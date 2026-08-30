@@ -23,6 +23,7 @@ public:
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
+        NamesAndTypesList converted_columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeSettingsPtr & storage_settings_,
@@ -213,9 +214,14 @@ private:
 
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
+/// `columns` with Arrays converted to subcolumns of Nested when `share_nested_offsets` is enabled.
+/// The reader keeps both lists; callers that create many readers for one part compute it once.
+NamesAndTypesList convertRequestedColumns(const NamesAndTypesList & columns, const MergeTreeSettings & storage_settings);
+
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns,
+    NamesAndTypesList converted_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,

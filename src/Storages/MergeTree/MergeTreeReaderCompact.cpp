@@ -25,6 +25,7 @@ namespace ErrorCodes
 MergeTreeReaderCompact::MergeTreeReaderCompact(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     NamesAndTypesList columns_,
+    NamesAndTypesList converted_columns_,
     const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeSettingsPtr & storage_settings_,
@@ -39,6 +40,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     : IMergeTreeReader(
         data_part_info_for_read_,
         columns_,
+        std::move(converted_columns_),
         virtual_fields_,
         storage_snapshot_,
         storage_settings_,

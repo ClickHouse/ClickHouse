@@ -173,6 +173,21 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     return &index_task;
 }
 
+void MergeTreeReadTaskInfo::fillConvertedColumns(const MergeTreeSettings & storage_settings)
+{
+    converted_columns = convertRequestedColumns(task_columns.columns, storage_settings);
+
+    converted_pre_columns.clear();
+    converted_pre_columns.reserve(task_columns.pre_columns.size());
+    for (const auto & pre_columns_per_step : task_columns.pre_columns)
+        converted_pre_columns.push_back(convertRequestedColumns(pre_columns_per_step, storage_settings));
+
+    converted_patch_columns.clear();
+    converted_patch_columns.reserve(task_columns.patch_columns.size());
+    for (const auto & patch_columns : task_columns.patch_columns)
+        converted_patch_columns.push_back(convertRequestedColumns(patch_columns, storage_settings));
+}
+
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
@@ -181,11 +196,15 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
-    auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
+    chassert(read_info->converted_pre_columns.size() == read_info->task_columns.pre_columns.size());
+    chassert(read_info->converted_patch_columns.size() == read_info->task_columns.patch_columns.size());
+
+    auto create_reader = [&](const NamesAndTypesList & columns_to_read, const NamesAndTypesList & converted_columns_to_read, bool is_prewhere)
     {
         return createMergeTreeReader(
             read_info->data_part_info,
             columns_to_read,
+            converted_columns_to_read,
             extras.storage_snapshot,
             read_info->data_part_info->getStorageSettings(),
             ranges,
@@ -198,14 +217,15 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
-    new_readers.main = create_reader(read_info->task_columns.columns, false);
+    new_readers.main = create_reader(read_info->task_columns.columns, read_info->converted_columns, false);
 
     bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
     if (is_vector_search)
         new_readers.main->setReadHints(read_info->read_hints, read_info->task_columns.columns);
 
-    for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
+    for (size_t step = 0; step < read_info->task_columns.pre_columns.size(); ++step)
     {
+        const auto & pre_columns_per_step = read_info->task_columns.pre_columns[step];
         /// Index-read-tasks (skip-index-on-data-read) are coordinator-only, so the concrete part
         /// is present whenever the list is non-empty; skip the concrete access otherwise.
         const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
@@ -221,7 +241,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         }
         else
         {
-            new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
+            new_readers.prewhere.push_back(create_reader(pre_columns_per_step, read_info->converted_pre_columns[step], true));
         }
 
         if (is_vector_search)
@@ -233,6 +253,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         return createMergeTreeReader(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
+            read_info->converted_patch_columns[part_idx],
             extras.storage_snapshot,
             read_info->data_part_info->getStorageSettings(),
             patches_ranges[part_idx],

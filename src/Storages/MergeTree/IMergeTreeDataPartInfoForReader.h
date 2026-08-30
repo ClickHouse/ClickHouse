@@ -123,6 +123,9 @@ public:
 
     virtual SerializationPtr getSerialization(const NameAndTypePair & column) const = 0;
 
+    /// The part's cached serialization of a column or an enumerable subcolumn, nullptr if the part has none for the name.
+    virtual SerializationPtr tryGetSerialization(const NameAndTypePair & column) const = 0;
+
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
     virtual String getTableName() const = 0;

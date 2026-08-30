@@ -306,6 +306,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
             settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     }
 
+    read_task_info.fillConvertedColumns(*read_task_info.data_part_info->getStorageSettings());
     read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
 
     std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)
