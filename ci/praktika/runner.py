@@ -101,6 +101,9 @@ class Runner:
             PR_LABELS=[],
             EVENT_TIME="",
             WORKFLOW_CONFIG=workflow_config,
+            # Mirror _setup_env: a job body may read its own configuration (e.g. to
+            # derive an output filename from `provides`), which is None here otherwise.
+            JOB_CONFIG=job,
         ).dump()
 
         if pr and pr > 0:
@@ -282,6 +285,88 @@ class Runner:
         except Exception as e:
             print(f"WARNING: Submodule cache restore failed: {e}, will clone from GitHub")
             traceback.print_exc()
+
+    # Signature left when the host docker daemon dies mid-run: the daemon
+    # connection is canceled while the main test container is still running, so
+    # the container returns exit 125 and the job is truncated with all
+    # already-executed tests OK. This is a runner-host infra event, so the job
+    # should be re-run on a fresh runner rather than reddening the merge check.
+    #
+    # Require the cancellation-specific conjunction, NOT any single fragment: a
+    # deterministic docker-connectivity regression such as
+    # "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" also
+    # exits 125 and leaves the result unfinished, but is a real regression that
+    # must surface rather than being retried forever. Both markers together only
+    # appear when a live container's daemon connection is torn down mid-run.
+    _DOCKER_DAEMON_DEATH_LOG_SIGNATURES = (
+        "Error waiting for container: Canceled",
+        "grpc: the client connection is closing",
+    )
+
+    @classmethod
+    def _is_docker_daemon_death(cls, exit_code, log_tail):
+        if exit_code != 125 or not log_tail:
+            return False
+        return all(sig in log_tail for sig in cls._DOCKER_DAEMON_DEATH_LOG_SIGNATURES)
+
+    @classmethod
+    def _label_infra_on_docker_daemon_death(
+        cls, result, exit_code, log_tail, timeout_exceeded
+    ):
+        """Label a truncated daemon-death run infra. Returns True if labeled."""
+        if timeout_exceeded or not cls._is_docker_daemon_death(exit_code, log_tail):
+            return False
+        print(
+            "NOTE: job truncated by a docker daemon failure - "
+            "labeling as infrastructure error for auto-retry"
+        )
+        # Append the bare label string, not the dict set_label() would store:
+        # retry_infra_failures.yml matches with `any(. == "infra")`, which only
+        # sees a plain string. The other readers (_label_name, json.html
+        # normalizeLabels, gh.py) already accept the string form.
+        labels = result.ext.setdefault("labels", [])
+        if Result.Label.INFRA not in labels:
+            labels.append(Result.Label.INFRA)
+        return True
+
+    @classmethod
+    def _finalize_job_result(cls, job, process, exit_code, host_metrics):
+        """Read the job result, classify a failed run, and persist it."""
+        result = Result.from_fs(job.name)
+        if host_metrics:
+            result.add_ext_key_value("metrics", host_metrics)
+            # Flag over/under-utilized runners, but not for skipped jobs -
+            # they did no real work, so their metrics are meaningless.
+            if not result.is_skipped():
+                for label, hint in HostMetricsCollector.classify(host_metrics):
+                    result.set_label(label, hint=hint)
+        if exit_code != 0:
+            if not result.is_completed():
+                if process.timeout_exceeded:
+                    print(
+                        f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
+                    )
+                    result.add_error(ResultInfo.TIMEOUT)
+                elif result.is_running():
+                    info = f"Job killed, exit code [{exit_code}]"
+                    print(f"ERROR: {info}")
+                    result.add_error(info)
+                else:
+                    info = (
+                        f"Invalid status [{result.status}] for exit code [{exit_code}]"
+                    )
+                    print(f"ERROR: {info}")
+                    result.add_error(info)
+                result.set_status(Result.Status.ERROR)
+                latest_log = process.get_latest_log(max_lines=20)
+                result.set_info(latest_log)
+                # Must run before the dump below, or the label never reaches the
+                # result JSON that retry_infra_failures.yml reads.
+                cls._label_infra_on_docker_daemon_death(
+                    result, exit_code, latest_log, process.timeout_exceeded
+                )
+        result.dump()
+        return result
 
     def _run(
         self,
@@ -517,32 +602,7 @@ class Runner:
                     chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
                     Shell.run(chown_cmd)
 
-                result = Result.from_fs(job.name)
-                if host_metrics:
-                    result.add_ext_key_value("metrics", host_metrics)
-                    # Flag over/under-utilized runners, but not for skipped jobs -
-                    # they did no real work, so their metrics are meaningless.
-                    if not result.is_skipped():
-                        for label, hint in HostMetricsCollector.classify(host_metrics):
-                            result.set_label(label, hint=hint)
-                if exit_code != 0:
-                    if not result.is_completed():
-                        if process.timeout_exceeded:
-                            print(
-                                f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
-                            )
-                            result.add_error(ResultInfo.TIMEOUT)
-                        elif result.is_running():
-                            info = f"Job killed, exit code [{exit_code}]"
-                            print(f"ERROR: {info}")
-                            result.add_error(info)
-                        else:
-                            info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
-                            print(f"ERROR: {info}")
-                            result.add_error(info)
-                        result.set_status(Result.Status.ERROR)
-                        result.set_info(process.get_latest_log(max_lines=20))
-                result.dump()
+                self._finalize_job_result(job, process, exit_code, host_metrics)
         finally:
             # Idempotent: a no-op if stop() already ran above; guarantees the
             # sampling thread is always joined even if TeePopen raised.

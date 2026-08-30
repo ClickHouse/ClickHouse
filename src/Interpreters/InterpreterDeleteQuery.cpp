@@ -1,5 +1,8 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/replaceLegacyToTime.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
@@ -32,6 +35,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool use_legacy_to_time;
     extern const SettingsBool enable_lightweight_delete;
     extern const SettingsUInt64 lightweight_deletes_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -57,6 +61,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -74,6 +79,12 @@ BlockIO InterpreterDeleteQuery::execute()
     /// the database of the deleted-from table.
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
+    /// The spelling must be canonical before the query is enqueued for a Replicated database or
+    /// lowered into an UPDATE / ALTER text: the replaying host may not carry this session's settings.
+    /// SQL UDF bodies are inlined above, so a `toTime` hidden in one is canonicalized too.
+    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+        replaceLegacyToTime(*query_ptr);
 
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
@@ -110,6 +121,14 @@ BlockIO InterpreterDeleteQuery::execute()
 
     if (table->supportsDelete())
     {
+        /// This pipeline serializes only the predicate into the mutation command, and the storages
+        /// that take it (`KeeperMap`, `EmbeddedRocksDB`, Iceberg, `system.wasm_modules`, ...) have
+        /// no notion of MergeTree-style partitions anyway. Reject the clause instead of silently
+        /// mutating a wider scope than the query requested.
+        if (delete_query.partition || delete_query.partitions)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DELETE ... IN PARTITION is not supported for table {}", table->getStorageID().getFullTableName());
+
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
         MutationCommand mut_command;
@@ -199,11 +218,19 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Build "UPDATE <table> [ON CLUSTER <cluster>] SET _row_exists = 0 [IN PARTITION <partition_id>] WHERE <predicate>" query
             static constexpr auto update_query_template = "UPDATE {}{} SET `_row_exists` = 0{} WHERE {}";
 
+            auto partition_clause = [&]() -> String
+            {
+                if (delete_query.partitions)
+                    return " IN PARTITION " + delete_query.partitions->formatWithSecretsOneLine();
+                if (delete_query.partition)
+                    return " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine();
+                return "";
+            }();
             String update_query = fmt::format(
                 update_query_template,
                 table->getStorageID().getFullTableName(),
                 delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster),
-                delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "",
+                partition_clause,
                 delete_query.predicate->formatWithSecretsOneLine());
 
             ParserUpdateQuery parser;
@@ -224,11 +251,19 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Build "ALTER <table> [ON CLUSTER <cluster>] UPDATE _row_exists = 0 [IN PARTITION <partition_id>] WHERE <predicate>" query
             static constexpr auto alter_query_template = "ALTER TABLE {}{} UPDATE `_row_exists` = 0{} WHERE {}";
 
+            auto partition_clause = [&]() -> String
+            {
+                if (delete_query.partitions)
+                    return " IN PARTITION " + delete_query.partitions->formatWithSecretsOneLine();
+                if (delete_query.partition)
+                    return " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine();
+                return "";
+            }();
             String alter_query = fmt::format(
                 alter_query_template,
                 table->getStorageID().getFullTableName(),
                 delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster),
-                delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "",
+                partition_clause,
                 delete_query.predicate->formatWithSecretsOneLine());
 
             ParserAlterQuery parser;
