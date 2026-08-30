@@ -9806,7 +9806,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         if (analyzed_partition_ids)
             analyzed_partition_ids->insert(part->info.getPartitionId());
 
-        if (!partition_pruner.canBePruned(*part))
+        if (!partition_pruner.canBePruned(*part, /*can_prune_empty_parts=*/ false))
             affected_partition_ids.insert(part->info.getPartitionId());
     }
 

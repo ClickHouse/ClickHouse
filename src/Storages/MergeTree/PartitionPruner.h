@@ -20,7 +20,7 @@ public:
         bool strict = false,
         bool skip_analysis = false);
 
-    bool canBePruned(const IMergeTreeDataPart & part) const;
+    bool canBePruned(const IMergeTreeDataPart & part, bool can_prune_empty_parts = true) const;
 
     bool isUseless() const { return useless; }
 
