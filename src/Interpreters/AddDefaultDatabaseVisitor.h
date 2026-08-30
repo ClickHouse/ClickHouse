@@ -142,13 +142,32 @@ private:
 
     void visitTableExpressionsImpl(IAST & ast) const
     {
-        if (auto * select = ast.as<ASTSelectQuery>(); select && select->recursive_with)
+        if (auto * select = ast.as<ASTSelectQuery>())
         {
-            for (const auto & child : select->with()->children)
+            if (select->recursive_with)
             {
-                if (const auto * with_element = typeid_cast<const ASTWithElement *>(child.get()))
-                    with_aliases.insert(with_element->name);
+                for (const auto & child : select->with()->children)
+                {
+                    if (const auto * with_element = typeid_cast<const ASTWithElement *>(child.get()))
+                        with_aliases.insert(with_element->name);
+                }
             }
+
+            /// The right argument of `IN` may refer to an alias of an expression defined
+            /// elsewhere in the query, possibly after the point of use - then it is not
+            /// a table name. Collect the aliases of this select query before descending
+            /// into the children, exactly like `visit(ASTSelectQuery &, ASTPtr &)` of the
+            /// full traversal does, with the same scoping.
+            auto enclosing_query_aliases = std::move(expression_aliases);
+            expression_aliases.clear();
+            for (const auto & child : select->children)
+                collectAliases(child);
+
+            for (auto & child : select->children)
+                visitTableExpressionsImpl(*child);
+
+            expression_aliases = std::move(enclosing_query_aliases);
+            return;
         }
 
         if (auto * table_expression = ast.as<ASTTableExpression>())
@@ -218,6 +237,12 @@ private:
             /// A plain identifier in the right argument of `IN` is a table name.
             if (auto * identifier = arguments[1]->as<ASTIdentifier>(); identifier && !identifier->as<ASTTableIdentifier>())
             {
+                /// Unless it is an alias of an expression defined elsewhere in the query -
+                /// then it is not a table name and must not be qualified with the database,
+                /// like in `visit(ASTFunction &, ASTPtr &)` of the full traversal.
+                if (expression_aliases.contains(identifier->name()))
+                    return;
+
                 if (auto maybe_table_identifier = identifier->createTable())
                     arguments[1] = maybe_table_identifier;
             }
