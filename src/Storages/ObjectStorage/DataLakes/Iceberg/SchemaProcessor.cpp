@@ -392,6 +392,7 @@ namespace Iceberg
 {
 
 std::string IcebergSchemaProcessor::default_link{};
+Names IcebergSchemaProcessor::default_path{};
 
 void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
 {
@@ -438,19 +439,36 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
 
         auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
         String current_full_name{};
+        Names current_path;
         for (size_t i = 0; i != fields->size(); ++i)
         {
             auto field = fields->getObject(static_cast<UInt32>(i));
             auto name = field->getValue<String>(f_name);
             bool required = field->getValue<bool>(f_required);
             current_full_name = name;
-            auto type = getFieldType(field, f_type, required, current_full_name, true);
+            current_path = {name};
+            auto type = getFieldType(field, f_type, required, current_full_name, current_path, true);
             clickhouse_schema->push_back(NameAndTypePair{name, type});
             clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, type};
             clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+            clickhouse_paths_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = current_path;
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
         iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
+
+        /// Census the flattened names a reader header can carry. It is taken over the built
+        /// ClickHouse type rather than over the Iceberg fields above, because header names come from
+        /// ClickHouse subcolumn flattening, which also exposes descendants of an array of tuples.
+        for (const auto & column : *clickhouse_schema)
+        {
+            Names flat_names{column.name};
+            IDataType::forEachSubcolumn(
+                [&](const auto &, const auto & subname, const auto &)
+                { flat_names.push_back(Nested::concatenateName(column.name, subname)); },
+                ISerialization::SubstreamData(column.type->getDefaultSerialization()).withType(column.type));
+            for (const auto & flat_name : flat_names)
+                ++flat_name_counts[{schema_id, flat_name}];
+        }
     }
     current_schema_id = std::nullopt;
 }
@@ -473,6 +491,28 @@ std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristic
     if (it == clickhouse_types_by_source_ids.end())
         return {};
     return it->second;
+}
+
+Names IcebergSchemaProcessor::getFieldPath(Int32 schema_version, Int32 source_id) const
+{
+    SharedLockGuard lock(mutex);
+
+    auto it = clickhouse_paths_by_source_ids.find({schema_version, source_id});
+    if (it == clickhouse_paths_by_source_ids.end())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Element path of field with source id {} in schema version {} is unknown",
+            source_id,
+            schema_version);
+    return it->second;
+}
+
+bool IcebergSchemaProcessor::flatNameIdentifiesOneColumn(Int32 schema_id, const String & flat_name) const
+{
+    SharedLockGuard lock(mutex);
+
+    auto it = flat_name_counts.find({schema_id, flat_name});
+    return it != flat_name_counts.end() && it->second == 1;
 }
 
 std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_id, const std::string & name) const
@@ -563,8 +603,8 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-DataTypePtr
-IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
+DataTypePtr IcebergSchemaProcessor::getComplexTypeFromObject(
+    const Poco::JSON::Object::Ptr & type, String & current_full_name, Names & current_path, bool is_subfield_of_root)
 {
     /// The schema comes from the table metadata and can be nested arbitrarily deeply.
     checkStackSize();
@@ -604,13 +644,21 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
                 Int32 schema_id = TSA_SUPPRESS_WARNING_FOR_READ(current_schema_id).value();
 
                 (current_full_name += ".").append(element_names.back());
-                scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
-                element_types.push_back(getFieldType(field, f_type, required, current_full_name, true));
+                current_path.push_back(element_names.back());
+                scope_guard guard([&]
+                {
+                    current_full_name.resize(current_full_name.size() - element_names.back().size() - 1);
+                    current_path.pop_back();
+                });
+                element_types.push_back(getFieldType(field, f_type, required, current_full_name, current_path, true));
                 TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)
                 [{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, element_types.back()};
 
                 TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)
                 [{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_paths_by_source_ids)
+                [{schema_id, field->getValue<Int32>(f_id)}] = current_path;
             }
             else
             {
@@ -625,10 +673,15 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
 }
 
 DataTypePtr IcebergSchemaProcessor::getFieldType(
-    const Poco::JSON::Object::Ptr & field, const String & type_key, bool required, String & current_full_name, bool is_subfield_of_root)
+    const Poco::JSON::Object::Ptr & field,
+    const String & type_key,
+    bool required,
+    String & current_full_name,
+    Names & current_path,
+    bool is_subfield_of_root)
 {
     if (field->isObject(type_key))
-        return getComplexTypeFromObject(field->getObject(type_key), current_full_name, is_subfield_of_root);
+        return getComplexTypeFromObject(field->getObject(type_key), current_full_name, current_path, is_subfield_of_root);
 
     auto type = field->get(type_key);
     if (type.isString())

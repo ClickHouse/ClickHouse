@@ -17,6 +17,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
+
 namespace DB::ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
@@ -57,7 +59,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_,
     const String & resolved_storage_path_,
     Int32 schema_id_relevant_to_iterator_,
-    std::vector<std::pair<String, Field>> identity_partition_columns_)
+    std::vector<Iceberg::IdentityPartitionColumn> identity_partition_columns_)
     : ObjectInfo(RelativePathWithMetadata(resolved_storage_path_))
     , info{
           data_manifest_file_entry_->parsed_entry->file_path_key,
@@ -208,11 +210,41 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
     }
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS)
     {
-        writeVarUInt(identity_partition_columns.size(), out);
-        for (const auto & [name, value] : identity_partition_columns)
+        const bool sites_are_sent = protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_PATHS;
+
+        /// The older layout describes a site by the field's joined name alone, which is only correct
+        /// when that name is itself one of the field's sites. Omit a column whose joined name the
+        /// schema does not uniquely identify, rather than let a peer inject it into another column.
+        std::vector<const IdentityPartitionColumn *> sent_columns;
+        sent_columns.reserve(identity_partition_columns.size());
+        for (const auto & column : identity_partition_columns)
         {
-            writeStringBinary(name, out);
-            writeFieldBinary(value, out);
+            const bool joined_name_is_a_site = std::ranges::any_of(
+                column.injection_sites, [&](const auto & site) { return site.second.empty() && site.first == column.name; });
+            if (sites_are_sent || joined_name_is_a_site)
+                sent_columns.push_back(&column);
+        }
+
+        writeVarUInt(sent_columns.size(), out);
+        for (const auto * column : sent_columns)
+        {
+            writeStringBinary(column->name, out);
+            writeFieldBinary(column->value, out);
+        }
+
+        if (sites_are_sent)
+        {
+            for (const auto * column : sent_columns)
+            {
+                writeVarUInt(column->injection_sites.size(), out);
+                for (const auto & [header_name, remaining] : column->injection_sites)
+                {
+                    writeStringBinary(header_name, out);
+                    writeVarUInt(remaining.size(), out);
+                    for (const auto & segment : remaining)
+                        writeStringBinary(segment, out);
+                }
+            }
         }
     }
 }
@@ -327,7 +359,32 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
         {
             String name;
             readStringBinary(name, in);
-            identity_partition_columns.emplace_back(std::move(name), readFieldBinary(in));
+            Field value = readFieldBinary(in);
+            /// A peer that predates the injection sites describes the whole-column site implicitly,
+            /// by the name alone. Synthesize it, so such a read keeps injecting top-level values.
+            identity_partition_columns.push_back(
+                Iceberg::IdentityPartitionColumn{name, {{name, Names{}}}, std::move(value)});
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_PATHS)
+    {
+        for (auto & column : identity_partition_columns)
+        {
+            size_t sites_size = 0;
+            readVarUInt(sites_size, in);
+            column.injection_sites.clear();
+            column.injection_sites.reserve(sites_size);
+            for (size_t i = 0; i < sites_size; ++i)
+            {
+                String header_name;
+                readStringBinary(header_name, in);
+                size_t remaining_size = 0;
+                readVarUInt(remaining_size, in);
+                Names remaining(remaining_size);
+                for (auto & segment : remaining)
+                    readStringBinary(segment, in);
+                column.injection_sites.emplace_back(std::move(header_name), std::move(remaining));
+            }
         }
     }
 }

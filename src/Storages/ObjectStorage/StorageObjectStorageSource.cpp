@@ -12,9 +12,13 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/tuple.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/IReadBufferMetadataProvider.h>
@@ -246,66 +250,155 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
         && object_info.data_lake_metadata->excluded_rows->size() > 0;
 }
 
+/// The identity values that may be injected into one column, each with the tuple element path to
+/// walk inside it. An empty path means the whole column is the value.
+using IdentitySubstitutions = std::vector<std::pair<const Names *, const Field *>>;
+
+/// Whether `path` addresses a named tuple element at every level of `type`. An identity partition
+/// source is always a primitive field under root-anchored structs, so a path that fails this is
+/// unreachable from an Iceberg schema and its value is not injected.
+static bool identityPathIsAddressable(const IDataType & type, const Names & path)
+{
+    const IDataType * current = &type;
+    for (const auto & segment : path)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(current);
+        if (!tuple_type || !tuple_type->hasExplicitNames())
+            return false;
+        const auto position = tuple_type->tryGetPositionByName(segment);
+        if (!position)
+            return false;
+        current = tuple_type->getElement(*position).get();
+    }
+    return true;
+}
+
+/// Match every identity value against the columns available to a reader, keyed by column name.
+/// `find_column_type` returns the type of an available column, or nullptr when it is absent, so both
+/// the availability and the addressability question are answered here for every consumer.
+static std::unordered_map<std::string_view, IdentitySubstitutions> collectIdentitySubstitutions(
+    const std::vector<Iceberg::IdentityPartitionColumn> & identity_partition_columns,
+    const std::function<const DataTypePtr *(const String &)> & find_column_type)
+{
+    std::unordered_map<std::string_view, IdentitySubstitutions> by_column;
+    for (const auto & column : identity_partition_columns)
+    {
+        for (const auto & [column_name, path] : column.injection_sites)
+        {
+            const DataTypePtr * type = find_column_type(column_name);
+            if (type && identityPathIsAddressable(**type, path))
+                by_column[column_name].emplace_back(&path, &column.value);
+        }
+    }
+    return by_column;
+}
+
+/// Rebuild `node` with the element addressed by `path` replaced by `value`, keeping every other
+/// element as the file provides it. `path` must be addressable in `node`'s type.
+static const ActionsDAG::Node & addIdentityElementReplacement(
+    ActionsDAG & dag, const ActionsDAG::Node & node, const Names & path, const Field & value)
+{
+    if (path.empty())
+        return dag.addColumn(node.result_type->createColumnConst(1, value), node.result_type, node.result_name);
+
+    const auto & tuple_type = assert_cast<const DataTypeTuple &>(*node.result_type);
+    const size_t position = tuple_type.getPositionByName(path.front());
+    const Names deeper(path.begin() + 1, path.end());
+    auto tuple_element_builder = FunctionFactory::instance().get("tupleElement", nullptr);
+
+    ActionsDAG::NodeRawConstPtrs elements;
+    elements.reserve(tuple_type.getElements().size());
+    for (size_t i = 0; i != tuple_type.getElements().size(); ++i)
+    {
+        const auto & element_name = tuple_type.getElementNames()[i];
+        auto element_name_type = std::make_shared<DataTypeString>();
+        const auto & element_name_constant
+            = dag.addColumn(element_name_type->createColumnConst(1, element_name), element_name_type, "'" + element_name + "'");
+        const auto & element = dag.addFunction(tuple_element_builder, {&node, &element_name_constant}, {});
+        elements.push_back(i == position ? &addIdentityElementReplacement(dag, element, deeper, value) : &element);
+    }
+
+    /// A directly constructed `FunctionTuple` always yields an unnamed tuple, so the cast back to the
+    /// parent's named type matches elements by position rather than by name.
+    FunctionOverloadResolverPtr tuple_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+    const auto & rebuilt = dag.addFunction(tuple_builder, std::move(elements), {});
+    return dag.addCast(rebuilt, node.result_type, node.result_name, nullptr);
+}
+
 static bool readsIdentityPartitionColumn(
-    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+    const ActionsDAG & dag, const std::vector<Iceberg::IdentityPartitionColumn> & identity_partition_columns)
 {
     if (identity_partition_columns.empty())
         return false;
 
-    for (const auto & required : dag.getRequiredColumns())
-        for (const auto & [name, _] : identity_partition_columns)
-            if (name == required.name)
-                return true;
-    return false;
+    const auto required = dag.getRequiredColumns();
+    auto find_required = [&](const String & name) -> const DataTypePtr *
+    {
+        auto it = std::ranges::find_if(required, [&](const auto & column) { return column.name == name; });
+        return it == required.end() ? nullptr : &it->type;
+    };
+    return !collectIdentitySubstitutions(identity_partition_columns, find_required).empty();
 }
 
 static ActionsDAG substituteIdentityPartitionColumns(
-    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+    const ActionsDAG & dag, const std::vector<Iceberg::IdentityPartitionColumn> & identity_partition_columns)
 {
-    std::unordered_map<std::string_view, const Field *> values_by_name;
-    for (const auto & [name, value] : identity_partition_columns)
-        values_by_name.emplace(name, &value);
+    const auto required = dag.getRequiredColumns();
+    auto find_required = [&](const String & name) -> const DataTypePtr *
+    {
+        auto it = std::ranges::find_if(required, [&](const auto & column) { return column.name == name; });
+        return it == required.end() ? nullptr : &it->type;
+    };
 
     ActionsDAG substitution;
-    for (const auto & required : dag.getRequiredColumns())
+    for (const auto & [column_name, sites] : collectIdentitySubstitutions(identity_partition_columns, find_required))
     {
-        auto it = values_by_name.find(required.name);
-        if (it == values_by_name.end())
-            continue;
+        const DataTypePtr & type = *find_required(String(column_name));
 
-        const auto & constant
-            = substitution.addColumn(required.type->createColumnConst(0, *it->second), required.type, required.name);
-        substitution.getOutputs().push_back(&substitution.materializeNode(constant));
+        /// Only a site that rebuilds a tuple element reads the column. A whole-column site stays a
+        /// bare constant: the file need not store that column, so reading it here could ask the
+        /// reader for a column that is not in the file.
+        const bool reads_column = std::ranges::any_of(sites, [](const auto & site) { return !site.first->empty(); });
+        const ActionsDAG::Node * node = reads_column
+            ? &substitution.addInput(String(column_name), type)
+            : &substitution.addColumn(type->createColumnConst(0, *sites.front().second), type, String(column_name));
+
+        if (reads_column)
+        {
+            for (const auto & [path, value] : sites)
+                node = &addIdentityElementReplacement(substitution, *node, *path, *value);
+        }
+        substitution.getOutputs().push_back(&substitution.materializeNode(*node));
     }
 
     return ActionsDAG::merge(std::move(substitution), dag.clone());
 }
 
 static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
-    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+    const Block & header, const std::vector<Iceberg::IdentityPartitionColumn> & identity_partition_columns)
 {
-    std::unordered_map<std::string_view, const Field *> values_by_name;
-    for (const auto & [name, value] : identity_partition_columns)
-        if (header.has(name))
-            values_by_name.emplace(name, &value);
+    auto find_in_header = [&](const String & name) -> const DataTypePtr *
+    { return header.has(name) ? &header.getByName(name).type : nullptr; };
 
-    if (values_by_name.empty())
+    const auto by_column = collectIdentitySubstitutions(identity_partition_columns, find_in_header);
+    if (by_column.empty())
         return {};
 
     ActionsDAG dag;
     auto & outputs = dag.getOutputs();
     for (const auto & column : header)
     {
-        const auto & input = dag.addInput(column.name, column.type);
-        auto it = values_by_name.find(column.name);
-        if (it == values_by_name.end())
+        const ActionsDAG::Node * node = &dag.addInput(column.name, column.type);
+        auto it = by_column.find(column.name);
+        if (it == by_column.end())
         {
-            outputs.push_back(&input);
+            outputs.push_back(node);
             continue;
         }
 
-        const auto & constant = dag.addColumn(column.type->createColumnConst(1, *it->second), column.type, column.name);
-        outputs.push_back(&dag.materializeNode(constant));
+        for (const auto & [path, value] : it->second)
+            node = &addIdentityElementReplacement(dag, *node, *path, *value);
+        outputs.push_back(&dag.materializeNode(*node));
     }
     return dag;
 }
@@ -1204,7 +1297,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (!initial_header.has(column_name))
                 initial_header.insert({rowLineageColumnType()->createColumn(), rowLineageColumnType(), column_name});
         }
-        std::vector<std::pair<String, Field>> identity_partition_columns;
+        std::vector<Iceberg::IdentityPartitionColumn> identity_partition_columns;
 #if USE_AVRO
         if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
             identity_partition_columns = iceberg_info->info.identity_partition_columns;
