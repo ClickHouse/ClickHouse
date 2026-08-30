@@ -2,7 +2,9 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <algorithm>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -42,6 +44,19 @@ struct ASTWindowDefinition;
 
 class SettingsChanges;
 
+/// All aggregate-function combinator suffixes ClickHouse recognises (see
+/// `AggregateFunctionCombinatorFactory`). Shared between the fuzzer — which
+/// applies the subset it can build valid arguments for — and
+/// `QueryOracleChecker`, which strips suffixes to recognise the base aggregate
+/// name behind fuzzer-produced chains like `first_valueOrNullDistinct`.
+/// Combinator spelling is case-sensitive in ClickHouse (`sumIf` is valid,
+/// `sumif` is not), so these stay PascalCase.
+inline const Strings aggregate_combinator_suffixes = {
+    "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
+    "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
+    "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
+};
+
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
  * AST, changing numbers, list of columns, functions, etc. It remembers part of
@@ -63,6 +78,11 @@ public:
     // This is the only function you have to call -- it will modify the passed
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
+
+    /// When true, reduce probability of structure-destroying mutations
+    /// (removing GROUP BY, WHERE, converting to EXPLAIN) to preserve
+    /// query structure for oracle correctness testing.
+    bool oracle_mode = false;
 
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void notifyQueryFailed(ASTPtr ast);
@@ -178,6 +198,15 @@ private:
     // total depth of AST to prevent this.
     // This field is reset for each fuzzMain() call.
     size_t current_ast_depth = 0;
+
+    // Depth of SELECT-query nesting while fuzzing (1 = inside the outermost
+    // `ASTSelectQuery`). Unlike `current_ast_depth`, this counts only SELECT
+    // nodes, so the oracle-mode guards can reliably recognise the topmost
+    // query — a plain SELECT is wrapped in `ASTSelectWithUnionQuery` and an
+    // expression list, putting the real top-level SELECT at AST depth 3.
+    // Maintained by a `ScopedIncrement` in the `ASTSelectQuery` branch of
+    // `fuzz`, which spans the recursion into the SELECT's children.
+    size_t current_select_nesting = 0;
 
     // Used to track added tables in join clauses
     uint32_t alias_counter = 0;
@@ -303,10 +332,32 @@ private:
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
+    void fuzzColumnDeclarationList(ASTExpressionList & columns);
+    ASTPtr makeTextIndexTokenizer();
+    String makeTextTokenizerArgument();
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
+    void fuzzIndexDeclarationList(ASTExpressionList & indices);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
+    void fuzzProjectionDeclarationList(ASTExpressionList & projections);
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
+    String pickFuzzedTableName(const String & full_name);
     void fuzzTableName(ASTTableExpression & table);
+
+    /// Point a statement that names an existing table at one of its live `__fuzz_N` clones, so the
+    /// rewritten definitions are exercised outside a `FROM` too. Takes any node exposing the
+    /// `table` / `getTable` / `setTable` trio; `setTable` re-registers the child, so there is
+    /// nothing else to keep in sync.
+    template <typename Query>
+    void fuzzTableName(Query & query)
+    {
+        if (!query.table || fuzz_rand() % 3 == 0)
+            return;
+
+        const auto new_table_name = pickFuzzedTableName(query.getTable());
+        if (!new_table_name.empty())
+            query.setTable(new_table_name);
+    }
+
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
@@ -327,6 +378,8 @@ private:
     void fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
+    void fuzzChildrenWithAlias(IAST & parent, ASTPtr & aliased_member);
+    String nextFuzzedTableName(const String & full_name);
     void collectFuzzInfoMain(ASTPtr ast);
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
@@ -336,6 +389,23 @@ private:
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
     ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);
+
+    /// Reshape a declaration list - reorder it, and drop one of several entries - then fuzz the
+    /// declarations that survive. Dropping the last one is never worth it: an empty list puts the
+    /// whole feature out of reach for every later iteration over the same corpus.
+    template <typename ASTDeclaration, typename FuzzDeclaration>
+    void fuzzDeclarationList(ASTs & declarations, FuzzDeclaration && fuzz_declaration)
+    {
+        if (declarations.size() > 1 && fuzz_rand() % 5 == 0)
+            std::shuffle(declarations.begin(), declarations.end(), fuzz_rand);
+
+        if (declarations.size() > 1 && fuzz_rand() % 10 == 0)
+            declarations.erase(declarations.begin() + fuzz_rand() % declarations.size());
+
+        for (auto & declaration_ast : declarations)
+            if (auto * declaration = declaration_ast->as<ASTDeclaration>())
+                fuzz_declaration(*declaration, declaration_ast);
+    }
 
     template <typename Container>
     const auto & pickRandomly(pcg64 & rand, const Container & container)

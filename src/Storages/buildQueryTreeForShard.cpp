@@ -78,6 +78,139 @@ namespace ErrorCodes
 namespace
 {
 
+/// Return a clone of the defining expression of an inlineable `ALIAS` column node, or nullptr otherwise.
+/// A JOIN / CROSS_JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
+/// which is not an alias body. The expression is cloned so each occurrence gets its own copy: that lets
+/// one occurrence be aliased (a projection output) without mutating another (a reference in ORDER BY).
+QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node)
+{
+    const auto * column_node = node->as<ColumnNode>();
+    if (!column_node || !column_node->hasExpression())
+        return nullptr;
+
+    const auto & column_source = column_node->getColumnSourceOrNull();
+    if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                       || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                       || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        return nullptr;
+
+    return column_node->getExpression()->clone();
+}
+
+void inlineAliasColumnsImpl(QueryTreeNodePtr & node);
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node);
+
+/// A `JOIN USING` key is a `ColumnNode` whose expression is a `ListNode` recording how the key resolves on
+/// each side, and a side's entry can itself be an `ALIAS` column. Such an entry keeps the key's name as an
+/// alias when inlined, because the shipped SQL renders the entry rather than the key: `USING (x AS a)` is
+/// what lets a remote server resolve a key that exists only as an `ALIAS` column of the initiator's table.
+/// The alias also tells `rejectUnshippableJoinUsingKeys` which keys no remote server can resolve, and it
+/// reads the entry expecting exactly this shape.
+void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
+{
+    auto * using_list = join_expression->as<ListNode>();
+    if (!using_list)
+        return;
+
+    for (auto & using_node : using_list->getNodes())
+    {
+        auto * using_column = using_node->as<ColumnNode>();
+        if (!using_column || !using_column->hasExpression())
+            continue;
+
+        auto * key_sides = using_column->getExpression()->as<ListNode>();
+        if (!key_sides)
+            continue;
+
+        for (auto & side : key_sides->getNodes())
+        {
+            const auto * side_column = side->as<ColumnNode>();
+            auto expression = getInlineableAliasColumnExpression(side);
+            if (!expression)
+                continue;
+
+            const String key_name = side_column->getColumnName();
+            inlineAliasColumnsInExpression(expression);
+            expression->setAlias(key_name);
+            side = expression;
+        }
+    }
+}
+
+/// Inline `ALIAS` columns inside an expression subtree without assigning any alias. Nested subqueries are
+/// handed back to `inlineAliasColumnsImpl` so their own projection columns keep their names.
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
+{
+    if (node->as<QueryNode>() || node->as<UnionNode>())
+    {
+        inlineAliasColumnsImpl(node);
+        return;
+    }
+
+    /// An `ALIAS` column may be defined over another one, so keep unwrapping.
+    while (auto expression = getInlineableAliasColumnExpression(node))
+        node = expression;
+
+    auto * join_node = node->as<JoinNode>();
+    const bool using_join = join_node && join_node->isUsingJoinExpression();
+
+    for (auto & child : node->getChildren())
+    {
+        if (!child)
+            continue;
+
+        if (using_join && child == join_node->getJoinExpression())
+            inlineJoinUsingKeys(child);
+        else
+            inlineAliasColumnsInExpression(child);
+    }
+}
+
+/// Inline `ALIAS` columns into their defining expressions, so the expression is evaluated on the
+/// shard/replica reading the real table instead of the column being resolved there as if it were physical.
+///
+/// The defining expression keeps the column's logical name as an alias only when the `ALIAS` column is a
+/// top-level projection item, so the mergeable-state output column keeps its name. Inside expression
+/// clauses (`WHERE`/`GROUP BY`/`ORDER BY`/`HAVING`/`JOIN ON`) no alias is set; otherwise two same-named
+/// `ALIAS` columns from different `JOIN` sources land in one scope with different bodies and the remote
+/// side throws `MULTIPLE_EXPRESSIONS_FOR_ALIAS` (https://github.com/ClickHouse/ClickHouse/issues/107990).
+void inlineAliasColumnsImpl(QueryTreeNodePtr & node)
+{
+    if (auto * union_node = node->as<UnionNode>())
+    {
+        for (auto & query : union_node->getQueries().getNodes())
+            inlineAliasColumnsImpl(query);
+        return;
+    }
+
+    auto * query_node = node->as<QueryNode>();
+    if (!query_node)
+    {
+        inlineAliasColumnsInExpression(node);
+        return;
+    }
+
+    for (auto & projection_item : query_node->getProjection().getNodes())
+    {
+        const auto * column_node = projection_item->as<ColumnNode>();
+        if (auto expression = getInlineableAliasColumnExpression(projection_item))
+        {
+            const String output_alias = column_node->getColumnName();
+            inlineAliasColumnsInExpression(expression);
+            expression->setAlias(output_alias);
+            projection_item = expression;
+        }
+        else
+        {
+            inlineAliasColumnsInExpression(projection_item);
+        }
+    }
+
+    for (auto & child : query_node->getChildren())
+        if (child && child != query_node->getProjectionNode())
+            inlineAliasColumnsInExpression(child);
+}
+
 /// Visitor that collect column source to columns mapping from query and all subqueries
 class CollectColumnSourceToColumnsVisitor : public InDepthQueryTreeVisitor<CollectColumnSourceToColumnsVisitor>
 {
@@ -748,6 +881,11 @@ void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
 
 }
 
+void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
+{
+    inlineAliasColumnsImpl(query_tree_to_modify);
+}
+
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
@@ -958,40 +1096,13 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 namespace
 {
 
-/// Replace ALIAS column nodes with their defining expression. The action name computed afterwards then matches the name
-/// the shard's ActionsDAG assigns (the shard works on the inlined query tree).
-class InlineAliasColumnsForNamingVisitor : public InDepthQueryTreeVisitor<InlineAliasColumnsForNamingVisitor>
-{
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
-    }
-
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-};
-
 String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
 {
+    /// The action name computed afterwards then matches the name the shard's ActionsDAG assigns
+    /// (the shard works on the inlined query tree). Action names come from the column identifier or the
+    /// expression rather than the SQL alias, so inlining without aliasing is what this needs.
     auto node_clone = node->clone();
-    InlineAliasColumnsForNamingVisitor visitor;
-    visitor.visit(node_clone);
+    inlineAliasColumnsInExpression(node_clone);
 
     /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
     /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
@@ -1193,8 +1304,12 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const Block & shard_header,
-    const Block & expected_header)
+    const Block & expected_header,
+    std::unordered_map<String, String> * duplicate_to_representative)
 {
+    if (duplicate_to_representative)
+        duplicate_to_representative->clear();
+
     if (!planner_context || !query_tree)
         return {};
 
@@ -1272,11 +1387,23 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
 
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(expected_header.columns());
+    /// The first expected column mapping onto a given shard column is its "representative"; any later expected column
+    /// mapping onto the same shard column is a duplicate of that representative. Report those duplicates so a downstream
+    /// aggregation merge can bucket by only the representative key columns (matching the shard's collapsed bucketing).
+    std::unordered_map<size_t, String> representative_for_shard_index;
     for (size_t i = 0; i < expected_header.columns(); ++i)
     {
         const auto & expected_name = expected_header.getByPosition(i).name;
-        const auto * source_node = shard_input_nodes[shard_index_for_expected[i]];
+        const size_t shard_index = shard_index_for_expected[i];
+        const auto * source_node = shard_input_nodes[shard_index];
         outputs.push_back(&dag.addAlias(*source_node, expected_name));
+
+        if (duplicate_to_representative)
+        {
+            auto [it, inserted] = representative_for_shard_index.emplace(shard_index, expected_name);
+            if (!inserted && it->second != expected_name)
+                duplicate_to_representative->emplace(expected_name, it->second);
+        }
     }
 
     dag.getOutputs() = std::move(outputs);

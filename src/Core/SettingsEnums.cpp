@@ -59,7 +59,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
-     {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH},
+     {"ie_join",              JoinAlgorithm::IE_JOIN}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
@@ -124,7 +125,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+    {{"kusto",   FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
 IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -345,6 +346,13 @@ IMPLEMENT_SETTING_ENUM(
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 
 IMPLEMENT_SETTING_ENUM(
+    AsynchronousMetricsKeyValuesMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"key_values", AsynchronousMetricsKeyValuesMode::KeyValues},
+     {"legacy_names", AsynchronousMetricsKeyValuesMode::LegacyNames},
+     {"both", AsynchronousMetricsKeyValuesMode::Both}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
@@ -376,6 +384,8 @@ IMPLEMENT_SETTING_ENUM(
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
+     {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
@@ -463,6 +473,12 @@ IMPLEMENT_SETTING_ENUM(
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreePatchPartsVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreePatchPartsVersion::V1},
+     {"v2", MergeTreePatchPartsVersion::V2}})
+
+IMPLEMENT_SETTING_ENUM(
     SearchOrphanedPartsDisks,
     ErrorCodes::BAD_ARGUMENTS,
     {{"any", SearchOrphanedPartsDisks::ANY},
@@ -474,6 +490,13 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexPostingListCodec::None},
      {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeTextIndexSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v0_initial", MergeTreeTextIndexSerializationVersion::V0_Initial},
+     {"v1_with_codec", MergeTreeTextIndexSerializationVersion::V1_WithCodec},
+     {"v2_with_positions", MergeTreeTextIndexSerializationVersion::V2_WithPositions}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,
