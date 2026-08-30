@@ -175,6 +175,7 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
         ["bash", "-c", f"ls -1 {queue_path}/*.bin | sort -V"]
     ).strip().splitlines()
     assert len(files) == 3
+    file_indices = [file.rsplit("/", 1)[-1][:-4] for file in files]
 
     with pytest.raises(QueryRuntimeException, match="ARGUMENT_OUT_OF_BOUND"):
         node1.query(
@@ -190,7 +191,26 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
     # `current_batch.txt` must preserve failed B followed by unsent C without sent A.
     assert node1.exec_in_container(
         ["cat", f"{queue_path}/current_batch.txt"]
-    ).splitlines() == [file.rsplit("/", 1)[-1][:-4] for file in files[1:]]
+    ).splitlines() == file_indices[1:]
+
+    # Simulate shutdown after sent A was removed but before the batch metadata was rewritten.
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '%s\\n' {' '.join(file_indices)} > {queue_path}/current_batch.txt",
+        ]
+    )
+    with pytest.raises(QueryRuntimeException, match="ARGUMENT_OUT_OF_BOUND"):
+        node1.query(
+            "system flush distributed dist settings function_range_max_elements_in_block=1"
+        )
+    assert int(
+        node1.query(
+            "select sum(data_files) from system.distribution_queue where table='dist'"
+        )
+    ) == 2
+    assert int(node1.query("select sum(uniq_values) from dist_data")) == 1
 
     node1.query(
         "system flush distributed dist settings function_range_max_elements_in_block=3"

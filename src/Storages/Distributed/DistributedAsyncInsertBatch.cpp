@@ -201,14 +201,17 @@ bool DistributedAsyncInsertBatch::recoverBatch()
         }
     }
 
-    /// In case of recovery it is possible that some of files will be
-    /// missing (or even broken), if server had been restarted abnormally
-    /// (between unlink(*.bin) and unlink(current_batch.txt)).
-    ///
-    /// But we should not throw in this case since current_batch_file_path
-    /// since there there is nothing we can do about it, the deduplication will
-    /// be broken anyway hence the info about this batch should be removed
-    /// anyway, and the batch should be started from scratch.
+    /// Files are removed in order, so a missing prefix was already processed
+    /// before an abnormal shutdown. Keep the surviving suffix in its persisted order.
+    auto first_existing_file = files.begin();
+    while (first_existing_file != files.end() && !fs::exists(*first_existing_file))
+    {
+        LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", *first_existing_file);
+        ++first_existing_file;
+    }
+    files.erase(files.begin(), first_existing_file);
+
+    /// A missing file inside the surviving suffix cannot be recovered safely.
     for (const auto & file : files)
     {
         if (!fs::exists(file))
