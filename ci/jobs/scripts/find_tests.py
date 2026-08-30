@@ -83,6 +83,7 @@ class Targeting:
         "ci/jobs/scripts/clickhouse_proc.py",
         "ci/jobs/scripts/find_tests.py",
         "ci/jobs/scripts/functional_tests_results.py",
+        "ci/jobs/scripts/log_export.py",
         "ci/jobs/scripts/workflow_hooks/filter_job.py",
         "ci/jobs/scripts/workflow_hooks/store_data.py",
         "ci/jobs/scripts/server_cleanup.py",
