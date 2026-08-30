@@ -1031,6 +1031,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & key_type = key_dag->result_type;
+        if (function_name == "hasAny" || function_name == "hasAll")
+            return false;
+
         if (is_special_text_index_function && WhichDataType(removeLowCardinalityAndNullable(key_type)).isArray())
             return false;
 
