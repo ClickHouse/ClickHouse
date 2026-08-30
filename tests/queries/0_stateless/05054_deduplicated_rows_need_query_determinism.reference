@@ -1,0 +1,81 @@
+shape	['v0','v0','v1','v1']
+runningAccumulate	[1,2,4,6]
+runningAccumulate	[1,2,4,6]
+runningAccumulate grouped	[1,2,2,4]
+runningAccumulate grouped	[1,2,2,4]
+neighbor	['v0','v1','v1','']
+neighbor	['v0','v1','v1','']
+runningDifference	[0,0,10,0]
+runningDifference	[0,0,10,0]
+runningDifferenceStartingWithFirstValue	[10,0,10,0]
+runningDifferenceStartingWithFirstValue	[10,0,10,0]
+control rowNumberInBlock	[0,0,1,1]
+control rowNumberInBlock	[0,0,1,1]
+control length	[2,2,2,2]
+control length	[2,2,2,2]
+join shape	[10,30,30]
+join runningConcurrency	[1,2,3]
+join runningConcurrency	[1,2,3]
+join runningDifference	[0,20,0]
+join runningDifference	[0,20,0]
+join neighbor	[30,30,0]
+join neighbor	[30,30,0]
+control join length	[2,2,2]
+control join length	[2,2,2]
+dynamic	Dynamic	[1,2,2,4]
+dynamic	Dynamic	[1,2,2,4]
+variant	Nullable(UInt64)	[1,2,2,4]
+variant	Nullable(UInt64)	[1,2,2,4]
+serialization	t_dense	s	Default
+serialization	t_dense	x	Default
+serialization	t_sparse	s	Sparse
+serialization	t_sparse	x	Sparse
+sparse runningDifference	0	0
+sparse runningDifference	1	0
+sparse runningDifference	2	5
+sparse runningDifference	3	-5
+sparse runningDifference	4	0
+dense  runningDifference	0	0
+dense  runningDifference	1	0
+dense  runningDifference	2	5
+dense  runningDifference	3	-5
+dense  runningDifference	4	0
+sparse neighbor	0	
+sparse neighbor	1	zz
+sparse neighbor	2	
+sparse neighbor	3	
+sparse neighbor	4	
+dense  neighbor	0	
+dense  neighbor	1	zz
+dense  neighbor	2	
+dense  neighbor	3	
+dense  neighbor	4	
+control sparse length	0	0
+control sparse length	1	0
+control sparse length	2	2
+control sparse length	3	0
+control sparse length	4	0
+control dense  length	0	0
+control dense  length	1	0
+control dense  length	2	2
+control dense  length	3	0
+control dense  length	4	0
+types	LowCardinality(UInt32)	LowCardinality(Int64)
+lc   runningDifference	0	0
+lc   runningDifference	1	6
+lc   runningDifference	2	-6
+lc   runningDifference	3	6
+full runningDifference	0	0
+full runningDifference	1	6
+full runningDifference	2	-6
+full runningDifference	3	6
+control lc plus one	0	2
+control lc plus one	1	8
+control lc plus one	2	2
+control lc plus one	3	8
+generateUUIDv4 lc	LowCardinality(UUID)	1
+generateUUIDv4 cast	UUID	1
+rand lc	LowCardinality(UInt32)	1
+rand cast	UInt32	1
+randomString lc	1
+generateULID lc	1
