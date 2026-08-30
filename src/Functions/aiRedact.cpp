@@ -151,7 +151,7 @@ is disabled) rather than returning partially redacted text.
         .returned_value = {"The text with detected PII replaced by the redaction token, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
             {"Redact specific categories", "SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])", "Purchase was done by customer [REDACTED] with email [REDACTED]"},
-            {"Redact the default PII categories with a custom token", "SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},
+            {"Redact the default PII categories with a custom token", "CREATE TABLE tickets (body String) ENGINE = Memory;\nINSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');\nSELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},
         },
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::AI});
