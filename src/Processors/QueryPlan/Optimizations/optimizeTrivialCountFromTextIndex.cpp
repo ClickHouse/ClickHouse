@@ -296,6 +296,11 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
         if (query->getTokens().empty())
             return {};
 
+        /// Candidate postings need row-level fallback validation, which the count-only source cannot perform.
+        if (const auto & payload = query->getJSONPayload();
+            payload && std::ranges::any_of(query->getTokens(), [&](const auto & token) { return payload->requiresValidation(token); }))
+            return {};
+
         return ResolvedQuery{.index = task.index, .condition = std::move(condition), .query = std::move(query)};
     }
 

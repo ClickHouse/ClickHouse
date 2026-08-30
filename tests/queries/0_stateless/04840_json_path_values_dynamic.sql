@@ -373,6 +373,9 @@ SETTINGS force_data_skipping_indices = 'shared_path_tokens',
     dynamic_throw_on_type_mismatch = 1; -- { serverError INDEX_NOT_USED }
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic WHERE shared_path.unsupported = 1
 SETTINGS dynamic_throw_on_type_mismatch = 0, force_data_skipping_indices = 'shared_path_tokens';
+SELECT count() FROM json_index_tokens_dynamic WHERE shared_path.unsupported = 1
+SETTINGS dynamic_throw_on_type_mismatch = 0, force_data_skipping_indices = 'shared_path_tokens',
+    query_plan_optimize_count_from_text_index = 1;
 
 SELECT 'empty strings';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic WHERE shared_path.empty = '';
