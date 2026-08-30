@@ -1227,7 +1227,8 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # why it's master only?
+    # Despite the name, this set is referenced only by `ci/workflows/release_branches.py`,
+    # so these jobs run on release branches and never on master.
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1235,7 +1236,11 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (4,)
+            # 6, not 4: at 4 batches each shard carries ~1.5x the modules of the
+            # `old analyzer` and `amd_tsan` variants below and overruns the 7200s
+            # pytest `--session-timeout`, reporting a bare `Timeout` with no test
+            # results. The 6-batch variants land at 5500-6500s of that same budget.
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
