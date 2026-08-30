@@ -260,6 +260,10 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         return Status::Finished;
     }
 
+    /// `waiting_outputs` is a lazy queue: an output may have finished after it was enqueued (the
+    /// loop over `updated_outputs` above flips its status but cannot remove it from the middle of
+    /// the queue), so every consumer below re-checks the current status and skips stale entries.
+
     /// Process abandoned chunks if any.
     while (!abandoned_chunks.empty() && !waiting_outputs.empty())
     {
@@ -267,6 +271,9 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         auto & output_state = output_port_state.at(waiting_output);
         waiting_outputs.pop();
         output_state.is_waiting = false;
+
+        if (output_state.status != OutputStatus::NeedData)
+            continue;
 
         waiting_output->pushData(std::move(abandoned_chunks.back()));
         abandoned_chunks.pop_back();
@@ -277,16 +284,21 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     /// Enable more inputs if needed.
     while (!disabled_input_ports.empty() && !waiting_outputs.empty())
     {
+        auto * waiting_output = waiting_outputs.front();
+        auto & output_state = output_port_state.at(waiting_output);
+        waiting_outputs.pop();
+        output_state.is_waiting = false;
+
+        if (output_state.status != OutputStatus::NeedData)
+            continue;
+
         auto * input_port = disabled_input_ports.front();
         auto & input_state = input_port_state.at(input_port);
         disabled_input_ports.pop();
 
         input_port->setNeeded();
         input_state.status = InputStatus::NeedData;
-        input_state.waiting_output = waiting_outputs.front();
-        output_port_state.at(waiting_outputs.front()).is_waiting = false;
-
-        waiting_outputs.pop();
+        input_state.waiting_output = waiting_output;
     }
 
     /// Close all other waiting for data outputs (there is no corresponding input for them).
