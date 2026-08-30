@@ -32,6 +32,11 @@ ${CLICKHOUSE_CLIENT} --query "SELECT j FROM ${table} FORMAT Native" \
     | ${CLICKHOUSE_LOCAL} --input-format Native --query \
         "SELECT count(), countIf(j.x = 'value'), countIf(j.y = 'dense') FROM table"
 
+${CLICKHOUSE_CLIENT} --query \
+    "WITH (SELECT j FROM ${table} LIMIT 1) AS s SELECT s FROM numbers(10) FORMAT Native" \
+    | ${CLICKHOUSE_LOCAL} --input-format Native --query \
+        "SELECT count(), countIf(s.x = 'value'), countIf(s.y = 'dense') FROM table"
+
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE ${table};
 "

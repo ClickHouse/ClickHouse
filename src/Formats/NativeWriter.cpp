@@ -149,7 +149,7 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
 {
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
-        ColumnPtr result_column = column.column;
+        ColumnPtr result_column = column.column->convertToFullColumnIfConst();
         if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
             result_column = result_column->convertToFullColumnIfReplicated();
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
