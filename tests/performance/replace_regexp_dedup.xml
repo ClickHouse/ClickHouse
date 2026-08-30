@@ -16,6 +16,10 @@
     <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpOne(URL, '^missing', 'X'))</query>
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '^missing', 'X'))</query>
 
+    <!-- Same short-circuiting reject, but with blocks shorter than the distinct-ratio sample: the match
+         ratio must be sampled early enough for the pre-check to engage inside each short block. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '^missing', 'X')) SETTINGS max_block_size = 100</query>
+
     <!-- A rejecting distinct prefix followed by a matching distinct suffix in each block: the guards disable
          the cache and engage the pre-check on the prefix, and the re-evaluated match ratio must turn the
          pre-check off on the suffix instead of scanning every remaining row twice. -->

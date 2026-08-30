@@ -396,8 +396,12 @@ struct ReplaceRegexpImpl
 
         HashMap<std::string_view, CachedResult> results_cache;
         bool map_enabled = true;
-        /// Low, so that short blocks are never written off as distinct before they can repeat.
-        size_t next_ratio_check = 256;
+        /// The first checkpoint fires early so that even a block far shorter than the default
+        /// `max_block_size` samples its match ratio and can enable the non-matching pre-check.
+        size_t next_ratio_check = 32;
+        /// The distinct ratio needs a longer sample: values that repeat with a longer cycle would be
+        /// written off as distinct before the first repeat can arrive.
+        static constexpr size_t min_rows_for_distinct_ratio_check = 256;
 
         bool precheck_non_matching = false;
         size_t matched_rows = 0;
@@ -450,7 +454,7 @@ struct ReplaceRegexpImpl
             /// would pay the pre-check plus the full match for every remaining row.
             if (i >= next_ratio_check)
             {
-                if (map_enabled && results_cache.size() * 10 > i * 9)
+                if (map_enabled && i >= min_rows_for_distinct_ratio_check && results_cache.size() * 10 > i * 9)
                 {
                     map_enabled = false;
                     results_cache.clearAndShrink();

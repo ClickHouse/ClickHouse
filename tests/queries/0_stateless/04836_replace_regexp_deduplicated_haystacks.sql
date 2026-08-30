@@ -59,6 +59,12 @@ SELECT countIf(replaceRegexpOne(h, '^missing', 'X') != replaceRegexpOne(h, mater
 FROM (SELECT concat('ab', toString(number % 7), 'cd') AS h FROM numbers(1000))
 SETTINGS max_block_size = 1000;
 
+-- No row matches and the blocks are shorter than the distinct-ratio sample: the early match-ratio
+-- checkpoint must still engage the pre-check inside each block.
+SELECT countIf(replaceRegexpOne(h, '^missing', 'X') != replaceRegexpOne(h, materialize('^missing'), 'X'))
+FROM (SELECT concat('ab', toString(number % 7), 'cd') AS h FROM numbers(1000))
+SETTINGS max_block_size = 100;
+
 -- Adjacent repeats without any match: once the pre-check is on, it runs before the previous-value compare.
 SELECT countIf(replaceRegexpAll(h, '^missing', 'X') != replaceRegexpAll(h, materialize('^missing'), 'X'))
 FROM (SELECT concat('ab', toString(intDiv(number, 4) % 3), 'cd') AS h FROM numbers(2000))
