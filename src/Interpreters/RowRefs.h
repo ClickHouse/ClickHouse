@@ -446,9 +446,8 @@ public:
         /// `repl_by_block[b]` is that column as `ColumnReplicated *` if it is one, otherwise nullptr.
         PODArray<const ColumnReplicated *> repl_by_block;
         /// `data_by_block[b]` is that column's raw fixed-width base (nullptr for a cleared block), valid
-        /// only when `direct_gather_ok`. A base pointer is a weaker guarantee than the `const IColumn *`
-        /// above: it stays valid only until the generation changes, so a stored column's buffer must not
-        /// be mutated in place without bumping the generation.
+        /// only when `direct_gather_ok`. Unlike the `const IColumn *` above it stays valid only until the
+        /// generation changes, so a stored column's buffer must not be mutated in place without bumping it.
         PODArray<const void *> data_by_block;
         /// Bytes per element, uniform across blocks.
         size_t stride = 0;
@@ -484,11 +483,9 @@ public:
 
     /// Resolve the emit table for the given saved-block column `positions` (the output columns of one
     /// probe), building any not-yet-built positions for the current generation (and dropping the whole
-    /// table first if the blocks changed). `out_columns`/`out_replicated`/`out_direct_gather` are sized to
-    /// `saved_columns_count` and indexed by stored-block column position: `out_columns[pos]` holds the
-    /// per-block base pointers for each requested `pos`; positions not in `positions` stay null, as does
-    /// `out_direct_gather[pos]` for a position the direct gather cannot read. Pointers are stable for as
-    /// long as the
+    /// table first if the blocks changed). `out_columns`/`out_replicated`/`out_direct_gather` are sized to `saved_columns_count`
+    /// and indexed by stored-block column position: `out_columns[pos]` holds the per-block base pointers for
+    /// each requested `pos`; positions not in `positions` stay null. Pointers are stable for as long as the
     /// generation does not change, which a StorageJoin read lock or a normal join's build-then-probe guarantees
     /// for the caller's lifetime. Holds `mutex` for the duration; called once per probe batch, never in the
     /// per-row loop.

@@ -2,6 +2,11 @@
 -- direct gather or through the generic per-row path. Every arm pins the settings that select the
 -- emit path, because the test runner randomizes them. The block at the end asserts which arms
 -- actually took the gather: without it a green run cannot tell the two paths apart.
+--
+-- Every arm that must gather carries a `FixedString(40)` column. Whether the in-memory row store
+-- claims the narrow columns instead depends on a planner estimate, which is not stable across runs,
+-- but 40 bytes is above the row store's inclusive 32-byte limit, so that one column stays on the
+-- columnar path in either case. Arms that must NOT gather carry no such column.
 
 DROP TABLE IF EXISTS dg_build;
 DROP TABLE IF EXISTS dg_probe;
@@ -25,7 +30,7 @@ CREATE TABLE dg_build
     c_date Date, c_date32 Date32, c_dt DateTime, c_dt64 DateTime64(3), c_time Time, c_time64 Time64(3),
     c_ipv4 IPv4, c_ipv6 IPv6, c_uuid UUID,
     c_d32 Decimal32(2), c_d64 Decimal64(4), c_d128 Decimal128(6), c_d256 Decimal256(8),
-    c_fs7 FixedString(7)
+    c_fs7 FixedString(7), c_fs40 FixedString(40)
 )
 ENGINE = MergeTree ORDER BY tuple();
 
@@ -45,7 +50,8 @@ INSERT INTO dg_build SELECT
     reinterpretAsUUID(toFixedString(leftPad(toString(number), 16, '0'), 16)),
     CAST(number * 3 AS Decimal32(2)), CAST(number * 5 AS Decimal64(4)),
     CAST(number * 7 AS Decimal128(6)), CAST(number * 11 AS Decimal256(8)),
-    toFixedString(leftPad(toString(number), 7, 'x'), 7)
+    toFixedString(leftPad(toString(number), 7, 'x'), 7),
+    toFixedString(leftPad(toString(number), 40, 'w'), 40)
 FROM numbers(2000);
 
 -- 1000 probe rows against 2000 unique build keys keeps the estimated fanout below the row store's
@@ -72,9 +78,10 @@ SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, 
 -- Arm 2: 100 probe keys have no match. With `join_use_nulls = 0` an unmatched right value is the type
 -- default, which is what a zero ref word makes the gather write. `Enum8` defaults to its first value
 -- instead of zero, so it is excluded from the gather and stays on the generic path in the same query.
-CREATE TABLE dg_mixed (k UInt64, c_u64 UInt64, c_fs7 FixedString(7), c_enum Enum8('a' = 1, 'b' = 2, 'c' = 3))
+CREATE TABLE dg_mixed (k UInt64, c_u64 UInt64, c_fs7 FixedString(7), c_fs40 FixedString(40), c_enum Enum8('a' = 1, 'b' = 2, 'c' = 3))
 ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_mixed SELECT number + 1, number * 1000003, toFixedString(leftPad(toString(number), 7, 'x'), 7),
+    toFixedString(leftPad(toString(number), 40, 'w'), 40),
     CAST(2 + number % 2, 'Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)') FROM numbers(500);
 CREATE TABLE dg_mixed_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_mixed_probe SELECT number FROM numbers(600);
@@ -93,8 +100,9 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 
 -- Arms 3 and 5: ten build rows per key. The threshold pin selects the emit builder; the gathering
 -- sub-arms and the untouched `buildOutputFromRowRefLists` control must agree on the values.
-CREATE TABLE dg_list (k UInt64, a UInt64, b Int32) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO dg_list SELECT number % 200, number * 1000003, toInt32(number) - 1000 FROM numbers(2000);
+CREATE TABLE dg_list (k UInt64, a UInt64, b Int32, w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_list SELECT number % 200, number * 1000003, toInt32(number) - 1000,
+    toFixedString(leftPad(toString(number), 40, 'w'), 40) FROM numbers(2000);
 CREATE TABLE dg_list_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_list_probe SELECT number FROM numbers(100);
 
@@ -116,10 +124,11 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 
 -- Arms 5b and 5c pin which builder ran, and with it the rule that the limit and offset builder is all
 -- or nothing: its gather input is the subset of ref words the walk selects, so one column left on the
--- generic path forces every column onto it. The two arms differ only in that switch.
-CREATE TABLE dg_list_mixed (k UInt64, a UInt64, e Enum8('a' = 1, 'b' = 2, 'c' = 3)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003,
-    CAST(1 + number % 3, 'Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)') FROM numbers(2000);
+-- generic path forces every column onto it. The two arms differ only in that switch. The `String`
+-- column is what keeps the output mixed: neither the gather nor the row store can take it, and with
+-- only one row-store-useful column left the row store cannot initialize at all.
+CREATE TABLE dg_list_mixed (k UInt64, a UInt64, s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003, toString(number) FROM numbers(2000);
 
 SELECT 'arm5b mixed limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,

@@ -358,9 +358,8 @@ void StoredColumnsIndex::resolveEmitColumns(
 
                 const IColumn & column = *emit_column->by_block[b];
                 /// The order matters: these three tests are what keeps `getRawData` from throwing. A
-                /// `ColumnReplicated` needs its index indirection and does not implement it at all, and a
-                /// `ColumnConst` forwards it to a single-element buffer, whose base would be read out of
-                /// bounds for every row number above zero.
+                /// `ColumnReplicated` does not implement it, and a `ColumnConst` forwards it to a one-element
+                /// buffer, whose base would be read out of bounds for every row number above zero.
                 if (emit_column->repl_by_block[b] || isColumnConst(column) || !column.isFixedAndContiguous())
                 {
                     gather_refused = true;

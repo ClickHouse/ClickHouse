@@ -7,10 +7,9 @@
 namespace DB
 {
 
-/// The fixed-width types whose `insertDefaultInto` writes bitwise zero, which is what
-/// `gatherColumnDirect` writes for an unmatched row. `Enum8` and `Enum16` are not among them because
-/// their default is the first enum value; `Date32` is, because the emit path uses `insertDefaultInto`
-/// (0) and not `getDefault` (1900-01-01).
+/// Fixed-width types whose `insertDefaultInto` writes bitwise zero, which is what the gather writes
+/// for an unmatched row. `Enum8` and `Enum16` are excluded: their default is the first enum value.
+/// `Date32` is included: this path uses `insertDefaultInto` (0), not `getDefault` (1900-01-01).
 bool directGatherAdmits(TypeIndex type_id);
 
 /// Appends `rows_to_add` values of one output column straight from the per-block raw data bases that
