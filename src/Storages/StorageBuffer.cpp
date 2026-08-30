@@ -904,9 +904,9 @@ private:
               */
 
             LOG_DEBUG(storage.log, "Flush buffer by threshold");
-            /// The flush writes out what is in the buffer now, which is not this block; whether the gates
-            /// of this query apply to it is decided in `flushBuffer` from the origin of the buffered rows.
-            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */, insert_start_gates);
+            /// The flush writes out what is in the buffer now, which is not this block; the gates it
+            /// shares are decided in `flushBuffer` from the origin of the buffered rows.
+            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
             buffer.metadata_version = metadata_version;
         }
 
@@ -1159,7 +1159,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
 }
 
 
-bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked, const InsertStartGatesPtr & insert_start_gates)
+bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked)
 {
     Block block_to_write;
     time_t current_time = time(nullptr);
@@ -1212,14 +1212,16 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         * - this could lead to infinite memory growth.
         */
 
-    /// The gates of the query on behalf of which the flush runs apply only to writing the rows of that
-    /// query. When it evicts rows buffered by an earlier query, the nested INSERT of the eviction has to
-    /// run the `Too many parts` check on its own: otherwise it would spend the gate of the current query
-    /// before that query has written anything of its own, and the query's first write would skip the
-    /// check and could go past `parts_to_throw_insert`.
+    /// The block being written carries the rows of every query recorded in `flushed_gates`, so the
+    /// pre-write decision of the nested INSERT below is shared with each of them: a query whose rows
+    /// were flushed on behalf of another query must not re-run the `Too many parts` check later and
+    /// count the parts this write created from its own rows. The query that triggered the flush
+    /// participates only when its own rows are among the flushed ones - when it merely evicts rows
+    /// buffered by earlier queries, the eviction makes no pre-write decision for it, and the query's
+    /// own first write still runs the check.
     InsertStartGatesPtr gates_for_write;
-    if (insert_start_gates && std::find(flushed_gates.begin(), flushed_gates.end(), insert_start_gates) != flushed_gates.end())
-        gates_for_write = insert_start_gates;
+    if (!flushed_gates.empty())
+        gates_for_write = std::make_shared<InsertStartGates>(flushed_gates);
 
     Stopwatch watch;
     try

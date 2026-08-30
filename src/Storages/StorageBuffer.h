@@ -166,10 +166,10 @@ private:
         ///    usually don't produce lots of small blocks.
         int32_t metadata_version = 0;
 
-        /// The registries of the INSERT queries whose rows are currently in `data`. A threshold flush
-        /// evicts whatever the buffer holds, which is not necessarily the data of the query that
-        /// triggered it, and the `Too many parts` gate of a query may only be spent on writing that
-        /// query's own rows. See `StorageBuffer::flushBuffer`.
+        /// The registries of the INSERT queries whose rows are currently in `data`. A flush writes out
+        /// whatever the buffer holds - possibly the rows of several queries, not necessarily including
+        /// the query that triggered it - and its pre-write decision has to be shared with exactly the
+        /// queries whose rows it writes. See `StorageBuffer::flushBuffer`.
         std::vector<InsertStartGatesPtr> contributing_gates;
 
         std::unique_lock<std::mutex> lockForReading() const;
@@ -205,14 +205,15 @@ private:
     LoggerPtr log;
 
     void flushAllBuffers(bool check_thresholds = true);
-    bool flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false, const InsertStartGatesPtr & insert_start_gates = nullptr);
+    bool flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false);
     bool checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
-    /// `insert_start_gates` is the registry of the INSERT query when the write runs on behalf of one
-    /// (the direct writes of `BufferSink`), so the nested INSERT shares the query's `Too many parts`
-    /// gates; the background flush passes none and the nested INSERT creates its own.
+    /// `insert_start_gates` is the registry of the INSERT query for a direct write of `BufferSink`, or
+    /// the group registry of the queries whose buffered rows a flush writes out, so the nested INSERT
+    /// shares the `Too many parts` gates of the queries the written rows belong to; when there is no
+    /// query to share with, none is passed and the nested INSERT creates its own.
     void writeBlockToDestination(const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates = nullptr);
 
     void backgroundFlush();

@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -64,19 +65,64 @@ using InsertStartGatePtr = std::shared_ptr<InsertStartGate>;
 class InsertStartGates
 {
 public:
+    InsertStartGates() = default;
+
+    /// A registry for a write performed on behalf of several queries at once: a `Buffer` flush writes
+    /// out a block that may hold rows buffered by different queries, and its pre-write decision has to
+    /// be observed by every one of them - a query whose rows were written by a flush someone else
+    /// triggered must not re-run the check later and count the parts that write created from its own
+    /// rows. Every gate this registry hands out is therefore shared with all the participating
+    /// queries' registries. A participant that already holds a gate for the table lends it to the
+    /// group instead: that query has already made (or is making) its pre-write decision for the table
+    /// - e.g. an earlier flush or direct write of the same query - and the group write must observe
+    /// that decision rather than re-enter the check and count the parts of that earlier write.
+    explicit InsertStartGates(std::vector<std::shared_ptr<InsertStartGates>> participants_)
+        : participants(std::move(participants_))
+    {
+    }
+
     InsertStartGatePtr get(const StorageIDMaybeEmpty & table_id)
     {
         std::lock_guard lock(mutex);
         auto & gate = gates[table_id];
         if (!gate)
-            gate = std::make_shared<InsertStartGate>();
+        {
+            for (const auto & participant : participants)
+            {
+                if ((gate = participant->tryGet(table_id)))
+                    break;
+            }
+            if (!gate)
+                gate = std::make_shared<InsertStartGate>();
+            for (const auto & participant : participants)
+                participant->adopt(table_id, gate);
+        }
         return gate;
     }
 
 private:
+    InsertStartGatePtr tryGet(const StorageIDMaybeEmpty & table_id)
+    {
+        std::lock_guard lock(mutex);
+        auto it = gates.find(table_id);
+        return it == gates.end() ? nullptr : it->second;
+    }
+
+    /// Keeps an already present gate: the query made its own pre-write decision for the table.
+    void adopt(const StorageIDMaybeEmpty & table_id, const InsertStartGatePtr & gate)
+    {
+        std::lock_guard lock(mutex);
+        auto & existing = gates[table_id];
+        if (!existing)
+            existing = gate;
+    }
+
     std::mutex mutex;
     std::unordered_map<StorageIDMaybeEmpty, InsertStartGatePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>
         gates;
+
+    /// Non-empty only for the registry of a group write (see the constructor above).
+    const std::vector<std::shared_ptr<InsertStartGates>> participants;
 };
 
 using InsertStartGatesPtr = std::shared_ptr<InsertStartGates>;
