@@ -391,7 +391,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         tuple_node->children.push_back(arguments);
 
         bool has_named_elements = false;
+        bool has_element_codecs = false;
         Strings element_names_tmp;
+        ASTs element_codecs_tmp;
         bool first_element = true;
 
         while (true)
@@ -415,12 +417,22 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto element_pos = pos;
             if (identifier_parser.parse(pos, identifier_node, expected) && type_parser.parse(pos, type_node, expected))
             {
-                /// Named element: name Type
+                /// Named element: name Type [CODEC(...)]
                 String elem_name;
                 tryGetIdentifierNameInto(identifier_node, elem_name);
                 element_names_tmp.push_back(elem_name);
                 arguments->children.push_back(type_node);
                 has_named_elements = true;
+
+                ASTPtr codec_node;
+                if (ParserKeyword(Keyword::CODEC).ignore(pos, expected))
+                {
+                    ParserCodec codec_parser;
+                    if (!codec_parser.parse(pos, codec_node, expected))
+                        return false;
+                    has_element_codecs = true;
+                }
+                element_codecs_tmp.push_back(std::move(codec_node));
             }
             else
             {
@@ -432,6 +444,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     /// The factory validates that all names are non-empty when element_names is set.
                     element_names_tmp.push_back("");
                     arguments->children.push_back(type_node);
+                    element_codecs_tmp.push_back(nullptr);
                 }
                 else
                 {
@@ -449,6 +462,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 element_names_tmp.shrink_to_fit();
                 tuple_node->element_names = std::move(element_names_tmp);
+            }
+            /// Only store element_codecs if any element has a codec
+            if (has_element_codecs)
+            {
+                element_codecs_tmp.shrink_to_fit();
+                tuple_node->element_codecs = std::move(element_codecs_tmp);
             }
             arguments->children.shrink_to_fit();
             node = tuple_node;

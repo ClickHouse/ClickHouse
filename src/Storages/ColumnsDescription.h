@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/SubcolumnCodecs.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StatisticsDescription.h>
@@ -101,6 +102,9 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
+    /// Codecs of tuple elements from the column type declaration, keyed by subcolumn name (see SubcolumnCodecs.h).
+    /// They take precedence over `codec` for the streams of the corresponding subcolumns.
+    SubcolumnCodecs subcolumn_codecs;
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;

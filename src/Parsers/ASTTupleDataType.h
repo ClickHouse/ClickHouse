@@ -21,6 +21,14 @@ public:
     /// Validation happens in DataTypeFactory::createTupleFromAST().
     Strings element_names;
 
+    /// Optional codecs of elements: Tuple(x UInt64 CODEC(Delta, ZSTD), y String).
+    /// If non-empty, has the same size as arguments->children; an entry is nullptr for an element
+    /// without a codec. Codecs can be specified only for named elements.
+    /// A codec is not a part of the data type: such type declarations are allowed only for columns
+    /// of CREATE TABLE and ALTER TABLE queries, where the codecs are extracted from the type AST
+    /// before the type is created (see extractSubcolumnCodecsFromTypeAST()).
+    ASTs element_codecs;
+
     String getID(char delim) const override;
     ASTPtr clone() const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;

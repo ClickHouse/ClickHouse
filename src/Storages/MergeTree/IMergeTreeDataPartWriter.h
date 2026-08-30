@@ -85,6 +85,10 @@ protected:
 
     ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
+    /// Codec description declared for the given substream of the column (a codec of a tuple element,
+    /// see SubcolumnCodecs.h), or nullptr if there is none and the column-level codec should be used.
+    ASTPtr getSubcolumnCodecDesc(const String & column_name, const ISerialization::SubstreamPath & substream_path) const;
+
     /// True if `column_name` uses the default codec (no `CODEC` clause, or an explicit lone `CODEC(Default)`).
     bool columnUsesDefaultCodec(const String & column_name) const;
 

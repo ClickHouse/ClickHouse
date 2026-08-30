@@ -1,0 +1,30 @@
+Create and show:
+CREATE TABLE default.ts_series\n(\n    `id` UInt64,\n    `samples` Array(Tuple(timestamp DateTime64(3, \'UTC\') CODEC(DoubleDelta, ZSTD(1)), value Float64 CODEC(Gorilla(8), ZSTD(1))))\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192
+Data:
+1	[('2026-08-28 10:00:00.000',41.5),('2026-08-28 10:00:15.000',42)]
+2	[('2026-08-28 11:00:00.000',1)]
+After merge:
+1	[('2026-08-28 10:00:00.000',41.5),('2026-08-28 10:00:15.000',42)]
+2	[('2026-08-28 11:00:00.000',1)]
+After DETACH and ATTACH:
+CREATE TABLE default.ts_series\n(\n    `id` UInt64,\n    `samples` Array(Tuple(timestamp DateTime64(3, \'UTC\') CODEC(DoubleDelta, ZSTD(1)), value Float64 CODEC(Gorilla(8), ZSTD(1))))\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192
+1	[('2026-08-28 10:00:00.000',41.5),('2026-08-28 10:00:15.000',42)]
+2	[('2026-08-28 11:00:00.000',1)]
+Codecs are applied per subcolumn:
+a	1	0
+b	0	1
+Compact part:
+[(1,'x'),(2,'y')]
+Compact
+ALTER:
+CREATE TABLE default.t_alter\n(\n    `x` UInt64,\n    `v` Array(Tuple(a UInt64 CODEC(Delta(8), ZSTD(1)), b UInt64))\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 8192
+CREATE TABLE default.t_alter\n(\n    `x` UInt64,\n    `v` Array(Tuple(a UInt64 CODEC(LZ4HC(5)), b UInt64 CODEC(ZSTD(3))))\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 8192
+CREATE TABLE default.t_alter\n(\n    `x` UInt64,\n    `v` Array(Tuple(a UInt64, b UInt64))\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 8192
+1	[(10,20)]
+SimpleAggregateFunction storage:
+CREATE TABLE default.t_saf\n(\n    `id` UInt64,\n    `t` SimpleAggregateFunction(anyLast, Tuple(a UInt64 CODEC(Delta(8), ZSTD(1)), b Float64 CODEC(Gorilla(8), ZSTD(1))))\n)\nENGINE = AggregatingMergeTree\nORDER BY id\nSETTINGS index_granularity = 8192
+1	(1,1.5)
+Tuple inside Map:
+CREATE TABLE default.t_map\n(\n    `m` Map(String, Tuple(x UInt64 CODEC(ZSTD(1)), y UInt64))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+{'k':(1,2)}
+Errors:

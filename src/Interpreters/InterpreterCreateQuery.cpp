@@ -76,6 +76,7 @@
 #include <Access/Common/AccessRightsElement.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/SubcolumnCodecs.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -510,7 +511,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         ASTPtr column_declaration_ptr{column_declaration};
 
         column_declaration->name = column.name;
-        column_declaration->setType(dataTypeToAST(column.type));
+
+        auto type_ast = dataTypeToAST(column.type);
+        if (!column.subcolumn_codecs.empty())
+            injectSubcolumnCodecsIntoTypeAST(*type_ast, column.subcolumn_codecs);
+        column_declaration->setType(std::move(type_ast));
 
         if (column.default_desc.expression)
         {
@@ -595,7 +600,9 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
+    /// Codecs of tuple elements are not part of the data type; getColumnsDescription() extracts
+    /// and stores them separately.
+    DataTypePtr column_type = DataTypeFactory::instance().get(typeASTWithoutSubcolumnCodecs(col_type));
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
         setVersionToAggregateFunctions(column_type, true);
@@ -751,6 +758,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec
                 = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, column.type, codec_validation_settings);
+        }
+
+        if (auto col_decl_type = col_decl.getType(); col_decl_type && typeASTHasSubcolumnCodecs(*col_decl_type))
+        {
+            if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+            extractSubcolumnCodecsFromTypeAST(col_decl_type, column.subcolumn_codecs);
+            validateSubcolumnCodecs(column.name, column.type, column.subcolumn_codecs, codec_validation_settings);
         }
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())

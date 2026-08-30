@@ -174,6 +174,30 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
 
+ASTPtr IMergeTreeDataPartWriter::getSubcolumnCodecDesc(const String & column_name, const ISerialization::SubstreamPath & substream_path) const
+{
+    const auto * column_desc = metadata_snapshot->columns.tryGet(column_name);
+    if (!column_desc || column_desc->subcolumn_codecs.empty())
+        return nullptr;
+
+    /// Look up the deepest declared subcolumn: a codec of tuple element `a` also applies to nested
+    /// streams of `a` (e.g. `a.size0`, or `a.b` when there is no more specific codec for `a.b`).
+    String subcolumn_name = ISerialization::getSubcolumnNameForStream(substream_path);
+    while (!subcolumn_name.empty())
+    {
+        auto it = column_desc->subcolumn_codecs.find(subcolumn_name);
+        if (it != column_desc->subcolumn_codecs.end())
+            return it->second;
+
+        auto pos = subcolumn_name.rfind('.');
+        if (pos == String::npos)
+            break;
+        subcolumn_name.resize(pos);
+    }
+
+    return nullptr;
+}
+
 bool IMergeTreeDataPartWriter::columnUsesDefaultCodec(const String & column_name) const
 {
     if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))

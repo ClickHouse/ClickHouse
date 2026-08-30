@@ -106,6 +106,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     default_desc = other.default_desc;
     comment = other.comment;
     codec = other.codec ? other.codec->clone() : nullptr;
+    subcolumn_codecs = cloneSubcolumnCodecs(other.subcolumn_codecs);
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     statistics = other.statistics;
@@ -126,6 +127,9 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
     codec = other.codec ? other.codec->clone() : nullptr;
     other.codec.reset();
 
+    subcolumn_codecs = cloneSubcolumnCodecs(other.subcolumn_codecs);
+    other.subcolumn_codecs.clear();
+
     settings = std::move(other.settings);
 
     ttl = other.ttl ? other.ttl->clone() : nullptr;
@@ -140,11 +144,20 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
 
+    auto subcolumn_codecs_equal = [&](const SubcolumnCodecs & lhs, const SubcolumnCodecs & rhs)
+    {
+        return std::ranges::equal(lhs, rhs, [&](const auto & lhs_elem, const auto & rhs_elem)
+        {
+            return lhs_elem.first == rhs_elem.first && ast_to_str(lhs_elem.second) == ast_to_str(rhs_elem.second);
+        });
+    };
+
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
         && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
+        && subcolumn_codecs_equal(subcolumn_codecs, other.subcolumn_codecs)
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -167,7 +180,10 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
 
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
-    writeEscapedString(type->getName(), buf);
+    if (subcolumn_codecs.empty())
+        writeEscapedString(type->getName(), buf);
+    else
+        writeEscapedString(getTypeNameWithSubcolumnCodecs(type, subcolumn_codecs), buf);
 
     if (default_desc.expression)
     {
@@ -226,7 +242,21 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
     String type_string;
     readEscapedString(type_string, buf);
-    type = DataTypeFactory::instance().get(type_string);
+
+    subcolumn_codecs.clear();
+    if (type_string.find(" CODEC(") != String::npos)
+    {
+        /// The type name can be annotated with codecs of tuple elements (see getTypeNameWithSubcolumnCodecs()).
+        ParserDataType type_parser;
+        ASTPtr type_ast = parseQuery(type_parser, type_string, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        type_ast = extractSubcolumnCodecsFromTypeAST(type_ast, subcolumn_codecs);
+        type = DataTypeFactory::instance().get(type_ast);
+        validateSubcolumnCodecs(name, type, subcolumn_codecs, CodecValidationSettings::trusted());
+    }
+    else
+    {
+        type = DataTypeFactory::instance().get(type_string);
+    }
 
     if (checkChar('\t', buf))
     {

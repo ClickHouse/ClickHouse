@@ -1054,20 +1054,32 @@ void MergeTreeData::checkProperties(
         {
             const auto column = new_metadata.columns.tryGetColumnDescription(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
-            if (!column || !column->codec)
+            if (!column || (!column->codec && column->subcolumn_codecs.empty()))
                 continue;
 
             /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
             /// so lossiness is resolved per substream the way the part writer resolves it.
             bool is_lossy = false;
-            ISerialization::StreamCallback callback = [&](const auto & substream_path)
+            auto check_lossy = [&](const ASTPtr & codec_desc, const DataTypePtr & type_to_check)
             {
-                if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
-                    return;
-                is_lossy = CompressionCodecFactory::instance()
-                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+                ISerialization::StreamCallback callback = [&](const auto & substream_path)
+                {
+                    if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+                        return;
+                    is_lossy = CompressionCodecFactory::instance()
+                                   .get(codec_desc, substream_path.back().data.type.get())->isLossyCompression();
+                };
+                type_to_check->getDefaultSerialization()->enumerateStreams(callback, type_to_check);
             };
-            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+
+            if (column->codec)
+                check_lossy(column->codec, column->type);
+
+            for (const auto & [subcolumn_name, subcolumn_codec] : column->subcolumn_codecs)
+            {
+                if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
+                    check_lossy(subcolumn_codec, subcolumn_type);
+            }
 
             if (is_lossy)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,

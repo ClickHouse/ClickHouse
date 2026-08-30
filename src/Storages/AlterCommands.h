@@ -155,6 +155,10 @@ struct AlterCommand
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
 
+    /// For ADD and MODIFY: codecs of tuple elements extracted from the column type declaration
+    /// (see SubcolumnCodecs.h).
+    SubcolumnCodecs subcolumn_codecs;
+
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;
 

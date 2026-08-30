@@ -226,14 +226,23 @@ void MergeTreeDataPartWriterWide::addStreams(
         const auto & subtype = substream_path.back().data.type;
         CompressionCodecPtr compression_codec;
 
+        /// A codec of a tuple element takes precedence over the column-level codec for its streams.
+        ASTPtr stream_codec_desc = effective_codec_desc;
+        bool stream_uses_default_codec = column_uses_default_codec;
+        if (auto subcolumn_codec_desc = getSubcolumnCodecDesc(name_and_type.getNameInStorage(), substream_path))
+        {
+            stream_codec_desc = subcolumn_codec_desc;
+            stream_uses_default_codec = false;
+        }
+
         /// If we can use special codec then just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
         {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
+            compression_codec = CompressionCodecFactory::instance().get(stream_codec_desc, subtype.get(), default_codec);
+            compression_codec = maybeAdaptiveDefaultCodec(stream_uses_default_codec, subtype, compression_codec);
         }
         else /// otherwise return only generic codecs and don't use info about the` data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+            compression_codec = CompressionCodecFactory::instance().get(stream_codec_desc, nullptr, default_codec, true);
 
         /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
         /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch

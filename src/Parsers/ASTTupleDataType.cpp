@@ -32,7 +32,14 @@ ASTPtr ASTTupleDataType::clone() const
         res->children.emplace_back(arguments->clone());
     }
 
-    /// element_names vector is copied by the copy constructor
+    /// element_names vector is copied by the copy constructor.
+    /// element_codecs entries are shared after the copy constructor, so clone them.
+    for (auto & codec : res->element_codecs)
+    {
+        if (codec)
+            codec = codec->clone();
+    }
+
     return res;
 }
 
@@ -47,6 +54,15 @@ void ASTTupleDataType::updateTreeHashImpl(SipHash & hash_state, bool ignore_alia
     {
         hash_state.update(elem_name.size());
         hash_state.update(elem_name);
+    }
+
+    /// Hash element codecs
+    hash_state.update(element_codecs.size());
+    for (const auto & codec : element_codecs)
+    {
+        hash_state.update(codec != nullptr);
+        if (codec)
+            codec->updateTreeHashImpl(hash_state, ignore_aliases);
     }
 
     /// Hash child types via arguments
@@ -97,6 +113,12 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
+
+                if (i < element_codecs.size() && element_codecs[i])
+                {
+                    ostr << ' ';
+                    element_codecs[i]->format(ostr, settings, state, frame);
+                }
             }
         }
         else
@@ -113,6 +135,12 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
+
+                if (i < element_codecs.size() && element_codecs[i])
+                {
+                    ostr << ' ';
+                    element_codecs[i]->format(ostr, settings, state, frame);
+                }
             }
         }
 
@@ -126,6 +154,10 @@ void ASTTupleDataType::writeJSON(WriteBuffer & out) const
     w.writeString("name", name);
     if (auto args = getArguments())
         w.writeChild("arguments", args);
+
+    /// element_codecs are not serialized: a type AST inside a serialized query plan never carries them,
+    /// because they can appear only in column declarations of CREATE/ALTER TABLE queries, where they are
+    /// extracted from the type AST before the column type is created.
 
     /// Named-tuple field names live in `element_names`, not as AST children, so write them explicitly;
     /// the generic `ASTDataType::writeJSON` would drop them (turning `Tuple(a UInt8)` into `Tuple(UInt8)`).

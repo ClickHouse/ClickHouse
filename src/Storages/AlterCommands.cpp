@@ -177,13 +177,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_col_decl.name;
         if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.getType());
+            command.data_type = data_type_factory.get(extractSubcolumnCodecsFromTypeAST(ast_col_decl.getType(), command.subcolumn_codecs));
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
             /// A stored column has to spell its state version out in the metadata the same way
             /// `CREATE TABLE` does (see `InterpreterCreateQuery::getColumnType`): an unversioned
             /// name in stored metadata denotes the layout from before the function became versioned.
             pinCurrentStateVersionToAggregateFunctions(command.data_type);
         }
+        if (!command.subcolumn_codecs.empty() && ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
         if (ast_col_decl.getDefaultExpression())
         {
             command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
@@ -247,7 +249,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.getType());
+            command.data_type = data_type_factory.get(extractSubcolumnCodecsFromTypeAST(ast_col_decl.getType(), command.subcolumn_codecs));
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
             /// Deliberately NOT pinning the current state version here, unlike ADD COLUMN above.
             /// `DataTypeAggregateFunction::equals` ignores the state version, so a version change is
@@ -694,6 +696,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         if (codec)
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
 
+        if (!subcolumn_codecs.empty())
+        {
+            column.subcolumn_codecs = cloneSubcolumnCodecs(subcolumn_codecs);
+            validateSubcolumnCodecs(column_name, data_type, column.subcolumn_codecs, CodecValidationSettings::trusted());
+        }
+
         column.ttl = ttl;
 
         if (!settings_changes.empty())
@@ -754,6 +762,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             else if (to_remove == RemoveProperty::CODEC)
             {
                 column.codec.reset();
+                column.subcolumn_codecs.clear();
             }
             else if (to_remove == RemoveProperty::COMMENT)
             {
@@ -782,6 +791,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                 if (data_type)
                 {
                     column.type = data_type;
+
+                    /// The new type declaration is authoritative for the codecs of tuple elements:
+                    /// they are replaced even when the new declaration has none.
+                    column.subcolumn_codecs = cloneSubcolumnCodecs(subcolumn_codecs);
+                    if (!column.subcolumn_codecs.empty())
+                        validateSubcolumnCodecs(column_name, data_type, column.subcolumn_codecs, CodecValidationSettings::trusted());
+
                     /// Update statistics data type to match the new column type
                     if (!column.statistics.empty())
                         column.statistics.data_type = data_type;
@@ -2091,6 +2107,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     codec_validation_settings);
             }
 
+            if (!command.subcolumn_codecs.empty())
+            {
+                auto subcolumn_codecs_copy = cloneSubcolumnCodecs(command.subcolumn_codecs);
+                validateSubcolumnCodecs(column_name, command.data_type, subcolumn_codecs_copy, codec_validation_settings);
+            }
+
             /// Advance the working snapshot with the exact columns apply() would materialize
             /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
@@ -2120,17 +2142,23 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     "Cannot modify column {} to ephemeral: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
 
-            if (command.codec)
+            if (command.codec || !command.subcolumn_codecs.empty())
             {
                 /// `default_kind` is what the parser set: `validate` runs before `prepare`, which back-fills it from the table.
                 const bool becomes_physical = command.default_expression
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    command.codec,
-                    command.data_type,
-                    codec_validation_settings);
+                if (command.codec)
+                    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        command.codec,
+                        command.data_type,
+                        codec_validation_settings);
+                if (!command.subcolumn_codecs.empty())
+                {
+                    auto subcolumn_codecs_copy = cloneSubcolumnCodecs(command.subcolumn_codecs);
+                    validateSubcolumnCodecs(column_name, command.data_type, subcolumn_codecs_copy, codec_validation_settings);
+                }
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
@@ -2197,7 +2225,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have TTL, cannot remove it",
                         backQuote(column_name));
-                if (command.to_remove == AlterCommand::RemoveProperty::CODEC && column_from_table.codec == nullptr)
+                if (command.to_remove == AlterCommand::RemoveProperty::CODEC && column_from_table.codec == nullptr
+                    && column_from_table.subcolumn_codecs.empty())
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have CODEC, cannot remove it",

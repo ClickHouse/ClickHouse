@@ -551,6 +551,28 @@ SELECT a.2 FROM named_tuples; -- by index
 └────────────────────┘
 ```
 
+## Compression codecs for Tuple elements {#compression-codecs-for-tuple-elements}
+
+When a column of a `MergeTree` family table is defined, every named tuple element can get its own
+[compression codec](/reference/statements/create/table#column_compression_codec). This is useful when the elements have
+different natures and need different codecs, for example timestamps and values of a time series:
+
+```sql
+CREATE TABLE series
+(
+    id UInt64,
+    samples Array(Tuple(
+        timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD(1)),
+        value Float64 CODEC(Gorilla, ZSTD(1))))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+A codec of an element applies to the streams of the corresponding subcolumn (`samples.timestamp` and `samples.value`
+in the example above) instead of the codec of the whole column. Elements without a codec use the codec
+of the column as usual. Codecs of tuple elements can be specified only in column declarations of
+`CREATE TABLE` and `ALTER TABLE` queries.
+
 ## Comparison operations with Tuple {#comparison-operations-with-tuple}
 
 Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.

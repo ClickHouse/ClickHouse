@@ -79,6 +79,17 @@ static DataTypePtr createEnumFromValues(const String & type_name, const std::vec
 /// Helper to create Tuple data type from ASTTupleDataType
 static DataTypePtr createTupleFromAST(const ASTTupleDataType * tuple_ast)
 {
+    /// Codecs of tuple elements are not part of the data type. They are accepted only in column
+    /// declarations of CREATE TABLE and ALTER TABLE queries, where they are extracted from the
+    /// type AST before this function is called (see extractSubcolumnCodecsFromTypeAST()).
+    for (const auto & codec : tuple_ast->element_codecs)
+    {
+        if (codec)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Codecs for Tuple elements can be specified only in a column declaration "
+                "of a CREATE TABLE or ALTER TABLE query");
+    }
+
     const auto arguments = tuple_ast->getArguments();
     if (!arguments || arguments->children.empty())
         return std::make_shared<DataTypeTuple>(DataTypes{});
