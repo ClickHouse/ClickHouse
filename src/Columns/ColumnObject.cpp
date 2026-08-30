@@ -2472,6 +2472,8 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
                 for (size_t i = 0; i != shared_variant.size(); ++i)
                 {
                     auto row = shared_variant.getDataAt(i);
+                    const auto * row_begin = row.data();
+                    const size_t row_size = row.size();
                     ReadBufferFromMemory buf(row);
                     /// A header this column wrote itself is always decodable.
                     auto value_type = decodeDataType(buf);
@@ -2485,10 +2487,10 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
                     }
                     else
                     {
-                        rewritten_chars.insert(row.data(), row.data() + header_size);
+                        rewritten_chars.insert(row_begin, row_begin + header_size);
                     }
 
-                    rewritten_chars.insert(row.data() + header_size, row.data() + row.size());
+                    rewritten_chars.insert(row_begin + header_size, row_begin + row_size);
                     rewritten_offsets.push_back(rewritten_chars.size());
                 }
                 shared_variant.getChars().swap(rewritten_chars);
