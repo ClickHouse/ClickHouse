@@ -125,7 +125,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+    {{"kusto",   FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
 IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -344,6 +344,13 @@ IMPLEMENT_SETTING_ENUM(
     GroupArrayActionWhenLimitReached,
     ErrorCodes::BAD_ARGUMENTS,
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
+
+IMPLEMENT_SETTING_ENUM(
+    AsynchronousMetricsKeyValuesMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"key_values", AsynchronousMetricsKeyValuesMode::KeyValues},
+     {"legacy_names", AsynchronousMetricsKeyValuesMode::LegacyNames},
+     {"both", AsynchronousMetricsKeyValuesMode::Both}})
 
 IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
