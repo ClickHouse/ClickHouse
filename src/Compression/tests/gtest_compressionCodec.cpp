@@ -3697,6 +3697,24 @@ TEST_F(WallabyTest, TakesADeltaCapWinSmallerThanAVectorOfLanes)
     EXPECT_LT(wallabyCompressedSize(values), 640u);
 }
 
+TEST_F(WallabyTest, StartsTheDeltaChainAfterALeadingOutlierPrefix)
+{
+    /// The delta chain is anchored on the first value by default, so a prefix of several
+    /// outliers cannot be exiled the way an interior one is - the chain would stay on the first
+    /// outlier and every later delta would span the whole distance back to it, turning almost
+    /// the entire vector into exceptions and forcing a multi-KiB Frame-of-Reference or raw
+    /// fallback. Exiling both leading values and anchoring the chain on the third keeps the +1
+    /// ramp in 2-bit lanes with just two exceptions (~290 bytes). An encoder revision whose
+    /// chain-start search looked only one position ahead missed every prefix longer than one.
+    std::vector<Float64> values(1024);
+    values[0] = 1e12;
+    values[1] = -1e12;
+    for (size_t i = 2; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i - 2);
+
+    EXPECT_LT(wallabyCompressedSize(values), 400u);
+}
+
 TEST_F(WallabyTest, CapsTheFrameOfReferenceLanesToDissolveTheAdjustmentLanes)
 {
     /// The Frame-of-Reference cap and the adjustment cap cannot be chosen one after the other:

@@ -151,6 +151,11 @@ constexpr UInt8 WALLABY_LEAD_CLASSES = 1 << WALLABY_LEAD_CLASS_BITS;
 /// candidate scales and to bound the exception count of a candidate from below.
 constexpr UInt32 WALLABY_MAX_SAMPLES = 256;
 
+/// How far into the vector the delta chain walk looks for the start of the smooth segment when
+/// the vector opens with values whose deltas do not fit the lane cap. Each skipped position
+/// costs one exception, so a prefix longer than this would lose to the exception budget anyway.
+constexpr UInt32 WALLABY_DELTA_PREFIX_WINDOW = 32;
+
 /// The cost of one stored exception: its position plus the raw value.
 template <typename T>
 constexpr UInt32 exceptionCost() { return sizeof(UInt16) + sizeof(T); }
@@ -663,60 +668,115 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             return cap_bits >= Traits::width_bits || zigzag < (T{1} << cap_bits);
         };
 
-        /** The chain starts at the first value, so an outlier sitting there cannot be exiled the
-          * way an interior one is — the chain would stay on it and every later delta would span
-          * the whole distance back to it, exiling the entire vector. The head is therefore
-          * exiled and the chain started one position later when the head is the value that does
-          * not belong: its delta to the next value does not fit the cap, the next delta does,
-          * and the delta across the head does not (so keeping the head and exiling position one
-          * would not re-synchronize either). One position of lookahead decides this; the
-          * opposite case, where position one is the outlier, keeps the existing behavior.
+        /// Runs the chain walk anchored at `start`: every position before it is exiled (its
+        /// lane holds a zero delta and the true value is patched from an exception), the chain
+        /// takes the quantized value at `start`, and each later position either extends the
+        /// chain or is exiled when its delta does not fit the cap.
+        const auto walk_from = [&](UInt32 start, T * lanes_out, UInt16 * exiled_out) -> UInt32
+        {
+            UInt32 exceptions = 0;
+            for (UInt32 i = 0; i < start; ++i)
+            {
+                if (exiled_out)
+                    exiled_out[exceptions] = static_cast<UInt16>(i);
+                ++exceptions;
+                if (lanes_out)
+                    lanes_out[i] = 0;
+            }
+            if (is_quantization_exception[start])
+            {
+                if (exiled_out)
+                    exiled_out[exceptions] = static_cast<UInt16>(start);
+                ++exceptions;
+            }
+            if (lanes_out)
+                lanes_out[start] = 0;
+            SignedType chain = quantized[start];
+            for (UInt32 i = start + 1; i < count; ++i)
+            {
+                SignedType needed = 0;
+                bool fits = !is_quantization_exception[i] && !__builtin_sub_overflow(quantized[i], chain, &needed);
+                T zigzag = 0;
+                if (fits)
+                {
+                    zigzag = (static_cast<T>(needed) << 1) ^ static_cast<T>(needed >> (Traits::width_bits - 1));
+                    fits = cap_bits >= Traits::width_bits || zigzag < (T{1} << cap_bits);
+                }
+                if (fits)
+                {
+                    chain = quantized[i];
+                    if (lanes_out)
+                        lanes_out[i] = zigzag;
+                }
+                else
+                {
+                    if (exiled_out)
+                        exiled_out[exceptions] = static_cast<UInt16>(i);
+                    ++exceptions;
+                    if (lanes_out)
+                        lanes_out[i] = 0;
+                }
+            }
+            return exceptions;
+        };
+
+        /** The chain starts at the first value by default, so an outlier prefix sitting there
+          * cannot be exiled the way an interior outlier is — the chain would stay on it and
+          * every later delta would span the whole distance back to it, exiling the entire
+          * vector. When the head pair does not fit the cap, the smooth segment may instead
+          * begin after a leading prefix of any length within a bounded window: exiling the
+          * whole prefix costs one exception per position, which is often far cheaper than
+          * losing the delta lanes altogether. Three anchors cover the possibilities — position
+          * zero (an interior outlier re-synchronizes on its own), the first position `f` that
+          * opens a fitting adjacent pair (skips the whole prefix), and the first prefix
+          * position whose delta straight to `f` fits (keeps one more value in the lanes). The
+          * exact walk is run from each candidate and the fewest exceptions win, so the choice
+          * is never worse than any single candidate; ties keep the earliest anchor. The
+          * measuring and packing phases replay the same deterministic search.
           */
         UInt32 chain_start = 0;
-        if (!is_quantization_exception[0] && count > 2 && !is_quantization_exception[1] && !is_quantization_exception[2]
-            && !delta_fits(quantized[0], quantized[1]) && delta_fits(quantized[1], quantized[2])
-            && !delta_fits(quantized[0], quantized[2]))
-            chain_start = 1;
+        if (count > 2
+            && (is_quantization_exception[0] || is_quantization_exception[1] || !delta_fits(quantized[0], quantized[1])))
+        {
+            const UInt32 window = std::min(count - 1, WALLABY_DELTA_PREFIX_WINDOW);
+            UInt32 first_fitting_pair = 0;
+            for (UInt32 f = 1; f < window; ++f)
+            {
+                if (!is_quantization_exception[f] && !is_quantization_exception[f + 1]
+                    && delta_fits(quantized[f], quantized[f + 1]))
+                {
+                    first_fitting_pair = f;
+                    break;
+                }
+            }
+            if (first_fitting_pair != 0)
+            {
+                UInt32 candidates[3] = {0, first_fitting_pair, first_fitting_pair};
+                for (UInt32 s = 1; s < first_fitting_pair; ++s)
+                {
+                    if (!is_quantization_exception[s] && delta_fits(quantized[s], quantized[first_fitting_pair]))
+                    {
+                        candidates[2] = s;
+                        break;
+                    }
+                }
+                UInt32 best_exceptions = walk_from(0, nullptr, nullptr);
+                for (UInt32 c = 1; c < 3; ++c)
+                {
+                    if (candidates[c] == candidates[c - 1])
+                        continue;
+                    const UInt32 walked = walk_from(candidates[c], nullptr, nullptr);
+                    if (walked < best_exceptions || (walked == best_exceptions && candidates[c] < chain_start))
+                    {
+                        best_exceptions = walked;
+                        chain_start = candidates[c];
+                    }
+                }
+            }
+        }
 
-        SignedType chain = quantized[chain_start];
-        base = chain;
-        UInt32 exceptions = 0;
-        if (is_quantization_exception[0] || chain_start == 1)
-        {
-            if (exiled_positions)
-                exiled_positions[exceptions] = 0;
-            ++exceptions;
-        }
-        if (delta_lanes)
-            delta_lanes[0] = 0;
-        if (chain_start == 1 && delta_lanes)
-            delta_lanes[1] = 0;
-        for (UInt32 i = chain_start + 1; i < count; ++i)
-        {
-            SignedType needed = 0;
-            bool fits = !is_quantization_exception[i] && !__builtin_sub_overflow(quantized[i], chain, &needed);
-            T zigzag = 0;
-            if (fits)
-            {
-                zigzag = (static_cast<T>(needed) << 1) ^ static_cast<T>(needed >> (Traits::width_bits - 1));
-                fits = cap_bits >= Traits::width_bits || zigzag < (T{1} << cap_bits);
-            }
-            if (fits)
-            {
-                chain = quantized[i];
-                if (delta_lanes)
-                    delta_lanes[i] = zigzag;
-            }
-            else
-            {
-                if (exiled_positions)
-                    exiled_positions[exceptions] = static_cast<UInt16>(i);
-                ++exceptions;
-                if (delta_lanes)
-                    delta_lanes[i] = 0;
-            }
-        }
-        return exceptions;
+        base = quantized[chain_start];
+        return walk_from(chain_start, delta_lanes, exiled_positions);
     };
 
     /** Chooses between Frame-of-Reference and zigzag delta packing for the quantized vector and
