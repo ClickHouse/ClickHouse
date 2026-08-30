@@ -117,6 +117,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
             {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
+            {"ArrowFlight",            static_cast<Int8>(Interface::ARROW_FLIGHT)},
         });
     static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
 
@@ -222,7 +223,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(client_info.interface);
 
-    columns[i++]->insertData(client_info.client_hostname.data(), client_info.client_hostname.length());
+    columns[i++]->insertData(client_info.getClientHostName().data(), client_info.getClientHostName().length());
     columns[i++]->insertData(client_info.client_name.data(), client_info.client_name.length());
     columns[i++]->insert(client_info.client_tcp_protocol_version);
     columns[i++]->insert(client_info.client_version_major);

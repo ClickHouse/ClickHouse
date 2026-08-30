@@ -156,28 +156,92 @@ inline const std::array<BFloat16, 256> & dequantizeLevels()
     return levels;
 }
 
-/// Reconstruction levels, as `Float32`, keyed directly by the raw code byte (the untransposed `QBit(Int8)` byte, which is
+/// Gaussian conditional-mean reconstruction values for the positive raw-code prefixes at precisions `1..7`.
+/// Values are stored in precision-major order: row `p` starts at offset `2^(p - 1) - 1` and contains `2^(p - 1)`
+/// entries. Hexadecimal Float32 literals keep the generated table bit-identical across platforms and avoid libm work at
+/// first use.
+/// For each prefix, the value is `(phi(lo) - phi(hi)) / (Phi(hi) - Phi(lo))` over its retained fine-cell interval,
+/// precomputed offline from these Float32 boundaries and rounded to Float32.
+/// `gtest_lloyd_max_quantizer.cpp` independently recomputes every entry from `BOUNDARIES`.
+// clang-format off
+// NOLINTBEGIN(modernize-use-std-numbers): generated quantizer data can lie near named mathematical constants.
+inline constexpr Float32 POSITIVE_PREFIX_CENTROIDS[127] = {
+    0x1.988454p-1f,
+    0x1.4ee63ap-2f, 0x1.467272p+0f,
+    0x1.4545e6p-3f, 0x1.faa2f2p-2f, 0x1.d22a84p-1f, 0x1.aba7e2p+0f,
+    0x1.431f7p-4f, 0x1.e8e4c4p-3f, 0x1.9ed9d4p-2f, 0x1.2b1474p-1f,
+    0x1.92340cp-1f, 0x1.0811f6p+0f, 0x1.68bb9ep+0f, 0x1.0e8d34p+1f,
+    0x1.42993cp-5f, 0x1.e4ecep-4f, 0x1.95d738p-3f, 0x1.1df47ep-2f,
+    0x1.72f768p-2f, 0x1.cab1a2p-2f, 0x1.13058cp-1f, 0x1.4316d2p-1f,
+    0x1.76566ap-1f, 0x1.ade9dp-1f, 0x1.ebb182p-1f, 0x1.19b4cap+0f,
+    0x1.46f3ap+0f, 0x1.87e446p+0f, 0x1.f1489ep+0f, 0x1.5149fcp+1f,
+    0x1.4277e8p-6f, 0x1.e3f538p-5f, 0x1.93b9aap-4f, 0x1.1b0f04p-3f,
+    0x1.6cb642p-3f, 0x1.bef658p-3f, 0x1.08fa7ap-2f, 0x1.32ed1p-2f,
+    0x1.5d687ep-2f, 0x1.88842cp-2f, 0x1.b459dcp-2f, 0x1.e10632p-2f,
+    0x1.0754acp-1f, 0x1.1eb3f8p-1f, 0x1.36b614p-1f, 0x1.4f73a2p-1f,
+    0x1.6909ep-1f, 0x1.839c1cp-1f, 0x1.9f5606p-1f, 0x1.bc6f7p-1f,
+    0x1.db32cep-1f, 0x1.fc095ap-1f, 0x1.0fc88ep+0f, 0x1.23619ep+0f,
+    0x1.399836p+0f, 0x1.53aa9cp+0f, 0x1.738128p+0f, 0x1.9bedcap+0f,
+    0x1.d113dap+0f, 0x1.0cba72p+1f, 0x1.40b358p+1f, 0x1.916fbap+1f,
+    0x1.426f96p-7f, 0x1.e3b7b2p-6f, 0x1.93344ap-5f, 0x1.1a5ad2p-4f,
+    0x1.6b3838p-4f, 0x1.bc3abp-4f, 0x1.06b556p-3f, 0x1.2f6864p-3f,
+    0x1.583adep-3f, 0x1.81313ep-3f, 0x1.aa5016p-3f, 0x1.d39c18p-3f,
+    0x1.fd1a1cp-3f, 0x1.136792p-2f, 0x1.28602cp-2f, 0x1.3d798ep-2f,
+    0x1.52b684p-2f, 0x1.6819f8p-2f, 0x1.7da6fcp-2f, 0x1.9360c2p-2f,
+    0x1.a94aaep-2f, 0x1.bf6852p-2f, 0x1.d5bd7p-2f, 0x1.ec4e0ep-2f,
+    0x1.018f38p-1f, 0x1.0d1994p-1f, 0x1.18c88ap-1f, 0x1.249eb8p-1f,
+    0x1.309ef6p-1f, 0x1.3ccc54p-1f, 0x1.492a22p-1f, 0x1.55bc04p-1f,
+    0x1.6285f6p-1f, 0x1.6f8c52p-1f, 0x1.7cd3f4p-1f, 0x1.8a6242p-1f,
+    0x1.983d4ap-1f, 0x1.a66be8p-1f, 0x1.b4f5f8p-1f, 0x1.c3e48cp-1f,
+    0x1.d34256p-1f, 0x1.e31c1p-1f, 0x1.f38132p-1f, 0x1.02426p+0f,
+    0x1.0b1f3ep+0f, 0x1.146638p+0f, 0x1.1e2a64p+0f, 0x1.288414p+0f,
+    0x1.33923cp+0f, 0x1.3f7c0ap+0f, 0x1.4c729ep+0f, 0x1.5ab2f4p+0f,
+    0x1.6a87fep+0f, 0x1.7c4d12p+0f, 0x1.90710ep+0f, 0x1.a77b02p+0f,
+    0x1.c2121p+0f, 0x1.e10b7cp+0f, 0x1.02c2b6p+1f, 0x1.188e4ep+1f,
+    0x1.33304cp+1f, 0x1.54f7fap+1f, 0x1.82dbbp+1f, 0x1.c98f46p+1f,
+};
+// NOLINTEND(modernize-use-std-numbers)
+// clang-format on
+
+/// Reconstruction values, as `Float32`, keyed directly by the raw code byte (the untransposed `QBit(Int8)` byte, which is
 /// `index XOR 0x80`), for every precision `1..8`. Used by the `...TransposedQuantized` distance functions to dequantize a
-/// `QBit(Int8)` on the fly. Row `p` reconstructs a code truncated to its top `p` bits (a `2^p`-level embedded quantizer):
-/// the low `8 - p` bits are zero, and the missing bits are filled to the coarse cell's centre so that a lower precision
-/// still reconstructs a representative value rather than the cell's lower edge. Row `8` is the exact per-cell level and
-/// equals `toFloat32(dequantizeInt8ToBFloat16(code))`. Row `0` is unused (precision `0` is invalid). Built lazily on first use.
+/// `QBit(Int8)` on the fly. For `p < 8`, row `p` is the conditional-mean centroid of the interval represented by the retained
+/// prefix (the union of its existing fine Lloyd-Max cells), so it is a `2^p`-level embedded/prefix quantizer. Row `8` is the
+/// exact per-cell level and equals `toFloat32(dequantizeInt8ToBFloat16(code))` bit-for-bit. Row `0` is unused (precision `0` is
+/// invalid). Built lazily on first use.
 inline const std::array<std::array<Float32, 256>, 9> & transposedDequantLUT()
 {
     static const std::array<std::array<Float32, 256>, 9> lut = []
     {
         std::array<std::array<Float32, 256>, 9> table{};
+
         for (size_t precision = 1; precision <= 8; ++precision)
         {
-            for (size_t raw = 0; raw < 256; ++raw)
+            if (precision == 8)
             {
-                /// Keep the top `precision` bits of the code byte; drop the rest.
-                const auto top = static_cast<uint8_t>(raw & (0xFFu << (8 - precision)));
-                /// Round to the centre of the coarse cell by setting the most significant dropped bit (a no-op at precision 8).
-                const auto centre = static_cast<uint8_t>(precision < 8 ? (top | (1u << (7 - precision))) : top);
-                /// The raw code byte is `index XOR 0x80`, so recover the level index by flipping the top bit back.
-                const auto index = static_cast<uint8_t>(centre ^ 0x80u);
-                table[precision][raw] = static_cast<Float32>(BFloat16(LEVELS[index]));
+                for (size_t raw = 0; raw < 256; ++raw)
+                {
+                    /// Preserve the existing full-precision reconstruction exactly.
+                    const auto index = static_cast<uint8_t>(raw ^ 0x80u);
+                    table[precision][raw] = static_cast<Float32>(BFloat16(LEVELS[index]));
+                }
+            }
+            else
+            {
+                /// Compute each distinct positive prefix once, fill its raw-code block, and mirror it to make the prefix
+                /// centroids exactly symmetric.
+                const size_t block_size = size_t{1} << (8 - precision);
+                const size_t positive_prefixes = size_t{1} << (precision - 1);
+                const size_t centroid_offset = positive_prefixes - 1;
+                for (size_t prefix = 0; prefix < positive_prefixes; ++prefix)
+                {
+                    const size_t raw = prefix * block_size;
+                    const Float32 centroid = POSITIVE_PREFIX_CENTROIDS[centroid_offset + prefix];
+                    for (size_t offset = 0; offset < block_size; ++offset)
+                        table[precision][raw + offset] = centroid;
+                }
+                for (size_t raw = 128; raw < 256; ++raw)
+                    table[precision][raw] = -table[precision][0xFFu - raw];
             }
         }
         return table;

@@ -165,9 +165,9 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/interfaces/formats.md) of the file.
-- `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
-- `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `wildcard` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise).
+- `format` — The [format](/reference/formats) of the file.
+- `compression` — Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
+- `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
 
@@ -203,13 +203,13 @@ SELECT * FROM test_table;
 
 Currently there are 3 ways to authenticate:
 - `Managed Identity` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`.
-- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
+- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
 - `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
 
 ### Data cache {#data-cache}
 
 `Azure` table engine supports data caching on local disk.
-See filesystem cache configuration options and usage in this [section](/operations/storing-data.md/#using-local-cache).
+See filesystem cache configuration options and usage in this [section](/concepts/features/configuration/server-config/storing-data#using-local-cache).
 Caching is made depending on the path and ETag of the storage object, so clickhouse will not read a stale cache version.
 
 To enable caching use a setting `filesystem_cache_name = '<name>'` and `enable_filesystem_cache = 1`.
@@ -233,17 +233,19 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 </clickhouse>
 ```
 
-2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
+2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
 ### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
 #### Partition strategy {#partition-strategy}
 
-`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. Selected by default when the path contains a `{_partition_id}` placeholder (the only strategy compatible with such a path), and otherwise under `compatibility` settings older than `26.6`; in the remaining cases the default is `hive` (see the `file_like_engine_default_partition_strategy` setting).
+`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. It is selected by default when the path contains `{_partition_id}`.
+
+When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
 `hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -268,7 +270,7 @@ select _path, * from azure_table;
 
 ## See also {#see-also}
 
-[Azure Blob Storage Table Function](/sql-reference/table-functions/azureBlobStorage)
+[Azure Blob Storage Table Function](/reference/functions/table-functions/azureBlobStorage)
 )DOCS_MD",
         .syntax = "ENGINE = AzureBlobStorage(connection_string | storage_account_url, container_name, blobpath, "
             "[account_name, account_key,] format [, compression])",
@@ -286,7 +288,7 @@ static void registerStorageS3Impl(const String & name, StorageFactory & factory)
     if (name == S3Definition::storage_engine_name)
     {
         description = R"DOCS_MD(
-This engine provides integration with the [Amazon S3](https://aws.amazon.com/s3/) ecosystem. This engine is similar to the [HDFS](/engines/table-engines/integrations/hdfs) engine, but provides S3-specific features.
+This engine provides integration with the [Amazon S3](https://aws.amazon.com/s3/) ecosystem. This engine is similar to the [HDFS](/reference/engines/table-engines/integrations/hdfs) engine, but provides S3-specific features.
 
 ## Example {#example}
 
@@ -320,18 +322,18 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
-- `format` — The [format](/interfaces/formats#formats-overview) of the file.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
-- `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will auto-detect compression by file extension.
-- `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `wildcard` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise).
+- `format` — The [format](/reference/formats#formats-overview) of the file.
+- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
+- `compression` — Compression type. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Parameter is optional. By default, it will auto-detect compression by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
+- `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
-- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 ### Data cache {#data-cache}
 
 `S3` table engine supports data caching on local disk.
-See filesystem cache configuration options and usage in this [section](/operations/storing-data.md/#using-local-cache).
+See filesystem cache configuration options and usage in this [section](/concepts/features/configuration/server-config/storing-data#using-local-cache).
 Caching is made depending on the path and ETag of the storage object, so clickhouse will not read a stale cache version.
 
 To enable caching use a setting `filesystem_cache_name = '<name>'` and `enable_filesystem_cache = 1`.
@@ -357,17 +359,19 @@ There are two ways to define cache in configuration file.
 </clickhouse>
 ```
 
-2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
+2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
 ### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
 #### Partition strategy {#partition-strategy}
 
-`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. Selected by default when the path contains a `{_partition_id}` placeholder (the only strategy compatible with such a path), and otherwise under `compatibility` settings older than `26.6`; in the remaining cases the default is `hive` (see the `file_like_engine_default_partition_strategy` setting).
+`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. It is selected by default when the path contains `{_partition_id}`.
+
+When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
 `hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
@@ -507,7 +511,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
 
 ## Insert data {#inserting-data}
 
-Note that rows can only be inserted into new files. There are no merge cycles or file split operations. Once a file is written, subsequent inserts will fail. To avoid this you can use `s3_truncate_on_insert` and `s3_create_new_file_on_insert` settings. See more details [here](/integrations/s3#inserting-data).
+Note that rows can only be inserted into new files. There are no merge cycles or file split operations. Once a file is written, subsequent inserts will fail. To avoid this you can use `s3_truncate_on_insert` and `s3_create_new_file_on_insert` settings. See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
 ## Virtual columns {#virtual-columns}
 
@@ -518,7 +522,7 @@ Note that rows can only be inserted into new files. There are no merge cycles or
 - `_etag` — ETag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
 - `_tags` — Tags of the file. Type: `Map(String, String)`. If no tag exist, the value is an empty map `{}'.
 
-For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
+For more information about virtual columns see [here](/reference/engines/table-engines/index#table_engines-virtual_columns).
 
 ## Implementation details {#implementation-details}
 
@@ -526,7 +530,7 @@ For more information about virtual columns see [here](../../../engines/table-eng
 - Not supported:
   - `ALTER` and `SELECT...SAMPLE` operations.
   - Indexes.
-  - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not supported.
+  - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not supported.
 
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -542,7 +546,7 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
-Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
+Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
 
 :::note
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
@@ -591,11 +595,22 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
     ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
 ```
 
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [s3_base](/reference/settings/session-settings/s3#s3_base) setting allows using a relative URL in the `S3` engine. When `s3_base` is set and the path has no scheme, it is resolved against the base URL per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [s3 table function docs](/reference/functions/table-functions/s3#resolving-relative-urls). The resolved URL is materialized into the stored table definition, so the table does not depend on the value of `s3_base` after creation.
+
+```sql
+SET s3_base = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/';
+CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Close Float32, Volume Float32, OpenInt Int32)
+    ENGINE = S3('aapl_stock.csv', NOSIGN, 'CSVWithNames');
+```
+
 ## Storage settings {#storage-settings}
 
-- [s3_truncate_on_insert](/operations/settings/settings.md#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [s3_create_new_file_on_insert](/operations/settings/settings.md#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [s3_skip_empty_files](/operations/settings/settings.md#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
+- [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
+- [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the engine. Empty (disabled) by default.
 
 ## S3-related settings {#settings}
 
@@ -671,7 +686,8 @@ Extracting data from these archives is possible using ::. Globs can be used both
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -696,11 +712,11 @@ CREATE TABLE big_table (name String, value UInt32)
 
 ## Optimizing performance {#optimizing-performance}
 
-For details on optimizing the performance of the s3 function see [our detailed guide](/integrations/s3/performance).
+For details on optimizing the performance of the s3 function see [our detailed guide](/integrations/connectors/data-ingestion/AWS/performance).
 
 ## Role-based access {#role-based-access}
 
-In ClickHouse Cloud, you can use role-based access to authenticate with S3 instead of using access keys. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+In ClickHouse Cloud, you can use role-based access to authenticate with S3 instead of using access keys. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 Once configured, a `roleARN` can be passed via an `extra_credentials` parameter:
 
@@ -718,8 +734,8 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
 ## See also {#see-also}
 
-- [s3 table function](../../../sql-reference/table-functions/s3.md)
-- [Integrating S3 with ClickHouse](/integrations/s3)
+- [s3 table function](/reference/functions/table-functions/s3)
+- [Integrating S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
 )DOCS_MD";
     }
     else
@@ -734,7 +750,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
         description = "The `" + name + "` engine provides integration with " + provider
             + " through its Amazon S3-compatible API. It shares the implementation, parameters, and settings of the "
-              "[`S3`](/engines/table-engines/integrations/s3) table engine; see that engine's documentation for the "
+              "[`S3`](/reference/engines/table-engines/integrations/s3) table engine; see that engine's documentation for the "
               "full description, parameters, examples, and settings.\n";
     }
 
@@ -801,7 +817,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-This engine provides integration with the [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar to the [File](/engines/table-engines/special/file) and [URL](/engines/table-engines/special/url) engines, but provides Hadoop-specific features.
+This engine provides integration with the [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar to the [File](/reference/engines/table-engines/special/file) and [URL](/reference/engines/table-engines/special/url) engines, but provides Hadoop-specific features.
 
 This feature is not supported by ClickHouse engineers, and it is known to have a sketchy quality. In case of any problems, fix them yourself and submit a pull request.
 
@@ -817,14 +833,14 @@ ENGINE = HDFS(URI, format)
 - `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/interfaces/formats#formats-overview) section.
+[Formats](/reference/formats#formats-overview) section.
 - [PARTITION BY expr]
 
 ### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
 **Example:**
 
@@ -859,7 +875,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 - Not supported:
   - `ALTER` and `SELECT...SAMPLE` operations.
   - Indexes.
-  - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+  - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not recommended.
 
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -874,7 +890,7 @@ Multiple path components can have globs. For being processed file should exists 
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 
-Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
+Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
 
 **Example**
 
@@ -1027,16 +1043,17 @@ libhdfs3 support HDFS namenode HA.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_etag` — ETag of the file. Type: `LowCardinality(String)`. HDFS has no native ETag, so the value is synthesized from the file's modification time and size as `<mtime_seconds>_<size>`. Because `libhdfs3` exposes the modification time only at one-second precision, a rewrite within the same second that keeps the same size yields the same value; for that reason this synthesized ETag is not used as a content-cache key.
 
 ## Storage settings {#storage-settings}
 
-- [hdfs_truncate_on_insert](/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_new_file_on_insert](/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [hdfs_skip_empty_files](/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [hdfs_truncate_on_insert](/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [hdfs_create_new_file_on_insert](/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_skip_empty_files](/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
 )DOCS_MD",
         .syntax = "ENGINE = HDFS(uri [, format] [, compression])",
         .related = {"S3", "AzureBlobStorage"}});
@@ -1131,18 +1148,17 @@ void registerStorageIceberg(StorageFactory & factory)
         Documentation{
             .description = R"DOCS_MD(
 :::warning
-We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+Use the [Iceberg Table Function](/reference/functions/table-functions/iceberg) for direct access to an existing Iceberg table. Use the Iceberg Table Engine when you need a persistent ClickHouse table or want to create a new standalone Iceberg table with an explicit schema on a writable backend.
 
 The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
-For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
 :::
 
-This engine provides a read-only *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
+This engine provides a *data* integration with Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
 ## Create table {#create-table}
 
-Note that the Iceberg table must already exist in the storage, this command does not take DDL parameters to create a new table.
+Without an explicit schema, the Iceberg table must already exist in storage. To create a new standalone Iceberg table on a writable backend, specify its schema in the `CREATE TABLE` statement.
 
 ```sql
 CREATE TABLE iceberg_table_s3
@@ -1163,9 +1179,9 @@ CREATE TABLE iceberg_table_local
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
 
-For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections)
 
 ### Example {#example}
 
@@ -1227,6 +1243,15 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `list` | `Array` |
 | `map` | `Map` |
 | `struct` | `Tuple` |
+
+## Schema and write compatibility limitations {#schema-and-write-compatibility-limitations}
+
+The data type mappings above apply to reads. The following limitations apply when ClickHouse creates or evolves Iceberg schemas and writes data:
+
+- ClickHouse cannot create an Iceberg schema containing `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` or `Decimal` values into existing Iceberg columns.
+- When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
+- ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
+- For data files containing types whose bounds ClickHouse cannot serialize, including `Bool` and `Decimal`, ClickHouse omits all lower and upper column bounds from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
@@ -1298,7 +1323,7 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 ### Example scenarios {#example-scenarios}
 
-All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
+These scenarios use Spark to illustrate schema changes made by an external Iceberg writer.
 
 #### Scenario 1: Schema changes without new snapshots {#scenario-1}
 
@@ -1421,7 +1446,7 @@ ts = now();
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
-In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
+In ClickHouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with ClickHouse Select queries and it will work the same way.
 
 ## Metadata file resolution {#metadata-file-resolution}
 When using the `Iceberg` table engine in ClickHouse, the system needs to locate the correct metadata.json file that describes the Iceberg table structure. Here's how this resolution process works:
@@ -1462,7 +1487,7 @@ CREATE TABLE example_table ENGINE = Iceberg(
 
 ## Data cache {#data-cache}
 
-`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
+`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](/reference/engines/table-engines/integrations/s3#data-cache).
 
 ## Metadata cache {#metadata-cache}
 
@@ -1498,7 +1523,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 ## See also {#see-also}
 
-- [iceberg table function](/sql-reference/table-functions/iceberg.md)
+- [iceberg table function](/reference/functions/table-functions/iceberg)
 )DOCS_MD",
             .syntax = "ENGINE = Iceberg(url [, access_key_id, secret_access_key])",
             .related = {"IcebergS3", "IcebergAzure", "IcebergHDFS", "IcebergLocal", "DeltaLake", "Hudi"}});
@@ -1537,7 +1562,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
+            .description = "Provides an integration with Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
             .syntax = "ENGINE = IcebergS3(url [, access_key_id, secret_access_key])",
             .related = {"Iceberg"}});
 #    endif
@@ -1576,7 +1601,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
+            .description = "Provides an integration with Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
             .syntax = "ENGINE = IcebergAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"Iceberg"}});
 #    endif
@@ -1597,7 +1622,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored in HDFS.",
+            .description = "Provides an integration with existing Apache Iceberg tables stored in HDFS.",
             .syntax = "ENGINE = IcebergHDFS(uri)",
             .related = {"Iceberg"}});
 #    endif
@@ -1635,7 +1660,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored on the local filesystem.",
+            .description = "Provides an integration with Apache Iceberg tables stored on the local filesystem.",
             .syntax = "ENGINE = IcebergLocal(path)",
             .related = {"Iceberg"}});
 }
@@ -1752,7 +1777,7 @@ CREATE TABLE paimon_table_local
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
 `format` stands for the format of data files in the Paimon table.
 
-Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections)
 
 ### Example {#example}
 
@@ -2223,9 +2248,9 @@ ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,] [extra_crede
 
 - `url` — Bucket url with path to the existing Delta Lake table.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
-- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-Engine parameters can be specified using [Named Collections](/operations/named-collections.md).
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections).
 
 **Example**
 
@@ -2332,11 +2357,11 @@ Writes to Azure are not yet supported but work for S3 and GCS.
 
 ### Data cache {#data-cache}
 
-The `DeltaLake` table engine and table function support data caching, the same as `S3`, `AzureBlobStorage`, `HDFS` storages. See ["S3 table engine"](../../../engines/table-engines/integrations/s3.md#data-cache) for more details.
+The `DeltaLake` table engine and table function support data caching, the same as `S3`, `AzureBlobStorage`, `HDFS` storages. See ["S3 table engine"](/reference/engines/table-engines/integrations/s3#data-cache) for more details.
 
 ## See also {#see-also}
 
-- [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)
+- [deltaLake table function](/reference/functions/table-functions/deltalake)
 )DOCS_MD",
             .syntax = "ENGINE = DeltaLake(url [, access_key_id, secret_access_key])",
             .related = {"DeltaLakeS3", "DeltaLakeAzure", "DeltaLakeLocal", "Iceberg", "Hudi"}});
@@ -2492,9 +2517,9 @@ CREATE TABLE hudi_table
 
 - `url` — Bucket url with the path to an existing Hudi table.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
-- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-Engine parameters can be specified using [Named Collections](/operations/named-collections.md).
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections).
 
 **Example**
 
@@ -2522,7 +2547,7 @@ CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 
 ## See also {#see-also}
 
-- [hudi table function](/sql-reference/table-functions/hudi.md)
+- [hudi table function](/reference/functions/table-functions/hudi)
 )DOCS_MD",
             .syntax = "ENGINE = Hudi(url [, access_key_id, secret_access_key])",
             .related = {"Iceberg", "DeltaLake"}});

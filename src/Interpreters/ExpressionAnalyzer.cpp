@@ -39,6 +39,7 @@
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
@@ -85,6 +86,7 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool enable_early_constant_folding;
+    extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsUInt64 max_bytes_in_set;
@@ -92,6 +94,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_read_in_order;
@@ -686,7 +689,10 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             for (const auto & col : actions_dag->getResultColumns())
             {
                 if (col.name == with_alias->getColumnName())
+                {
                     DB::validateGroupByKeyType(col.type, context_.getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
+                    DB::validateWindowKeyType(col.type, "PARTITION BY");
+                }
             }
 
             desc.partition_by_actions.push_back(std::move(actions_dag));
@@ -710,6 +716,14 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
 
             auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);
+
+            const auto & sort_key_name = order_by_element.children.front()->getColumnName();
+            for (const auto & col : actions_dag->getResultColumns())
+            {
+                if (col.name == sort_key_name)
+                    DB::validateWindowKeyType(col.type, "ORDER BY");
+            }
+
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
     }
@@ -717,15 +731,6 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.full_sort_description = desc.partition_by;
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
-
-    if (definition.frame_type != WindowFrame::FrameType::ROWS
-        && definition.frame_type != WindowFrame::FrameType::RANGE)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Window frame '{}' is not implemented (while processing '{}')",
-            definition.frame_type,
-            ast->formatForErrorMessage());
-    }
 
     const auto * window_function = aggregate_function ? dynamic_cast<const IWindowFunction *>(aggregate_function.get()) : nullptr;
     desc.frame.is_default = definition.frame_is_default;
@@ -761,6 +766,8 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             context_.shared_from_this());
         desc.frame.begin_offset = value;
     }
+
+    desc.checkValid();
 }
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
@@ -1003,6 +1010,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context)
 {
+    if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
+        && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
+        analyzed_join->setRowStoreEnabled(true);
+
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
 
@@ -1059,7 +1070,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        StatsCollectingParams{});
+                        HashJoinStatsCollectingParams{});
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1073,14 +1084,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(
-                analyzed_join, settings[Setting::max_threads], right_sample_block, StatsCollectingParams{});
+                analyzed_join, settings[Setting::max_threads], right_sample_block, HashJoinStatsCollectingParams{});
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(analyzed_join))
-            return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
+            return std::make_shared<FullSortingMergeJoin>(
+                analyzed_join, right_sample_block, /*null_direction_=*/1,
+                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
@@ -1118,7 +1131,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        StatsCollectingParams{});
+                        HashJoinStatsCollectingParams{});
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1149,8 +1162,20 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return join;
     }
 
+    /// Print the names the way they are spelled in the `join_algorithm` setting, so that they can be
+    /// pasted straight back into it. `toString(JoinAlgorithm)` returns the uppercase enum spelling,
+    /// which the setting parser rejects.
+    std::vector<String> enabled_algorithm_names;
+    enabled_algorithm_names.reserve(join_algorithms.size());
+    for (auto algorithm : join_algorithms)
+        enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Can't execute any of specified join algorithms for this strictness/kind and right storage type");
+        "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
+        "with the given right table storage type",
+        fmt::join(enabled_algorithm_names, ", "),
+        toString(analyzed_join->strictness()),
+        toString(analyzed_join->kind()));
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(

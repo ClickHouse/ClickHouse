@@ -6,17 +6,13 @@ tags: ['Seguridad y autenticación', 'Gestión de Cloud']
 keywords: ['AWS PrivateLink', 'servicio de endpoint de VPC', 'MSK', 'Kafka', 'ClickPipes']
 ---
 
-{frontMatter.description}
-
-{/* truncar */}
-
 <div id="overview">
   ## Descripción general
 </div>
 
 Esta guía explica cómo exponer un clúster de Amazon MSK a ClickPipes mediante [servicios de endpoint de VPC de AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
 
-Use este enfoque cuando la [conectividad multi-VPC de MSK](/es/integrations/clickpipes/aws-privatelink#msk-multi-vpc) no esté disponible o no sea suficiente; por ejemplo:
+Use este enfoque cuando la [conectividad multi-VPC de MSK](/es/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc) no esté disponible o no sea suficiente; por ejemplo:
 
 * Conectividad entre regiones desde ClickPipes hasta MSK.
 * Clústeres MSK Express.
@@ -136,25 +132,25 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
   ## Crear endpoints privados inversos de ClickPipes
 </div>
 
-En la consola de ClickHouse Cloud, crea un endpoint privado inverso para cada VPC endpoint service de broker:
+En la consola de ClickHouse Cloud, crea un endpoint privado inverso para cada servicio de endpoint de VPC de broker:
 
 1. Ve a tu servicio de ClickHouse Cloud.
 2. Inicia la creación de un ClickPipe.
 3. Elige `Reverse private endpoint`.
 4. Elige `VPC endpoint service` como tipo de VPC endpoint.
-5. Introduce el Service name del VPC endpoint service específico de ese broker.
+5. Introduce el Service name del servicio de endpoint de VPC específico de ese broker.
 6. En `Custom private DNS name`, introduce el hostname original del broker de MSK correspondiente.
 7. Crea el endpoint.
-8. Si el endpoint está pendiente de aceptación, acepta la solicitud de conexión del endpoint en la consola de AWS para el VPC endpoint service.
+8. Si el endpoint está pendiente de aceptación, acepta la solicitud de conexión del endpoint en la consola de AWS para el servicio de endpoint de VPC.
 
 Repite el proceso hasta que cada hostname de broker tenga un RPE correspondiente.
 
 Para conocer el comportamiento del DNS privado personalizado, las reglas de nomenclatura y las opciones de API/Terraform, consulta
-[DNS privado personalizado](/es/integrations/clickpipes/aws-privatelink#custom-private-dns).
+[DNS privado personalizado](/es/integrations/clickpipes/networking/aws-privatelink#custom-private-dns).
 
 También puedes crear los endpoints privados inversos con [OpenAPI](/es/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) o Terraform.
 
-Para OpenAPI, crea un endpoint privado inverso por broker con `type` establecido en `VPC_ENDPOINT_SERVICE`, el Service name del VPC endpoint service específico de ese broker y una correspondencia de DNS privado personalizado para el hostname del broker:
+Para OpenAPI, crea un endpoint privado inverso por broker con `type` establecido en `VPC_ENDPOINT_SERVICE`, el Service name del servicio de endpoint de VPC específico de ese broker y una asignación personalizada de DNS privado para el hostname del broker:
 
 ```json
 {
@@ -169,13 +165,13 @@ Para OpenAPI, crea un endpoint privado inverso por broker con `type` establecido
 }
 ```
 
-Para Terraform, utiliza [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint) para crear el endpoint y [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns) para configurar la correspondencia del hostname del broker.
+Para Terraform, utiliza [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint) para crear el endpoint y [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_private_dns) para configurar la correspondencia del hostname del broker.
 
 <div id="create-the-kafka-clickpipe">
   ## Crear el Kafka ClickPipe
 </div>
 
-Siga la [guía de ClickPipes AWS PrivateLink](/es/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+Siga la [guía de ClickPipes AWS PrivateLink](/es/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
 para crear el ClickPipe con endpoints privados inversos.
 
 Al crear el Kafka ClickPipe:

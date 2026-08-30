@@ -2,9 +2,9 @@
 sidebarTitle: 'Приём данных из MySQL в ClickHouse'
 description: 'Легко настройте приём данных из вашей базы данных MySQL или MariaDB в ClickHouse Cloud.'
 slug: /integrations/clickpipes/mysql
-title: 'Приём данных из MySQL в ClickHouse (с использованием CDC)'
+title: 'Приём данных из MySQL в ClickHouse (с использованием CDC (фиксация изменений данных))'
 doc_type: 'guide'
-keywords: ['MySQL', 'ClickPipes', 'CDC', 'фиксация изменений данных', 'репликация базы данных']
+keywords: ['MySQL', 'ClickPipes', 'CDC (фиксация изменений данных)', 'фиксация изменений данных', 'репликация базы данных']
 integration:
    - support_level: 'core'
    - category: 'clickpipes'
@@ -21,7 +21,7 @@ import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.
   Приём данных из MySQL в ClickHouse Cloud через ClickPipes доступен в рамках публичной бета-версии.
 </Info>
 
-MySQL ClickPipe предоставляет полностью управляемое и отказоустойчивое решение для приёма данных из баз данных MySQL и MariaDB в ClickHouse Cloud. Он поддерживает как **пакетную загрузку** для одноразовой ингестии, так и **CDC (фиксацию изменений данных)** для непрерывной ингестии.
+MySQL ClickPipe предоставляет полностью управляемое и отказоустойчивое решение для приёма данных из баз данных MySQL и MariaDB в ClickHouse Cloud. Он поддерживает как **пакетную загрузку** для одноразовой ингестии, так и **CDC (фиксацию изменений данных) (фиксацию изменений данных)** для непрерывной ингестии.
 
 MySQL ClickPipes можно развёртывать и управлять ими вручную через интерфейс ClickPipes, а также программно с использованием [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 
@@ -76,7 +76,7 @@ MySQL ClickPipes можно развёртывать и управлять им�
 4. Заполните сведения о подключении к вашей исходной базе данных MySQL, которую вы настроили на этапе предварительной подготовки.
 
 <Info>
-  Прежде чем добавлять сведения о подключении, убедитесь, что IP-адреса ClickPipes добавлены в список разрешённых в правилах брандмауэра. На следующей странице вы найдёте [список IP-адресов ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips).
+  Прежде чем добавлять сведения о подключении, убедитесь, что IP-адреса ClickPipes добавлены в список разрешённых в правилах брандмауэра. На следующей странице вы найдёте [список IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips).
   Дополнительные сведения см. в руководствах по настройке исходной базы данных MySQL, ссылки на которые приведены [в верхней части этой страницы](#prerequisites).
 </Info>
 
@@ -105,7 +105,7 @@ MySQL ClickPipes можно развёртывать и управлять им�
 4. Нажмите &quot;Verify Connection&quot;, чтобы проверить подключение.
 
 <Note>
-  Убедитесь, что [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) добавлены в список разрешённых в правилах вашего брандмауэра для SSH-бастиона, чтобы ClickPipes мог установить SSH-туннель.
+  Убедитесь, что [IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) добавлены в список разрешённых в правилах вашего брандмауэра для SSH-бастиона, чтобы ClickPipes мог установить SSH-туннель.
 </Note>
 
 После заполнения сведений о подключении нажмите `Next`.

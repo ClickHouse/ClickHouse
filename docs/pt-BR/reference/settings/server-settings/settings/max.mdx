@@ -168,7 +168,7 @@ Se o número de partes ativas exceder o valor especificado, o servidor ClickHous
   ## max_partition_size_to_drop
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="50000000000" changeable_without_restart="Yes" />
+<SettingsInfoBlock type="UInt64" default_value="50000000000" changeable_without_restart="Sim" />
 
 Restrição para a remoção de partições.
 
@@ -178,7 +178,7 @@ Esta configuração não exige a reinicialização do servidor ClickHouse para e
 <Note>
   O valor `0` significa que você pode remover partições sem nenhuma restrição.
 
-  Essa limitação não restringe DROP TABLE nem TRUNCATE TABLE; consulte [max&#95;table&#95;size&#95;to&#95;drop](/pt-BR/reference/settings/session-settings#max_table_size_to_drop)
+  Essa limitação não restringe DROP TABLE nem TRUNCATE TABLE; consulte [max&#95;table&#95;size&#95;to&#95;drop](/pt-BR/reference/settings/session-settings/max#max_table_size_to_drop)
 </Note>
 
 **Exemplo**
@@ -217,7 +217,7 @@ Exemplo:
   ## max_temporary_data_on_disk_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Não" />
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
 A quantidade máxima de armazenamento que pode ser usada para agregação externa, junções ou ordenação.
 Consultas que excederem esse limite falharão com uma exceção.
@@ -228,8 +228,8 @@ Consultas que excederem esse limite falharão com uma exceção.
 
 Veja também:
 
-* [`max_temporary_data_on_disk_size_for_user`](/pt-BR/reference/settings/session-settings#max_temporary_data_on_disk_size_for_user)
-* [`max_temporary_data_on_disk_size_for_query`](/pt-BR/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query)
+* [`max_temporary_data_on_disk_size_for_user`](/pt-BR/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
+* [`max_temporary_data_on_disk_size_for_query`](/pt-BR/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 
 <div id="max_unexpected_parts_loading_thread_pool_size">
   ## max_unexpected_parts_loading_thread_pool_size
@@ -241,7 +241,7 @@ Veja também:
   ## max_waiting_queries
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Sim" />
 
 Limite do número total de consultas em espera simultaneamente.
 A execução de uma consulta em espera fica bloqueada enquanto as tabelas necessárias são carregadas de forma assíncrona (consulte [`async_load_databases`](/pt-BR/reference/settings/server-settings/settings/async-load#async_load_databases).
@@ -252,8 +252,8 @@ A execução de uma consulta em espera fica bloqueada enquanto as tabelas necess
   * [`max_concurrent_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)
   * [`max_concurrent_insert_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries)
   * [`max_concurrent_select_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)
-  * [`max_concurrent_queries_for_user`](/pt-BR/reference/settings/session-settings#max_concurrent_queries_for_user)
-  * [`max_concurrent_queries_for_all_users`](/pt-BR/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+  * [`max_concurrent_queries_for_user`](/pt-BR/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user)
+  * [`max_concurrent_queries_for_all_users`](/pt-BR/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
 
   Esse ajuste é feito para evitar que esses limites sejam atingidos logo após a inicialização do servidor.
 </Note>
