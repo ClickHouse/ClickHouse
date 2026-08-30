@@ -41,12 +41,15 @@ void fillFromBlocksAndRowNumbers(
     MutableColumns & columns,
     const ColumnAccessIndexes & output_access_indexes,
     const ColumnsWithRowNumbers & columns_with_row_numbers,
-    const NamesAndTypes & type_name)
+    const NamesAndTypes & type_name,
+    const std::vector<DirectGatherColumn> * gathered)
 {
     for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
     {
         const auto & access_index = output_access_indexes[dst_idx];
         if (access_index.type != ColumnAccessIndex::Type::Columns)
+            continue;
+        if (gathered && (*gathered)[dst_idx].data_by_block)
             continue;
 
         columns[dst_idx]->fillFromBlocksAndRowNumbers(type_name[dst_idx].type, access_index.index, columns_with_row_numbers);
@@ -61,10 +64,11 @@ void fillJoinOutputColumns(
     const RowStorePointers & row_store_ptrs,
     std::optional<size_t> batch_size,
     const ColumnsWithRowNumbers & columns_with_row_numbers,
-    const NamesAndTypes & type_name)
+    const NamesAndTypes & type_name,
+    const std::vector<DirectGatherColumn> * gathered)
 {
     fillFromRowStorePtrs(columns, output_access_indexes, row_store_ptrs, batch_size, type_name);
-    fillFromBlocksAndRowNumbers(columns, output_access_indexes, columns_with_row_numbers, type_name);
+    fillFromBlocksAndRowNumbers(columns, output_access_indexes, columns_with_row_numbers, type_name, gathered);
 }
 
 }

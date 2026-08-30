@@ -5,6 +5,7 @@
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
 
@@ -84,6 +85,13 @@ struct LazyOutput
     /// Filled in the AddedColumns ctor for the hot `fillFromRowRefs` path; empty for joinGet / ASOF.
     std::vector<const IColumn * const *> emit_block_columns;
     std::vector<const ColumnReplicated * const *> emit_block_replicated;
+
+    /// Per output column, the raw fixed-width source `gatherColumnDirect` reads; a null `data_by_block`
+    /// means that column keeps the generic path. Resolved once per probe block, because the admission
+    /// test is a property of the join and not of an output chunk.
+    std::vector<DirectGatherColumn> emit_direct_gather;
+    size_t num_direct_gather = 0;
+    size_t num_columnar_dst = 0;
 
     NamesAndTypes type_name;
 
@@ -280,11 +288,31 @@ public:
                 else
                     columnar_columns_count = saved_block_sample.columns();
 
+                std::vector<DirectGatherColumn> direct_gather_by_position;
                 join.getJoinedData()->stored_columns_index->resolveEmitColumns(
                     columnar_columns_count,
                     columnar_positions,
                     lazy_output.emit_block_columns,
-                    lazy_output.emit_block_replicated);
+                    lazy_output.emit_block_replicated,
+                    &direct_gather_by_position);
+
+                lazy_output.emit_direct_gather.assign(lazy_output.output_access_indexes.size(), {});
+                for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
+                {
+                    const auto & access_index = lazy_output.output_access_indexes[dst_idx];
+                    if (access_index.type != ColumnAccessIndex::Type::Columns)
+                        continue;
+                    ++lazy_output.num_columnar_dst;
+
+                    const DirectGatherColumn & source = direct_gather_by_position[access_index.index];
+                    const IColumn & destination = *columns[dst_idx];
+                    if (!source.data_by_block || !directGatherAdmits(lazy_output.type_name[dst_idx].type->getTypeId())
+                        || !destination.isFixedAndContiguous() || destination.sizeOfValueIfFixed() != source.stride)
+                        continue;
+
+                    lazy_output.emit_direct_gather[dst_idx] = source;
+                    ++lazy_output.num_direct_gather;
+                }
             }
         }
     }

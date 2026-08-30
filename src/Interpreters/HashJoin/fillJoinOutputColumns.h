@@ -12,12 +12,14 @@ namespace DB
 
 /// Fills join output columns by dispatching on `ColumnAccessIndex::Type`:
 /// RowStore columns are filled from `row_store_ptrs`, the rest from `columns_with_row_numbers`.
+/// A `gathered` entry with a non-null `data_by_block` marks a column the caller has already filled.
 void fillJoinOutputColumns(
     MutableColumns & columns,
     const ColumnAccessIndexes & output_access_indexes,
     const RowStorePointers & row_store_ptrs,
     std::optional<size_t> row_store_batch_size,
     const ColumnsWithRowNumbers & columns_with_row_numbers,
-    const NamesAndTypes & type_name);
+    const NamesAndTypes & type_name,
+    const std::vector<DirectGatherColumn> * gathered = nullptr);
 
 }

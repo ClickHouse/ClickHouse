@@ -192,13 +192,24 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     if (columns.empty())
         return rows_limit;
 
+    /// All or nothing, unlike `buildOutputFromBlocks`: the gather's input is the subset of ref words this
+    /// walk selects, and that sequence exists only if the walk records it, so a column left to the generic
+    /// path forces every column onto it.
+    const bool gather_here = from_columns && num_direct_gather > 0 && num_direct_gather == num_columnar_dst;
+    [[maybe_unused]] PaddedPODArray<UInt64> selected_words;
+
     ColumnsWithRowNumbers columns_with_row_numbers;
     [[maybe_unused]] auto & many_columns = columns_with_row_numbers.columns;
     [[maybe_unused]] auto & row_nums = columns_with_row_numbers.row_numbers;
     if constexpr (from_columns)
     {
-        many_columns.reserve(rows_limit);
-        row_nums.reserve(rows_limit);
+        if (gather_here)
+            selected_words.reserve(rows_limit);
+        else
+        {
+            many_columns.reserve(rows_limit);
+            row_nums.reserve(rows_limit);
+        }
     }
 
     [[maybe_unused]] RowStorePointers row_store_ptrs;
@@ -256,8 +267,13 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                 ++added_rows;
                 if constexpr (from_columns)
                 {
-                    many_columns.emplace_back(block);
-                    row_nums.emplace_back(static_cast<UInt32>(row_num));
+                    if (gather_here)
+                        selected_words.push_back(ref_word);
+                    else
+                    {
+                        many_columns.emplace_back(block);
+                        row_nums.emplace_back(static_cast<UInt32>(row_num));
+                    }
                 }
                 if constexpr (from_row_store)
                 {
@@ -279,9 +295,14 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
             }
             if constexpr (from_columns)
             {
-                many_columns.emplace_back(nullptr);
-                row_nums.emplace_back(0);
-                columns_with_row_numbers.has_defaults = true;
+                if (gather_here)
+                    selected_words.push_back(0);
+                else
+                {
+                    many_columns.emplace_back(nullptr);
+                    row_nums.emplace_back(0);
+                    columns_with_row_numbers.has_defaults = true;
+                }
             }
             if constexpr (from_row_store)
             {
@@ -296,7 +317,19 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
         }
     }
 
-    fillJoinOutputColumns(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
+    if (gather_here)
+    {
+        /// Every selected word is inline or zero by construction, which is the `from_row_list = false` shape.
+        for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+            if (emit_direct_gather[dst_idx].data_by_block)
+                gatherColumnDirect<false>(
+                    *columns[dst_idx], emit_direct_gather[dst_idx], selected_words.data(),
+                    selected_words.data() + selected_words.size(), selected_words.size());
+    }
+
+    fillJoinOutputColumns(
+        columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name,
+        gather_here ? &emit_direct_gather : nullptr);
     return added_rows;
 }
 
@@ -305,6 +338,24 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
 {
     if (columns.empty())
         return;
+
+    if constexpr (from_columns)
+    {
+        if (num_direct_gather)
+        {
+            const size_t rows_to_add = countDirectGatherRows<from_row_list>(row_refs_begin, row_refs_end);
+            chassert(rows_to_add <= size_to_reserve);
+            for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+                if (emit_direct_gather[dst_idx].data_by_block)
+                    gatherColumnDirect<from_row_list>(
+                        *columns[dst_idx], emit_direct_gather[dst_idx], row_refs_begin, row_refs_end, rows_to_add);
+
+            /// With every columnar column gathered and no row store there is nothing left to collect.
+            if constexpr (!from_row_store)
+                if (num_direct_gather == num_columnar_dst)
+                    return;
+        }
+    }
 
     ColumnsWithRowNumbers columns_with_row_numbers;
     [[maybe_unused]] auto & many_columns = columns_with_row_numbers.columns;
@@ -372,7 +423,9 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         }
     }
 
-    fillJoinOutputColumns(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
+    fillJoinOutputColumns(
+        columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name,
+        num_direct_gather ? &emit_direct_gather : nullptr);
 }
 
 template<>

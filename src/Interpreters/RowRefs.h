@@ -405,6 +405,14 @@ ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
         return mapped.encode();
 }
 
+/// The raw fixed-width source of one output column, as handed to the emit path. `data_by_block` is
+/// null when the column cannot be read this way and has to go through its `IColumn`.
+struct DirectGatherColumn
+{
+    const void * const * data_by_block = nullptr;
+    size_t stride = 0;
+};
+
 /// Maps `block_no` (the high half of RowRef) to the stored block.
 /// Appended under mutex during the build phase (possibly from several ConcurrentHashJoin
 /// slots sharing one index, so that block numbers are globally unique across slots and
@@ -437,6 +445,14 @@ public:
         PODArray<const IColumn *> by_block;
         /// `repl_by_block[b]` is that column as `ColumnReplicated *` if it is one, otherwise nullptr.
         PODArray<const ColumnReplicated *> repl_by_block;
+        /// `data_by_block[b]` is that column's raw fixed-width base (nullptr for a cleared block), valid
+        /// only when `direct_gather_ok`. A base pointer is a weaker guarantee than the `const IColumn *`
+        /// above: it stays valid only until the generation changes, so a stored column's buffer must not
+        /// be mutated in place without bumping the generation.
+        PODArray<const void *> data_by_block;
+        /// Bytes per element, uniform across blocks.
+        size_t stride = 0;
+        bool direct_gather_ok = false;
     };
 
     /// Registers a stored block, returns its block_no. Throws when the 2^31 limit
@@ -468,9 +484,11 @@ public:
 
     /// Resolve the emit table for the given saved-block column `positions` (the output columns of one
     /// probe), building any not-yet-built positions for the current generation (and dropping the whole
-    /// table first if the blocks changed). `out_columns`/`out_replicated` are sized to `saved_columns_count`
-    /// and indexed by stored-block column position: `out_columns[pos]` holds the per-block base pointers for
-    /// each requested `pos`; positions not in `positions` stay null. Pointers are stable for as long as the
+    /// table first if the blocks changed). `out_columns`/`out_replicated`/`out_direct_gather` are sized to
+    /// `saved_columns_count` and indexed by stored-block column position: `out_columns[pos]` holds the
+    /// per-block base pointers for each requested `pos`; positions not in `positions` stay null, as does
+    /// `out_direct_gather[pos]` for a position the direct gather cannot read. Pointers are stable for as
+    /// long as the
     /// generation does not change, which a StorageJoin read lock or a normal join's build-then-probe guarantees
     /// for the caller's lifetime. Holds `mutex` for the duration; called once per probe batch, never in the
     /// per-row loop.
@@ -478,7 +496,8 @@ public:
         size_t saved_columns_count,
         const std::vector<size_t> & positions,
         std::vector<const IColumn * const *> & out_columns,
-        std::vector<const ColumnReplicated * const *> & out_replicated);
+        std::vector<const ColumnReplicated * const *> & out_replicated,
+        std::vector<DirectGatherColumn> * out_direct_gather = nullptr);
 
     /// Invalidate the emit table after the stored columns are replaced in place (e.g. shrinkStoredBlocksToFit
     /// `cloneResized`), which would otherwise leave the cached `const IColumn *` dangling. Bumps the generation.

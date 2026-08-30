@@ -312,7 +312,8 @@ void StoredColumnsIndex::resolveEmitColumns(
     size_t saved_columns_count,
     const std::vector<size_t> & positions,
     std::vector<const IColumn * const *> & out_columns,
-    std::vector<const ColumnReplicated * const *> & out_replicated)
+    std::vector<const ColumnReplicated * const *> & out_replicated,
+    std::vector<DirectGatherColumn> * out_direct_gather)
 {
     std::lock_guard guard(mutex);
 
@@ -332,6 +333,8 @@ void StoredColumnsIndex::resolveEmitColumns(
     const size_t num_blocks = blocks.size();
     out_columns.assign(saved_columns_count, nullptr);
     out_replicated.assign(saved_columns_count, nullptr);
+    if (out_direct_gather)
+        out_direct_gather->assign(saved_columns_count, {});
     for (size_t pos : positions)
     {
         chassert(pos < saved_columns_count);
@@ -340,18 +343,55 @@ void StoredColumnsIndex::resolveEmitColumns(
             auto emit_column = std::make_unique<EmitColumn>();
             emit_column->by_block.resize(num_blocks);
             emit_column->repl_by_block.resize(num_blocks);
+            emit_column->data_by_block.resize(num_blocks);
+            const IColumn * gather_sample = nullptr;
+            bool gather_refused = false;
             for (size_t b = 0; b < num_blocks; ++b)
             {
                 const StoredBlock * block = blocks[b];
                 /// A cleared/popped slot keeps a null entry: no live ref points to it (mirrors `at()`).
                 emit_column->by_block[b] = block ? block->columns[pos].get() : nullptr;
                 emit_column->repl_by_block[b] = block ? block->replicated_columns[pos] : nullptr;
+                emit_column->data_by_block[b] = nullptr;
+                if (!block || gather_refused)
+                    continue;
+
+                const IColumn & column = *emit_column->by_block[b];
+                /// The order matters: these three tests are what keeps `getRawData` from throwing. A
+                /// `ColumnReplicated` needs its index indirection and does not implement it at all, and a
+                /// `ColumnConst` forwards it to a single-element buffer, whose base would be read out of
+                /// bounds for every row number above zero.
+                if (emit_column->repl_by_block[b] || isColumnConst(column) || !column.isFixedAndContiguous())
+                {
+                    gather_refused = true;
+                    continue;
+                }
+                const size_t stride = column.sizeOfValueIfFixed();
+                if (gather_sample && (stride != emit_column->stride || typeid(column) != typeid(*gather_sample)))
+                {
+                    gather_refused = true;
+                    continue;
+                }
+                const std::string_view raw_data = column.getRawData();
+                /// A positive invariant rather than a list of column classes to refuse: any other column
+                /// that delegates `getRawData` hands back a buffer not holding its own rows.
+                if (raw_data.size() != column.size() * stride)
+                {
+                    gather_refused = true;
+                    continue;
+                }
+                gather_sample = &column;
+                emit_column->stride = stride;
+                emit_column->data_by_block[b] = raw_data.data();
             }
+            emit_column->direct_gather_ok = gather_sample && !gather_refused;
             emit_columns[pos] = std::move(emit_column);
         }
         const EmitColumn & emit_column = *emit_columns[pos];
         out_columns[pos] = emit_column.by_block.data();
         out_replicated[pos] = emit_column.repl_by_block.data();
+        if (out_direct_gather && emit_column.direct_gather_ok)
+            (*out_direct_gather)[pos] = {.data_by_block = emit_column.data_by_block.data(), .stride = emit_column.stride};
     }
 }
 
