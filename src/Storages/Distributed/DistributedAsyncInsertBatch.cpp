@@ -338,18 +338,14 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & settings_changes)
 {
     size_t broken_files = 0;
-    std::vector<std::string> sent_files;
+    size_t processed_files = 0;
 
     auto finalize_processed_files = [&] -> bool
     {
         /// Every completed iteration sent or quarantined one file, so these entries form a prefix.
-        const size_t processed_files = sent_files.size() + broken_files;
         if (!processed_files)
             return false;
 
-        auto dir_sync_guard = parent.getDirectorySyncGuard(parent.relative_path);
-        for (const auto & file : sent_files)
-            parent.markAsSend(file);
         files.erase(files.begin(), files.begin() + processed_files);
         return true;
     };
@@ -387,7 +383,10 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
 
                 writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
                 remote.onFinish();
-                sent_files.push_back(file);
+
+                auto dir_sync_guard = parent.getDirectorySyncGuard(parent.relative_path);
+                parent.markAsSend(file);
+                ++processed_files;
             }
             catch (Exception & e)
             {
@@ -399,6 +398,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
 
                 parent.markAsBroken(file);
                 ++broken_files;
+                ++processed_files;
             }
         }
     }
@@ -409,9 +409,9 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
         throw;
     }
 
+    finalize_processed_files();
     if (broken_files)
     {
-        finalize_processed_files();
         throw Exception(ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES,
             "Failed to send {} files", broken_files);
     }
