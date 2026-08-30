@@ -8896,6 +8896,13 @@ Bounds the actual read work: a matched token with a large (non-embedded) posting
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
+    DECLARE(Bool, use_text_index_like_pattern_bypass, true, R"(
+Whether a LIKE/ILIKE pattern query whose matched tokens cover every row may skip reading their posting lists.
+
+Such a read cannot prune anything, so skipping it is pure saving. Disable to force the posting lists to be read anyway, which is what a test guarding the posting-list reader needs.
+
+Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+)", 0) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.

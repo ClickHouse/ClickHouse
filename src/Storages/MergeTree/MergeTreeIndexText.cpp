@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
     extern const SettingsUInt64 text_index_like_max_postings_rows_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsBool use_text_index_like_pattern_bypass;
     extern const SettingsBool use_text_index_negative_tokens_cache;
 }
 
@@ -534,7 +535,8 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto & settings = condition_text.getContext()->getSettingsRef();
 
     /// Dictionary scan is complete; bypass pattern queries that cannot be selective before reading postings.
-    analyzer->analyzeCardinalitiesAndBypassPatterns(state.part_info.getRowCount());
+    if (settings[Setting::use_text_index_like_pattern_bypass])
+        analyzer->analyzeCardinalitiesAndBypassPatterns(state.part_info.getRowCount());
 
     if (!state.skip_postings_deserialization)
         analyzePostings(postings_serialization, *postings_stream, state);
