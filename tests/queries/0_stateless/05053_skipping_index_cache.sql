@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- no-parallel: looks at server-wide cache, which other tests may clear
 
--- The table has 300 index granules for GRANULARITY 1 => 3 blocks of the cache (128 + 128 + 44), 75 index granules for GRANULARITY 4.
+-- The table has 300 index granules for GRANULARITY 1 => 10 blocks of the cache (9 full ones and a partial one), 75 index granules for GRANULARITY 4.
 -- Each query is run twice: the first run populates the cache, the second run must be served from it.
 -- The queries with primary key pruning touch only a part of a block of granules, including the last (partial) block.
 -- The queries with use_skip_indexes = 0 check that the results do not depend on the cache.

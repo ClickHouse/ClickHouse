@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+# Tags: no-parallel, no-random-merge-tree-settings
 # no-parallel: checks server-wide SkippingIndexCacheCells metric
-# no-random-settings: old_parts_lifetime = 0 must not be overridden
+# no-random-merge-tree-settings: old_parts_lifetime = 0 must not be overridden
 
 # Entries of the skipping index cache must be evicted when old parts are removed after a mutation.
 

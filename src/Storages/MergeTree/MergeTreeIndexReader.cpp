@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/SkippingIndexCache.h>
-#include <limits>
 
 namespace DB
 {
@@ -91,6 +90,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     , skipping_index_cache(skipping_index_cache_)
     , settings(std::move(settings_))
 {
+    /// Projection parts are never Active, so they are not cached.
     auto concrete_part = data_part_info->getDataPart();
     if (concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
         cache_key_prefix = concrete_part->getIndexCacheKeyPrefix();
@@ -99,7 +99,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     if (cache_key_prefix.empty() || !index->supportsGranuleCache() || (skipping_index_cache && skipping_index_cache->maxSizeInBytes() == 0))
         skipping_index_cache = nullptr;
     else
-        skipping_index_cache_key = {cache_key_prefix, index->getFileName(), std::numeric_limits<size_t>::max()};
+        skipping_index_cache_key = {cache_key_prefix, data_part_info->getChecksums().getTotalChecksumUInt128(), index->getFileName(), 0};
 }
 
 MergeTreeIndexReader::~MergeTreeIndexReader() = default;
@@ -119,6 +119,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     {
         for (const auto & range : all_mark_ranges)
         {
+            chassert(range.begin < range.end);
             auto begin = SkippingIndexCache::blockRange(range.begin / SkippingIndexCache::GRANULES_PER_ENTRY, marks_count).begin;
             auto end = SkippingIndexCache::blockRange((range.end - 1) / SkippingIndexCache::GRANULES_PER_ENTRY, marks_count).end;
             if (!widened_mark_ranges.empty() && widened_mark_ranges.back().end >= begin)
@@ -183,6 +184,8 @@ void MergeTreeIndexReader::loadGranule(MergeTreeIndexGranulePtr & res, size_t ma
         .skip_postings_deserialization = false,
     };
 
+    /// The position of the stream is unknown if deserialization throws.
+    stream_mark = -1;
     res->deserializeBinaryWithMultipleStreams(streams, state);
     stream_mark = mark + 1;
 }
@@ -208,7 +211,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     {
         /// One cache lookup per block of granules. The granules are shared with other readers, so they must never be modified.
         size_t block_number = mark / SkippingIndexCache::GRANULES_PER_ENTRY;
-        if (skipping_index_cache_key.block_number != block_number)
+        if (!current_block || skipping_index_cache_key.block_number != block_number)
         {
             auto key = skipping_index_cache_key;
             key.block_number = block_number;
@@ -216,7 +219,8 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             skipping_index_cache_key.block_number = block_number;
         }
 
-        granule = current_block->granules.at(mark % SkippingIndexCache::GRANULES_PER_ENTRY);
+        chassert(mark % SkippingIndexCache::GRANULES_PER_ENTRY < current_block->granules.size());
+        granule = current_block->granules[mark % SkippingIndexCache::GRANULES_PER_ENTRY];
         return;
     }
 

@@ -29,13 +29,16 @@ struct SkippingIndexCacheKey
 {
     /// Storage-related path of the part - uniquely identifies one part from another
     String path_to_data_part;
+    /// A part with the same path can be replaced by another one with the same name (e.g. detached and fetched again)
+    /// while a block is being loaded, so the content of the part is a part of the key as well.
+    UInt128 part_checksum;
     String index_name;
     /// Index of the block of granules: index_mark / SkippingIndexCache::GRANULES_PER_ENTRY.
     size_t block_number;
 
     bool operator==(const SkippingIndexCacheKey & rhs) const
     {
-        return path_to_data_part == rhs.path_to_data_part && index_name == rhs.index_name && block_number == rhs.block_number;
+        return path_to_data_part == rhs.path_to_data_part && part_checksum == rhs.part_checksum && index_name == rhs.index_name && block_number == rhs.block_number;
     }
 };
 
@@ -45,6 +48,7 @@ struct SkippingIndexCacheHashFunction
     {
         SipHash siphash;
         siphash.update(key.path_to_data_part);
+        siphash.update(key.part_checksum);
         siphash.update(key.index_name);
         siphash.update(key.block_number);
 
@@ -85,7 +89,7 @@ public:
     using Base = CacheBase<SkippingIndexCacheKey, SkippingIndexCacheCell, SkippingIndexCacheHashFunction, SkippingIndexCacheWeightFunction>;
 
     /// Number of consecutive index granules stored in one cache entry.
-    static constexpr size_t GRANULES_PER_ENTRY = 128;
+    static constexpr size_t GRANULES_PER_ENTRY = 32;
 
     SkippingIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::SkippingIndexCacheBytes, CurrentMetrics::SkippingIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
