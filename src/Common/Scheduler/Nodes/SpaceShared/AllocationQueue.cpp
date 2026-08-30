@@ -308,8 +308,13 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     // requester still has to give up. Select the requester itself so a single impossible grow does not
     // also take a higher-scored peer down with it. `fair_key` is the requester's allocated size plus its
     // pending increase, so `fair_key > limit` means it cannot fit even with the whole workload freed.
+    // This queue is the least common ancestor of killer and victim (they coincide), so fill in `details`.
     if (&killer.allocation.queue == this && killer.allocation.fair_key > limit)
+    {
+        details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
+            formatReadableCost(killer.allocation.allocated), killer.allocation.memory_eviction_score, getWorkloadName(), formatReadableCost(killer.size));
         return &killer.allocation;
+    }
 
     // Choose the eviction victim among the running allocations.
     //
