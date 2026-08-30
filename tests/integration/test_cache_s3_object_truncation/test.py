@@ -127,10 +127,12 @@ def test_truncated_object_predownload_no_logical_error(started_cluster):
     query on the primary key) to a granule located beyond the truncation. On the
     unpatched code this throws `Failed to predownload remaining ... bytes`
     (LOGICAL_ERROR); the fix fails with a regular error and the server stays up.
-    Any non-LOGICAL_ERROR (an S3 range/If-Match error from the resumed request,
+    The needed bytes lie beyond the truncation, so the query MUST fail: a
+    success would mean the cache fabricated EOF and returned garbage. Any
+    non-LOGICAL_ERROR (an S3 range/If-Match error from the resumed request,
     S3_OBJECT_CHANGED_DURING_READ, CANNOT_READ_ALL_DATA, broken part, etc.) is
-    acceptable; what matters is no forbidden LOGICAL_ERROR and that the server
-    survives (no use-of-uninitialized-value crash).
+    acceptable; what matters is that it fails without a forbidden LOGICAL_ERROR
+    and that the server survives (no use-of-uninitialized-value crash).
     """
     minio = started_cluster.minio_client
     node.query("DROP TABLE IF EXISTS t_trunc SYNC")
@@ -166,16 +168,19 @@ def test_truncated_object_predownload_no_logical_error(started_cluster):
         _truncate_to_valid_prefix(minio, target_name, keep_fraction=0.5)
 
         # Point query on the PK seeks to a granule near the end of the column,
-        # forcing the cache to predownload past the real (truncated) EOF.
-        try:
+        # forcing the cache to predownload past the real (truncated) EOF. The
+        # needed bytes lie beyond the truncation, so a successful read would
+        # mean the cache fabricated EOF and returned garbage — the query MUST
+        # fail, and with a regular error, not a LOGICAL_ERROR.
+        with pytest.raises(Exception) as exc_info:
             node.query(
                 "SELECT s FROM t_trunc WHERE x = 99000 "
                 "SETTINGS enable_filesystem_cache = 1, max_threads = 1"
             )
-            logger.info("Query returned without error")
-        except Exception as e:
-            _assert_no_forbidden_logical_error(str(e))
-            logger.info("Query raised acceptable non-LOGICAL_ERROR: %s", str(e)[:200])
+        _assert_no_forbidden_logical_error(str(exc_info.value))
+        logger.info(
+            "Query raised acceptable non-LOGICAL_ERROR: %s", str(exc_info.value)[:200]
+        )
 
         # Server must stay alive.
         assert node.query("SELECT 1").strip() == "1"
