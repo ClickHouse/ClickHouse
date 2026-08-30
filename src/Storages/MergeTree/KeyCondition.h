@@ -556,8 +556,8 @@ private:
     /// type / functions chain, replaces `const_value` and `const_type` with the constant's
     /// first element, and sets `out_condition_is_relaxed` when the implication is not an
     /// equivalence (a tuple of more than one element). The caller weakens the strict
-    /// comparison operators of relaxed conditions afterwards. On failure the atom inputs
-    /// are left unchanged (`out_*` may hold garbage).
+    /// comparison operators of relaxed conditions afterwards. On failure `const_value` and
+    /// `const_type` are left unchanged, while the `out_*` parameters may hold garbage.
     bool tryRelaxedTupleComparisonAtom(
         const RPNBuilderTreeNode & key_arg,
         const BuildInfo & info,
