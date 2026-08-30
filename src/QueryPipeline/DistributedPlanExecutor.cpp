@@ -62,6 +62,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
@@ -839,7 +840,7 @@ private:
     };
 
     LoggerPtr logger;
-    std::vector<std::shared_ptr<Branch>> branches;
+    VectorWithMemoryTracking<std::shared_ptr<Branch>> branches;
 };
 
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,

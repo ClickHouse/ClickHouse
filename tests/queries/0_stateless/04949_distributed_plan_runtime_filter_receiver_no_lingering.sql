@@ -22,7 +22,12 @@ SYSTEM FLUSH LOGS query_log;
 -- The probe tasks (stage_0) must finish much earlier than the build-scan task that holds the
 -- sleep (stage_1). Without the receive-branch cancellation a probe task lives until the filter
 -- arrives, which cannot happen before the sleep ends, and both sides show the same duration.
+-- With local execution every task fragment shares the root query's `query_id`, so the fragments
+-- are selected through the root query, which carries the current database.
 SELECT maxIf(query_duration_ms, query LIKE 'stage_0_%') * 2 < maxIf(query_duration_ms, query LIKE 'stage_1_%')
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment = '04949_no_lingering' AND event_date >= yesterday()
-    AND query NOT LIKE 'SELECT%';
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query NOT LIKE 'SELECT%'
+    AND query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04949_no_lingering'
+            AND current_database = currentDatabase() AND event_date >= yesterday());

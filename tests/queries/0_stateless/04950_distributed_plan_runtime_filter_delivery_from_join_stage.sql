@@ -40,6 +40,6 @@ SYSTEM FLUSH LOGS query_log, text_log;
 SELECT uniqExact(extract(message, 'under key .(_rf_rnd_[0-9a-f_]+).')) >= 3 FROM system.text_log
 WHERE logger_name = 'RuntimeFilter' AND message LIKE 'Registered runtime filter%' AND query_id IN (
     SELECT query_id FROM system.query_log
-    WHERE type = 'QueryFinish' AND query LIKE 'stage_%' AND log_comment = '04950_delivery_from_join_stage'
-        AND event_date >= yesterday())
+    WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04950_delivery_from_join_stage'
+        AND current_database = currentDatabase() AND event_date >= yesterday())
     AND event_date >= yesterday();
