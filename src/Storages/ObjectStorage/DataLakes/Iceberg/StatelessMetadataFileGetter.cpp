@@ -76,8 +76,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
-    const IcebergPathFromMetadata & filename,
-    size_t bytes_size)
+    const IcebergPathFromMetadata & filename)
 {
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -105,7 +104,8 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
             std::move(buffer), filename, getFormatSettings(local_context));
 
-        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), bytes_size};
+        const size_t manifest_file_bytes = manifest_file_deserializer->bytesRead();
+        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), manifest_file_bytes};
     };
 
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
@@ -130,8 +130,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         persistent_table_components,
         local_context,
         log,
-        cache_key.manifest_file_path,
-        static_cast<size_t>(cache_key.manifest_file_byte_size));
+        cache_key.manifest_file_path);
 
     auto iterator = Iceberg::ManifestFileIterator::create(
         cacheable_info.deserializer,
@@ -140,6 +139,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         *persistent_table_components.schema_processor,
         cache_key.added_sequence_number,
         cache_key.added_snapshot_id,
+        cache_key.first_row_id,
         local_context,
         nullptr,
         table_snapshot_schema_id);
@@ -246,9 +246,18 @@ ManifestFileCacheKeys getManifestList(
                     f_partition_spec_id);
             Int32 partition_spec_id = static_cast<Int32>(
                 manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
+
+            std::optional<UInt64> first_row_id;
+            if (manifest_list_format_version > 2 && manifest_list_deserializer.hasPath(f_manifest_first_row_id))
+            {
+                auto first_row_id_value = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_first_row_id);
+                if (!first_row_id_value.isNull())
+                    first_row_id = first_row_id_value.safeGet<Int64>();
+            }
+
             manifest_file_cache_keys.emplace_back(
                 manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type,
-                partition_spec_id);
+                partition_spec_id, first_row_id);
 
             insertRowToLogTable(
                 local_context,
