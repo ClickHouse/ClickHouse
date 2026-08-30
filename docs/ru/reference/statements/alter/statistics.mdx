@@ -6,7 +6,7 @@ title: 'Работа со статистикой столбцов'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -33,7 +33,7 @@ import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBad
 Добавление двух типов статистики для двух столбцов:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
 ```
 
 <Note>

@@ -3,7 +3,7 @@ set optimize_aggregation_in_order = 0;
 SELECT trimLeft(*) FROM (explain select sum(b) from pr_t group by a order by a limit 5 offset 500) WHERE explain LIKE '%ReadFromMergeTree%';
 ReadFromMergeTree (p_agg)
 set optimize_aggregation_in_order = 1;
-explain pipeline select sum(b) from pr_t group by a order by a limit 5 offset 500;
+explain pipeline select sum(b) from pr_t group by a order by a limit 5 offset 500 settings parallel_replicas_plan_based = 0;
 (Expression)
 ExpressionTransform
   (Limit)

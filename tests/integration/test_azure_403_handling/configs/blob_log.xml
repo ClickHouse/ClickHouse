@@ -1,0 +1,7 @@
+<clickhouse>
+    <blob_storage_log>
+        <database>system</database>
+        <table>blob_storage_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </blob_storage_log>
+</clickhouse>

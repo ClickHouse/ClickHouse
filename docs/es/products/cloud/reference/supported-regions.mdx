@@ -7,70 +7,71 @@ slug: /cloud/reference/supported-regions
 doc_type: 'reference'
 ---
 
-import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="aws-regions">
-  ## Regiones de AWS
+<div id="supported-regions">
+  ## Regiones compatibles
 </div>
 
-* ap-northeast-1 (Tokio)
-* ap-northeast-2 (Corea del Sur, Seúl)
-* ap-south-1 (Bombay)
-* ap-southeast-1 (Singapur)
-* ap-southeast-2 (Sídney)
-* eu-central-1 (Fráncfort)
-* eu-west-1 (Irlanda)
-* eu-west-2 (Londres)
-* us-east-1 (Virginia del Norte)
-* us-east-2 (Ohio)
-* us-west-2 (Oregón)
-* il-central-1 (Israel, Tel Aviv)
+Las siguientes tablas enumeran las regiones compatibles por proveedor de nube. Las insignias indican la disponibilidad de regiones privadas, HIPAA y PCI. Las regiones sin insignias no ofrecen actualmente ninguna de estas opciones.
 
-**Región privada:**
+<Tabs>
+  <Tab title="AWS" id="aws-regions" icon="aws">
+    | Región           | Disponibilidad                                                                                           |
+    | ---------------- | -------------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | <Badge color="purple">Privada</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">Privada</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">Privada</Badge>                                                                    |
+    | `ap-northeast-1` | —                                                                                                        |
+    | `ap-northeast-2` | —                                                                                                        |
+    | `ap-south-1`     | —                                                                                                        |
+    | `ap-southeast-1` | —                                                                                                        |
+    | `ap-southeast-2` | —                                                                                                        |
+    | `ap-southeast-3` | <Badge color="purple">Privada</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">Privada</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `eu-north-1`     | <Badge color="purple">Privada</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `il-central-1`   | —                                                                                                        |
+    | `mx-central-1`   | <Badge color="purple">Privada</Badge> <Badge color="blue">PCI</Badge>                                    |
+    | `sa-east-1`      | <Badge color="purple">Privada</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+  </Tab>
 
-* ca-central-1 (Canadá)
-* af-south-1 (Sudáfrica)
-* eu-north-1 (Estocolmo)
-* sa-east-1 (Sudamérica)
-* ap-southeast-3 (Yakarta)
-* ap-east-1 (Hong Kong)
-* mx-central-1 (México)
+  <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
+    | Región                    | Disponibilidad                                                     |
+    | ------------------------- | ------------------------------------------------------------------ |
+    | `asia-northeast1`         | —                                                                  |
+    | `asia-southeast1`         | —                                                                  |
+    | `australia-southeast1`    | <Badge color="purple">Privada</Badge>                              |
+    | `europe-west2`            | —                                                                  |
+    | `europe-west3`            | <Badge color="purple">Privada</Badge>                              |
+    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">Privada</Badge>                              |
+    | `northamerica-northeast1` | <Badge color="purple">Privada</Badge>                              |
+    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">Privada</Badge>                              |
+  </Tab>
 
-<div id="google-cloud-regions">
-  ## Regiones de Google Cloud
-</div>
-
-* asia-southeast1 (Singapur)
-* asia-northeast1 (Tokio)
-* europe-west2 (Londres)
-* europe-west4 (Países Bajos)
-* us-central1 (Iowa)
-* us-east1 (Carolina del Sur)
-
-**región privada:**
-
-* australia-southeast1(Sídney)
-* europe-west3 (Fráncfort)
-* europe-west6 (Zúrich)
-* northamerica-northeast1 (Montréal)
-* us-west1 (Oregón)
-
-<div id="azure-regions">
-  ## Regiones de Azure
-</div>
-
-* West US 3 (Arizona)
-* East US 2 (Virginia)
-* Germany West Central (Frankfurt)
-
-**Región privada:**
-
-* Japan East (Tokyo, Saitama)
-* UAE North (Dubai)
-* Australia East (New South Wales)
+  <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
+    | Región                 | Disponibilidad                        |
+    | ---------------------- | ------------------------------------- |
+    | `Australia East`       | <Badge color="purple">Privada</Badge> |
+    | `East US 2`            | —                                     |
+    | `Germany West Central` | —                                     |
+    | `Japan East`           | <Badge color="purple">Privada</Badge> |
+    | `UAE North`            | <Badge color="purple">Privada</Badge> |
+    | `West US 3`            | —                                     |
+  </Tab>
+</Tabs>
 
 <Note>
-  ¿Necesitas desplegar en una región que actualmente no aparece en la lista? [Envía una solicitud](https://clickhouse.com/pricing?modal=open).
+  ¿Necesita desplegar en una región que no aparece en la lista? [Envíe una solicitud](https://clickhouse.com/pricing?modal=open).
 </Note>
 
 <div id="private-regions">
@@ -79,15 +80,14 @@ import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFe
 
 <EnterprisePlanFeatureBadge feature="Función de regiones privadas" />
 
-Ofrecemos regiones privadas para nuestros servicios del nivel Enterprise. [Contáctenos](https://clickhouse.com/company/contact) para solicitar una región privada.
+Ofrecemos regiones privadas para servicios del nivel Enterprise. [Contáctenos](https://clickhouse.com/company/contact) para solicitar una región privada.
 
 Consideraciones clave para las regiones privadas:
 
 * Los servicios no se escalan automáticamente; sin embargo, se admite el escalado vertical y horizontal manual.
 * Los servicios no pueden ponerse en estado inactivo.
-* La página de estado no está disponible para las regiones privadas.
 
-Es posible que se apliquen requisitos adicionales para el cumplimiento de HIPAA (incluida la firma de un BAA). Tenga en cuenta que HIPAA actualmente solo está disponible para servicios del nivel Enterprise.
+Es posible que se apliquen requisitos adicionales para el cumplimiento de HIPAA, incluida la firma de un Acuerdo de Asociado Comercial (BAA). HIPAA actualmente solo está disponible para servicios del nivel Enterprise.
 
 <div id="hipaa-compliant-regions">
   ## Regiones compatibles con HIPAA
@@ -95,41 +95,12 @@ Es posible que se apliquen requisitos adicionales para el cumplimiento de HIPAA 
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
-Los clientes deben firmar un Business Associate Agreement (BAA) y solicitar el onboarding a través de Ventas o Soporte para configurar servicios en regiones compatibles con HIPAA. Las siguientes regiones admiten el cumplimiento de HIPAA:
-
-* AWS af-south-1 (Sudáfrica) **región privada**
-* AWS ca-central-1 (Canadá) **región privada**
-* AWS eu-central-1 (Fráncfort)
-* AWS eu-north-1 (Estocolmo) **región privada**
-* AWS eu-west-1 (Irlanda)
-* AWS eu-west-2 (Londres)
-* AWS sa-east-1 (Sudamérica) **región privada**
-* AWS us-east-1 (Virginia del Norte)
-* AWS us-east-2 (Ohio)
-* AWS us-west-2 (Oregón)
-* GCP europe-west4 (Países Bajos)
-* GCP us-central1 (Iowa)
-* GCP us-east1 (Carolina del Sur)
+Los clientes deben firmar un BAA y solicitar el onboarding a través de Ventas o Soporte para configurar servicios en las regiones marcadas como compatibles con HIPAA en la tabla.
 
 <div id="pci-compliant-regions">
-  ## Regiones que cumplen con PCI
+  ## Regiones compatibles con PCI
 </div>
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 
-Los clientes deben solicitar el onboarding a través de Ventas o Soporte para configurar servicios en regiones que cumplen con PCI. Las siguientes regiones permiten cumplir con PCI:
-
-* AWS af-south-1 (Sudáfrica) **región privada**
-* AWS ca-central-1 (Canadá) **región privada**
-* AWS eu-central-1 (Fráncfort)
-* AWS eu-north-1 (Estocolmo) **región privada**
-* AWS eu-west-1 (Irlanda)
-* AWS eu-west-2 (Londres)
-* AWS mx-central-1 (México) **región privada**
-* AWS sa-east-1 (Sudamérica) **región privada**
-* AWS us-east-1 (Virginia del Norte)
-* AWS us-east-2 (Ohio)
-* AWS us-west-2 (Oregón)
-* GCP europe-west4 (Países Bajos)
-* GCP us-central1 (Iowa)
-* GCP us-east1 (Carolina del Sur)
+Los clientes deben solicitar el onboarding a través de Ventas o Soporte para configurar servicios en las regiones marcadas como compatibles con PCI en la tabla.

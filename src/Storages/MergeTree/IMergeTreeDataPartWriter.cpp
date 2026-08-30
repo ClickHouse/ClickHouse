@@ -1,4 +1,5 @@
 #include <Columns/ColumnSparse.h>
+#include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
@@ -6,6 +7,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/defines.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 namespace DB
@@ -110,6 +113,11 @@ std::optional<Columns> IMergeTreeDataPartWriter::releaseIndexColumns()
     /// We need to deallocate it in shrinkToFit without memory tracker as well.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
+    /// `shrinkToFit` reallocates each index column to a right-sized buffer, and that buffer is the
+    /// resident primary index kept for the part's whole lifetime. Route it into the dedicated arena
+    /// (the reload path does the same in `loadIndex`).
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     Columns result;
     result.reserve(index_columns.size());
 
@@ -164,6 +172,28 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
         return virtual_desc->codec ? virtual_desc->codec : default_codec_desc;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
+
+bool IMergeTreeDataPartWriter::columnUsesDefaultCodec(const String & column_name) const
+{
+    if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
+        return CompressionCodecFactory::isDefaultCodec(column_desc->codec);
+
+    if (const auto * virtual_desc
+        = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        return CompressionCodecFactory::isDefaultCodec(virtual_desc->codec);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
+
+/// TODO: structural integer substreams (offsets, null maps) could go adaptive but `isSpecialCompressionAllowed` gates them out. Optimise.
+CompressionCodecPtr IMergeTreeDataPartWriter::maybeAdaptiveDefaultCodec(
+    bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const
+{
+    /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting default.
+    if (settings.apply_adaptive_codec && column_uses_default_codec && substream_type && !resolved_codec->isEncryption())
+        return std::make_shared<CompressionCodecAdaptive>(*substream_type, resolved_codec);
+    return resolved_codec;
 }
 
 

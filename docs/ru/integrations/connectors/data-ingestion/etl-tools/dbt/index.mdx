@@ -10,7 +10,7 @@ integration:
   - website: 'https://github.com/ClickHouse/dbt-clickhouse'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -217,8 +217,8 @@ profile: 'clickhouse-service'
 * Плагин использует синтаксис, требующий ClickHouse версии 25.3 или новее. Более старые версии ClickHouse мы не тестируем. Также в настоящее время мы не тестируем таблицы Replicated.
 * Разные запуски `dbt-adapter` могут конфликтовать, если выполняются одновременно, поскольку внутри они могут использовать одинаковые имена таблиц для одних и тех же операций. Подробнее см. issue [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420).
 * Сейчас адаптер материализует модели в виде таблиц с использованием [INSERT INTO SELECT](/ru/reference/statements/insert-into#inserting-the-results-of-select). На практике это означает дублирование данных при повторном запуске. Очень большие датасеты (PB) могут приводить к крайне долгому времени выполнения, из-за чего некоторые модели становятся непрактичными. Чтобы повысить производительность, используйте materialized views ClickHouse, реализуя представление как `materialized: materialization_view`. Кроме того, старайтесь по возможности уменьшать количество строк, возвращаемых любым запросом, используя `GROUP BY`. Предпочтительнее модели, которые агрегируют данные, а не просто преобразуют их, сохраняя количество строк источника.
-* Чтобы использовать Distributed tables для представления модели, необходимо вручную создать базовые реплицируемые таблицы на каждом узле. Затем поверх них можно создать Distributed таблицу. Адаптер не управляет созданием cluster.
-* Когда dbt создает отношение (table/view) в database, оно обычно создается в виде: `{{ database }}.{{ schema }}.{{ table/view id }}`. В ClickHouse нет понятия схем. Поэтому адаптер использует `{{schema}}.{{ table/view id }}`, где `schema` — это database ClickHouse.
+* Чтобы использовать distributed таблицы для представления модели, необходимо вручную создать базовые реплицируемые таблицы на каждом узле. Затем поверх них можно создать distributed таблицу. Адаптер не управляет созданием кластера.
+* Когда dbt создает отношение (table/view) в базе данных, оно обычно создается в виде: `{{ database }}.{{ schema }}.{{ table/view id }}`. В ClickHouse нет понятия схем. Поэтому адаптер использует `{{schema}}.{{ table/view id }}`, где `schema` — это база данных ClickHouse.
 * Эфемерные модели/CTE не работают, если размещены перед `INSERT INTO` в операторе вставки ClickHouse, см. https://github.com/ClickHouse/ClickHouse/issues/30323. Это не должно затрагивать большинство моделей, но следует учитывать, где именно эфемерная модель размещается в определениях моделей и других SQL-командах. {/* TODO проверить это ограничение, похоже, issue уже был закрыт, а исправление добавлено в 24.10 */}
 
 <div id="fivetran">

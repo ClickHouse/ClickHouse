@@ -1,0 +1,79 @@
+---
+date: 2025-11-19
+title: 存储故障后如何恢复副本
+tags: ['部署与扩缩容']
+keywords: ['恢复', '副本', '存储故障', 'atomic 数据库']
+description: '本文说明了在 ClickHouse 的 atomic 数据库中使用复制表时，如果某个副本上的磁盘/存储丢失或损坏，如何恢复数据。'
+---
+
+<Note>
+  本指南假设您的 config.xml 文件中的 `<path>` 参数设置为：
+
+  ```text
+  <path>/var/lib/clickhouse/</path>
+  ```
+
+  如果您配置了不同的数据路径，请将下面命令中所有出现的 `/var/lib/clickhouse` 替换为 `<path>` 设置的实际值。
+</Note>
+
+<Steps>
+  <Step title="从健康副本复制访问配置" id="copy-access-config">
+    从健康副本复制 `access` 文件夹的内容，该文件夹包含本地用户：
+
+    ```text
+    /var/lib/clickhouse/access
+    ```
+  </Step>
+
+  <Step title="从健康副本备份 metadata 文件夹" id="back-up-the-metadata-folder-from-the-healthy-replica">
+    1. 进入 ClickHouse 数据目录：
+
+    ```text
+    cd /var/lib/clickhouse
+    ```
+
+    2. 备份 metadata 文件夹 (包括符号链接) ：metadata 目录包含数据库和表的 DDLs。
+       数据库目录中包含指向 `/var/lib/clickhouse/store/..` 的符号链接，其中保存了所有表的 DDLs。
+
+    ```bash
+    { find metadata -type f; find metadata -type l; find metadata -type l | xargs readlink -f; } | tar -cPf backup.tar --files-from=-
+    ```
+
+    <Note>
+      此命令可确保备份中同时保留 **metadata 文件** 和符号链接结构。
+    </Note>
+  </Step>
+
+  <Step title="在故障副本上恢复 metadata" id="restore-the-metadata-on-the-faulty-replica">
+    1. 将生成的 `backup.tar` 文件复制到故障副本。
+    2. 将其解压到 ClickHouse 数据目录：
+
+    ```text
+    cd /var/lib/clickhouse/
+    tar -xvPf backup.tar
+    ```
+  </Step>
+
+  <Step title="创建强制恢复标志" id="create-force-restore-flag">
+    要触发从其他副本自动同步数据，请创建以下标志文件：
+
+    ```text
+    sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+    ```
+  </Step>
+
+  <Step title="重启故障副本" id="restart-faulty-replica">
+    1. 在故障节点上重启 ClickHouse server。
+    2. 检查服务器日志，您应会看到系统正在从健康副本下载 parts：
+
+    ```bash
+    2025.11.02 00:00:04.047097 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Downloading files 23
+    2025.11.02 00:00:04.055542 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Download of part 202511_0_0_0 onto disk disk2 finished.
+    2025.11.02 00:00:04.101888 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2025_0_0_1 onto disk default.
+    2025.11.02 00:00:04.102005 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    2025.11.02 00:00:04.102210 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2022_0_0_1 onto disk disk1.
+    2025.11.02 00:00:04.102247 [ 688 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2021_0_0_1 onto disk disk2.
+    2025.11.02 00:00:04.102331 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    ```
+  </Step>
+</Steps>

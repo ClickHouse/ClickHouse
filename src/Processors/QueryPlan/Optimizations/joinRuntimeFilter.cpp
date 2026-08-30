@@ -105,19 +105,19 @@ static String runtimeFilterName(UInt64 structural_hash)
 /// EXPLAIN renders (the pretty printer keys on the name via `getRuntimeFilterId`, never on the value).
 ///
 /// The value is a fresh random key per plan build, so the const is genuinely non-deterministic and is
-/// marked `is_deterministic_constant=false`. Two existing mechanisms keep that volatile value from
-/// leaking into cached/keyed state:
-///   - Query condition cache: `Node::isDeterministic` reports the filter expression as
-///     non-deterministic (the `__applyFilter` function is non-deterministic, and so is this constant),
-///     so the QCC skips it instead of reusing a per-granule result that a later execution with a
-///     different key would read as stale.
-///   - Hash-table-statistics cache key: it is computed during join-order optimization, before
-///     `tryAddJoinRuntimeFilter` adds the filter, so the volatile value is not in the hashed DAG.
+/// marked `is_deterministic_constant=false` (which keeps the query condition cache from caching a
+/// per-granule result that a later execution with a different key would read as stale — `__applyFilter`
+/// is non-deterministic too, so `Node::isDeterministic` reports the whole filter expression as such).
+///
+/// It is additionally marked `is_runtime_filter_id=true`,
+/// which makes `Node::updateHash` skip its VALUE while still hashing its stable NAME.
 static const ActionsDAG::Node & addRuntimeFilterLabelColumn(ActionsDAG & actions_dag, const RuntimeFilterId & id)
 {
     auto string_type = std::make_shared<DataTypeString>();
     auto id_column = string_type->createColumnConst(0, id.key);
-    return actions_dag.addColumn(std::move(id_column), std::move(string_type), id.name, /*is_deterministic_constant=*/false);
+    return actions_dag.addColumn(
+        std::move(id_column), std::move(string_type), id.name,
+        /*is_deterministic_constant=*/false, /*is_masked_secret=*/false, /*is_runtime_filter_id=*/true);
 }
 
 static const ActionsDAG::Node & createRuntimeFilterCondition(
@@ -242,9 +242,24 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
+    /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
+    /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
+    /// be attached, and the algorithm list must not be pinned to hash-family ones below.
+    if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
+        return false;
+
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
         return false;
+
+    /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
+    /// Planning and pipeline overhead outweighs any saving on a tiny probe.
+    if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
+    {
+        auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
+        if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
+            return false;
+    }
 
     /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
     /// that would have matches in the right table. This means we need to add something like NOT IN filter.
@@ -386,17 +401,24 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
-            try
+            auto common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
+            if (!common_type)
             {
-                common_types.push_back(getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type}));
+                /// The keys still can be joined by the values that they have in common, see
+                /// `JoinCommon::tryGetCommonSubtypeForJoinKeys`, but a runtime filter cannot be built this way:
+                /// the values that are out of the common range become NULL, and for `NOT IN` that would
+                /// filter out the rows that have to be preserved. Give up on the filter, it is only an optimization.
+                /// If the JOIN itself cannot be performed, it will report this type mismatch on its own.
+                ///
+                /// The types compared here are always the ORIGINAL key types: the subtype fallback rewrites the
+                /// keys to `accurateCastOrNull` in `JoinStepLogical::predicateOperandsToCommonType`, which runs
+                /// from `addJoinPredicatesToTableJoin` while the logical step is converted to a physical one —
+                /// that is, after every query plan optimization pass, including this one. So the rewrite can
+                /// never hide the mismatch from this check, and a fallback JOIN never keeps a runtime filter
+                /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
+                return false;
             }
-            catch (Exception & ex)
-            {
-                ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-                    join_key_probe_side.name, join_key_probe_side.type->getName(),
-                    join_key_build_side.name, join_key_build_side.type->getName());
-                throw;
-            }
+            common_types.push_back(std::move(common_type));
         }
         else
         {

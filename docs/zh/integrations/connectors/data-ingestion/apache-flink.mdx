@@ -10,7 +10,7 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -147,7 +147,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
     ```java
     public static void main(String[] args) {
         // 配置 ClickHouseClient
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
         // 创建一个 ElementConverter
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -161,7 +161,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
                 MAX_BATCH_SIZE_IN_BYTES,
                 MAX_TIME_IN_BUFFER_MS,
                 MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
+                clientConfig
         );
 
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -243,7 +243,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
         "insert_deduplicate", "1"
     );
 
-    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
         url,
         username,
         password,
@@ -351,7 +351,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clickHouseClientConfig
+        clientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```
@@ -449,17 +449,17 @@ com.clickhouse.client.api.ServerException: Code: 33. DB::Exception: Cannot read 
 
 [//]: # "**解决方案**:"
 
-[//]: # "- 如果你的表使用的是 `Replicated*MergeTree` table engine："
+[//]: # "- 如果你的表使用的是 `Replicated*MergeTree` table engine:"
 
-[//]: # "  1. 确保 server session setting `insert_deduplicate=1` (如有需要，可参见上面的[示例](#client-options)了解如何设置)。请注意，复制表默认启用 `insert_deduplicate`。"
+[//]: # "  1. 确保服务端会话设置 `insert_deduplicate=1` (如有需要，可参见上面的[示例](#client-options)了解如何设置)。请注意，复制表默认启用 `insert_deduplicate`。"
 
-[//]: # "  2. 如有必要，增大 `MergeTree` table settings [`replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window) 或 [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds)。"
+[//]: # "  2. 如有必要，增大 `MergeTree` table settings [`replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) 或 [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)。"
 
-[//]: # "- 如果你的表使用的是非复制表 `*MergeTree` table engine，请增大 `MergeTree` table setting [`non_replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window)。"
+[//]: # "- 如果你的表使用的是非复制表 `*MergeTree` table engine，请增大 `MergeTree` table setting [`non_replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)。"
 
 [//]: #
 
-[//]: # "_注 1：此解决方案依赖于 [synchronous inserts](https://clickhouse.com/docs/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default)，这也是 Flink 连接器推荐使用的方式。请确保 server session setting `async_insert=0`。_"
+[//]: # "_注 1：此解决方案依赖于 [synchronous inserts](https://clickhouse.com/docs/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default)，这也是 Flink 连接器推荐使用的方式。请确保服务端会话设置 `async_insert=0`。_"
 
 [//]: #
 

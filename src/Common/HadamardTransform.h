@@ -21,9 +21,11 @@
 /// embedding dimensions such as 384/768/1536/3072 and 2560), and NEON variants for float32 on AArch64. The scalar and
 /// NEON kernels perform exactly the same butterflies in the same stage order, so they are bit-for-bit identical.
 ///
-/// Order 9 has no +-1 Hadamard matrix (those exist only for orders 1, 2, and multiples of 4), so for the 2^k * 9
-/// family (e.g. 1152 = 128 * 9) an exact Kronecker transform H_{2^k} (x) C_9 is also provided, where C_9 is a real
-/// orthogonal Discrete Hartley Transform matrix applied with float multiplies. See kroneckerFactorFor / kronecker*.
+/// Odd orders (and even orders that are not a multiple of 4) have no +-1 Hadamard matrix -- those exist only for orders
+/// 1, 2, and multiples of 4 -- so for a length 2^k * m whose odd part m has no +-1 Hadamard matrix (e.g. m = 7 for
+/// 3584 = 512 * 7, m = 9 for 1152 = 128 * 9) an exact Kronecker transform H_{2^k} (x) C_m is provided instead, where
+/// C_m is a real orthogonal Discrete Hartley Transform matrix applied with float multiplies. Any odd order up to
+/// max_hartley_block is supported this way. See kroneckerFactorFor / kronecker*.
 ///
 /// Used by the `randomHadamardTransform` SQL function and by the structured random projection that backs the quantized
 /// vector search codecs (`Common/VectorQuantizer.cpp`).
@@ -84,6 +86,11 @@ void fwhtScalar(T * a, size_t m)
 /// The largest dense Hadamard block order supported below (must be a multiple of 4 for the NEON path).
 inline constexpr size_t max_hadamard_block = 64;
 
+/// The largest dense Hartley (DHT) small-factor order supported below. The dense O(m^2) per-block
+/// matvec and the fixed-size block scratch buffers (sized to max_hadamard_block) both bound m by this,
+/// which comfortably covers every realistic embedding dimension's odd part (e.g. 7, 9, 11, 13, 25).
+inline constexpr size_t max_hartley_block = max_hadamard_block;
+
 /// A dimension d = 2^k * m can be transformed exactly (no zero-padding) as the Kronecker product
 /// H_{2^k} (x) B_m, where B_m is a real orthogonal m x m matrix and 2^k = blocks. The small factor
 /// B_m is one of two kinds:
@@ -91,10 +98,12 @@ inline constexpr size_t max_hadamard_block = 64;
 ///    exist only for orders that are multiples of 4; we support m in {12, 20}, which covers common
 ///    embedding dimensions (384, 768, 1536, 3072 = 2^k * 12; 2560 = 2^7 * 20).
 ///  - Hartley: a real orthogonal Discrete Hartley Transform matrix, applied with float multiplies,
-///    used for orders that have no +-1 Hadamard matrix. We support m = 9, covering the 2^k * 9
-///    family (e.g. 1152 = 128 * 9, 2304 = 256 * 9).
-/// kroneckerFactorFor returns m, the number of blocks 2^k, and the kind, or {0, 0, None} when d is
-/// not of a supported form (then the caller falls back to zero-padding to a power of two).
+///    used for any other odd factor m (1 < m <= max_hartley_block) that has no +-1 Hadamard matrix.
+///    This covers the remaining embedding families such as 2^k * 7 (e.g. 3584 = 512 * 7), 2^k * 9
+///    (e.g. 1152 = 128 * 9), 2^k * 11, 2^k * 13, and so on.
+/// kroneckerFactorFor returns m, the number of blocks 2^k, and the kind. It returns {0, 0, None} for a
+/// power of two (transformed directly by the FWHT with no small factor) and also when the odd part
+/// exceeds max_hartley_block (then the length cannot be transformed exactly).
 enum class SmallFactorKind
 {
     None,
@@ -111,14 +120,25 @@ struct KroneckerFactor
 
 inline KroneckerFactor kroneckerFactorFor(size_t length)
 {
-    /// Orders with a +-1 Hadamard matrix (Paley type I): fast sign-flip small factor.
+    if (length == 0)
+        return {};
+
+    /// Orders with a +-1 Hadamard matrix (Paley type I): the fast sign-flip small factor. 12 = 4 * 3
+    /// and 20 = 4 * 5 cover the common odd parts 3 and 5 (e.g. 384/768/1536/3072 and 1280/2560) with
+    /// no float multiplies. These two orders are also the only small factors the vector-search codec
+    /// uses, so this list must stay stable (see Common/VectorQuantizer.cpp).
     for (size_t m : {static_cast<size_t>(12), static_cast<size_t>(20)})
         if (length % m == 0 && std::has_single_bit(length / m))
             return {m, length / m, SmallFactorKind::Hadamard};
 
-    /// Order 9 has no +-1 Hadamard matrix, so use a dense real orthogonal DHT matrix instead.
-    if (length % 9 == 0 && std::has_single_bit(length / 9))
-        return {static_cast<size_t>(9), length / 9, SmallFactorKind::Hartley};
+    /// Split length = blocks * m with blocks the largest power-of-two divisor and m the odd part. Any
+    /// odd m > 1 up to max_hartley_block uses a dense real orthogonal DHT matrix of order m (orders
+    /// without a +-1 Hadamard matrix). m == 1 means a pure power of two: no small factor, handled by
+    /// the FWHT directly.
+    const size_t blocks = size_t(1) << std::countr_zero(length);
+    const size_t m = length / blocks;
+    if (m > 1 && m <= max_hartley_block)
+        return {m, blocks, SmallFactorKind::Hartley};
 
     return {};
 }
@@ -226,7 +246,7 @@ void kroneckerScalar(Compute * a, size_t blocks, size_t m, const HmMasks<Compute
 /// A dense real orthogonal m x m matrix (a Discrete Hartley Transform), stored row-major and
 /// UNnormalized so that C^T C = m * I -- i.e. applying it scales a vector's norm by sqrt(m), exactly
 /// like the unnormalized +-1 Hadamard block above. Used for orders that have no +-1 Hadamard matrix
-/// (m = 9). The caller caches the result per order m.
+/// (any odd m in [3, max_hartley_block], e.g. 7 or 9). The caller caches the result per order m.
 template <typename Compute>
 struct HartleyMatrix
 {
@@ -257,7 +277,7 @@ void buildHartleyMatrix(HartleyMatrix<Compute> & out, size_t m)
 template <typename Compute>
 void applyHartleyScalar(Compute * block, size_t m, const Compute * coef)
 {
-    Compute z[max_hadamard_block];
+    Compute z[max_hartley_block];
     for (size_t i = 0; i < m; ++i)
     {
         Compute acc = 0;

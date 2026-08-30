@@ -6,7 +6,7 @@ title: 'Именованные коллекции'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -103,6 +103,16 @@ url = 'https://connection.url/'
 ```
 
 Необязательный параметр конфигурации `update_timeout_ms` по умолчанию имеет значение `5000`.
+
+Проверить активный тип хранилища можно с помощью `system.server_settings` и `getServerSetting`:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+Изменение типа хранилища требует перезапуска сервера; `SYSTEM RELOAD CONFIG` не изменяет активное backend-соединение.
 
 <div id="storing-named-collections-in-configuration-files">
   ## Хранение именованных коллекций в конфигурационных файлах
@@ -374,6 +384,8 @@ SELECT dictGet('dict', 'B', 2);
 
 * `username` для `user`
 * `db` для `database`.
+
+Настройки пула соединений для [движка таблицы PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql) (`postgresql_connection_pool_size` и другие настройки `postgresql_*`) также можно хранить в коллекции или передавать в виде переопределений `key = value`. Они применяются к движку таблицы `PostgreSQL`, табличной функции `postgresql` и движку базы данных `PostgreSQL`; явная секция `SETTINGS` для таблицы имеет приоритет над значениями из коллекции.
 
 Параметр `addresses_expr` используется в коллекции вместо `host:port`. Этот параметр необязателен, поскольку есть и другие необязательные параметры: `host`, `hostname`, `port`. Приоритет показан в следующем псевдокоде:
 

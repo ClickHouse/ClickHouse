@@ -4,11 +4,31 @@ sidebar: 'sqlreference'
 slug: /sql-reference/functions
 title: 'Descripción general de las funciones'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Página                                                                                | Descripción                                                                                          |
-| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| [Funciones regulares](/es/reference/functions/regular-functions/regular-functions-index) | Funciones cuyo resultado para cada fila es independiente de todas las demás filas.                   |
-| [Funciones de agregación](/es/reference/functions/aggregate-functions/index)             | Funciones que acumulan un conjunto de valores a lo largo de varias filas.                            |
-| [Funciones de tabla](/es/reference/functions/table-functions/index)                      | Métodos para construir tablas.                                                                       |
-| [Funciones de ventana](/es/reference/functions/window-functions/index)                   | Funciones que permiten realizar cálculos sobre un conjunto de filas relacionadas con la fila actual. |
+<CardGroup cols={2}>
+  <Card title="Funciones regulares" icon="function" href="/es/reference/functions/regular-functions/overview">
+    Funciones cuyo resultado para cada fila es independiente del de todas las demás.
+  </Card>
+
+  <Card title="Funciones de agregación" icon="calculator" href="/es/reference/functions/aggregate-functions/index">
+    Funciones que acumulan un conjunto de valores a través de varias filas.
+  </Card>
+
+  <Card title="Funciones de tabla" icon="table" href="/es/reference/functions/table-functions/index">
+    Métodos para construir tablas.
+  </Card>
+
+  <Card title="Funciones de ventana" icon="chart-column" href="/es/reference/functions/window-functions/index">
+    Funciones que permiten realizar cálculos sobre un conjunto de filas relacionadas con la fila actual.
+  </Card>
+
+  <Card title="Funciones definidas por el usuario" icon="code" href="/es/reference/functions/regular-functions/udf">
+    Funciones ejecutables personalizadas definidas por el usuario.
+  </Card>
+
+  <Card title="WebAssembly UDF" icon="cube" href="/es/reference/functions/regular-functions/wasm_udf">
+    Funciones definidas por el usuario implementadas con WebAssembly.
+  </Card>
+</CardGroup>
