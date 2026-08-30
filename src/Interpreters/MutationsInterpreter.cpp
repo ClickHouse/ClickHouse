@@ -9,6 +9,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
@@ -736,6 +737,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     NameSet updated_columns;
+    NameSet materialize_column_targets;
     /// Columns whose values are changed by materializing patch parts (lightweight
     /// updates). They arrive as READ_COLUMN commands flagged read_for_patch. Skip
     /// indices, projections and statistics that depend on them must be rebuilt,
@@ -761,6 +763,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (command.type == MutationCommand::REWRITE_PARTS)
             has_rewrite_parts = true;
+
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+            materialize_column_targets.insert(command.column_name);
 
         if (command.type == MutationCommand::DROP_COLUMN && command.clear)
         {
@@ -793,7 +798,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     MaterializedColumnDependencies materialized_dependencies(columns_desc, context);
 
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
-    /// and projections to recalculate them if dependencies are updated.
+    /// and projections to recalculate them if dependencies are updated. The map is also needed
+    /// for MATERIALIZE COLUMN: rewriting a column must recompute the stored MATERIALIZED columns
+    /// computed from it (or be refused when such a dependent column feeds a key).
     std::unordered_map<String, Names> column_to_affected_materialized;
     /// Each MATERIALIZED column's own required source columns. Used to walk chains of
     /// MATERIALIZED columns (e.g. m2 MATERIALIZED m1 MATERIALIZED src) so a change of a
@@ -801,10 +808,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     std::unordered_map<String, NameSet> materialized_column_dependencies;
 
     /// The MATERIALIZED-chain analysis is needed for classical UPDATE, for materializing
-    /// patch parts (APPLY PATCHES) and for CLEAR COLUMN, since all three can change a
+    /// patch parts (APPLY PATCHES), CLEAR COLUMN, and MATERIALIZE COLUMN, since all can change a
     /// column that a chain of MATERIALIZED columns is derived from.
     const bool need_materialized_analysis =
-        !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
+        !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column || !materialize_column_targets.empty();
     if (need_materialized_analysis)
     {
         for (const auto & column : columns_desc)
@@ -827,7 +834,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 /// on-disk value will become stale. Not on an on-fly read, which builds an interpreter
                 /// per read task per part and writes nothing, so the warning is untrue and repeats there.
                 if (!settings.apply_on_fly_for_read
-                    && std::ranges::any_of(required_columns, [&](const auto & dep) { return updated_columns.contains(dep); }))
+                    && std::ranges::any_of(required_columns, [&](const auto & dep) { return updated_columns.contains(dep) || materialize_column_targets.contains(dep); }))
                     LOG_WARNING(logger,
                         "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
                         "columns that are being updated. Its value will NOT be recalculated "
@@ -840,7 +847,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & dependency : required_columns)
             {
                 materialized_column_dependencies[column.name].insert(dependency);
-                if (updated_columns.contains(dependency))
+                if (updated_columns.contains(dependency) || materialize_column_targets.contains(dependency))
                     column_to_affected_materialized[dependency].push_back(column.name);
             }
         }
@@ -1249,11 +1256,156 @@ void MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             addStageIfNeeded(command.mutation_version, false);
 
-            // Can't materialize a column in the sort key
-            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
+            /// Can't materialize a column that is used in a sorting key or partition key
+            /// expression, either directly (ORDER BY col) or indirectly (ORDER BY func(col)).
+            /// Materializing such a column recalculates its values, which would invalidate the
+            /// sort order or the partition assignment of existing data parts: the mutation
+            /// preserves the on-disk row order and copies the source part's partition id rather
+            /// than recomputing it. The same applies to the sorting keys of projections:
+            /// materializing a column used by a projection's ORDER BY would leave the
+            /// already-materialized projection parts sorted by stale key values.
+            auto column_required_by = [&](const String & target_column, const Names & required_columns) -> bool
             {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
+                for (const auto & required_column : required_columns)
+                {
+                    if (required_column == target_column)
+                        return true;
+
+                    /// The key can depend on a subcolumn (e.g. `ORDER BY t.k`), while
+                    /// `MATERIALIZE COLUMN t` targets the parent column. Materializing the parent
+                    /// recalculates the subcolumn too, so it must be refused as well.
+                    auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                    if (resolved && resolved->isSubcolumn() && resolved->getNameInStorage() == target_column)
+                        return true;
+                }
+                return false;
+            };
+
+            auto column_used_in_sorting_key = [&](const String & target_column, const StorageMetadataPtr & key_metadata) -> bool
+            {
+                if (!key_metadata->hasSortingKey())
+                    return false;
+
+                Names sort_columns = key_metadata->getSortingKeyColumns();
+                if (std::find(sort_columns.begin(), sort_columns.end(), target_column) != sort_columns.end())
+                    return true;
+
+                return column_required_by(target_column, key_metadata->getColumnsRequiredForSortingKey());
+            };
+
+            if (column_used_in_sorting_key(command.column_name, metadata_snapshot))
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                    "Refused to materialize column {} because it is used in the sorting key expression. "
+                    "Doing so could break the sort order of existing data",
+                    backQuote(command.column_name));
+            }
+
+            if (metadata_snapshot->hasPartitionKey()
+                && column_required_by(command.column_name, metadata_snapshot->getColumnsRequiredForPartitionKey()))
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                    "Refused to materialize column {} because it is used in the partition key expression. "
+                    "Doing so could move existing rows to a different partition while the part metadata "
+                    "still describes the old partition id",
+                    backQuote(command.column_name));
+            }
+
+            for (const auto & projection : projections_desc)
+            {
+                if (projection.metadata
+                    && column_used_in_sorting_key(command.column_name, projection.metadata))
+                {
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because it is used in the sorting key expression "
+                        "of projection {}. Doing so could break the sort order of the projection's existing data",
+                        backQuote(command.column_name), backQuote(projection.name));
+                }
+            }
+
+            /// MergeTree merge semantics depend on the sign column (CollapsingMergeTree), the
+            /// version column (ReplacingMergeTree) and the is_deleted column
+            /// (`ReplacingMergeTree(ver, is_deleted)`). `validateUpdateColumns` treats the sign and
+            /// version columns as immutable key columns via `getKeyColumns`, so UPDATE of such a
+            /// column is refused. MATERIALIZE COLUMN rewrites the stored values just the same, so it
+            /// must be refused too — even when the column is not part of ORDER BY / PARTITION BY.
+            /// The is_deleted column is refused here as well, although UPDATE allows it: an explicit
+            /// UPDATE of is_deleted deliberately changes the delete marker, while MATERIALIZE COLUMN
+            /// would recompute it from the default expression as a side effect and could silently
+            /// flip the replacing semantics of existing rows.
+            Names merge_key_columns;
+            if (const auto * merge_tree_data = source.getMergeTreeData())
+            {
+                if (!merge_tree_data->merging_params.sign_column.empty())
+                    merge_key_columns.push_back(merge_tree_data->merging_params.sign_column);
+                if (!merge_tree_data->merging_params.version_column.empty())
+                    merge_key_columns.push_back(merge_tree_data->merging_params.version_column);
+                if (!merge_tree_data->merging_params.is_deleted_column.empty())
+                    merge_key_columns.push_back(merge_tree_data->merging_params.is_deleted_column);
+            }
+
+            if (column_required_by(command.column_name, merge_key_columns))
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                    "Refused to materialize column {} because it is used as the sign, version or "
+                    "is_deleted column of the table engine, which the merge logic depends on. "
+                    "Recomputing it could change the collapsing or replacing semantics of existing data",
+                    backQuote(command.column_name));
+            }
+
+            /// A stored MATERIALIZED column may be computed from the column being materialized.
+            /// Rewriting the source column would leave such dependent columns stale, so they are
+            /// recomputed in an extra stage below. If a dependent column feeds the sorting key or
+            /// the partition key (of the table or of a projection), recomputing it would break the
+            /// sort order or the partition assignment just like rewriting a key column directly,
+            /// so it is refused the same way.
+            Names affected_materialized;
+            if (auto it = column_to_affected_materialized.find(command.column_name); it != column_to_affected_materialized.end())
+                affected_materialized = it->second;
+
+            for (const auto & dependent_name : affected_materialized)
+            {
+                if (column_used_in_sorting_key(dependent_name, metadata_snapshot))
+                {
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
+                        "and is used in the sorting key expression. Recomputing it could break the sort order "
+                        "of existing data",
+                        backQuote(command.column_name), backQuote(dependent_name));
+                }
+
+                if (metadata_snapshot->hasPartitionKey()
+                    && column_required_by(dependent_name, metadata_snapshot->getColumnsRequiredForPartitionKey()))
+                {
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
+                        "and is used in the partition key expression. Recomputing it could move existing rows "
+                        "to a different partition while the part metadata still describes the old partition id",
+                        backQuote(command.column_name), backQuote(dependent_name));
+                }
+
+                for (const auto & projection : projections_desc)
+                {
+                    if (projection.metadata
+                        && column_used_in_sorting_key(dependent_name, projection.metadata))
+                    {
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
+                            "and is used in the sorting key expression of projection {}. Recomputing it could break "
+                            "the sort order of the projection's existing data",
+                            backQuote(command.column_name), backQuote(dependent_name), backQuote(projection.name));
+                    }
+                }
+
+                if (column_required_by(dependent_name, merge_key_columns))
+                {
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
+                        "and is used as the sign, version or is_deleted column of the table engine, which the "
+                        "merge logic depends on. Recomputing it could change the collapsing or replacing "
+                        "semantics of existing data",
+                        backQuote(command.column_name), backQuote(dependent_name));
+                }
             }
 
             const auto & column = columns_desc.get(command.column_name);
@@ -1263,10 +1415,479 @@ void MutationsInterpreter::prepare(bool dry_run)
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
-            auto materialized_column = makeASTFunction(
+            ASTPtr materialized_column = makeASTFunction(
                 "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
 
+            /// We need to replace all subcolumns used in the materialized expression with the
+            /// getSubcolumn function, because otherwise the subcolumn is registered as a separate
+            /// input of the stage and is read from the source part. In a mixed mutation such as
+            /// `UPDATE t = ..., MATERIALIZE COLUMN m` with `m MATERIALIZED t.k + 1`, this stage
+            /// would then compute `m` from the pre-update subcolumn values instead of the
+            /// rewritten parent column. Same as the dependent-MATERIALIZED stages below.
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
+
             stages.back().column_to_updated.emplace(column.name, materialized_column);
+
+            /// Recompute the dependent MATERIALIZED columns in extra stages, so they are evaluated
+            /// over the already-rewritten source column.
+            ///
+            /// All expressions of a single stage are resolved against the block as it looked
+            /// *before* that stage (`prepareMutationStages` builds one combined `update_expr_list`
+            /// for the whole `column_to_updated` map and only then aliases the results back to the
+            /// target column names), so a dependent column that reads another dependent column must
+            /// not share a stage with it. For `c2 MATERIALIZED a * 10, m MATERIALIZED c2 + 1,
+            /// n MATERIALIZED c2 + m` both `m` and `n` are directly affected by
+            /// `MATERIALIZE COLUMN c2`, but `n` reads `m`, so a single stage would compute `n` from
+            /// the *old* stored `m` and the derived-object rebuild below would then treat that wrong
+            /// value as fresh. Split the dependent columns into dependency layers — a column goes
+            /// into the first layer in which none of the sibling columns it reads is still pending —
+            /// and emit one stage per layer.
+            if (!affected_materialized.empty())
+            {
+                const NameSet affected_materialized_set(affected_materialized.begin(), affected_materialized.end());
+
+                std::vector<Names> recompute_layers;
+                NameSet already_layered;
+                Names pending = affected_materialized;
+
+                while (!pending.empty())
+                {
+                    Names layer;
+                    Names still_pending;
+
+                    for (const auto & dependent_name : pending)
+                    {
+                        const auto & dependency_columns = materialized_column_dependencies[dependent_name];
+                        const bool reads_pending_sibling = std::ranges::any_of(dependency_columns, [&](const auto & dependency)
+                        {
+                            return dependency != dependent_name
+                                && affected_materialized_set.contains(dependency)
+                                && !already_layered.contains(dependency);
+                        });
+
+                        if (reads_pending_sibling)
+                            still_pending.push_back(dependent_name);
+                        else
+                            layer.push_back(dependent_name);
+                    }
+
+                    /// MATERIALIZED default expressions cannot form a cycle (a column can only
+                    /// reference columns declared before it), so a layer is always non-empty.
+                    if (layer.empty())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Cyclic dependency between the MATERIALIZED columns computed from {}",
+                            backQuote(command.column_name));
+
+                    already_layered.insert(layer.begin(), layer.end());
+                    recompute_layers.push_back(std::move(layer));
+                    pending = std::move(still_pending);
+                }
+
+                for (const auto & layer : recompute_layers)
+                {
+                    const NameSet layer_set(layer.begin(), layer.end());
+                    stages.emplace_back(context);
+
+                    for (const auto & dependent_column : columns_desc)
+                    {
+                        if (dependent_column.default_desc.kind == ColumnDefaultKind::Materialized
+                            && dependent_column.default_desc.expression
+                            && layer_set.contains(dependent_column.name))
+                        {
+                            ASTPtr dependent_expr = makeASTFunction("_CAST",
+                                dependent_column.default_desc.expression->clone(),
+                                make_intrusive<ASTLiteral>(dependent_column.type->getName()));
+
+                            /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
+                            /// because otherwise subcolumns are extracted before the source column is updated and we get
+                            /// old subcolumns values.
+                            replaceSubcolumnsToGetSubcolumnFunctionInQuery(dependent_expr, all_columns);
+
+                            stages.back().column_to_updated.emplace(dependent_column.name, dependent_expr);
+                        }
+                    }
+                }
+            }
+
+            /// The base column data is recomputed (along with the dependent MATERIALIZED columns
+            /// above), so any skip index, projection or statistics that reads any of the rewritten
+            /// columns must be rebuilt too — otherwise the unchanged derived files would be
+            /// hardlinked and keep stale values. Rebuilding needs the object's input columns in the
+            /// mutation output, so we register them as dependencies here, before the dependency
+            /// expansion below splits columns into changed/unchanged stages. This mirrors how
+            /// `MATERIALIZE INDEX` and `MATERIALIZE PROJECTION` feed their inputs into the stream;
+            /// just marking the object for rebuild (without its inputs) would leave the rebuild
+            /// reading a block that lacks the other required columns.
+            NameSet rewritten_columns{command.column_name};
+            for (const auto & dependent_name : affected_materialized)
+                rewritten_columns.insert(dependent_name);
+
+            auto rewritten_column_required_by = [&](const Names & required_columns) -> bool
+            {
+                return std::ranges::any_of(rewritten_columns, [&](const auto & rewritten_column)
+                {
+                    return column_required_by(rewritten_column, required_columns);
+                });
+            };
+
+            /// A skip index can read a rewritten column through a *subcolumn* (`INDEX idx t.k` while
+            /// materializing the parent Tuple column `t`, or a dynamic path of a JSON column). The
+            /// rebuild below registers the subcolumn name as a `SKIP_INDEX` dependency, but the
+            /// readonly recalculation stage materializes such a dependency as a plain identifier read
+            /// from the source part — it is never rewritten through `getSubcolumn` of the recomputed
+            /// parent (unlike the recompute paths for MATERIALIZED expressions above) — so the index
+            /// would be rebuilt from the *pre-rewrite* subcolumn values and stay stale. This is a
+            /// pre-existing limitation of the shared mutation machinery (`ALTER TABLE ... UPDATE` of
+            /// the parent column leaves such an index equally stale), so, following the fail-close
+            /// approach used below for subcolumn TTL bounds, refuse the command rather than silently
+            /// producing a stale index. (Projections cannot contain individual subcolumns, and
+            /// statistics exist only for whole columns, so only skip indices are affected.)
+            for (const auto & index : indices_desc)
+            {
+                for (const auto & required_column : index.expression->getRequiredColumns())
+                {
+                    auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                    if (resolved && resolved->isSubcolumn() && rewritten_columns.contains(resolved->getNameInStorage()))
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Refused to materialize column {} because the subcolumn {} of the recomputed column {} "
+                            "is read by skip index {}. Recomputing the column would require rebuilding the index "
+                            "from the subcolumn, which is not supported for subcolumn dependencies",
+                            backQuote(command.column_name), backQuote(required_column),
+                            backQuote(resolved->getNameInStorage()), backQuote(index.name));
+                }
+            }
+
+            for (const auto & index : indices_desc)
+            {
+                if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
+                    continue;
+
+                const auto & index_cols = index.expression->getRequiredColumns();
+                if (rewritten_column_required_by(index_cols))
+                {
+                    for (const auto & col : index_cols)
+                        dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+                    materialized_indices.insert(index.name);
+                }
+            }
+
+            for (const auto & projection : projections_desc)
+            {
+                if (!source.hasProjection(projection.name))
+                    continue;
+
+                const auto & projection_cols = projection.required_columns;
+                if (rewritten_column_required_by(projection_cols))
+                {
+                    for (const auto & col : projection_cols)
+                        dependencies.emplace(col, ColumnDependency::PROJECTION);
+                    materialized_projections.insert(projection.name);
+                }
+            }
+
+            for (const auto & column_desc : columns_desc)
+            {
+                if (column_desc.statistics.empty())
+                    continue;
+
+                if (rewritten_column_required_by(Names{column_desc.name}))
+                {
+                    dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
+                    materialized_statistics.insert(column_desc.name);
+                }
+            }
+
+            /// A TTL expression can also depend on a *subcolumn* of a rewritten column (e.g.
+            /// `TTL t.k + INTERVAL 1 DAY` while materializing the parent Tuple column `t`, or
+            /// `TTL j.d + INTERVAL 1 DAY` over a dynamic path of a JSON column `j`). The TTL
+            /// dependency is then recorded under the subcolumn name (`t.k` / `j.d`), which the
+            /// exact-name `getAllColumnDependencies` recalculation below does not pick up — and
+            /// unlike skip indices, projections and statistics (handled above via the subcolumn-aware
+            /// `column_required_by`), recomputing the part's `ttl_infos` for a subcolumn dependency
+            /// is not implemented. Following the same fail-close approach used for key columns,
+            /// refuse the command rather than leaving stale TTL bounds in the new part.
+            ///
+            /// Scan the TTL dependency names themselves and resolve each to its name in storage,
+            /// rather than enumerating the rewritten column's subcolumns: `IDataType::getSubcolumnNames`
+            /// does not list dynamic subcolumns (JSON / Dynamic paths), so enumerating them would miss
+            /// a `TTL j.d` dependency, while `tryGetColumnOrSubcolumn` does resolve a dynamic subcolumn
+            /// name to its parent.
+            auto refuse_if_ttl_depends_on_subcolumn = [&](const Names & ttl_columns)
+            {
+                for (const auto & ttl_column : ttl_columns)
+                {
+                    auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, ttl_column);
+                    if (resolved && resolved->isSubcolumn() && rewritten_columns.contains(resolved->getNameInStorage()))
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Refused to materialize column {} because a TTL expression depends on its subcolumn {}. "
+                            "Recomputing the column would require recalculating the TTL bounds, which is not "
+                            "supported for subcolumn dependencies",
+                            backQuote(command.column_name), backQuote(ttl_column));
+                }
+            };
+
+            if (metadata_snapshot->hasRowsTTL())
+                refuse_if_ttl_depends_on_subcolumn(metadata_snapshot->getRowsTTL().expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getRecompressionTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getColumnTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.second.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getMoveTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.expression_columns.getNames());
+
+            /// A TTL expression reading any rewritten column must be recalculated too, so the new
+            /// part's `ttl_infos` reflect the new values. This mirrors the UPDATE path, which obtains
+            /// these dependencies via `getAllColumnDependencies(updated_columns)` at the top of
+            /// `prepare`; MATERIALIZE COLUMN keeps its targets out of `updated_columns`, so without
+            /// this the new part's `ttl.txt` would be copied from the source part and keep stale
+            /// min/max bounds. For example, after `MODIFY COLUMN c2 ...; MATERIALIZE COLUMN c2` on a
+            /// table with `TTL c2 + INTERVAL 1 DAY`, TTL scheduling/deletes/moves would still use the
+            /// old bounds. The required TTL input columns are fed into the mutation stream as well,
+            /// just like `MATERIALIZE TTL` does for the UPDATE/DELETE case.
+            Names ttl_target_columns;
+            for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, rewritten_columns, has_dependency))
+            {
+                if (dependency.kind == ColumnDependency::TTL_EXPRESSION
+                    || dependency.kind == ColumnDependency::TTL_TARGET)
+                    dependencies.insert(dependency);
+
+                /// A `TTL_TARGET` dependency means the mutation re-evaluates a column TTL whose
+                /// expression reads a rewritten column, and `TTLTransform` rewrites (resets on
+                /// expiry) that TTL's *target* column — e.g. with `x ... TTL c + INTERVAL ...`,
+                /// `MATERIALIZE COLUMN c` resets `x`.
+                if (dependency.kind == ColumnDependency::TTL_TARGET)
+                    ttl_target_columns.push_back(dependency.column_name);
+            }
+
+            /// A TTL-driven reset must not touch a merge-semantic column either.
+            /// `checkTTLExpressions` forbids a column TTL only on sorting / partition key columns,
+            /// so a table with e.g. `sign Int8 TTL c + INTERVAL ...` is valid, and `MATERIALIZE
+            /// COLUMN c` would reset `sign` through the TTL side effect after the direct and
+            /// dependent-MATERIALIZED checks above have already passed. Follow the same fail-close
+            /// approach and refuse the command up front. (UNIQUE KEY columns need no such check:
+            /// TTL is not supported on tables with UNIQUE KEY at all.)
+            for (const auto & ttl_target_column : ttl_target_columns)
+            {
+                if (std::ranges::find(merge_key_columns, ttl_target_column) != merge_key_columns.end())
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because it drives a TTL that resets column {}, "
+                        "which is used as the sign, version or is_deleted column of the table engine, "
+                        "which the merge logic depends on. Resetting it could change the collapsing or "
+                        "replacing semantics of existing data",
+                        backQuote(command.column_name), backQuote(ttl_target_column));
+            }
+
+            /// A TTL-driven reset must not leave a stored MATERIALIZED column stale either. Any
+            /// `TTL_TARGET` dependency makes the mutation run the full TTL pass
+            /// (`ExecuteTTLType::NORMAL`), which re-evaluates *every* column TTL of the table and
+            /// resets expired targets. A stored MATERIALIZED column reading such a target (e.g.
+            /// `m MATERIALIZED y + 1` with `y ... TTL c + INTERVAL ...` while materializing `c`)
+            /// never enters `column_to_affected_materialized` — the target is neither updated nor
+            /// materialized — and the recompute stages run before `TTLTransform` anyway, so nothing
+            /// recalculates it from the reset value: the new part would hold fresh `y` and stale `m`
+            /// (and any skip index / projection / statistics over `m` would stay stale with it).
+            /// Following the same fail-close approach as above, refuse the command up front.
+            if (!ttl_target_columns.empty())
+            {
+                for (const auto & [ttl_column_name, ttl_entry] : metadata_snapshot->getColumnTTLs())
+                {
+                    for (const auto & [mat_column, mat_dependencies] : materialized_column_dependencies)
+                    {
+                        if (mat_dependencies.contains(ttl_column_name))
+                            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Refused to materialize column {} because it makes the mutation re-evaluate a TTL "
+                                "that can reset column {}, which the stored MATERIALIZED column {} is computed from. "
+                                "The reset would leave the stored value of {} stale",
+                                backQuote(command.column_name), backQuote(ttl_column_name),
+                                backQuote(mat_column), backQuote(mat_column));
+                    }
+                }
+            }
+
+            /// A TTL-target column rewritten as above lands in `changed_columns`, so the generic
+            /// derived-object scan near the end of `prepare` rebuilds a skip index that reads it.
+            /// That rebuild is only correct when the index reads the target as a *plain column*: its
+            /// recalculated value is written and the plain minmax / set / bloom-filter is derived from
+            /// it (verified for those types). It is NOT correct when the index reads the target through
+            /// a *computed expression* (`INDEX idx (y + 1)` or `INDEX idx (a + y)`) or through a
+            /// *subcolumn* (`INDEX idx x.k`): the mutation recomputes the index from a block in which the
+            /// target still holds its pre-reset value (it is read as an unchanged column from the source
+            /// part rather than the recalculated one), so the rebuilt index keeps stale values and a
+            /// query forced through it can be pruned incorrectly. This is a pre-existing limitation of the
+            /// shared mutation machinery — `ALTER TABLE ... UPDATE` of the same TTL-expression column
+            /// leaves such an index equally stale — so, following the fail-close approach used above for
+            /// subcolumn TTL bounds and the TTL WHERE condition, refuse the command rather than silently
+            /// producing a stale index. (A plain-column index over the same target is still allowed and
+            /// rebuilt; `MATERIALIZE INDEX` / `OPTIMIZE FINAL` rebuild the stale shapes correctly
+            /// afterwards, as they run over the already-reset part.)
+            if (!ttl_target_columns.empty())
+            {
+                for (const auto & index : indices_desc)
+                {
+                    for (const auto & required_column : index.expression->getRequiredColumns())
+                    {
+                        auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                        if (resolved && resolved->isSubcolumn()
+                            && std::ranges::find(ttl_target_columns, resolved->getNameInStorage()) != ttl_target_columns.end())
+                            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Refused to materialize column {} because it drives a TTL that resets column {}, whose "
+                                "subcolumn {} is read by skip index {}. Recomputing the column would require rebuilding "
+                                "the index from the subcolumn, which is not supported for subcolumn dependencies",
+                                backQuote(command.column_name), backQuote(resolved->getNameInStorage()),
+                                backQuote(required_column), backQuote(index.name));
+                    }
+
+                    /// A skip index reads the target through a computed expression when at least one of
+                    /// its top-level expressions is not a bare column identifier (aliases were already
+                    /// expanded when the index was parsed). A plain-column index — including a
+                    /// multi-column one like `(a, y)`, whose elements are all bare identifiers — is
+                    /// rebuilt correctly and must not be refused.
+                    bool index_has_computed_expression = false;
+                    if (index.expression_list_ast)
+                        for (const auto & element : index.expression_list_ast->children)
+                            if (!element->as<ASTIdentifier>())
+                            {
+                                index_has_computed_expression = true;
+                                break;
+                            }
+
+                    if (index_has_computed_expression)
+                    {
+                        for (const auto & required_column : index.expression->getRequiredColumns())
+                        {
+                            if (std::ranges::find(ttl_target_columns, required_column) != ttl_target_columns.end())
+                                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                    "Refused to materialize column {} because it drives a TTL that resets column {}, "
+                                    "which is read by skip index {} inside a computed expression. Recomputing the column "
+                                    "would leave the index stale, because the index expression is rebuilt from the "
+                                    "column's pre-reset value (the same limitation applies to UPDATE)",
+                                    backQuote(command.column_name), backQuote(required_column), backQuote(index.name));
+                        }
+                    }
+                }
+
+                /// A projection or a plain-column skip index that reads a TTL-reset target column is
+                /// marked for rebuild by the generic derived-object scan near the end of `prepare` (the
+                /// target lands in `changed_columns`). The rebuild reads the object's inputs from the
+                /// mutation output block, so every *other* input column — a sibling that is neither the
+                /// materialized column nor a TTL dependency — must be fed into the stream as an unchanged
+                /// column; otherwise, on a wide part, the rebuild fails with `NOT_FOUND_COLUMN_IN_BLOCK`
+                /// (projection) or `UNKNOWN_IDENTIFIER` (index). For example, `MATERIALIZE COLUMN c` with
+                /// `y ... TTL c + INTERVAL ...` and `PROJECTION p (SELECT a, y ORDER BY a)` or
+                /// `INDEX idx (a, y)` must feed the sibling `a`. The recursive `getAllColumnDependencies`
+                /// above already discovers these `PROJECTION` / `SKIP_INDEX` inputs through the
+                /// `TTL_TARGET` column, but they are filtered out just above, so register them here.
+                /// Only the *non-target* inputs need feeding — the target column itself is already
+                /// streamed via its `TTL_TARGET` dependency (verified: a plain single-column index over
+                /// the target rebuilds correctly with no sibling). This mirrors the direct-dependency
+                /// handling above that feeds an object's inputs when it reads the rewritten column
+                /// itself. Skip indices that read the target through a computed expression or a subcolumn
+                /// are refused just above and never reach the rebuild, so no sibling is fed for them.
+                auto feed_non_target_inputs = [&](const Names & required_columns, ColumnDependency::Kind kind)
+                {
+                    for (const auto & required_column : required_columns)
+                        if (std::ranges::find(ttl_target_columns, required_column) == ttl_target_columns.end())
+                            dependencies.emplace(required_column, kind);
+                };
+
+                auto reads_ttl_target = [&](const Names & required_columns)
+                {
+                    return std::ranges::any_of(required_columns, [&](const auto & required_column)
+                        { return std::ranges::find(ttl_target_columns, required_column) != ttl_target_columns.end(); });
+                };
+
+                for (const auto & index : indices_desc)
+                {
+                    if (reads_ttl_target(index.expression->getRequiredColumns()))
+                        feed_non_target_inputs(index.expression->getRequiredColumns(), ColumnDependency::SKIP_INDEX);
+                }
+
+                for (const auto & projection : projections_desc)
+                {
+                    if (!source.hasProjection(projection.name))
+                        continue;
+                    if (reads_ttl_target(projection.required_columns))
+                        feed_non_target_inputs(projection.required_columns, ColumnDependency::PROJECTION);
+                }
+            }
+
+            /// `TTL <expr> DELETE WHERE <cond>` (a rows-where TTL) and `TTL <expr> GROUP BY ... [WHERE
+            /// <cond>]` also read the columns of their WHERE condition, stored separately in
+            /// `where_expression_columns`. For a rows-where TTL, `getColumnDependencies` expands the
+            /// WHERE columns the same way as the TTL expression columns (`add_for_rows_ttl`): a match
+            /// forces every physical column into the mutation and re-evaluates the whole TTL
+            /// (`ExecuteTTLType::NORMAL`), which re-evaluates the WHERE condition too and rebuilds the
+            /// part's `rows_where_ttl_info`. So a column used only in a rows-where WHERE condition is
+            /// materialized safely and must not be refused.
+            ///
+            /// That expansion matches by exact name only, and does NOT cover:
+            /// - a *subcolumn* of a rewritten column used in a rows-where WHERE condition (`DELETE
+            ///   WHERE t.k = 1` while materializing the parent `t`) — the dependency is recorded under
+            ///   the subcolumn name, which never matches the parent;
+            /// - the WHERE condition of a group-by TTL, whose `where_expression_columns` the dependency
+            ///   expansion does not read at all.
+            /// Nothing recomputes those, so changing such a column can change which rows participate in
+            /// the TTL while the mutation copies the part's TTL infos with stale bounds. Making them
+            /// recompute would require changing the shared `getColumnDependencies` expansion, which also
+            /// drives UPDATE; so, following the same fail-close approach used for subcolumn TTL
+            /// dependencies above, refuse the command rather than leaving stale TTL bounds in the new part.
+            ///
+            /// The full-recalculation shortcut below must mirror `add_for_rows_ttl` in
+            /// `getColumnDependencies` exactly: the row / rows-where / group-by TTL *expression* columns
+            /// plus the rows-where WHERE columns, matched by exact name. A plain `TTL_TARGET` dependency
+            /// is NOT a sufficient signal: `getColumnDependencies` also emits `TTL_TARGET` for a *column*
+            /// TTL target (`x ... TTL c + INTERVAL ...`, which only resets that one target column and does
+            /// not re-evaluate any rows-where TTL). Keying off any `TTL_TARGET` let a column-TTL target
+            /// wrongly disable the refusal below and leave the part's `rows_where_ttl_info` stale.
+            /// Matching by exact name against `rewritten_columns` (rather than resolving subcolumns or
+            /// the transitive dependency closure) keeps this conservative: when in doubt it refuses
+            /// rather than risking a stale TTL bound.
+            auto rewritten_feeds_rows_ttl_expression = [&](const Names & expression_columns)
+            {
+                return std::ranges::any_of(expression_columns,
+                    [&](const auto & name) { return rewritten_columns.contains(name); });
+            };
+
+            bool full_ttl_recalc = false;
+            if (metadata_snapshot->hasRowsTTL())
+                full_ttl_recalc = rewritten_feeds_rows_ttl_expression(metadata_snapshot->getRowsTTL().expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
+                full_ttl_recalc = full_ttl_recalc
+                    || rewritten_feeds_rows_ttl_expression(ttl_entry.expression_columns.getNames())
+                    || rewritten_feeds_rows_ttl_expression(ttl_entry.where_expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
+                full_ttl_recalc = full_ttl_recalc || rewritten_feeds_rows_ttl_expression(ttl_entry.expression_columns.getNames());
+
+            if (!full_ttl_recalc)
+            {
+                auto refuse_if_rewritten_in_ttl_where = [&](const Names & where_columns)
+                {
+                    for (const auto & where_column : where_columns)
+                    {
+                        /// Resolve to the name in storage so both a full column (`c`) and a subcolumn
+                        /// (`t.k`, including a dynamic JSON path) of a rewritten column are caught.
+                        auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, where_column);
+                        if (resolved && rewritten_columns.contains(resolved->getNameInStorage()))
+                            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Refused to materialize column {} because the column {} is used in the WHERE "
+                                "condition of a TTL DELETE / GROUP BY expression. Recomputing it would require "
+                                "recalculating the part's rows-where TTL bounds, which is not supported for "
+                                "WHERE-condition dependencies",
+                                backQuote(command.column_name), backQuote(where_column));
+                    }
+                };
+
+                if (metadata_snapshot->hasRowsTTL())
+                    refuse_if_rewritten_in_ttl_where(metadata_snapshot->getRowsTTL().where_expression_columns.getNames());
+                for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
+                    refuse_if_rewritten_in_ttl_where(ttl_entry.where_expression_columns.getNames());
+                for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
+                    refuse_if_rewritten_in_ttl_where(ttl_entry.where_expression_columns.getNames());
+            }
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
