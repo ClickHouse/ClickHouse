@@ -559,15 +559,33 @@ inline bool isDeferredGeometryKindType(const IDataType & type)
     return typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner);
 }
 
-/// Whether `type` is no geometry at all: neither a named geometry kind (a WKB `String` included,
-/// see `geoKindNameOfType`), nor one of the unnamed shapes `callOnGeometryDataType` resolves
-/// structurally, nor a `Dynamic`/`Variant` whose kind is only known per row.
+/// Whether `type` carries no geometry `extractBboxFromFieldValue` could read: neither a named
+/// geometry kind (a WKB `String` included, see `geoKindNameOfType`), nor one of the unnamed shapes
+/// `callOnGeometryDataType` resolves structurally, nor a `Dynamic`/`Variant` whose kind is only
+/// known per row.
+///
+/// Checked at EVERY `Array` level, not just the outermost. `extractBboxFromFieldValue` recurses into
+/// a generic `Array` and reads whatever each element turns out to be, so `Array(String)` is a
+/// perfectly good carrier of WKB blobs -- and a corrupt blob nested in one must still fail the
+/// conjunct closed, exactly as a top-level corrupt blob does. Answering `true` for the outer `Array`
+/// alone would skip the whole recursion and downgrade that to `NoInfo`, letting a sibling conjunct
+/// prune the granule and hide the parse failure. Only a type that is no geometry carrier at any
+/// depth -- `Array(Int32)`, say -- may be skipped.
 inline bool isNonGeometryType(const IDataType & type)
 {
-    const IDataType & inner = unwrapGeoKindWrappers(type);
-    if (typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner))
-        return false;
-    return geoKindNameOfType(inner).empty() && structuralGeoKindName(inner).empty();
+    const IDataType * inner = &unwrapGeoKindWrappers(type);
+    while (true)
+    {
+        if (typeid_cast<const DataTypeVariant *>(inner) || typeid_cast<const DataTypeDynamic *>(inner))
+            return false;
+        if (!geoKindNameOfType(*inner).empty() || !structuralGeoKindName(*inner).empty())
+            return false;
+
+        const auto * array_type = typeid_cast<const DataTypeArray *>(inner);
+        if (!array_type)
+            return true;
+        inner = &unwrapGeoKindWrappers(*array_type->getNestedType());
+    }
 }
 
 /// Whether `type` is a bare, unnamed two-`Float64` `Tuple` -- the shape `callOnGeometryDataType`
