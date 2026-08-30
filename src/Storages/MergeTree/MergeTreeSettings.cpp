@@ -522,6 +522,11 @@ no effect on disks with unlimited space (such as object storage).
 Merges initiated by [OPTIMIZE](/reference/statements/optimize) with `FINAL` or
 with an explicit `PARTITION` ignore this setting (only the free disk space is
 taken into account).
+
+On `ReplicatedMergeTree` that exemption travels in the replication log entry,
+and the entry carries it only when the setting is non-zero on the replica that
+queues it. An `OPTIMIZE` queued while the setting was 0 is therefore executed
+under the headroom, even if the setting is raised before the merge runs.
 )", 0) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, R"(
 How many tasks of merging and mutating parts are allowed simultaneously in
