@@ -15,6 +15,9 @@ SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+-- The pattern below matches every row, so the bypass would skip reading the posting lists -
+-- which is exactly the reader this test exists to guard. Force the read.
+SET use_text_index_like_pattern_bypass = 0;
 
 DROP TABLE IF EXISTS t_text_index_like_large;
 
