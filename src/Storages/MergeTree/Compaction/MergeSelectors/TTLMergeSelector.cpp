@@ -3,9 +3,19 @@
 namespace DB
 {
 
-static bool canIncludeToRange(size_t part_size, size_t part_rows, time_t part_ttl, time_t current_time, size_t usable_memory, size_t usable_rows)
+/// Shared by center selection and range expansion. Both have to apply it: gating only the
+/// center would still let a merge started on an old-enough part pull in a neighbour whose
+/// rows expired a moment ago and delete those too, which is not what the setting promises.
+static bool isOldEnoughForTTLMerge(time_t part_ttl, time_t current_time, time_t min_ttl_age)
 {
-    return (0 < part_ttl && part_ttl <= current_time) && usable_memory >= part_size && usable_rows >= part_rows;
+    return !min_ttl_age || current_time - part_ttl >= min_ttl_age;
+}
+
+static bool canIncludeToRange(size_t part_size, size_t part_rows, time_t part_ttl, time_t current_time, time_t min_ttl_age, size_t usable_memory, size_t usable_rows)
+{
+    return (0 < part_ttl && part_ttl <= current_time)
+        && isOldEnoughForTTLMerge(part_ttl, current_time, min_ttl_age)
+        && usable_memory >= part_size && usable_rows >= part_rows;
 }
 
 class ITTLMergeSelector::MergeRangesConstructor
@@ -119,7 +129,7 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
             /// reproduces the merge_with_ttl_timeout cadence without any in-memory
             /// state: after a TTL merge the resulting part only holds rows with a
             /// later TTL, so its ttl moves forward by at least the same interval.
-            if (min_ttl_age && current_time - ttl < min_ttl_age)
+            if (!isOldEnoughForTTLMerge(ttl, current_time, min_ttl_age))
                 continue;
 
             centers.emplace_back(range, part, ttl);
@@ -151,7 +161,7 @@ PartsIterator ITTLMergeSelector::findLeftRangeBorder(
             break;
 
         auto ttl = getTTLForPart(*next_to_check);
-        if (!canIncludeToRange(next_to_check->size, next_to_check->rows, ttl, current_time, usable_memory, usable_rows))
+        if (!canIncludeToRange(next_to_check->size, next_to_check->rows, ttl, current_time, min_ttl_age, usable_memory, usable_rows))
             break;
 
         usable_memory -= next_to_check->size;
@@ -184,7 +194,7 @@ PartsIterator ITTLMergeSelector::findRightRangeBorder(
             break;
 
         auto ttl = getTTLForPart(*right);
-        if (!canIncludeToRange(right->size, right->rows, ttl, current_time, usable_memory, usable_rows))
+        if (!canIncludeToRange(right->size, right->rows, ttl, current_time, min_ttl_age, usable_memory, usable_rows))
             break;
 
         usable_memory -= right->size;
