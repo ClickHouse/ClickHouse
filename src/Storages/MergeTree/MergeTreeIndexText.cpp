@@ -534,7 +534,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto & settings = condition_text.getContext()->getSettingsRef();
 
     /// Dictionary scan is complete; bypass pattern queries that cannot be selective before reading postings.
-    analyzer->analyzeCardinalitiesAndBypassPatterns(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part_info.getRowCount());
+    analyzer->analyzeCardinalitiesAndBypassPatterns(state.part_info.getRowCount());
 
     if (!state.skip_postings_deserialization)
         analyzePostings(postings_serialization, *postings_stream, state);

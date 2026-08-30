@@ -85,7 +85,7 @@ public:
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
     /// Bypasses pattern queries whose scan-discovered token union is not selective, before any
     /// posting lists are read for them.
-    void analyzeCardinalitiesAndBypassPatterns(double selectivity_threshold, size_t total_rows);
+    void analyzeCardinalitiesAndBypassPatterns(size_t total_rows);
     size_t memoryUsageBytes() const;
 
 private:
