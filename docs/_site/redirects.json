@@ -1,5 +1,21 @@
 [
   {
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data"
+  },
+  {
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data/index"
+  },
+  {
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion"
+  },
+  {
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion/index"
+  },
+  {
     "destination": "/products/cloud/features/backups/overview",
     "source": "/products/cloud/features/backups/faq"
   },
@@ -1404,7 +1420,7 @@
     "source": "/cloud/connect"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/cloud/data-ingestion"
   },
   {
@@ -4380,7 +4396,7 @@
     "source": "/integrations/data-ingestion"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/integrations/data-ingestion-overview"
   },
   {
@@ -4918,6 +4934,10 @@
   {
     "destination": "/integrations/connectors/data-visualization/metabase-and-clickhouse",
     "source": "/integrations/metabase"
+  },
+  {
+    "destination": "/integrations/connectors/data-integrations/integrations/microsoft-fabric",
+    "source": "/integrations/microsoft-fabric"
   },
   {
     "destination": "/integrations/connectors/data-integrations/integrations/middleware",
@@ -14444,7 +14464,7 @@
     "source": "/jp/sql-reference/statements/use"
   },
   {
-    "destination": "/ja/reference/statements/watch",
+    "destination": "/ja/reference/statements/create/view",
     "source": "/jp/sql-reference/statements/watch"
   },
   {
@@ -25204,7 +25224,7 @@
     "source": "/ko/sql-reference/statements/use"
   },
   {
-    "destination": "/ko/reference/statements/watch",
+    "destination": "/ko/reference/statements/create/view",
     "source": "/ko/sql-reference/statements/watch"
   },
   {
@@ -37320,7 +37340,7 @@
     "source": "/ru/sql-reference/statements/use"
   },
   {
-    "destination": "/ru/reference/statements/watch",
+    "destination": "/ru/reference/statements/create/view",
     "source": "/ru/sql-reference/statements/watch"
   },
   {
@@ -40616,7 +40636,7 @@
     "source": "/sql-reference/statements/use"
   },
   {
-    "destination": "/reference/statements/watch",
+    "destination": "/reference/statements/create/view",
     "source": "/sql-reference/statements/watch"
   },
   {
@@ -41840,7 +41860,7 @@
     "source": "/use-cases/observability/clickstack/getting-started/telemetrygen"
   },
   {
-    "destination": "/clickstack/ingesting-data",
+    "destination": "/clickstack/ingesting-data/overview",
     "source": "/use-cases/observability/clickstack/ingesting-data"
   },
   {
@@ -50892,7 +50912,7 @@
     "source": "/zh/sql-reference/statements/use"
   },
   {
-    "destination": "/zh/reference/statements/watch",
+    "destination": "/zh/reference/statements/create/view",
     "source": "/zh/sql-reference/statements/watch"
   },
   {
@@ -54498,5 +54518,77 @@
   {
     "destination": "/pt-BR/reference/functions/table-functions/prometheusQueryRange",
     "source": "/pt-BR/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/reference/statements/create/view",
+    "source": "/reference/statements/watch"
+  },
+  {
+    "destination": "/ar/reference/statements/create/view",
+    "source": "/ar/reference/statements/watch"
+  },
+  {
+    "destination": "/es/reference/statements/create/view",
+    "source": "/es/reference/statements/watch"
+  },
+  {
+    "destination": "/fr/reference/statements/create/view",
+    "source": "/fr/reference/statements/watch"
+  },
+  {
+    "destination": "/ja/reference/statements/create/view",
+    "source": "/ja/reference/statements/watch"
+  },
+  {
+    "destination": "/ko/reference/statements/create/view",
+    "source": "/ko/reference/statements/watch"
+  },
+  {
+    "destination": "/pt-BR/reference/statements/create/view",
+    "source": "/pt-BR/reference/statements/watch"
+  },
+  {
+    "destination": "/ru/reference/statements/create/view",
+    "source": "/ru/reference/statements/watch"
+  },
+  {
+    "destination": "/zh/reference/statements/create/view",
+    "source": "/zh/reference/statements/watch"
+  },
+  {
+    "destination": "/reference/settings/session-settings",
+    "source": "/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ar/reference/settings/session-settings",
+    "source": "/ar/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/es/reference/settings/session-settings",
+    "source": "/es/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/fr/reference/settings/session-settings",
+    "source": "/fr/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ja/reference/settings/session-settings",
+    "source": "/ja/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ko/reference/settings/session-settings",
+    "source": "/ko/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/pt-BR/reference/settings/session-settings",
+    "source": "/pt-BR/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ru/reference/settings/session-settings",
+    "source": "/ru/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/zh/reference/settings/session-settings",
+    "source": "/zh/reference/settings/session-settings/window-view"
   }
 ]
