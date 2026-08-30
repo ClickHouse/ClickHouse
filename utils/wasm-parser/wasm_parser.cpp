@@ -9,20 +9,59 @@
 ///   int       ch_check(const char *, uint32_t) - parse; 1 = ok, 0 = syntax error
 ///   int       ch_format(const char *, uint32_t, int one_line)
 ///                                              - parse, then format; 1 = ok, 0 = parse error
-///   const char * ch_result_data()              - result (formatted query, or the error message)
+///   int       ch_parse(const char *, uint32_t) - parse; the result is always a JSON document
+///                                                with the AST, the highlights, and the error
+///   int       ch_format_json(const char *, uint32_t, int one_line)
+///                                              - take AST JSON (the "ast" object of `ch_parse`,
+///                                                or `parseQueryToJSON` on a server) and format
+///                                                it back into SQL; 1 = ok, 0 = error
+///   const char * ch_result_data()              - result (formatted query, JSON document, or the
+///                                                error message)
 ///   uint32_t  ch_result_size()
 ///
-/// `ch_format` is absent from a `--no-formatting` build, which only checks that a query parses.
+/// `ch_format` and `ch_format_json` are absent from a `--no-formatting` build, and `ch_parse`
+/// then reports no "ast" (see below).
+///
+/// The `ch_parse` result is UTF-8 JSON, in one of two shapes. For a query that parses:
+///
+///   {"ast": {...}, "highlights": [{"begin": 0, "end": 6, "type": "keyword"}, ...]}
+///
+/// where "ast" is the same JSON the SQL function `parseQueryToJSON` produces (round-trippable
+/// through `ch_format_json` and the server's `formatQueryFromJSON`). A query can parse and still
+/// have no JSON representation - `GRANT`, or `INSERT` with inline data - and then "ast" is null
+/// and "ast_error" says why. A `--no-formatting` build omits "ast" entirely, because the strings
+/// such a build stores in the tree (`CAST` types, for one) are the user's spelling rather than
+/// the canonical one. For a query that does not parse:
+///
+///   {"error": {"message": "...", "begin": 7, "end": 8, "line": 1, "column": 8,
+///              "expected": ["..."]}, "highlights": [...]}
+///
+/// "begin"/"end" are 0-based byte offsets of the offending token, "line"/"column" are 1-based
+/// (column in bytes), all omitted when unknown (an error reported by throwing has no token);
+/// "expected" lists what the parser would have accepted there, omitted when there is nothing to
+/// say. "highlights" covers what parsed before the error, so an editor can keep coloring while
+/// the user types. All highlight offsets are byte offsets, end-exclusive; the types are the
+/// visible names of `enum Highlight` (`keyword`, `identifier`, `function`, `alias`,
+/// `substitution`, `number`, `string`, `string_escape`, `string_metacharacter`).
 
+#include <Formats/FormatSettings.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+#include <Parsers/ASTToJSON.h>
+#endif
 
 #include <wasm_sjlj.h>
 
 #include <cstdint>
 #include <string>
 #include <new>
+#include <utility>
 
 namespace
 {
@@ -36,18 +75,78 @@ std::string & result()
 constexpr size_t MAX_QUERY_SIZE = 1u << 20;
 constexpr size_t MAX_PARSER_DEPTH = 1000;
 constexpr size_t MAX_PARSER_BACKTRACKS = 1000000;
+/// What the server defaults `max_ast_elements` to; bounds `ch_format_json` deserialization.
+constexpr size_t MAX_AST_ELEMENTS = 50000;
 
 /// `tryParseQuery` reports a syntax error by returning null and filling in the message, and
 /// nothing in `src/Parsers` catches. A few checks in the parser still report an invalid query by
 /// throwing, and this build has no unwinding, so `wasm_runtime.cpp` turns such a throw into a jump
 /// back to the boundary in `wasm_sjlj.c` - see the comment on `__cxa_throw` there.
-DB::ASTPtr parse(const char * query, uint32_t size, std::string & error)
+DB::ASTPtr parse(const char * query, uint32_t size, std::string & error, DB::ParserDiagnostics * diagnostics = nullptr)
 {
     const char * end = query + size;
     DB::ParserQuery parser(end);
     return DB::tryParseQuery(
         parser, query, end, error, /*hilite=*/false, "query", /*allow_multi_statements=*/false,
-        MAX_QUERY_SIZE, MAX_PARSER_DEPTH, MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/true);
+        MAX_QUERY_SIZE, MAX_PARSER_DEPTH, MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/true, diagnostics);
+}
+
+void writeJSONText(std::string_view text, DB::WriteBuffer & out)
+{
+    static const DB::FormatSettings format_settings;
+    DB::writeJSONString(text, out, format_settings);
+}
+
+/// The publicly visible highlight names. `string_like` and `string_regexp` do not survive
+/// `expandHighlights`, and `none` marks nothing; all three answer null and are not emitted.
+const char * highlightName(DB::Highlight type)
+{
+    if (type == DB::Highlight::none)
+        return nullptr;
+
+    switch (type)
+    {
+#define M(NAME) case DB::Highlight::NAME: return #NAME;
+        APPLY_FOR_HIGHLIGHTS(M)
+#undef M
+        default:
+            return nullptr;
+    }
+}
+
+/// Both 1-based; the column is in bytes, as in the "(line N, col M)" of server error messages.
+std::pair<size_t, size_t> lineAndColumn(const char * begin, const char * pos)
+{
+    size_t line = 1;
+    const char * line_begin = begin;
+    for (const char * c = begin; c < pos; ++c)
+    {
+        if (*c == '\n')
+        {
+            ++line;
+            line_begin = c + 1;
+        }
+    }
+    return {line, static_cast<size_t>(pos - line_begin) + 1};
+}
+
+void writeHighlights(const DB::ParserDiagnostics & diagnostics, const char * query_begin, DB::WriteBuffer & out)
+{
+    out << "\"highlights\":[";
+    bool first = true;
+    for (const auto & range : DB::expandHighlights(diagnostics.expected.highlights))
+    {
+        const char * name = highlightName(range.highlight);
+        if (!name)
+            continue;
+        if (!first)
+            out << ',';
+        first = false;
+        out << "{\"begin\":" << static_cast<UInt64>(range.begin - query_begin)
+            << ",\"end\":" << static_cast<UInt64>(range.end - query_begin)
+            << ",\"type\":\"" << name << "\"}";
+    }
+    out << ']';
 }
 
 /// What a `chParserProtectedCall` body is handed. `one_line` is only read by `formatBody`.
@@ -95,6 +194,64 @@ extern "C" int formatBody(void * argument)
     result() = request.one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
     return 1;
 }
+
+extern "C" int formatJSONBody(void * argument)
+{
+    const auto & request = *static_cast<const Request *>(argument);
+
+    /// `createFromJSON` bounds the AST it builds, but `Poco::JSON::Parser` materializes the whole
+    /// document first, so the raw text is bounded up front, as `formatQueryFromJSON` does on the
+    /// server with `max_query_size`.
+    if (request.size > MAX_QUERY_SIZE)
+    {
+        result() = "Max query size exceeded";
+        return 0;
+    }
+
+    /// Deserialization throws for anything wrong with the document - malformed JSON, an unknown
+    /// node type, a field of the wrong shape, a tree past the depth or element limits - and the
+    /// boundary turns that into the error message.
+    DB::ASTPtr ast = DB::IAST::createFromJSON(std::string(request.query, request.size), MAX_PARSER_DEPTH, MAX_AST_ELEMENTS);
+
+    result() = request.one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
+    return 1;
+}
+#endif
+
+/// What `ch_parse` hands below the boundary. The outputs live in the caller's frame, above the
+/// boundary, so whatever was filled in before a throw - the highlights above all - survives it.
+struct ParseRequest
+{
+    const char * query;
+    uint32_t size;
+    DB::ParserDiagnostics * diagnostics;
+    std::string * error;
+    DB::ASTPtr * ast;
+};
+
+extern "C" int parseBody(void * argument)
+{
+    const auto & request = *static_cast<const ParseRequest *>(argument);
+    *request.ast = parse(request.query, request.size, *request.error, request.diagnostics);
+    return *request.ast ? 1 : 0;
+}
+
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+struct SerializeRequest
+{
+    const DB::IAST * ast;
+    std::string * json;
+};
+
+/// Its own trip below the boundary: `writeJSON` is fail-closed and throws for a node with no
+/// faithful JSON representation (access management, `INSERT` with inline data), and that must
+/// come back as a null "ast" with a reason, not as a failure of the whole call.
+extern "C" int serializeBody(void * argument)
+{
+    const auto & request = *static_cast<const SerializeRequest *>(argument);
+    *request.json = DB::serializeASTToJSON(*request.ast);
+    return 1;
+}
 #endif
 
 /// Turns the boundary's `CH_PARSER_THREW` into the same answer a syntax error gets, with the
@@ -121,15 +278,16 @@ extern "C"
   */
 enum : uint32_t
 {
-    CH_FEATURE_FORMAT = 1,  /// `ch_format` is exported
-    CH_FEATURE_DCL = 2,     /// `CREATE USER`, `GRANT` and the rest of access management parse
+    CH_FEATURE_FORMAT = 1,    /// `ch_format` is exported
+    CH_FEATURE_DCL = 2,       /// `CREATE USER`, `GRANT` and the rest of access management parse
+    CH_FEATURE_AST_JSON = 4,  /// `ch_parse` reports an "ast", and `ch_format_json` is exported
 };
 
 uint32_t ch_features()
 {
     uint32_t features = 0;
 #if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
-    features |= CH_FEATURE_FORMAT;
+    features |= CH_FEATURE_FORMAT | CH_FEATURE_AST_JSON;
 #endif
 #if !defined(CLICKHOUSE_PARSER_NO_DCL)
     features |= CH_FEATURE_DCL;
@@ -159,7 +317,87 @@ int ch_format(const char * query, uint32_t size, int one_line)
     Request request{query, size, one_line};
     return finish(chParserProtectedCall(formatBody, &request));
 }
+
+int ch_format_json(const char * json, uint32_t size, int one_line)
+{
+    Request request{json, size, one_line};
+    return finish(chParserProtectedCall(formatJSONBody, &request));
+}
 #endif
+
+int ch_parse(const char * query, uint32_t size)
+{
+    DB::ParserDiagnostics diagnostics;
+    diagnostics.expected.enable_highlighting = true;
+
+    std::string error;
+    DB::ASTPtr ast;
+    ParseRequest request{query, size, &diagnostics, &error, &ast};
+    const int parsed = chParserProtectedCall(parseBody, &request);
+
+    /// The envelope is assembled above the boundary, from parts that are all in hand by now.
+    DB::WriteBufferFromOwnString out;
+    out << '{';
+
+    if (parsed == 1)
+    {
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+        out << "\"ast\":";
+
+        std::string ast_json;
+        SerializeRequest serialize_request{ast.get(), &ast_json};
+        if (chParserProtectedCall(serializeBody, &serialize_request) == 1)
+        {
+            out << ast_json;
+        }
+        else
+        {
+            out << "null,\"ast_error\":";
+            writeJSONText(chParserRecoveryMessage(), out);
+        }
+        out << ',';
+#endif
+    }
+    else
+    {
+        out << "\"error\":{\"message\":";
+        writeJSONText(parsed == CH_PARSER_THREW ? std::string_view(chParserRecoveryMessage()) : std::string_view(error), out);
+
+        /// A failure that came back through the boundary set no error token; the rightmost
+        /// position the parser reached is the best that is known about where it happened.
+        const char * error_begin = parsed == 0 ? diagnostics.error_token.begin : diagnostics.expected.max_parsed_pos;
+        if (error_begin)
+        {
+            out << ",\"begin\":" << static_cast<UInt64>(error_begin - query);
+            if (parsed == 0)
+                out << ",\"end\":" << static_cast<UInt64>(diagnostics.error_token.end - query);
+            const auto [line, column] = lineAndColumn(query, error_begin);
+            out << ",\"line\":" << static_cast<UInt64>(line) << ",\"column\":" << static_cast<UInt64>(column);
+        }
+
+        if (!diagnostics.expected.variants.empty())
+        {
+            out << ",\"expected\":[";
+            bool first = true;
+            for (const char * variant : diagnostics.expected.variants)
+            {
+                if (!first)
+                    out << ',';
+                first = false;
+                writeJSONText(variant, out);
+            }
+            out << ']';
+        }
+
+        out << "},";
+    }
+
+    writeHighlights(diagnostics, query, out);
+    out << '}';
+
+    result() = out.str();
+    return parsed == 1;
+}
 
 const char * ch_result_data()
 {

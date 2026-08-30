@@ -264,7 +264,8 @@ ASTPtr tryParseQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool skip_insignificant)
+    bool skip_insignificant,
+    ParserDiagnostics * diagnostics)
 {
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
@@ -289,6 +290,9 @@ ASTPtr tryParseQuery(
         if (!query_description.empty())
             out_error_message += " (" + query_description + ")";
 
+        if (diagnostics)
+            diagnostics->error_token = *token_iterator;
+
         // Advance the position, so that we can use this parser for stream parsing
         // even in presence of such queries.
         _out_query_end = token_iterator->begin;
@@ -312,7 +316,10 @@ ASTPtr tryParseQuery(
         return std::max(iter->end, min_end);
     };
 
-    Expected expected;
+    /// The parse reports into the caller's `Expected` when one is supplied (it may have
+    /// highlighting enabled, and it carries the expected-token variants back to the caller).
+    Expected local_expected;
+    Expected & expected = diagnostics ? diagnostics->expected : local_expected;
 
     /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
       * But there are certain cases when invalid tokens are permitted:
@@ -333,6 +340,8 @@ ASTPtr tryParseQuery(
                 // Capture max() BEFORE current_statement_end, which walks fresh tokens
                 // and would otherwise inflate the max-visited position.
                 _out_query_end = token_iterator.max().end;
+                if (diagnostics)
+                    diagnostics->error_token = *lookahead;
                 out_error_message = getLexicalErrorMessage(
                     query_begin, current_statement_end(lookahead->end), *lookahead, hilite, query_description);
                 return nullptr;
@@ -364,6 +373,8 @@ ASTPtr tryParseQuery(
     /// Lexical error
     if (last_token.isError())
     {
+        if (diagnostics)
+            diagnostics->error_token = last_token;
         out_error_message = getLexicalErrorMessage(
             query_begin, current_statement_end(last_token.end), last_token, hilite, query_description);
         return nullptr;
@@ -392,6 +403,8 @@ ASTPtr tryParseQuery(
 
         if (!scoped_parens.empty())
         {
+            if (diagnostics)
+                diagnostics->error_token = scoped_parens[0];
             out_error_message = getUnmatchedParenthesesErrorMessage(
                 query_begin, statement_end, scoped_parens, hilite, query_description);
             return nullptr;
@@ -406,6 +419,8 @@ ASTPtr tryParseQuery(
     if (!parse_res)
     {
         /// Generic parse error.
+        if (diagnostics)
+            diagnostics->error_token = last_token;
         out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
         return nullptr;
@@ -415,6 +430,8 @@ ASTPtr tryParseQuery(
     if (!token_iterator->isEnd()
         && token_iterator->type != TokenType::Semicolon)
     {
+        if (diagnostics)
+            diagnostics->error_token = last_token;
         expected.add(last_token.begin, "end of query");
         out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
@@ -432,6 +449,8 @@ ASTPtr tryParseQuery(
     if (!allow_multi_statements
         && !token_iterator->isEnd())
     {
+        if (diagnostics)
+            diagnostics->error_token = last_token;
         out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
             last_token, {}, hilite,
             (query_description.empty() ? std::string() : std::string(". "))
