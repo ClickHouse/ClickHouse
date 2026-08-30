@@ -8,9 +8,12 @@ doc_type: 'reference'
 
 يلغي إسقاط الجدول.
 
-اعتبارًا من إصدار ClickHouse 23.3، يمكن تنفيذ UNDROP لجدول في قاعدة بيانات Atomic
-خلال `database_atomic_delay_before_drop_table_sec` (8 دقائق افتراضيًا) بعد إصدار عبارة DROP TABLE. تُدرَج الجداول التي أُسقِطت في
-جدول نظام يُسمى `system.dropped_tables`.
+اعتبارًا من إصدار ClickHouse 23.3، يمكنك استعادة جدول في قاعدة بيانات `Atomic` باستخدام `UNDROP TABLE`
+خلال الفترة التي يحددها [`database_atomic_delay_before_drop_table_sec`](/ar/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) (8 دقائق افتراضيًا) بعد تنفيذ `DROP TABLE`.
+تُدرَج الجداول المُسقَطة من قواعد بيانات `Atomic` في `system.dropped_tables`.
+
+بالنسبة إلى قاعدة بيانات `Shared` في ClickHouse Cloud، تتحكم [`database_shared_drop_table_delay_seconds`](/ar/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds) في هذه الفترة بدلًا من ذلك، وتبلغ 8 ساعات افتراضيًا.
+لا تُدرَج الجداول المُسقَطة من قواعد بيانات `Shared` في `system.dropped_tables`.
 
 إذا كان لديك عرض مادي من دون عبارة `TO` مرتبط بالجدول المُسقَط، فستحتاج أيضًا إلى تنفيذ UNDROP للجدول الداخلي لهذا العرض.
 

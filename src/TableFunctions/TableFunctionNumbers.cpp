@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/System/StorageSystemNumbers.h>
@@ -104,7 +105,9 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
 template <bool multithreaded>
 UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
+    const auto constant = evaluateConstantExpressionAsColumn(argument, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
@@ -134,8 +137,25 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
             },
             .returned_value = {"A table with a single `number` column of type `UInt64`.", {"UInt64"}},
             .examples = {
-                {"The integers from 0 to 9, in an unspecified order", "SELECT * FROM numbers_mt(10) ORDER BY number;", ""},
-                {"Count rows using multiple threads", "SELECT count() FROM numbers_mt(1000000000);", ""},
+                {"The integers from 0 to 9, in an unspecified order", "SELECT * FROM numbers_mt(10) ORDER BY number;", R"(
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+)"},
+                {"Count rows using multiple threads", "SELECT count() FROM numbers_mt(1000000000);", R"(
+┌────count()─┐
+│ 1000000000 │
+└────────────┘
+)"},
                 {"Limit an infinite stream", "SELECT * FROM numbers_mt() LIMIT 10;", ""},
             },
             .introduced_in = {1, 1},

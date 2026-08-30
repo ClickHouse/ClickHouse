@@ -14,6 +14,18 @@ from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import Shell
 
+# `out` and `err` are API- or user-controlled and unbounded, while the fields identifying the
+# failure (command, exit code, attempt count) are short. Cap the unbounded ones so a caller
+# that bounds the whole message, or a log reader, still sees the cause.
+_GH_DIAGNOSTIC_FIELD_LIMIT = 300
+
+
+def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
+    """`text` capped at `limit`, with an explicit marker so a reader can tell it was cut."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars elided)"
+
 
 class GH:
 
@@ -208,7 +220,7 @@ class GH:
         return res
 
     @classmethod
-    def get_output_with_retries(cls, command, verbose=False):
+    def get_output_with_retries(cls, command, verbose=False, strict=False):
         """Run a read-style ``gh`` command and return its stdout.
 
         Mirrors :meth:`do_command_with_retries` but returns the captured
@@ -220,10 +232,17 @@ class GH:
 
         Returns the trimmed stdout on success; an empty string if the
         command keeps failing after ``MAX_RETRIES_GH`` attempts.
+        ``strict=True`` raises instead, so a caller can report why the
+        read failed rather than be handed an empty string that is
+        indistinguishable from an empty result.
         """
         retry_count = 0
+        # Counted where the subprocess is invoked, so a non-retryable class that breaks out
+        # of the loop still reports the attempt it made. retry_count counts retries taken.
+        attempts = 0
         out, err, ret_code = "", "", -1
         while retry_count < Settings.MAX_RETRIES_GH:
+            attempts += 1
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
             if ret_code == 0:
                 return out
@@ -241,9 +260,15 @@ class GH:
             delay = min(2 ** (retry_count + 1), 60)
             time.sleep(delay)
 
-        print(
-            f"ERROR: Failed to execute gh command [{command}] out:[{out}] err:[{err}] after [{retry_count}] attempts"
+        # Field order matters: a caller may bound this message (it can reach a public report
+        # page), so the fields naming the cause come before the API-controlled output.
+        message = (
+            f"Failed to execute gh command [{command}] exit_code:[{ret_code}] "
+            f"after [{attempts}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
         )
+        print(f"ERROR: {message}")
+        if strict:
+            raise RuntimeError(message)
         return ""
 
     @classmethod
@@ -761,6 +786,86 @@ class GH:
         return res
 
     @classmethod
+    def _submit_team_review_requests(cls, team_slugs, pr, repo):
+        assert team_slugs
+
+        payload = {"reviewers": [], "team_reviewers": team_slugs}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as temp_file:
+            json.dump(payload, temp_file)
+            temp_file_path = temp_file.name
+
+        try:
+            cmd = (
+                "gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+                f"--input {shlex.quote(temp_file_path)}"
+            )
+            if not cls.do_command_with_retries(cmd):
+                raise RuntimeError(
+                    f"Failed to request team reviews for pull request [{pr}]"
+                )
+        finally:
+            os.unlink(temp_file_path)
+
+    @classmethod
+    def _get_requested_team_reviews(cls, pr, repo):
+        cmd = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+            "--jq '[.teams[].slug]'"
+        )
+        output = cls.get_output_with_retries(cmd)
+        if not output:
+            raise RuntimeError(
+                f"Failed to retrieve team review requests for pull request [{pr}]"
+            )
+
+        try:
+            requested_teams = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Failed to parse team review requests for pull request [{pr}]: {e}"
+            ) from e
+        if not isinstance(requested_teams, list) or not all(
+            isinstance(team, str) for team in requested_teams
+        ):
+            raise RuntimeError(
+                f"Unexpected team review request response for pull request [{pr}]"
+            )
+
+        return set(requested_teams)
+
+    @classmethod
+    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
+        requested = set(team_slugs)
+        if not requested:
+            return True
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        teams_to_request = sorted(
+            requested - cls._get_requested_team_reviews(pr, repo)
+        )
+        if teams_to_request:
+            cls._submit_team_review_requests(teams_to_request, pr, repo)
+            missing_teams = set(teams_to_request) - cls._get_requested_team_reviews(
+                pr, repo
+            )
+            if missing_teams:
+                raise RuntimeError(
+                    "Failed to verify team review requests for pull request "
+                    f"[{pr}], missing teams [{', '.join(sorted(missing_teams))}]"
+                )
+
+        return True
+
+    @classmethod
     def get_pr_contributors(cls, pr=None, repo=None):
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -963,19 +1068,37 @@ class GH:
         return status_map
 
     @classmethod
-    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
+    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False, admin=False):
+        """Merge PR #`pr`. With `admin`, merge right away with administrator
+        privileges: required checks are not awaited and the merge queue on the
+        base branch is bypassed. Only for automation that has already decided
+        the change must land immediately, such as reverting a broken merge.
+
+        `admin` never asks `gh` to delete the branch, whatever `keep_branch`
+        says, because `gh` refuses the two together -- see the comment below."""
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
         extra_args = ""
-        if not keep_branch:
+        # `gh` rejects `--delete-branch` outright whenever the base branch has a
+        # merge queue enabled -- "Cannot use `-d` or `--delete-branch` when merge
+        # queue enabled" -- and it rejects it even next to `--admin`, which is the
+        # flag that bypasses that very queue: the check looks at the branch setting
+        # and not at what the merge is about to do. Asking for both fails the merge
+        # itself, so an `admin` merge does not ask. Nothing is lost by that: the
+        # merge is immediate rather than queued, and GitHub removes the head branch
+        # on its own wherever the repository has `delete_branch_on_merge` set, which
+        # is where this is used.
+        if not keep_branch and not admin:
             extra_args += " --delete-branch"
         if squash:
             extra_args += " --squash"
         else:
             extra_args += " --merge"
+        if admin:
+            extra_args += " --admin"
 
         cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
         return cls.do_command_with_retries(cmd)
