@@ -1,9 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <base/types.h>
 
 
 namespace DB
@@ -22,6 +25,12 @@ struct ClientSlashCommand
 /// All the `/`-commands, in the order they are offered in.
 /// Keep in sync with the commands dispatched in `ClientBase::processQueryText`.
 std::span<const ClientSlashCommand> clientSlashCommands();
+
+/// Diagnose input that looks like a `/`-command but is not one: a misspelled name (with the similar
+/// commands suggested) or an argument given to a command that takes none. Returns nothing when the
+/// input is a valid command, or when it is not a command at all (a `/* comment */`, ...) - it is then
+/// left to the SQL parser as before. The input has to be trimmed of whitespace and `;` already.
+std::optional<String> diagnoseClientSlashCommand(std::string_view trimmed_input);
 
 /// Whether the input (trimmed of whitespace and `;`) is one of the `/`-commands, with or without
 /// its argument. In the AI-chat mode such a line runs as the command itself instead of being sent

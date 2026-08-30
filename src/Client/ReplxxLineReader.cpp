@@ -363,6 +363,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     , suggest(options.suggest)
     , word_break_characters(options.word_break_characters.data())
     , enable_slash_commands(options.enable_slash_commands)
+    , enable_suggestion_hints(options.enable_suggestion_hints)
     , editor(getEditor())
 {
     using Replxx = replxx::Replxx;
@@ -415,6 +416,14 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         {
             if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
             {
+                /// replxx passes the prefix through the cursor only. Do not fall back to the
+                /// regular completion source for a command being edited in the middle: it has no
+                /// visibility of the suffix, and completing it would insert another command name
+                /// before that suffix. In particular, this must not ask `Suggest` for completions
+                /// when suggestions are disabled.
+                if (!isCursorAtEndOfInput())
+                    return replxx::Replxx::completions_t{};
+
                 context_size = static_cast<int>(slash_commands.prefix_length);
                 return replxx::Replxx::completions_t(slash_commands.commands.begin(), slash_commands.commands.end());
             }
@@ -516,7 +525,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             /// SQL and the AI-chat mode (they run as commands in both), as soon as the `/` is typed.
             /// The hints replace the whole typed prefix including the `/`, so `context_size` is
             /// widened to it (see the completion callback).
-            if (enable_slash_commands)
+            if (enable_slash_commands && isCursorAtEndOfInput())
             {
                 if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
                 {
@@ -529,6 +538,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             /// No SQL hints while composing an AI-chat question (the `?` mode or an inline `?`):
             /// it is natural-language text, so identifier suggestions are only noise.
             if (ai_mode || isAIChatLine(rx.get_state().text()))
+                return replxx::Replxx::hints_t{};
+
+            if (!enable_suggestion_hints)
                 return replxx::Replxx::hints_t{};
 
             /// Mirror `set_complete_on_empty(false)` *before* matching: an empty last word matches

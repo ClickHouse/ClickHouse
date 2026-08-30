@@ -3249,6 +3249,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// Streaming queries do index analysis in MergeTreeCommitOrderSource
     /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
     /// filter below. Fail closed rather than serve logically-deleted rows.
+    ///
     /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
     if (query_info_.isStream())
     {
@@ -3371,15 +3372,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (!allow_query_condition_cache_)
         reader_settings.use_query_condition_cache = false;
 
-    /// The query-condition cache is server-shared and CSN-oblivious (keyed on
-    /// part+condition+mark, no CSN). For a UNIQUE KEY read it can cache marks as
-    /// non-matching after a delete-bitmap + WHERE drop their rows, then let a
-    /// reader pinned at an OLDER snapshot skip a mark whose rows are live at its
-    /// CSN -> missing rows. Disable it for UK reads. The consult/skip side is the
-    /// filterPartsByQueryConditionCache call below (guarded here); the write side
-    /// is gated where the member reader_settings is finalized in initializePipeline.
-    /// This local reader_settings only drives index analysis, but keep it consistent.
-    /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
+    /// TODO(unique-key): unique-key multi-versioned bitmap is conflicted with the single-versioned query-condition cache
     const bool table_has_unique_key = metadata_snapshot->hasUniqueKey();
     if (table_has_unique_key)
         reader_settings.use_query_condition_cache = false;
@@ -3417,14 +3410,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        /// Consult/skip side of the query-condition cache.
-        ///
-        /// Disabled for:
-        /// - Unique key reads (see above)
-        /// - Filtering by non-deterministic virtual columns (see above)
-        /// - And for a read whose step turned the cache off (`allow_query_condition_cache`),
-        ///   that flag means this read neither consults nor populates the cache, so it must also not
-        ///   skip granules based on entries written by other queries.
         if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
 
@@ -4914,12 +4899,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (!allow_query_condition_cache || !has_where_or_prewhere)
         reader_settings.use_query_condition_cache = false;
 
-    /// Disable the query-condition cache (write side: this `reader_settings` flows to
-    /// MergeTreeSelectProcessor) for UNIQUE KEY reads — the cache is CSN-oblivious and
-    /// server-shared, so caching marks as non-matching after a delete-bitmap drop can
-    /// make an older-snapshot reader skip a mark whose rows are live at its CSN. The
-    /// consult/skip side is gated separately in selectRangesToReadImpl.
-    /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
+    /// TODO(unique-key): unique-key multi-versioned bitmap is conflicted with the single-versioned query-condition cache
     if (storage_snapshot->metadata->hasUniqueKey())
         reader_settings.use_query_condition_cache = false;
 
@@ -5203,8 +5183,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             input_names.insert(input->result_name);
         restoreDAGInputs(filter_dag, input_names);
 
+        /// The filter column can be a source column, which the stream must keep for the rest of the query.
+        if (input_names.contains(column_name))
+            remove_column = false;
+
         auto actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
-        pipe.addSimpleTransform([&, actions](const SharedHeader & header)
+        pipe.addSimpleTransform([&, actions, remove_column](const SharedHeader & header)
         {
             return std::make_shared<FilterTransform>(header, actions, column_name, remove_column);
         });
