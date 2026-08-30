@@ -78,7 +78,7 @@ $CLICKHOUSE_LOCAL --path "${MV_PATH}" -q "
 "
 $CLICKHOUSE_LOCAL --path "${MV_PATH}" -q "
     SELECT 'reloaded', count() FROM mv;
-    SELECT 'stored', extract(formatQuerySingleLine(create_table_query), 'AS .*') FROM system.tables WHERE name = 'mv';
+    SELECT 'stored', extract(formatQuerySingleLine(create_table_query), 'AS .*') FROM system.tables WHERE database = currentDatabase() AND name = 'mv';
 "
 
 rm -rf "${WORKDIR}"
