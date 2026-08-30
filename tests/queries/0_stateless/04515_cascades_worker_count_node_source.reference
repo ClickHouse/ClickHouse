@@ -10,3 +10,17 @@ GatherExchange
       Expression ((Before GROUP BY + Change column names to column identifiers))
         ShuffleExchange
           ReadFromMergeTree (ParallelRead default.t_worker_count)
+-- sixteen workers: shuffled aggregation is correct
+0	5000
+1	5000
+2	5000
+3	5000
+-- sixteen workers: still a distributed plan
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ShuffleExchange
+          ReadFromMergeTree (ParallelRead default.t_worker_count)
+-- dispatched worker fragments arbitrate CPU slots and honor the thread limit
+1	1

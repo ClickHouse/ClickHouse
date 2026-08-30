@@ -1,0 +1,33 @@
+<!-- `^lit`, `lit$` and `^lit$` are matched by a comparison at a fixed offset. `extract`, `countMatches` and
+     `regexpPosition` reach it through the single-string `OptimizedRegularExpression::match` overloads,
+     `match` and `LIKE` over a column through `MatchImpl`. -->
+<test>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https://'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '\\.html$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^http://smeshariki\\.ru/$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(Referer, '^https://'))</query>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(countMatches(URL, '^https://'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(countMatches(URL, '\\.html$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(regexpPosition(URL, '\\.html$'))</query>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https://')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '\\.html$')) SETTINGS max_threads = 1</query>
+
+    <!-- `compile_regular_expressions` is disabled because the regexp JIT also handles anchors, and would
+         take these queries away from the path under test. `LIKE` never reaches the JIT. -->
+    <query>SELECT count() FROM test.hits WHERE match(URL, '^https://') SETTINGS compile_regular_expressions = 0</query>
+    <query>SELECT count() FROM test.hits WHERE match(URL, '\\.html$') SETTINGS compile_regular_expressions = 0</query>
+    <query>SELECT count() FROM test.hits WHERE match(URL, '^http://smeshariki\\.ru/$') SETTINGS compile_regular_expressions = 0</query>
+    <query>SELECT count() FROM test.hits WHERE match(URL, '\\.html$') SETTINGS compile_regular_expressions = 0, max_threads = 1</query>
+
+    <!-- An affix `LIKE` over a plain column is rewritten to `startsWith` / `endsWith`, so it is disabled here. -->
+    <query>SELECT count() FROM test.hits WHERE URL LIKE 'http://smeshariki.ru/%' SETTINGS optimize_rewrite_like_perfect_affix = 0</query>
+    <query>SELECT count() FROM test.hits WHERE URL LIKE '%.html' SETTINGS optimize_rewrite_like_perfect_affix = 0</query>
+    <!-- A wildcard-free `LIKE` lowers to `^literal$` and is not rewritten, so it needs no settings. -->
+    <query>SELECT count() FROM test.hits WHERE URL LIKE 'http://smeshariki.ru/'</query>
+
+    <!-- An unanchored literal keeps using the substring search; here to catch a regression on that path. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, 'html'))</query>
+    <query>SELECT count() FROM test.hits WHERE URL LIKE '%.html%'</query>
+</test>

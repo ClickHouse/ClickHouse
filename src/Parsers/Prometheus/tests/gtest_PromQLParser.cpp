@@ -164,6 +164,118 @@ PrometheusQueryTree(INSTANT_VECTOR):
 }
 
 
+TEST(PromQLParser, QuotedGroupingLabels)
+{
+    EXPECT_EQ(parse(R"(sum by ("service.name", "k8s.namespace.name") (http_requests_total))"), R"(
+sum by ("service.name", "k8s.namespace.name") (http_requests_total)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(sum)
+        by service.name, k8s.namespace.name
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
+    EXPECT_EQ(parse(R"(max without ("deployment.environment") (http_request_duration_seconds))"), R"(
+max without ("deployment.environment") (http_request_duration_seconds)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(max)
+        without deployment.environment
+        InstantSelector:
+            __name__ EQ 'http_request_duration_seconds'
+)");
+
+    EXPECT_EQ(parse(R"(http_requests_total + on ("service.name", "k8s.namespace.name") group_left ("pod.name") target_info)"), R"(
+http_requests_total + on("service.name", "k8s.namespace.name") group_left("pod.name") target_info
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    BinaryOperator(+)
+        on service.name, k8s.namespace.name
+        group_left pod.name
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+        InstantSelector:
+            __name__ EQ 'target_info'
+)");
+
+    EXPECT_EQ(parse(R"(http_requests_total / ignoring ("cluster.name") group_right ("instance.name") target_info)"), R"(
+http_requests_total / ignoring("cluster.name") group_right("instance.name") target_info
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    BinaryOperator(/)
+        ignoring cluster.name
+        group_right instance.name
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+        InstantSelector:
+            __name__ EQ 'target_info'
+)");
+
+    EXPECT_EQ(parse(R"(sum by ('service.name', `k8s.namespace.name`) (up))"), R"(
+sum by ("service.name", "k8s.namespace.name") (up)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(sum)
+        by service.name, k8s.namespace.name
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+}
+
+
+TEST(PromQLParser, QuotedGroupingLabelsRoundTrip)
+{
+    for (const auto *const input : {
+             R"(sum by ("a\x00b") (up))",
+             R"(sum by ("Inf") (up))",
+             R"(sum by ("NaN") (up))",
+             R"(sum by ("iNf") (up))",
+             R"(sum by ("nAn") (up))",
+         })
+    {
+        PrometheusQueryTree query_tree{input};
+        EXPECT_EQ(query_tree.toString(), input);
+
+        PrometheusQueryTree reparsed_query_tree{query_tree.toString()};
+        EXPECT_EQ(reparsed_query_tree.toString(), input);
+    }
+}
+
+
+TEST(PromQLParser, QuotedMetricNameRoundTrip)
+{
+    const auto *const input = R"(sum by ("service.name") ({__name__="http.server.duration"}))";
+    const auto *const expected = R"(sum by ("service.name") ({"http.server.duration"}))";
+
+    PrometheusQueryTree query_tree{input};
+    EXPECT_EQ(query_tree.toString(), expected);
+
+    PrometheusQueryTree reparsed_query_tree{query_tree.toString()};
+    EXPECT_EQ(reparsed_query_tree.toString(), expected);
+}
+
+
+TEST(PromQLParser, InvalidQuotedGroupingLabels)
+{
+    for (const auto *const query : {R"(sum by ("") (up))", R"(sum by ("\xff") (up))"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
+        EXPECT_FALSE(error_message.empty());
+    }
+}
+
+
+TEST(PromQLParser, PromQLStringSerializationRoundTrip)
+{
+    expectRoundTrip(R"("line\n\t\r\b\f\v")", R"("line\n\t\r\b\f\v")");
+    expectRoundTrip(R"("invalid \xff")", R"("invalid \xff")");
+}
+
+
 /// Parse queries from https://github.com/prometheus/compliance/blob/main/promql/promql-test-queries.yml
 TEST(PromQLParser, ComplianceQueries)
 {

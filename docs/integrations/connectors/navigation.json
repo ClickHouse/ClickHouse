@@ -102,7 +102,6 @@
       "expanded": true,
       "group": "Data ingestion",
       "pages": [
-        "integrations/connectors/data-ingestion/index",
         "integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
@@ -148,17 +147,7 @@
           ]
         },
         "integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
-        {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
-        },
+        { "$ref": "data-ingestion/etl-tools/dbt/navigation.json" },
         "integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
           "group": "Fivetran",
@@ -203,7 +192,8 @@
         "integrations/connectors/tools/data-integration-index",
         "integrations/connectors/data-integrations/integrations/retool",
         "integrations/connectors/data-integrations/integrations/easypanel",
-        "integrations/connectors/data-integrations/integrations/middleware",
+        "integrations/connectors/data-integrations/integrations/microsoft-fabric",
+    "integrations/connectors/data-integrations/integrations/middleware",
         "integrations/connectors/data-integrations/integrations/notion",
         "integrations/connectors/data-integrations/integrations/splunk"
       ]

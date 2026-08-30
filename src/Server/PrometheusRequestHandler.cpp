@@ -422,7 +422,7 @@ public:
 };
 
 /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values).
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -445,8 +445,24 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "lookback_delta", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
+    }
+
+    /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
+    /// with 0 (the default) meaning no limit.
+    UInt64 getLimitParam() const
+    {
+        String limit_param = params->get("limit", "");
+        if (limit_param.empty())
+            return 0;
+
+        Int64 parsed_limit = 0;
+        if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
+                            limit_param);
+        return static_cast<UInt64>(parsed_limit);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -533,29 +549,27 @@ public:
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
-
-                /// The optional `limit` parameter caps the number of returned series (0 means no limit, which is also the default).
-                UInt64 limit = 0;
-                String limit_param = params->get("limit", "");
-                if (!limit_param.empty())
-                {
-                    Int64 parsed_limit = 0;
-                    if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
-                                        limit_param);
-                    limit = static_cast<UInt64>(parsed_limit);
-                }
+                UInt64 limit = getLimitParam();
 
                 protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
+            else if (uri_path.ends_with("/metadata"))
+            {
+                String metric = params->get("metric", "");
+                /// Both limit parameters are optional; negative values are accepted and mean "no limit", like in Prometheus.
+                Int64 limit = getMetadataLimitParam("limit");
+                Int64 limit_per_metric = getMetadataLimitParam("limit_per_metric");
+
+                protocol.getMetadata(getOutputStream(response), metric, limit, limit_per_metric, query_finish_callback);
+            }
             else if (uri_path.ends_with("/labels"))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabels(getOutputStream(response), match, start, end);
+                protocol.getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
@@ -598,6 +612,20 @@ public:
     }
 
 private:
+    /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
+    Int64 getMetadataLimitParam(const String & name) const
+    {
+        String value = params->get(name, "");
+        if (value.empty())
+            return -1;
+
+        Int64 result = 0;
+        if (!tryParse(result, value.data(), value.size()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value of the '{}' parameter: '{}', expected an integer", name, value);
+        return result;
+    }
+
     /// Extracts the label name from a label-values endpoint path ".../label/<name>/values".
     /// Returns std::nullopt when `uri_path` isn't a valid label-values endpoint.
     static std::optional<String> extractLabelValuesName(std::string_view uri_path)
@@ -677,7 +705,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }

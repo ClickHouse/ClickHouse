@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 
 set optimize_normalize_count_variants = 1;
 

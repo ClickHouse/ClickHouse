@@ -73,7 +73,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 
-# Heavy imports (github, clickhouse_helper, ...) are done lazily inside main() so
+# Heavy imports (github, ci.praktika, ...) are done lazily inside main() so
 # that the pure helpers below stay importable for unit tests without PyGithub.
 
 SECTION_START = "<!-- ch-version-info:start -->"

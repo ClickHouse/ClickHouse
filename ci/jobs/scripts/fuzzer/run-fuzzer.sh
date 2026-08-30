@@ -79,6 +79,10 @@ function configure
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
+    if [[ -n "${FUZZER_ORACLE_ENABLED:-}" ]]; then
+        cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/z-oracle-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
+    fi
+
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
@@ -106,7 +110,7 @@ function filter_exists_and_template
 
 function stop_server
 {
-    clickhouse-client --query "select elapsed, query from system.processes" ||:
+    timeout --signal TERM --kill-after=10 20 clickhouse-client --query "select elapsed, query from system.processes" ||:
     clickhouse stop
 
     # Debug.
@@ -149,7 +153,7 @@ function fuzz
     # A dead server is detected early, so the deadline only affects hung servers.
     for _ in {1..120}
     do
-        if clickhouse-client --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
+        if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
         then
             break
         fi
@@ -204,7 +208,7 @@ function fuzz
         # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
         for _ in {1..180}
         do
-            if clickhouse-client --receive_timeout=5 --query "select 1"
+            if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1"
             then
                 break
             fi
@@ -337,7 +341,7 @@ function fuzz
         # Make sure the server is still accepting queries before restarting: a fuzzer that
         # exited with code 0 against a dead server would otherwise restart-loop until the budget
         # runs out and hide the failure.
-        if ! clickhouse-client --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
+        if ! clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
             echo "Server is not responding, not restarting the fuzzer"
             break
         fi
@@ -359,15 +363,17 @@ function fuzz
     # returns "Connection refused"/EOF instead -- so count repeated timeouts and
     # only declare a hang once they persist, otherwise a single transient timeout
     # turns a clean (exit 143) run into a bogus "server died" FAIL.
-    # BEGIN: server-liveness probe loop (exercised verbatim by
-    # ci/tests/test_fuzzer_liveness_loop.py)
+    # BEGIN: server-liveness probe loop
     server_died=0
     timeouts=0
     timeouts_max=12
 
     for _ in {1..100}
     do
-        if clickhouse-client --receive_timeout=5 --query "SELECT 1" 2> err
+        # --receive_timeout governs the socket only once the handshake has completed; until
+        # then both directions run on handshake_timeout_ms, whose client-side default is 300s.
+        # A probe needs both bounds to be held to the budget it asks for.
+        if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 1" 2> err
         then
             server_died=0
             break
@@ -380,7 +386,7 @@ function fuzz
                 # diagnostic and runs under `set -e`; if the same overload rejects
                 # it, do not abort the script (that would skip the status.tsv
                 # write below and surface as a missing-status job ERROR).
-                clickhouse-client --query "SHOW PROCESSLIST" ||:
+                timeout --signal TERM --kill-after=10 20 clickhouse-client --query "SHOW PROCESSLIST" ||:
                 timeouts=0
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err

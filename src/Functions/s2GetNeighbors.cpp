@@ -125,7 +125,7 @@ Returns the S2 neighbor indices corresponding to the provided S2 cell index. Eac
         {"s2index", "The S2 cell identifier.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of 4 neighbor S2 cell identifiers.", {"Array(UInt64)"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2GetNeighbors(5765131099823669248)", "[5765131099698741248, 5765131099950653440, 5765131100074868736, 5765131100088901632]"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2GetNeighbors(5765131099823669248)", "[5765131099830484992,5765131099821047808,5765131099823144960,5765131099824193536]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

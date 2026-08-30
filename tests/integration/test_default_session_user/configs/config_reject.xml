@@ -1,0 +1,62 @@
+<clickhouse>
+    <!-- The empty global default session user prohibits connections without a user name
+         on every interface that has no per-endpoint override. Arrow Flight and gRPC are
+         not composable protocols, so this is the only way to enable the reject mode for
+         them. -->
+    <default_session_user></default_session_user>
+
+    <grpc_port>9100</grpc_port>
+    <arrowflight_port>9110</arrowflight_port>
+
+    <!-- The rejects have to be auditable: `system.session_log` records them as
+         `LoginFailure` events with an empty user name. -->
+    <session_log>
+        <database>system</database>
+        <table>session_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </session_log>
+
+    <!-- A global `prometheus.handlers` section (no `keeper_metrics_only`, so composable
+         `prometheus` endpoints go through the regular factory and serve these handlers)
+         with an anonymous time-series `write` handler. The reload test switches the
+         handler to a fixed `user` and changes the endpoint's `default_session_user` in a
+         single reload, which must restart the listener even though the *new* handler set
+         no longer consumes the setting. -->
+    <prometheus>
+        <!-- The standalone prometheus listener serves the same handler set as the composable
+             `type = prometheus` endpoints below, so a change of the section must restart it
+             too, even though it has no `protocols.*` entry of its own. -->
+        <port>9118</port>
+        <handlers>
+            <write_rule>
+                <url>/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prometheus_ts</table>
+                </handler>
+            </write_rule>
+        </handlers>
+    </prometheus>
+
+    <protocols>
+        <prometheus_write_reload>
+            <type>prometheus</type>
+            <host>0.0.0.0</host>
+            <port>9116</port>
+            <default_session_user>proto_prometheus_user</default_session_user>
+            <description>prometheus-write-reload</description>
+        </prometheus_write_reload>
+        <!-- A second listener over the same shared `prometheus.handlers` section. It is
+             restarted together with the listener above when the section changes (even
+             though its own `default_session_user` does not), and once every handler in
+             the section carries a fixed `user`, changing its `default_session_user`
+             must no longer restart it. -->
+        <prometheus_write_noreload>
+            <type>prometheus</type>
+            <host>0.0.0.0</host>
+            <port>9117</port>
+            <default_session_user>proto_prometheus_norestart_user</default_session_user>
+            <description>prometheus-write-noreload</description>
+        </prometheus_write_noreload>
+    </protocols>
+</clickhouse>

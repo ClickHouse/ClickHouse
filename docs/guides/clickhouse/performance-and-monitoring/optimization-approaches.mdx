@@ -1,0 +1,278 @@
+---
+slug: /optimize/optimization-approaches
+sidebarTitle: 'Choose an optimization approach'
+sidebar_label: 'Choose an optimization approach'
+sidebar_position: 4
+title: 'Choose an optimization approach'
+description: 'Use evidence from a slow ClickHouse query to evaluate appropriate optimization approaches'
+doc_type: 'guide'
+keywords: ['query optimization', 'data types', 'ordering key', 'materialized views', 'projections']
+---
+
+import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
+
+Use evidence from [query logs](/reference/system-tables/query_log), controlled comparisons, and [query plans](/reference/statements/explain) to evaluate optimization approaches that address the measured bottleneck.
+
+## Before you begin {#before-you-begin}
+
+Begin with a repeatable baseline and a hypothesis about the bottleneck. If you have not identified one yet, start with [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) and [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
+
+The examples in this guide use the `nyc_taxi.trips_small_inferred` table. To run them as written, create and load the table if you have not already done so:
+
+<Accordion title="Set up the example dataset">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+## Choose an approach {#choose-an-approach}
+
+Use the evidence you collected to choose where to begin. Prefer the least specialized change that addresses it:
+
+| Evidence | Start with | Expected effect |
+| --- | --- | --- |
+| The query reads wide columns or columns it does not need | [Reduce the data read](#reduce-the-data-read) | Bytes read, memory use, and processing work |
+| A selective filter still reads many [parts or granules](/parts) | [Align the data layout with the query](#align-the-data-layout-with-the-query) | Rows and granules read |
+| Repeated transformations or aggregations dominate the query | [Precompute repeatable work](#precompute-repeatable-work) | Computation performed at query time |
+
+If the evidence does not match one of these categories, return to the query plan rather than forcing the query into an approach.
+
+## Reduce the data read {#reduce-the-data-read}
+
+- **Use when:** The query reads wide columns or columns it does not need.
+- **Change:** Reduce the size or number of columns read by the query.
+- **Validate:** Compare `read_bytes`, memory use, and duration under the same conditions.
+
+ClickHouse reads only the columns required by a query, but it still has to read, decompress, and process the selected data. Review both the selected columns and their types. [Schema inference](/concepts/features/interfaces/schema-inference) provides a practical starting point, but inferred types can be wider or more permissive than the production data requires.
+
+### Review column types {#review-column-types}
+
+<span id="choose-precise-types"></span>
+
+**Choose precise types**
+
+Choose types that preserve the range and precision the workload requires without storing more data than necessary. Use numeric and date types rather than a general-purpose [`String`](/reference/data-types/string) for those values, and choose the smallest [signed or unsigned numeric type](/reference/data-types/int-uint) that safely represents the expected range. For temporal columns, use [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) unless you need the wider range or fractional precision of [`Date32`](/reference/data-types/date32) or [`DateTime64`](/reference/data-types/datetime64).
+
+<span id="use-nullable-columns-deliberately"></span>
+
+**Use nullable columns deliberately**
+
+A [`Nullable`](/reference/data-types/nullable) column stores a separate null mask in addition to its values, which ClickHouse must also read and process. Use it when the distinction between a null value and the type's default value is meaningful. If a column is guaranteed to contain a value, a non-nullable type avoids that additional work.
+
+Before changing a column, check the source data and ingestion path rather than assuming that observed non-null data will always remain non-null. The [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example#nullable) demonstrates how to identify columns that contain null values and measure the effect of changing the schema.
+
+<span id="use-dictionary-encoding-for-repeated-values"></span>
+
+**Use dictionary encoding for repeated values**
+
+[`LowCardinality`](/reference/data-types/lowcardinality) uses dictionary encoding and is often effective for string columns such as status values, country codes, or other dimensions with substantially fewer distinct values than rows. Approximately 10,000 distinct values is a useful starting point for identifying candidates, not a fixed limit. Avoid identifiers and other mostly unique columns, and compare measurements before and after changing the type.
+
+See [Selecting data types](/best-practices/select-data-types) for more detailed guidance.
+
+### Read only the required columns {#read-only-the-required-columns}
+
+Because ClickHouse stores data by column, selecting fewer columns directly reduces the data read. List the required columns instead of using `SELECT *`, particularly for wide tables or queries that return only a small subset of each row.
+
+Use `read_bytes` from [`system.query_log`](/reference/system-tables/query_log) to compare the amount of data read before and after narrowing the selected columns. If `read_bytes` remains high, inspect the query plan for expressions, filters, joins, or nested queries that still require additional columns.
+
+For example, if a dashboard needs only the pickup time, payment type, and total amount, select those columns rather than the complete row:
+
+```sql
+SELECT
+    pickup_datetime,
+    payment_type,
+    total_amount
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+LIMIT 1000;
+```
+
+Compare this query with the same filter and limit using `SELECT *`. The number of returned rows is unchanged, but `read_bytes` should reflect the smaller set of columns read.
+
+## Align the data layout with the query {#align-the-data-layout-with-the-query}
+
+- **Use when:** A selective filter still reads many parts or granules.
+- **Change:** Align the physical layout with the filters used by recurring queries.
+- **Validate:** Compare the parts and granules selected by [`EXPLAIN indexes = 1`](/reference/statements/explain), then check `read_rows`, `read_bytes`, and duration.
+
+### Start with the ordering key {#start-with-the-ordering-key}
+
+For [tables in the `MergeTree` family](/reference/engines/table-engines/mergetree-family/), the ordering key determines how rows are arranged on disk. By default, it also serves as the primary key that defines the [sparse primary index](/primary-indexes). Unlike a primary key in an OLTP database, a ClickHouse primary key does not enforce uniqueness. Its performance benefit comes from allowing ClickHouse to skip granules that cannot satisfy a query's filters.
+
+Prioritize columns that appear frequently in selective filters, including their order in the key. Grouping related values can also improve compression. When a query's grouping or sorting order aligns with the key, ClickHouse might use in-order optimizations for `GROUP BY` or `ORDER BY`.
+
+Compare the parts and granules selected by `EXPLAIN indexes = 1` before and after testing a different ordering key. Also compare `read_rows`, `read_bytes`, and duration under the same conditions. See [Choosing a primary key](/best-practices/choosing-a-primary-key) for detailed selection guidance.
+
+The example table uses `ORDER BY ()`, so the following selective date filter has no ordering key that can eliminate granules:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count()
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+On ClickHouse 25.9 and later, these settings ensure that `EXPLAIN` reports the indexes used and the parts and granules they eliminate.
+</Note>
+
+Use this output as the baseline. To complete the comparison, follow [Apply the ordering-key change](/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-ordering-key-change) in the worked example to create a table with an ordering key that includes `pickup_datetime`, then run the same `EXPLAIN` against it. The primary-key section of the plan should show fewer selected granules before you use duration or memory measurements to evaluate the overall change.
+
+<Tip>
+[`PREWHERE`](/optimize/prewhere) can reduce the column values read without changing the number of rows processed. ClickHouse moves eligible conditions from `WHERE` to `PREWHERE` automatically when `optimize_move_to_prewhere` is enabled, which is the default. Inspect the plan before adding `PREWHERE` manually, and use `read_bytes` as well as `read_rows` when measuring its effect.
+</Tip>
+
+### Evaluate additional indexing and data-layout options {#evaluate-additional-indexing-and-data-layout-options}
+
+If the ordering key cannot efficiently support an important access pattern, evaluate the more specialized options that follow.
+
+<span id="partition-for-data-management-and-pruning"></span>
+
+**Partition for data management and pruning**
+
+[Partitioning](/best-practices/choosing-a-partitioning-key) is primarily a data-management mechanism for operations such as retention, movement, and deletion. It can reduce query work when filters allow ClickHouse to exclude complete partitions, but it should not be the first mechanism used to accelerate a query.
+
+For example, monthly partitions can support dropping complete months when retention is also managed by month. Consider partitioning only when the partition key aligns with data lifecycle requirements or a well-understood access pattern. Keep its cardinality low: a high-cardinality key creates many parts that cannot be merged across partitions and can degrade performance. Use `EXPLAIN indexes = 1` to confirm that the query actually prunes partitions.
+
+<span id="add-a-data-skipping-index-for-a-localized-filter"></span>
+
+**Add a data-skipping index for a localized filter**
+
+A [data-skipping index](/best-practices/use-data-skipping-indices-where-appropriate) stores metadata that lets ClickHouse avoid reading blocks that cannot match a filter. It is most useful when the ordering key does not support an important filter and matching values are sufficiently localized within blocks.
+
+For example, a bloom filter index can help with equality lookups when most blocks do not contain the searched value. Use skipping indexes after reviewing data types and the ordering key. An index that rarely excludes a block adds storage and evaluation overhead without reducing much work. Test the index type and granularity with representative data, then use `EXPLAIN indexes = 1` to compare selected granules and check `read_rows`, `read_bytes`, and duration.
+
+<span id="use-projections-selectively"></span>
+
+**Use projections selectively**
+
+[Projections](/data-modeling/projections) store alternative data layouts alongside a table. They can provide another ordering key or a precomputed result, and ClickHouse can select an applicable projection without requiring the query to reference it directly.
+
+For example, a projection ordered by `payment_type` can support a recurring filter that the base table's ordering does not. Use a small number of projections for important access patterns that the base ordering cannot serve efficiently.
+
+Projections store additional index or column data and add work during insertion and merging; a full-column projection duplicates the columns that it stores. Heavy projection use can also increase the work required to choose an optimal projection at query time. For large deployments with many distinct access patterns, fewer projections or separate purpose-built tables are often easier to operate. See [Materialized views versus projections](/managing-data/materialized-views-versus-projections) when choosing between these mechanisms.
+
+Add an alternative ordering for queries that filter by payment type and pickup time while continuing to query the source table:
+
+```sql
+ALTER TABLE nyc_taxi.trips_small_inferred
+ADD PROJECTION trips_by_payment_type
+(
+    SELECT
+        payment_type,
+        pickup_datetime,
+        trip_distance,
+        total_amount
+    ORDER BY (payment_type, pickup_datetime)
+);
+
+ALTER TABLE nyc_taxi.trips_small_inferred
+MATERIALIZE PROJECTION trips_by_payment_type;
+```
+
+Materializing the projection populates it for existing data; future inserts maintain it automatically. Repeat a representative query against the original table and use `EXPLAIN projections = 1` to confirm whether ClickHouse selects the projection and reads fewer rows or bytes. Also measure insertion and storage overhead before applying the pattern broadly.
+
+## Precompute repeatable work {#precompute-repeatable-work}
+
+- **Use when:** The same transformations or aggregations repeatedly dominate query time.
+- **Change:** Move repeatable computation to ingestion, a scheduled refresh, or a purpose-built data layout.
+- **Validate:** Confirm that the query reads a smaller result and performs less computation at query time, while ingestion or refresh work remains acceptable.
+
+Choose based on how the result should be maintained and accessed. These options are not mutually exclusive:
+
+| When you need | Start with |
+|---|---|
+| Results that update as data arrives | [Incremental materialized view](#incremental-materialized-view) |
+| Periodic recomputation with some acceptable staleness | [Refreshable materialized view](#refreshable-materialized-view) |
+| An independent schema, ordering key, or lifecycle | [Purpose-built table](#purpose-built-table) |
+
+Each section includes a basic implementation, the main operational trade-off, and a way to validate the result.
+
+### Incremental materialized view {#incremental-materialized-view}
+
+Use an [incremental materialized view](/materialized-view/incremental-materialized-view) when a recurring filter, transformation, or aggregation must remain current as data arrives. It processes each newly inserted block and writes the transformed result to a target table. The trade-off is additional ingestion work and an explicit target table.
+
+For example, a dashboard that repeatedly counts trips by day can read from a small aggregate table instead of grouping the source data for every request:
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_day
+(
+    pickup_date Date,
+    trip_count UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY pickup_date;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_day_mv
+TO nyc_taxi.trips_by_day
+AS SELECT
+    toDate(assumeNotNull(pickup_datetime)) AS pickup_date,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime IS NOT NULL
+GROUP BY pickup_date;
+```
+
+Query the target table with `sum(trip_count)` grouped by `pickup_date` so that rows awaiting a background merge are combined at query time. The view processes new inserts only, so backfill existing source data separately. Validate the change by comparing duration and rows read with the original aggregation, then confirm that the additional insertion work is acceptable.
+
+### Refreshable materialized view {#refreshable-materialized-view}
+
+Use a [refreshable materialized view](/materialized-view/refreshable-materialized-view) when slightly stale results are acceptable and the complete result can be recomputed at a practical interval. It reruns its query on a schedule. The trade-off is result freshness and the cost of each refresh.
+
+For example, a report can rebuild trip totals by payment type every hour:
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_payment_type
+(
+    payment_type Int64,
+    trip_count UInt64
+)
+ENGINE = MergeTree
+ORDER BY payment_type;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_payment_type_mv
+REFRESH EVERY 1 HOUR
+TO nyc_taxi.trips_by_payment_type
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+GROUP BY payment_type;
+```
+
+The report reads the precomputed target while ClickHouse refreshes the complete result on schedule. Validate the change by comparing its query duration with the original aggregation, then inspect [`system.view_refreshes`](/reference/system-tables/view_refreshes) to confirm that refresh duration, status, and frequency suit the workload.
+
+### Purpose-built table {#purpose-built-table}
+
+Use a purpose-built table when a separate workload needs a materially different schema, ordering key, or lifecycle. It provides explicit control over the physical design and can be clearer than maintaining many projections. The trade-off is additional storage and pipeline management. Repeated joins or transformations can also move into the ingestion pipeline when the source data and freshness requirements make that practical. See [Use materialized views](/best-practices/use-materialized-views) and [Denormalizing data](/data-modeling/denormalization) for detailed design guidance.
+
+For example, create a narrower table ordered for a dashboard that filters trips by payment type and pickup time:
+
+```sql
+CREATE TABLE nyc_taxi.trips_for_payment_dashboard
+ENGINE = MergeTree
+ORDER BY (payment_type, pickup_datetime)
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    assumeNotNull(source.pickup_datetime) AS pickup_datetime,
+    trip_distance,
+    total_amount
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+  AND source.pickup_datetime IS NOT NULL;
+```
+
+This example excludes null ordering-key values and removes `Nullable` from those two target columns. Confirm that this treatment matches the workload's data requirements. The dashboard must query this table explicitly, and the ingestion pipeline must keep it current. Validate the change by comparing rows and bytes read, memory use, and duration with the source-table query. Include the additional storage and pipeline maintenance in the decision.
+
+## Next steps {#next-steps}
+
+When evaluating a change, repeat the original measurements under comparable conditions. Confirm that the change reduces the intended work without shifting the bottleneck elsewhere.
+
+Continue with the [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example) to see schema and ordering-key changes measured against an original baseline.

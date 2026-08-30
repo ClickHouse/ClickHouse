@@ -13,6 +13,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -1063,6 +1064,16 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
+}
+
+void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> *)
+{
+    getNestedColumn().fillFromRowRefsWithRowStore(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &getNullMapData());
+}
+
+void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
+{
+    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
 }
 
 /// A NULL row emits only the flag byte and never touches the nested column, so an

@@ -29,7 +29,7 @@ The function can take multiple arrays of the same size as arguments. In this cas
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array where each element is the position among elements with the same value or tuple.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT arrayEnumerateUniq([10, 20, 10, 30]);", "[1, 1, 2, 1]"},
+        {"Basic usage", "SELECT arrayEnumerateUniq([10, 20, 10, 30]);", "[1,1,2,1]"},
         {"Multiple arrays", "SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);", "[1,2,1,1,2,1]"},
         {"ARRAY JOIN aggregation",
          R"(
@@ -38,31 +38,32 @@ The function can take multiple arrays of the same size as arguments. In this cas
 -- the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, we apply a condition to the
 -- value of the arrayEnumerateUniq(Goals.ID) function.
 
+CREATE TABLE visits (CounterID UInt32, Sign Int8, Goals Nested(ID UInt32)) ENGINE = Memory;
+
+INSERT INTO visits VALUES
+    (160656, 1, [53225, 53225, 56600]),
+    (160656, 1, [53225, 2825062]),
+    (160656, 1, [56600, 56600, 2825062]),
+    (160657, 1, [53225]);
+
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
     sumIf(Sign, num = 1) AS Visits
-FROM test.visits
+FROM visits
 ARRAY JOIN
     Goals,
     arrayEnumerateUniq(Goals.ID) AS num
 WHERE CounterID = 160656
 GROUP BY GoalID
-ORDER BY Reaches DESC
+ORDER BY Reaches DESC, GoalID
 LIMIT 10
 )",
 R"(
 ┌──GoalID─┬─Reaches─┬─Visits─┐
-│   53225 │    3214 │   1097 │
-│ 2825062 │    3188 │   1097 │
-│   56600 │    2803 │    488 │
-│ 1989037 │    2401 │    365 │
-│ 2830064 │    2396 │    910 │
-│ 1113562 │    2372 │    373 │
-│ 3270895 │    2262 │    812 │
-│ 1084657 │    2262 │    345 │
-│   56599 │    2260 │    799 │
-│ 3271094 │    2256 │    812 │
+│   53225 │       3 │      2 │
+│   56600 │       3 │      2 │
+│ 2825062 │       2 │      2 │
 └─────────┴─────────┴────────┘
 )"}
     };

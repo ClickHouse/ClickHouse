@@ -257,6 +257,8 @@ public:
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer == SplitByStringTokenizer::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
+                else if (tokenizer == SplitByRegexpTokenizer::getExternalName())
+                    optional_args.emplace_back("regexp", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
 #if USE_JIEBA
                 else if (tokenizer == ChineseTokenizer::getExternalName())
                     optional_args.emplace_back(
@@ -313,6 +315,7 @@ Splits a string into tokens using the given tokenizer.
 Available tokenizers:
 - `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 - `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitByString)). The separators can be specified using an optional parameter, for example, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Note that each string can consist of multiple characters (`', '` in the example). The default separator list, if not specified explicitly, is a single whitespace `[' ']`.
+- `splitByRegexp(re)` splits strings along a user-defined regular expression separator `re` (also see function [splitByRegexp](/sql-reference/functions/splitting-merging-functions.md/#splitByRegexp)). The regular expression is mandatory, for example, `tokens(value, 'splitByRegexp', '[^\p{L}\p{N}#+]+')`. Unlike `splitByString`, a regular expression separator can preserve tokens containing special characters (such as `C++` or `C#`).
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens.
 - `chinese` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words, which yields more meaningful tokens and higher search quality for Chinese text. An optional `granularity` argument is either `coarse_grained` (the default) or `fine_grained`; the latter additionally enumerates overlapping sub-words, improving recall at the cost of a larger index.
 - `icu(locale)` splits strings into word tokens using the ICU library's Unicode word segmentation (UAX #29). For scripts without whitespace between words (for example Chinese, Japanese, and Thai) ICU applies dictionary-based segmentation, so such text is split into meaningful words. `locale` is the ICU locale passed to the segmenter (segmentation is mainly script- and dictionary-driven; the locale selects ICU's locale-specific tailoring); it is mandatory and passed as a separate argument, for example `tokens(value, 'icu', 'ja')`.
@@ -329,6 +332,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
 tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
+tokens(value, 'splitByRegexp', regexp)
 tokens(value, 'asciiCJK')
 tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
@@ -339,10 +343,11 @@ tokens(value, 'array')
 )";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
         {"locale", "Only relevant if argument `tokenizer` is `icu`: The mandatory locale, for example `'ja'`.", {"const String"}},
         {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
+        {"regexp", "Only relevant if argument `tokenizer` is `splitByRegexp`: A mandatory parameter which defines the regular expression separator.", {"const String"}},
         {"min_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
         {"max_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
         {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}},

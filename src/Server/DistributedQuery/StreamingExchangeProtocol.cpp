@@ -25,7 +25,7 @@ void SourceHelloBody::readAfterVersion(ReadBuffer & in)
 {
     readStringBinary(query_id, in);
     readStringBinary(stream_name, in);
-    readStringBinary(jwt_token, in);
+    readStringBinary(auth_token, in);
 }
 
 void SourceHelloBody::write(WriteBuffer & out) const
@@ -33,7 +33,7 @@ void SourceHelloBody::write(WriteBuffer & out) const
     writeIntBinary(source_version, out);
     writeStringBinary(query_id, out);
     writeStringBinary(stream_name, out);
-    writeStringBinary(jwt_token, out);
+    writeStringBinary(auth_token, out);
 }
 
 void SinkHelloBody::read(ReadBuffer & in)

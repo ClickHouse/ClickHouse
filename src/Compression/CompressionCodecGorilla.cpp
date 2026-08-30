@@ -318,6 +318,16 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
                 // 0b11 prefix
                 curr_xored_info.leading_zero_bits = static_cast<UInt8>(reader.readBits(LEADING_ZEROES_BIT_LENGTH));
                 curr_xored_info.data_bits = static_cast<UInt8>(reader.readBits(DATA_BIT_LENGTH));
+
+                /// The encoder derives both widths from a non-zero XOR, so there is at least one data
+                /// bit and the leading zero bits and the data bits together fit into the value.
+                if (curr_xored_info.data_bits == 0
+                    || UInt32{curr_xored_info.leading_zero_bits} + UInt32{curr_xored_info.data_bits} > sizeof(T) * 8) [[unlikely]]
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                        "Cannot decompress Gorilla-encoded data: corrupted input data. "
+                        "It has {} leading zero bits and {} data bits, which is not a valid split of {} bits",
+                        UInt32{curr_xored_info.leading_zero_bits}, UInt32{curr_xored_info.data_bits}, sizeof(T) * 8);
+
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
             }
             // else: 0b10 prefix - use prev_xored_info

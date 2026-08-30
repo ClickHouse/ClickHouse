@@ -47,7 +47,7 @@ SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 -- Changing clear_depth=2 results in the enumeration occurring separately for each row anew.
 
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
-        )", "[[1, 1, 2, 3], [1, 2, 3, 4]]"
+        )", "[[1,1,2,3],[1,2,3,4]]"
       }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};

@@ -176,8 +176,8 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
             order_by_expression->arguments->children.push_back(child->clone());
     }
 
-    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockNumberColumn::name));
-    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockOffsetColumn::name));
+    /// `_block_number` and `_block_offset` are part of the sorting key and are appended to the key
+    /// by `getKeyFromAST` itself, from the `additional_columns` passed below. Do not append them here explicitly.
 
     addCodecsForPatchSystemColumns(patch_part_desc);
 
@@ -583,6 +583,57 @@ PatchInfosByPartition getPatchPartsByPartition(const std::vector<MergeTreePartIn
             res[partition_id].push_back(info);
     }
     return res;
+}
+
+static void sortDataVersions(DataVersionsByPartition & data_versions)
+{
+    for (auto & [_, versions] : data_versions)
+    {
+        std::sort(versions.begin(), versions.end());
+        versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
+    }
+}
+
+DataVersionsByPartition getDataVersionsByPartition(const DataPartsVector & parts)
+{
+    DataVersionsByPartition res;
+    for (const auto & part : parts)
+    {
+        if (!part->info.isPatch())
+            res[part->info.getPartitionId()].push_back(part->info.getDataVersion());
+    }
+
+    sortDataVersions(res);
+    return res;
+}
+
+DataVersionsByPartition getDataVersionsByPartition(const std::vector<MergeTreePartInfo> & parts)
+{
+    DataVersionsByPartition res;
+    for (const auto & info : parts)
+    {
+        if (!info.isPatch())
+            res[info.getPartitionId()].push_back(info.getDataVersion());
+    }
+
+    sortDataVersions(res);
+    return res;
+}
+
+std::optional<Int64> findDataVersionInRange(const DataVersionsByPartition & data_versions, const String & partition_id, Int64 from, Int64 to)
+{
+    auto it = data_versions.find(partition_id);
+    if (it == data_versions.end())
+        return {};
+
+    const auto & versions = it->second;
+    const auto [lower_bound, upper_bound] = std::minmax(from, to);
+    auto version_it = std::lower_bound(versions.begin(), versions.end(), lower_bound);
+
+    if (version_it == versions.end() || *version_it >= upper_bound)
+        return {};
+
+    return *version_it;
 }
 
 }

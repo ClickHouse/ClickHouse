@@ -205,7 +205,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
 ┌─d─────────────┬─isDynamicElementInSharedData(d)─┐
 │ ᴺᵁᴸᴸ          │ false                           │
 │ 42            │ false                           │
-│ Hello, World! │ true                            │
+│ Hello, World! │ false                           │
 │ [1,2,3]       │ true                            │
 └───────────────┴─────────────────────────────────┘
         )"

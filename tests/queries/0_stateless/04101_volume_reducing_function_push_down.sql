@@ -132,6 +132,42 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT lengthUTF8(fs) FROM volume_reducing_function_push_down ORDER BY id
     SETTINGS query_plan_push_down_volume_reducing_functions = 1);
 
+-- The positive side of the same condition: a `FixedString(64)` value is wider than the `UInt64`
+-- the length functions return, so both `length` and `lengthUTF8` are volume-reducing for it. This
+-- is exactly the shape measured by `tests/performance/push_down_volume_reducing_functions.xml`;
+-- asserting it here makes CI fail as soon as the benchmark stops exercising the pass, instead of
+-- letting it silently degrade into a timing of a plan that never changed.
+DROP TABLE IF EXISTS volume_reducing_function_push_down_wide_fixed_string;
+
+CREATE TABLE volume_reducing_function_push_down_wide_fixed_string (id UInt64, fs FixedString(64)) ENGINE = Memory;
+
+INSERT INTO volume_reducing_function_push_down_wide_fixed_string VALUES (1, ''), (2, 'hello'), (3, 'привет');
+
+SELECT 'plan: wide FixedString length — pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT length(fs) FROM (SELECT fs, id FROM volume_reducing_function_push_down_wide_fixed_string ORDER BY id)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1);
+
+SELECT 'plan: wide FixedString lengthUTF8 — pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT lengthUTF8(fs) FROM (SELECT fs, id FROM volume_reducing_function_push_down_wide_fixed_string ORDER BY id)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1);
+
+SELECT 'plan: wide FixedString lengthUTF8 — no pushdown when disabled';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT lengthUTF8(fs) FROM (SELECT fs, id FROM volume_reducing_function_push_down_wide_fixed_string ORDER BY id)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0);
+
+-- The results must not change either.
+SELECT 'result: wide FixedString lengthUTF8';
+SELECT lengthUTF8(fs) FROM (SELECT fs, id FROM volume_reducing_function_push_down_wide_fixed_string ORDER BY id)
+SETTINGS query_plan_push_down_volume_reducing_functions = 1;
+
+DROP TABLE volume_reducing_function_push_down_wide_fixed_string;
+
 -- Composite paths can share their payload with other expressions under another nested-column
 -- name. Do not push them down unless the optimizer can prove the complete payload is removed.
 SELECT 'plan: array length — not pushed';

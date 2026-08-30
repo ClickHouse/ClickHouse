@@ -18,6 +18,8 @@ class WorkloadEntityStorageBase : public IWorkloadEntityStorage
 {
 public:
     explicit WorkloadEntityStorageBase(ContextPtr global_context_, std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {});
+    ~WorkloadEntityStorageBase() override;
+
     ASTPtr get(const String & entity_name) const override;
 
     ASTPtr tryGet(const String & entity_name) const override;
@@ -111,10 +113,23 @@ private:
         const std::unordered_map<String, ASTPtr> & all_entities,
         std::optional<Event> change = {});
 
+    /// Held by shared_ptr so a subscription outlives both its list node and the storage.
+    /// `exec_mutex` is held for the whole invocation, so acquiring it waits for an in-flight call.
+    /// `unsubscribed` stops an entry a notifier already copied out of `list` from being invoked.
+    struct HandlerEntry
+    {
+        explicit HandlerEntry(OnChangedHandler handler_) : handler(std::move(handler_)) {}
+
+        OnChangedHandler handler;
+        std::mutex exec_mutex;
+        bool unsubscribed = false; /// guarded by exec_mutex
+    };
+    using HandlerEntryPtr = std::shared_ptr<HandlerEntry>;
+
     struct Handlers
     {
         std::mutex mutex;
-        std::list<OnChangedHandler> list;
+        std::list<HandlerEntryPtr> list;
     };
     /// shared_ptr is here for safety because WorkloadEntityStorageBase can be destroyed before all subscriptions are removed.
     std::shared_ptr<Handlers> handlers;

@@ -114,25 +114,23 @@ String RandomGenerator::nextDate32(const String & separator, const bool allow_fu
     }
     if (this->nextMediumNumber() < 16)
     {
-        switch (this->randomInt<uint32_t>(0, 2))
+        switch (this->randomInt<uint32_t>(0, 4))
         {
-            case 0: return separator + "1900-01-01" + separator; /// Min Date32
-            case 1: return separator + "2299-12-31" + separator; /// Max Date32
+            case 0: return separator + "0000-01-01" + separator; /// Min Date32
+            case 1: return separator + "9999-12-31" + separator; /// Max Date32
             case 2: return separator + "1970-01-01" + separator; /// Epoch
+            /// The date LUT only covers [1900, 2299]; anything outside it takes the cctz
+            /// escape path instead, so both edges of that window are worth hitting.
+            case 3: return separator + "1900-01-01" + separator;
+            case 4: return separator + "2299-12-31" + separator;
             default: UNREACHABLE();
         }
     }
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
-    return fmt::format(
-        "{}{}-{}{}-{}{}{}",
-        separator,
-        1900 + datetime64_years(generator),
-        month < 10 ? "0" : "",
-        month,
-        day < 10 ? "0" : "",
-        day,
-        separator);
+    const uint32_t year = this->nextBool() ? date32_lut_years(generator) : date32_years(generator);
+    /// A year below 1000 has to keep its leading zeros - `7-03-05` is not parsable.
+    return fmt::format("{}{:04}-{:02}-{:02}{}", separator, year, month, day, separator);
 }
 
 String RandomGenerator::nextTime(const String & separator, const bool allow_func)
@@ -353,9 +351,8 @@ String RandomGenerator::nextHexBytes(const uint32_t nbytes)
     ret.reserve(nbytes * 2);
     for (uint32_t i = 0; i < nbytes; i++)
     {
-        const uint8_t byte = nextRandomUInt8();
-        ret += hexDigits[byte >> 4];
-        ret += hexDigits[byte & 0x0F];
+        ret += hexDigits[hex_digits_dist(generator)];
+        ret += hexDigits[hex_digits_dist(generator)];
     }
     return ret;
 }
@@ -506,7 +503,12 @@ String RandomGenerator::nextIPv4()
             default: UNREACHABLE();
         }
     }
-    return fmt::format("{}.{}.{}.{}", this->nextRandomUInt8(), this->nextRandomUInt8(), this->nextRandomUInt8(), this->nextRandomUInt8());
+    return fmt::format(
+        "{}.{}.{}.{}",
+        this->randomInt<uint32_t>(0, 255),
+        this->randomInt<uint32_t>(0, 255),
+        this->randomInt<uint32_t>(0, 255),
+        this->randomInt<uint32_t>(0, 255));
 }
 
 String RandomGenerator::nextIPv6()

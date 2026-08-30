@@ -27,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 bool indexFileExistsInChecksums(
@@ -60,6 +61,14 @@ String getIndexFileName(const String & index_name, bool escape_filename)
 {
     if (escape_filename)
         return escapeForFileName(String(SKIP_INDEX_FILE_PREFIX) + index_name);
+
+    /// Here the name becomes a part of the file name as is, so a '/' in it would turn into a path
+    /// separator. `getIndexFromAST` rejects such names, but `escape_index_filenames` can also be
+    /// switched off by `ALTER TABLE ... MODIFY SETTING` after the index was created.
+    if (index_name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Skip index name ({}) cannot contain '/' with `escape_index_filenames` disabled", index_name);
+
     return String(SKIP_INDEX_FILE_PREFIX) + index_name;
 }
 
@@ -204,7 +213,8 @@ bool hasSameMeaning(const IDataType & from, const IDataType & to)
 ///
 /// Returns null when the part's own list answers neither way. For a subcolumn that is a
 /// DIFFERENCE, not an unknown, so the caller must not fall back to the cached description there.
-DataTypePtr tryGetPartOwnType(const IMergeTreeDataPart & part, const NameAndTypePair & required)
+template <typename Part>
+DataTypePtr tryGetPartOwnType(const Part & part, const NameAndTypePair & required)
 {
     if (auto own = part.getColumns().tryGetByName(required.name))
         return own->type;
@@ -273,13 +283,25 @@ bool isSerializationDefinedSubcolumn(
 
 }
 
-bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) const
+namespace
 {
-    const auto & metadata_columns = metadata_snapshot->getColumns();
+
+/// The two part representations answer these questions with the same method names, so the checks
+/// below are written once. A concrete part must not be wrapped in a part-info here: the physical
+/// format is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
+const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part) { return part.checksums; }
+const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
+const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }
+const IDataPartStorage & getStorage(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPartStorage(); }
+
+template <typename Part>
+bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & part)
+{
+    const auto & metadata_columns = skip_index.metadata_snapshot->getColumns();
     /// The part's OWN list, for the same reason tryGetPartOwnType uses it rather than the cache.
     const auto & part_columns = part.getColumns();
 
-    for (const auto & [column, metadata_type] : getColumnsWithTypesRequiredForIndexCalc())
+    for (const auto & [column, metadata_type] : skip_index.getColumnsWithTypesRequiredForIndexCalc())
     {
         auto part_column = part.tryGetColumn(column);
 
@@ -336,7 +358,7 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
         /// Date column but UInt32 once that column becomes UInt16. Recovering the expression's
         /// part-side result type would mean running the analyzer per part on the query path, so a
         /// non-trivial expression is refused on any type difference.
-        if (!index.isSimpleSingleColumnIndex())
+        if (!skip_index.index.isSimpleSingleColumnIndex())
             return false;
 
         if (!isRepresentationPreservingConversion(part_type.get(), metadata_type.get()))
@@ -346,34 +368,71 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
     return true;
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+template <typename Part>
+MergeTreeIndexFormat getDeserializedFormatImpl(
+    const IMergeTreeIndex & skip_index, const Part & part, const std::string & relative_path_prefix)
 {
-    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
+    for (const auto & [column, _] : skip_index.getColumnsWithTypesRequiredForIndexCalc())
         if (part.isSystemColumnInvalidated(column))
             return {0 /*unknown*/, {}};
 
     /// Discover what is on disk first: a part that does not have this index at all cannot
     /// mis-decode anything, and asking the type question only about parts that DO have it lets the
     /// check refuse outright when the part records no type for a required column.
-    auto format = getPhysicalFormat(part, relative_path_prefix);
+    auto format = skip_index.getPhysicalFormat(getChecksums(part), getStorage(part), relative_path_prefix);
     if (!format)
         return format;
 
     /// The part's granules were written with types the metadata no longer declares, so decoding them
     /// under the new types reads garbage. Report the index as not materialized in this part; the
     /// query then answers correctly without it.
-    if (!isPartTypeCompatible(part))
+    if (!isPartTypeCompatibleImpl(skip_index, part))
         return {0 /*unknown*/, {}};
 
     return format;
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+}
+
+bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPartInfoForReader & part_info) const
 {
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
+    return isPartTypeCompatibleImpl(*this, part_info);
+}
+
+bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) const
+{
+    return isPartTypeCompatibleImpl(*this, part);
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
+    const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const
+{
+    return getDeserializedFormatImpl(*this, part_info, relative_path_prefix);
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+{
+    return getDeserializedFormatImpl(*this, part, relative_path_prefix);
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
+{
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /*unknown*/, {}};
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+{
+    return getPhysicalFormat(part.checksums, part.getDataPartStorage(), relative_path_prefix);
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(
+    const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const
+{
+    return getPhysicalFormat(part_info.getChecksums(), *part_info.getDataPartStorage(), relative_path_prefix);
 }
 
 MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(

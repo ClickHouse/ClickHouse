@@ -12,12 +12,7 @@ Nullable(String) key, INNER
 a	A
 b	B
 LowCardinality(String) key, LEFT
-a	A
-x	
 LowCardinality(Nullable(String)) key, LEFT
-a	A
-b	B
-\N	
 NULL key does not match a real empty-string dictionary key
 a	A
 \N	

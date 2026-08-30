@@ -2,7 +2,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ForkWriteBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -76,17 +75,13 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     ObjectStorageRouterPtr object_storages_,
     BlobKillerThreadPtr blob_killer_,
     std::shared_ptr<ThreadPool> copy_object_pool_,
-    bool wait_blob_removal_,
-    String read_resource_name_,
-    String write_resource_name_)
+    bool wait_blob_removal_)
     : cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
     , blob_killer(std::move(blob_killer_))
     , copy_object_pool(std::move(copy_object_pool_))
     , wait_blob_removal(wait_blob_removal_)
-    , read_resource_name(std::move(read_resource_name_))
-    , write_resource_name(std::move(write_resource_name_))
     , metadata_transaction(metadata_storage->createTransaction())
 {
 }
@@ -98,10 +93,8 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     ClusterConfigurationPtr destination_cluster_,
     MetadataStoragePtr destination_metadata_storage_,
     ObjectStorageRouterPtr destination_object_storages_,
-    std::shared_ptr<ThreadPool> copy_object_pool_,
-    std::string read_resource_name_,
-    std::string write_resource_name_)
-    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, std::move(copy_object_pool_), /*wait_blob_removal=*/false, std::move(read_resource_name_), std::move(write_resource_name_))
+    std::shared_ptr<ThreadPool> copy_object_pool_)
+    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, std::move(copy_object_pool_), /*wait_blob_removal=*/false)
     , source_cluster(std::move(source_cluster_))
     , source_metadata_storage(std::move(source_metadata_storage_))
     , source_object_storages(std::move(source_object_storages_))
@@ -289,8 +282,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 {
     LOG_TEST(getLogger("DiskObjectStorageTransaction"), "write file {} mode {} autocommit {}", path, mode, autocommit);
 
-    WriteSettings enriched_settings = updateIOSchedulingSettings(settings, read_resource_name, write_resource_name);
-
     /// NOTE: We check it here and not after writing blob because in case of plain/plain-rewritable metadata storages
     ///       undo of disk tx will actually remove existing data.
     if (mode == WriteMode::Append && !metadata_storage->supportWritingWithAppend())
@@ -303,7 +294,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const bool create_blob_if_empty = !metadata_storage->supportsEmptyFilesWithoutBlobs();
 
     /// Builds the blob write stack; deferred so a fully inline write never touches the object storage.
-    auto create_blob_buffer = [disk_tx = shared_from_this(), path, object, buf_size, enriched_settings, enabled_locations]() mutable -> std::unique_ptr<WriteBuffer>
+    auto create_blob_buffer = [disk_tx = shared_from_this(), path, object, buf_size, write_settings = settings, enabled_locations]() mutable -> std::unique_ptr<WriteBuffer>
     {
         ForkWriteBuffer::WriteBufferPtrs writers;
         for (const auto & location : enabled_locations)
@@ -316,10 +307,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 ObjectStoragePtr object_storage = disk_tx->object_storages->takePointingTo(location);
 
                 #if ENABLE_DISTRIBUTED_CACHE
-                    bool use_distributed_cache = DistributedCache::canUseDistributedCacheForWrite(enriched_settings, *object_storage);
+                    bool use_distributed_cache = DistributedCache::canUseDistributedCacheForWrite(write_settings, *object_storage);
 
-                    if (use_distributed_cache && enriched_settings.distributed_cache_settings.write_through_cache_buffer_size)
-                        use_buffer_size = enriched_settings.distributed_cache_settings.write_through_cache_buffer_size;
+                    if (use_distributed_cache && write_settings.distributed_cache_settings.write_through_cache_buffer_size)
+                        use_buffer_size = write_settings.distributed_cache_settings.write_through_cache_buffer_size;
                 #endif
 
                 writer = object_storage->writeObject(
@@ -328,11 +319,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     WriteMode::Rewrite,
                     /*attributes=*/std::nullopt,
                     use_buffer_size,
-                    enriched_settings);
+                    write_settings);
 
                 #if ENABLE_DISTRIBUTED_CACHE
                     if (use_distributed_cache)
-                        writer = DistributedCache::writeWithDistributedCache(path, object, enriched_settings, *object_storage, std::move(writer));
+                        writer = DistributedCache::writeWithDistributedCache(path, object, write_settings, *object_storage, std::move(writer));
                 #endif
             }
             else
@@ -343,7 +334,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     WriteMode::Rewrite,
                     /*attributes=*/std::nullopt,
                     use_buffer_size,
-                    enriched_settings);
+                    write_settings);
             }
 
             writers.push_back(std::move(writer));
@@ -549,12 +540,10 @@ void DiskObjectStorageTransaction::copyFileImpl(
         }
     }
 
-    /// Share the enriched settings via shared_ptr so each task lambda captures a cheap refcount bump
+    /// Share the settings via shared_ptr so each task lambda captures a cheap refcount bump
     /// rather than a full copy of ReadSettings / WriteSettings.
-    const auto enriched_read_settings = std::make_shared<const ReadSettings>(
-        updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name));
-    const auto enriched_write_settings = std::make_shared<const WriteSettings>(
-        updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name));
+    const auto shared_read_settings = std::make_shared<const ReadSettings>(read_settings);
+    const auto shared_write_settings = std::make_shared<const WriteSettings>(write_settings);
 
     const auto blobs_to_copy = src_metadata_storage->getStorageObjects(from_file_path);
     const auto blobs_to_create = blobs_to_copy
@@ -582,10 +571,10 @@ void DiskObjectStorageTransaction::copyFileImpl(
         for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
         {
             runner.enqueueAndKeepTrack(
-                [this, src_object_storages, src_blob, dst_blob, location, src_local_location, enriched_read_settings, enriched_write_settings]
+                [this, src_object_storages, src_blob, dst_blob, location, src_local_location, shared_read_settings, shared_write_settings]
                 {
                     src_object_storages->takePointingTo(src_local_location)->copyObjectToAnotherObjectStorage(
-                        src_blob, dst_blob, *enriched_read_settings, *enriched_write_settings, *object_storages->takePointingTo(location));
+                        src_blob, dst_blob, *shared_read_settings, *shared_write_settings, *object_storages->takePointingTo(location));
                 });
         }
     }

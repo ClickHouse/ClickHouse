@@ -158,8 +158,8 @@ REGISTER_FUNCTION(Reverse)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array or string with the order of elements or characters reversed."};
     FunctionDocumentation::Examples examples = {
-        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4, 3, 2, 1]"},
-        {"Reverse string", "SELECT reverse('abcd');", "'dcba'"}
+        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4,3,2,1]"},
+        {"Reverse string", "SELECT reverse('abcd');", "dcba"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

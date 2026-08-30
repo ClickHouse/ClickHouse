@@ -147,6 +147,26 @@ def test_connections():
         == "1\n"
     )
 
+    assert (
+        execute_query_https(
+            server.ip_address, 8447, "SELECT 1", version=ssl.TLSVersion.TLSv1_2
+        )
+        == "1\n"
+    )
+    assert execute_query_https_unsupported(
+        server.ip_address, 8447, "SELECT 1", version=ssl.TLSVersion.TLSv1_3
+    )
+
+    assert (
+        execute_query_https(
+            server.ip_address, 8443, "SELECT 1", version=ssl.TLSVersion.TLSv1_2
+        )
+        == "1\n"
+    )
+    assert execute_query_https_unsupported(
+        server.ip_address, 8443, "SELECT 1", version=ssl.TLSVersion.TLSv1_3
+    )
+
 
 # tests when using PROXYv1 with enabled auth_use_forwarded_address that forwarded address is used for authentication and query's source address
 def test_proxy_1():

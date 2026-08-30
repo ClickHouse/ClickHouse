@@ -174,7 +174,10 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 {
                     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
                     if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+                    {
+                        UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(context);
                         function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, context);
+                    }
                 }
 
                 if (!function_builder)

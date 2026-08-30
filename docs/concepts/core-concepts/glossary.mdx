@@ -1,21 +1,61 @@
 ---
 sidebarTitle: 'Glossary'
-description: 'This page contains a list of commonly used words and phrases regarding ClickHouse, as well as their definitions.'
+description: 'Definitions of database concepts and ClickHouse terminology, with emphasis on behavior that differs from transactional databases.'
 title: 'Glossary'
 slug: /concepts/glossary
 keywords: ['glossary', 'definitions', 'terminology']
+mode: 'wide'
 doc_type: 'reference'
 ---
 
 {/* no-glossary */}
 
+import { Glossary } from '/snippets/components/Glossary/Glossary.jsx'
+
+A glossary of database concepts and ClickHouse terminology, including how familiar database terms differ in ClickHouse.
+
+export const glossaryMetadata = {
+  delete: { learnMore: '/deletes/overview' },
+  deduplication: { aliases: ['duplicate rows', 'unique constraint'], learnMore: '/guides/developer/deduplication' },
+  dictionary: { learnMore: '/dictionary' },
+  'distributed-table': { learnMore: '/engines/table-engines/special/distributed' },
+  final: { aliases: ['still see duplicates', 'query-time merge'], code: true, learnMore: '/sql-reference/statements/select/from#final-modifier' },
+  granule: { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
+  'incremental-materialized-view': { aliases: ['insert trigger'], learnMore: '/materialized-view/incremental-materialized-view' },
+  json: { code: true, learnMore: '/sql-reference/data-types/newjson' },
+  'materialized-view': { aliases: ['MV', 'stored query', 'insert trigger', 'dynamic table', 'dynamic tables'], learnMore: '/materialized-views' },
+  merge: { learnMore: '/merges' },
+  mergetree: { code: true, learnMore: '/engines/table-engines/mergetree-family/mergetree' },
+  mutation: { aliases: ['ALTER UPDATE', 'ALTER DELETE', 'MERGE statement'], learnMore: '/concepts/best-practices/avoid-mutations' },
+  'nullable-column': { aliases: ['NULL', 'NULL vs default value'], learnMore: '/sql-reference/data-types/nullable' },
+  parts: { learnMore: '/concepts/core-concepts/parts' },
+  partition: { aliases: ['PARTITION BY', 'partition pruning'], learnMore: '/partitions' },
+  'partitioning-key': { learnMore: '/concepts/core-concepts/partitions' },
+  'primary-key': { aliases: ['ORDER BY', 'sorting key', 'unique key', 'unique constraint'], learnMore: '/concepts/core-concepts/primary-indexes' },
+  projection: { aliases: ['projection vs materialized view', 'alternate ordering'], learnMore: '/data-modeling/projections' },
+  'refreshable-materialized-view': { aliases: ['scheduled materialized view', 'refresh materialized view', 'scheduled query', 'scheduled queries'], learnMore: '/materialized-view/refreshable-materialized-view' },
+  replacingmergetree: { aliases: ['upsert', 'deduplication', 'still have duplicates', 'MERGE statement'], code: true, learnMore: '/guides/replacing-merge-tree' },
+  'secondary-index': { learnMore: '/optimize/skipping-indexes' },
+  'skipping-index': { learnMore: '/optimize/skipping-indexes' },
+  'sorting-key': { aliases: ['ORDER BY', 'primary key', 'on-disk order', 'clustering key', 'clustering columns', 'clustered table', 'CLUSTER BY'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
+  'sparse-index': { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes' },
+  'table-engine': { learnMore: '/engines/table-engines' },
+  transaction: { learnMore: '/guides/developer/transactional' },
+  ttl: { aliases: ['expiration', 'retention', 'data retention'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
+  update: { aliases: ['row update', 'lightweight update'], legacyIds: ['lightweight-update'], learnMore: '/updating-data/overview' },
+  upsert: { aliases: ['ON CONFLICT', 'insert or update', 'MERGE statement'], learnMore: '/guides/replacing-merge-tree' },
+  warehouse: { aliases: ['compute-compute separation', 'virtual warehouse', 'virtual warehouses'], learnMore: '/cloud/reference/warehouses' },
+}
+
+<Glossary metadata={glossaryMetadata}>
+
 ## Atomicity {#atomicity}
 
-Atomicity ensures that a transaction (a series of database operations) is treated as a single, indivisible unit. This means that either all operations within the transaction occur, or none do. An example of an atomic transaction is transferring money from one bank account to another. If either step of the transfer fails, the transaction fails, and the money stays in the first account. Atomicity ensures no money is lost or created.
+Atomicity means an operation is observed either in full or not at all. In ClickHouse, an insert into one partition of one `MergeTree`-family table is atomic when its rows are written as a single block. An insert spanning partitions is atomic separately for each partition, and an insert into a distributed table is atomic separately for each shard. Multi-statement transactions remain experimental and restricted.
 
 ## Block {#block}
 
-A block is a logical unit for organizing data processing and storage. Each block contains columnar data which is processed together to enhance performance during query execution. By processing data in blocks, ClickHouse utilizes CPU cores efficiently by minimizing cache misses and facilitating vectorized execution. ClickHouse uses various compression algorithms, such as LZ4, ZSTD, and Delta, to compress data in blocks.
+A block is a self-describing columnar batch of rows used for query processing and data transfer. Blocks are runtime and wire units; data parts and granules are separate storage and indexing concepts. Processing column values in blocks enables vectorized execution.
 
 ## Cluster {#cluster}
 
@@ -23,92 +63,142 @@ A collection of nodes (servers) that work together to store and process data.
 
 ## CMEK {#cmek}
 
-Customer-managed encryption keys (CMEK) allow customers to use their key-management service (KMS) key to encrypt the ClickHouse disk data key and protect their data at rest.
+In ClickHouse Cloud, customer-managed encryption keys (CMEK) allow a customer's key-management service (KMS) key to protect the data encryption key (DEK) used for data at rest.
+
+## Delete {#delete}
+
+For `MergeTree`-family tables, deleting rows can mean marking them as deleted with `DELETE FROM`, rewriting affected data parts with `ALTER TABLE ... DELETE`, or efficiently removing an entire partition. Lightweight deletes hide rows from subsequent queries before the data is physically removed during background merges.
+
+## Deduplication {#deduplication}
+
+Deduplication can refer to different mechanisms in ClickHouse. For row-version deduplication, engines such as `ReplacingMergeTree` identify duplicate versions by the sorting key and resolve them during background merges within a partition. Replicated table engines can separately deduplicate retried insert blocks by their block identifiers.
 
 ## Dictionary {#dictionary}
 
-A dictionary is a mapping of key-value pairs that is useful for various types of reference lists. It is a powerful feature that allows for the efficient use of dictionaries in queries, which is often more efficient than using a `JOIN` with reference tables.
+A dictionary provides key-value access to reference data from an in-memory or external source. For compatible key-based lookups, dictionary functions or a direct dictionary `JOIN` can avoid repeatedly scanning a reference table.
 
 ## Distributed table {#distributed-table}
 
 A distributed table in ClickHouse is a special type of table that doesn't store data itself but provides a unified view for distributed query processing across multiple servers in a cluster.
 
+## `FINAL` {#final}
+
+`FINAL` is a query modifier that applies an engine's merge-time transformations while reading data, without physically merging the stored parts. It can return reconciled results from engines such as `ReplacingMergeTree` before background merges finish, at the cost of additional query-time compute and memory.
+
 ## Granule {#granule}
 
-A granule is a batch of rows in an uncompressed block. When reading data, ClickHouse accesses granules, but not individual rows, which enables faster data processing in analytical workloads. A granule contains 8192 rows by default. The primary index contains one entry per granule.
+A granule is the smallest logical group of rows ClickHouse reads for primary-index pruning. It contains up to 8,192 rows by default, but adaptive index granularity can create smaller granules. The primary index normally stores one entry per granule.
 
 ## Incremental materialized view {#incremental-materialized-view}
 
-In ClickHouse is a type of materialized view that processes and aggregates data at insert time. When new data is inserted into the source table, the materialized view executes a predefined SQL aggregation query only on the newly inserted blocks and writes the aggregated results to a target table.
+An incremental materialized view runs its query as data is inserted into a source table and writes the result to a target table. It processes only the newly inserted blocks, not the source table's complete current state, and changes to joined right-side tables don't retrigger it.
 
-## Lightweight update {#lightweight-update}
+## `JSON` {#json}
 
-A lightweight update in ClickHouse is an experimental feature that allows you to update rows in a table using standard SQL UPDATE syntax, but instead of rewriting entire columns or data parts (as with traditional mutations), it creates "patch parts" containing only the updated columns and rows. These updates are immediately visible in SELECT queries through patch application, but the physical data is only updated during subsequent merges.
+The `JSON` type stores semi-structured documents whose paths and types may vary between rows. ClickHouse stores discovered paths as subcolumns so queries can read individual fields efficiently. Use typed columns or structural types such as `Tuple` when the schema is stable.
 
 ## Mark file {#mark-file}
 
-A mark file in ClickHouse is a file that stores "marks", or index entries that help ClickHouse quickly locate where specific data ranges are stored in data files.
+A mark file stores offsets that locate granules in compressed column data. Each mark records an offset in the compressed file and an offset within the corresponding decompressed block, allowing ClickHouse to seek to a granule without reading the entire column.
 
 ## Materialized view {#materialized-view}
 
-A materialized view in ClickHouse is a mechanism that automatically runs a query on data as it is inserted into a source table, storing the transformed or aggregated results in a separate target table for faster querying.
+ClickHouse has two materialized-view models. An incremental materialized view acts like an insert-time trigger that processes newly inserted blocks, while a refreshable materialized view periodically reruns its query over the full dataset. Features with similar names in other databases may combine these behaviors, so there isn't always a one-to-one mapping.
 
-## MergeTree {#mergetree}
+## Merge {#merge}
 
-A MergeTree in ClickHouse is a table engine designed for high data ingest rates and large data volumes. It is the core storage engine in ClickHouse, providing features such as columnar storage, custom partitioning, sparse primary indexes, and support for background data merges.
+A merge in ClickHouse is a background storage operation that combines smaller immutable data parts into larger parts within the same partition. Depending on the table engine, merges can also aggregate, collapse, or replace rows; they aren't the same as a transactional SQL `MERGE` statement.
+
+## `MergeTree` {#mergetree}
+
+A `MergeTree` in ClickHouse is a table engine designed for high data ingest rates and large data volumes. It is the core storage engine in ClickHouse, providing features such as columnar storage, custom partitioning, sparse primary indexes, and support for background data merges.
 
 ## Mutation {#mutation}
 
-A mutation in ClickHouse refers to an operation that modifies or deletes existing data in a table, typically using commands like ALTER TABLE ... UPDATE or ALTER TABLE ... DELETE. Mutations are implemented as asynchronous background processes that rewrite entire data parts affected by the change, rather than modifying rows in place.
+For `MergeTree`-family tables, a mutation modifies or deletes existing data with commands such as `ALTER TABLE ... UPDATE` or `ALTER TABLE ... DELETE`. Unlike an OLTP row update, it rewrites affected data parts and normally proceeds asynchronously; parts are replaced as they become ready, so the operation isn't an atomic table-wide transaction.
+
+## Nullable column {#nullable-column}
+
+A column must use `Nullable(T)` to distinguish `NULL` from ordinary values of type `T`, including values such as `0` or an empty string. ClickHouse stores a separate null mask, which adds storage and processing overhead, so use nullable columns when missing values have meaningful semantics rather than as a default choice.
 
 ## On-the-fly mutation {#on-the-fly-mutation}
 
-On-the-fly mutations in ClickHouse are a mechanism that allows updates or deletes to be visible in subsequent SELECT queries immediately after the mutation is submitted, without waiting for the background mutation process to finish.
+When `apply_mutations_on_fly` is enabled for both a mutation and subsequent reads, ClickHouse applies pending updates or deletes during `SELECT` queries so their results are visible before the stored parts are rewritten. The mutation is still materialized asynchronously in the background.
 
 ## Parts {#parts}
 
-A physical file on a disk that stores a portion of the table's data. This is different from a partition, which is a logical division of a table's data that is created using a partition key.
+A data part is an immutable collection of files on storage containing a portion of a table's rows. Parts are created by inserts and combined by background merges within a partition. Unlike a partition, which is a logical grouping of data, a part is a physical storage unit managed by ClickHouse.
+
+## Partition {#partition}
+
+A partition is a logical grouping of data parts in a `MergeTree`-family table. Partitioning is primarily for data-management operations such as dropping, moving, and applying retention policies to groups of data. Partition pruning can help queries that select only a few partitions, but the sorting and primary keys are usually more important for query performance.
 
 ## Partitioning key {#partitioning-key}
 
-A partitioning key in ClickHouse is a SQL expression defined in the PARTITION BY clause when creating a table. It determines how data is logically grouped into partitions on disk. Each unique value of the partitioning key forms its own physical partition, allowing for efficient data management operations such as dropping, moving, or archiving entire partitions.
+A partitioning key is the expression in a table's `PARTITION BY` clause. Rows that produce the same partition ID belong to the same logical partition, while separate inserts can create separate data parts inside that partition. The grouping enables operations such as dropping, moving, or archiving an entire partition.
 
 ## Primary key {#primary-key}
 
-In ClickHouse, a primary key determines the order in which data is stored on disk and is used to build a sparse index that speeds up query filtering. Unlike traditional databases, the primary key in ClickHouse doesn't enforce uniqueness—multiple rows can have the same primary key value.
+Unlike a primary key in many transactional databases, a ClickHouse primary key isn't a row-level uniqueness constraint. It defines the columns in a sparse primary index that helps ClickHouse skip granules while reading. By default it matches the sorting key defined by `ORDER BY`; if defined separately, it must be a prefix of the sorting key.
 
 ## Projection {#projection}
 
-A projection in ClickHouse is a hidden, automatically maintained table that stores data in a different order or with precomputed aggregations to speed up queries, especially those filtering on columns not in the main primary key.
+A projection is an automatically maintained representation of a table's data with an alternate ordering, a subset of columns, or a precomputed aggregation. ClickHouse can choose it automatically while querying the original table. Projections may duplicate stored data and add write overhead, although `_part_offset` projections can trade storage for additional reads from the base table.
 
 ## Refreshable materialized view {#refreshable-materialized-view}
 
-Refreshable materialized view is a type of materialized view that periodically re-executes its query over the full dataset and stores the result in a target table. Unlike incremental materialized views, refreshable materialized views are updated on a schedule and can support complex queries, including JOINs and UNIONs, without restrictions.
+A refreshable materialized view periodically reruns its query over the full dataset and replaces or appends the stored result on a schedule. Unlike an incremental materialized view, it isn't triggered by each inserted block and can use complex queries. It can replace a scheduled query that materializes a `SELECT` result, but it isn't a general-purpose scheduler for arbitrary DDL or DML statements.
+
+## `ReplacingMergeTree` {#replacingmergetree}
+
+`ReplacingMergeTree` models updates and upserts by accepting multiple versions of rows with the same sorting key and retaining one version during background merges. Deduplication is eventual rather than an insert-time uniqueness guarantee, so queries may see multiple versions until they use `FINAL`, equivalent query logic, or the relevant parts merge.
 
 ## Replica {#replica}
 
-A copy of the data stored in a ClickHouse database. You can have any number of replicas of the same data for redundancy and reliability. Replicas are used in conjunction with the ReplicatedMergeTree table engine, which enables ClickHouse to keep multiple copies of data in sync across different servers.
+A replica is a server or compute instance that maintains or accesses the same logical table data as other replicas for availability and query capacity. With `ReplicatedMergeTree`, replicas maintain independent copies of data; ClickHouse Cloud replicas using `SharedMergeTree` share object storage instead.
+
+## Secondary index {#secondary-index}
+
+In ClickHouse, the closest analogue to a conventional secondary index is usually a data skipping index. Instead of locating individual rows through a B-tree, it stores metadata for groups of granules so ClickHouse can avoid reading blocks that can't contain matching values.
 
 ## Shard {#shard}
 
-A subset of data. ClickHouse always has at least one shard for your data. If you don't split the data across multiple servers, your data will be stored in one shard. Sharding data across multiple servers can be used to divide the load if you exceed the capacity of a single server.
+A shard is a logical subset of table data assigned to one server or replica group in a distributed deployment. Sharding divides data and query work across servers; replicas provide redundant or parallel access to the data within each shard.
 
 ## Skipping index {#skipping-index}
 
-Skipping indices are used to store small amounts of metadata at the level of multiple consecutive granules which allows ClickHouse to avoid scanning irrelevant rows. Skipping indices provide a lightweight alternative to projections.
+A data skipping index stores compact metadata for one or more consecutive granules so ClickHouse can avoid reading blocks that cannot match a query. It is most effective when indexed values correlate with the table's ordering and may provide little benefit when matching values occur in most indexed blocks.
 
 ## Sorting key {#sorting-key}
 
-In ClickHouse, a sorting key defines the physical order of rows on disk. If you don't specify a primary key, ClickHouse uses the sorting key as the primary key. If you specify both, the primary key must be a prefix of the sorting key.
+For a `MergeTree`-family table, the `ORDER BY` clause defines the sorting key: the physical row order within each data part. It serves a similar purpose to clustering columns or clustering keys in other analytical databases, but ClickHouse uses it to maintain a defined lexicographic row order. If no separate primary key is specified, the sorting key also becomes the primary key; the two keys are related but aren't required to be identical.
 
 ## Sparse index {#sparse-index}
 
-A type of indexing when the primary index contains one entry for a group of rows, rather than a single row. The entry that corresponds to a group of rows is referred to as a mark. With sparse indexes, ClickHouse first identifies groups of rows that potentially match the query and then processes them separately to find a match. Because of this, the primary index is small enough to be loaded into the memory.
+A sparse primary index stores key values for each granule rather than one entry per row. ClickHouse uses these entries to identify candidate granules and then reads their rows. Because its size scales with granules rather than rows, the index is usually small enough to keep in memory.
 
 ## Table engine {#table-engine}
 
-Table engines in ClickHouse determine how data is written, stored and accessed. MergeTree is the most common table engine, and allows quick insertion of large amounts of data which get processed in the background.
+Table engines in ClickHouse determine how data is written, stored and accessed. `MergeTree` is the most common table engine, and allows quick insertion of large amounts of data which get processed in the background.
 
-## TTL {#ttl}
+## Transaction {#transaction}
 
-Time To Live (TTL) is A ClickHouse feature that automatically moves, deletes, or rolls up columns or rows after a certain time period. This allows you to manage storage more efficiently because you can delete, move, or archive the data that you no longer need to access frequently.
+In ClickHouse, transactional guarantees are scoped differently from those in a typical OLTP database. Qualifying inserts are atomic at the block or partition level, while conventional multi-statement transactions with `COMMIT` and `ROLLBACK` remain experimental and have significant restrictions.
+
+## `TTL` {#ttl}
+
+`TTL` rules move, delete, or roll up data after an expression becomes eligible. Expiration isn't immediate: ClickHouse normally applies expired-data actions during background merges, so expired rows can remain on disk and be returned by queries until a merge processes the relevant parts.
+
+## Update {#update}
+
+ClickHouse is optimized for immutable, append-heavy data rather than frequent in-place row updates. Updates are commonly modeled by inserting new versions with specialized table engines or performed as mutations that rewrite affected data parts.
+
+## Upsert {#upsert}
+
+`MergeTree`-family tables don't perform a transactional `INSERT ... ON CONFLICT` upsert. Upserts are commonly modeled by inserting a newer row version into an engine such as `ReplacingMergeTree`. Older versions are resolved during background merges, so queries may need `FINAL` or equivalent logic until merging occurs.
+
+## Warehouse {#warehouse}
+
+In ClickHouse Cloud, a warehouse is a set of services that share the same data but have independent compute resources and endpoints. In systems where a warehouse represents one compute cluster, an individual ClickHouse service is the closer analogue; a ClickHouse warehouse groups multiple services.
+
+</Glossary>

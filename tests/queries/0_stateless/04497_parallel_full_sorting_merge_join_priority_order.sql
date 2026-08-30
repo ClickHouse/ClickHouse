@@ -20,8 +20,6 @@ INSERT INTO pfsmj_prio_left  SELECT number, number FROM numbers(0, 2000);
 INSERT INTO pfsmj_prio_left  SELECT number, number FROM numbers(2000, 2000);
 INSERT INTO pfsmj_prio_right SELECT number, number * 2 FROM numbers(0, 4000);
 
--- Analyzer path. The default is overridden to 0 in the old-analyzer CI configuration, so pin it
--- explicitly (`enable_analyzer` cannot be changed inside a subquery, so set it at session level).
 SET enable_analyzer = 1;
 
 -- `parallel_full_sorting_merge` selected -> sharded.
@@ -39,19 +37,6 @@ FROM (EXPLAIN PIPELINE SELECT l.id FROM pfsmj_prio_left AS l INNER JOIN pfsmj_pr
 -- Plain `full_sorting_merge` -> NOT sharded (baseline).
 SELECT 'analyzer full_only_not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
 FROM (EXPLAIN PIPELINE SELECT l.id FROM pfsmj_prio_left AS l INNER JOIN pfsmj_prio_right AS r ON l.k = r.k SETTINGS join_algorithm = 'full_sorting_merge', max_threads = 4);
-
--- Legacy analyzer path: the selected-algorithm flag is set on both construction paths. `enable_analyzer`
--- cannot be changed inside a subquery, so set it at session level (as in `04494`) rather than in the
--- `EXPLAIN PIPELINE` SETTINGS.
-SET enable_analyzer = 0;
-
-SELECT 'legacy parallel_only_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
-FROM (EXPLAIN PIPELINE SELECT l.id FROM pfsmj_prio_left AS l INNER JOIN pfsmj_prio_right AS r ON l.k = r.k SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4);
-
-SELECT 'legacy full_first_not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT l.id FROM pfsmj_prio_left AS l INNER JOIN pfsmj_prio_right AS r ON l.k = r.k SETTINGS join_algorithm = 'full_sorting_merge,parallel_full_sorting_merge', max_threads = 4);
-
-SET enable_analyzer = 1;
 
 -- Regardless of the chosen execution, all variants must return the same (correct) result.
 SELECT 'result_all_equal',

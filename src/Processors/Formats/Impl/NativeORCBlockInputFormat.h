@@ -58,6 +58,11 @@ asORCInputStream(ReadBuffer & in, const FormatSettings & settings, bool use_pref
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
 std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
 
+/// The memory pool to set on the options of every ORC reader and writer we create: unlike the
+/// default one of the library, it is accounted for by the memory tracker and it throws on failure
+/// instead of returning a null pointer that the library dereferences.
+orc::MemoryPool & getORCMemoryPool();
+
 std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 

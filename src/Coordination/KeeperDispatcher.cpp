@@ -13,6 +13,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -426,7 +427,7 @@ void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size, UInt64
 void KeeperDispatcher::interruptibleSleep(std::chrono::milliseconds period)
 {
     std::unique_lock lock(early_shutdown_wait_mutex);
-    early_shutdown_wait_cv.wait_for(lock, period, [&] { return shutting_down.load(); });
+    early_shutdown_wait_cv.wait_for(lock, saturatedWaitMilliseconds(period.count()), [&] { return shutting_down.load(); });
 }
 
 void KeeperDispatcher::signalShutdown()
@@ -610,7 +611,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         throw;
     }
 
-    if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
+    if (future.wait_for(saturatedWaitMilliseconds(session_timeout_ms)) != std::future_status::ready)
     {
         {
             std::lock_guard lock(new_session_id_mutex);

@@ -60,7 +60,6 @@
             <allow_distributed_ddl>1</allow_distributed_ddl>
             <allow_drop_detached>1</allow_drop_detached>
             <allow_dynamic_type_in_join_keys>1</allow_dynamic_type_in_join_keys>
-            <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
             <allow_experimental_alias_table_engine>1</allow_experimental_alias_table_engine>
             <allow_experimental_cleanup_old_data_files_compaction>1</allow_experimental_cleanup_old_data_files_compaction>
             <allow_experimental_codecs>1</allow_experimental_codecs>
@@ -83,18 +82,17 @@
             <allow_experimental_join_right_table_sorting>1</allow_experimental_join_right_table_sorting>
             <allow_experimental_json_lazy_type_hints>1</allow_experimental_json_lazy_type_hints>
             <allow_experimental_kafka_offsets_storage_in_keeper>1</allow_experimental_kafka_offsets_storage_in_keeper>
-            <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
             <allow_experimental_object_storage_queue_hive_partitioning>1</allow_experimental_object_storage_queue_hive_partitioning>
             <allow_experimental_polyglot_dialect>1</allow_experimental_polyglot_dialect>
+            <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
             <allow_experimental_query_deduplication>1</allow_experimental_query_deduplication>
             <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
             <allow_experimental_unique_key>1</allow_experimental_unique_key>
             <allow_experimental_url_wildcard_from_index_pages>1</allow_experimental_url_wildcard_from_index_pages>
-            <allow_experimental_window_view>1</allow_experimental_window_view>
             <allow_experimental_ytsaurus_dictionary_source>1</allow_experimental_ytsaurus_dictionary_source>
             <allow_experimental_ytsaurus_table_engine>1</allow_experimental_ytsaurus_table_engine>
             <allow_experimental_ytsaurus_table_function>1</allow_experimental_ytsaurus_table_function>

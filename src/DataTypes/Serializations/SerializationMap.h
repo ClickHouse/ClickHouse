@@ -90,8 +90,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -109,21 +108,6 @@ private:
     friend SerializationMapSize;
     friend SerializationMapKeysOrValues;
     friend SerializationMapKeyValue;
-
-    /// Small shared state cached at the current substream path so that both
-    /// `SerializationMap` and `SerializationMapKeyValue` can coordinate.
-    /// `SerializationMap` sets `reading_full_map = true` during prefix deserialization;
-    /// `SerializationMapKeyValue` reads the flag to decide whether to keep the
-    /// intermediate nested column (needed for cache sharing) or discard it after extraction.
-    struct DeserializeBinaryBulkStateMapReadingInfo : public DeserializeBinaryBulkState
-    {
-        bool reading_full_map = false;
-
-        DeserializeBinaryBulkStatePtr clone() const override
-        {
-            return std::make_shared<DeserializeBinaryBulkStateMapReadingInfo>(*this);
-        }
-    };
 
     /// State read from the buckets info stream during deserialization prefix.
     /// Contains the bucket count and optional statistics that were written
@@ -147,7 +131,6 @@ private:
     };
 
     static DeserializeBinaryBulkStatePtr deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
-    static DeserializeBinaryBulkStatePtr deserializeMapReadingInfoStatePrefix(SubstreamsDeserializeStatesCache * cache, const ISerialization::SubstreamPath & path);
 
     template <typename KeyWriter, typename ValueWriter>
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;

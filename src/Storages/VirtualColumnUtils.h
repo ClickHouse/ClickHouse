@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -157,6 +158,10 @@ struct VirtualsForFileLikeStorage
     /// Original file path as stored in Iceberg metadata (before resolution to storage path).
     /// Used by Iceberg position deletes to reference data files in the metadata path format.
     const String * iceberg_metadata_file_path { nullptr };
+    std::optional<UInt64> last_updated_sequence_number = std::nullopt;
+    std::optional<UInt64> first_row_id = std::nullopt;
+    ColumnPtr materialized_row_ids = {};
+    ColumnPtr materialized_last_updated_sequence_numbers = {};
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(

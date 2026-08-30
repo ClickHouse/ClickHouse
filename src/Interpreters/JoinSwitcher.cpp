@@ -11,7 +11,7 @@ JoinSwitcher::JoinSwitcher(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader right_sample_block_,
     const bool any_take_last_row_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_)
     : limits(table_join_->sizeLimits())
     , switched(false)
     , table_join(table_join_)
@@ -19,7 +19,7 @@ JoinSwitcher::JoinSwitcher(
 {
     join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row_, /*reserve_num_=*/0, /*instance_id_=*/"",
-        /*use_two_level_maps_=*/false, stats_collecting_params_);
+        /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();

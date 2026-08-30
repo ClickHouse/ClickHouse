@@ -24,9 +24,9 @@ Returns the millisecond component (0-999) of a `DateTime` or `DateTime64` value.
 SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3));
         )",
         R"(
-┌──toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
-│                                                        456 │
-└────────────────────────────────────────────────────────────┘
+┌─toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
+│                                                       456 │
+└───────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 2};

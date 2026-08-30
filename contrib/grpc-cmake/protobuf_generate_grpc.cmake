@@ -204,8 +204,11 @@ function(protobuf_generate_grpc)
     endif()
     list(APPEND _generated_srcs_all ${_generated_srcs})
 
+    # protoc does not create the output directory, and the Makefiles generator
+    # (unlike Ninja) does not create directories of custom command outputs.
     add_custom_command(
       OUTPUT ${_generated_srcs}
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${protobuf_generate_grpc_PROTOC_OUT_DIR}
       COMMAND ${NATIVE_protoc}
       ARGS --${protobuf_generate_grpc_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
            --grpc_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}

@@ -3151,27 +3151,23 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
         in node.query_and_get_error(
             f"""
-    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet', partition_strategy = 'wildcard')
     PARTITION BY (b, c)
-    """,
-            settings={"file_like_engine_default_partition_strategy": "wildcard"},
+    """
         )
     )
 
     # `compatibility` older than `26.6` resolves
-    # `file_like_engine_default_partition_strategy` to `wildcard` via
-    # `SettingsChangesHistory`, so the same path must raise the same error
-    # without an explicit setting override.
-    assert (
-        "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
-        in node.query_and_get_error(
-            f"""
+    # `file_like_engine_default_partition_strategy` to `wildcard`. Without an
+    # explicit strategy, preserve the old read-only behavior instead of failing.
+    node.query(
+        f"""
     CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
     PARTITION BY (b, c)
     """,
-            settings={"compatibility": "26.5"},
-        )
+        settings={"compatibility": "26.5"},
     )
+    node.query(f"DROP TABLE {table_name}")
 
     # From `26.6` onwards the default flips to `hive`, so the same statement
     # under `compatibility = '26.6'` must succeed.
@@ -3761,3 +3757,38 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
 
     instance.query(f"DROP TABLE {table_name}")
 
+
+def test_row_policy_over_csv(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    filename = "test_row_policy_over_csv.csv"
+    url = f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{filename}"
+
+    run_query(
+        instance,
+        f"INSERT INTO TABLE FUNCTION s3('{url}', 'CSV', 'id UInt64, region String') "
+        f"SELECT number, ['East', 'West'][number % 2 + 1] FROM numbers(6) "
+        f"SETTINGS s3_truncate_on_insert=1",
+    )
+    run_query(
+        instance,
+        f"CREATE TABLE test_row_policy_csv (id UInt64, region String) ENGINE = S3('{url}', 'CSV')",
+    )
+    run_query(
+        instance,
+        "CREATE ROW POLICY test_row_policy_csv_p ON test_row_policy_csv "
+        "USING region = 'East' TO ALL",
+    )
+    try:
+        assert (
+            run_query(instance, "SELECT id, region FROM test_row_policy_csv ORDER BY id")
+            == "0\tEast\n2\tEast\n4\tEast\n"
+        )
+        assert (
+            run_query(instance, "SELECT id FROM test_row_policy_csv ORDER BY id")
+            == "0\n2\n4\n"
+        )
+        assert run_query(instance, "SELECT count() FROM test_row_policy_csv") == "3\n"
+    finally:
+        run_query(instance, "DROP ROW POLICY test_row_policy_csv_p ON test_row_policy_csv")
+        run_query(instance, "DROP TABLE test_row_policy_csv")

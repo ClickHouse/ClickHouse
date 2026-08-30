@@ -157,9 +157,9 @@ No percent decoding or trimming of tabs, spaces or control characters is perform
         "Usage example",
         "SELECT idnaEncode('straße.münchen.de')",
         R"(
-┌─idnaEncode('straße.münchen.de')─────┐
-│ xn--strae-oqa.xn--mnchen-3ya.de     │
-└─────────────────────────────────────┘
+┌─idnaEncode('straße.münchen.de')─┐
+│ xn--strae-oqa.xn--mnchen-3ya.de │
+└─────────────────────────────────┘
         )"
     }
     };
@@ -181,9 +181,9 @@ In case of an error it returns an empty string instead of throwing an exception.
         "Usage example",
         "SELECT tryIdnaEncode('straße.münchen.de')",
         R"(
-┌─tryIdnaEncode('straße.münchen.de')──┐
-│ xn--strae-oqa.xn--mnchen-3ya.de     │
-└─────────────────────────────────────┘
+┌─tryIdnaEncode('straße.münchen.de')─┐
+│ xn--strae-oqa.xn--mnchen-3ya.de    │
+└────────────────────────────────────┘
         )"
     }
     };

@@ -1,0 +1,25 @@
+-- old analyzer, window partitioned by the exploded column: must not engage even when forced
+1
+-- old analyzer, DISTINCT on the exploded column: must not engage even when forced
+1
+-- the analyzer: the exploded column gets a synthetic name and never matches; results stay equal
+1
+1
+-- window partitioned by a table column with an unrelated ARRAY JOIN: still engages
+Skip scatter by partition: 1
+Read each partition through separate port: 1
+1
+-- DISTINCT on a table column with an unrelated ARRAY JOIN: still engages
+Read each partition through separate port: 1
+1
+-- window partitioned by an ARRAY JOIN alias: not applicable, and the query works
+1
+-- mixed keys (k, x) with an exploded x: still engages
+Skip scatter by partition: 1
+Read each partition through separate port: 1
+1
+Read each partition through separate port: 1
+1
+-- mixed keys, old analyzer: results stay equal
+1
+1

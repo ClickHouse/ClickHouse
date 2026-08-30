@@ -1,0 +1,5 @@
+1
+1
+1
+0
+CREATE USER user_04604_valid_until IDENTIFIED WITH no_password

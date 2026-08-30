@@ -40,7 +40,7 @@ The recommended value is half of the available system memory.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."}]}]}/>
 
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. A join that may spill normally prevents the read in order through join optimization; see [`query_plan_read_in_order_through_spilling_join`](/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) for when the optimization applies anyway and the join is pinned in memory instead.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
 
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
@@ -132,8 +132,6 @@ For example, if set to `0.6`, `JOIN` will allow using `60%` of the available mem
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
 Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
-
-A join that may spill normally prevents the read in order through join optimization; see [`query_plan_read_in_order_through_spilling_join`](/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) for when the optimization applies anyway and the join is pinned in memory instead, so that reaching this ratio does not convert it to grace hash join.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

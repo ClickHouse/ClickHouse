@@ -332,6 +332,16 @@ public:
 
     bool trySchedule(ExecutableTaskPtr task);
     void removeTasksCorrespondingToStorage(StorageID id);
+
+    /// Flip the executor into shutdown mode without joining the worker threads:
+    /// new tasks are rejected by `trySchedule` and pending tasks are not started
+    /// (worker threads exit at the next step boundary). Used on server shutdown to
+    /// stop scheduling before the in-flight tasks are cancelled, so that no freshly
+    /// scheduled task can slip in after the cancellation and block `wait`.
+    void requestShutdown();
+
+    /// Implies `requestShutdown`, then joins the worker threads. Running tasks are
+    /// not interrupted: each finishes its current step.
     void wait();
 
     /// Update scheduling policy for pending tasks. It does nothing if `new_policy` is the same or unknown.

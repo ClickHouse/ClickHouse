@@ -15,7 +15,6 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 

@@ -114,9 +114,9 @@ Returns an array of the roles which are assigned to the current user.
 SELECT currentRoles();
         )",
         R"(
-┌─currentRoles()─────────────────────────────────┐
-│ ['sql-console-role:jane.smith@clickhouse.com'] │
-└────────────────────────────────────────────────┘
+┌─currentRoles()─┐
+│ []             │
+└────────────────┘
         )"
     }
     };
@@ -137,9 +137,9 @@ Returns an array of the roles which are enabled for the current user.
 SELECT enabledRoles();
         )",
         R"(
-┌─enabledRoles()─────────────────────────────────────────────────┐
-│ ['general_data', 'sql-console-role:jane.smith@clickhouse.com'] │
-└────────────────────────────────────────────────────────────────┘
+┌─enabledRoles()─┐
+│ []             │
+└────────────────┘
         )"
     }
     };
@@ -160,9 +160,9 @@ Returns an array of default roles for the current user.
 SELECT defaultRoles();
         )",
         R"(
-┌─defaultRoles()─────────────────────────────────┐
-│ ['sql-console-role:jane.smith@clickhouse.com'] │
-└────────────────────────────────────────────────┘
+┌─defaultRoles()─┐
+│ []             │
+└────────────────┘
         )"
     }
     };

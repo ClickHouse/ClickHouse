@@ -258,10 +258,9 @@ private:
     DiskTransactionPtr createObjectStorageTransaction();
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
-    String getReadResourceName() const;
-    String getWriteResourceName() const;
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
+    void propagateResourceNamesNoLock() const;
 
     /// Points to wrapped disk in case of cache disk.
     DiskObjectStorageConstPtr wrapped_disk = nullptr;
@@ -286,8 +285,6 @@ private:
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
     mutable std::mutex resource_mutex;
-    String read_resource_name_from_config; // specified in disk config.xml read_resource element
-    String write_resource_name_from_config; // specified in disk config.xml write_resource element
     String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
     String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause

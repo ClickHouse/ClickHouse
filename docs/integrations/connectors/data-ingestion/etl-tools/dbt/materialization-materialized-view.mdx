@@ -459,7 +459,7 @@ To use a refreshable materialized view, add a `refreshable` config object to you
 
 | Option                | Description                                                                                                                                                              | Required | Default Value |
 |-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|---------------|
-| refresh_interval      | The interval clause (required)                                                                                                                                           | Yes      |               |
+| interval              | The interval clause (required), such as `EVERY 5 MINUTE`                                                                                                                 | Yes      |               |
 | randomize             | The randomization clause, will appear after `RANDOMIZE FOR`                                                                                                              |          |               |
 | append                | If set to `True`, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular INSERT SELECT.                  |          | False         |
 | depends_on            | A dependencies list for the refreshable mv. Please provide the dependencies in the following format `{schema}.{view_name}`                                               |          |               |
@@ -511,6 +511,17 @@ SELECT
 FROM {{ source('raw', 'events') }}
 GROUP BY event_date, event_type
 ```
+
+### Updating the refresh parameters {#refreshable-updating-parameters}
+
+Starting with dbt-clickhouse 1.10.2, changes to the refresh parameters (`interval`, `randomize` and `depends_on`) of an existing refreshable materialized view are applied in place on a regular `dbt run`, using `ALTER TABLE ... MODIFY REFRESH`. The materialized view is not dropped or recreated, so no data is lost and there is no "blind window" while the change is applied.
+
+Some transitions cannot be applied in place. Instead of silently ignoring them, dbt will fail the run with an error asking you to use `dbt run --full-refresh`:
+
+- Converting a regular materialized view into a refreshable one (adding the `refreshable` config), or the other way around (removing it).
+- Changing the `append` setting, since ClickHouse does not allow adding or removing `APPEND` via `MODIFY REFRESH`.
+
+Keep in mind that a `--full-refresh` drops and recreates the materialized view, with the implications described in [Behavior during active ingestion](#behavior-during-active-ingestion).
 
 ### Limitations {#refreshable-limitations}
 

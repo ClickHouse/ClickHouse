@@ -2,7 +2,6 @@
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -128,6 +127,8 @@ public:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
+
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 

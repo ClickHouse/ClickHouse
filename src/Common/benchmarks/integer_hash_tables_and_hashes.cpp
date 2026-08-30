@@ -1,24 +1,14 @@
 #include <benchmark/benchmark.h>
 
-#include <iomanip>
+#include <functional>
 #include <random>
 #include <vector>
-
-#include <unordered_map>
-
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/sparse_hash_map>
-#include <absl/container/flat_hash_map.h>
-
-#include <Common/Stopwatch.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
 #include <farmhash.h>
 #include <wyhash.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <IO/ReadBufferFromFile.h>
 #include <base/types.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>

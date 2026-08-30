@@ -196,6 +196,10 @@ function makeElement(tag) {
         applyColumnColors() {},
         applyPinnedColumns() {},
         refreshColumnColor() {},
+        refreshSortIndicators() {},
+        refreshFilterIndicators() {},
+        refreshCellControls() {},
+        renderPagination() {},
         transposeIfNeeded() {},
         _changeTableLayout() {},
         finalizeFailedTable() {},
@@ -1229,6 +1233,51 @@ async function main() {
         await sleep(50);
         check('run-marker-plain-load', 'a run under a plain load writes a plain URL',
             new URL(r.sandbox.location.href).searchParams.get('run') === null,
+            r.sandbox.location.href);
+    }
+
+    /// Contract (a result shape reaches the URL and the history entry only through the run that
+    /// applies it): `commitResultShape` launches the re-run WITHOUT stamping the chosen shape, because
+    /// the launch is what decides whether the shape still belongs to the statement (and the context)
+    /// being run. Stamping it first would leave a `sort_columns` / `filters` / `page` in the entry and
+    /// the URL that a `Stop` or a reload before the run's own history write turns into a shape rebound
+    /// to an unrelated draft on the next load.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: 'SELECT a FROM t', params: {}, result: null,
+                  lastSavedQuery: 'SELECT a FROM t' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
+        });
+        /// Stand in for the launch: the shape must be committed by a click in the result view exactly
+        /// as the header arrows do it, but nothing must actually run here - the point is what the page
+        /// looks like BETWEEN the click and the run.
+        vm.runInContext(
+            "(() => { globalThis.__launched = 0; postOne = async () => { ++globalThis.__launched; };" +
+            " const t = getActiveTab(); t.sortColumns.push({ name: 'a', desc: true });" +
+            " commitResultShape({ _ownerTab: t, _queryText: t.query }); })()",
+            r.sandbox);
+        await sleep(50);
+        check('shape-not-stamped-before-run', 'the shape change launched the re-run',
+            vm.runInContext('globalThis.__launched', r.sandbox) === 1,
+            vm.runInContext('globalThis.__launched', r.sandbox));
+        check('shape-not-stamped-before-run', 'the URL carries no shape until the run applies it',
+            new URL(r.sandbox.location.href).searchParams.get('sort_columns') === null,
+            r.sandbox.location.href);
+        check('shape-not-stamped-before-run', 'the history entry carries none either',
+            !(r.sandbox.history.state && r.sandbox.history.state.sort_columns
+                && r.sandbox.history.state.sort_columns.length),
+            r.sandbox.history.state);
+        /// And the launch DOES stamp it, once it has resolved the shape for the statement it runs -
+        /// this is the call `postSingle` makes right after `resolveShapeForRun`.
+        vm.runInContext('persistResultShape(getActiveTab())', r.sandbox);
+        await sleep(50);
+        check('shape-not-stamped-before-run', 'the run stamps the shape it resolved',
+            new URL(r.sandbox.location.href).searchParams.get('sort_columns')
+                === JSON.stringify([{ name: 'a', desc: true }]),
             r.sandbox.location.href);
     }
 

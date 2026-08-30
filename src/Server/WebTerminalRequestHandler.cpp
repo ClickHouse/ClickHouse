@@ -7,6 +7,7 @@
 #include <Server/ClientEmbedded/ClientEmbeddedRunner.h>
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Access/Credentials.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
@@ -35,6 +36,16 @@ constexpr unsigned char resource_webterminal_html[] =
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
 
 namespace
 {
@@ -558,9 +569,13 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// abnormal close (1006) indistinguishable from a network drop. Catch
     /// parse errors and send a deterministic policy close (1008) instead.
     ///
-    /// `auth_user` is seeded with the server's default user so that omitting
-    /// the "user" field in the JSON falls back to that default.
-    String auth_user = "default";
+    /// `auth_user` is seeded with the default session user (the `default_session_user` server
+    /// setting, or its per-endpoint override) so that omitting the "user" field in the JSON falls
+    /// back to that default. An empty default session user leaves `auth_user` empty, so an auth
+    /// message without a "user" field fails authentication (anonymous connections are prohibited).
+    String auth_user = default_session_user
+        ? *default_session_user
+        : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
     String auth_password;
     bool auth_parsed = false;
     try
@@ -599,7 +614,23 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     try
     {
-        session->authenticate(BasicCredentials(auth_user, auth_password), request.clientAddress());
+        /// Keep the audit information and authentication address consistent with
+        /// ordinary HTTP authentication. In particular, when
+        /// `auth_use_forwarded_address` is enabled, use the trusted final entry
+        /// of `X-Forwarded-For` rather than the reverse proxy address.
+        session->setHTTPClientInfo(request);
+        const auto & client_info = session->getClientInfo();
+        const auto forwarded_address = client_info.getLastForwardedFor();
+        const bool use_forwarded_address = server.context()->getConfigRef().getBool("auth_use_forwarded_address", false);
+        if (use_forwarded_address && !client_info.forwarded_for.empty() && !forwarded_address)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Invalid address in `X-Forwarded-For` HTTP header: expected an IP literal with an optional numeric port");
+
+        const auto client_address = forwarded_address && use_forwarded_address
+            ? *forwarded_address
+            : request.clientAddress();
+        session->authenticate(BasicCredentials(auth_user, auth_password), client_address);
     }
     catch (...)
     {

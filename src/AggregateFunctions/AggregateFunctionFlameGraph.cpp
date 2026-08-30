@@ -702,7 +702,7 @@ static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string 
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description = R"DOC(
 Builds a [flamegraph](https://www.brendangregg.com/flamegraphs.html) using the list of stacktraces.
 Outputs an array of strings which can be used by the [flamegraph.pl](https://github.com/brendangregg/FlameGraph) utility to render an SVG of the flamegraph.
 
@@ -711,7 +711,66 @@ In the case where `ptr != 0`, a flameGraph will map allocations (size > 0) and d
 Only allocations which were not freed are shown.
 Non mapped deallocations are ignored.
 :::
-    )";
+
+**Recipes.**
+The stacktraces come from `system.trace_log`, which the query profiler fills in, and the array of
+strings the function returns is fed to `flamegraph.pl`. The recipes below are written for the
+command line, so they are not run as examples.
+
+**A flamegraph of the CPU time of a query.**
+
+```sql
+SET query_profiler_cpu_time_period_ns = 10000000;
+SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+```
+
+```bash
+clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(arrayReverse(trace))) FROM system.trace_log WHERE trace_type = 'CPU' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl > flame_cpu.svg
+```
+
+**A flamegraph of every allocation of a query.**
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+```
+
+```bash
+clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size)) FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+```
+
+**A flamegraph of the allocations of a query that were not freed.**
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1, use_uncompressed_cache = 1, merge_tree_max_rows_to_use_cache = 100000000000, merge_tree_max_bytes_to_use_cache = 1000000000000;
+SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+```
+
+```bash
+clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_untracked.svg
+```
+
+**A flamegraph of the allocations that were alive at the moment a query used the most memory.**
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+
+-- 1. The memory usage per second.
+SELECT event_time, m, formatReadableSize(max(s) AS m) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample') GROUP BY event_time ORDER BY event_time;
+
+-- 2. The moment of the maximal memory usage.
+SELECT argMax(event_time, s), max(s) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample');
+```
+
+```bash
+# 3. The allocations that were alive at that moment.
+clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time <= 'yyy' ORDER BY event_time)" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
+
+# 4. The deallocations that happened after that moment.
+clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, -size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time > 'yyy' ORDER BY event_time DESC)" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
+```
+    )DOC";
     FunctionDocumentation::Syntax syntax = "flameGraph(traces[, size[, ptr]])";
     FunctionDocumentation::Arguments arguments = {
         {"traces", "A stacktrace, either as raw addresses or as already-symbolized strings (e.g. `arrayMap(addressToSymbol, trace)`).", {"Array(UInt64)", "Array(String)"}},
@@ -722,53 +781,21 @@ Non mapped deallocations are ignored.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of strings for use with flamegraph.pl utility.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Building a flamegraph based on a CPU query profiler",
+        "Usage example",
         R"(
-SET query_profiler_cpu_time_period_ns=10000000;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-        )",
-        R"(
-clickhouse client --allow_introspection_functions=1 -q "select arrayJoin(flameGraph(arrayReverse(trace))) from system.trace_log where trace_type = 'CPU' and query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl  > flame_cpu.svg
-        )"
-    },
-    {
-        "Building a flamegraph based on a memory query profiler, showing all allocations",
-        R"(
-SET memory_profiler_sample_probability=1, max_untracked_memory=1;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-        )",
-        R"(
-clickhouse client --allow_introspection_functions=1 -q "select arrayJoin(flameGraph(trace, size)) from system.trace_log where trace_type = 'MemorySample' and query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
-        )"
-    },
-    {
-        "Building a flamegraph based on a memory query profiler, showing allocations which were not deallocated",
-        R"(
-SET memory_profiler_sample_probability=1, max_untracked_memory=1, use_uncompressed_cache=1, merge_tree_max_rows_to_use_cache=100000000000, merge_tree_max_bytes_to_use_cache=1000000000000;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-        )",
-        R"(
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_untracked.svg
-        )"
-    },
-    {
-        "Build a flamegraph based on memory query profiler, showing active allocations at a fixed point of time",
-        R"(
-SET memory_profiler_sample_probability=1, max_untracked_memory=1;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+-- The function reads raw addresses, so it needs the introspection functions.
+SET allow_introspection_functions = 1;
 
--- 1. Memory usage per second
-SELECT event_time, m, formatReadableSize(max(s) AS m) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample') GROUP BY event_time ORDER BY event_time;
-
--- 2. Find a time point with maximal memory usage
-SELECT argMax(event_time, s), max(s) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample');
+-- Three stacktraces, made of made-up addresses: two of them share a prefix.
+SELECT arrayJoin(flameGraph(trace)) AS f
+FROM VALUES('trace Array(UInt64)', ([1, 2, 3]), ([1, 2, 4]), ([1, 5]));
         )",
         R"(
--- 3. Fix active allocations at fixed point of time
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time <= 'yyy' ORDER BY event_time\)\" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
-
--- 4. Find deallocations at fixed point of time
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, -size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time > 'yyy' ORDER BY event_time desc\)\" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
+┌─f──────────────────────────────────────────────────────────┐
+│ 0x0000000000000001;0x0000000000000002;0x0000000000000003 1 │
+│ 0x0000000000000001;0x0000000000000002;0x0000000000000004 1 │
+│ 0x0000000000000001;0x0000000000000005 1                    │
+└────────────────────────────────────────────────────────────┘
         )"
     }
     };

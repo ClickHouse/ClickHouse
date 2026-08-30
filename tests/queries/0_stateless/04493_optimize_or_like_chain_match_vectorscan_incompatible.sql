@@ -9,7 +9,7 @@
 -- previously-working query into an exception: a chain that contains a raw `match()` regexp is kept
 -- off `multiMatchAny`, and we no longer fall back to a combined `match` alternation, so the original
 -- `OR` chain is kept unchanged. Verify the chain succeeds and returns the same result as the
--- un-rewritten OR chain, for both the analyzer and the old analyzer.
+-- un-rewritten OR chain.
 
 DROP TABLE IF EXISTS t_or_like_match_re2;
 CREATE TABLE t_or_like_match_re2 (s String) ENGINE = Memory;
@@ -30,17 +30,11 @@ WHERE match(s, '\\C') OR match(s, 'one') OR match(s, 'two') OR match(s, 'three')
 SETTINGS optimize_or_like_chain = 1, optimize_or_like_chain_min_patterns = 1, allow_hyperscan = 1, enable_analyzer = 1;
 
 -- Rewrite enabled, old analyzer: same.
-SELECT count() FROM t_or_like_match_re2
-WHERE match(s, '\\C') OR match(s, 'one') OR match(s, 'two') OR match(s, 'three') OR match(s, 'nomatch')
-SETTINGS optimize_or_like_chain = 1, optimize_or_like_chain_min_patterns = 1, allow_hyperscan = 1, enable_analyzer = 0;
 
 -- Same chain at the default thresholds (5 patterns is below `optimize_or_like_chain_min_patterns`, so
 -- the chain is kept as-is), to prove the default-on rewrite no longer turns this into an exception.
 SELECT count() FROM t_or_like_match_re2
 WHERE match(s, '\\C') OR match(s, 'one') OR match(s, 'two') OR match(s, 'three') OR match(s, 'nomatch')
 SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1, enable_analyzer = 1;
-SELECT count() FROM t_or_like_match_re2
-WHERE match(s, '\\C') OR match(s, 'one') OR match(s, 'two') OR match(s, 'three') OR match(s, 'nomatch')
-SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1, enable_analyzer = 0;
 
 DROP TABLE t_or_like_match_re2;

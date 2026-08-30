@@ -30,7 +30,7 @@ This affects for example integer types of different size, named and unnamed `Tup
         "SELECT murmurHash2_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;",
         R"(
 ┌─MurmurHash2─┬─type───┐
-│  3681770635 │ UInt32 │
+│  2947095100 │ UInt32 │
 └─────────────┴────────┘
         )"
     }
@@ -59,7 +59,7 @@ This affects for example integer types of different size, named and unnamed `Tup
         "SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;",
         R"(
 ┌──────────MurmurHash2─┬─type───┐
-│ 11832096901709403633 │ UInt64 │
+│ 16479669305841206229 │ UInt64 │
 └──────────────────────┴────────┘
         )"
     }
@@ -88,7 +88,7 @@ This affects for example integer types of different size, named and unnamed `Tup
         "SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;",
         R"(
 ┌─MurmurHash3─┬─type───┐
-│     2152717 │ UInt32 │
+│   317985299 │ UInt32 │
 └─────────────┴────────┘
         )"
     }
@@ -117,7 +117,7 @@ This affects for example integer types of different size, named and unnamed `Tup
         "SELECT murmurHash3_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;",
         R"(
 ┌──────────MurmurHash3─┬─type───┐
-│ 11832096901709403633 │ UInt64 │
+│ 11285022984631508790 │ UInt64 │
 └──────────────────────┴────────┘
         )"
     }

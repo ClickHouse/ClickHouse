@@ -1,0 +1,10 @@
+-- no row matches the equality
+0
+-- the residual predicate on `text` costs far more per row than the index lookup
+index condition first
+-- a selective predicate on a narrow column costs less, so it goes first
+physical condition first
+-- rows of partition `all` with v = 42
+20
+-- a virtual column that reads nothing goes first
+partition condition first

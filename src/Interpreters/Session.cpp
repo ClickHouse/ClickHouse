@@ -413,7 +413,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     prepared_client_info->connection_address = Poco::Net::SocketAddress(connection_address ? *connection_address : address);
 }
 
-void Session::checkIfUserIsStillValid()
+void Session::checkIfUserIsStillValid() const
 {
     if (const auto valid_until = user_authenticated_with.getValidUntil())
     {
@@ -422,6 +422,19 @@ void Session::checkIfUserIsStillValid()
         if (now > valid_until)
             throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used has expired");
     }
+}
+
+std::shared_ptr<const AccessRightsElements> Session::getAuthenticationGrants() const
+{
+    const auto & grants = user_authenticated_with.getGrants();
+    if (grants.structurallyEmpty())
+        return nullptr;
+    return std::make_shared<const AccessRightsElements>(grants);
+}
+
+time_t Session::getAuthenticationValidUntil() const
+{
+    return user_authenticated_with.getValidUntil();
 }
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
@@ -585,7 +598,7 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id, external_roles);
+    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -640,11 +653,20 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Set user information for the new context: current profiles, roles, access rights.
     if (!access->tryGetUser())
     {
-        new_session_context->setUser(*user_id, external_roles);
+        new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
     }
     else
     {
+        /// The session context is reused, but the current connection could be authenticated with
+        /// a different authentication method than the one which created the session. The access rights
+        /// limit must correspond to the method used by this connection: otherwise reattaching to a named session
+        /// would allow a credential with the GRANTS clause to use the full access rights of the user.
+        new_session_context->setAuthenticationGrants(getAuthenticationGrants());
+        /// The per-method expiry follows the same reasoning: the reused context must fail closed on the
+        /// expiry of the method used by this connection, not the one that originally created the session.
+        new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
+
         // Always get setting from profile
         // profile can be changed by ALTER PROFILE during single session
         auto settings = access->getDefaultSettings();
@@ -695,6 +717,13 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
+
+    /// The authentication method's `VALID UNTIL` must be enforced per query, not only at login:
+    /// stateful protocols (MySQL, PostgreSQL, native TCP, gRPC, Arrow Flight) authenticate once and
+    /// then create a query context per command, so an expired credential must stop working here.
+    /// Interserver connections replay an already-checked initiator identity, so they are exempt.
+    if (getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
+        checkIfUserIsStillValid();
 
     /// We can create a query context either from a session context or from a global context.
     const bool from_session_context = static_cast<bool>(session_context) && !detached;
@@ -770,7 +799,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, effective_external_roles);
+        query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);

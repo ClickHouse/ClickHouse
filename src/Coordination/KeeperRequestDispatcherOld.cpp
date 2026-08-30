@@ -13,6 +13,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -785,7 +786,7 @@ void KeeperRequestDispatcherOld::shutdown()
                                         nuraft::ptr<std::exception> & /*exception*/) { my_sessions_closing_done_promise->set_value(); });
 
             auto session_shutdown_timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
-            if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
+            if (sessions_closing_done.wait_for(saturatedWaitMilliseconds(session_shutdown_timeout)) != std::future_status::ready)
                 LOG_WARNING(
                     log,
                     "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",

@@ -42,7 +42,7 @@ SELECT acos(0.5);
 ```
 
 ```response title=Response
-1.0471975511965979
+1.0471975511965974
 ```
 
 ## acosh {#acosh}
@@ -108,7 +108,7 @@ SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))
 ```
 
 ```response title=Response
-1 1 1
+1	1	0.9999999999999999
 ```
 
 **float32**
@@ -128,7 +128,7 @@ SELECT asin(1.1), asin(-2), asin(inf), asin(nan)
 ```
 
 ```response title=Response
-nan nan nan nan
+nan	nan	nan	nan
 ```
 
 ## asinh {#asinh}
@@ -612,7 +612,7 @@ Returns the factorial of the input as UInt64. Returns 1 for input 0 or any negat
 **Usage example**
 
 ```sql title=Query
-factorial(10)
+SELECT factorial(10)
 ```
 
 ```response title=Response
@@ -946,7 +946,7 @@ SELECT log(10);
 ```
 
 ```response title=Response
-2.302585092994046
+2.3025850938475476
 ```
 
 ## log10 {#log10}
@@ -1496,7 +1496,7 @@ Returns the bucket number as an integer. Returns 0 if operand < low, returns cou
 **Usage example**
 
 ```sql title=Query
-widthBucket(10.15, -8.6, 23, 18)
+SELECT widthBucket(10.15, -8.6, 23, 18)
 ```
 
 ```response title=Response

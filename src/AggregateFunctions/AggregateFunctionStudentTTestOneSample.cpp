@@ -101,17 +101,26 @@ studentTTestOneSample([confidence_level])(sample_data, population_mean)
     {
         "Without confidence interval",
         R"(
+CREATE TABLE t (value Float64) ENGINE = Memory;
+INSERT INTO t VALUES (20.3), (21.1), (21.9), (21.7), (19.9), (21.8);
+
 SELECT studentTTestOneSample()(value, 20.0) FROM t;
         )",
         R"(
+┌─studentTTestOneSample(value, 20.)─────────┐
+│ (3.2378108288009266,0.023005151817711324) │
+└───────────────────────────────────────────┘
         )"
     },
     {
         "With confidence interval (95%)",
         R"(
-SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
+        SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
         )",
         R"(
+┌─studentTTestOneSample(0.95)(value, 20.)────────────────────────────────────────┐
+│ (3.2378108288009266,0.023005151817711324,20.230116092352564,22.00321724098077) │
+└────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

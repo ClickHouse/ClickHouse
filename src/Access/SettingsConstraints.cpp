@@ -252,6 +252,31 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
     checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
 }
 
+void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+{
+    /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
+    /// check also deliberately permits a reset that does not change the value.
+    const Settings defaults;
+    for (const auto & name : names)
+    {
+        if (Settings::hasBuiltin(name))
+        {
+            check(current_settings, SettingChange{name, defaults.get(name)}, source);
+            continue;
+        }
+
+        /// Custom settings have no declared default: resetting one removes it. There cannot be a
+        /// value constraint for such a setting, but an existing value must still pass the readonly
+        /// and source checks. Do not check an absent custom setting, preserving its no-op behavior.
+        Field current_value;
+        if (current_settings.tryGet(name, current_value))
+        {
+            SettingChange change{name, current_value};
+            getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, THROW_ON_VIOLATION, source);
+        }
+    }
+}
+
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
 {
     checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);

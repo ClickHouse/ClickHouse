@@ -260,7 +260,12 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
     const auto key_str = key.toString();
     const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
+    {
+        /// The id is a single path component: every carrier of a non-internal id rejects a NUL and
+        /// a '/' up front via `DistributedCache::getClientIDRejectionReason`.
+        chassert(!origin.user_id.contains('\0') && !origin.user_id.contains('/'));
         return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
+    }
 
     return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
 }
@@ -351,8 +356,9 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
 
     /// Refresh idle-client TTL after releasing the bucket lock: prevents
     /// lock-order inversion with the eviction task. Skip internal/common ids
-    /// and probe-only lookups (result == nullptr).
-    if (result && on_client_access)
+    /// and probe-only lookups (result == nullptr). The startup load is not a client
+    /// access, so it must not pass for one (the TTL counts from the load regardless).
+    if (result && on_client_access && !is_initial_load)
     {
         const auto & user_id = origin.user_id;
         if (!user_id.empty()

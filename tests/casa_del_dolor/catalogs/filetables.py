@@ -26,6 +26,7 @@ from avro.errors import AvroException
 from avro.io import DatumReader, DatumWriter
 
 from integration.helpers.client import Client
+from pyspark.sql.pandas.types import from_arrow_type, to_arrow_type
 from pyspark.sql.types import (
     ArrayType,
     BinaryType,
@@ -438,11 +439,32 @@ _UNSIGNED_TO_SIGNED = {
     pa.uint64(): pa.decimal128(20, 0),
 }
 
+# Spark decimals hold at most 38 digits, the precision the type mapper already declares for a
+# ClickHouse `Decimal256` / wide `Decimal(P, S)` column, so narrowing the file's type matches
+# the view to it. A value needing more digits raises, and the caller regenerates the file.
+_SPARK_MAX_DECIMAL_PRECISION = 38
+
 
 def _spark_compatible_arrow_type(t):
     for unsigned, signed in _UNSIGNED_TO_SIGNED.items():
         if t.equals(unsigned):
             return signed
+    # `arrow.json` (written for JSON columns) stores its own text, so unwrapping it renders the
+    # same string on both sides. `arrow.uuid` stores the raw 16 bytes that ClickHouse prints as
+    # canonical text and no arrow cast bridges the two, so leave it wrapped: Spark rejects the
+    # column and the caller drops it from the comparison rather than comparing it as bytes.
+    if isinstance(t, pa.BaseExtensionType):
+        if pa.types.is_string(t.storage_type) or pa.types.is_large_string(t.storage_type):
+            return _spark_compatible_arrow_type(t.storage_type)
+        return t
+    if pa.types.is_decimal(t) and t.precision > _SPARK_MAX_DECIMAL_PRECISION:
+        return pa.decimal128(
+            _SPARK_MAX_DECIMAL_PRECISION, min(_SPARK_MAX_DECIMAL_PRECISION, t.scale)
+        )
+    # Spark's bridge has no time-of-day type, and the mapper declares `Time`/`Time64` as
+    # STRING; the arrow cast renders exactly the text ClickHouse prints for them
+    if pa.types.is_time(t):
+        return pa.string()
     if pa.types.is_large_list(t):
         return pa.large_list(_spark_compatible_field(t.value_field))
     if pa.types.is_list(t):
@@ -465,12 +487,39 @@ def _spark_compatible_field(f):
     return f.with_type(_spark_compatible_arrow_type(f.type))
 
 
+def _spark_can_ingest(t) -> bool:
+    """Whether Spark's Arrow bridge accepts the type. This is the same conversion
+    `createDataFrame` runs, so a type failing it takes the whole run down rather than the
+    single check; the exceptions it raises are pyspark's and pyarrow's, hence the broad catch.
+    """
+    try:
+        to_arrow_type(from_arrow_type(t))
+    except Exception:
+        return False
+    return True
+
+
 def _to_spark_compatible_arrow(arrow_table):
-    """Cast any unsigned integer types (nested included) to signed so Spark can ingest them."""
+    """Cast the types Spark's Arrow bridge rejects (unsigned integers, decimals wider than
+    38 digits, text-backed extension types, time-of-day), nested ones included. A column it
+    still cannot ingest - the union a ClickHouse-written `Variant` becomes, or an `arrow.uuid`
+    whose bytes have no textual cast - is replaced with NULLs and its name returned, so the
+    row count and every other column stay comparable."""
+    unsupported = [
+        f.name
+        for f in arrow_table.schema
+        if not _spark_can_ingest(_spark_compatible_arrow_type(f.type))
+    ]
+    for name in unsupported:
+        arrow_table = arrow_table.set_column(
+            arrow_table.schema.get_field_index(name),
+            pa.field(name, pa.string()),
+            pa.nulls(arrow_table.num_rows, pa.string()),
+        )
     new_schema = pa.schema([_spark_compatible_field(f) for f in arrow_table.schema])
-    if new_schema.equals(arrow_table.schema):
-        return arrow_table
-    return arrow_table.cast(new_schema)
+    if not new_schema.equals(arrow_table.schema):
+        arrow_table = arrow_table.cast(new_schema)
+    return arrow_table, unsupported
 
 
 class FileHandler:
@@ -639,12 +688,24 @@ class FileHandler:
                 for rec in data_read
             ]
             df = next_session.createDataFrame(rows, schema=struct)
+            unsupported = []
         else:
-            df = next_session.createDataFrame(_to_spark_compatible_arrow(data_read))
+            arrow_table, unsupported = _to_spark_compatible_arrow(data_read)
+            df = next_session.createDataFrame(arrow_table)
         df.createOrReplaceTempView(table.get_table_full_path())
         # Compare only the columns both sides share, under the same reader settings as the probe
+        for_check = table.for_check()
+        if unsupported:
+            # NULLed out above, so they carry no value to compare
+            self.logger.info(
+                f"Excluding column(s) {','.join(unsupported)} from the comparison for"
+                f" {table.get_clickhouse_path()}: Spark cannot read their type from the data file"
+            )
+            for_check.columns = {
+                k: v for k, v in for_check.columns.items() if k not in unsupported
+            }
         return self.spark.table_check.check_table(
-            cluster, next_session, table.for_check(), extra_ch_settings=decode_settings
+            cluster, next_session, for_check, extra_ch_settings=decode_settings
         )
 
     def update_or_check_table(self, cluster, next_session, data) -> bool:

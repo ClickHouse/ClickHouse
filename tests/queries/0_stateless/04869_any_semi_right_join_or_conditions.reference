@@ -1,0 +1,21 @@
+one row per left row, no defaults
+1	3
+2	3
+3	3
+4	3
+count, distinct left rows, rows padded with defaults
+4	4	0
+swapped ANY LEFT JOIN
+1050	1050	50
+ANY RIGHT JOIN
+1050	1050	50
+SEMI RIGHT JOIN
+1000	1000
+swapped ANY LEFT JOIN, joined blocks split
+1050	1050	50
+SEMI RIGHT JOIN, joined blocks split
+1000	1000
+swapped ANY LEFT JOIN, residual condition
+1050	1050	50
+SEMI RIGHT JOIN, residual condition
+1000	1000

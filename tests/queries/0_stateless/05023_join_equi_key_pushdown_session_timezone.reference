@@ -1,0 +1,6 @@
+RIGHT JOIN USING, Date / DateTime keys, session_timezone: left MergeTree prunes granules
+1
+RIGHT JOIN USING, Date / DateTime keys, session_timezone: the row stays matched
+2023-06-01 00:00:00	2023-06-01 00:00:00
+RIGHT JOIN USING, Date / DateTime keys, session_timezone: unmatched right row preserved
+2023-06-01 12:34:56

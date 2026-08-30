@@ -1,0 +1,7 @@
+ground truth	[1,0,3,0,5,0,7,0]
+if	[1,0,3,0,5,0,7,0]
+multiIf	[1,0,3,0,5,0,7,0]
+and	[0,0,1,0,1,0,1,0]
+if disable	[1,0,3,0,5,0,7,0]
+sibling	[0,999,2,999,4,999,6,999]
+computed argument, still filtered	[1,0,2,0,3,0,4,0]

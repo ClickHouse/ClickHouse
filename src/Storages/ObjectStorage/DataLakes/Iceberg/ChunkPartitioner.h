@@ -7,6 +7,7 @@
 
 #include <Core/Range.h>
 #include <Processors/Chunk.h>
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Functions/IFunction.h>
 

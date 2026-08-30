@@ -46,7 +46,7 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (`x` UInt8) 
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (`x` UInt8) ENGINE = Memory'), '"storage":{"type":"Storage"', '"storage":{"type":"Identifier","name":"s"')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- `ASTCreateQuery`: `is_ordinary_view`/`is_materialized_view`/`is_window_view`/`is_dictionary` are
+-- `ASTCreateQuery`: `is_ordinary_view`/`is_materialized_view`/`is_dictionary` are
 -- mutually exclusive query kinds. Setting two at once makes formatting and execution disagree.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE VIEW v AS SELECT 1'), '"is_materialized_view":false', '"is_materialized_view":true')); -- { serverError BAD_ARGUMENTS }

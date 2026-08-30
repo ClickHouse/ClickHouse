@@ -174,16 +174,18 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const handleClick = (e) => {
-        e.preventDefault();
-        const target = document.getElementById('mcp-setup');
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
+    const path = '/pt-BR/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
+    const withBase = (p) => assetBase + p;
+    const href = withBase(path);
     return (
         <a
-            href="#mcp-setup"
+            href={href}
             data-galaxy-event="docs.home.mcp-server"
-            onClick={handleClick}
+            onClick={(e) => {
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                window.location.href = href;
+            }}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
             <span
@@ -467,65 +469,6 @@ export const PageWrapper = ({ children }) => {
         </div>
       </div>
 
-      <FullWidthDivider style={{ margin: '40px 0 0' }} />
-
-      <div id="mcp-setup" className="mt-16 scroll-mt-20">
-        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Configure o servidor MCP da documentação</h2>
-        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Consulte a documentação do ClickHouse diretamente nas suas ferramentas de IA usando o Model Context Protocol.</p>
-
-        <div className="mt-6">
-          <Tabs>
-            <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">Execute no terminal:</p>
-
-              <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user`}
-              </CodeBlock>
-            </Tab>
-
-            <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">Adicione ao <code>claude&#95;desktop&#95;config.json</code>:</p>
-
-              <CodeBlock language="json">
-                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
-              </CodeBlock>
-            </Tab>
-
-            <Tab title="Codex" icon="/images/logo-codex.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">Execute no terminal:</p>
-
-              <CodeBlock language="bash">
-                {`codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp`}
-              </CodeBlock>
-            </Tab>
-
-            <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">Adicione ao <code>.cursor/mcp.json</code>:</p>
-
-              <CodeBlock language="json">
-                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
-              </CodeBlock>
-            </Tab>
-
-            <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">Adicione ao <code>~/.codeium/windsurf/mcp&#95;config.json</code>:</p>
-
-              <CodeBlock language="json">
-                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
-              </CodeBlock>
-            </Tab>
-          </Tabs>
-        </div>
-
-        <div className="mt-6 p-4 rounded-lg bg-[#f9f9f9] dark:bg-white/[0.03] border border-[#e5e7eb] dark:border-white/10">
-          <p className="text-sm font-semibold text-gray-900 dark:text-zinc-50 mb-1">Adicione skills do ClickHouse ao seu agente de codificação</p>
-          <p className="text-sm text-gray-500 dark:text-zinc-500 mb-3">Instale as skills do ClickHouse para dar ao seu agente conhecimento especializado em ClickHouse e melhores práticas.</p>
-
-          <CodeBlock language="bash">
-            {`npx skills add https://clickhouse.com`}
-          </CodeBlock>
-        </div>
-      </div>
     </div>
   </div>
 </PageWrapper>

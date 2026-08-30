@@ -292,10 +292,21 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->column)
         {
-            auto literal = make_intrusive<ASTLiteral>(node->column->getField());
+            ASTPtr literal;
+            if (typeMayContainDecimal(*node->result_type))
+                /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) exactly so
+                /// the shard does not re-parse them through Float64 or DateTime64 text heuristics.
+                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
+            else
+                /// Other types keep their raw Field literal. In particular a DateTime serialized as local
+                /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
+                /// share one text, and parsing picks one side), whereas the raw Unix-timestamp literal is exact.
+                literal = make_intrusive<ASTLiteral>(node->column->getField());
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
+            /// makeCastToTypeNameAST skips the wrap when the exact serialization already cast the value to
+            /// the result type (scalar Decimal/DateTime64/Time64), avoiding a redundant identity cast.
+            auto casted_literal = makeCastToTypeNameAST(std::move(literal), node->result_type->getName());
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;

@@ -1,12 +1,16 @@
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -94,6 +98,61 @@ static ASTPtr generateOptimizedDateFilterAST(const String & comparator, const Na
     }
 }
 
+/// `tryEvaluateConstantExpression` throws when an expression resolves but yields no `ColumnConst`,
+/// so check the same foldability properties recursively first.
+static bool canEvaluateConstantExpression(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (ast->as<ASTLiteral>())
+        return true;
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function)
+        return false;
+
+    const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+    if (!resolver)
+        return false;
+
+    ColumnsWithTypeAndName arguments;
+    if (function->arguments)
+    {
+        arguments.reserve(function->arguments->children.size());
+        for (const auto & argument : function->arguments->children)
+        {
+            if (!canEvaluateConstantExpression(argument, context))
+                return false;
+
+            auto constant = tryEvaluateConstantExpression(argument, context);
+            if (!constant)
+                return false;
+
+            auto & [field, type] = *constant;
+            arguments.emplace_back(type->createColumnConst(1, field), type, argument->getColumnName());
+        }
+    }
+
+    const auto function_base = resolver->build(arguments);
+    return function_base && function_base->isDeterministicInScopeOfQuery() && function_base->isSuitableForConstantFolding();
+}
+
+/// This pass runs before type analysis, so an invalid comparison must still raise instead of being
+/// rewritten into a valid one.
+static bool canCompare(const String & name, const ColumnsWithTypeAndName & arguments, const ContextPtr & context)
+{
+    const auto resolver = FunctionFactory::instance().tryGet(name, context);
+    if (!resolver)
+        return false;
+
+    try
+    {
+        return resolver->build(arguments) != nullptr;
+    }
+    catch (const Exception &)
+    {
+        return false;
+    }
+}
+
 void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction & function, ASTPtr & ast, const Data & data)
 {
     const static std::unordered_map<String, String> swap_relations = {
@@ -111,68 +170,88 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
     if (!function.arguments || function.arguments->children.size() != 2)
         return;
 
-    size_t func_id = function.arguments->children.size();
+    for (size_t func_id = 0; func_id < function.arguments->children.size(); ++func_id)
+    {
+        const auto * ast_func = function.arguments->children[func_id]->as<ASTFunction>();
+        /// Explicit-time-zone overloads cannot be handled: the preimage API does not receive
+        /// constant function arguments.
+        if (!ast_func || !ast_func->arguments || ast_func->arguments->children.size() != 1)
+            continue;
 
-    for (size_t i = 0; i < function.arguments->children.size(); i++)
-        if (const auto * /*func*/ _ = function.arguments->children[i]->as<ASTFunction>())
-            func_id = i;
+        const auto * column_id = ast_func->arguments->children.at(0)->as<ASTIdentifier>();
+        if (!column_id)
+            continue;
 
-    if (func_id == function.arguments->children.size())
+        auto pos = IdentifierSemantic::getMembership(*column_id);
+        if (!pos)
+            pos = IdentifierSemantic::chooseTableColumnMatch(*column_id, data.tables, true);
+        if (!pos || *pos >= data.tables.size())
+            continue;
+
+        auto data_type_and_name = data.tables[*pos].columns.tryGetByName(column_id->shortName());
+        if (!data_type_and_name)
+            continue;
+
+        const auto column_type = data_type_and_name->type;
+        if (!column_type || (!isDateOrDate32(*column_type) && !isDateTime(*column_type) && !isDateTime64(*column_type)))
+            continue;
+
+        const auto & converter = FunctionFactory::instance().tryGet(ast_func->name, data.context);
+        if (!converter)
+            continue;
+
+        ColumnsWithTypeAndName args;
+        args.emplace_back(column_type, "tmp");
+        auto converter_base = converter->build(args);
+        if (!converter_base || !converter_base->hasInformationAboutPreimage())
+            continue;
+
+        /// This legacy pass runs before general constant folding, so fold the operand opposite the
+        /// converter ourselves to let `toDate('2026-03-08')` and `today` take part.
+        const size_t constant_id = 1 - func_id;
+        Field point;
+        DataTypePtr point_type;
+        if (const auto * literal = function.arguments->children[constant_id]->as<ASTLiteral>())
+        {
+            point = literal->value;
+            point_type = applyVisitor(FieldToDataType(), point);
+        }
+        else
+        {
+            if (!canEvaluateConstantExpression(function.arguments->children[constant_id], data.context))
+                continue;
+
+            auto constant = tryEvaluateConstantExpression(function.arguments->children[constant_id], data.context);
+            if (!constant)
+                continue;
+            point = std::move(constant->first);
+            point_type = std::move(constant->second);
+        }
+
+        if (point.getType() != Field::Types::UInt64)
+            continue;
+
+        if (!canCalculatePreimageForConstant(*converter_base->getResultType(), *point_type))
+            continue;
+
+        ColumnsWithTypeAndName comparison_arguments(2);
+        comparison_arguments[func_id] = {nullptr, converter_base->getResultType(), ""};
+        comparison_arguments[constant_id] = {nullptr, point_type, ""};
+        if (!canCompare(function.name, comparison_arguments, data.context))
+            continue;
+
+        auto preimage_range = converter_base->getPreimage(*column_type, point);
+        if (!preimage_range)
+            continue;
+
+        const String comparator = constant_id > func_id ? function.name : swap_relations.at(function.name);
+        const auto new_ast = generateOptimizedDateFilterAST(comparator, *data_type_and_name, *preimage_range);
+        if (!new_ast)
+            continue;
+
+        ast = new_ast;
         return;
-
-    size_t literal_id = 1 - func_id;
-    const auto * literal = function.arguments->children[literal_id]->as<ASTLiteral>();
-
-    if (!literal || literal->value.getType() != Field::Types::UInt64)
-        return;
-
-    String comparator = literal_id > func_id ? function.name : swap_relations.at(function.name);
-
-    const auto * ast_func = function.arguments->children[func_id]->as<ASTFunction>();
-    /// Currently we only handle single-argument functions.
-    if (!ast_func || !ast_func->arguments || ast_func->arguments->children.size() != 1)
-        return;
-
-    const auto * column_id = ast_func->arguments->children.at(0)->as<ASTIdentifier>();
-    if (!column_id)
-        return;
-
-    auto pos = IdentifierSemantic::getMembership(*column_id);
-    if (!pos)
-        pos = IdentifierSemantic::chooseTableColumnMatch(*column_id, data.tables, true);
-    if (!pos)
-        return;
-
-    if (*pos >= data.tables.size())
-        return;
-
-    auto data_type_and_name = data.tables[*pos].columns.tryGetByName(column_id->shortName());
-    if (!data_type_and_name)
-        return;
-
-    const auto column_type = data_type_and_name->type;
-    if (!column_type || (!isDateOrDate32(*column_type) && !isDateTime(*column_type) && !isDateTime64(*column_type)))
-        return;
-
-    const auto & converter = FunctionFactory::instance().tryGet(ast_func->name, data.context);
-    if (!converter)
-        return;
-
-    ColumnsWithTypeAndName args;
-    args.emplace_back(column_type, "tmp");
-    auto converter_base = converter->build(args);
-    if (!converter_base || !converter_base->hasInformationAboutPreimage())
-        return;
-
-    auto preimage_range = converter_base->getPreimage(*column_type, literal->value);
-    if (!preimage_range)
-        return;
-
-    const auto new_ast = generateOptimizedDateFilterAST(comparator, *data_type_and_name, *preimage_range);
-    if (!new_ast)
-        return;
-
-    ast = new_ast;
+    }
 }
 
 bool OptimizeDateOrDateTimeConverterWithPreimageMatcher::needChildVisit(ASTPtr & ast, ASTPtr & /*child*/)

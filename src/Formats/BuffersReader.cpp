@@ -58,16 +58,18 @@ Block BuffersReader::read()
         UInt64 buffer_size = 0;
         readBinaryLittleEndian(buffer_size, istr);
 
-        auto column = header.getByPosition(i).cloneEmpty();
+        /// Copy name and type from the header; the column itself is filled in below.
+        auto column = header.getByPosition(i);
 
-        ColumnPtr & read_column = column.column;
+        auto read_column = column.type->createColumn();
 
         auto serialization = column.type->getDefaultSerialization();
 
         const size_t before = istr.count();
 
         NameAndTypePair name_and_type = {column.name, column.type};
-        NativeReader::readData(*serialization, read_column, istr, &format_settings, num_rows, &name_and_type, nullptr);
+        NativeReader::readData(*serialization, *read_column, istr, &format_settings, num_rows, &name_and_type, nullptr);
+        column.column = std::move(read_column);
 
         const size_t after = istr.count();
 

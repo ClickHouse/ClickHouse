@@ -42,6 +42,15 @@ public:
     /// All pointers (such as this->buffer().end()) may be invalidated
     void rollbackToCheckpoint(bool drop = false);
 
+    /// Re-point this buffer at the sub-buffer's current buffer, as required by the class contract
+    /// above when the sub-buffer has been written to (or its memory reset) behind this buffer's
+    /// back. This buffer writes straight into the sub-buffer's memory and keeps its own copy of the
+    /// write position, so a stale `working_buffer` would make the next write land outside the
+    /// sub-buffer. No checkpoint may be active: the data written after it lives in this buffer's own
+    /// memory, or in the very region of the sub-buffer this call re-points away from; and the buffer
+    /// must still be writable, so that re-attaching cannot resurrect a finalized or canceled one.
+    void reattachToSubBuffer();
+
     void finalizeImpl() override
     {
         chassert(!checkpoint);

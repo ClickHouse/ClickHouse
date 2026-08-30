@@ -4,13 +4,18 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -20,9 +25,14 @@
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+#include <bit>
+#include <cstring>
+#include <optional>
 
 namespace DB
 {
@@ -64,6 +74,14 @@ public:
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A lazily replicated array argument is consumed by gathering from the compact nested column.
+    /// When true it materializes the compacted representation to a full column.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    /// `Nullable(QBit)` with an array of indices must produce `Array(Nullable(T))`,
+    /// which cannot be represented by the default nullable wrapper around the result.
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForDynamic() const override { return true; }
+    bool useDefaultImplementationForVariant() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -87,6 +105,19 @@ private:
         const DataTypePtr & result_type,
         ArrayImpl::NullMapBuilder<mode> & builder,
         size_t input_rows_count) const;
+
+    /// Element access over a lazily replicated array (Replicated(Array)) without materializing it.
+    ColumnPtr executeReplicated(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
+    template <typename IndexType>
+    static bool gatherReplicated(
+        const IColumn & index_column,
+        const ColumnIndex & replication_indexes,
+        const ColumnArray::Offsets & offsets,
+        const IColumn & data,
+        IColumn & result,
+        ArrayImpl::NullMapBuilder<mode> & builder);
 
     template <typename DataType>
     static ColumnPtr executeNumberConst(
@@ -175,6 +206,17 @@ private:
 
     ColumnPtr executeWithArrayIndex(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
+    /** For a QBit, reconstructs the n-th vector element from its bit planes. Only the planes of the single
+      * stride group that contains the element are read.
+      */
+    ColumnPtr executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+
+    template <typename T>
+    ColumnPtr executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+
+    template <typename T>
+    ColumnPtr executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     using Offsets = ColumnArray::Offsets;
 
@@ -2079,20 +2121,28 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
     const auto & values_data = col_map->getNestedData().getColumn(1);
     const auto & offsets = nested_column.getOffsets();
 
+    const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
+
+    /// A map with Enum keys can be indexed by the name of an enum value, e.g. `m['name']`.
+    /// Cast the index to the key type, so it is matched by the numeric value of the enum.
+    ColumnPtr index_column = arguments[1].column;
+    if (isEnum(type_map.getKeyType()) && isStringOrFixedString(removeLowCardinality(arguments[1].type)))
+        index_column = castColumn(arguments[1], type_map.getKeyType());
+
     /// At first step calculate indices in array of values for requested keys.
     auto indices_column = DataTypeNumber<UInt64>().createColumn();
     indices_column->reserve(input_rows_count);
     auto & indices_data = assert_cast<ColumnVector<UInt64> &>(*indices_column).getData();
 
     bool executed = false;
-    if (!isColumnConst(*arguments[1].column))
+    if (!isColumnConst(*index_column))
     {
-        executed = matchKeyToIndexNumber(keys_data, offsets, !!col_const_map, *arguments[1].column, indices_data)
-            || matchKeyToIndexString(keys_data, offsets, !!col_const_map, *arguments[1].column, indices_data);
+        executed = matchKeyToIndexNumber(keys_data, offsets, !!col_const_map, *index_column, indices_data)
+            || matchKeyToIndexString(keys_data, offsets, !!col_const_map, *index_column, indices_data);
     }
     else
     {
-        Field index = (*arguments[1].column)[0];
+        Field index = (*index_column)[0];
         executed = matchKeyToIndexNumberConst(keys_data, offsets, index, indices_data)
             || matchKeyToIndexStringConst(keys_data, offsets, index, indices_data);
     }
@@ -2108,8 +2158,6 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
     ColumnPtr values_array = ColumnArray::create(values_data.getPtr(), nested_column.getOffsetsPtr());
     if (col_const_map)
         values_array = ColumnConst::create(values_array, input_rows_count);
-
-    const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
 
     /// Prepare arguments to call arrayElement for array with values and calculated indices at previous step.
     ColumnsWithTypeAndName new_arguments
@@ -2423,6 +2471,395 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+{
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
+
+    switch (qbit_type.getElementType()->getTypeId())
+    {
+        case TypeIndex::Int8:
+            return executeQBitImpl<Int8>(arguments, input_rows_count);
+        case TypeIndex::BFloat16:
+            return executeQBitImpl<BFloat16>(arguments, input_rows_count);
+        case TypeIndex::Float32:
+            return executeQBitImpl<Float32>(arguments, input_rows_count);
+        case TypeIndex::Float64:
+            return executeQBitImpl<Float64>(arguments, input_rows_count);
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unexpected QBit element type {} in function {}", qbit_type.getElementType()->getName(), getName());
+    }
+}
+
+template <ArrayElementExceptionMode mode>
+template <typename T>
+ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+{
+    using Word = std::conditional_t<
+        sizeof(T) == 1,
+        uint8_t,
+        std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
+
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
+    const size_t dimension = qbit_type.getDimension();
+    const size_t stride = qbit_type.getStride();
+    const size_t element_size = qbit_type.getElementSize();
+    const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
+
+    /// A constant nullable source arrives as `ColumnConst(ColumnNullable(ColumnQBit))`, so the constant
+    /// has to be peeled before the null map is looked for.
+    const bool qbit_is_const = isColumnConst(*arguments[0].column);
+    const IColumn & unwrapped_qbit
+        = qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column;
+    const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(&unwrapped_qbit);
+    const auto * source_null_map = nullable_qbit ? &nullable_qbit->getNullMapData() : nullptr;
+    const auto & qbit_col = assert_cast<const ColumnQBit &>(nullable_qbit ? nullable_qbit->getNestedColumn() : unwrapped_qbit);
+    const auto & tuple = qbit_col.getNestedData();
+
+    /// The null map of a constant source holds a single row.
+    auto source_is_null = [&](size_t row) { return source_null_map && (*source_null_map)[qbit_is_const ? 0 : row]; };
+
+    const ColumnArray * index_array = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
+    ColumnPtr materialized_index;
+    if (!index_array)
+    {
+        materialized_index = arguments[1].column->convertToFullColumnIfConst();
+        index_array = checkAndGetColumn<ColumnArray>(materialized_index.get());
+    }
+    if (!index_array)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", arguments[1].column->getName(), getName());
+
+    ColumnPtr index_holder = recursiveRemoveLowCardinality(index_array->getDataPtr());
+    const auto * nullable_index = checkAndGetColumn<ColumnNullable>(index_holder.get());
+    const IColumn & index_data = nullable_index ? nullable_index->getNestedColumn() : *index_holder;
+    const NullMap * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
+    const auto & offsets = index_array->getOffsets();
+    const size_t total_indices = input_rows_count ? offsets[input_rows_count - 1] : 0;
+
+    auto result = ColumnVector<T>::create(total_indices);
+    auto & result_data = result->getData();
+    memset(result_data.data(), 0, total_indices * sizeof(T));
+
+    const bool result_is_nullable = is_null_mode || nullable_index || source_null_map;
+    ColumnUInt8::MutablePtr null_map;
+    if (result_is_nullable)
+        null_map = ColumnUInt8::create(total_indices, UInt8(0));
+
+    auto plane_chars = [&](size_t group, size_t bit) -> const UInt8 *
+    {
+        return reinterpret_cast<const UInt8 *>(
+            assert_cast<const ColumnFixedString &>(tuple.getColumn(group * element_size + bit)).getChars().data());
+    };
+
+    auto extract_into = [&](size_t output_row, size_t qbit_row, size_t element)
+    {
+        const size_t group = element / stride;
+        const size_t within_group = element % stride;
+        const size_t byte_offset = bytes_per_group - 1 - within_group / 8;
+        const size_t bit_in_byte = within_group % 8;
+
+        Word word = 0;
+        for (size_t bit = 0; bit < element_size; ++bit)
+        {
+            const UInt8 byte = plane_chars(group, bit)[qbit_row * bytes_per_group + byte_offset];
+            word |= static_cast<Word>(static_cast<Word>((byte >> bit_in_byte) & 1) << (element_size - 1 - bit));
+        }
+        result_data[output_row] = std::bit_cast<T>(word);
+    };
+
+    auto process = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
+    {
+        size_t output_row = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const size_t begin = row ? offsets[row - 1] : 0;
+            for (size_t pos = begin; pos < offsets[row]; ++pos, ++output_row)
+            {
+                if (source_is_null(row))
+                {
+                    null_map->getData()[output_row] = 1;
+                    continue;
+                }
+
+                if (index_null_map && (*index_null_map)[pos])
+                {
+                    if (null_map)
+                        null_map->getData()[output_row] = 1;
+                    continue;
+                }
+
+                std::optional<size_t> element;
+                if constexpr (std::is_signed_v<IndexType>)
+                {
+                    if (indices[pos] > 0 && static_cast<UInt64>(indices[pos]) <= dimension)
+                        element = static_cast<size_t>(indices[pos] - 1);
+                    else if (indices[pos] < 0)
+                    {
+                        const UInt64 abs_index = UInt64(0) - static_cast<UInt64>(indices[pos]);
+                        if (abs_index <= dimension)
+                            element = dimension - static_cast<size_t>(abs_index);
+                    }
+                }
+                else if (indices[pos] >= 1 && indices[pos] <= dimension)
+                    element = static_cast<size_t>(indices[pos] - 1);
+
+                if (element)
+                    extract_into(output_row, qbit_is_const ? 0 : row, *element);
+                else if constexpr (is_null_mode)
+                    null_map->getData()[output_row] = 1;
+            }
+        }
+    };
+
+    auto dispatch = [&](const auto * column) -> bool
+    {
+        if (!column)
+            return false;
+        process(column->getData());
+        return true;
+    };
+
+    if (!dispatch(checkAndGetColumn<ColumnVector<UInt8>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<UInt16>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<UInt32>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<UInt64>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<Int8>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<Int16>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<Int32>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<Int64>>(&index_data)))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", arguments[1].column->getName(), getName());
+
+    auto result_offsets = ColumnArray::ColumnOffsets::create();
+    result_offsets->getData().assign(offsets.begin(), offsets.begin() + input_rows_count);
+    ColumnPtr result_data_column;
+    if (null_map)
+        result_data_column = ColumnNullable::create(std::move(result), std::move(null_map));
+    else
+        result_data_column = std::move(result);
+    return ColumnArray::create(result_data_column, std::move(result_offsets));
+}
+
+/** A QBit stores each vector bit-transposed: tuple column `group * element_size + bit` is a FixedString bit plane
+  * holding bit `bit` (MSB first) of the `stride` dimensions of stride group `group`. Within a plane each byte holds
+  * one octet of 8 dimensions, high octets at low byte offsets, LSB-first within a byte (see
+  * SerializationQBit::transposeBits). Reconstructing element `e` therefore reads exactly one bit from each of the
+  * `element_size` planes of the single stride group containing `e`; the planes of all other stride groups are not
+  * touched.
+  *
+  * Out-of-range indices follow the Array semantics: the default value (zero) for arrayElement, NULL for
+  * arrayElementOrNull, and negative indices count from the end of the vector.
+  */
+template <ArrayElementExceptionMode mode>
+template <typename T>
+ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+{
+    /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t`).
+    using Word = std::conditional_t<
+        sizeof(T) == 1,
+        uint8_t,
+        std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
+
+    if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
+        return executeQBitWithArrayIndex<T>(arguments, input_rows_count);
+
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
+    const size_t dimension = qbit_type.getDimension();
+    const size_t stride = qbit_type.getStride();
+    const size_t element_size = qbit_type.getElementSize();
+    const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
+
+    /// The QBit column stays constant when only the index is a full column (useDefaultImplementationForConstants
+    /// unwraps constants only when every argument is constant). A constant nullable source arrives as
+    /// `ColumnConst(ColumnNullable(ColumnQBit))`, so the constant has to be peeled before the null map is looked for.
+    const bool qbit_is_const = isColumnConst(*arguments[0].column);
+    const IColumn & unwrapped_qbit
+        = qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column;
+    const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(&unwrapped_qbit);
+    const auto * source_null_map = nullable_qbit ? &nullable_qbit->getNullMapData() : nullptr;
+    const auto & qbit_col = assert_cast<const ColumnQBit &>(nullable_qbit ? nullable_qbit->getNestedColumn() : unwrapped_qbit);
+    const auto & tuple = qbit_col.getNestedData();
+
+    /// The null map of a constant source holds a single row.
+    auto source_is_null = [&](size_t row) { return source_null_map && (*source_null_map)[qbit_is_const ? 0 : row]; };
+
+    auto res = ColumnVector<T>::create(input_rows_count);
+    auto & res_data = res->getData();
+    /// Out-of-range rows keep the default (zero) value, so start from an all-zero buffer that bits are ORed into.
+    memset(res_data.data(), 0, input_rows_count * sizeof(T));
+
+    const bool index_is_nullable = arguments[1].type->isNullable();
+    ColumnUInt8::MutablePtr null_map;
+    if constexpr (is_null_mode)
+        null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+    else if (source_null_map || index_is_nullable)
+        null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+
+    auto plane_chars = [&](size_t group, size_t bit) -> const UInt8 *
+    {
+        return reinterpret_cast<const UInt8 *>(
+            assert_cast<const ColumnFixedString &>(tuple.getColumn(group * element_size + bit)).getChars().data());
+    };
+
+    /// Resolve a 1-based index into a 0-based element position, or nullopt when out of range.
+    auto resolve_signed = [dimension](Int64 index) -> std::optional<size_t>
+    {
+        if (index > 0 && static_cast<UInt64>(index) <= dimension)
+            return static_cast<size_t>(index - 1);
+        if (index < 0)
+        {
+            /// Compute |index| in the unsigned domain: -INT64_MIN does not fit in Int64.
+            const UInt64 abs_index = UInt64(0) - static_cast<UInt64>(index);
+            if (abs_index <= dimension)
+                return dimension - static_cast<size_t>(abs_index);
+        }
+        return std::nullopt;
+    };
+    auto resolve_unsigned = [dimension](UInt64 index) -> std::optional<size_t>
+    {
+        if (index >= 1 && index <= dimension)
+            return static_cast<size_t>(index - 1);
+        return std::nullopt;
+    };
+
+    auto set_out_of_range = [&](size_t row)
+    {
+        if constexpr (is_null_mode)
+            null_map->getData()[row] = 1;
+        /// res_data[row] stays the default (zero).
+    };
+
+    auto extract_into = [&](size_t row, size_t element)
+    {
+        const size_t group = element / stride;
+        const size_t within_group = element % stride;
+        const size_t byte_offset = bytes_per_group - 1 - within_group / 8;
+        const size_t bit_in_byte = within_group % 8;
+        const size_t qbit_row = qbit_is_const ? 0 : row;
+
+        Word word = 0;
+        for (size_t bit = 0; bit < element_size; ++bit)
+        {
+            const UInt8 byte = plane_chars(group, bit)[qbit_row * bytes_per_group + byte_offset];
+            word |= static_cast<Word>(static_cast<Word>((byte >> bit_in_byte) & 1) << (element_size - 1 - bit));
+        }
+        res_data[row] = std::bit_cast<T>(word);
+    };
+
+    const IColumn & index_column = *arguments[1].column;
+
+    if (isColumnConst(index_column))
+    {
+        const Field index = index_column[0];
+
+        if constexpr (!is_null_mode)
+        {
+            /// Mirror the Array behaviour: a constant index 0 is an error while a non-constant index 0 returns the default value.
+            if (index == 0u)
+                throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
+        }
+
+        std::optional<size_t> element;
+        if (index.getType() == Field::Types::UInt64)
+            element = resolve_unsigned(index.safeGet<UInt64>());
+        else if (index.getType() == Field::Types::Int64)
+            element = resolve_signed(index.safeGet<Int64>());
+        else if (index.isNull() && index_is_nullable)
+        {
+            null_map->getData().assign(input_rows_count, UInt8(1));
+            return ColumnNullable::create(std::move(res), std::move(null_map));
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
+
+        if (!element)
+        {
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                if (source_is_null(row))
+                    null_map->getData()[row] = 1;
+                else
+                    set_out_of_range(row);
+            }
+        }
+        else
+        {
+            /// The bit position is the same for every row, so read the planes one by one for cache friendliness.
+            const size_t group = *element / stride;
+            const size_t within_group = *element % stride;
+            const size_t byte_offset = bytes_per_group - 1 - within_group / 8;
+            const size_t bit_in_byte = within_group % 8;
+
+            Word * words = reinterpret_cast<Word *>(res_data.data());
+            for (size_t bit = 0; bit < element_size; ++bit)
+            {
+                const UInt8 * src = plane_chars(group, bit) + byte_offset;
+                const size_t shift = element_size - 1 - bit;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    if (source_is_null(row))
+                    {
+                        null_map->getData()[row] = 1;
+                        continue;
+                    }
+                    const size_t qbit_row = qbit_is_const ? 0 : row;
+                    words[row] |= static_cast<Word>(static_cast<Word>((src[qbit_row * bytes_per_group] >> bit_in_byte) & 1) << shift);
+                }
+            }
+        }
+    }
+    else
+    {
+        const auto * nullable_index = checkAndGetColumn<ColumnNullable>(&index_column);
+        const IColumn & nested_index_column = nullable_index ? nullable_index->getNestedColumn() : index_column;
+        const auto * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
+
+        auto execute_index_type = [&]<typename IndexType>() -> bool
+        {
+            const auto * col_index = checkAndGetColumn<ColumnVector<IndexType>>(&nested_index_column);
+            if (!col_index)
+                return false;
+
+            const auto & indices = col_index->getData();
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                if (source_is_null(row))
+                {
+                    null_map->getData()[row] = 1;
+                    continue;
+                }
+                if (index_null_map && (*index_null_map)[row])
+                {
+                    null_map->getData()[row] = 1;
+                    continue;
+                }
+                std::optional<size_t> element;
+                if constexpr (std::is_signed_v<IndexType>)
+                    element = resolve_signed(indices[row]);
+                else
+                    element = resolve_unsigned(indices[row]);
+
+                if (element)
+                    extract_into(row, *element);
+                else
+                    set_out_of_range(row);
+            }
+            return true;
+        };
+
+        if (!(execute_index_type.template operator()<UInt8>() || execute_index_type.template operator()<UInt16>()
+              || execute_index_type.template operator()<UInt32>() || execute_index_type.template operator()<UInt64>()
+              || execute_index_type.template operator()<Int8>() || execute_index_type.template operator()<Int16>()
+              || execute_index_type.template operator()<Int32>() || execute_index_type.template operator()<Int64>()))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
+    }
+
+    if (null_map)
+        return ColumnNullable::create(std::move(res), std::move(null_map));
+
+    return res;
+}
+
+template <ArrayElementExceptionMode mode>
 String FunctionArrayElement<mode>::getName() const
 {
     return name;
@@ -2431,10 +2868,52 @@ String FunctionArrayElement<mode>::getName() const
 template <ArrayElementExceptionMode mode>
 DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & arguments) const
 {
+    /// `useDefaultImplementationForNulls` is disabled for the whole overload set because of QBit
+    /// (see executeImpl). Reproduce the type of the default adapter for a NULL literal argument.
+    /// This convention holds for every source type, QBit included.
+    if (arguments[0]->onlyNull() || arguments[1]->onlyNull())
+        return makeNullable(std::make_shared<DataTypeNothing>());
+
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
     {
         auto value_type = recursiveRemoveLowCardinality(map_type->getValueType());
-        return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
+        return (is_null_mode || arguments[1]->isNullable()) && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
+    }
+
+    const bool qbit_is_nullable = arguments[0]->isNullable();
+    if (const auto * qbit_type = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0]).get()))
+    {
+        if (const auto * index_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
+        {
+            auto index_element_type = recursiveRemoveLowCardinality(index_array_type->getNestedType());
+            const bool index_element_is_nullable = index_element_type->isNullable();
+            if (!isNativeInteger(removeNullable(index_element_type)))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument for function '{}' must be integer or array of integers, got '{}' instead",
+                    getName(),
+                    arguments[1]->getName());
+            }
+
+            auto element_type = qbit_type->getElementType();
+            if ((is_null_mode || index_element_is_nullable || qbit_is_nullable) && element_type->canBeInsideNullable())
+                element_type = makeNullable(element_type);
+            return std::make_shared<DataTypeArray>(element_type);
+        }
+
+        if (!isNativeInteger(removeNullable(arguments[1])))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function '{}' must be integer, got '{}' instead",
+                getName(),
+                arguments[1]->getName());
+        }
+
+        /// The n-th element of a QBit vector is reconstructed at the full precision of the element type.
+        const auto & element_type = qbit_type->getElementType();
+        return (is_null_mode || qbit_is_nullable || arguments[1]->isNullable()) ? makeNullable(element_type) : element_type;
     }
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
@@ -2470,6 +2949,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
+    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
     auto index_type = removeNullable(removeLowCardinality(arguments[1]));
     if (!isNativeInteger(index_type))
     {
@@ -2480,8 +2960,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[1]->getName());
     }
 
-    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
-    return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
+    return (is_null_mode || arguments[1]->isNullable()) && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2551,6 +3030,45 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// A replicated column can arrive in either position.
+    if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
+        || typeid_cast<const ColumnReplicated *>(arguments[1].column.get()))
+        return executeReplicated(arguments, result_type, input_rows_count);
+
+    const bool is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get());
+
+    /// The default nullable implementation cannot preserve a NULL `QBit` source for an
+    /// array-of-indices result: the result itself is an Array and cannot be wrapped in
+    /// Nullable. It is therefore handled by executeQBit below, and `useDefaultImplementationForNulls`
+    /// is disabled for the whole overload set. The established Array and Map paths keep the
+    /// conventions of the default adapter, which are reproduced here.
+    /// A NULL literal argument makes the result a NULL constant, without evaluating the function.
+    /// This convention holds for every source type, QBit included.
+    if (arguments[0].type->onlyNull() || arguments[1].type->onlyNull())
+        return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+    if (!is_qbit)
+    {
+        if (arguments[1].type->isNullable())
+        {
+            /// The same for a constant NULL of a nullable type, as long as the result can hold a NULL.
+            if (result_type->isNullable() && isColumnConst(*arguments[1].column) && arguments[1].column->onlyNull())
+                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+            /// For a non-nullable result the convention is to evaluate the function on the nested index
+            /// without turning the result into Nullable.
+            auto nested_arguments = arguments;
+            nested_arguments[1] = columnGetNested(arguments[1]);
+            auto result = executeImpl(nested_arguments, removeNullable(result_type), input_rows_count);
+            return result_type->isNullable()
+                ? wrapInNullable(result, arguments, result_type, input_rows_count)
+                : result;
+        }
+    }
+
+    if (is_qbit)
+        return executeQBit(arguments, input_rows_count);
+
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 
@@ -2638,6 +3156,165 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     /// Store the result.
     return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeReplicated(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    ColumnsWithTypeAndName args = arguments;
+
+    const auto * replicated_array = typeid_cast<const ColumnReplicated *>(args[0].column.get());
+    const auto * replicated_index = typeid_cast<const ColumnReplicated *>(args[1].column.get());
+
+    /// When the array and the index are replicated by the same indexes column (they came from the same expansion,
+    /// e.g. one ARRAY JOIN), row i reads nested_array[idx[i]][nested_index[idx[i]]], so the result is the nested
+    /// computation replicated by the same indexes.
+    if (replicated_array && replicated_index
+        && replicated_array->getIndexesColumn().get() == replicated_index->getIndexesColumn().get()
+        && replicated_array->getNestedColumn()->size() == replicated_index->getNestedColumn()->size())
+    {
+        /// Compute on the compact nested columns and stay lazy.(Remove unused indexes)
+        auto compact = replicated_array->getIndexes().buildCompactIndexedColumns(
+            {replicated_array->getNestedColumn(), replicated_index->getNestedColumn()});
+
+        /// Now recurse on the internal rows
+        size_t nested_rows_count = compact.compact_indexed_columns[0]->size();
+        ColumnsWithTypeAndName nested_args
+            = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
+               {compact.compact_indexed_columns[1], args[1].type, args[1].name}};
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
+
+        /// Wrap the result in a new ColumnReplicated with the compacted indexes column
+        return convertToFullColumnIfReplicationNotUseful(
+            ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
+    }
+
+    /// The index argument is a per-row number and when it is replicated independently of the array,
+    /// its repetition has no structure, so materialize it.
+    args[1].column = args[1].column->convertToFullColumnIfReplicated();
+
+    if (!replicated_array)
+        return executeImpl(args, result_type, input_rows_count);
+
+    const auto * col_array = typeid_cast<const ColumnArray *>(replicated_array->getNestedColumn().get());
+
+    /// Fall back to materialization for the shapes the fast path does not cover:
+    /// Replicated over Map, and LowCardinality elements (their handling is layered above this function
+    bool fast_path_supported = col_array
+        && !typeid_cast<const ColumnLowCardinality *>(&col_array->getData())
+        && !typeid_cast<const ColumnMap *>(&col_array->getData());
+    if (!fast_path_supported)
+    {
+        args[0].column = args[0].column->convertToFullColumnIfReplicated();
+        return executeImpl(args, result_type, input_rows_count);
+    }
+
+    if (isColumnConst(*args[1].column))
+    {
+        /// A constant index gives one value per nested row: execute on the compact nested array and replicate the result lazily.
+        /// Compact away nested rows the indexes never reference, so the nested work is proportional to the used rows.
+        auto compact = replicated_array->getIndexes().buildCompactIndexedColumns({replicated_array->getNestedColumn()});
+        size_t nested_rows_count = compact.compact_indexed_columns[0]->size();
+        ColumnsWithTypeAndName nested_args
+            = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
+               {args[1].column->cloneResized(nested_rows_count), args[1].type, args[1].name}};
+
+        /// Recurse on the internal rows
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
+        /// Wrap the result in a new ColumnReplicated with the compacted indexes column
+        return convertToFullColumnIfReplicationNotUseful(
+            ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
+    }
+
+    const auto & offsets = col_array->getOffsets();
+    const IColumn * data = &col_array->getData();
+
+    ArrayImpl::NullMapBuilder<mode> builder;
+    bool is_array_of_nullable = isColumnNullable(*data);
+    if (is_array_of_nullable)
+    {
+        const auto & nullable_data = assert_cast<const ColumnNullable &>(*data);
+        builder.initSource(nullable_data.getNullMapData().data());
+        data = &nullable_data.getNestedColumn();
+    }
+
+    if (builder)
+        builder.initSink(input_rows_count);
+
+    auto result = data->cloneEmpty();
+    result->reserve(input_rows_count);
+
+    const auto & replication_indexes = replicated_array->getIndexes();
+    const auto & index_column = *args[1].column;
+    /// Core loop to build result by dispatching based on the index type
+    if (!(gatherReplicated<UInt8>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt16>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt32>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt64>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int8>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int16>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int32>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int64>(index_column, replication_indexes, offsets, *data, *result, builder)))
+    {
+        /// The index is not a plain numeric column (e.g. Nullable, or an array of indexes):
+        /// materialize the array and let the generic path handle it.
+        args[0].column = args[0].column->convertToFullColumnIfReplicated();
+        return executeImpl(args, result_type, input_rows_count);
+    }
+
+    if (is_array_of_nullable)
+        return ColumnNullable::create(
+            std::move(result), builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+
+    ColumnPtr immutable_result = std::move(result);
+    if (builder && immutable_result->canBeInsideNullable())
+        return ColumnNullable::create(immutable_result, std::move(builder).getNullMapColumnPtr());
+
+    return immutable_result;
+}
+
+template <ArrayElementExceptionMode mode>
+template <typename IndexType>
+bool FunctionArrayElement<mode>::gatherReplicated(
+    const IColumn & index_column,
+    const ColumnIndex & replication_indexes,
+    const ColumnArray::Offsets & offsets,
+    const IColumn & data,
+    IColumn & result,
+    ArrayImpl::NullMapBuilder<mode> & builder)
+{
+    const auto * index_vec = checkAndGetColumn<ColumnVector<IndexType>>(&index_column);
+    if (!index_vec)
+        return false;
+
+    const auto & indices = index_vec->getData();
+    size_t rows = indices.size();
+    /// Each output element is one insertFrom reading directly from the shared nested data
+    for (size_t i = 0; i < rows; ++i)
+    {
+        ssize_t nested_row = replication_indexes.getIndexAt(i);
+        /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
+        ColumnArray::Offset begin = offsets[nested_row - 1];
+        ColumnArray::Offset end = offsets[nested_row];
+
+        IndexType index = indices[i];
+        /// Positive index is 1-based from the beginning of the array, negative counts from the end.
+        /// Any invalid index (zero, out of range) lands outside [begin, end) and produces a default value.
+        size_t insert_position = index > 0 ? begin + index - 1 : end + index;
+        if (begin <= insert_position && insert_position < end)
+        {
+            result.insertFrom(data, insert_position);
+            builder.update(insert_position);
+        }
+        else
+        {
+            result.insertDefault();
+            builder.update();
+        }
+    }
+
+    return true;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2758,10 +3435,12 @@ Arrays in ClickHouse are one-indexed.
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 Operator `[n]` provides the same functionality.
+
+The first argument may also be a [QBit](/sql-reference/data-types/qbit): the n-th vector element is reconstructed at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array)."},
+        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array) or [`QBit`](/reference/data-types/qbit)."},
         {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Any", "Array(T)", "Array(Nullable(T))"}};
@@ -2803,7 +3482,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"},
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "\\N"},
         {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};

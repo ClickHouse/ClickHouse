@@ -2329,6 +2329,48 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }
 
+            /// If the type hint is a named tuple, match the read fields to the hint elements by name,
+            /// as the requested column type expects: fields that are missing in the hint are dropped,
+            /// and hint elements without a matching field are filled by default values. The generic
+            /// tuple conversion applied afterwards converts tuples with disjoint sets of element
+            /// names positionally, and here the fields must be matched by name regardless of how
+            /// many of them match, consistently with the other format readers.
+            if (tuple_type_hint && tuple_type_hint->hasExplicitNames() && !is_map_nested_column)
+            {
+                std::unordered_map<std::string_view, size_t> read_positions;
+                for (size_t i = 0; i < tuple_names.size(); ++i)
+                    read_positions.emplace(tuple_names[i], i);
+
+                Columns matched_elements;
+                DataTypes matched_types;
+                std::vector<String> matched_names;
+                const auto & hint_names = tuple_type_hint->getElementNames();
+                matched_elements.reserve(hint_names.size());
+                matched_types.reserve(hint_names.size());
+                matched_names.reserve(hint_names.size());
+
+                for (size_t i = 0; i < hint_names.size(); ++i)
+                {
+                    auto it = read_positions.find(hint_names[i]);
+                    if (it != read_positions.end())
+                    {
+                        matched_elements.emplace_back(std::move(tuple_elements[it->second]));
+                        matched_types.emplace_back(std::move(tuple_types[it->second]));
+                    }
+                    else
+                    {
+                        const auto & hint_element_type = tuple_type_hint->getElement(i);
+                        matched_elements.emplace_back(hint_element_type->createColumn()->cloneResized(arrow_column->length()));
+                        matched_types.emplace_back(hint_element_type);
+                    }
+                    matched_names.emplace_back(hint_names[i]);
+                }
+
+                tuple_elements = std::move(matched_elements);
+                tuple_types = std::move(matched_types);
+                tuple_names = std::move(matched_names);
+            }
+
             ColumnPtr tuple_column;
             if (tuple_elements.empty())
                 tuple_column = ColumnTuple::create(arrow_column->length());

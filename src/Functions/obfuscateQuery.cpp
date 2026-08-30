@@ -353,7 +353,7 @@ REGISTER_FUNCTION(obfuscateQuery)
          "SELECT a FROM b, SELECT c FROM d"},
         {"Different rows produce different results",
          "SELECT obfuscateQuery('SELECT 1') AS a, obfuscateQuery('SELECT 1') AS b",
-         "A B"}
+         "SELECT 1\tSELECT 1"}
     };
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
@@ -404,13 +404,13 @@ Features:
     FunctionDocumentation::Examples obfuscate_query_with_seed_examples = {
         {"Deterministic obfuscation with integer seed",
          "SELECT obfuscateQueryWithSeed('SELECT name FROM users', 42)",
-         "SELECT fruit FROM table"},
+         "SELECT name FROM users"},
         {"Deterministic obfuscation with string seed",
          "SELECT obfuscateQueryWithSeed('SELECT id, value FROM data', 'myseed')",
-         "SELECT a, b FROM c"},
+         "SELECT id, value FROM data"},
         {"Same seed produces same result",
          "SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 1', 100)",
-         "true"}
+         "1"}
     };
 
     FunctionDocumentation obfuscate_query_with_seed_documentation = {

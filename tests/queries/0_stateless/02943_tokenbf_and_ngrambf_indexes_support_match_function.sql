@@ -38,16 +38,6 @@ SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY 
 -- Alternatives: 'Hello ClickHouse', 'Hello World'
 -- Surrounded by spaces for tokenbf
 
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes=1
-    SELECT * FROM tokenbf_tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -60,16 +50,6 @@ WHERE
 SETTINGS
   enable_analyzer = 1;
 
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes=1
-    SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -93,16 +73,6 @@ SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id;
 -- Alternatives: 'ClickHouse', 'World'
 -- Surrounded by spaces for tokenbf
 
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM tokenbf_tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -115,16 +85,6 @@ WHERE
 SETTINGS
   enable_analyzer = 1;
 
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -156,28 +116,8 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  enable_analyzer = 0;
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM tokenbf_tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
   enable_analyzer = 1;
 
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
 
 SELECT *
 FROM

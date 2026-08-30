@@ -1,5 +1,6 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -29,6 +30,16 @@ ASTPtr ASTProjectionDeclaration::clone() const
     if (with_settings)
         res->set(res->with_settings, with_settings->clone());
     return res;
+}
+
+void ASTProjectionDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name` is not a child, so the default implementation does not see it.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 88, "If members were added to ASTProjectionDeclaration, hash them here unless they are purely cosmetic.");
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 

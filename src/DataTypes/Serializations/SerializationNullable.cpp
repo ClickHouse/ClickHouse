@@ -138,49 +138,46 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
 
 
 void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto mutable_column = column->assumeMutable();
-    ColumnNullable & col = assert_cast<ColumnNullable &>(*mutable_column);
+    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     if (!use_default_null_map)
     {
         settings.path.push_back(Substream::NullMap);
-        if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumnPtr()))
+        if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumn()))
         {
             /// Data was inserted from cache.
         }
         else if (auto * stream = settings.getter(settings.path))
         {
-            size_t prev_size = col.getNullMapColumnPtr()->size();
-            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
+            size_t prev_size = col.getNullMapColumn().size();
+            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
+            size_t n = col.getNullMapColumn().size() - prev_size;
             addColumnWithNumReadRowsToSubstreamsCache(
-                cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
+                cache, settings.path, col.getNullMapColumn().getPtr(), n);
         }
         settings.path.pop_back();
     }
 
     settings.path.push_back(Substream::NullableElements);
-    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), rows_offset, limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), limit, settings, state, cache);
     settings.path.pop_back();
 
     if (use_default_null_map)
         col.getNullMapData().resize_fill(col.getNestedColumn().size());
 
-    auto null_map = col.getNullMapColumnPtr();
-    auto nested_column = col.getNestedColumnPtr();
-    if (null_map->size() != nested_column->size())
+    if (col.getNullMapColumn().size() != col.getNestedColumn().size())
         throw Exception(
             settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Sizes of nested column and null map of Nullable column are not equal after deserialization (null map size = {}, nested "
             "column size = {})",
-            null_map->size(),
-            nested_column->size());
+            col.getNullMapColumn().size(),
+            col.getNestedColumn().size());
 }
 
 

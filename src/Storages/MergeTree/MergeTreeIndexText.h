@@ -20,6 +20,8 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <concepts>
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -114,10 +116,19 @@ public:
     /// posting list is created in the postings_holder and reference to it is saved.
     void add(UInt32 value, PostingListsHolder & postings_holder);
 
-    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
+    size_t size() const
+    {
+        chassert(!isFiltered());
+        return isSmall() ? small_size : large.postings->cardinality();
+    }
     bool isEmpty() const { return size() == 0; }
     bool isSmall() const { return small_size < max_small_size; }
     bool isLarge() const { return !isSmall(); }
+
+    /// A filtered entry holds no postings; only isFiltered and clearFiltered may be called on it.
+    void markFiltered() { small_size = filtered_flag; }
+    bool isFiltered() const { return small_size == filtered_flag; }
+    void clearFiltered() { small_size = 0; }
 
     UInt32 minimum() const
     {
@@ -131,9 +142,9 @@ public:
         return isSmall() ? small[small_size - 1] : large.postings->maximum();
     }
 
-    SmallContainer & getSmall() { return small; }
-    const SmallContainer & getSmall() const { return small; }
-    PostingList & getLarge() const { return *large.postings; }
+    SmallContainer & getSmall() { chassert(!isFiltered()); return small; }
+    const SmallContainer & getSmall() const { chassert(!isFiltered()); return small; }
+    PostingList & getLarge() const { chassert(!isFiltered()); return *large.postings; }
 
 private:
     struct PostingListWithContext
@@ -148,6 +159,7 @@ private:
         PostingListWithContext large;
     };
 
+    static constexpr UInt8 filtered_flag = 0xFF;
     UInt8 small_size;
 };
 
@@ -162,6 +174,16 @@ struct SortedToken
 };
 using SortedTokens = std::vector<SortedToken>;
 struct TokenPostingsInfo;
+
+/// Posting lists up to this cardinality are serialized as raw VarUInt values:
+/// the minimal size of a serialized Roaring Bitmap is 48 bytes, so tiny lists don't use it.
+static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
+/// Posting lists up to this cardinality are embedded into the dictionary block
+/// to avoid additional random reads from disk.
+static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
+
+static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
 struct PostingsSerialization
 {
@@ -186,10 +208,20 @@ struct PostingsSerialization
         HasPositions = 1ULL << 5,
     };
 
-    void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
-    PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
+    /// Serializes a roaring bitmap as a portable serialized bitmap.
+    void serializeBitmap(const roaring::api::roaring_bitmap_t & postings, WriteBuffer & ostr);
+    /// Serializes a posting lists using the posting list codec.
+    void serializeCompressed(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
+    /// Serializes a plain array of row ids as VarUInt values.
+    static void serializeRaw(std::span<const UInt32> postings, WriteBuffer & ostr);
+
+    /// Returns the row ids of a posting list as a plain array of ascending unique values.
+    /// A large container is converted into the reusable buffer, so the returned span is valid until the next call.
+    std::span<const UInt32> toRawPostings(const PostingListBuilder & postings);
+    std::span<const UInt32> toRawPostings(std::span<const UInt32> postings) const { return postings; }
+
+    PostingListPtr deserializeToBitmap(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
+    void deserializeToArray(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
@@ -198,9 +230,9 @@ private:
     PostingListCodecPtr posting_list_codec;
     MergeTreeTextIndexSerializationVersion serialization_version;
 
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
-    std::vector<UInt32> raw_postings_buffer;
-    PaddedPODArray<char> deserialization_buffer;
+    /// Reusable buffers to avoid repeated heap allocations during serialization/deserialization.
+    PaddedPODArray<UInt32> raw_postings_buffer;
+    PaddedPODArray<char> raw_data_buffer;
 };
 
 /// Closed range of rows.
@@ -227,7 +259,7 @@ struct TokenPostingsInfo
     /// so use inlined vector to avoid heap allocations.
     absl::InlinedVector<UInt64, 1> offsets;
     absl::InlinedVector<RowsRange, 1> ranges;
-    PostingListPtr embedded_postings;
+    absl::InlinedVector<UInt32, MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS> embedded_postings;
 
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
@@ -297,6 +329,11 @@ struct TextIndexHeader
     DictionarySparseIndex sparse_index;
 };
 
+/// A posting list is serialized either from the builder used while writing an index,
+/// or from a plain array of row ids, which merges of text indexes have already materialized.
+template <typename T>
+concept PostingsContainer = std::same_as<T, PostingListBuilder> || std::same_as<T, std::span<const UInt32>>;
+
 struct TextIndexSerialization
 {
     enum class TokensFormat : UInt64
@@ -305,8 +342,11 @@ struct TextIndexSerialization
         FrontCodedStrings = 1
     };
 
+    /// Serializes the posting list of a single token and returns its metadata.
+    /// The row ids must be sorted in ascending order and unique.
+    template <PostingsContainer Postings>
     static TokenPostingsInfo serializePostings(
-        PostingListBuilder & postings,
+        const Postings & postings,
         MergeTreeIndexWriterStream & postings_stream,
         const MergeTreeIndexTextParams & params,
         PostingsSerialization & postings_serialization);
@@ -321,17 +361,14 @@ struct TextIndexSerialization
     /// Reads only the version and posting list codec from the start of the header, without the
     /// (potentially large) sparse index. The returned header has an empty `sparse_index`.
     static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
-    /// If postings_serialization is null, embedded postings are skipped.
-    static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization);
+    /// If skip_postings is true, embedded postings are skipped.
+    static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, bool skip_postings = false);
+    /// Skips a token info without full deserialization and filling the fields.
     static void skipTokenInfo(ReadBuffer & istr);
 
     /// Deserializes `TokenPostingsInfo` only for tokens at the given sorted indices,
     /// skipping postings for others. Returns a vector parallel to `matched_indices`.
-    static std::vector<TokenPostingsInfoPtr> deserializeTokenInfos(
-        ReadBuffer & istr,
-        size_t num_tokens,
-        const std::vector<size_t> & matched_indices,
-        PostingsSerialization & postings_serialization);
+    static std::vector<TokenPostingsInfoPtr> deserializeTokenInfos(ReadBuffer & istr, size_t num_tokens, const std::vector<size_t> & matched_indices);
 
     /// Deserializes tokens from a dictionary block.
     /// Returns the tokens column and the tokens format.
@@ -339,7 +376,7 @@ struct TextIndexSerialization
 
     /// Deserializes a dictionary block into a new DictionaryBlock.
     /// If postings_serialization is null, embedded postings are skipped.
-    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, PostingsSerialization * postings_serialization);
+    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, bool skip_postings = false);
 };
 
 using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
@@ -380,9 +417,9 @@ public:
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionaryForTokens(const DictionarySparseIndex & sparse_index, PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForTokens(const DictionarySparseIndex & sparse_index, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for patterns.
-    void analyzeDictionaryForPatterns(const DictionarySparseIndex & sparse_index, PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForPatterns(const DictionarySparseIndex & sparse_index, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Fills tokens and their infos from the cache.
     /// Returns tokens that are not in the cache and need to be read from the dictionary file.
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
@@ -467,6 +504,8 @@ struct MergeTreeIndexTextGranuleBuilder
     bool empty() const { return is_empty; }
     void reset();
 
+    void seedDropFilter();
+
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
@@ -483,8 +522,8 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Position data for phrase query support.
     /// Only allocated when params.positions is true.
     std::unique_ptr<TokenToPositionListMap> position_map;
-    /// Fast path for IN/NOT IN filter-only postprocessors: when set, addToken drops a token before inserting it,
-    /// so dropped tokens allocate no map entry and build no postings. Non-owning.
+    /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
+    /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
     const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
 };
 
@@ -546,7 +585,11 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+    using IMergeTreeIndex::getPhysicalFormat;
+    MergeTreeIndexFormat getPhysicalFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;

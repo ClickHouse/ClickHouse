@@ -26,12 +26,18 @@ The template already imports these. Required frontmatter:
 ```yaml
 ---
 sidebarTitle: 'Short nav title'
+searchable: true
 title: 'Create your first ...'
 useCases: ['Real-time analytics', 'Data warehousing']
 products: ['Cloud']
 description: 'One or two sentences shown on the explorer card.'
 ---
 ```
+
+Individual quickstart pages are intentionally omitted from the sidebar, so
+`searchable: true` is required to keep them discoverable through docs search.
+The quickstart generator propagates this flag to every localized quickstart,
+and the quickstart check enforces it across all locale trees.
 
 ### `useCases` — one or more of: {#usecases-values}
 

@@ -203,9 +203,34 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
                 throw;
         }
         /// WASM functions are stored in the same SQL objects storage but have their own origin.
-        /// They are emitted separately below; skip them here to avoid duplicates.
+        /// When the runtime registry has the function, it is emitted separately below with full
+        /// signature information; skip it here to avoid duplicates. A stored definition without a
+        /// runtime registration (e.g. after a restart on a build without a WebAssembly engine or
+        /// with the feature turned off) must stay visible, so that the leftover can be discovered
+        /// and removed with `DROP FUNCTION`.
         if (ast && ast->as<ASTCreateWasmFunctionQuery>())
+        {
+            if (UserDefinedWebAssemblyFunctionFactory::instance().has(function_name))
+                continue;
+
+            res_columns[0]->insert(function_name);
+            res_columns[1]->insert(UInt64(0)); // is_aggregate
+            res_columns[2]->insert(false); // case_insensitive
+            res_columns[3]->insertDefault(); // alias_to
+            res_columns[4]->insert(format({context, *ast}));
+            res_columns[5]->insert(static_cast<Int8>(FunctionOrigin::WASM_USER_DEFINED));
+            res_columns[6]->insertDefault(); // description
+            res_columns[7]->insertDefault(); // syntax
+            res_columns[8]->insertDefault(); // arguments
+            res_columns[9]->insertDefault(); // parameters
+            res_columns[10]->insertDefault(); // returned_value
+            res_columns[11]->insertDefault(); // examples
+            res_columns[12]->insertDefault(); // introduced_in
+            res_columns[13]->insertDefault(); // categories
+            res_columns[14]->insertDefault(); // is_deterministic
+            res_columns[15]->insert(UInt8{0}); // higher_order
             continue;
+        }
 
         /// The same applies to driver-created executable functions: they are materialized
         /// in the executable UDF loader and emitted with the `ExecutableUserDefined` origin below.

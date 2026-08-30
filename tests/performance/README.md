@@ -55,6 +55,16 @@ Test template:
 
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
+### Setup queries that cannot run on the reference server
+
+A `create_query`/`fill_query` normally must succeed on both servers being compared. If your PR adds a feature the setup depends on (e.g. a new MergeTree setting), the query cannot work on the reference (master) server yet, and the test would fail the CI check. Opt out of the reference-side check with `do_not_check_in_pr="<number of your PR>"`:
+
+```xml
+<create_query do_not_check_in_pr="12345">CREATE TABLE tab (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS new_setting = 1</create_query>
+```
+
+When such a query fails on the reference server, the remaining setup queries are skipped there, the whole test runs on the new server only, and its queries are reported under "Backward-incompatible queries" instead of failing the check. The opt-out applies only in the PR named by the attribute. The attribute is only allowed on top-level `create_query`/`fill_query` elements and is not compatible with `<query type="shell">` in the same test.
+
 ### Shell-script queries
 
 In addition to SQL queries sent over the native protocol, a benchmark query can be a shell script, marked with `type="shell"`. This is useful for end-to-end measurements that the native protocol cannot express: HTTP latency, response compression, tool startup time, etc.

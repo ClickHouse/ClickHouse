@@ -1,0 +1,132 @@
+# The examples of the embedded documentation that do not pass yet, with the reason for each one.
+# See tests/docs_examples/runner.py; regenerate with its `--update-known-failures`.
+#
+# Every line is `<Type>/<name>#<index> error|output|unstable  # why`, where `error` means the
+# example does not run, `output` means it runs but does not produce the response the documentation
+# shows, and `unstable` means its output is random and any outcome is accepted.
+# An entry is not an excuse: fix the example and drop the line whenever you can.
+
+AggregateFunction/groupArraySample#0      unstable  # the output is not the same on every run
+AggregateFunction/groupArraySample#2      unstable  # the output is not the same on every run
+AggregateFunction/kolmogorovSmirnovTest#0 unstable  # the output is not the same on every run
+AggregateFunction/kolmogorovSmirnovTest#1 unstable  # the output is not the same on every run
+AggregateFunction/stddevPopStable#0       unstable  # the output is not the same on every run
+Function/FQDN#0                           output  # the response describes the server or the machine it runs on
+Function/UTCTimestamp#0                   unstable  # the output is not the same on every run
+Function/addressToLine#0                  unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
+Function/addressToLine#1                  output  # the response carries a path or a database name of the machine this ran on
+Function/addressToLine#2                  unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
+Function/addressToLineWithInlines#0       output  # the response carries a path or a database name of the machine this ran on
+Function/addressToLineWithInlines#1       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
+Function/addressToSymbol#0                unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
+Function/addressToSymbol#1                output  # the literal address and the symbol in the response belong to the build that recorded them
+Function/addressToSymbol#2                unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
+Function/aiClassify#0                     error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiClassify#1                     error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiEmbed#0                        error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiEmbed#1                        error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiEmbed#2                        error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiExtract#0                      error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiExtract#1                      error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiFilter#0                       error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiFilter#1                       error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiGenerate#0                     error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiGenerate#1                     error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiGenerate#2                     error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiRedact#0                       error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiRedact#1                       error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiSimilarity#0                   error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiSimilarity#1                   error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiSimilarity#2                   error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiTranslate#0                    error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/aiTranslate#1                    error  # the example sends a request to an external model provider; the job points its credentials at a loopback port nothing listens on, so it stops at the request
+Function/arrayPartialShuffle#0            unstable  # the output is not the same on every run
+Function/arrayPartialShuffle#1            unstable  # the output is random and sometimes equals the documented one
+Function/arrayPartialShuffle#2            unstable  # the output is not the same on every run
+Function/arrayRandomSample#0              unstable  # the output is random and sometimes equals the documented one
+Function/arrayRandomSample#1              unstable  # the output is random and sometimes equals the documented one
+Function/arrayShuffle#0                   unstable  # the output is not the same on every run
+Function/buildId#0                        output  # the response describes the server or the machine it runs on
+Function/catboostEvaluate#0               error  # the example reads a demo dataset that the server under test does not have
+Function/currentDatabase#0                output  # the response describes the server or the machine it runs on
+Function/currentDatabase#1                output  # the response describes the server or the machine it runs on
+Function/currentQueryID#0                 unstable  # the output is not the same on every run
+Function/currentSchemas#0                 output  # the response describes the server or the machine it runs on
+Function/dateTimeToUUIDv7#0               unstable  # the output is not the same on every run
+Function/dateTimeToUUIDv7#1               unstable  # the output is not the same on every run
+Function/dateTrunc#0                      unstable  # the output is not the same on every run
+Function/dateTrunc#1                      unstable  # the output is not the same on every run
+Function/demangle#0                       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
+Function/demangle#1                       output  # the literal address and the symbol in the response belong to the build that recorded them
+Function/demangle#2                       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
+Function/displayName#0                    output  # the response describes the server or the machine it runs on
+Function/filesystemAvailable#0            output  # the response describes the server or the machine it runs on
+Function/filesystemCapacity#0             output  # the response describes the server or the machine it runs on
+Function/filesystemUnreserved#0           output  # the response describes the server or the machine it runs on
+Function/formatDateTime#2                 unstable  # the output is not the same on every run
+Function/fuzzBits#0                       unstable  # the output is not the same on every run
+Function/generateRandomStructure#0        unstable  # the output is not the same on every run
+Function/generateRandomStructure#1        unstable  # the output is not the same on every run
+Function/generateSnowflakeID#0            unstable  # the output is not the same on every run
+Function/generateSnowflakeID#1            unstable  # the output is not the same on every run
+Function/generateSnowflakeID#2            unstable  # the output is not the same on every run
+Function/generateULID#0                   unstable  # the output is not the same on every run
+Function/generateULID#1                   unstable  # the output is not the same on every run
+Function/generateUUIDv4#0                 unstable  # the output is not the same on every run
+Function/generateUUIDv4#1                 unstable  # the output is not the same on every run
+Function/generateUUIDv7#0                 unstable  # the output is not the same on every run
+Function/generateUUIDv7#1                 unstable  # the output is not the same on every run
+Function/getMacro#0                       output  # the response describes the server or the machine it runs on
+Function/getOSKernelVersion#0             output  # the response describes the server or the machine it runs on
+Function/hostName#0                       output  # the response describes the server or the machine it runs on
+Function/localtime#0                      unstable  # the output is not the same on every run
+Function/lowCardinalityKeys#0             unstable  # the output is not the same on every run
+Function/now#0                            unstable  # the output is not the same on every run
+Function/now#1                            unstable  # the output is not the same on every run
+Function/now#2                            unstable  # the output is not the same on every run
+Function/now64#0                          unstable  # the output is not the same on every run
+Function/nowInBlock#0                     unstable  # the output is not the same on every run
+Function/nowInBlock64#0                   unstable  # the output is not the same on every run
+Function/obfuscateQuery#0                 unstable  # the output is not the same on every run
+Function/obfuscateQuery#1                 unstable  # the output is not the same on every run
+Function/parseDateTime64BestEffort#0      unstable  # the output is not the same on every run
+Function/rand#0                           unstable  # the output is not the same on every run
+Function/rand64#0                         unstable  # the output is not the same on every run
+Function/randBernoulli#0                  unstable  # the output is random and sometimes equals the documented one
+Function/randBinomial#0                   unstable  # the output is not the same on every run
+Function/randCanonical#0                  unstable  # the output is not the same on every run
+Function/randChiSquared#0                 unstable  # the output is not the same on every run
+Function/randConstant#0                   unstable  # the output is not the same on every run
+Function/randConstant#1                   unstable  # the output is not the same on every run
+Function/randExponential#0                unstable  # the output is not the same on every run
+Function/randFisherF#0                    unstable  # the output is not the same on every run
+Function/randLogNormal#0                  unstable  # the output is not the same on every run
+Function/randNegativeBinomial#0           unstable  # the output is not the same on every run
+Function/randNormal#0                     unstable  # the output is not the same on every run
+Function/randPoisson#0                    unstable  # the output is not the same on every run
+Function/randStudentT#0                   unstable  # the output is not the same on every run
+Function/randUniform#0                    unstable  # the output is not the same on every run
+Function/randomFixedString#0              unstable  # the output is not the same on every run
+Function/randomPrintableASCII#0           unstable  # the output is not the same on every run
+Function/randomString#0                   unstable  # the output is not the same on every run
+Function/randomStringUTF8#0               unstable  # the output is not the same on every run
+Function/regionToArea#0                   error  # the geobase of the test configuration does not have this hierarchy
+Function/regionToDistrict#0               error  # the geobase of the test configuration does not have this hierarchy
+Function/revision#0                       output  # the response describes the server or the machine it runs on
+Function/serverUUID#0                     output  # the response describes the server or the machine it runs on
+Function/shardNum#0                       unstable  # the two shards answer in whichever order they finish
+Function/showCertificate#0                error  # the example needs a server configured with TLS
+Function/structureToCapnProtoSchema#0     unstable  # the output is not the same on every run
+Function/tid#0                            unstable  # the output is not the same on every run
+Function/timezone#0                       output  # the response describes the server or the machine it runs on
+Function/toInterval#1                     unstable  # the output is not the same on every run
+Function/toString#0                       unstable  # the output is not the same on every run
+Function/today#0                          unstable  # the output depends on the current date
+Function/today#1                          unstable  # the output depends on the current date
+Function/transactionID#0                  unstable  # the output is not the same on every run
+Function/transactionLatestSnapshot#0      unstable  # the snapshot counter grows with the number of transactions the server has run
+Function/transactionOldestSnapshot#0      unstable  # the snapshot counter grows with the number of transactions the server has run
+Function/uptime#0                         output  # the response describes the server or the machine it runs on
+Function/version#0                        output  # the response describes the server or the machine it runs on
+Function/yesterday#0                      unstable  # the output depends on the current date
+Function/zookeeperSessionUptime#0         unstable  # the output grows with the uptime of the session

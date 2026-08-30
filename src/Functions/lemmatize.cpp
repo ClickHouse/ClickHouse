@@ -152,7 +152,7 @@ For more details on loading a dictionary from a local file see page ["Defining D
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the lemmatized form of the word", {"String"}};
     FunctionDocumentation::Examples examples = {
-        {"English lemmatization", "SELECT lemmatize('en', 'wolves')", "wolf"}
+        {"English lemmatization", "SET allow_experimental_nlp_functions = 1;\nSELECT lemmatize('en', 'wolves')", "wolf"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Client/Connection.h>
+#include <Core/Field.h>
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
@@ -32,13 +34,19 @@ struct LocalQueryState
     /// must use the dialect/gate the query was originally accepted with — a JSON
     /// `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'` (or `... enable_json_ast_dialect = 0`)
     /// would otherwise be reparsed with the changed settings and fail.
-    bool parsed_as_json_dialect = false;
+    Dialect parsed_dialect = Dialect::clickhouse;
     bool enable_json_ast_dialect = false;
-    /// AST-size limits captured at the same point. The JSON branch of the `input()` initializer reparses
-    /// `query` through `IAST::createFromJSON`; it must use the limits the original parse was accepted with,
-    /// so a JSON `INSERT ... FROM input(...) SETTINGS max_ast_depth = 1` (or `max_query_size` /
-    /// `max_ast_elements`) cannot make that second parse fail under limits the first parse never saw.
-    UInt64 json_ast_max_query_size = 0;
+    /// Parser limits and SQL parser flags captured at the same point. The `input()` initializer must
+    /// reparse with the settings that accepted the original query, not its query-local mutations.
+    UInt64 max_query_size = 0;
+    UInt64 max_parser_depth = 0;
+    UInt64 max_parser_backtracks = 0;
+    bool allow_settings_after_format_in_insert = false;
+    bool implicit_select = false;
+    String promql_database;
+    String promql_table;
+    Field promql_evaluation_time;
+    /// AST-size limits used only by the JSON dialect.
     UInt64 json_ast_max_depth = 0;
     UInt64 json_ast_max_elements = 0;
     /// Streams of blocks, that are processing the query.

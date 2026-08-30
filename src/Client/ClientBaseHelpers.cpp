@@ -288,7 +288,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     Expected expected;
     expected.enable_highlighting = true;
 
-    /// We don't do highlighting for foreign dialects, such as PRQL and Kusto.
+    /// We don't do highlighting for foreign dialects, such as PRQL.
     /// Only normal ClickHouse SQL queries are highlighted.
 
     ParserQuery parser(end, false, context.getSettingsRef()[Setting::implicit_select]);

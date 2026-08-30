@@ -56,6 +56,7 @@ private:
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
         MutableColumnPtr shared_data_,
         size_t max_dynamic_paths_,
+        size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
@@ -76,6 +77,7 @@ public:
         const UnorderedMapWithMemoryTracking<String, ColumnPtr> & dynamic_paths_,
         const ColumnPtr & shared_data_,
         size_t max_dynamic_paths_,
+        size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
@@ -85,6 +87,7 @@ public:
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
         MutableColumnPtr shared_data_,
         size_t max_dynamic_paths_,
+        size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
@@ -260,6 +263,7 @@ public:
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
+    size_t getMaxDynamicPathsUpperBound() const { return max_dynamic_paths_upper_bound; }
     size_t getGlobalMaxDynamicPaths() const { return global_max_dynamic_paths; }
     DataTypePtr getDynamicType() const { return std::make_shared<DataTypeDynamic>(max_dynamic_types); }
 
@@ -274,7 +278,10 @@ public:
     void setDynamicPaths(const VectorWithMemoryTracking<String> & paths);
     void setDynamicPaths(const VectorWithMemoryTracking<std::pair<String, ColumnPtr>> & paths);
     void setMaxDynamicPaths(size_t max_dynamic_paths_);
-    void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
+    /// Lowers the upper bound on max_dynamic_paths (and max_dynamic_paths with it).
+    void setMaxDynamicPathsUpperBound(size_t max_dynamic_paths_upper_bound_);
+    /// Lowers this column's upper bound to the source's, so a parsing limit travels with the data.
+    void takeMaxDynamicPathsUpperBoundFrom(const ColumnObject & src);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n);
@@ -398,8 +405,14 @@ private:
     /// This limit can be different for different instances of Object column. For example, we can decrease it
     /// in `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom` before merge.
     size_t max_dynamic_paths;
+    /// The value max_dynamic_paths is restored to when it is raised back (see `prepareForSquashing`).
+    /// Usually equal to global_max_dynamic_paths, but a parsing setting can lower it for this instance.
+    size_t max_dynamic_paths_upper_bound;
     /// Global limit on number of dynamic paths for all column instances of this Object type. It's the limit specified
-    /// in the type definition (for example 'JSON(max_dynamic_paths=N)'). max_dynamic_paths is always not greater than this limit.
+    /// in the type definition (for example 'JSON(max_dynamic_paths=N)').
+    /// Never narrowed: it takes part in `getName`/`structureEquals`/`dynamicStructureEquals`, so narrowing it would
+    /// make a column mismatch the header built from its own type. Narrow max_dynamic_paths_upper_bound instead.
+    /// Invariant: max_dynamic_paths <= max_dynamic_paths_upper_bound <= global_max_dynamic_paths.
     size_t global_max_dynamic_paths;
     /// Maximum number of dynamic types for each dynamic path. Used while creating Dynamic columns for new dynamic paths.
     size_t max_dynamic_types;

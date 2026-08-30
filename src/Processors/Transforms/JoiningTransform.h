@@ -33,6 +33,19 @@ private:
 
 using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 
+/// Sums the match totals reported by each probe stream as it drains.
+class RightRowsMatchCounter
+{
+public:
+    void add(size_t matched_right_rows_) { matched_right_rows.fetch_add(matched_right_rows_, std::memory_order_relaxed); }
+    size_t get() const { return matched_right_rows.load(std::memory_order_relaxed); }
+
+private:
+    std::atomic_size_t matched_right_rows{0};
+};
+
+using RightRowsMatchCounterPtr = std::shared_ptr<RightRowsMatchCounter>;
+
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
 /// First input is for data from left table.
@@ -48,7 +61,9 @@ public:
         size_t max_block_size_,
         bool on_totals_ = false,
         bool default_totals_ = false,
-        FinishCounterPtr finish_counter_ = nullptr);
+        FinishCounterPtr finish_counter_ = nullptr,
+        RightRowsMatchCounterPtr match_counter_ = nullptr,
+        bool emit_non_joined_ = true);
 
     ~JoiningTransform() override;
 
@@ -71,9 +86,14 @@ private:
     bool has_virtual_row = false;
     bool stop_reading = false;
     bool process_non_joined = true;
+    bool is_drained = false;
+    bool is_last_drained = false;
 
     JoinPtr join;
     bool on_totals;
+    /// Whether this transform emits non-joined rows itself once all probe streams have drained.
+    /// False when separate `NonJoinedBlocksTransform` processors own the emission.
+    bool emit_non_joined;
     /// This flag means that we have manually added totals to our pipeline.
     /// It may happen in case if joined subquery has totals, but out string doesn't.
     /// We need to join default values with subquery totals if we have them, or return empty chunk is haven't.
@@ -85,6 +105,9 @@ private:
     FinishCounterPtr finish_counter;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
+
+    RightRowsMatchCounterPtr match_counter;
+    size_t matched_right_rows = 0;
 
     Block readExecute(Chunk & chunk);
 };

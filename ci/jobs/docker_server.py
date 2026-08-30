@@ -193,7 +193,10 @@ def parse_args() -> argparse.Namespace:
         help="if set, point apt at the in-region AWS Ubuntu mirror for this region "
         "(e.g. us-east-1) instead of Canonical's archive.ubuntu.com / "
         "ports.ubuntu.com, which are frequently unreachable from the runners. "
-        "Empty means use the Dockerfile default (canonical mirror).",
+        "An image whose retries are exhausted on an apt download failure is then "
+        "rebuilt against Canonical, for the days when the in-region mirror is the "
+        "broken one. Empty means use the Dockerfile default (canonical mirror) "
+        "with no second attempt.",
     )
 
     return parser.parse_args()
@@ -232,7 +235,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 
 
 # `docker buildx build` resolves base/SBOM-scanner images such as
-# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) from docker.io, which
+# `docker/buildkit-syft-scanner` (pulled for the SBOM attestation) from docker.io, which
 # intermittently returns transient HTTP errors while resolving and while pushing
 # image layers, and the build itself hits `apt-get` package mirrors that occasionally
 # refuse connections. Retry the buildx commands only on genuine
@@ -261,6 +264,114 @@ BUILDX_RETRY_ERRORS = [
     "Connection failed",
     "Connection timed out",
 ]
+
+# A single apt mirror can stay broken for longer than `BUILDX_RETRIES` attempts
+# take: on 2026-08-21 `us-east-1.ec2.ports.ubuntu.com` answered `503` and served
+# ~20 kB/s for half an hour, which is long enough to exhaust every retry and red
+# the arm64 server image on master. When the retries against one mirror are used
+# up on an apt *download* failure, the whole build is repeated against the next
+# mirror in `apt_mirror_variants` instead of failing the check. These signatures
+# say "this mirror did not hand over the file"; a broken package name, an
+# unsatisfiable dependency or any other genuine packaging error produces none of
+# them and still fails right away.
+APT_MIRROR_ERRORS = [
+    # `apt-get install` could not download a .deb, and the summary line after it
+    "Failed to fetch",
+    "Unable to fetch some archives",
+    # `apt-get update` could not refresh the package lists
+    "Some index files failed to download",
+]
+
+
+# `--progress=plain` prints the whole build, so a signature found anywhere in the
+# output says nothing about what stopped the build: `apt-get update` warns with
+# `W: Failed to fetch ...` and carries on, and the step that actually failed can be a
+# later `wget` or `dpkg` with a genuine packaging error. Two things narrow the match
+# to the failure itself - the fenced context block that buildx prints for the step it
+# stopped on, and apt's own `E:` severity, which distinguishes "could not get the
+# file" from a miss apt recovered from.
+BUILDX_FAILURE_FENCE = "------"
+# buildx has reworded this line: it used to read `ERROR: failed to solve: ...` and
+# since 0.23 reads `ERROR: failed to build: failed to solve: ...` (measured on 0.30.1).
+# Matching the whole phrase pinned the old wording, so `terminal_build_failure` found
+# no terminal step, every failure was classified as "not the mirror", and the fallback
+# below was dead code from the day it was added: on 2026-08-26 the arm64 server and
+# keeper images reded on master on a `503` from `us-east-1.ec2.ports.ubuntu.com`
+# without ever rebuilding against Canonical. Anchor on the two parts that did not
+# move - buildx starts its top-level errors at the beginning of the line with
+# `ERROR: `, and this one names the solve step - so a future infix cannot break it.
+BUILDX_ERROR_PREFIX = "ERROR: "
+BUILDX_SOLVE_ERROR = "failed to solve:"
+# Inside the fence, buildx repeats the failing step's command as a header before its
+# output. That is the recipe, not what happened: `RUN ... && apt-get install ...` names
+# apt, and a `RUN` that echoes or greps for one of the signatures below would match on
+# its own text alone. Only the output lines get a verdict.
+BUILDX_STEP_HEADER_PREFIX = " > "
+APT_ERROR_SEVERITY = "E: "
+
+
+def is_buildx_solve_error(line: str) -> bool:
+    """Is this buildx's own top-level "the build failed" line?
+
+    The step output that precedes it repeats the same text, so requiring the line to
+    *start* with `ERROR: ` is what keeps the per-step `#12 ERROR: ...` copy and the
+    fenced `61.2 E: ...` body from standing in for the terminal line.
+    """
+    return line.startswith(BUILDX_ERROR_PREFIX) and BUILDX_SOLVE_ERROR in line
+
+
+def terminal_build_failure(info: str) -> str:
+    """Output of the step the build stopped on, fences included.
+
+    A failed `docker buildx build --progress=plain` ends with the failing step's own
+    output fenced between `------` lines, then the offending `Dockerfile` lines, then a
+    top-level `ERROR: ... failed to solve: ...`. Everything above that fence belongs to
+    steps that succeeded, and everything below it is source, not output - so the block
+    ends at the closing fence, while the top-level error still has to be there as proof
+    that this is where the build stopped. Empty when the shape is absent - a timed-out
+    or truncated log - so callers fail closed.
+    """
+    lines = info.splitlines()
+    # Retries truncate the log, so a log with several attempts in it is one that was
+    # concatenated; either way the last solve error is the one that ended the build.
+    ends = [i for i, line in enumerate(lines) if is_buildx_solve_error(line)]
+    if not ends:
+        return ""
+    end = ends[-1]
+    fences = [
+        i for i, line in enumerate(lines[:end]) if line.strip() == BUILDX_FAILURE_FENCE
+    ]
+    if len(fences) < 2:
+        return ""
+    return "\n".join(lines[fences[-2] : fences[-1] + 1])
+
+
+def is_apt_mirror_failure(info: str) -> bool:
+    """Did the step that stopped the build fail because a mirror withheld a file?"""
+    return any(
+        not line.startswith(BUILDX_STEP_HEADER_PREFIX)
+        and APT_ERROR_SEVERITY in line
+        and any(error in line for error in APT_MIRROR_ERRORS)
+        for line in terminal_build_failure(info).splitlines()
+    )
+
+
+def apt_mirror_variants(apt_mirror_region: str) -> List[List[str]]:
+    """buildx `--build-arg` sets pointing apt at each mirror to try, in order."""
+    # An empty set of arguments leaves the Dockerfile defaults in place, i.e.
+    # Canonical's archive.ubuntu.com (amd64) and ports.ubuntu.com (arm64).
+    canonical: List[str] = []
+    if not apt_mirror_region:
+        return [canonical]
+    # The in-region AWS mirror goes first: Canonical's mirrors are frequently
+    # unreachable over IPv4 from the runners, while the in-region one is normally
+    # reachable and fast. Canonical is kept as the second attempt for the days
+    # when the in-region mirror is the broken one.
+    in_region = [
+        f"--build-arg=apt_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com",
+        f"--build-arg=apt_ports_archive=http://{apt_mirror_region}.ec2.ports.ubuntu.com",
+    ]
+    return [in_region, canonical]
 
 # `Acquire::http::Timeout` is an inactivity timeout, so an apt mirror that keeps
 # trickling bytes is never bounded by it and the build runs until the job's own cap
@@ -305,6 +416,23 @@ def with_timeout(cmd: str, seconds: int = BUILDX_TIMEOUT) -> str:
     )
 
 
+def is_buildx_timeout(info: str) -> bool:
+    return BUILDX_TIMEOUT_MESSAGE in info or BUILDX_TIMEOUT_KILL_DIAG in info
+
+
+def should_try_next_mirror(info: str) -> bool:
+    """After the retries against one mirror are gone: is that mirror a plausible cause?
+
+    A mirror breaks in two shapes, and each is bounded by a different mechanism. It
+    refuses the file, which apt reports and `BUILDX_RETRIES` then burns through; or it
+    trickles the file, which apt's inactivity timeout never bounds and `with_timeout`
+    kills. The second shape is the one that reded the arm64 server image, so an expiry
+    has to reach the next mirror too - it is only reached once the build is failing
+    anyway, and `buildx_timeout` keeps the extra attempt inside the job's own cap.
+    """
+    return is_apt_mirror_failure(info) or is_buildx_timeout(info)
+
+
 def buildx_args(
     urls: Dict[str, str],
     arch: str,
@@ -312,33 +440,28 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
-    apt_mirror_region: str,
+    attest: bool,
 ) -> List[str]:
     args = [
-        "--provenance=true",
-        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
         f"--label=com.clickhouse.build.version={version}",
     ]
+    # Attestations survive only in pushed manifests (the local docker exporter
+    # drops them), while the SBOM scan of a multi-GB image OOMs smaller runners,
+    # so generate them only for pushed images.
+    # The scanner is pinned because the floating stable-1 tag can silently move
+    # to a version whose scan of a multi-GB image exceeds the runner's memory.
+    if attest:
+        args.append("--provenance=true")
+        args.append("--attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11")
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
     elif urls:
         url = urls[arch]
         args.append(f"--build-arg=REPOSITORY='{url}'")
         args.append(f"--build-arg=deb_location_url='{url}'")
-    # Point apt at the in-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com
-    # (amd64) and ports.ubuntu.com (arm64) are frequently unreachable over IPv4
-    # from the runners; the in-region mirror is reachable and fast. The Dockerfile
-    # defaults stay canonical so images build normally outside CI.
-    if apt_mirror_region:
-        args.append(
-            f"--build-arg=apt_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com"
-        )
-        args.append(
-            f"--build-arg=apt_ports_archive=http://{apt_mirror_region}.ec2.ports.ubuntu.com"
-        )
     return args
 
 
@@ -376,7 +499,6 @@ def build_and_push_image(
         arch_tag = f"{tag}-{arch}"
         metadata_path = temp_path / arch_tag
         dockerfile = f"{image.path}/Dockerfile.{os}"
-        cmd_args = list(init_args)
         urls = []
         if direct_urls:
             # distroless and ubuntu-server use an Ubuntu builder with dpkg, so they
@@ -398,6 +520,7 @@ def build_and_push_image(
                     urls = [url for url in tgz_urls if "clickhouse-keeper" in url]
                 else:
                     urls = tgz_urls
+        cmd_args = list(init_args)
         cmd_args.extend(
             buildx_args(
                 repo_urls,
@@ -406,7 +529,7 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
-                apt_mirror_region=apt_mirror_region,
+                attest=push,
             )
         )
         if not push:
@@ -423,22 +546,59 @@ def build_and_push_image(
         # explicitly to ensure the published image has no shell.
         if os == "distroless":
             cmd_args.append("--target=production")
-        cmd_args.extend(
-            [
-                f"--file={dockerfile}",
-                Path(image.path).as_posix(),
-            ]
-        )
-        cmd = " ".join(cmd_args)
-        logging.info("Building image %s:%s for arch %s: %s", image.name, tag, arch, cmd)
-        result.append(
-            Result.from_commands_run(
+        mirrors = apt_mirror_variants(apt_mirror_region)
+        for attempt, apt_mirror_args in enumerate(mirrors, start=1):
+            cmd = " ".join(
+                [
+                    *cmd_args,
+                    *apt_mirror_args,
+                    f"--file={dockerfile}",
+                    Path(image.path).as_posix(),
+                ]
+            )
+            logging.info(
+                "Building image %s:%s for arch %s, apt mirror %s/%s: %s",
+                image.name,
+                tag,
+                arch,
+                attempt,
+                len(mirrors),
+                cmd,
+            )
+            build_result = Result.from_commands_run(
                 name=f"{image.name}:{tag}-{arch}",
                 command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
             )
-        )
+            if build_result.is_ok() or not should_try_next_mirror(build_result.info):
+                if not build_result.is_ok() and not terminal_build_failure(
+                    build_result.info
+                ):
+                    # Fail-closed and silent is what let a reworded buildx error keep
+                    # this loop from ever running: say so, so the next log shows it.
+                    logging.info(
+                        "Image %s:%s for arch %s failed and no terminal build step "
+                        "could be identified in its output, so no apt mirror can be "
+                        "blamed for it; not trying another mirror",
+                        image.name,
+                        tag,
+                        arch,
+                    )
+                break
+            logging.info(
+                "Image %s:%s for arch %s exhausted its retries on a failure the apt "
+                "mirror can explain; %s",
+                image.name,
+                tag,
+                arch,
+                (
+                    "rebuilding against the next apt mirror"
+                    if attempt < len(mirrors)
+                    else "no apt mirror left to try"
+                ),
+            )
+        result.append(build_result)
         if not result[-1].is_ok():
             return result
         with open(metadata_path, "rb") as m:

@@ -1,0 +1,56 @@
+-- shadowing output, values must be equal on both sides of ON
+2	2
+2	2
+3	3
+3	3
+-- row count
+4
+-- shadowing output that also changes the type must plan and return equal values
+2	2
+2	2
+3	3
+3	3
+-- three inner relations, two flatten levels
+2	2
+2	2
+2	2
+2	2
+3	3
+3	3
+3	3
+3	3
+-- non-shadowing output keeps its values
+2	2
+2	2
+3	3
+3	3
+-- shadowing only on an internal node keeps its values
+3	3
+3	3
+-- non-shadowing output is still merged into the join graph
+1
+-- shadowing only on an internal node is still merged into the join graph
+1
+-- shadowing output is not merged into the join graph
+0
+-- nothing is merged when the setting is off
+0
+-- the parent join of a refused merge is still reordered
+1
+-- and the same query is not reordered once reordering is off
+0
+-- stored view with a shadowing output, values must be equal on both sides of ON
+2	2
+2	2
+3	3
+3	3
+-- stored view row count
+4
+-- stored view shadowing output is not merged into the join graph
+0
+-- stored view non-shadowing output is still merged into the join graph
+1
+-- the parent join of a refused stored view merge is still reordered
+1
+-- and the same stored view query is not reordered once reordering is off
+0

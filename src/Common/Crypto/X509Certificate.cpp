@@ -19,6 +19,9 @@ extern const int BAD_ARGUMENTS;
 X509Certificate::X509Certificate(X509 * cert_)
     : certificate(cert_)
 {
+    /// Every accessor dereferences the certificate, so a null pointer here turns into a segfault later.
+    if (!certificate)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create a certificate from a null pointer");
 }
 
 X509Certificate::operator X509 *() const

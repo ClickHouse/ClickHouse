@@ -62,34 +62,18 @@ FROM ( EXPLAIN actions = 0
              max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
 
--- Spilling-on path: automatic spilling wraps the chosen hash join in `SpillingHashJoin`,
--- which reports delayed blocks only because it *might* spill. The second-pass join
--- traversal now accepts it and pins it in memory, so the deferral fires and only the
--- outer `Sort + Limit` remains, exactly like the `both_on` case.
+-- Spilling-on path: even with both flags on, automatic spilling can wrap the
+-- chosen hash join in `SpillingHashJoin` (`hasDelayedBlocks=true`), which the
+-- second-pass join traversal rejects. The deferral must therefore NOT fire -
+-- otherwise both optimizations get silently disabled. `topKThroughJoin` is
+-- expected to inject its own `Sort + Limit`, mirroring the
+-- `through_join_off` case.
 SELECT 'spilling_on' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, countIf(explain LIKE '%Limit%') AS limit_count
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
-             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
-             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
-             query_plan_optimize_lazy_materialization = 0,
-             enable_parallel_replicas = 0,
-             max_bytes_ratio_before_external_join = 0.5
-);
-
--- Spilling-on path with `query_plan_read_in_order_through_spilling_join = 0`: the join keeps
--- its ability to spill, so the second-pass join traversal rejects it again and the deferral
--- must NOT fire - otherwise both optimizations get silently disabled. `topKThroughJoin` is
--- expected to inject its own `Sort + Limit`, mirroring the `through_join_off` case.
-SELECT 'spilling_on_opt_out' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, countIf(explain LIKE '%Limit%') AS limit_count
-FROM ( EXPLAIN actions = 0
-    SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
-    ORDER BY l.k DESC LIMIT 10
-    SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
-             query_plan_read_in_order_through_spilling_join = 0,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,

@@ -9,10 +9,14 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <IO/Progress.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -23,14 +27,24 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
+#include <chrono>
+
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool async_insert;
+    extern const SettingsSeconds wait_for_async_insert_timeout;
+}
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -234,13 +248,38 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
         columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
     insert_query->columns = columns_ast;
 
+    auto * queue = context->tryGetAsynchronousInsertQueue();
+    const bool async_insert = queue && context->getSettingsRef()[Setting::async_insert];
+
     auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), context);
     try
     {
-        PushingPipelineExecutor executor(io.pipeline);
-        executor.start();
-        executor.push(std::move(block));
-        executor.finish();
+        if (async_insert)
+        {
+            auto result = queue->pushQueryWithBlock(ast, std::move(block), context);
+            if (result.status != AsynchronousInsertQueue::PushResult::OK)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of pushing a block to the asynchronous insert queue");
+
+            io.resetPipeline(/*cancel=*/ true);
+
+            const auto timeout_ms = context->getSettingsRef()[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+            if (result.future.wait_for(std::chrono::milliseconds(timeout_ms)) == std::future_status::timeout)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout_ms);
+
+            const auto progress = result.future.get();
+            if (auto process_list_element = context->getProcessListElement())
+            {
+                process_list_element->updateProgressIn(Progress(ReadProgress(progress.rows, progress.bytes)));
+                process_list_element->updateProgressOut(Progress(WriteProgress(progress.rows, progress.bytes)));
+            }
+        }
+        else
+        {
+            PushingPipelineExecutor executor(io.pipeline);
+            executor.start();
+            executor.push(std::move(block));
+            executor.finish();
+        }
     }
     catch (...)
     {

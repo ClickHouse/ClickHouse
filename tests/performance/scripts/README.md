@@ -72,7 +72,7 @@ A query is supposed to run longer than 0.1 second. If your query runs faster, in
 #### Backward-incompatible Queries
 Action required for the cells marked in red.
 
-Shows the queries we are unable to run on an old server -- probably because they contain a new function. You should see this table when you add a new function and a performance test for it. Check that the run time and variance are acceptable (run time between 0.1 and 1 seconds, variance below 10%). If not, they will be highlighted in red.
+Shows the queries we are unable to run on an old server -- probably because they contain a new function. You should see this table when you add a new function and a performance test for it. A test whose `create_query`/`fill_query` is marked with `do_not_check_in_pr="<this PR's number>"` and fails on the old server also lands here, with all of its queries, in the PR that introduces it. Check that the run time and variance are acceptable (run time between 0.1 and 1 seconds, variance below 10%). If not, they will be highlighted in red.
 
 #### Changes in Performance
 Action required for the cells marked in red, and some cheering is appropriate for the cells marked in green.

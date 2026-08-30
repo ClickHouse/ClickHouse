@@ -116,9 +116,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
        timeSeriesGroupToTags(result_group)
         )",
         R"(
-┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)────────────────────────┐
-│          1 │         2 │            3 │ [('__name__','http_codes'),('code','404'),('region','eu')] │
-└────────────┴───────────┴──────────────┴────────────────────────────────────────────────────────────┘
+┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)───────────────────────┐
+│          1 │         2 │            3 │ [('__name__','http_codes'),('env','dev'),('region','eu')] │
+└────────────┴───────────┴──────────────┴───────────────────────────────────────────────────────────┘
         )"
     }
     };

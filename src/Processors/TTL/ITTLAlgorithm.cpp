@@ -51,38 +51,76 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     return block_copy.getByName(result_column).column->convertToFullColumnIfSparse();
 }
 
-/// TODO: This per-row type dispatch is inefficient when called in a loop.
-/// Callers should resolve the column type once and iterate over typed data directly.
-/// See TTLDeleteFilterTransform::extractTimestamps for a batch-oriented approach.
-Int64 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) const
+/// Shared by every TTL algorithm and by `TTLDeleteFilterTransform`, so a new result type is added
+/// once for all of them. Not shared with the insert path: `MergeTreeDataWriter::updateTTLInfo` and
+/// `updateTTLInfoConst` fold the same types into `MergeTreeDataPartTTLInfo` without building an
+/// array, and still need the new type too.
+void ITTLAlgorithm::extractTimestamps(
+    const IColumn * column, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps)
 {
-    /// Sparse columns must be unwrapped before type dispatch, since
-    /// typeid_cast does not see through the ColumnSparse wrapper.
-    /// Use getValueIndex (binary-search, O(log N)) to avoid O(N²) full conversion.
-    if (const auto * col_sparse = typeid_cast<const ColumnSparse *>(column))
-        return getTimestampByIndex(&col_sparse->getValuesColumn(), col_sparse->getValueIndex(index));
+    const IColumn * ttl_column = column;
+    const size_t num_rows = column->size();
+    timestamps.resize_exact(num_rows);
 
-    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
-        return date_lut.fromDayNum(DayNum(column_date->getData()[index]));
-    if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
-        return column_date_time->getData()[index];
-    if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(column))
-        return date_lut.fromDayNum(ExtendedDayNum(column_date_32->getData()[index]));
-    if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(column))
-        return column_date_time_64->getData()[index] / intExp10OfSize<Int64>(column_date_time_64->getScale());
-    if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
+    /// Sparse columns must be converted to dense before type dispatch, since typeid_cast does not
+    /// see through the ColumnSparse wrapper. Unreachable in practice - every caller gets its column
+    /// from executeExpressionAndGetColumn, which converts - but kept so the mapping stays total.
+    ColumnPtr dense;
+    if (typeid_cast<const ColumnSparse *>(ttl_column))
     {
-        if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
-            return date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>()));
-        if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
-            return column_const->getValue<UInt32>();
-        if (typeid_cast<const ColumnInt32 *>(&column_const->getDataColumn()))
-            return date_lut.fromDayNum(ExtendedDayNum(column_const->getValue<Int32>()));
-        if (const ColumnDateTime64 * column_dt64 = typeid_cast<const ColumnDateTime64 *>(&column_const->getDataColumn()))
-            return column_const->getValue<DateTime64>() / intExp10OfSize<Int64>(column_dt64->getScale());
+        dense = ttl_column->convertToFullColumnIfSparse();
+        ttl_column = dense.get();
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+    if (const auto * col_date = typeid_cast<const ColumnUInt16 *>(ttl_column))
+    {
+        const auto & data = col_date->getData();
+        for (size_t i = 0; i < num_rows; ++i)
+            timestamps[i] = date_lut.fromDayNum(DayNum(data[i]));
+    }
+    else if (const auto * col_datetime = typeid_cast<const ColumnUInt32 *>(ttl_column))
+    {
+        const auto & data = col_datetime->getData();
+        for (size_t i = 0; i < num_rows; ++i)
+            timestamps[i] = static_cast<Int64>(data[i]);
+    }
+    else if (const auto * col_date32 = typeid_cast<const ColumnInt32 *>(ttl_column))
+    {
+        const auto & data = col_date32->getData();
+        for (size_t i = 0; i < num_rows; ++i)
+            timestamps[i] = date_lut.fromDayNum(ExtendedDayNum(data[i]));
+    }
+    else if (const auto * col_datetime64 = typeid_cast<const ColumnDateTime64 *>(ttl_column))
+    {
+        const auto & data = col_datetime64->getData();
+        const auto scale = intExp10OfSize<Int64>(col_datetime64->getScale());
+        for (size_t i = 0; i < num_rows; ++i)
+            timestamps[i] = data[i] / scale;
+    }
+    else if (const auto * col_const = typeid_cast<const ColumnConst *>(ttl_column))
+    {
+        /// A constant column has one value for the whole block, so the inner type is
+        /// resolved and converted once rather than per row.
+        const auto & inner = col_const->getDataColumn();
+        Int64 value = 0;
+        if (typeid_cast<const ColumnUInt16 *>(&inner))
+            value = date_lut.fromDayNum(DayNum(col_const->getValue<UInt16>()));
+        else if (typeid_cast<const ColumnUInt32 *>(&inner))
+            value = col_const->getValue<UInt32>();
+        else if (typeid_cast<const ColumnInt32 *>(&inner))
+            value = date_lut.fromDayNum(ExtendedDayNum(col_const->getValue<Int32>()));
+        else if (const auto * inner_dt64 = typeid_cast<const ColumnDateTime64 *>(&inner))
+            value = col_const->getValue<DateTime64>() / intExp10OfSize<Int64>(inner_dt64->getScale());
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of inner column in constant TTL column");
+
+        std::fill(timestamps.begin(), timestamps.end(), value);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+    }
 }
+
 
 }

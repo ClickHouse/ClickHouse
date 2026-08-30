@@ -396,10 +396,10 @@ The operation maintains these properties:
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same type as the input array containing elements from `source` that weren't found in `except`. ", {"Array(T)"}};
 
     FunctionDocumentation::Examples examples
-        = {{"basic", "SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])", "[1, 2, 2, 4]"},
-           {"with_nulls1", "SELECT arrayExcept([1, NULL, 2, NULL], [2])", "[1, NULL, NULL]"},
+        = {{"basic", "SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])", "[1,2,2,4]"},
+           {"with_nulls1", "SELECT arrayExcept([1, NULL, 2, NULL], [2])", "[1,NULL,NULL]"},
            {"with_nulls2", "SELECT arrayExcept([1, NULL, 2, NULL], [NULL, 2, NULL])", "[1]"},
-           {"strings", "SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])", "['apple', 'cherry']"}};
+           {"strings", "SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])", "['apple','cherry']"}};
 
     FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

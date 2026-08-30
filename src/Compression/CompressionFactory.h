@@ -1,12 +1,13 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
+#include <Core/SettingsTierType.h>
 #include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
 #include <Common/Documentation.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Parsers/IAST_fwd.h>
-#include <Columns/IColumn_fwd.h>
 
 #include <functional>
 #include <memory>
@@ -43,8 +44,8 @@ struct CodecValidationSettings
     /// An already accepted codec must not be re-judged by the current session, or existing tables could fail to load.
     static CodecValidationSettings trusted() { return {}; }
 
-    /// nullptr on trusted paths (every experimental / suspicious codec is accepted).
-    /// Otherwise an experimental codec is enabled by its `enable_<family>_codec` setting.
+    /// nullptr on trusted paths (every gated / suspicious codec is accepted).
+    /// Otherwise a gated codec must be enabled by its dedicated setting.
     const Settings * settings = nullptr;
 
 private:
@@ -59,6 +60,7 @@ protected:
     using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
+
     using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType>;
     using CompressionCodecsCodeDictionary = UnorderedMapWithMemoryTracking<uint8_t, CreatorWithType>;
 
@@ -110,6 +112,9 @@ public:
     /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
     CompressionCodecPtr get(const String & compression_codec) const;
 
+    /// Names of the dedicated settings gating registered codec families.
+    Strings getGateSettingNames() const;
+
     /// Insert codec information into MutableColumns to show in the system table
     void fillCodecDescriptions(MutableColumns & res_columns) const;
 
@@ -135,6 +140,12 @@ protected:
 private:
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
+
+    /// Name of the gate setting: `enable_<lowercase family>_codec`.
+    static String getGateSettingName(const String & family_name);
+
+    /// Get setting tier of a codec. nullopt when the codec is ungated or the setting is obsolete (-> codec is GA)
+    static std::optional<SettingsTierType> getGateTier(const String & gate_setting_name);
 
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;

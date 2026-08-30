@@ -1324,3 +1324,61 @@ def test_system_queue_metadata_broken_mandatory_folder(started_cluster):
     # Restore the layout so the table can be dropped normally.
     zk.create(f"{keeper_path}/failed")
     node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_selected_rows_not_double_counted(started_cluster):
+    # The queue source reads the file's format through the inner pipeline of
+    # StorageObjectStorageSource::createReader and reports the same rows again through
+    # ISource auto-progress, so `SelectedRows` and `SelectedBytes` are twice the query's own
+    # `read_rows`/`read_bytes` unless that inner pipeline has profile event updates disabled.
+    # See #116301.
+    node = started_cluster.instances["instance"]
+    table_name = f"test_selected_rows_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    row_num = 10
+
+    generate_random_files(started_cluster, files_path, 1, row_num=row_num)
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": f"/clickhouse/test_{table_name}_{generate_random_string()}"
+        },
+    )
+
+    # A direct select runs the queue source in the foreground, so its counters land in the
+    # query's own `query_log` row. The streaming path has no row to read them from: its insert
+    # is executed straight from `InterpreterInsertQuery`, never through `executeQuery`.
+    query_id = f"{table_name}_direct"
+    node.query(
+        f"SELECT * FROM {table_name} FORMAT Null",
+        query_id=query_id,
+        settings={"stream_like_engine_allow_direct_select": 1},
+    )
+    node.query("SYSTEM FLUSH LOGS query_log")
+
+    read_rows, read_bytes, selected_rows, selected_bytes = (
+        node.query(
+            f"""
+            SELECT read_rows, read_bytes,
+                   ProfileEvents['SelectedRows'], ProfileEvents['SelectedBytes']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+            ORDER BY event_time_microseconds DESC LIMIT 1
+            """
+        )
+        .strip()
+        .split("\t")
+    )
+
+    # The read amounts are pinned as well, so a select that stopped reading the file cannot
+    # satisfy the equalities with both sides at zero.
+    assert read_rows == str(row_num), (read_rows, read_bytes)
+    assert read_bytes != "0", (read_rows, read_bytes)
+    assert selected_rows == read_rows, (selected_rows, read_rows)
+    assert selected_bytes == read_bytes, (selected_bytes, read_bytes)
+
+    node.query(f"DROP TABLE {table_name} SYNC")

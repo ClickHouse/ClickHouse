@@ -1,14 +1,23 @@
 ---
 slug: /getting-started/quick-start/cloud
 sidebarTitle: 'Cloud'
-keywords: ['clickhouse', 'install', 'getting started', 'quick start']
+keywords: ['clickhouse', 'install', 'getting started', 'quick start', 'clickhousectl', 'CLI', 'automation', 'AI agents']
 title: 'ClickHouse Cloud quick start'
 description: 'Quick start guide for ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import CloudQuickstartCLI from "/snippets/quickstarts/_cloud_quickstart_cli.mdx";
 
+<Visibility for="agents">
+
+<CloudQuickstartCLI />
+
+</Visibility>
+
+<Visibility for="humans">
+<View title="Cloud UI">
 
 > The quickest and easiest way to get up and running with ClickHouse is to create a new
 service in [ClickHouse Cloud](https://console.clickhouse.cloud). In this quick start guide, we'll get you setup
@@ -23,19 +32,19 @@ To create a free ClickHouse service in [ClickHouse Cloud](https://console.clickh
   - If you sign up using an email and password, remember to verify your email address within the next 24h via the link you receive in your email
   - Login using the username and password you just created
 
-<Image img="/images/_snippets/signup_page.webp" size="md" alt='Select Plan' border/>
+<Image img="/images/_snippets/signup_page.webp" size="lg" alt='Select Plan' border/>
 <br/>
 
 Once you're logged in, ClickHouse Cloud starts the onboarding wizard which walks you through creating a new ClickHouse service. Select your desired region for deploying the service, and give your new service a name:
 
-<Image img="/images/_snippets/createservice1.webp" size="md" alt='New ClickHouse Service' border/>
+<Image img="/images/_snippets/createservice1.webp" size="lg" alt='New ClickHouse Service' border/>
 <br/>
 
 By default, new organizations are put on the Scale tier and will create 3 replicas each with 4 VCPUs and 16 GiB RAM. [Vertical autoscaling](/products/cloud/features/autoscaling/vertical) will be enabled by default in the Scale tier. You can change your organization tier later on the 'Plans' page.
 
 Customize the service resources if needed by specifying a minimum and maximum size for replicas to scale between. When ready, select `Create service`.
 
-<Image img="/images/_snippets/scaling_limits.webp" size="md" alt='Scaling Limits' border/>
+<Image img="/images/_snippets/scaling_limits.webp" size="lg" alt='Scaling Limits' border/>
 <br/>
 
 Congratulations! Your ClickHouse Cloud service is up and running and onboarding is complete. Keep reading for details on how to start ingesting and querying your data.
@@ -48,7 +57,7 @@ There are 2 ways to connect to ClickHouse:
 ### Connect using SQL console {#connect-using-sql-console}
 For getting started quickly, ClickHouse provides a web-based SQL console to which you will be redirected on completing onboarding.
 
-<Image img="/images/_snippets/createservice8.webp" size="md" alt='SQL Console' border/>
+<Image img="/images/_snippets/createservice8.webp" size="lg" alt='SQL Console' border/>
 
 Create a query tab and enter a simple query to verify that your connection is working:
 
@@ -58,7 +67,7 @@ SHOW databases
 
 You should see 4 databases in the list, plus any that you may have added.
 
-<Image img="/images/_snippets/show_databases.webp" size="md" alt='SQL Console' border/>
+<Image img="/images/_snippets/show_databases.webp" size="lg" alt='SQL Console' border/>
 <br/>
 
 That's it - you're ready to start using your new ClickHouse service!
@@ -66,7 +75,7 @@ That's it - you're ready to start using your new ClickHouse service!
 ### Connect with your app {#connect-with-your-app}
 Press the connect button from the navigation menu. A modal will open offering the credentials to your service and offering you a set of instructions on how to connect with your interface or language clients.
 
-<Image img="/images/_snippets/service_connect.webp" size="md" alt='Service Connect' border/>
+<Image img="/images/_snippets/service_connect.webp" size="lg" alt='Service Connect' border/>
 <br/>
 
 If you can't see your language client, you may want to check our list of  [Integrations](/integrations/home).
@@ -74,7 +83,7 @@ If you can't see your language client, you may want to check our list of  [Integ
 <Step title="Add data" id="3-add-data">
 ClickHouse is better with data! There are multiple ways to add data and most of them are available on the Data Sources page, which can be accessed in the navigation menu.
 
-<Image img="/images/_snippets/data_sources.webp" size="md" alt='Data sources' border/>
+<Image img="/images/_snippets/data_sources.webp" size="lg" alt='Data sources' border/>
 <br/>
 
 You can upload data using the following methods:
@@ -87,7 +96,7 @@ You can upload data using the following methods:
 ### ClickPipes {#clickpipes}
 [ClickPipes](/integrations/clickpipes/home) is a managed integration platform that makes ingesting data from a diverse set of sources as simple as clicking a few buttons. Designed for the most demanding workloads, ClickPipes's robust and scalable architecture ensures consistent performance and reliability. ClickPipes can be used for long-term streaming needs or one-time data loading job.
 
-<Image img="/images/_snippets/select_data_source.webp" size="md" alt='Select data source' border/>
+<Image img="/images/_snippets/select_data_source.webp" size="lg" alt='Select data source' border/>
 <br/>
 
 ### Add data using the SQL Console {#add-data-using-the-sql-console}
@@ -181,9 +190,9 @@ SELECT * FROM helloworld.my_first_table
 ```
 
 ### Add data using the ClickHouse Client {#add-data-using-the-clickhouse-client}
-You can also connect to your ClickHouse Cloud service using a command-line tool named [**clickhouse client**](/concepts/features/interfaces/cli). Click `Connect` on the left menu to access these details. From the dialog select `Native` from the drop-down:
+You can also connect to your ClickHouse Cloud service using a command-line tool named [**clickhouse client**](/concepts/features/interfaces/client). Click `Connect` on the left menu to access these details. From the dialog select `Native` from the drop-down:
 
-<Image img="/images/_snippets/client_details.webp" size="md" alt='clickhouse client connection details' border/>
+<Image img="/images/_snippets/client_details.webp" size="lg" alt='clickhouse client connection details' border/>
 <br/>
 
 1. Install [ClickHouse](/concepts/features/interfaces/cli).
@@ -283,7 +292,7 @@ Suppose we have the following text in a CSV file named `data.csv`:
 
 <br/>
 
-<Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt='New rows from CSV file' />
+<Image img="/images/_snippets/new_rows_from_csv.webp" size="lg" alt='New rows from CSV file' />
 <br/>
 </Step>
 </Steps>
@@ -302,3 +311,14 @@ See ["Setting IP filters"](/products/cloud/guides/security/connectivity/setting-
 - If your data is coming from an external source, view our [collection of integration guides](/integrations/home) for connecting to message queues, databases, pipelines and more
 - If you're using a UI/BI visualization tool, view the [user guides for connecting a UI to ClickHouse](/integrations/connectors/data-visualization/index)
 - The user guide on [primary keys](/guides/clickhouse/data-modelling/sparse-primary-indexes) is everything you need to know about primary keys and how to define them
+
+</View>
+
+<View title="CLI">
+
+You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
+
+<CloudQuickstartCLI />
+
+</View>
+</Visibility>

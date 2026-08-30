@@ -18,7 +18,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>

@@ -22,6 +22,7 @@ struct ServerSettingsImpl;
 
 /// List of available types supported in ServerSettings object
 #define SERVER_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, AsynchronousMetricsKeyValuesMode) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, GroupArrayActionWhenLimitReached) \

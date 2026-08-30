@@ -1,2 +1,0 @@
-Tuple(UInt8)	(1)
-SELECT tuple(1)

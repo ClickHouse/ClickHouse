@@ -114,12 +114,12 @@ SET enable_analyzer = false;
 SELECT getSetting('enable_analyzer');
         )",
         R"(
-┌─getSetting('⋯_analyzer')─┐
-│ true                     │
-└──────────────────────────┘
-┌─getSetting('⋯_analyzer')─┐
-│ false                    │
-└──────────────────────────┘
+┌─getSetting('enable_analyzer')─┐
+│ true                          │
+└───────────────────────────────┘
+┌─getSetting('enable_analyzer')─┐
+│ false                         │
+└───────────────────────────────┘
         )"
     }
     };
@@ -149,7 +149,7 @@ SELECT getSettingOrDefault('custom_undef3', NULL);
         R"(
 my_value
 100
-NULL
+\N
         )"
     }
     };

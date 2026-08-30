@@ -41,6 +41,9 @@ public:
             std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
     }
 
+    /// A read always produces exactly one `NullSource`.
+    size_t getMaxReadStreams(size_t /*num_streams*/, ContextPtr) override { return 1; }
+
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
     bool supportsParallelInsert() const override { return true; }

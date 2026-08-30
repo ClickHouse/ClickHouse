@@ -149,6 +149,7 @@
       "group": "ガイド",
       "pages": [
         {
+          "expanded": true,
           "group": "データの取り込み",
           "pages": [
             "ja/clickstack/ingesting-data/index",

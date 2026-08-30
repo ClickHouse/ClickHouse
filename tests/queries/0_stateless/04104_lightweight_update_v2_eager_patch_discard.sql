@@ -45,6 +45,16 @@ INSERT INTO t_v2_eager_discard SELECT number FROM numbers(800000,   200000);
 SET lightweight_delete_mode = 'lightweight_update_force';
 SET max_threads = 1;
 
+-- The budget below measures the patch reader's own memory. On object storage the prefetched
+-- read pool charges its read buffers to the same query - they are bounded by
+-- `filesystem_prefetch_max_memory_usage`, which the test randomizer draws from 32/64/128 MiB -
+-- and that has nothing to do with what this test asserts. On an `amd_msan, s3 storage` run with
+-- a randomized `allow_prefetched_read_pool_for_remote_filesystem = 1` the first query peaked at
+-- 62.05 MiB against the 61.04 MiB budget, and the failure reproduced 6 times out of 6 with the
+-- same settings while passing without randomization. Pin the setting off, as the randomizer
+-- itself already does for debug builds.
+SET allow_prefetched_read_pool_for_remote_filesystem = 0;
+
 DELETE FROM t_v2_eager_discard WHERE (a % 2) = 0;
 
 -- Tight budget. Enough patch metadata and one working block per patch fit comfortably;

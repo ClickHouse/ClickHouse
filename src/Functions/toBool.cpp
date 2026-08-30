@@ -87,6 +87,8 @@ SELECT
 FORMAT Vertical
         )",
         R"(
+Row 1:
+──────
 toBool(toUInt8(1)):      true
 toBool(toInt8(-1)):      true
 toBool(toFloat32(1.01)): true

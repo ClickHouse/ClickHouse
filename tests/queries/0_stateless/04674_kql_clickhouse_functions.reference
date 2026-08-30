@@ -1,0 +1,19 @@
+-- plain ClickHouse scalar functions --
+4220206313085259313
+8
+1.00 KiB
+2026-08-01 12:00:00
+1.2.3.4
+-- names are case-sensitive, as they are in SQL --
+Int8
+65
+-- they compose with KQL expressions and operators --
+10
+true
+defg	8
+-- and inside summarize, where ClickHouse aggregates also work --
+a	5	4
+b	3	0
+-- a KQL function still wins over a same-named ClickHouse one --
+ab
+cba

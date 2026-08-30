@@ -1,0 +1,39 @@
+--- WHERE on the evolved column ---
+4	4
+5	five
+--- PREWHERE on the evolved column ---
+4	4
+5	five
+--- PREWHERE IS NULL / IS NOT NULL ---
+none
+6
+--- PREWHERE on an untouched column ---
+4	4
+--- declared type and full scan ---
+7	2	Nullable(Int64)
+0	0
+1	1
+2	2
+3	3
+4	4
+5	five
+\N	none
+--- MODIFY COLUMN to Nullable plus RENAME COLUMN ---
+4	4	Nullable(Int64)
+5	five	Nullable(Int64)
+--- widening plus nullability (int required to long optional) ---
+4	Nullable(Int64)
+--- optional to required is still rejected ---
+Iceberg spec doesn't allow change type from nullable to non-nullable
+--- String column made Nullable ---
+4	Nullable(String)
+--- externally authored optional to required stays a passthrough ---
+id	Int64
+s	String
+none
+one
+three
+none
+one
+three
+three

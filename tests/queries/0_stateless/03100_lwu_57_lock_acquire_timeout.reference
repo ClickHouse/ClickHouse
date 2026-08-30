@@ -1,0 +1,22 @@
+sync 1000 failed 1 waited 1
+sync 60000 succeeded contended 1
+sync huge-timeout succeeded contended 1
+sync cancelled-in-wait 1
+sync single-chunk cancelled-in-wait 1
+sync zero-timeout uncontended succeeded
+auto 1000 failed 1 waited 1
+auto 60000 succeeded contended 1
+auto huge-timeout succeeded contended 1
+auto cancelled-in-wait 1
+auto single-chunk cancelled-in-wait 1
+auto zero-timeout uncontended succeeded
+plain sync cancelled-in-wait 1
+plain sync single-chunk cancelled-in-wait 1
+plain sync zero-timeout uncontended succeeded
+plain auto cancelled-in-wait 1
+plain auto single-chunk cancelled-in-wait 1
+plain auto zero-timeout uncontended succeeded
+churn succeeded tries_bounded 1
+cas retried_once 1
+cancel interrupted 1 promptly 1
+watch spanned true registered_once true

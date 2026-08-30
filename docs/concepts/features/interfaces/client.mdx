@@ -174,6 +174,24 @@ help maxx_threads
 
 Entering `help` on its own prints a short usage summary.
 
+### Commands {#slash-commands}
+
+The client runs a few `/`-prefixed commands itself instead of sending them to the server:
+
+| Command                       | Description                                                  |
+|-------------------------------|--------------------------------------------------------------|
+| `/help <name>`, `/man <name>` | Show the documentation of `<name>`, the same as `help` above  |
+| `/clear`                      | Clear the terminal                                           |
+
+Typing `/` at the beginning of the input lists the commands as [hints](#command-line-options-formatting), and typing more of a name narrows the list down; `Tab` completes the command being typed, which is also how the commands are completed when the hints are disabled. A `/` submitted on its own is not a command: as in Oracle SQL\*Plus, it repeats the last input. A misspelled command name is reported as such, with the commands it may have meant, instead of being run as a query:
+
+```text
+:) /hepl
+
+Exception on client:
+Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Type `/` at the beginning of the line to see all the commands. (BAD_ARGUMENTS)
+```
+
 ### Query processing information {#processing-info}
 
 When processing a query, the client shows:
@@ -878,7 +896,7 @@ See [Settings](/reference/settings/session-settings) for a list of settings.
 | `--echo-query-id [ <bool> ]` | Print the query id before execution. Takes an optional boolean value.                                                                                                                                                    | `true` in interactive mode, `false` in non-interactive (batch) mode |
 | `--echo-query-separator <string>` | Print this separator before the formatted echoed query (requires `--echo-formatted`), making it easier to tell the typed query apart from its reformatted echo.                                                     | Empty (disabled) |
 | `--highlight [ --hilite ] <bool>` | Toggle syntax highlighting of the command prompt and the echoed queries.                                                                                                                                            | `true`         |
-| `--hints <bool>`                  | Show as-you-type autocompletion hints (inline "ghost" text) for the best matching suggestion when the cursor is at the end of the input. Navigate the hints with Up/Down (or Ctrl-Up/Ctrl-Down); accept the inline hint with Tab or Right; `Enter` accepts a hint only after one has been explicitly selected and otherwise runs the query; `Tab` also opens the classic completion list. Requires `--highlight` (hints need color) and the suggestion machinery (so `--disable_suggestion` also turns them off). | `true`         |
+| `--hints <bool>`                  | Show as-you-type autocompletion hints (inline "ghost" text) for the best matching suggestion when the cursor is at the end of the input. Navigate the hints with Up/Down (or Ctrl-Up/Ctrl-Down); accept the inline hint with Tab or Right; `Enter` accepts a hint only after one has been explicitly selected and otherwise runs the query; `Tab` also opens the classic completion list. Requires `--highlight` (hints need color). The suggestion hints also need the suggestion machinery, so `--disable_suggestion` turns those off; the [`/`-commands](#slash-commands) of the client are a static list and stay hinted as long as `--hints` and `--highlight` are on. `Tab` completes the `/`-commands even when the hints are off. | `true`         |
 
 ### Execution details {#command-line-options-execution-details}
 

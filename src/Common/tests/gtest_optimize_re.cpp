@@ -11,13 +11,16 @@ TEST(OptimizeRE, analyze)
                      bool has_capture_expected = false,
                      bool prefix_expected = false)
     {
-        auto [answer, is_trivial, has_capture, is_prefix, alternatives] = DB::OptimizedRegularExpression::analyze(regexp);
+        auto [answer, is_trivial, has_capture, is_prefix, alternatives, match_kind]
+            = DB::OptimizedRegularExpression::analyze(regexp);
         std::cerr << regexp << std::endl;
         EXPECT_EQ(required, answer);
         EXPECT_EQ(alternatives, expect_alternatives);
         EXPECT_EQ(is_trivial, trival_expected);
         EXPECT_EQ(has_capture, has_capture_expected);
         EXPECT_EQ(is_prefix, prefix_expected);
+        /// An anchored kind means the required substring is the whole literal, so it cannot be empty.
+        EXPECT_TRUE(!DB::isAnchoredLiteralMatchKind(match_kind) || !answer.empty());
     };
     test_f("abc", "abc", {}, true, false, true);
     test_f("c([^k]*)de", "", {}, false, true, false);
@@ -83,4 +86,64 @@ TEST(OptimizeRE, analyze)
     test_f(std::string("a\0b", 3), std::string("a\0b", 3), {}, true, false, true); /// literal NUL kept in the required substring
     test_f(std::string("\0*abc", 5), "abc", {}, false, false, false);             /// `\0*` is optional; "abc" stays the required substring
     test_f(std::string("\0*@(.*)$", 8), "", {}, false, true, false);              /// the analysis must not stop at the leading NUL
+}
+
+TEST(OptimizeRE, anchoredLiteral)
+{
+    auto test_f = [](const std::string & regexp, DB::RegexpMatchKind kind_expected, const std::string & literal_expected = "")
+    {
+        auto result = DB::OptimizedRegularExpression::analyze(regexp);
+        std::cerr << regexp << std::endl;
+        EXPECT_EQ(result.match_kind, kind_expected);
+        if (DB::isAnchoredLiteralMatchKind(result.match_kind))
+            EXPECT_EQ(result.required_substring, literal_expected);
+    };
+
+    using Kind = DB::RegexpMatchKind;
+
+    test_f("^abc", Kind::Prefix, "abc");
+    test_f("abc$", Kind::Suffix, "abc");
+    test_f("^abc$", Kind::Exact, "abc");
+    /// The required substring is the literal to compare against, and the analysis drops short and tuned-away ones.
+    test_f("^a", Kind::General);
+    test_f("a$", Kind::General);
+    test_f("^ab$", Kind::General);
+    test_f("^www", Kind::General);
+    test_f("^a\\.c$", Kind::Exact, "a.c");
+    test_f("a\\$b$", Kind::Suffix, "a$b");
+    test_f("\\^abc$", Kind::Suffix, "^abc");
+    test_f(std::string("^a\0b$", 5), Kind::Exact, std::string("a\0b", 3));
+
+    /// Not anchored literals.
+    test_f("abc", Kind::Substring);                 /// a plain literal is matched anywhere
+    test_f("", Kind::Substring);
+    test_f("^", Kind::General);                     /// the empty literal is left to re2
+    test_f("$", Kind::General);
+    test_f("^$", Kind::General);
+    test_f("^a.c", Kind::General);                  /// `.` is not a literal
+    test_f("^abc.*", Kind::General);
+    test_f("^ab|cd$", Kind::General);
+    test_f("^(abc)$", Kind::General);
+    test_f("a$b", Kind::General);                   /// `$` in the middle is an assertion, not an anchor
+    test_f("a^b", Kind::General);
+    test_f("^ab\\d", Kind::General);                /// an escape which is not an escaped metacharacter
+    test_f("^ab\\", Kind::General);                 /// a dangling escape
+    test_f("^\\Qa.c\\E$", Kind::General);
+}
+
+TEST(OptimizeRE, anchoredLiteralIsCaseSensitiveOnly)
+{
+    const DB::OptimizedRegularExpression case_sensitive("^abc");
+    EXPECT_EQ(case_sensitive.getMatchKind(), DB::RegexpMatchKind::Prefix);
+    EXPECT_EQ(case_sensitive.getRE2(), nullptr);
+    EXPECT_TRUE(case_sensitive.match("abcdef", 6));
+    EXPECT_FALSE(case_sensitive.match("ABCdef", 6));
+
+    /// A case-insensitive re2 folds Unicode, which a byte comparison cannot reproduce, so the pattern keeps
+    /// using re2 and gets no anchored kind.
+    const DB::OptimizedRegularExpression case_insensitive("^abc", DB::OptimizedRegularExpression::RE_CASELESS);
+    EXPECT_EQ(case_insensitive.getMatchKind(), DB::RegexpMatchKind::General);
+    EXPECT_NE(case_insensitive.getRE2(), nullptr);
+    EXPECT_TRUE(case_insensitive.match("ABCdef", 6));
+    EXPECT_FALSE(case_insensitive.match("xABCdef", 7));
 }

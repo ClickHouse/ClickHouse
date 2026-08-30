@@ -38,8 +38,7 @@ size_t MergeTreeReaderIndex::readRows(
     size_t from_mark,
     bool continue_reading,
     size_t max_rows_to_read,
-    size_t rows_offset,
-    Columns & res_columns)
+    MutableColumns & res_columns)
 {
     if (res_columns.size() != 1)
     {
@@ -50,16 +49,11 @@ size_t MergeTreeReaderIndex::readRows(
             res_columns.size());
     }
 
-    // std::cerr << "MergeTreeReaderIndex::readRows from_mark " << from_mark
-    //     << " max_rows_to_read " << max_rows_to_read
-    //     << " rows_offset " << rows_offset
-    //     << " continue_reading " << continue_reading << "\n";
-
     /// Determine the starting row.
     if (!continue_reading)
         current_row = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
 
-    size_t starting_row = current_row + rows_offset;
+    size_t starting_row = current_row;
 
     if (!continue_reading && lazy_materializing_rows)
         next_lazy_row_it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);
@@ -78,7 +72,7 @@ size_t MergeTreeReaderIndex::readRows(
     /// If projection index is available, attempt to construct the filter column
     if (index_read_result && index_read_result->projection_index_read_result)
     {
-        ColumnPtr & filter_column = res_columns.front();
+        MutableColumnPtr & filter_column = res_columns.front();
 
         if (filter_column == nullptr)
         {
@@ -95,18 +89,14 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
-            auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
+            auto & filter_data = static_cast<ColumnUInt8 &>(*filter_column).getData();
             index_read_result->projection_index_read_result->appendToFilter(filter_data, starting_row, max_rows_to_read);
-            filter_column = std::move(mutable_filter_column);
         }
     }
 
     if (lazy_materializing_rows)
     {
-        // std::cerr << "MergeTreeReaderIndex::readRows lazy_materializing_rows " << lazy_materializing_rows->size() << "\n";
-        // std::cerr << "from " << starting_row << " max_to_read " << max_rows_to_read << "\n";
-        ColumnPtr & filter_column = res_columns.front();
+        MutableColumnPtr & filter_column = res_columns.front();
 
         if (filter_column == nullptr)
         {
@@ -123,8 +113,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
-            auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
+            auto & filter_data = static_cast<ColumnUInt8 &>(*filter_column).getData();
             size_t old_size = filter_data.size();
             filter_data.resize(old_size + max_rows_to_read);
             memset(filter_data.begin() + old_size, 0, max_rows_to_read);
@@ -137,12 +126,9 @@ size_t MergeTreeReaderIndex::readRows(
 
             while (next_lazy_row_it != lazy_materializing_rows->end() && *next_lazy_row_it < starting_row + max_rows_to_read)
             {
-                // std::cerr << ": " << *next_lazy_row_it << " -> " << (*next_lazy_row_it + old_size - starting_row) << "\n";
                 filter_data[old_size + *next_lazy_row_it - starting_row] = 1;
                 ++next_lazy_row_it;
             }
-            // std::cerr << "Added rows " << (next_lazy_row_it - it) << std::endl;
-            filter_column = std::move(mutable_filter_column);
         }
     }
 

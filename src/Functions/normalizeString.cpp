@@ -312,9 +312,9 @@ SELECT
     normalizeUTF8NFKCCasefold('Ä ① Hello') AS nfkc_cf_normalized;
         )",
         R"(
-┌─original───┬─nfkc_cf_normalized─┐
-│ Ä ① Hello │ ä 1 hello           │
-└────────────┴────────────────────┘
+┌─original──┬─nfkc_cf_normalized─┐
+│ Ä ① Hello │ ä 1 hello          │
+└───────────┴────────────────────┘
         )"
     }
     };

@@ -425,9 +425,9 @@ SELECT accurateCastOrDefault(42, 'String')
 SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
         )",
         R"(
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
+│                                                           999 │
+└───────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -823,7 +823,7 @@ or the provided default if an invalid argument is received.
     FunctionDocumentation::ReturnedValue toDateTime64OrDefault_returned_value = {"Value of type DateTime64 if successful, otherwise returns the default value if passed or 1970-01-01 00:00:00.000 if not.", {"DateTime64"}};
     FunctionDocumentation::Examples toDateTime64OrDefault_examples = {
         {"Successful conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00.30', 3)", "1976-10-18 00:00:00.300"},
-        {"Failed conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3))", "2000-12-31 23:00:00.000"}
+        {"Failed conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3))", "2001-01-01 00:00:00.000"}
     };
     FunctionDocumentation::Category toDateTime64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDateTime64OrDefault_introduced_in = {21, 11};
@@ -992,9 +992,9 @@ SELECT
     toIPv4OrDefault(malformed_string, toIPv4('8.8.8.8')) AS provided_default;
         )",
         R"(
-┌─valid─────────┬─default_value─┬─provided_default─┐
-│ 192.168.1.1   │ 0.0.0.0       │ 8.8.8.8          │
-└───────────────┴───────────────┴──────────────────┘
+┌─valid───────┬─default_value─┬─provided_default─┐
+│ 192.168.1.1 │ 0.0.0.0       │ 8.8.8.8          │
+└─────────────┴───────────────┴──────────────────┘
         )"
     }
     };
@@ -1030,9 +1030,9 @@ SELECT
     toIPv6OrDefault(malformed_string, toIPv6('::1')) AS provided_default;
         )",
         R"(
-┌─valid──────────────────────────────────┬─default_value─┬─provided_default─┐
-│ 2001:db8:85a3::8a2e:370:7334           │ ::            │ ::1              │
-└────────────────────────────────────────┴───────────────┴──────────────────┘
+┌─valid────────────────────────┬─default_value─┬─provided_default─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ::            │ ::1              │
+└──────────────────────────────┴───────────────┴──────────────────┘
         )"
     }
     };

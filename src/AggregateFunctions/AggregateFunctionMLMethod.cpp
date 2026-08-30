@@ -16,6 +16,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -136,6 +137,8 @@ CREATE TABLE IF NOT EXISTS train_data
 
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
 
+DROP TABLE IF EXISTS your_model;
+
 CREATE TABLE your_model ENGINE = Memory AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
 AS state FROM train_data;
@@ -203,8 +206,12 @@ So in the example above the query will return a column with 3 values.
     {
         "Training a model",
         R"(
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = Memory
@@ -219,14 +226,20 @@ SELECT count() FROM your_model
     {
         "Making predictions",
          R"(
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = Memory
 AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
 AS state FROM train_data;
+
+DROP TABLE IF EXISTS test_data;
 
 CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO test_data VALUES (10, 0), (20, 0);
@@ -242,6 +255,8 @@ evalMLMethod(model, x1, x2) > 0 FROM test_data
     {
         "Getting model weights",
         R"(
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
 
@@ -278,6 +293,8 @@ CREATE TABLE IF NOT EXISTS train_data
 ) ENGINE = Memory;
 
 INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model ENGINE = Memory AS SELECT
 stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
@@ -337,8 +354,12 @@ Then the result will be labels.
     {
         "Training a model",
         R"(
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = MergeTree
@@ -354,8 +375,12 @@ SELECT count() FROM your_model
     {
         "Making predictions",
         R"(
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = MergeTree
@@ -363,6 +388,8 @@ ORDER BY tuple()
 AS SELECT
 stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
 AS state FROM train_data;
+
+DROP TABLE IF EXISTS test_data;
 
 CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO test_data VALUES (1, 1), (9, 9);
@@ -380,8 +407,12 @@ FROM test_data
     {
         "Classification with threshold",
         R"(
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = MergeTree
@@ -389,6 +420,8 @@ ORDER BY tuple()
 AS SELECT
 stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
 AS state FROM train_data;
+
+DROP TABLE IF EXISTS test_data;
 
 CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO test_data VALUES (1, 1), (9, 9);
@@ -470,14 +503,32 @@ void LinearModelData::returnWeights(IColumn & to) const
     val_to.push_back(bias);
 }
 
-void LinearModelData::read(ReadBuffer & buf)
+void LinearModelData::read(ReadBuffer & buf, UInt64 expected_param_num)
 {
     readBinary(bias, buf);
     readBinary(weights, buf);
     readBinary(iter_num, buf);
     readBinary(gradient_batch, buf);
     readBinary(batch_size, buf);
-    weights_updater->read(buf);
+
+    if (weights.size() != expected_param_num)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed state of a machine learning aggregate function: it has {} weights, "
+            "while the type declares {} features",
+            weights.size(), expected_param_num);
+
+    /// The gradient holds one value per weight plus one for the bias. The weights updaters rely on
+    /// that, so a state where the two disagree would make them read past the end of the gradient.
+    if (gradient_batch.size() != weights.size() + 1)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed state of a machine learning aggregate function: it has {} weights and a gradient of {} values",
+            weights.size(), gradient_batch.size());
+
+    /// The updaters keep their own vectors of the gradient size and index them by the weight
+    /// number as well, so they check the deserialized vectors against the same size.
+    weights_updater->read(buf, weights.size() + 1);
 }
 
 void LinearModelData::write(WriteBuffer & buf) const
@@ -529,6 +580,22 @@ void LinearModelData::add(const IColumn ** columns, size_t row_num)
     }
 }
 
+namespace
+{
+    /// The updater vectors hold one value per weight plus one for the bias, like the gradient.
+    /// An empty vector is also valid: versions before 23.2 serialized the vectors empty until
+    /// the first update, and the updaters treat an empty vector as "no accumulated data".
+    void checkUpdaterVectorSize(size_t size, UInt64 expected_size)
+    {
+        if (size != 0 && size != expected_size)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Malformed state of a machine learning aggregate function: the weights updater holds "
+                "a vector of {} values, while {} are expected",
+                size, expected_size);
+    }
+}
+
 /// Weights updaters
 
 void Adam::write(WriteBuffer & buf) const
@@ -537,10 +604,20 @@ void Adam::write(WriteBuffer & buf) const
     writeBinary(average_squared_gradient, buf);
 }
 
-void Adam::read(ReadBuffer & buf)
+void Adam::read(ReadBuffer & buf, UInt64 expected_size)
 {
     readBinary(average_gradient, buf);
     readBinary(average_squared_gradient, buf);
+    checkUpdaterVectorSize(average_gradient.size(), expected_size);
+    checkUpdaterVectorSize(average_squared_gradient.size(), expected_size);
+
+    /// The two vectors are read and written together, so they must agree with each other as well.
+    if (average_gradient.size() != average_squared_gradient.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed state of a machine learning aggregate function: the weights updater holds "
+            "an average gradient of {} values and an average squared gradient of {} values",
+            average_gradient.size(), average_squared_gradient.size());
 }
 
 void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
@@ -606,9 +683,10 @@ void Adam::addToBatch(
     gradient_computer.compute(batch_gradient, weights, bias, l2_reg_coef, target, columns, row_num);
 }
 
-void Nesterov::read(ReadBuffer & buf)
+void Nesterov::read(ReadBuffer & buf, UInt64 expected_size)
 {
     readBinary(accumulated_gradient, buf);
+    checkUpdaterVectorSize(accumulated_gradient.size(), expected_size);
 }
 
 void Nesterov::write(WriteBuffer & buf) const
@@ -619,6 +697,10 @@ void Nesterov::write(WriteBuffer & buf) const
 void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     const auto & nesterov_rhs = static_cast<const Nesterov &>(rhs);
+
+    if (nesterov_rhs.accumulated_gradient.empty())
+        return;
+
     accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
@@ -668,9 +750,10 @@ void Nesterov::addToBatch(
     gradient_computer.compute(batch_gradient, shifted_weights, shifted_bias, l2_reg_coef, target, columns, row_num);
 }
 
-void Momentum::read(ReadBuffer & buf)
+void Momentum::read(ReadBuffer & buf, UInt64 expected_size)
 {
     readBinary(accumulated_gradient, buf);
+    checkUpdaterVectorSize(accumulated_gradient.size(), expected_size);
 }
 
 void Momentum::write(WriteBuffer & buf) const
@@ -681,6 +764,11 @@ void Momentum::write(WriteBuffer & buf) const
 void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     const auto & momentum_rhs = static_cast<const Momentum &>(rhs);
+
+    if (momentum_rhs.accumulated_gradient.empty())
+        return;
+
+    accumulated_gradient.resize(momentum_rhs.accumulated_gradient.size(), Float64{0.0});
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
     {
         accumulated_gradient[i] = accumulated_gradient[i] * frac + momentum_rhs.accumulated_gradient[i] * rhs_frac;
@@ -739,6 +827,9 @@ void LogisticRegression::predict(
     Float64 bias,
     ContextPtr /*context*/) const
 {
+    if (weights.size() + 1 != arguments.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "In predict function number of arguments differs from the size of weights vector");
+
     size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
@@ -809,7 +900,7 @@ void LinearRegression::predict(
 {
     if (weights.size() + 1 != arguments.size())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "In predict function number of arguments differs from the size of weights vector");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "In predict function number of arguments differs from the size of weights vector");
     }
 
     size_t rows_num = arguments.front().column->size();

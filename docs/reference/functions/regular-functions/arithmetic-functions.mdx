@@ -282,7 +282,7 @@ SELECT divide(25,5) AS quotient, toTypeName(quotient)
 ```
 
 ```response title=Response
-5 Float64
+5	Float64
 ```
 
 **Dividing by zero**
@@ -327,7 +327,7 @@ The result of division with given scale. [`Decimal256`](/reference/data-types/de
 **Example 1**
 
 ```sql title=Query
-divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
+SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
 ```
 
 ```response title=Response
@@ -347,9 +347,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 ┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
 │                                             -5.7 │
 └──────────────────────────────────────────────────┘
-┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
-│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
-└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+┌───a─┬───b─┬─divideDecimal(a, b, 1)─┬─divideDecimal(a, b, 5)─┐
+│ -12 │ 2.1 │                   -5.7 │               -5.71428 │
+└─────┴─────┴────────────────────────┴────────────────────────┘
 ```
 
 ## divideOrNull {#divideOrNull}
@@ -455,7 +455,7 @@ SELECT 1/0 AS infimum, ifNotFinite(infimum,42)
 ```
 
 ```response title=Response
-inf  42
+inf	42
 ```
 
 ## intDiv {#intDiv}
@@ -494,9 +494,9 @@ SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
+┌──res─┬─toTypeName(res)─┐
+│ 1000 │ Int64           │
+└──────┴─────────────────┘
 ```
 
 **Quotient does not fit in the range of the dividend**
@@ -666,11 +666,11 @@ isInfinite(x)
 **Test if a number is infinite**
 
 ```sql title=Query
-SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))
+SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 ```
 
 ```response title=Response
-1 0 0
+1	0	0
 ```
 
 ## isNaN {#isNaN}
@@ -1191,13 +1191,24 @@ SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Decimal overflow**
+**No overflow with multiplyDecimal**
 
 ```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
     multiplyDecimal(a, b);
+```
+
+```response title=Response
+┌─────────────a─┬─────────────b─┬─multiplyDecimal(a, b)─┐
+│ -12.647987876 │ 123.967645643 │       -1567.941279108 │
+└───────────────┴───────────────┴───────────────────────┘
+```
+
+**Decimal overflow with regular multiplication**
+
+```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
@@ -1205,12 +1216,8 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
-│ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
-└───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
-Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow:
-While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
+Received exception:
+Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
 ```
 
 ## negate {#negate}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <Common/FiberLocal.h>
 #include <Common/VariableContext.h>
 
 /// To be able to avoid MEMORY_LIMIT_EXCEEDED Exception in destructors:
@@ -18,9 +19,9 @@
 struct LockMemoryExceptionInThread
 {
 private:
-    static thread_local constinit uint64_t counter;
-    static thread_local constinit VariableContext level;
-    static thread_local constinit bool block_fault_injections;
+    static constinit FiberLocal<uint64_t, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_COUNTER> counter;
+    static constinit FiberLocal<VariableContext, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_LEVEL> level;
+    static constinit FiberLocal<bool, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_BLOCK_FAULT_INJECTIONS> block_fault_injections;
 
     VariableContext previous_level;
     bool previous_block_fault_injections;

@@ -110,10 +110,19 @@ namespace
         const ScramSHA256Credentials * scram_sha256_credentials,
         const AuthenticationData & authentication_method)
     {
+        /// Only the `scram_sha256_password` method stores the salted password which the client proof
+        /// is verified against. Other methods (e.g. `ssh_key`) must not be checked against a SCRAM
+        /// client proof: their password hash is empty, and using it as an HMAC key would throw,
+        /// aborting the whole authentication instead of letting the next method of the user be tried.
+        if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
+            return false;
+
         const auto & client_proof = scram_sha256_credentials->getClientProof();
         const auto & auth_message = scram_sha256_credentials->getAuthMessage();
-        const auto & salt = authentication_method.getSalt();
         const auto & password = authentication_method.getPasswordHashBinary();
+        if (password.empty())
+            return false;
+
         auto computed_client_proof = computeScramSHA256ClientProof(password, auth_message);
 
         if (computed_client_proof.size() != client_proof.size())

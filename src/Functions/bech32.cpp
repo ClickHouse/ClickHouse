@@ -686,7 +686,7 @@ certain that they are all the same length and ensure that your `FixedString` col
 -- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
             )",
-            "bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq"
+            "bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru"
         },
         {
             "Bech32 algorithm",
@@ -694,7 +694,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 -- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
             )",
-            "bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z"
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
         },
         {
             "Custom HRP",
@@ -703,7 +703,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 -- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
             )",
-            "abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4"
+            "abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px"
         },
         {
             "Cosmos SDK address (BIP173, no witness version)",
@@ -712,7 +712,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 -- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
             )",
-            "inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs"
+            "inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq"
         }
     };
     FunctionDocumentation::IntroducedIn bech32Encode_introduced_in = {25, 6};
@@ -733,8 +733,24 @@ Unlike the encode function, `bech32Decode` will automatically handle padded Fixe
     };
     FunctionDocumentation::ReturnedValue bech32Decode_returned_value = {"Returns a tuple consisting of `(hrp, data)` that was used to encode the string. The data is in binary format.", {"Tuple(String, String)"}};
     FunctionDocumentation::Examples bech32Decode_examples = {
-        {"Decode address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)", "bc   751E76E8199196D454941C45D1B3A323F1433BD6"},
-        {"Testnet address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)", "tb   751E76E8199196D454941C45D1B3A323F1433BD6"}
+        {
+            "Decode address",
+            "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)",
+            R"(
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
+            )"
+        },
+        {
+            "Testnet address",
+            "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)",
+            R"(
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
+            )"
+        }
     };
     FunctionDocumentation::IntroducedIn bech32Decode_introduced_in = {25, 6};
     FunctionDocumentation::Category bech32Decode_category = FunctionDocumentation::Category::Encoding;

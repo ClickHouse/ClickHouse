@@ -56,6 +56,10 @@ auto constructWithReserveIfPossible(size_t size_hint)
 
 void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 {
+    /// `init` also reinitializes a table after an external-aggregation flush, so preserve
+    /// whether the heap rejected anything before the old method is replaced.
+    top_k_heap_ever_rejected = topKHeapEverRejected();
+
     switch (type_)
     {
         case Type::EMPTY:
@@ -88,6 +92,25 @@ size_t AggregatedDataVariants::size() const
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
             return (NAME)->data.size() + (without_key != nullptr);
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
+bool AggregatedDataVariants::topKHeapEverRejected() const
+{
+    if (top_k_heap_ever_rejected)
+        return true;
+
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return false;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return (NAME)->top_k_heap.everRejected();
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
@@ -222,6 +245,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 #define M(NAME) \
         case Type::NAME: \
             NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
+            (NAME ## _two_level)->top_k_heap = std::move((NAME)->top_k_heap); \
             (NAME).reset(); \
             type = Type::NAME ## _two_level; \
             break;

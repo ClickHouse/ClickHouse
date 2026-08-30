@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/Executors/PipelineExecutionStatus.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
@@ -56,15 +57,7 @@ public:
 
     const Processors & getProcessors() const;
 
-    enum class ExecutionStatus
-    {
-        NotStarted,
-        Executing,
-        Finished,
-        Exception,
-        CancelledByUser,
-        CancelledByTimeout,
-    };
+    using ExecutionStatus = PipelineExecutionStatus;
 
     /// Cancel execution. May be called from another thread.
     void cancel() { cancel(ExecutionStatus::CancelledByUser); }
@@ -149,6 +142,8 @@ private:
 
     /// If execution_status == from, change it to desired.
     bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);
+
+    String dumpPipeline() const;
 };
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;

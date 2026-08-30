@@ -19,6 +19,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
 
+#include <bit>
+
 
 namespace DB
 {
@@ -30,6 +32,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -131,6 +134,139 @@ public:
         size_t i = 0;
         for (auto it = set.begin(); it != set.end(); ++it, ++i)
             data_to[old_size + i] = it->getValue();
+    }
+};
+
+
+/// The serialized format (size, then the elements) is shared with the hash set implementation above:
+/// the reader does not depend on the order of the elements.
+struct AggregateFunctionGroupUniqArrayBitmapData
+{
+    UInt64 bits[4] = {};
+
+    size_t size() const
+    {
+        return std::popcount(bits[0]) + std::popcount(bits[1]) + std::popcount(bits[2]) + std::popcount(bits[3]);
+    }
+
+    bool contains(UInt8 idx) const { return bits[idx / 64] & (1ULL << (idx % 64)); }
+    void set(UInt8 idx) { bits[idx / 64] |= 1ULL << (idx % 64); }
+
+    template <typename F>
+    void forEach(F && f) const
+    {
+        for (size_t word = 0; word < 4; ++word)
+        {
+            UInt64 w = bits[word];
+            while (w)
+            {
+                f(static_cast<UInt8>(word * 64 + std::countr_zero(w)));
+                w &= w - 1;
+            }
+        }
+    }
+};
+
+
+/// Same as AggregateFunctionGroupUniqArray, but for 8-bit types the set of values is a 256-bit bitmap.
+template <typename T, typename LimitNumElems>
+class AggregateFunctionGroupUniqArrayBitmap final
+    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayBitmapData, AggregateFunctionGroupUniqArrayBitmap<T, LimitNumElems>>
+{
+    static_assert(sizeof(T) == 1);
+
+    static constexpr bool limit_num_elems = LimitNumElems::value;
+    UInt64 max_elems;
+
+    using Data = AggregateFunctionGroupUniqArrayBitmapData;
+
+public:
+    AggregateFunctionGroupUniqArrayBitmap(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupUniqArrayBitmap<T, LimitNumElems>>({argument_type}, parameters_, std::make_shared<DataTypeArray>(argument_type))
+        , max_elems(max_elems_) {}
+
+    String getName() const override { return "groupUniqArray"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        auto & data = this->data(place);
+        UInt8 idx = static_cast<UInt8>(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+        /// Not just `set`: a store on every row would make consecutive rows serialize on the same memory.
+        if (data.contains(idx))
+            return;
+        if (limit_num_elems && data.size() >= max_elems)
+            return;
+        data.set(idx);
+    }
+
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        auto & cur = this->data(place);
+        const auto & other = this->data(rhs);
+
+        if constexpr (!limit_num_elems)
+        {
+            for (size_t word = 0; word < 4; ++word)
+                cur.bits[word] |= other.bits[word];
+        }
+        else
+        {
+            size_t cur_size = cur.size();
+            for (size_t word = 0; word < 4; ++word)
+            {
+                UInt64 w = other.bits[word] & ~cur.bits[word];
+                while (w)
+                {
+                    if (cur_size >= max_elems)
+                        return;
+                    cur.bits[word] |= 1ULL << std::countr_zero(w);
+                    ++cur_size;
+                    w &= w - 1;
+                }
+            }
+        }
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        const auto & data = this->data(place);
+        writeVarUInt(data.size(), buf);
+        data.forEach([&](UInt8 idx) { writeBinaryLittleEndian(static_cast<T>(idx), buf); });
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        size_t size = 0;
+        readVarUInt(size, buf);
+        if (size > 256)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements ({}) in serialized state of groupUniqArray over an 8-bit type", size);
+
+        auto & data = this->data(place);
+        for (size_t i = 0; i < size; ++i)
+        {
+            T value;
+            readBinaryLittleEndian(value, buf);
+            data.set(static_cast<UInt8>(value));
+        }
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        const auto & data = this->data(place);
+        size_t size = data.size();
+
+        offsets_to.push_back(offsets_to.back() + size);
+
+        typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+        size_t old_size = data_to.size();
+        data_to.resize(old_size + size);
+        T * out = data_to.data() + old_size;
+        data.forEach([&](UInt8 idx) { *out++ = static_cast<T>(idx); });
     }
 };
 
@@ -290,6 +426,12 @@ IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, TAr
 template <typename HasLimit, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupUniqArrayImpl(const std::string & name, const DataTypePtr & argument_type, TArgs ... args)
 {
+    /// Must precede createWithNumericType, which also matches these types.
+    WhichDataType which(argument_type);
+    if (which.isUInt8())
+        return std::make_shared<AggregateFunctionGroupUniqArrayBitmap<UInt8, HasLimit>>(argument_type, args...);
+    if (which.isInt8() || which.isEnum8())
+        return std::make_shared<AggregateFunctionGroupUniqArrayBitmap<Int8, HasLimit>>(argument_type, args...);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray, HasLimit, const DataTypePtr &>(*argument_type, argument_type, args...));
 

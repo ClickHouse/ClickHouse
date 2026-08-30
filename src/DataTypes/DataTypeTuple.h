@@ -40,7 +40,6 @@ public:
     bool canBeInsideSparseColumns() const override { return false; }
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;

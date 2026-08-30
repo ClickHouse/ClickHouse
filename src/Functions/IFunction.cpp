@@ -217,6 +217,22 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
+        /// A `Nullable`-typed argument may still be wrapped in `ColumnReplicated` when the function
+        /// opted out of the default implementation for replicated columns (e.g. `arrayElement`).
+        for (const auto & arg : args)
+        {
+            if (arg.type->isNullable() && typeid_cast<const ColumnReplicated *>(arg.column.get()))
+            {
+                ColumnsWithTypeAndName materialized_args = args;
+                for (auto & materialized_arg : materialized_args)
+                {
+                    if (materialized_arg.type->isNullable())
+                        materialized_arg.column = materialized_arg.column->convertToFullColumnIfReplicated();
+                }
+                return defaultImplementationForNulls(materialized_args, result_type, input_rows_count, dry_run);
+            }
+        }
+
         const bool result_is_nullable = result_type->isNullable();
 
         if (!result_is_nullable)

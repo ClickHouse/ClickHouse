@@ -1,6 +1,8 @@
 generous memory budget: the dictionary filter prunes row group 1, only 16384 rows are read
 {"result":[{"count()":1}],"rows_read":16384}
-watermark between the underestimated and the real HashSet footprint: pruning must be skipped, all 32768 rows are read
+watermark that affords the hash vectors: the dictionary filter still prunes, only 16384 rows are read
+{"result":[{"count()":1}],"rows_read":16384}
+watermark just below what the value set needs: pruning must be skipped, all 32768 rows are read
 {"result":[{"count()":1}],"rows_read":32768}
 extreme memory budget (1 byte): pruning is skipped, result is still correct
 {"result":[{"count()":1}],"rows_read":32768}
@@ -10,5 +12,9 @@ null_as_default: querying the default value reads the row group with nulls (256 
 {"result":[{"count()":256}],"rows_read":4352}
 null_as_default: a value only in row group 1 prunes row group 0 despite its default-extended value set
 {"result":[{"count()":1}],"rows_read":4352}
+null_as_default, watermark that affords the hash vectors: the null-free row group is still pruned
+{"result":[{"count()":256}],"rows_read":4352}
+null_as_default, watermark just below what the value set needs: pruning is skipped, all 8704 rows are read
+{"result":[{"count()":256}],"rows_read":8704}
 null_as_default results are identical regardless of the memory budget
 OK
