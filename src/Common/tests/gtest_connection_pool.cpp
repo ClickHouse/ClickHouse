@@ -1,8 +1,10 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/CurrentThread.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>
@@ -567,6 +569,74 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
 
     ASSERT_EQ(count-1, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(count-2, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// The connection info published for a request must describe the socket that actually carried it.
+/// Both tests below exercise `PooledConnection::reconnect`, which swaps the whole socket - and the
+/// bookkeeping that goes with it - out from under a session that is already in the middle of a
+/// request.
+
+TEST_F(ConnectionPoolTest, ConnectionInfoNewIdAfterReconnect)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    echoRequest("Hello", *connection);
+    auto first = DB::takeCurrentHTTPConnectionInfo();
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+    ASSERT_EQ(0, first.requests_served);
+
+    connection->abort(); // further usage requires reconnect, the pool is empty so a new socket
+
+    echoRequest("Hello", *connection);
+    auto second = DB::takeCurrentHTTPConnectionInfo();
+    ASSERT_TRUE(second.has_value);
+
+    /// A different TCP connection, even though the kernel usually hands back the same file
+    /// descriptor number - and often the same socket inode - right after the previous one closed.
+    ASSERT_NE(first.id, second.id);
+    ASSERT_EQ(0, second.requests_served);
+}
+
+TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
+{
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    auto first_connection = pool->getConnection(timeouts, nullptr);
+    echoRequest("Hello", *first_connection);
+    DB::takeCurrentHTTPConnectionInfo();
+
+    DB::HTTPConnectionInfo stored_info;
+    {
+        auto second_connection = pool->getConnection(timeouts, nullptr);
+        echoRequest("Hello", *second_connection);
+        stored_info = DB::takeCurrentHTTPConnectionInfo();
+    } // returned to the pool, and starts sitting there idle from now on
+
+    ASSERT_TRUE(stored_info.has_value);
+    ASSERT_EQ(0, stored_info.idle_microseconds); // its first and only request so far
+
+    const uint64_t idle_for_microseconds = 300 * 1000;
+    sleepForMicroseconds(idle_for_microseconds);
+
+    first_connection->abort(); // further usage requires reconnect, reuse the idle stored connection
+
+    echoRequest("Hello", *first_connection);
+    auto reused = DB::takeCurrentHTTPConnectionInfo();
+
+    ASSERT_TRUE(reused.has_value);
+    /// The very socket that was waiting in the pool, with its own history - not a fresh one, and
+    /// not the aborted one.
+    ASSERT_EQ(stored_info.id, reused.id);
+    ASSERT_EQ(1, reused.requests_served);
+    /// And the idle time is how long that socket really waited, not the sample taken for its
+    /// previous request.
+    ASSERT_GE(reused.idle_microseconds, idle_for_microseconds / 2);
 }
 
 TEST_F(ConnectionPoolTest, ReceiveTimeout)

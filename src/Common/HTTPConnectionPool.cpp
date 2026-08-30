@@ -454,11 +454,34 @@ private:
             socket_inode = other.socket_inode;
             requests_on_socket = other.requests_on_socket;
             last_idle_time = other.last_idle_time;
+
+            /// The socket is gone from `other` now, so it must not keep claiming it.
+            other.forgetSocketIdentity();
+        }
+
+        /// Called on every path that drops this session's socket. The fd number and the inode are
+        /// only a cache used to tell "still the same socket" from "a new one", and the OS recycles
+        /// both aggressively: a close followed by a connect routinely returns the very same pair.
+        /// Forgetting them here is what makes `notifySocketInode` mint a new `connection_id` -
+        /// and restart the age and the request count - for what is really a new TCP connection.
+        void forgetSocketIdentity()
+        {
+            socket_fd = -1;
+            socket_inode = 0;
+        }
+
+        /// Time this socket spent idle since its previous request. On a socket's first request
+        /// there is no previous request to be idle after, and Poco seeds that timestamp at
+        /// construction, so report zero rather than the connection setup time.
+        void sampleIdleTime()
+        {
+            last_idle_time = requests_on_socket ? idleTime() : Poco::Timespan(0);
         }
 
         void reconnect(UInt64 * connect_time) override
         {
             Session::close();
+            forgetSocketIdentity();
 
             if (auto lock = pool.lock())
             {
@@ -476,6 +499,11 @@ private:
             /// Poco can reconnect from inside sendRequest when the borrowed connection turns out
             /// to be dead. Publish again - it re-identifies the socket first - so the log describes
             /// the socket that actually carried the request, not the one that was discarded.
+            ///
+            /// Re-sample the idle time as well: the connection we just took from the pool may have
+            /// been sitting there far longer than the sample `assignFrom` copied along with it,
+            /// which belongs to that socket's previous request.
+            sampleIdleTime();
             publishConnectionInfo();
         }
 
@@ -529,10 +557,8 @@ private:
         std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
             /// Sampled before Poco's sendRequest, which updates the session's last-request
-            /// timestamp. On a socket's first request there is no previous request to be idle
-            /// after, and Poco seeds that timestamp at construction, so report zero rather than
-            /// the connection setup time.
-            last_idle_time = requests_on_socket ? idleTime() : Poco::Timespan(0);
+            /// timestamp.
+            sampleIdleTime();
             publishConnectionInfo();
 
             // Set data hooks for IO scheduling
@@ -578,6 +604,7 @@ private:
             response_stream_completed = false;
 
             Session::reset();
+            forgetSocketIdentity();
         }
 
         ~PooledConnection() override
@@ -698,6 +725,7 @@ private:
 
         void doConnect(UInt64 * connect_time)
         {
+            forgetSocketIdentity();
             Session::reconnect(connect_time);
             notifySocketInode();
         }
