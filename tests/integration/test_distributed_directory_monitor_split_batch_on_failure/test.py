@@ -218,6 +218,44 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
     assert int(node1.query("select sum(uniq_values) from dist_data")) == 3
 
 
+def test_recovery_skips_sent_prefix_before_broken_file(started_cluster):
+    create_tables(
+        background_insert_batch=1, background_insert_split_batch_on_failure=1
+    )
+    for value in (1, 2, 3):
+        node1.query(
+            f"insert into dist values (1, {value})",
+            settings={"distributed_foreground_insert": 0},
+        )
+
+    queue_path = node1.query(
+        "select data_path from system.distribution_queue where table='dist' and data_files=3"
+    ).strip()
+    files = node1.exec_in_container(
+        ["bash", "-c", f"ls -1 {queue_path}/*.bin | sort -V"]
+    ).strip().splitlines()
+    assert len(files) == 3
+    file_indices = [file.rsplit("/", 1)[-1][:-4] for file in files]
+
+    # Simulate an acknowledged first file followed by a quarantined second file,
+    # with the stale batch metadata left by an abnormal shutdown.
+    node1.query(
+        "insert into dist values (1, 1)",
+        settings={"distributed_foreground_insert": 1},
+    )
+    node1.exec_in_container(["mv", files[1], f"{queue_path}/broken/"])
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '%s\\n' {' '.join(file_indices)} > {queue_path}/current_batch.txt",
+        ]
+    )
+
+    node1.query("system flush distributed dist")
+    assert int(node1.query("select sum(uniq_values) from dist_data")) == 2
+
+
 def test_broken_file_during_split_removes_sent_files(started_cluster):
     drop_tables()
     for _, node in cluster.instances.items():
