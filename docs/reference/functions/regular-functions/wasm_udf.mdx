@@ -44,8 +44,7 @@ Enable WebAssembly support in your ClickHouse configuration:
 
 Available Engine Implementations:
 
-- `wasmtime` (default, recommended) — uses [WasmTime](https://github.com/bytecodealliance/wasmtime)
-- `wasmedge` — uses [WasmEdge](https://github.com/WasmEdge/WasmEdge)
+- `wasmtime` (default, and currently the only one) — uses [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
 ## Quick Start
 
@@ -222,7 +221,7 @@ RETURNS return_type
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
     - `serialization_format` String — Format used to serialize argument blocks passed to the module and to parse the returned result. Used only by `ABI BUFFERED_V1`. Supported values: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, and `Buffers`. Default: `MsgPack`. Block-based formats such as `Buffers` must return a single column whose type matches the declared function signature.
-    - `webassembly_udf_enable_fuel` Bool — Enables finite fuel budgeting for the function. Default: `true`. When `false`, the query-level setting `webassembly_udf_max_fuel` is ignored for this function. Disabling fuel limits may improve performance when using the `wasmtime` engine. However, for untrusted or buggy guest code, it can increase the risk of runaway execution.
+    - `webassembly_udf_enable_fuel` Bool — Enables finite fuel budgeting for the function. Default: `true`. When `false`, the query-level setting `webassembly_udf_max_fuel` is ignored for this function. Disabling fuel limits may improve performance. However, for untrusted or buggy guest code, it can increase the risk of runaway execution.
 
 ## ABIs Versions
 
