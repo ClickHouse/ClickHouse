@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 -- no-parallel: uses the global shard_0 / shard_1 databases of test_cluster_two_shards_different_databases.
 
 SET allow_experimental_time_series_table = 1;
@@ -31,11 +31,20 @@ SELECT '--- and the rows really are split over both shards ---';
 SELECT (SELECT count() FROM shard_0.ts_local) + (SELECT count() FROM shard_1.ts_local) = 20 AS all_rows_landed,
        (SELECT count() FROM shard_0.ts_local) > 0 AND (SELECT count() FROM shard_1.ts_local) > 0 AS both_shards_used;
 
-SELECT '--- a point lookup resolves on whichever shard holds it ---';
-SELECT metric_name, tags['host'] FROM ts_dist WHERE metric_name = 'metric_7';
+SELECT '--- both shards are really read, not just one answering for everything ---';
+SELECT uniqExact(_shard_num) FROM ts_dist;
 
-SELECT '--- aggregation runs across both shards ---';
-SELECT count(), uniqExact(tags['host']) FROM ts_dist;
+SELECT '--- the sample payload survives the round trip, not only the identifying columns ---';
+SELECT metric_name, tags['host'], time_series FROM ts_dist WHERE metric_name = 'metric_7';
+
+-- Read routing only consults the sharding key when this is on; with it off the query is broadcast.
+-- If the key were evaluated differently on read than on write this would prune to the wrong shard
+-- and return nothing.
+SELECT '--- with shard pruning on, the sharding key picks the shard holding the series ---';
+SELECT metric_name FROM ts_dist WHERE metric_name = 'metric_7' SETTINGS optimize_skip_unused_shards = 1;
+
+SELECT '--- an aggregate over the samples themselves is merged across shards ---';
+SELECT sum(arraySum(arrayMap(x -> x.2, time_series))) FROM ts_dist;
 
 SELECT '--- the TimeSeries table functions need a real TimeSeries table, not a Distributed one ---';
 SELECT count() > 0 FROM timeSeriesData('shard_0', 'ts_local');

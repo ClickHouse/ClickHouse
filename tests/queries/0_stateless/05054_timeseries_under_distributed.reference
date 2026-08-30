@@ -2,9 +2,13 @@
 20	20
 --- and the rows really are split over both shards ---
 1	1
---- a point lookup resolves on whichever shard holds it ---
-metric_7	7
---- aggregation runs across both shards ---
-20	20
+--- both shards are really read, not just one answering for everything ---
+2
+--- the sample payload survives the round trip, not only the identifying columns ---
+metric_7	7	[('2026-01-01 00:00:00.000',7)]
+--- with shard pruning on, the sharding key picks the shard holding the series ---
+metric_7
+--- an aggregate over the samples themselves is merged across shards ---
+190
 --- the TimeSeries table functions need a real TimeSeries table, not a Distributed one ---
 1
