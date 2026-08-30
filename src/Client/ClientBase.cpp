@@ -1597,10 +1597,20 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
-void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
+void ClientBase::pinOutboundDialect(const String & outbound_query)
 {
     if (!current_query_parsed_as_json_dialect)
+    {
+        /// The `SETTINGS` clause of the query has already been applied to the client context, but the
+        /// text was parsed with the `dialect` of the session as it was before that. The settings are
+        /// sent along with the query and the receiving side parses that very same text with them, so a
+        /// `SETTINGS dialect = 'kusto'` on a ClickHouse SQL `INSERT` would have it parsed as KQL. Keep
+        /// the transport dialect on the one the text was accepted with; a `SET dialect = ...` is a
+        /// statement of its own and still reaches the session.
+        if (client_context->getSettingsRef().get("dialect") != current_query_parse_dialect)
+            client_context->setSetting("dialect", current_query_parse_dialect);
         return;
+    }
 
     /// The client parsed this query as JSON (`clickhouse_json` dialect), but the server re-parses the
     /// outbound text using the session `dialect`. Determine the form of the text actually being sent:
@@ -1781,7 +1791,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     /// before sending so the server parses it the same way the client did. Must run before
     /// `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned `dialect` is
     /// included in the settings sent to the server.
-    pinOutboundDialectForJSONDialect(query);
+    pinOutboundDialect(query);
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
@@ -2398,7 +2408,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     /// before sending so the server parses it the same way the client did.
     /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
     /// `dialect` is included in the settings sent to the server.
-    pinOutboundDialectForJSONDialect(query);
+    pinOutboundDialect(query);
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send
@@ -2938,9 +2948,10 @@ void ClientBase::processParsedSingleQuery(
             client_context->setSettings(old_settings);
             connection->setFormatSettings(getFormatSettings(client_context));
         });
-        /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
-        /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
-        /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
+        /// Capture the dialect this query was parsed with *before* applying any in-query `SET` (which
+        /// may change `dialect`/`enable_json_ast_dialect`). The outbound transport dialect is pinned to
+        /// match the outbound text in `pinOutboundDialect`.
+        current_query_parse_dialect = client_context->getSettingsRef().get("dialect");
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
