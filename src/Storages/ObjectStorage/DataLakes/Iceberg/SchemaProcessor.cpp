@@ -409,11 +409,8 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
         std::unordered_map<String, String> type_mapping;
-        if (allow_geo_parser)
-        {
-            type_mapping[f_geography] = f_binary;
-            type_mapping[f_geometry] = f_binary;
-        }
+        type_mapping[f_geography] = f_binary;
+        type_mapping[f_geometry] = f_binary;
         /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
         if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
             throw Exception(
@@ -499,7 +496,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg)
 {
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
@@ -532,13 +529,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeString>();
 
     if (type_name.starts_with(f_geometry) || type_name.starts_with(f_geography))
-    {
-        if (allow_geo_parser)
-        {
-            return DataTypeFactory::instance().get("Geometry");
-        }
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
-    }
+        return DataTypeFactory::instance().get("Geometry");
     if (type_name == f_uuid)
         return std::make_shared<DataTypeUUID>();
 
@@ -634,7 +625,7 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-        auto data_type = getSimpleType(type_name, allow_geo_parser);
+        auto data_type = getSimpleType(type_name);
         return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
     }
 

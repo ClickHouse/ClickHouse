@@ -661,6 +661,12 @@ void StorageObjectStorage::read(
         }
     }
 
+    /// The snapshot the query will read is settled here, whether it was pinned during analysis or
+    /// by the block above. Ask the data lake layer on every read: a snapshot already pinned by an
+    /// earlier query must not let this one read columns it is not entitled to.
+    if (configuration->isDataLakeConfiguration() && storage_snapshot->metadata)
+        configuration->checkReadIsAllowed(storage_snapshot, local_context);
+
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
             local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);

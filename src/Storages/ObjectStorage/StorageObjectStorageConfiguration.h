@@ -191,6 +191,7 @@ public:
     virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
     virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const;
     virtual bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
+    virtual void checkReadIsAllowed(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & local_context) const;
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
