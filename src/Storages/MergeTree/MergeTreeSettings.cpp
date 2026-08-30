@@ -527,6 +527,12 @@ On `ReplicatedMergeTree` that exemption travels in the replication log entry,
 and the entry carries it only when the setting is non-zero on the replica that
 queues it. An `OPTIMIZE` queued while the setting was 0 is therefore executed
 under the headroom, even if the setting is raised before the merge runs.
+
+During a rolling upgrade, leave this setting at `0` on `ReplicatedMergeTree`
+until every replica has been upgraded. A non-zero value makes those `OPTIMIZE`
+merges write an extra field into the `MERGE_PARTS` log entry, and a replica
+that does not know the field fails on the entry instead of skipping it, so the
+queue stalls on that replica.
 )", 0) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, R"(
 How many tasks of merging and mutating parts are allowed simultaneously in
