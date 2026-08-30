@@ -9,10 +9,9 @@
 -- and the projection candidate analysis must not consult entries under the plain condition hash.
 --
 -- The write side is the observable discriminator: without carrying the gate onto the projection
--- read, its `PREWHERE` reader writes a plain-keyed entry for the TopK query. The consult side has
--- no observable discriminator today (entries for projection parts are written under a
--- `<parent_part>:<projection>` key while the analysis-time consult probes the bare projection
--- part name, so a probe cannot hit), and is gated for the invariant only.
+-- read, its `PREWHERE` reader writes a plain-keyed entry for the TopK query. The consult side is
+-- covered by `05053_query_condition_cache_topk_projection_warm_reuse`, which pins that a warm
+-- projection-backed TopK read does hit the cache when the gate is on.
 --
 -- The TopK stamp uses the skip-index-only shape (dynamic filtering off, minmax index on the sort
 -- column): a `__topKFilter` node in the prewhere would be non-deterministic and already suppress
@@ -121,11 +120,9 @@ ORDER BY event_time_microseconds;
 --
 -- The observable discriminator is the number of entries: repeating the same query reuses the same
 -- key (the entry count stays put), while a query over a changed part set writes under a fresh key
--- (the count grows). A warm read of a projection part cannot report a cache *hit* today: a
--- projection candidate is analysed - and the cache consulted - in `optimizeUseNormalProjections`
--- before the projection read's `PREWHERE` is built, so `filterPartsByQueryConditionCache` never sees
--- the `PREWHERE` these entries are keyed by. The write is still gated and salted correctly, which is
--- what this section pins down.
+-- (the count grows). The warm read also reuses those entries (see
+-- `05053_query_condition_cache_topk_projection_warm_reuse`); this section pins down the keying, i.e.
+-- that the write is gated and salted by the parent-part-qualified part set.
 SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET max_block_size = 8192;
