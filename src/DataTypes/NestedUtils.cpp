@@ -27,6 +27,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -677,6 +678,42 @@ bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & 
 
 }
 
+/// Type of the element `Nested::flatten` would name `<parent>.<element_name>`. Only declared element
+/// names are candidates, since a virtual subcolumn name such as `null` is never a flattened column,
+/// and the lookup goes through `type` rather than its unwrapped form so that a nullable ancestor
+/// still promotes the element.
+static DataTypePtr tryGetDeclaredElementType(
+    const DataTypePtr & type, std::string_view element_name, bool case_insensitive)
+{
+    const DataTypePtr unwrapped = removeNullable(type);
+    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get());
+    if (!type_tuple || !type_tuple->hasExplicitNames())
+        return nullptr;
+
+    /// `Block::findByName` takes the FIRST case-insensitive match, so scan in declaration order.
+    for (const auto & declared_name : type_tuple->getElementNames())
+        if (case_insensitive ? boost::iequals(declared_name, element_name) : declared_name == element_name)
+            return type->tryGetSubcolumnType(declared_name);
+
+    return nullptr;
+}
+
+/// Declared type of `subcolumn_path` inside `root_type`. Each component is resolved on its own, the
+/// way `extractColumn` cuts the flattened name at the first dot, so it can only match the element the
+/// extractor selects.
+static DataTypePtr resolveDeclaredSubcolumnType(
+    const DataTypePtr & root_type, const String & subcolumn_path, bool case_insensitive)
+{
+    DataTypePtr current = root_type;
+    for (std::string_view rest = subcolumn_path; !rest.empty() && current;)
+    {
+        const auto [head, tail] = Nested::splitName(rest);
+        current = tryGetDeclaredElementType(current, head, case_insensitive);
+        rest = tail;
+    }
+    return current;
+}
+
 /// A `Nullable(Tuple(...))` element looks identical whether the wrapping was synthesized from an
 /// outer struct null map or declared in the schema, so `declared_subcolumn_type` is the arbiter and
 /// not the null map: `Nullable` keeps it nullable, a plain `Tuple` drops the wrapper. Dropping
@@ -731,32 +768,8 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
 
     /// Arbiter for the terminal `applyExtractedSubcolumnNullablePolicy`, computed from the declared
     /// type here rather than there because only this scope has the root column.
-    /// `nested_names.first` differs from the root portion of `column_name` only in case, so the
-    /// suffix length is stable.
-    DataTypePtr declared_subcolumn_type;
-    if (column_name.size() > nested_names.first.size() + 1)
-    {
-        const String subcolumn_path = column_name.substr(nested_names.first.size() + 1);
-
-        /// Names are compared case-folded because a requested spelling differs in case from the
-        /// declared one (readers lowercase it; `StorageHive::read` does not). `Block::findByName`
-        /// takes the FIRST case-insensitive match, so resolving here in that same order is what
-        /// keeps the declared type describing the element the column comes from.
-        if (case_insentive)
-        {
-            const String subcolumn_path_lower = boost::to_lower_copy(subcolumn_path);
-            for (const auto & declared_name : root_column.type->getSubcolumnNames())
-            {
-                if (boost::to_lower_copy(declared_name) == subcolumn_path_lower)
-                {
-                    declared_subcolumn_type = root_column.type->tryGetSubcolumnType(declared_name);
-                    break;
-                }
-            }
-        }
-        else
-            declared_subcolumn_type = root_column.type->tryGetSubcolumnType(subcolumn_path);
-    }
+    const DataTypePtr declared_subcolumn_type
+        = resolveDeclaredSubcolumnType(root_column.type, nested_names.second, case_insentive);
 
     if (!nested_tables.contains(nested_names.first))
     {

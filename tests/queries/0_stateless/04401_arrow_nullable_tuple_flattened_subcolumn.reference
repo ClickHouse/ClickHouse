@@ -103,3 +103,22 @@ INSERT INTO FUNCTION file(currentDatabase() || '_04401_map.arrowstream', 'ArrowS
 SELECT `m.keys`, `m.values` FROM file(currentDatabase() || '_04401_map.arrowstream', 'ArrowStream');
 ['a','b']	[1,2]
 SELECT `m.keys` FROM file(currentDatabase() || '_04401_map.arrowstream', 'ArrowStream', '`m.keys` Array(String)'); -- { serverError TYPE_MISMATCH }
+-- A tuple element name may itself contain a dot, so `c0.a.b` is both the element `a.b` and the path
+-- from `a` to `b`. The extractor always cuts at the first dot and takes the path, so the declared
+-- type used as the nullability arbiter has to be resolved the same way; a full-path subcolumn lookup
+-- binds to the element instead and its non-nullable type then collapses the genuine NULL.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_dot.arrow', 'Arrow')
+SELECT c0 FROM values('c0 Tuple(`a.b` UInt32, a Tuple(b Nullable(Tuple(v UInt32))), c String)', (tuple(1, tuple(tuple(10)), 'p')), (tuple(2, tuple(NULL), 'q')), (tuple(3, tuple(tuple(30)), 'r')));
+SELECT `c0.a.b`, isNull(`c0.a.b`), `c0.c` FROM file(currentDatabase() || '_04401_dot.arrow', 'Arrow', '`c0.a.b` Nullable(Tuple(v UInt32)), `c0.c` String') ORDER BY `c0.c`;
+(10)	0	p
+\N	1	q
+(30)	0	r
+-- Only the exact lowercase `null` is reserved as an element name, so `Null` is legal. Under
+-- case-insensitive matching the request `c0.null` matches both that element and the parent's virtual
+-- null-map subcolumn; the latter is never a flattened column, so it must not supply the declared type.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_nullname.arrow', 'Arrow')
+SELECT c0 FROM values('c0 Nullable(Tuple(`Null` Nullable(Tuple(v UInt32)), c String))', (tuple(tuple(10), 'p')), (tuple(NULL, 'q')), (tuple(tuple(30), 'r')));
+SELECT `c0.null`, isNull(`c0.null`), `c0.c` FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', '`c0.null` Nullable(Tuple(v UInt32)), `c0.c` Nullable(String)') ORDER BY `c0.c` SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+(10)	0	p
+\N	1	q
+(30)	0	r
