@@ -1117,7 +1117,17 @@ static std::string_view tokenText(IParser::Pos pos)
     return std::string_view(pos->begin, pos->end - pos->begin);
 }
 
-/// Scans an array or a tuple of numbers and strings, and of nested arrays and tuples of them,
+/// The `NULL` keyword in any case, which the lexer leaves as a bare word.
+static bool isNullKeyword(std::string_view text)
+{
+    return text.size() == 4
+        && (text[0] == 'N' || text[0] == 'n')
+        && (text[1] == 'U' || text[1] == 'u')
+        && (text[2] == 'L' || text[2] == 'l')
+        && (text[3] == 'L' || text[3] == 'l');
+}
+
+/// Scans an array or a tuple of numbers, strings and `NULL`s, and of nested arrays and tuples of them,
 /// leaving `pos` right after it. Returns the end of its text, or nullptr if there is no such
 /// collection ahead, in which case `pos` is left somewhere inside what was scanned.
 static const char * scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal)
@@ -1193,6 +1203,13 @@ static const char * scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAs
             {
                 literal.all_non_negative = false;
             }
+        }
+        else if (pos->type == BareWord && isNullKeyword(tokenText(pos)))
+        {
+            if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
+                return nullptr;
+            literal.has_null = true;
+            holds_own_scalar |= own;
         }
         else
         {
@@ -1283,7 +1300,8 @@ enum class NumeralReader : uint8_t
     UnsignedInteger,
 };
 
-static NumeralReader numeralReaderOf(const IAST & type)
+/// `nullable` is set when a `Nullable` is passed on the way, which is what reads a `NULL` back.
+static NumeralReader numeralReaderOf(const IAST & type, bool & nullable)
 {
     const auto * data_type = type.as<ASTDataType>();
     if (!data_type)
@@ -1291,13 +1309,16 @@ static NumeralReader numeralReaderOf(const IAST & type)
 
     const String name = Poco::toUpper(data_type->name);
 
-    /// These hand the text over to the type they wrap.
-    if (name == "NULLABLE" || name == "ARRAY")
+    /// These hand the text over to the type they wrap. `LowCardinality` belongs here because the
+    /// conversion of a field strips it before looking at the value - see `convertFieldToType` - so
+    /// a numeral would take the same lossy path as with the wrapped type alone.
+    if (name == "NULLABLE" || name == "ARRAY" || name == "LOWCARDINALITY")
     {
         const auto arguments = data_type->getArguments();
         if (!arguments || arguments->children.size() != 1)
             return NumeralReader::None;
-        return numeralReaderOf(*arguments->children[0]);
+        nullable |= name == "NULLABLE";
+        return numeralReaderOf(*arguments->children[0], nullable);
     }
 
     static const std::unordered_set<std::string_view> decimal_names
@@ -1333,7 +1354,14 @@ bool typeReadsLiteralExactly(const String & type_text, const LiteralAsText & lit
     if (!ParserDataType().parse(pos, type, expected) || !pos->isEnd())
         return false;
 
-    switch (numeralReaderOf(*type))
+    bool nullable = false;
+    const NumeralReader reader = numeralReaderOf(*type, nullable);
+
+    /// A `NULL` element is only read back by a `Nullable` target.
+    if (literal.has_null && !nullable)
+        return false;
+
+    switch (reader)
     {
         case NumeralReader::None:
             return false;
@@ -1357,6 +1385,13 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     std::optional<String> type_text = parseDataTypeAsText(pos, expected);
     if (!type_text)
+        return false;
+
+    /// A literal holding a `NULL` goes as text only when the target type provably reads it back -
+    /// see `typeReadsLiteralExactly`. Everything else falls back to the ordinary expression path,
+    /// where a `NULL` converts, or fails to, the way it always did: the text parsers of some types
+    /// would silently turn it into a default value instead.
+    if (literal.has_null && !typeReadsLiteralExactly(*type_text, literal, pos))
         return false;
 
     /// The text is a literal only together with the type that reads it, so it is not recorded in the

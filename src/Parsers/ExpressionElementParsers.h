@@ -580,9 +580,11 @@ struct LiteralAsText
     bool all_integers = true;
     /// No number in it is negative.
     bool all_non_negative = true;
+    /// It holds a `NULL`, which only a `Nullable` target reads back.
+    bool has_null = false;
 };
 
-/** Reads a literal - a number, or an array or a tuple of numbers and strings - as text, leaving
+/** Reads a literal - a number, or an array or a tuple of numbers, strings and `NULL`s - as text, leaving
   * `pos` right after it. Casting the text with the target type is what makes `CAST` exact:
   * `0.1::Decimal256(76)` keeps all 76 digits, instead of reading `0.1` as a `Float64` and rounding
   * it on the way to the `Decimal`.
