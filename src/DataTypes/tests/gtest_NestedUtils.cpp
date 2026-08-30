@@ -351,3 +351,43 @@ GTEST_TEST(NestedUtils, extractLowCardinalityLeafFromNullableTupleBecomesLowCard
     ASSERT_EQ(col_v->type->getName(), "Nullable(UInt32)");
     ASSERT_TRUE(col_v->column->isNullAt(1));
 }
+
+/// Two element names differing only in case are legal (`checkTupleNames` compares case-sensitively),
+/// so under case-insensitive extraction the requested name matches both. The column is taken with
+/// `Block::findByName(..., case_insentive)`, which returns the first such element, so the declared
+/// type has to be resolved in the same order: pairing one element's column with the other element's
+/// nullability turns a genuine NULL into a non-NULL tuple of NULLs.
+GTEST_TEST(NestedUtils, extractCaseCollidingElementPairsColumnWithItsOwnDeclaredType)
+{
+    DataTypePtr nullable_uint = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>());
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+
+    /// Tuple(A Nullable(Tuple(b Nullable(UInt32))), a Tuple(b UInt32)) -- `A` is genuinely nullable,
+    /// its lowercase sibling `a` is not.
+    DataTypePtr upper_inner = std::make_shared<DataTypeTuple>(DataTypes{nullable_uint}, Strings{"b"});
+    DataTypePtr upper_elem = std::make_shared<DataTypeNullable>(upper_inner);
+    DataTypePtr lower_elem = std::make_shared<DataTypeTuple>(DataTypes{uint_type}, Strings{"b"});
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{upper_elem, lower_elem}, Strings{"A", "a"});
+
+    auto column = outer_tuple->createColumn();
+    column->insert(Tuple{Tuple{10u}, Tuple{20u}});
+    column->insert(Tuple{Null{}, Tuple{21u}});
+    column->insert(Tuple{Tuple{30u}, Tuple{40u}});
+
+    Block block;
+    block.insert({std::move(column), outer_tuple, "x"});
+
+    /// The readers lowercase the requested spelling, so `x.a` is what arrives here.
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/true);
+    auto col = extractor.extractColumn("x.a");
+    ASSERT_TRUE(col.has_value());
+
+    /// `A` wins the case-insensitive lookup, so the extracted type must be `A`'s nullable one and
+    /// its real NULL row must stay NULL, rather than being unwrapped using `a`'s non-nullable type.
+    ASSERT_EQ(col->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
+    ASSERT_EQ(col->column->size(), 3u);
+    ASSERT_FALSE(col->column->isNullAt(0));
+    ASSERT_TRUE(col->column->isNullAt(1));
+    ASSERT_FALSE(col->column->isNullAt(2));
+}

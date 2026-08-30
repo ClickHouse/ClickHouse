@@ -744,12 +744,12 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
     if (column_name.size() > nested_names.first.size() + 1)
     {
         const String subcolumn_path = column_name.substr(nested_names.first.size() + 1);
-        declared_subcolumn_type = root_column.type->tryGetSubcolumnType(subcolumn_path);
 
-        /// `tryGetSubcolumnType` matches names case-sensitively, but the requested spelling may
-        /// differ in case from the declared name (readers lowercase it; `StorageHive::read` does
-        /// not). Retry with both sides case-folded.
-        if (!declared_subcolumn_type && case_insentive)
+        /// Names are compared case-folded because a requested spelling differs in case from the
+        /// declared one (readers lowercase it; `StorageHive::read` does not). `Block::findByName`
+        /// takes the FIRST case-insensitive match, so resolving here in that same order is what
+        /// keeps the declared type describing the element the column comes from.
+        if (case_insentive)
         {
             const String subcolumn_path_lower = boost::to_lower_copy(subcolumn_path);
             for (const auto & declared_name : root_column.type->getSubcolumnNames())
@@ -761,6 +761,8 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
                 }
             }
         }
+        else
+            declared_subcolumn_type = root_column.type->tryGetSubcolumnType(subcolumn_path);
     }
 
     if (!nested_tables.contains(nested_names.first))
