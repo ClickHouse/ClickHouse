@@ -125,7 +125,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+    {{"kusto",   FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
 IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -346,6 +346,13 @@ IMPLEMENT_SETTING_ENUM(
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 
 IMPLEMENT_SETTING_ENUM(
+    AsynchronousMetricsKeyValuesMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"key_values", AsynchronousMetricsKeyValuesMode::KeyValues},
+     {"legacy_names", AsynchronousMetricsKeyValuesMode::LegacyNames},
+     {"both", AsynchronousMetricsKeyValuesMode::Both}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
@@ -464,6 +471,12 @@ IMPLEMENT_SETTING_ENUM(
     {{"v1", MergeTreeDynamicSerializationVersion::V1},
      {"v2", MergeTreeDynamicSerializationVersion::V2},
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreePatchPartsVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreePatchPartsVersion::V1},
+     {"v2", MergeTreePatchPartsVersion::V2}})
 
 IMPLEMENT_SETTING_ENUM(
     SearchOrphanedPartsDisks,

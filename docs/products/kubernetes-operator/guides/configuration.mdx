@@ -106,86 +106,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-The operator addresses every pod through the headless Service as
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. That suffix flows into
-two parts of the generated configuration:
+For ClickHouse replicas the operator creates a governing headless Service `<cluster-name>-clickhouse-headless` that serves client traffic.
+And per-replica services `<cluster-name>-clickhouse-internal-<shard>-<index>` that publish unready Pods for internal traffic
+and management requests from the operator. This can be used for replica recovery if it cannot become ready itself.
 
-- On a `ClickHouseCluster`, its value is used for the replica host names in
-  `remote_servers` (cross-replica and `Distributed` queries).
-- On a `KeeperCluster`, its value builds the Keeper node host names that
-  ClickHouse uses for coordination.
-
-<Note>
-Only override this when your cluster's `kubelet` runs with a `--cluster-domain`
-other than `cluster.local`. If the value does not match the real cluster domain,
-ClickHouse cannot resolve the Keeper and replica host names — coordination and
-`Distributed` queries fail with DNS resolution errors. Set the **same** value on the
-`ClickHouseCluster` and the `KeeperCluster` it references.
-</Note>
-
-### Multi-disk (JBOD) storage {#multi-disk-jbod-storage}
-
-`additionalVolumeClaimTemplates` attaches extra disks to each ClickHouse replica, on top of the primary `dataVolumeClaimSpec`, which is required to use them.
-Each entry is a PVC template — a `metadata.name` plus a PVC `spec`.
-The disks are reconciled exactly like the primary data disk — as StatefulSet `volumeClaimTemplates` — so the StatefulSet controller creates and retains one PVC per replica, named `<name>-<statefulset>-0`.
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-The operator mounts each additional volume at `/var/lib/clickhouse/disks/<name>` and adds it to a generated ClickHouse storage configuration.
-Hyphens in a name become underscores in the ClickHouse disk identifier; the mount path keeps the original name.
-
-The primary data disk and every additional disk are placed in a single volume of the `default` storage policy, so ClickHouse spreads new data parts across all of them in round-robin fashion.
-Usable capacity is the sum of all disks, and every table that does not set its own `storage_policy` (including `system.*` tables) uses the combined set.
-
-<Note>
-PVC names must match `^[a-z]([-a-z0-9]*[a-z0-9])?$` and must not collide with the primary data volume name.
-Like the primary data disk, the set of additional disks is fixed at creation: adding, removing, or renaming entries after creation is rejected.
-Additional PVCs are retained when the cluster is deleted, like the primary data disk.
-Storage size on an existing entry can be expanded if the StorageClass supports expansion.
-</Note>
-
-## Cluster domain {#cluster-domain}
-
-`spec.clusterDomain` sets the Kubernetes DNS suffix the operator uses when it builds
-the fully-qualified pod host names it writes into the ClickHouse server
-configuration. It defaults to `cluster.local` and exists on both
-`ClickHouseCluster` and `KeeperCluster`.
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-The operator addresses every pod through the headless Service as
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. That suffix flows into
-two parts of the generated configuration:
-
-- On a `ClickHouseCluster`, its value is used for the replica host names in
-  `remote_servers` (cross-replica and `Distributed` queries).
-- On a `KeeperCluster`, its value builds the Keeper node host names that
-  ClickHouse uses for coordination.
+Keeper nodes use pod names through their headless Service: `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`.
 
 <Note>
 Only override this when your cluster's `kubelet` runs with a `--cluster-domain`
@@ -838,7 +763,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
