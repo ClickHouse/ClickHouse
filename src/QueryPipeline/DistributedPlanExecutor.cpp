@@ -82,6 +82,7 @@ namespace ProfileEvents
     extern const Event DistributedPlanRemoteTasks;
     extern const Event DistributedPlanLocalExecution;
     extern const Event DistributedPlanHostsUsed;
+    extern const Event RuntimeFilterReceiveBranchFailures;
 }
 
 
@@ -779,6 +780,68 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
+/// Runs the runtime filter receive branches of a task beside its data pipeline, each in its own
+/// executor thread. A branch waits for a filter that the producer builds only after reading its
+/// whole build side, so the filter can arrive late or never. Keeping the branch out of the data
+/// pipeline guarantees two things: the task finishes when its data work finishes (`finish`
+/// cancels the still-waiting branches), and a branch error never fails the task - the filter is
+/// simply not registered and `__applyFilter` passes all rows.
+class RuntimeFilterReceiveBranches
+{
+public:
+    explicit RuntimeFilterReceiveBranches(LoggerPtr logger_) : logger(std::move(logger_)) {}
+
+    void start(QueryPipeline pipeline, const String & filter_name)
+    {
+        auto branch = std::make_shared<Branch>(std::move(pipeline));
+        branches.push_back(branch);
+        branch->thread = ThreadFromGlobalPool(
+            [branch, filter_name, thread_group = CurrentThread::getGroup(), log = logger]
+        {
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+            try
+            {
+                CompletedPipelineExecutor executor(branch->pipeline);
+                executor.setCancelCallback([branch] { return branch->cancelled.load(); }, /*interactive_timeout_ms_*/ 50);
+                executor.execute();
+            }
+            catch (...)
+            {
+                ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
+                tryLogCurrentException(log, fmt::format(
+                    "Receive branch for runtime filter '{}' failed; the filter is skipped and rows pass unfiltered",
+                    filter_name));
+            }
+        });
+    }
+
+    /// Cancel the branches that are still waiting and join their threads. Idempotent.
+    void finish() noexcept
+    {
+        for (const auto & branch : branches)
+            branch->cancelled = true;
+        for (const auto & branch : branches)
+            if (branch->thread.joinable())
+                branch->thread.join();
+        branches.clear();
+    }
+
+    ~RuntimeFilterReceiveBranches() { finish(); }
+
+private:
+    struct Branch
+    {
+        explicit Branch(QueryPipeline pipeline_) : pipeline(std::move(pipeline_)) {}
+
+        QueryPipeline pipeline;
+        std::atomic<bool> cancelled{false};
+        ThreadFromGlobalPool thread;
+    };
+
+    LoggerPtr logger;
+    std::vector<std::shared_ptr<Branch>> branches;
+};
+
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
     bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
@@ -862,9 +925,13 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
-    /// Each receive descriptor is a completed side branch (sources -> union -> sink). Folding it
-    /// into the data streams deadlocks a remote worker: data sinks idle until the join pulls the
-    /// probe, which waits on the build stage, which waits on these sources.
+    /// Each receive descriptor is a separate side pipeline (sources -> union -> sink) run by
+    /// `receive_branches` in its own thread. It is kept out of the data pipeline for two reasons:
+    /// folding it into the data streams deadlocks a remote worker (data sinks idle until the join
+    /// pulls the probe, which waits on the build stage, which waits on these sources), and a
+    /// filter can arrive after the data work is done or never - the task must not stay alive
+    /// waiting for it, so the branches are cancelled once the data pipeline finishes.
+    RuntimeFilterReceiveBranches receive_branches(logger);
     for (const auto & descriptor : task.runtime_filter_descriptors)
     {
         const auto partials_header = runtimeFilterPartialsHeader();
@@ -883,7 +950,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
             context->getRuntimeFilterLookup()));
         QueryPipeline branch(std::move(partials));
         branch.complete(std::make_shared<EmptySink>(partials_header));
-        pipeline.addCompletedPipeline(std::move(branch));
+        receive_branches.start(std::move(branch), descriptor.filter_name);
     }
 
     /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
@@ -926,6 +993,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         if (is_cancelled)
             executor.setCancelCallback(is_cancelled, 100);
         executor.execute();
+
+        /// The data work is done; a filter that has not arrived by now has nothing left to serve.
+        receive_branches.finish();
 
         logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
             query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);
