@@ -854,6 +854,16 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
             || in_second_argument_type == QueryTreeNodeType::TABLE)
         && in_first_argument_result_type)
     {
+        /// `FunctionIn::getReturnTypeImpl` rejects every left operand whose type has a dynamic
+        /// structure with `ILLEGAL_TYPE_OF_ARGUMENT` before it ever looks at the set arity, and it
+        /// does so at analysis time too, so constant folding cannot hide that error. This includes
+        /// types whose dynamic structure comes from a nested member, such as
+        /// `Tuple(Dynamic, UInt8)`. Report nothing here for them: otherwise the arity check below
+        /// would win and replace the existing unsupported-type contract with
+        /// `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
+        if (in_first_argument_result_type->hasDynamicStructure())
+            return;
+
         /// `getResultType` may be null for unresolved nodes (e.g. a lambda used as the left side of IN).
         /// Such cases are rejected later with a more informative error, so skip the column-count check here.
         /// Count tuple elements only for a top-level `DataTypeTuple`, matching how `FunctionIn`
@@ -918,7 +928,6 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
         /// set builder also rejects this conversion, but it must be reported here before
         /// constant folding can remove the `IN` expression from an unreachable predicate.
         if (right_columns_count == 1 && !left_tuple_type
-            && !in_first_argument_result_type->hasDynamicStructure()
             && !isNothing(removeNullable(in_first_argument_result_type)))
         {
             /// Compare the types the set actually uses as keys, i.e. after stripping the wrappers
@@ -1781,13 +1790,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>())
             {
-                /// The rewrite below produces a correlated subquery, so it requires the setting.
-                /// Checked here (not at the gate) so constant/tuple `IN` is never rejected.
-                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
-
                 /// An array subquery on the right of IN is the set of its elements (see
                 /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
                 /// EXISTS rewrite, so the comparison below is `x = <element>` rather than `x = <array>`.
@@ -1835,6 +1837,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
             {
+                /// The rewrite below produces a correlated subquery, so it requires the setting.
+                /// Checked here rather than at the gate above, so that the shapes which are not
+                /// rewritten at all are never rejected because of it: a constant or tuple `IN`, and
+                /// the single-key shape just identified, which stays on the regular `IN` path.
+                /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
+                /// though no correlated rewrite happens.
+                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
                 /// Rename subquery projection to a unique name to avoid collisions with names from outer scope

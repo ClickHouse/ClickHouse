@@ -164,3 +164,14 @@ SET enable_nullable_tuple_type = 1;
 SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
 SELECT CAST((1, 3), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
 SELECT CAST('(1,2)', 'LowCardinality(String)') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
+
+-- A left operand whose type has a dynamic structure is rejected by `FunctionIn` itself with
+-- `ILLEGAL_TYPE_OF_ARGUMENT`, before the set arity is ever considered - and that happens during
+-- analysis, so constant folding cannot hide it either. The dynamic structure may come from a nested
+-- member, as in `Tuple(Dynamic, UInt8)`, where the left side does look like a two-column tuple. The
+-- analysis-time column-count check must not run for such types, otherwise it would replace that
+-- existing unsupported-type contract with `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
+-- Regression for the nested dynamic-structure carrier flagged in PR #97540.
+SELECT CAST((1, 2), 'Tuple(Dynamic, UInt8)') IN (SELECT 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST((1, 2), 'Tuple(Dynamic, UInt8)') IN (SELECT 1, 2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [CAST(1, 'Dynamic')] IN (SELECT 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

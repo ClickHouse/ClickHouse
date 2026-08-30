@@ -53,3 +53,12 @@ SELECT count() FROM numbers(1) WHERE concat('0', toString(number + 1)) IN (SELEC
 SET transform_null_in = 0;
 SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
 SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
+
+-- The shapes above stay on the regular `IN` path, so they perform no correlated rewrite and must
+-- not require `allow_experimental_correlated_subqueries`: enabling `rewrite_in_to_join` alone must
+-- never change which queries are accepted.
+SET allow_experimental_correlated_subqueries = 0;
+SELECT count() FROM numbers(1) WHERE concat('0', toString(number + 1)) IN (SELECT toUInt8(1));
+SELECT count() FROM numbers(1) WHERE (1, number) IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)'));
+-- A shape that is actually rewritten still requires the setting.
+SELECT count() FROM numbers(1) WHERE number IN (SELECT number FROM numbers(3)); -- { serverError SUPPORT_IS_DISABLED }
