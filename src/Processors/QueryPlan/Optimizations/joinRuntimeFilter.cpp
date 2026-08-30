@@ -242,6 +242,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
+    /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
+    /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
+    /// be attached, and the algorithm list must not be pinned to hash-family ones below.
+    if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
+        return false;
+
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
         return false;
@@ -395,17 +401,24 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
-            try
+            auto common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
+            if (!common_type)
             {
-                common_types.push_back(getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type}));
+                /// The keys still can be joined by the values that they have in common, see
+                /// `JoinCommon::tryGetCommonSubtypeForJoinKeys`, but a runtime filter cannot be built this way:
+                /// the values that are out of the common range become NULL, and for `NOT IN` that would
+                /// filter out the rows that have to be preserved. Give up on the filter, it is only an optimization.
+                /// If the JOIN itself cannot be performed, it will report this type mismatch on its own.
+                ///
+                /// The types compared here are always the ORIGINAL key types: the subtype fallback rewrites the
+                /// keys to `accurateCastOrNull` in `JoinStepLogical::predicateOperandsToCommonType`, which runs
+                /// from `addJoinPredicatesToTableJoin` while the logical step is converted to a physical one —
+                /// that is, after every query plan optimization pass, including this one. So the rewrite can
+                /// never hide the mismatch from this check, and a fallback JOIN never keeps a runtime filter
+                /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
+                return false;
             }
-            catch (Exception & ex)
-            {
-                ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-                    join_key_probe_side.name, join_key_probe_side.type->getName(),
-                    join_key_build_side.name, join_key_build_side.type->getName());
-                throw;
-            }
+            common_types.push_back(std::move(common_type));
         }
         else
         {

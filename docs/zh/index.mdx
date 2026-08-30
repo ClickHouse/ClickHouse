@@ -174,16 +174,18 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const handleClick = (e) => {
-        e.preventDefault();
-        const target = document.getElementById('mcp-setup');
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
+    const path = '/zh/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
+    const withBase = (p) => assetBase + p;
+    const href = withBase(path);
     return (
         <a
-            href="#mcp-setup"
+            href={href}
             data-galaxy-event="docs.home.mcp-server"
-            onClick={handleClick}
+            onClick={(e) => {
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                window.location.href = href;
+            }}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
             <span
@@ -260,25 +262,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-          .ch-goal-icon { color: #374151; }
-          .dark .ch-goal-icon { color: #FAFF69; }
-          /* Integrations 横幅：两种模式下均使用强调色边框 */
-          html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-          html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-          .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-          .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-          /* 在首页立即隐藏侧边栏（防止闪现） */
-          #sidebar { display: none !important; }
-          /* 由于侧边栏已隐藏，让导航栏横跨整个页面宽度 */
-          #navbar-transition-maple {
-            width: 100vw !important;
-            left: 0 !important;
-            margin-left: 0 !important;
-            /* 与导航栏自身的右侧内边距（3rem）保持一致 */
-            padding-left: 3rem !important;
-            justify-content: flex-start !important;
-          }
-          `}
+            .ch-goal-icon { color: #374151; }
+            .dark .ch-goal-icon { color: #FAFF69; }
+            /* Integrations 横幅：两种模式下均使用强调色边框 */
+            html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+            html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+            .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+            .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+            /* 在首页立即隐藏侧边栏（防止闪现） */
+            #sidebar { display: none !important; }
+            /* 由于侧边栏已隐藏，让导航栏横跨整个页面宽度 */
+            #navbar-transition-maple {
+              width: 100vw !important;
+              left: 0 !important;
+              margin-left: 0 !important;
+              /* 与导航栏自身的右侧内边距（3rem）保持一致 */
+              padding-left: 3rem !important;
+              justify-content: flex-start !important;
+            }
+            `}
 </style>
 
 <PageWrapper>
@@ -286,7 +288,7 @@ export const PageWrapper = ({ children }) => {
     <div className="absolute -top-14 left-0 right-0 opacity-80">
       <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV84MjcpIj4KPHJlY3Qgb3BhY2l0eT0iMC4wMSIgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ1cmwoI3BhaW50MF9saW5lYXJfMjMxXzgyNykiLz4KPC9nPgo8ZGVmcz4KPGxpbmVhckdyYWRpZW50IGlkPSJwYWludDBfbGluZWFyXzIzMV84MjciIHgxPSI1NzYiIHkxPSIwIiB4Mj0iNTc2IiB5Mj0iMzg4IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CjxzdG9wIHN0b3AtY29sb3I9IiM3MzczNzMiLz4KPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjRDlEOUQ5IiBzdG9wLW9wYWNpdHk9IjAiLz4KPC9saW5lYXJHcmFkaWVudD4KPGNsaXBQYXRoIGlkPSJjbGlwMF8yMzFfODI3Ij4KPHJlY3Qgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo=" className="block dark:hidden pointer-events-none w-full h-auto" alt="装饰性背景图。" />
 
-      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV83MzApIj4KPGcgb3BhY2l0eT0iMC4xMiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8yMzFfNzMwKSI+CjxjaXJjbGUgY3g9Ijg0My41IiBjeT0iLTIzMS41IiByPSIyMDMuNSIgZmlsbD0id2hpdGUiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2ZfMjMxXzczMCIgeD0iNTguMTk4OSIgeT0iLTEwMTYuOCIgd2lkdGg9IjE1NzAuNiIgaGVpZ2h0PSIxNTcwLjYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiLz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMjkwLjkwMSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzIzMV83MzAiLz4KPC9maWx0ZXI+CjxjbGlwUGF0aCBpZD0iY2xpcDBfMjMxXzczMCI+CjxyZWN0IHdpZHRoPSIxMTUyIiBoZWlnaHQ9IjM4OCIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K" className="hidden dark:block pointer-events-none w-full h-auto" alt="装饰性背景图片。" />
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV83MzApIj4KPGcgb3BhY2l0eT0iMC4xMiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8yMzFfNzMwKSI+CjxjaXJjbGUgY3g9Ijg0My41IiBjeT0iLTIzMS41IiByPSIyMDMuNSIgZmlsbD0id2hpdGUiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2ZfMjMxXzczMCIgeD0iNTguMTk4OSIgeT0iLTEwMTYuOCIgd2lkdGg9IjE1NzAuNiIgaGVpZ2h0PSIxNTcwLjYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiLz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMjkwLjkwMSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzIzMV83MzAiLz4KPC9maWx0ZXI+CjxjbGlwUGF0aCBpZD0iY2xpcDBfMjMxXzczMCI+CjxyZWN0IHdpZHRoPSIxMTUyIiBoZWlnaHQ9IjM4OCIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K" className="hidden dark:block pointer-events-none w-full h-auto" alt="装饰性背景图。" />
     </div>
 
     <div className="relative z-10 px-0 py-16 lg:py-12 lg:pb-40 max-w-6xl mx-auto">
@@ -295,7 +297,7 @@ export const PageWrapper = ({ children }) => {
       </div>
 
       <h1 className="block text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
-        开始基于 <HighlightedClickHouse /> 进行构建
+        开始使用 <HighlightedClickHouse /> 构建
       </h1>
 
       <div className="mx-auto px-4 -mt-5 text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
@@ -368,7 +370,7 @@ export const PageWrapper = ({ children }) => {
         { label: "设置", href: "/zh/reference/settings/index" },
         { label: "函数", href: "/zh/reference/functions/regular-functions/overview" },
         { label: "引擎", href: "/zh/reference/engines/engines" },
-        { label: "系统表", href: "/zh/reference/system-tables" },
+        { label: "系统表", href: "/zh/reference/system-tables/overview" },
         { label: "格式", href: "/zh/reference/formats/index" },
         { label: "数据类型", href: "/zh/reference/data-types/index" }
     ]}
@@ -387,7 +389,7 @@ export const PageWrapper = ({ children }) => {
           links={[
         { label: "ClickHouse Cloud", href: "/zh/products/cloud/getting-started/cloud-get-started" },
         { label: "ClickStack", href: "/zh/clickstack" },
-        { label: "Managed Postgres", href: "/zh/products/managed-postgres/overview" },
+        { label: "ClickHouse Managed Postgres", href: "/zh/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
         { label: "chDB", href: "/zh/chdb" },
         { label: "Kubernetes Operator", href: "/zh/products/kubernetes-operator/overview" },
@@ -436,7 +438,7 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">你将了解：</p>
           </>}
               links={[
-              { label: "1. 如何以最低成本从常见来源摄取数据", href: "/zh/integrations" },
+              { label: "1. 如何以最低成本从常见来源摄取数据", href: "/zh/integrations/home" },
               { label: "2. 面向分析和增长场景组织数据的最佳实践", href: "/zh/guides/clickhouse/data-modelling/schema-design" },
               { label: "3. 实时查询大型数据集的方法", href: "/zh/get-started/use-cases/real-time-analytics" },
               { label: "4. 如何在此基础上构建仪表盘、告警和事件驱动功能", href: "/zh/get-started/use-cases/data-warehousing" },
@@ -448,7 +450,7 @@ export const PageWrapper = ({ children }) => {
           <div className="flex flex-col gap-4">
             <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="由 ClickHouse 驱动的一体化可观测性技术栈，提供针对日志、指标、链路追踪、会话回放和错误的闪电般快速查询与强大聚合能力。" href="/zh/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="快速、可扩展、企业级的 Postgres 服务，与 ClickHouse 原生集成。轻松结合使用 Postgres 处理事务，用 ClickHouse 进行分析。" href="/zh/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="快速、可扩展、企业级的 Postgres 服务，与 ClickHouse 原生集成。轻松结合使用 Postgres 处理事务，用 ClickHouse 进行分析。" href="/zh/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
@@ -467,51 +469,6 @@ export const PageWrapper = ({ children }) => {
         </div>
       </div>
 
-      <FullWidthDivider style={{ margin: '40px 0 0' }} />
-
-      <div id="mcp-setup" className="mt-16 scroll-mt-20">
-        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">设置文档 MCP 服务器</h2>
-        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">使用 Model Context Protocol，直接通过 AI 工具查询 ClickHouse 文档。</p>
-
-        <div className="mt-6">
-          <Tabs>
-            <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">在终端中运行：</p>
-
-              <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}
-              </CodeBlock>
-            </Tab>
-
-            <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">添加到 <code>claude&#95;desktop&#95;config.json</code>：</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-
-            <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">添加到 <code>.cursor/mcp.json</code>：</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-
-            <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">添加到 <code>~/.codeium/windsurf/mcp&#95;config.json</code>：</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-          </Tabs>
-        </div>
-
-        <div className="mt-6 p-4 rounded-lg bg-[#f9f9f9] dark:bg-white/[0.03] border border-[#e5e7eb] dark:border-white/10">
-          <p className="text-sm font-semibold text-gray-900 dark:text-zinc-50 mb-1">为您的编程智能体添加 ClickHouse 技能</p>
-          <p className="text-sm text-gray-500 dark:text-zinc-500 mb-3">安装 ClickHouse 技能，为您的智能体提供专业的 ClickHouse 知识和最佳实践。</p>
-
-          <CodeBlock language="bash">
-            {`npx skills add https://clickhouse.com`}
-          </CodeBlock>
-        </div>
-      </div>
     </div>
   </div>
 </PageWrapper>
