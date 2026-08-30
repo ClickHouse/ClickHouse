@@ -951,10 +951,12 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 
 # 2070 is the oldest flag = 1 row's TTL; folding the flag = 0 row in would give 2050.
+# `rows = 3` selects the merged data part: the lightweight update above leaves a patch part active
+# too, and it carries no rows-WHERE entry of its own.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT rows_where_ttl_info.min[1] = toDateTime('2020-01-01 00:00:00') + INTERVAL 50 YEAR
     FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_ttl_rows_where_predicate' AND active;
+    WHERE database = currentDatabase() AND table = 't_ttl_rows_where_predicate' AND active AND rows = 3;
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_rows_where_predicate;"
 
