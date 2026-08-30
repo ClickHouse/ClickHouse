@@ -751,6 +751,27 @@ remove_registered_descendants()
     done
 }
 
+# Align the worker's submodule checkouts with the gitlinks recorded in the
+# superproject HEAD, honoring `--skip-submodules`. `--no-fetch` is load-bearing
+# for isolation: `.gitmodules` is pull-request content, so a submodule whose
+# objects are absent locally must fail here instead of fetching an
+# author-chosen URL with the operator's credentials.
+align_worker_submodules()
+{
+    local wt="$1"
+
+    if (( SKIP_SUBMODULES )); then
+        # Restore initialized submodules to the superproject gitlinks without
+        # initializing absent ones. `submodule update` can nevertheless
+        # initialize submodules selected by `submodule.active`, so check out
+        # the recorded SHA directly in the submodules that `foreach` found.
+        git -C "$wt" submodule foreach --quiet --recursive \
+            'git checkout --detach -q "$sha1"'
+    else
+        git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
+    fi
+}
+
 # Prepare a reusable worker for a new PR. Root-level build directories remain
 # available for reuse; all other tracked, untracked and ignored changes go.
 prepare_worktree_for_task()
@@ -772,16 +793,7 @@ prepare_worktree_for_task()
     # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
     git -C "$wt" submodule foreach --quiet --recursive \
         'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
-    if (( SKIP_SUBMODULES )); then
-        # Restore initialized submodules to the superproject gitlinks without
-        # initializing absent ones. `submodule update` can nevertheless
-        # initialize submodules selected by `submodule.active`, so check out
-        # the recorded SHA directly in the submodules that `foreach` found.
-        git -C "$wt" submodule foreach --quiet --recursive \
-            'git checkout --detach -q "$sha1"'
-    else
-        git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
-    fi
+    align_worker_submodules "$wt"
     # Integration tests can leave root-owned artifacts, and stale servers can
     # briefly recreate files while cleanup is traversing a directory. Retry
     # the identical, path-scoped cleanup after stopping any replacement
@@ -1249,7 +1261,12 @@ recreate_validated_triage_merge()
     # operator authors: never make it depend on the local signing setup. With
     # `commit.gpgSign=true` configured, an otherwise clean validated merge
     # would fail here on any machine where signing needs interaction.
-    git -C "$wt" -c commit.gpgSign=false commit -m "Merge base branch into pull request head"
+    git -C "$wt" -c commit.gpgSign=false commit -m "Merge base branch into pull request head" || return 1
+    # The recreated merge can advance submodule gitlinks (a base-branch
+    # submodule bump merges cleanly). Without realignment the worker's
+    # submodule worktrees stay on the old revisions and the coding model
+    # starts from a dirty tree, building against stale submodule sources.
+    align_worker_submodules "$wt"
 }
 
 discard_untrusted_triage_changes()

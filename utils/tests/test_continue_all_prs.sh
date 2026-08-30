@@ -422,6 +422,8 @@ IFS=$'\t' read -r fork_head_oid fork_base_oid _ <<< "$fork_result"
 # detached checkout fails with `reference is not a tree`.
 source <(sed -n '/^import_triage_objects()/,/^}/p' "$repo/utils/continue-all-prs.sh")
 source <(sed -n '/^recreate_validated_triage_merge()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+source <(sed -n '/^align_worker_submodules()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+SKIP_SUBMODULES=0
 import_source="$scratch/import-source"
 import_worker="$scratch/import-worker"
 import_triage="$scratch/import-triage"
@@ -493,6 +495,54 @@ git -C "$sign_triage" fetch -q "$sign_source" \
     "+refs/heads/pr-head:refs/remotes/origin/pr-head" "+refs/heads/master:refs/remotes/origin/master"
 recreate_validated_triage_merge "$sign_worker" "$sign_head_oid" "$sign_base_oid" "$sign_triage" >/dev/null
 [[ "$(git -C "$sign_worker" show -s --format='%P' HEAD)" == "$sign_head_oid $sign_base_oid" ]]
+
+# A validated merge can advance a submodule gitlink (a base-only submodule
+# bump merges cleanly). Recreating the superproject commit alone leaves the
+# worker's submodule worktree on the old revision and the tree dirty, so the
+# coding-model handoff would build against stale submodule sources. The merge
+# must realign the submodule checkouts with the new gitlinks.
+sub_dep="$scratch/sub-dep"
+sub_source="$scratch/sub-source"
+sub_worker="$scratch/sub-worker"
+sub_triage="$scratch/sub-triage"
+git init -q -b master "$sub_dep"
+git -C "$sub_dep" config user.email test@example.com
+git -C "$sub_dep" config user.name test
+printf 'dep v1\n' > "$sub_dep/content"
+git -C "$sub_dep" add content
+git -C "$sub_dep" commit -qm 'Dep v1'
+sub_dep_old=$(git -C "$sub_dep" rev-parse HEAD)
+printf 'dep v2\n' > "$sub_dep/content"
+git -C "$sub_dep" commit -qam 'Dep v2'
+sub_dep_new=$(git -C "$sub_dep" rev-parse HEAD)
+git init -q -b master "$sub_source"
+git -C "$sub_source" config user.email test@example.com
+git -C "$sub_source" config user.name test
+git -C "$sub_source" -c protocol.file.allow=always submodule add -q "$sub_dep" dep
+git -C "$sub_source/dep" checkout -q "$sub_dep_old"
+printf 'base\n' > "$sub_source/base"
+git -C "$sub_source" add base dep
+git -C "$sub_source" commit -qm 'Add base with the submodule'
+git -c protocol.file.allow=always clone -q --recurse-submodules "$sub_source" "$sub_worker"
+git -C "$sub_worker" config user.email test@example.com
+git -C "$sub_worker" config user.name test
+git -C "$sub_source" checkout -q -b pr-head
+printf 'head\n' > "$sub_source/head"
+git -C "$sub_source" add head
+git -C "$sub_source" commit -qm 'Add head'
+sub_head_oid=$(git -C "$sub_source" rev-parse refs/heads/pr-head)
+git -C "$sub_source" checkout -q master
+git -C "$sub_source/dep" checkout -q "$sub_dep_new"
+git -C "$sub_source" add dep
+git -C "$sub_source" commit -qm 'Bump the submodule on the base branch'
+sub_base_oid=$(git -C "$sub_source" rev-parse refs/heads/master)
+git clone -q --shared --no-checkout "$sub_worker" "$sub_triage"
+git -C "$sub_triage" fetch -q "$sub_source" \
+    "+refs/heads/pr-head:refs/remotes/origin/pr-head" "+refs/heads/master:refs/remotes/origin/master"
+recreate_validated_triage_merge "$sub_worker" "$sub_head_oid" "$sub_base_oid" "$sub_triage" >/dev/null
+[[ "$(git -C "$sub_worker" rev-parse HEAD:dep)" == "$sub_dep_new" ]]
+[[ "$(git -C "$sub_worker/dep" rev-parse HEAD)" == "$sub_dep_new" ]]
+[[ -z "$(git -C "$sub_worker" status --porcelain)" ]]
 
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
