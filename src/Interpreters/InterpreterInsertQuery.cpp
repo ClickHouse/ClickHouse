@@ -15,7 +15,6 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
@@ -46,7 +45,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -220,8 +218,6 @@ Block InterpreterInsertQuery::getSampleBlock(
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
-            return window_view->getInputHeader();
         if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         return metadata_snapshot->getSampleBlockNonMaterialized();
