@@ -149,7 +149,8 @@
                 "concepts/features/configuration/server-config/workload-scheduling",
                 "concepts/features/configuration/server-config/quotas",
                 "concepts/features/configuration/server-config/composable-protocols",
-                "concepts/features/configuration/server-config/startup-scripts"
+                "concepts/features/configuration/server-config/startup-scripts",
+                "concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -211,15 +212,18 @@
             "concepts/features/interfaces/native-clients-interfaces-index",
             "concepts/features/interfaces/cli",
             "concepts/features/interfaces/client",
+            "concepts/features/interfaces/mcp",
             {
               "group": "Drivers and interfaces",
               "pages": [
                 "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
+                "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
+                "concepts/features/interfaces/adbc",
                 "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
-                "concepts/features/interfaces/odbc",
+                { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",
                 "concepts/features/interfaces/ssh",
@@ -233,6 +237,7 @@
             "concepts/features/interfaces/web-sql",
             "concepts/features/interfaces/web-ui-color-coding",
             "concepts/features/interfaces/web-ui-pinned-columns",
+            "concepts/features/interfaces/web-ui-result-shaping",
             "concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",

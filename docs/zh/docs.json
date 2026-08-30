@@ -4,7 +4,7 @@
       "pages": [
         "zh/index"
       ],
-      "tab": "Home"
+      "tab": "首页"
     },
     {
       "menu": [
@@ -21,7 +21,7 @@
           "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Database"
+      "tab": "数据库"
     },
     {
       "menu": [
@@ -37,9 +37,6 @@
           "$ref": "./products/managed-postgres/navigation.json"
         },
         {
-          "$ref": "./clickstack/navigation.json"
-        },
-        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
           "item": "Langfuse"
@@ -47,7 +44,10 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Open source"
+          "item": "开源"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "$ref": "./products/agentic-data-stack/navigation.json"
@@ -59,12 +59,12 @@
           "$ref": "./products/kubernetes-operator/navigation.json"
         }
       ],
-      "tab": "Solutions"
+      "tab": "解决方案"
     },
     {
       "menu": [
         {
-          "item": "Ecosystem",
+          "item": "生态",
           "pages": [
             "zh/integrations/home",
             "zh/integrations/data-catalogs"
@@ -80,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrations"
+      "tab": "集成"
     },
     {
       "menu": [
@@ -97,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Resources"
+      "tab": "资源"
     }
   ]
 }
