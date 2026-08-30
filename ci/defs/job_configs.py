@@ -1464,11 +1464,6 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
-        Job.ParamSet(
-            parameter="amd_release, oracle",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_RELEASE],
-        ),
     )
     ast_fuzzer_targeted_pr_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
