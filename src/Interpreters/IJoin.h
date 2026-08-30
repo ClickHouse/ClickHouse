@@ -64,6 +64,9 @@ public:
 
     virtual JoinResultBlock next() = 0;
 
+    /// Right table rows matched while producing the result. Only meaningful once the result is exhausted.
+    virtual size_t getMatchedRightRows() const { return 0; }
+
     static JoinResultPtr createFromBlock(Block block);
 };
 
@@ -155,14 +158,6 @@ public:
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
 
-    /// Whether `keepLeftPipelineInOrder` can make this join preserve the left order. Asked before
-    /// committing to the optimisation, because committing is what pins the join. Delayed blocks
-    /// normally mean the rows get reordered, so the default answer follows `hasDelayedBlocks`.
-    /// A join that only reports delayed blocks because it *might* spill (`SpillingHashJoin`) can
-    /// still promise the order by giving up its ability to spill, so it overrides this to say yes
-    /// while `hasDelayedBlocks` is still true.
-    virtual bool canKeepLeftPipelineInOrder() const { return !hasDelayedBlocks(); }
-
     /// Whether the join emits left rows in the same order they arrive. HashJoin/DirectJoin/ConcurrentHashJoin
     /// stream the probe side, so they do. PartialMergeJoin re-sorts left blocks by the join key, so it does not;
     /// the read-in-order-through-join optimisation in optimizeReadInOrder.cpp must not propagate through such joins.
@@ -198,6 +193,11 @@ public:
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
+
+    /// Called by `JoiningTransform` when every probe stream has consumed its whole left input.
+    /// Not called when the probe is cut short (LIMIT, cancellation).
+    /// `matched_right_rows` is the number of right table rows matched across every probe stream.
+    virtual void onProbePhaseFinish(size_t /*matched_right_rows*/) { }
 
     /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
     /// a post build optimization step.

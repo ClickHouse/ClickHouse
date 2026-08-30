@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/UniqueLock.h>
+
 #include <atomic>
 #include <filesystem>
 #include <mutex>
@@ -24,8 +26,8 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/MergeTree/PartDirIntent.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Statistics/Statistics.h>
@@ -205,7 +207,7 @@ public:
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
     /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
-    /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
+    /// `patch_part_index`) into that arena. A cheap copy of small objects; call once these members
     /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
     /// `setMinMaxIndex` / the population sites.
     void moveMetadataToDedicatedArena();
@@ -469,6 +471,7 @@ public:
 
     NameSet invalidated_system_columns;
     bool isSystemColumnInvalidated(const String & column_name) const;
+    static NameSet getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info);
     static void writeInvalidatedSystemColumns(WriteBuffer & out, const NameSet & columns);
     static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
     static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
@@ -574,8 +577,8 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
-    void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_) { source_parts_set = std::move(source_parts_set_); }
-    const SourcePartsSetForPatch & getSourcePartsSet() const { return source_parts_set; }
+    void setPatchPartIndex(PatchPartIndex patch_part_index_);
+    const PatchPartIndex & getPatchPartIndex() const;
 
     /// Check if the part is in the `/moving` directory
     bool isMovingPart() const;
@@ -609,6 +612,15 @@ public:
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
     bool areChecksumsLoaded() const { return !checksums.empty(); }
+
+    /// Whether this part's column and secondary index sizes are already computed.
+    /// Never triggers the lazy computation: that reads from the part storage, and callers
+    /// use this to decide whether reading is safe here.
+    bool areColumnAndSecondaryIndexSizesCalculated() const
+    {
+        UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
+        return are_columns_and_secondary_indices_sizes_calculated;
+    }
 
     void setBrokenReason(const String & message, int code) const;
 
@@ -829,8 +841,8 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    /// Set of source parts for patch parts. Empty for regular parts.
-    SourcePartsSetForPatch source_parts_set;
+    /// Index of source parts covered by a patch part. Non-empty only for patch parts.
+    std::optional<PatchPartIndex> patch_part_index;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -928,7 +940,7 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
-    void loadSourcePartsSet();
+    void loadPatchPartIndex();
 
     ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
     ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
