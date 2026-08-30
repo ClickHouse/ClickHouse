@@ -1,15 +1,10 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
-#include <algorithm>
 #include <filesystem>
-#include <iterator>
-#include <tuple>
 
 #include <Common/FailPoint.h>
 #include <Poco/URI.h>
@@ -111,31 +106,15 @@ void TableMetadata::setLocation(const std::string & location_)
     // pos+3 to account for ://
     storage_type_str = location_.substr(0, pos+3);
     auto pos_to_bucket = pos + std::strlen("://");
-    auto path_separator_offset = location_.substr(pos_to_bucket).find('/');
+    auto pos_to_path = location_.substr(pos_to_bucket).find('/');
 
-    size_t pos_to_path = 0;
-    if (path_separator_offset == std::string::npos)
-    {
-        /// Some catalogs (notably AWS S3 Tables) return the table's data location as just
-        /// `<scheme>://<bucket>` because the table data lives at the root of a dedicated bucket.
-        /// Treat the whole input as `location_without_path` and leave `path` empty.
-        /// This bucket-only form is only expected for S3, so reject any other scheme
-        /// instead of silently accepting a malformed location.
-        if (parseStorageTypeFromString(storage_type_str) != StorageType::S3)
-            throw DB::Exception(
-                DB::ErrorCodes::NOT_IMPLEMENTED,
-                "Location without a path is only supported for the s3 scheme: {}", location_);
+    if (pos_to_path == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
 
-        pos_to_path = location_.size();
-        location_without_path = location_;
-        path.clear();
-    }
-    else
-    {
-        pos_to_path = pos_to_bucket + path_separator_offset;
-        location_without_path = location_.substr(0, pos_to_path);
-        path = location_.substr(pos_to_path + 1);
-    }
+    pos_to_path = pos_to_bucket + pos_to_path;
+
+    location_without_path = location_.substr(0, pos_to_path);
+    path = location_.substr(pos_to_path + 1);
 
     /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
     /// The bucket (container) is the part before '@', not the whole string before '/'
@@ -169,10 +148,7 @@ std::string TableMetadata::getLocation() const
     if (!endpoint.empty())
         return constructLocation(endpoint, DB::S3UriStyle::AUTO);
 
-    if (path.empty())
-        return location_without_path;
-
-    return (std::filesystem::path(location_without_path) / path).string();
+    return std::filesystem::path(location_without_path) / path;
 }
 
 std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
@@ -197,7 +173,7 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        if (!force_add_bucket && location.contains("/" + bucket))
+        if (!force_add_bucket && location.find("/" + bucket) != std::string::npos)
             return std::filesystem::path(location) / path / "";
         return std::filesystem::path(location) / bucket / path / "";
     }
@@ -243,7 +219,6 @@ void TableMetadata::setSchema(const DB::NamesAndTypesList & schema_)
     if (!with_schema)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
 
-    DB::validateLakeSchemaColumnNames(schema_, "data lake catalog");
     schema = schema_;
 }
 
@@ -303,11 +278,6 @@ bool TableMetadata::hasStorageCredentials() const
     return storage_credentials != nullptr;
 }
 
-bool TableMetadata::hasDataLakeSpecificProperties() const
-{
-    return data_lake_specific_metadata.has_value();
-}
-
 std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metadata_file_location) const
 {
     std::string metadata_location = iceberg_metadata_file_location;
@@ -346,55 +316,6 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
-CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
-{
-    switch (filter.kind)
-    {
-        case TableNameFilter::Kind::All:
-            return getTables();
-
-        case TableNameFilter::Kind::Equals:
-        {
-            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
-            const auto pos = filter.value.rfind('.');
-            if (pos == std::string::npos)
-                return getTables();
-            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
-        }
-
-        case TableNameFilter::Kind::Like:
-        {
-            /// Every table name matching `pattern` must start with the pattern's
-            /// fixed prefix — the literal part before the first LIKE wildcard
-            /// (`%`/`_`) — extracted here the same way `KeyCondition` prunes ranges.
-            /// A namespace `N` can hold such a table (full name `N + "." + <...>`)
-            /// only if `N + "."` and the fixed prefix are consistent, i.e. one is a
-            /// prefix of the other. This never rejects a namespace `LIKE` could match
-            /// (the fixed prefix is a *necessary* prefix of any match), so no
-            /// `system.tables` row is dropped; a looser match only costs an extra
-            /// table listing.
-            const String fixed_prefix = extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false).prefix;
-
-            /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
-            /// Calling getTables() is better as its parallel.
-            if (fixed_prefix.empty())
-                return getTables();
-
-            CatalogTables result;
-            for (const auto & namespace_name : getNamespaces())
-            {
-                const std::string namespace_prefix = namespace_name + ".";
-                if (!startsWith(namespace_prefix, fixed_prefix) && !startsWith(fixed_prefix, namespace_prefix))
-                    continue;
-                auto tables = listTablesInNamespaceDirect(namespace_name);
-                std::move(tables.begin(), tables.end(), std::back_inserter(result));
-            }
-            return result;
-        }
-    }
-    return {};
-}
-
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
@@ -420,7 +341,7 @@ bool ICatalog::updateSchema(
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
 }
 
-void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const
+void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
 }

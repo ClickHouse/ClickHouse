@@ -201,8 +201,6 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;
-            else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
-                field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
             else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
                 field = decodePartitionDecimalByType(field.safeGet<String>(), *type);
         }
