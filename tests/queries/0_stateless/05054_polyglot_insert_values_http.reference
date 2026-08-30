@@ -1,0 +1,41 @@
+--- HTTP polyglot inline INSERT with an empty body (expect: 7 1) ---
+7	1
+NOT_IMPLEMENTED
+--- no insert when an HTTP body accompanies a polyglot INSERT (expect: 7 1) ---
+7	1
+NOT_IMPLEMENTED
+--- no insert when an HTTP body accompanies a CTE-wrapped polyglot INSERT (expect: 7 1) ---
+7	1
+--- the request body continues a URL query that only mentions the identifier insert ---
+{"insert":2}
+--- the request body continues a URL query aliasing both insert and into ---
+{"insert":1,"into":2}
+--- implicit_select is honoured by the client-side classifier (expect: 2) ---
+2
+--- polyglot INSERT SELECT FROM input() streams stdin (expect: 12 2) ---
+12	2
+NO_DATA_TO_INSERT
+--- no insert from an input() query without data (expect: 12 2) ---
+12	2
+SYNTAX_ERROR
+--- no insert from a polyglot EXPLAIN INSERT (expect: 12 2) ---
+12	2
+--- a polyglot query may disable the polyglot dialect in its own SETTINGS clause (expect: 42) ---
+42
+--- inline data survives a dialect switch in the INSERT's own SETTINGS clause (expect: 25 3) ---
+25	3
+--- parse limits are pinned for the server-side reparse (expect: 7, 42) ---
+7
+42
+--- deferred HTTP 100 Continue without a body still inserts (expect: 39 4) ---
+39	4
+--- deferred chunked HTTP 100 Continue without a body still inserts (expect: 54 5) ---
+54	5
+NOT_IMPLEMENTED
+--- deferred HTTP 100 Continue with a body is still rejected (expect: 54 5) ---
+54	5
+--- polyglot INSERT without inline data streams stdin (expect: 71 6) ---
+71	6
+NOT_IMPLEMENTED
+--- inline data plus stdin is still rejected (expect: 71 6) ---
+71	6
