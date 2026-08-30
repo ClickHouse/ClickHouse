@@ -18,6 +18,11 @@ SETTINGS log_comment = '05047_finished_stages_drain';
 
 SYSTEM FLUSH LOGS query_log;
 
+-- Read the log through the ordinary plan. A distributed read serializes the part names chosen by the
+-- coordinator and resolves them again on the worker, so a background merge of `system.query_log`
+-- landing in between makes a selected part unavailable and the read fails with `NO_SUCH_DATA_PART`.
+SET make_distributed_plan = 0;
+
 -- The unfixed driver needs at least 100 ms x 40 stages > 4 seconds; the healthy run takes well
 -- under a second even on slow builds, so the threshold cannot flap in either direction.
 SELECT max(query_duration_ms) < 3000 FROM system.query_log
