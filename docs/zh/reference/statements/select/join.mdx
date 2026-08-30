@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## 对不同表中的列使用带不等条件的 JOIN
 </div>
 
-ClickHouse 当前支持在 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` 中，除等值条件外，还可使用不等条件。不等条件仅支持 `hash` 和 `grace_hash` JOIN 算法。启用 `join_use_nulls` 时，不支持不等条件。
+ClickHouse 当前支持在 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` 中，除相等条件外，还可使用不等条件。不等条件仅支持 `hash`、`parallel_hash` 和 `grace_hash` JOIN 算法。JOIN 过程中求值的非等值条件不能包含 `arrayJoin`，因为此类条件必须保持行数不变；仅适用于一侧的条件，以及基于 `arrayJoin` 的等值键会在 JOIN 前被提取，因此不受影响；非析取的 `ALL INNER JOIN` 条件同样不受影响，因为此类条件会在 JOIN 后应用。如果展开操作仅依赖于一侧，请在 JOIN 前将其移至子查询中的 `ARRAY JOIN`；如果条件中的 `arrayJoin` 参数读取两侧的列，则必须重构该条件。
 
 **示例**
 
