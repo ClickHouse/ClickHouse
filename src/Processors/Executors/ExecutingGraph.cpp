@@ -43,6 +43,15 @@ String describeProcessor(const IProcessor * processor)
     return fmt::format("{} at {}", processor->getUniqID(), static_cast<const void *>(processor));
 }
 
+/// Stands in for the removed peer of a retired edge. Portless and always `Finished`, so it has
+/// nothing to connect to and nothing to do.
+class RetiredEdgeTarget final : public IProcessor
+{
+public:
+    String getName() const override { return "RetiredEdgeTarget"; }
+    Status prepare() override { return Status::Finished; }
+};
+
 }
 
 ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_)
@@ -71,7 +80,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     return new_node;
 }
 
-std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> ExecutingGraph::removeNode(ProcessorPtr processor)
+ExecutingGraph::Node * ExecutingGraph::findNodeToRemove(const ProcessorPtr & processor)
 {
     auto node_it = processors_map.find(processor.get());
     if (node_it == processors_map.end())
@@ -84,15 +93,14 @@ std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> Execut
     if (node->last_processor_status.value() != IProcessor::Status::Finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}. Graph: {}", processor->getName(), dump(false));
 
-    std::unordered_set<const void *> removed_edges;
-    removed_edges.insert_range(node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
-    removed_edges.insert_range(node->back_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
+    return node;
+}
 
-    processors_map.erase(node_it);
+void ExecutingGraph::eraseNode(Node * node)
+{
+    processors_map.erase(node->processor());
     processors->erase(node->processor_iter);
     nodes.erase(node->self_iter);
-
-    return {node, std::move(removed_edges)};
 }
 
 ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
@@ -152,41 +160,45 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
     return result;
 }
 
-std::unordered_set<const void *> ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes)
+void ExecutingGraph::retireAffectedEdges(const std::unordered_set<const Node *> & removed_nodes)
 {
-    std::unordered_set<const void *> removed_edge_ids;
-
-    for (auto it = node.back_edges.begin(); it != node.back_edges.end();)
+    /// Allocate before anything moves, so that a throw here leaves the graph as it was.
+    if (!retired_edge_target)
     {
-        if (removed_nodes.contains(it->to))
+        retired_edge_target_processors.push_back(std::make_shared<RetiredEdgeTarget>());
+        auto target = std::make_unique<Node>(std::prev(retired_edge_target_processors.end()), 0);
+        target->status = ExecStatus::Finished;
+        target->last_processor_status = IProcessor::Status::Finished;
+        retired_edge_target = std::move(target);
+    }
+
+    auto retire = [&](Edges & edges, bool retire_every_edge)
+    {
+        for (auto it = edges.begin(); it != edges.end();)
         {
-            removed_edge_ids.insert(it->update_info.id);
-            it = node.back_edges.erase(it);
+            auto next = std::next(it);
+
+            if (retire_every_edge || removed_nodes.contains(it->to))
+            {
+                it->to = retired_edge_target.get();
+                /// The list belongs to the node owning the edge, which may itself be going away,
+                /// and a retired edge is never visited again to drain what was pushed to it.
+                it->update_info.update_list = nullptr;
+                retired_edges.splice(retired_edges.end(), edges, it);
+            }
+
+            it = next;
         }
-        else
-            it = std::next(it);
-    }
+    };
 
-    for (auto it = node.direct_edges.begin(); it != node.direct_edges.end();)
+    for (auto & node : nodes)
     {
-        if (removed_nodes.contains(it->to))
-        {
-            removed_edge_ids.insert(it->update_info.id);
-            it = node.direct_edges.erase(it);
-        }
-        else
-            it = std::next(it);
+        /// A removed node's own edges are queued elsewhere just the same, and the lists holding
+        /// them die with the node, so all of them are retired and not just the ones pointing back.
+        const bool owner_is_removed = removed_nodes.contains(&node);
+        retire(node.back_edges, owner_is_removed);
+        retire(node.direct_edges, owner_is_removed);
     }
-
-    /// We need to remove cached updates for removed edges. This updates now contain stale pointers.
-    if (!removed_edge_ids.empty())
-    {
-        auto is_stale = [&](void * id) { return removed_edge_ids.contains(id); };
-        std::erase_if(node.post_updated_input_ports, is_stale);
-        std::erase_if(node.post_updated_output_ports, is_stale);
-    }
-
-    return removed_edge_ids;
 }
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container::devector<Node *> & stack, Node & cur_node)
@@ -224,11 +236,27 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
         /// Record removed processors in pending removal queue
         if (!update.to_remove.empty())
         {
+            /// A processor may be pending removal at most once across the whole graph, whether it
+            /// repeats within this list or was queued by an earlier call: `not_finished` counts
+            /// every entry, while `removed_processors` and the graph hold one of each, so a second
+            /// entry leaves a counter that can never reach zero.
+            std::unordered_set<const IProcessor *> distinct_removed;
+            distinct_removed.reserve(update.to_remove.size());
+
             size_t not_finished = 0;
             for (const auto & removed_proc : update.to_remove)
+            {
+                if (removed_processors.contains(removed_proc) || !distinct_removed.insert(removed_proc.get()).second)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Processor {} is listed more than once for removal. Graph: {}",
+                        removed_proc->getName(),
+                        dump(false));
+
                 if (const auto * node = processors_map.at(removed_proc.get()))
                     if (node->last_processor_status != IProcessor::Status::Finished)
                         ++not_finished;
+            }
 
             auto group = std::make_shared<PendingRemovalGroup>();
             group->not_finished = not_finished;
@@ -286,22 +314,34 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemo
 {
     RemoveGroupResult result;
 
+    /// Look every node up before anything changes, so that a malformed removal throws with the
+    /// graph untouched.
+    std::vector<Node *> nodes_to_erase;
+    nodes_to_erase.reserve(group.processors.size());
+
     {
         std::lock_guard guard(processors_mutex);
 
         for (const auto & removed_proc : group.processors)
         {
-            auto [removed_node, removed_edges] = removeNode(removed_proc);
+            auto * removed_node = findNodeToRemove(removed_proc);
             result.removed_nodes.insert(removed_node);
-            result.removed_edges.insert_range(removed_edges);
+            nodes_to_erase.push_back(removed_node);
         }
+    }
+
+    /// Must precede the erase below: it is what keeps the edges of these nodes alive.
+    retireAffectedEdges(result.removed_nodes);
+
+    {
+        std::lock_guard guard(processors_mutex);
+
+        for (auto * removed_node : nodes_to_erase)
+            eraseNode(removed_node);
     }
 
     for (const auto & removed_proc : group.processors)
         removed_processors.erase(removed_proc);
-
-    for (auto & node : nodes)
-        result.removed_edges.insert_range(removeAffectedEdges(node, result.removed_nodes));
 
     /// Removed processors can hold the last strong reference to data.
     /// It is too expensive to destroy them under the nodes mutex.
@@ -319,7 +359,6 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removeReadyGroups(Processors &
     {
         auto group_result = removePendingGroup(*group, delayed_destruction);
         result.removed_nodes.insert_range(group_result.removed_nodes);
-        result.removed_edges.insert_range(group_result.removed_edges);
     }
 
     return result;
@@ -600,12 +639,6 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                 read_lock.unlock();
 
                 RemoveGroupResult remove_result = removeReadyGroups(delayed_destruction);
-
-                if (!remove_result.removed_edges.empty())
-                {
-                    auto removed_range = std::ranges::remove_if(updated_edges, [&](const void * edge) { return remove_result.removed_edges.contains(edge); });
-                    updated_edges.erase(removed_range.begin(), removed_range.end());
-                }
 
                 if (!remove_result.removed_nodes.empty())
                 {

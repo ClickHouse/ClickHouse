@@ -166,7 +166,13 @@ private:
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
-    std::pair<const Node *, std::unordered_set<const void *>> removeNode(ProcessorPtr processor);
+
+    /// Look up the node of a processor that is about to be removed, and check it may be removed.
+    /// Changes nothing, so a throw here leaves the graph as it was.
+    Node * findNodeToRemove(const ProcessorPtr & processor);
+
+    /// Destroy a node found by `findNodeToRemove`, together with the edges it owns.
+    void eraseNode(Node * node);
 
     /// Add single edge to edges list. Check processor is known.
     Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
@@ -179,7 +185,6 @@ private:
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-    std::unordered_set<const void *> removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
@@ -199,10 +204,24 @@ private:
     struct RemoveGroupResult
     {
         std::unordered_set<const Node *> removed_nodes;
-        std::unordered_set<const void *> removed_edges;
     };
     RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
     RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
+
+    /// An edge of a removed processor is moved here instead of being destroyed, and lives until the
+    /// graph does: a `updateNode` frame may hold it queued across a gap it makes in `nodes_mutex`,
+    /// and that pointer has to stay valid.
+    Edges retired_edges;
+
+    /// Permanently `Finished` node every retired edge is pointed at. `updateNode` skips a
+    /// `Finished` node without reaching its processor, so a retired edge cannot reach the removed
+    /// processor. It is in neither `nodes` nor the pipeline's processors, so nothing prepares it and
+    /// nothing reports it. Its processor needs a list of its own because `Node` holds an iterator.
+    Processors retired_edge_target_processors;
+    std::unique_ptr<Node> retired_edge_target;
+
+    /// Callers must hold `nodes_mutex` exclusively.
+    void retireAffectedEdges(const std::unordered_set<const Node *> & removed_nodes);
     std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
     void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
 
