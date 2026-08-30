@@ -150,3 +150,38 @@ WHERE database=currentDatabase() AND table='single_donor_two_json_04839' AND act
 ORDER BY column;
 
 DROP TABLE single_donor_two_json_04839;
+
+-- A conditional picks one branch per row, so slot i of the result is fed by slot i of every branch.
+-- Without slot-wise handling the flat candidate list reaches the self-only fallback, which drops
+-- every donor once the output holds more than one JSON node, and both rules are lost.
+DROP TABLE IF EXISTS if_two_json_04839;
+CREATE TABLE if_two_json_04839
+(
+    id UInt64,
+    j1 JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_a'),
+    j2 JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_b'),
+    k1 JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_a'),
+    k2 JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_b')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO if_two_json_04839 VALUES (1, '{"tag_a1":1}', '{"tag_b1":2}', '{"tag_a2":3}', '{"tag_b2":4}');
+
+ALTER TABLE if_two_json_04839 MODIFY COLUMN j1 JSON(max_dynamic_paths=5);
+ALTER TABLE if_two_json_04839 MODIFY COLUMN j2 JSON(max_dynamic_paths=5);
+ALTER TABLE if_two_json_04839 MODIFY COLUMN k1 JSON(max_dynamic_paths=5);
+ALTER TABLE if_two_json_04839 MODIFY COLUMN k2 JSON(max_dynamic_paths=5);
+
+ALTER TABLE if_two_json_04839 ADD PROJECTION p (SELECT id, if(id > 0, tuple(j1, j2), tuple(k1, k2)) WHERE id > 0 ORDER BY id);
+ALTER TABLE if_two_json_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+-- Both branches carry the same rule in each slot, so the slot-wise union is unambiguous.
+SELECT
+    'if(tuple,tuple) type',
+    type
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='if_two_json_04839' AND column LIKE 'if(%' AND active;
+
+DROP TABLE if_two_json_04839;
