@@ -9,6 +9,8 @@
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/StringUtils.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -421,35 +423,49 @@ HTTPRequestHandlerFactoryPtr createKeeperPrometheusHandlerFactory(
 }
 
 
-bool httpHandlersCanExposePrometheusMetrics(const Poco::Util::AbstractConfiguration & config, const String & http_handlers_key)
+namespace
 {
-    /// The default `/metrics` route is registered from the `prometheus` section, and only when that
-    /// section is not served on a port of its own and does not describe its own handlers
+    /// Whether the default `/metrics` route is registered from the `prometheus` section: only when that
+    /// section exists, is not served on a port of its own and does not describe its own handlers
     /// (mirrors `createPrometheusHandlerFactoryForHTTPRuleDefaults`).
-    const bool defaults_expose_prometheus
-        = config.has("prometheus") && !config.getInt("prometheus.port", 0) && !config.has("prometheus.handlers");
-
-    /// Without a section of its own, the listener serves the default handler set.
-    if (!config.has(http_handlers_key))
-        return defaults_expose_prometheus;
-
-    Strings keys;
-    config.keys(http_handlers_key, keys);
-
-    bool has_defaults = false;
-    for (const String & key : keys)
+    bool defaultRoutesExposePrometheusMetrics(const Poco::Util::AbstractConfiguration & config)
     {
-        if (key == "defaults")
-            has_defaults = true;
-        else if (config.getString(http_handlers_key + "." + key + ".handler.type", "").starts_with("prometheus"))
-            return true;
+        return config.has("prometheus") && !config.getInt("prometheus.port", 0) && !config.has("prometheus.handlers");
     }
 
-    return has_defaults && defaults_expose_prometheus;
+    /// Whether an HTTP listener serving the rules of `http_handlers_key` also serves the default handler
+    /// set. Without a section of its own, the listener serves nothing but the default handlers.
+    bool httpHandlersServeDefaultRoutes(const Poco::Util::AbstractConfiguration & config, const String & http_handlers_key)
+    {
+        if (!config.has(http_handlers_key))
+            return true;
+
+        Strings keys;
+        config.keys(http_handlers_key, keys);
+        return std::find(keys.begin(), keys.end(), "defaults") != keys.end();
+    }
 }
 
 
-void validatePrometheusConstantLabels(const Poco::Util::AbstractConfiguration & config, const Strings & http_handlers_keys)
+bool httpHandlersCanExposePrometheusMetrics(const Poco::Util::AbstractConfiguration & config, const String & http_handlers_key)
+{
+    if (config.has(http_handlers_key))
+    {
+        Strings keys;
+        config.keys(http_handlers_key, keys);
+        for (const String & key : keys)
+        {
+            if (key != "defaults" && config.getString(http_handlers_key + "." + key + ".handler.type", "").starts_with("prometheus"))
+                return true;
+        }
+    }
+
+    return httpHandlersServeDefaultRoutes(config, http_handlers_key) && defaultRoutesExposePrometheusMetrics(config);
+}
+
+
+void validatePrometheusConstantLabels(
+    const Poco::Util::AbstractConfiguration & config, const Strings & http_handlers_keys, bool has_prometheus_listener)
 {
     const auto async_metrics_mode = getAsynchronousMetricsKeyValuesMode(config);
 
@@ -459,9 +475,20 @@ void validatePrometheusConstantLabels(const Poco::Util::AbstractConfiguration & 
     /// The `prometheus` section feeds the standalone `prometheus.port` listener, a composable
     /// `type = prometheus` endpoint and the default `/metrics` route of an HTTP port alike, either
     /// through its `handlers` subsection or, without one, as a single metrics endpoint.
+    /// It is only read when a listener of this configuration actually serves it: a section that no
+    /// listener serves is not read at a fresh start either, so validating it would reject a reload of a
+    /// configuration the server would happily start with.
     /// `keeper_metrics_only` selects the Keeper writer, whose surface - and therefore whose reserved
     /// label names - is smaller.
-    if (config.has("prometheus"))
+    const bool prometheus_section_is_served = config.has("prometheus")
+        && (has_prometheus_listener
+            || (defaultRoutesExposePrometheusMetrics(config)
+                && std::any_of(
+                    http_handlers_keys.begin(),
+                    http_handlers_keys.end(),
+                    [&](const String & handlers_key) { return httpHandlersServeDefaultRoutes(config, handlers_key); })));
+
+    if (prometheus_section_is_served)
     {
         const PrometheusMetricsWriter & writer = config.getBool("prometheus.keeper_metrics_only", false)
             ? static_cast<const PrometheusMetricsWriter &>(keeper_writer)

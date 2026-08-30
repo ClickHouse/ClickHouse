@@ -132,11 +132,16 @@ bool httpHandlersCanExposePrometheusMetrics(
 /// `INVALID_CONFIG_PARAMETER` on a collision, so that such a configuration can be rejected before it is
 /// installed - the same check runs again for each endpoint when its handler factory is built.
 /// @param http_handlers_keys - the `<http_handlers>`-style sections HTTP listeners of `config` serve, so
-///        that a section no listener serves is not checked. A `prometheus` section is checked whenever
-///        it is present: it would be rejected as soon as any listener served it.
+///        that a section no listener serves is not checked.
+/// @param has_prometheus_listener - whether a listener of `config` serves the `prometheus` section on a
+///        port of its own (the standalone `prometheus.port` one, or a composable `type = prometheus`
+///        endpoint). Without one, that section is only read when it registers the default `/metrics`
+///        route of an HTTP listener; an inert section that nothing serves is not read at a fresh start
+///        either, and is therefore not checked here.
 void validatePrometheusConstantLabels(
     const Poco::Util::AbstractConfiguration & config,
-    const Strings & http_handlers_keys);
+    const Strings & http_handlers_keys,
+    bool has_prometheus_listener);
 
 /// Makes a handler factory to handle prometheus protocols.
 /// Supports the "metrics" protocol only.

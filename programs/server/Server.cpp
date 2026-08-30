@@ -1255,9 +1255,10 @@ void initializeAzureSDKLogger(
 
 namespace
 {
-/// Defined next to `resolveHTTPHandlersKey` below, which it walks the `impl` chain with; declared here
-/// because the configuration reload callback of `Server::main` validates a configuration with it.
+/// Defined next to `resolveHTTPHandlersKey` below, which they walk the `impl` chain with; declared here
+/// because the configuration reload callback of `Server::main` validates a configuration with them.
 Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config);
+bool hasPrometheusListener(const Poco::Util::AbstractConfiguration & config);
 }
 
 #if defined(SANITIZER)
@@ -2755,7 +2756,8 @@ try
             /// the form is read from the live configuration on every update of the asynchronous metrics,
             /// so validating afterwards would leave a rejected reload publishing the new form while the
             /// endpoints keep serving with the labels of the old one.
-            validatePrometheusConstantLabels(*loaded_config, servedHTTPHandlersKeys(*loaded_config));
+            validatePrometheusConstantLabels(
+                *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
@@ -4156,6 +4158,45 @@ Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config)
     }
 
     return {keys.begin(), keys.end()};
+}
+
+/// Whether a listener of this configuration serves the `prometheus` section on a port of its own: the
+/// standalone `prometheus.port` listener, or a composable `type = prometheus` endpoint (whose type is
+/// found by walking the `impl` chain, as in `buildProtocolStackFromConfig`).
+bool hasPrometheusListener(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.getInt("prometheus.port", 0))
+        return true;
+
+    if (!config.has("protocols"))
+        return false;
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+
+    for (const auto & protocol : protocols)
+    {
+        std::string conf_name = "protocols." + protocol;
+        std::string prefix = conf_name + ".";
+        std::unordered_set<std::string> pset {conf_name};
+        while (true)
+        {
+            if (config.getString(prefix + "type", "") == "prometheus")
+                return true;
+
+            if (!config.has(prefix + "impl"))
+                break;
+
+            conf_name = "protocols." + config.getString(prefix + "impl");
+            prefix = conf_name + ".";
+
+            /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+            if (!pset.insert(conf_name).second)
+                break;
+        }
+    }
+
+    return false;
 }
 
 /// Whether a non-keeper `prometheus` endpoint (serving the global `prometheus` section)
