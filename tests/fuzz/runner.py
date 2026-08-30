@@ -16,6 +16,10 @@ import signal
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
+# Corpus minimization has its own budget: it is a fixed amount of work
+# proportional to the corpus, and letting it inherit the fuzzing timeout would
+# double the length of the job for no benefit.
+MINIMIZATION_TIMEOUT = int(os.getenv("MINIMIZATION_TIMEOUT", "0"))
 OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
 DEFAULT_INPUT_TIMEOUT = 1200 # libFuzzer default value for '-timeout' option
@@ -89,7 +93,7 @@ class Stopwatch:
         self.start_time_str_value = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def run_fuzzer(fuzzer: str, timeout: int):
+def run_fuzzer(fuzzer: str, timeout: int, minimization_timeout: int):
 
     seed_corpus_dir = f"{fuzzer}.in"
     path = Path(seed_corpus_dir)
@@ -209,10 +213,10 @@ def run_fuzzer(fuzzer: str, timeout: int):
         logging.info(
             "Running corpus minimization for fuzzer %s for %d seconds...",
             fuzzer,
-            timeout,
+            minimization_timeout,
         )
 
-        merge_libfuzzer_options = f" {libfuzzer_merge_options} -artifact_prefix={artifact_prefix}mini- -merge=1 -max_total_time={timeout} -merge_control_file={merge_control_file} {mini_corpus_dir} {active_corpus_dir}"
+        merge_libfuzzer_options = f" {libfuzzer_merge_options} -artifact_prefix={artifact_prefix}mini- -merge=1 -max_total_time={minimization_timeout} -merge_control_file={merge_control_file} {mini_corpus_dir} {active_corpus_dir}"
         cmd_line = f"{DEBUGGER} ./{fuzzer}"
 
         env_fuzzer = {}
@@ -248,7 +252,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     check=True,
                     shell=False,
                     errors="replace",
-                    timeout=timeout,
+                    timeout=minimization_timeout,
                     kill_timeout= input_timeout * 2 if input_timeout > 0 else DEFAULT_INPUT_TIMEOUT,
                     env= os.environ | env_common | env_fuzzer,
                 )
@@ -432,13 +436,18 @@ def main():
     subprocess.check_call("ls -al", shell=True)
 
     timeout = 30 if TIMEOUT == 0 else TIMEOUT
+    minimization_timeout = timeout if MINIMIZATION_TIMEOUT == 0 else MINIMIZATION_TIMEOUT
 
     current = Path(".")
     with ThreadPoolExecutor(max_workers=RUNNERS) as executor:
         futures = {}
         for fuzzer in current.iterdir():
             if fuzzer.is_file() and os.access(fuzzer, os.X_OK):
-                futures[executor.submit(run_fuzzer, fuzzer.name, timeout)] = fuzzer.name
+                futures[
+                    executor.submit(
+                        run_fuzzer, fuzzer.name, timeout, minimization_timeout
+                    )
+                ] = fuzzer.name
 
         for future in as_completed(futures):
             fuzzer = futures[future]

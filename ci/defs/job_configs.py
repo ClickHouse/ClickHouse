@@ -1830,6 +1830,9 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
+        # Up to an hour of corpus minimization plus five hours of fuzzing per
+        # target, all targets in parallel, plus artifact download and upload.
+        timeout=7 * 3600,
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
