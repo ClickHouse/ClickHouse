@@ -1,5 +1,6 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-replicated-database
 -- ^ test asserts exact part levels, which randomized merge tree settings can perturb
+-- Tag no-replicated-database: Unsupported type of CREATE TABLE ... CLONE AS ... query
 
 -- Adopting a part from a plain MergeTree into a collapsing engine (Replacing/Summing/
 -- Aggregating) used to keep the source part's merge level. A lone level>0 part is treated

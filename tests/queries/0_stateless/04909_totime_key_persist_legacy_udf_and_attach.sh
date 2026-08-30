@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: Unsupported type of CREATE TABLE ... CLONE AS ... query, ON CLUSTER is not allowed
 # The explicit legacy spelling must be persisted for every definition a user supplies, including one
 # whose key expression only becomes visible after SQL UDF substitution and one supplied by a
 # full-definition ATTACH. Definitions replayed from stored metadata must be left alone.

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: ON CLUSTER is not allowed
 # `CREATE TABLE ... AS` ON CLUSTER materializes the source definition on the worker, so the initiator
 # cannot rewrite the legacy `toTime` spelling for it. Only `distributed_ddl_entry_format_version = 1`
 # drops the query settings, so only that version has to be rejected: version 2 carries

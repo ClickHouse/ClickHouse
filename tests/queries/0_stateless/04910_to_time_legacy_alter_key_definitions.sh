@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: Unsupported type of CREATE TABLE ... CLONE AS ... query
 # The UDF name includes the test database because SQL UDFs are server-global and this test runs
 # concurrently with itself in flaky-check mode.
 
