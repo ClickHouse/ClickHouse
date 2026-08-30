@@ -4442,6 +4442,31 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
 }
 
 
+namespace
+{
+
+/// Reservation for the destination after the first (largest) source was merged: the overlap
+/// with that source estimates the shared key universe (the Lincoln-Petersen capture-recapture
+/// estimator), and the keys the remaining sources add decay exponentially with their total
+/// size. Only half the estimate is reserved: the estimate is unreliable when the per-thread
+/// key sets are not exchangeable (e.g. keys correlated with the scan ranges), and the grower
+/// rounds up to a power of two, so a whole overestimate can double the final buffer.
+size_t reservationForMerge(size_t dst_size_before, size_t dst_size_after, size_t first_src_size, size_t remaining_src_sizes)
+{
+    const size_t new_keys = dst_size_after - dst_size_before;
+    const size_t overlap = first_src_size - new_keys;
+    if (overlap == 0)
+        return (dst_size_after + remaining_src_sizes) / 2;
+    const double dst_after = static_cast<double>(dst_size_after);
+    const double universe = static_cast<double>(dst_size_before) * static_cast<double>(first_src_size) / static_cast<double>(overlap);
+    if (universe <= dst_after)
+        return dst_size_after / 2;
+    const auto estimate = static_cast<size_t>(universe - (universe - dst_after) * std::exp(-static_cast<double>(remaining_src_sizes) / universe));
+    return estimate / 2;
+}
+
+}
+
 template <typename Method>
 void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const
@@ -4454,6 +4479,20 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+
+    auto & dst = getDataVariant<Method>(*res).data;
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); };
+    size_t first_src_size = 0;
+    size_t remaining_src_sizes = 0;
+    size_t dst_size_before = 0;
+    if constexpr (can_reserve)
+    {
+        if (non_empty_data.size() > 1)
+            first_src_size = getDataVariant<Method>(*non_empty_data[1]).data.size();
+        for (size_t result_num = 2, size = non_empty_data.size(); result_num < size; ++result_num)
+            remaining_src_sizes += getDataVariant<Method>(*non_empty_data[result_num]).data.size();
+        dst_size_before = dst.size();
+    }
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -4476,6 +4515,12 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
             {
                 mergeDataImpl<Method>(
                     getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled);
+            }
+
+            if constexpr (can_reserve)
+            {
+                if (result_num == 1 && remaining_src_sizes)
+                    dst.reserve(reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes));
             }
         }
         else if (res->without_key)
@@ -4543,6 +4588,24 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     const bool prefetch = params.enable_prefetch
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
+    auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
+    const size_t first_src_size = data.size() > 1 ? getDataVariant<Method>(*data[1]).data.impls[bucket].size() : 0;
+    size_t remaining_src_sizes = 0;
+    for (size_t result_num = 2, size = data.size(); result_num < size; ++result_num)
+        remaining_src_sizes += getDataVariant<Method>(*data[result_num]).data.impls[bucket].size();
+    const size_t dst_size_before = dst.size();
+    const size_t input_keys = dst_size_before + first_src_size + remaining_src_sizes;
+
+    /// Reserve up front from the completed buckets' ratio (see `merged_buckets_input_keys`);
+    /// the first buckets, merged while nothing has completed yet, use the in-loop estimate.
+    /// Loading the produced total first makes a torn read only lower the observed ratio, and
+    /// a merge never produces more keys than it consumes, so the reservation is also capped
+    /// by this bucket's input.
+    const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_relaxed));
+    const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
+    if (seen_input_keys)
+        dst.reserve(std::min(input_keys, static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         if (is_cancelled.load(std::memory_order_seq_cst))
@@ -4566,7 +4629,13 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 prefetch,
                 is_cancelled);
         }
+
+        if (!seen_input_keys && result_num == 1 && remaining_src_sizes)
+            dst.reserve(reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes));
     }
+
+    res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
+    res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_relaxed);
 }
 
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
