@@ -77,6 +77,10 @@ public:
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
     const DataTypePtr & getFilterColumnTargetType() const { return filter_column_target_type; }
 
+    /// False while the filter still expects merges from parallel build streams; `find` on a
+    /// half-built filter throws.
+    bool isReady() const { return inserts_are_finished.load(); }
+
 protected:
 
     IRuntimeFilter(

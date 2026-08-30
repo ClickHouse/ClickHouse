@@ -727,8 +727,14 @@ public:
         auto it = filters_by_name.find(name);
         if (it == filters_by_name.end())
             return nullptr;
-        else
-            return it->second;
+        /// Parallel build streams register one by one, and until the last one arrives the filter
+        /// is half-built. It must stay invisible: a reader that races the registrations (a scan's
+        /// PREWHERE applying one filter while another one is being built in the same task) would
+        /// otherwise look up a filter whose `find` throws. Not ready means not there yet - the
+        /// reader passes all rows, exactly as before the first registration.
+        if (!it->second->isReady())
+            return nullptr;
+        return it->second;
     }
 
     void logStats() const override
