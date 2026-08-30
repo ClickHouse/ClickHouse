@@ -97,10 +97,12 @@ void generateManifestFile(
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
     /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
     Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
-    /// Optional per-data-file overrides aligned index-for-index with `data_file_names`; when
-    /// non-null they take precedence over the shared `partition_values` / `data_file_statistics`
-    /// above. Unlike `per_file_statistics`, these are recomputed rather than carried over verbatim.
+    /// Optional per-data-file partition tuples aligned index-for-index with `data_file_names`; when
+    /// non-null they take precedence over the shared `partition_values` above. Unlike
+    /// `per_file_statistics`, these are recomputed rather than carried over verbatim.
     const std::vector<std::vector<Field>> * per_file_partition_values = nullptr,
+    /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
+    /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
     const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
 
 /// Per manifest-list entry file/row counts and lineage for rewritten manifests.

@@ -452,6 +452,22 @@ void generateManifestFile(
     const std::vector<std::vector<Field>> * per_file_partition_values,
     const std::vector<const DataFileStatistics *> * per_file_fresh_statistics)
 {
+    /// A throw, not a `chassert`: mis-pairing statistics or partition tuples with data files publishes
+    /// metadata that is wrong in the unsafe direction for external readers, and `chassert` compiles out
+    /// of release builds.
+    if (per_file_fresh_statistics && per_file_fresh_statistics->size() != data_file_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "per_file_fresh_statistics size does not match number of data files: {} vs {}",
+            per_file_fresh_statistics->size(),
+            data_file_names.size());
+    if (per_file_partition_values && per_file_partition_values->size() != data_file_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "per_file_partition_values size does not match number of data files: {} vs {}",
+            per_file_partition_values->size(),
+            data_file_names.size());
+
     chassert(
         data_file_formats.empty() || data_file_formats.size() == data_file_names.size(),
         "data_file_formats size does not match number of data files");
@@ -464,10 +480,6 @@ void generateManifestFile(
     chassert(
         per_file_entry_lineage.empty() || per_file_entry_lineage.size() == data_file_names.size(),
         "per_file_entry_lineage size does not match number of data files");
-    if (per_file_partition_values && per_file_partition_values->size() != data_file_names.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "per_file_partition_values size does not match data files");
-    if (per_file_fresh_statistics && per_file_fresh_statistics->size() != data_file_names.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "per_file_fresh_statistics size does not match data files");
 
     /// The type tuple is indexed as partition_types[i] for i < partition_columns.size() below, so it must
     /// have exactly one entry per partition column on every path.
@@ -558,12 +570,14 @@ void generateManifestFile(
         data_file.field(Iceberg::f_file_format)
             = avro::GenericDatum(data_file_formats.empty() ? format : data_file_formats[file_idx]);
 
-        /// OPTIMIZE per-file overrides take precedence over the shared arguments when supplied:
-        /// `per_file_fresh_statistics` are recomputed bounds for physically-rewritten files, and
-        /// `per_file_partition_values` give each entry its own partition tuple. Independent of
-        /// master's `per_file_statistics` verbatim carryover below (manifest-only rewrite).
+        /// When per-file statistics were supplied, this entry describes only its own data file; the shared
+        /// `data_file_statistics` accumulator covers every file of the manifest and is the fallback.
+        /// Independent of `per_file_statistics` below, which carries pre-serialized bytes over verbatim.
         const DataFileStatistics * effective_statistics
-            = per_file_fresh_statistics ? (*per_file_fresh_statistics)[file_idx] : (data_file_statistics ? &*data_file_statistics : nullptr);
+            = per_file_fresh_statistics ? (*per_file_fresh_statistics)[file_idx]
+                                        : (data_file_statistics ? &*data_file_statistics : nullptr);
+        /// Likewise `per_file_partition_values` (OPTIMIZE) gives each entry its own partition tuple,
+        /// overriding the shared `partition_values`.
         const std::vector<Field> & effective_partition_values
             = per_file_partition_values ? (*per_file_partition_values)[file_idx] : partition_values;
 
@@ -1379,6 +1393,14 @@ bool IcebergStorageSink::initializeMetadata()
                 StoredObject(resolver.resolve(manifest_entry_path)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
             try
             {
+                /// Each manifest entry must describe only the data file it points at, so pass the writer's
+                /// per-file statistics instead of letting every entry inherit the manifest-wide aggregate
+                /// (which can report more nulls than the file has rows, and prunes non-empty files).
+                std::vector<const DataFileStatistics *> per_file_fresh_statistics;
+                per_file_fresh_statistics.reserve(writer.getPerFileStatistics().size());
+                for (const auto & file_statistics : writer.getPerFileStatistics())
+                    per_file_fresh_statistics.push_back(file_statistics.get());
+
                 generateManifestFile(
                     metadata,
                     partitioner ? partitioner->getColumns() : std::vector<String>{},
@@ -1394,7 +1416,16 @@ bool IcebergStorageSink::initializeMetadata()
                     partititon_spec,
                     partition_spec_id,
                     *buffer_manifest_entry,
-                    Iceberg::FileContentType::DATA);
+                    Iceberg::FileContentType::DATA,
+                    /*user_defined_sequence_number=*/std::nullopt,
+                    /*user_defined_snapshot_id=*/std::nullopt,
+                    /*data_file_formats=*/{},
+                    /*per_file_statistics=*/{},
+                    /*data_file_sort_order_ids=*/{},
+                    /*per_file_entry_lineage=*/{},
+                    /*schema_to_serialize=*/nullptr,
+                    /*per_file_partition_values=*/nullptr,
+                    &per_file_fresh_statistics);
                 buffer_manifest_entry->finalize();
                 auto size = buffer_manifest_entry->count();
                 if (size == 0)
