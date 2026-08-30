@@ -45,31 +45,6 @@ def zipdir(path, ziph):
             )
 
 
-def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
-    result = []
-    if "DatabaseReplicated" in check_name:
-        result.append("USE_DATABASE_REPLICATED=1")
-    if "DatabaseOrdinary" in check_name:
-        result.append("USE_DATABASE_ORDINARY=1")
-    if "wide parts enabled" in check_name:
-        result.append("USE_POLYMORPHIC_PARTS=1")
-    if "ParallelReplicas" in check_name:
-        result.append("USE_PARALLEL_REPLICAS=1")
-    if "s3 storage" in check_name:
-        result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-        result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
-    if "analyzer" in check_name:
-        result.append("USE_OLD_ANALYZER=1")
-    if "distributed plan" in check_name:
-        result.append("USE_DISTRIBUTED_PLAN=1")
-
-    if run_by_hash_total != 0:
-        result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
-        result.append(f"RUN_BY_HASH_TOTAL={run_by_hash_total}")
-
-    return result
-
-
 def get_run_command(
     fuzzers_path: Path,
     repo_path: Path,
@@ -77,12 +52,6 @@ def get_run_command(
     additional_envs: List[str],
     image: DockerImage,
 ) -> str:
-    additional_options = ["--hung-check"]
-
-    additional_options_str = (
-        '-e ADDITIONAL_OPTIONS="' + " ".join(additional_options) + '"'
-    )
-
     envs = [
         # a static link, don't use S3_URL or S3_DOWNLOAD
         '-e S3_URL="https://s3.amazonaws.com"',
@@ -102,7 +71,7 @@ def get_run_command(
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
         f"--volume={result_path}:{RUNNER_OUTPUT} "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} "
+        f"--cap-add=SYS_PTRACE {env_str} {image} "
         "python3 /usr/share/clickhouse-test/fuzz/runner.py"
     )
 
@@ -137,8 +106,17 @@ def download_corpus(path):
     logging.info("...downloaded %d corpora", len(list(corpus_path.glob("*.zip"))))
 
     total_units = 0
+    orphans = []
 
     for zip_file in corpus_path.glob("*.zip"):
+        if not (path / zip_file.stem).exists():
+            # A corpus left behind by a fuzzer that no longer exists. Deploying it
+            # would be wasted work, and it would then be uploaded again, keeping
+            # the dead corpus alive forever.
+            orphans.append(zip_file.stem)
+            zip_file.unlink()
+            continue
+
         logging.info("Deploying corpus %s", zip_file.stem)
         target_dir = corpus_path / zip_file.stem
         target_dir.mkdir(exist_ok=True)
@@ -156,6 +134,14 @@ def download_corpus(path):
     subprocess.check_call(f"ls -al {corpus_path}", shell=True)
 
     logging.info("...downloaded total %d units", total_units)
+
+    if orphans:
+        logging.warning(
+            "Skipped corpora with no matching fuzzer binary; delete them from "
+            "s3://%s/fuzzer/corpus/: %s",
+            Settings.S3_ARTIFACT_PATH,
+            ", ".join(f"{name}.zip" for name in sorted(orphans)),
+        )
 
 
 def upload_corpus(path):
@@ -383,18 +369,12 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(Utils.cwd())
 
-    args = parse_args()
-    check_name = args.check_name
+    # The check name is accepted for consistency with the other job scripts,
+    # which all take it as a positional argument.
+    parse_args()
     info = Info()
 
     temp_path.mkdir(parents=True, exist_ok=True)
-
-    if "RUN_BY_HASH_NUM" in os.environ:
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-    else:
-        run_by_hash_num = 0
-        run_by_hash_total = 0
 
     docker_image = DockerImage.get_docker_image(
         "clickhouse/stateless-test"
@@ -418,9 +398,7 @@ def main():
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
-    additional_envs = get_additional_envs(
-        check_name, run_by_hash_num, run_by_hash_total
-    )
+    additional_envs = []
 
     timeout = TIMEOUT_MASTER if is_master else TIMEOUT_PR
     additional_envs.append(f"TIMEOUT={timeout}")
