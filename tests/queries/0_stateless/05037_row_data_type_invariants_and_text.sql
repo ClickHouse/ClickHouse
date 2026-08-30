@@ -60,6 +60,8 @@ SELECT '-- a plain Row column round-trips through text formats';
 
 CREATE TABLE row_text (id UInt8, r Row(a UInt8, b String)) ENGINE = Memory;
 INSERT INTO row_text VALUES (1, (1, 'x')), (2, (2, 'yy'));
+-- VALUES expressions go through convertFieldToType rather than the streaming literal parser.
+INSERT INTO row_text VALUES (5, tuple(5, 'v')), (6, (3 + 3, concat('w', 'w')));
 SELECT r FROM row_text ORDER BY id FORMAT TSV;
 SELECT r FROM row_text ORDER BY id FORMAT JSONEachRow;
 SELECT toTypeName(r) FROM row_text LIMIT 1;

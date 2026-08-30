@@ -107,7 +107,7 @@ bool columnMatchesType(const IColumn & column, const IDataType & type, bool stri
             if (col_tuple->tupleSize() != type_elements.size())
                 return false;
             for (size_t i = 0; i < col_tuple->tupleSize(); ++i)
-                if (!columnMatchesType(col_tuple->getColumn(i), *type_elements[i]))
+                if (!columnMatchesType(col_tuple->getColumn(i), *type_elements[i], strict_decimal_scale))
                     return false;
             return true;
         }

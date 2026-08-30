@@ -11,8 +11,12 @@ Nullable(String)	Date
 -- a plain Row column round-trips through text formats
 (1,'x')
 (2,'yy')
+(5,'v')
+(6,'ww')
 {"r":{"a":1,"b":"x"}}
 {"r":{"a":2,"b":"yy"}}
+{"r":{"a":5,"b":"v"}}
+{"r":{"a":6,"b":"ww"}}
 Row(a UInt8, b String)
 (3,'zzz')	Row(a UInt8, b String)
 (4,'w')
