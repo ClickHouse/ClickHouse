@@ -475,7 +475,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             Strings filter_paths;
             filter_paths.reserve(paths.size());
             for (const auto & path : paths)
-                filter_paths.push_back(fs::path(configuration->getNamespace()) / path);
+                filter_paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), path));
 
             if (is_explicit_archive_member)
             {
@@ -2169,7 +2169,7 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (deferred_filter_actions)
         {
             std::vector<String> filtered_keys({key});
-            std::vector<String> filter_paths({fs::path(object_namespace) / key});
+            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, key)});
             if (!archive_member_path.empty())
                 filter_paths.front() += fmt::format("::{}", archive_member_path);
             std::vector<String> archive_member_names;
