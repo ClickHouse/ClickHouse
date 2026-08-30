@@ -746,6 +746,29 @@ bool hasWithFillAnywhere(const ASTPtr & ast)
     return false;
 }
 
+/// True if any SELECT anywhere in the query uses `GROUP BY ... WITH TOTALS`
+/// (also `ROLLUP` / `CUBE` / `GROUPING SETS`). These synthesise a subtotal /
+/// grand-total row that is a global aggregate, not a per-input-row value, so it
+/// is not distributive over the WHERE/HAVING partition split the metamorphic
+/// oracles perform: re-scanning the source in each partition recomputes the
+/// totals over a subset (or drops them), so the totals row legitimately differs.
+/// The per-oracle guards already reject a TOP-LEVEL `group_by_with_totals`, but a
+/// modifier hidden in a CTE or subquery (whose outer query the oracle rewrites)
+/// slips past them, so gate it recursively at the top of `check`.
+bool hasGroupByTotalsModifierAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+        if (select->group_by_with_totals || select->group_by_with_rollup
+            || select->group_by_with_cube || select->group_by_with_grouping_sets)
+            return true;
+    for (const auto & child : ast->children)
+        if (hasGroupByTotalsModifierAnywhere(child))
+            return true;
+    return false;
+}
+
 /// True if any table expression in the query uses `FINAL`. FINAL's dedup is
 /// global over the table's row versions and is NOT distributive over a WHERE
 /// predicate: the TLP rewrites split rows into `p` / `NOT p` / `p IS NULL`
@@ -2441,6 +2464,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasWithFillAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: ORDER BY ... WITH FILL (synthesises order-dependent rows)");
+        return false;
+    }
+
+    if (hasGroupByTotalsModifierAnywhere(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: WITH TOTALS / ROLLUP / CUBE / GROUPING SETS (subtotal row is not distributive over partitions)");
         return false;
     }
 
