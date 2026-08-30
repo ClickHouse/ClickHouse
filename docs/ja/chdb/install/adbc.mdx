@@ -1,0 +1,239 @@
+---
+title: 'ADBCドライバーとしてのchDB'
+sidebarTitle: 'ADBC'
+slug: /chdb/install/adbc
+description: 'Arrow Database Connectivity（ADBC）経由でchDBを使用する方法'
+keywords: ['chdb', 'adbc', 'arrow', 'driver', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Warning>
+  ADBC ドライバーは実験的機能です。動作やオプションはリリース間で変更される可能性があります。
+</Warning>
+
+[ADBC](https://arrow.apache.org/adbc/) は、アプリケーションとデータベース間で Arrow データを移動するためのベンダー中立な API です。chDB ADBC ドライバーは ADBC Driver Foundry を通じて配布され、任意の ADBC ドライバーマネージャーで読み込むことができます。
+
+結果は行ごとの変換なしに Arrow の record batch として受け渡されます。アプリケーションでは、Python または ADBC ドライバーマネージャーを利用できる他の任意の言語から、同じドライバーを使用できます。
+
+<div id="installation">
+  ## インストール
+</div>
+
+[`dbc`](https://docs.columnar.tech/dbc/) を使用して、ADBC Driver Foundry からドライバーをインストールします。
+
+```bash
+dbc install chdb
+```
+
+chDB 向けに最初にパブリッシュされた `dbc` パッケージは、バージョン 26.7.0 です。利用可能なバージョンを確認するには、次を実行します。
+
+```bash
+dbc search -v chdb
+```
+
+インストールしたドライバーは、ADBC ドライバーマネージャー から `chdb` という名前で読み込めます。
+
+x86-64 および arm64 アーキテクチャの Linux と macOS をサポートしています。
+
+<div id="connecting-from-python">
+  ## Python から接続する
+</div>
+
+Python ADBC ドライバーマネージャーをインストールします。
+
+```bash
+pip install adbc-driver-manager pyarrow
+```
+
+次に、`dbc` でインストールした chDB ドライバーを名前でロードします。
+
+```python
+from adbc_driver_manager import dbapi
+
+with dbapi.connect(
+    driver="chdb",
+    db_kwargs={"uri": "chdb://"},
+    autocommit=True,
+) as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT number FROM numbers(3)")
+        print(cur.fetch_arrow_table())
+```
+
+| `uri`                   | データベース                   |
+| ----------------------- | ------------------------ |
+| `chdb://`               | インメモリ                    |
+| `chdb:///absolute/path` | ディスク上、指定したディレクトリに永続化されます |
+
+<div id="connection-lifecycle">
+  ## 接続のライフサイクル
+</div>
+
+chDB は、接続が開かれている間、各プロセスで 1 つの埋め込みエンジンを実行します。以下のルールに注意してください。
+
+* プロセス内で同時に開かれているすべての ADBC 接続は、同じストレージパスを参照する必要があります。
+* このパスへの複数の接続がサポートされており、異なるスレッドから同時に使用する接続も含まれます。クエリを同時実行する場合は、1 つの接続で複数の操作を同時に実行するのではなく、各ワーカーに専用の接続を割り当ててください。
+* 最後の接続を閉じると、埋め込みエンジンは停止します。その後の接続で再起動でき、異なるストレージパスを使用することもできますが、停止と起動を繰り返すと時間とメモリを消費します。繰り返し処理を行う場合は、少なくとも 1 つの接続を開いたままにしてください。
+* 特定のディスク上のディレクトリを同時に開ける OS プロセスは 1 つだけです。各プロセスに専用のディレクトリを割り当てるか、インメモリデータベースを使用してください。
+
+<div id="using-python-chdb-package">
+  ### Python chDB パッケージでの ADBC の使用
+</div>
+
+`dbc` パッケージは、スタンドアロンのネイティブ ADBC ドライバーをインストールします。これは、Python の `chdb` パッケージが読み込むネイティブライブラリとは別のものです。
+
+1 つの Python プロセス内で、`dbc` によって読み込まれた ADBC 接続と通常の `chdb` 接続が、インメモリテーブルやエンジンの状態を共有することは想定しないでください。特定のデータベースパスでは、ADBC ドライバーまたは Python の `chdb` API のいずれか一方のみを使用し、同じオンディスクパスで両方を開いたままにしないでください。2 つの API 間でデータを移動するには、一方のすべての接続を閉じてからもう一方を開くか、Arrow またはファイルを介して明示的にデータを渡してください。
+
+<div id="implemented-functionality">
+  ## 実装されている機能
+</div>
+
+`未対応` は、今後追加可能な ADBC ドライバーの機能を示します。`該当なし` は、現在の chDB または ClickHouse の実行モデルに該当しない機能を示します。
+
+<div id="database">
+  ### データベース
+</div>
+
+| 関数                                     | ステータス  | 注記                                   |
+| -------------------------------------- | ------ | ------------------------------------ |
+| `AdbcDatabaseNew` / `Init` / `Release` | サポート済み |                                      |
+| `AdbcDatabaseSetOption`                | サポート済み | `uri`、`path`、および `chdb.*` のエンジンオプション |
+
+<div id="connection">
+  ### 接続
+</div>
+
+| 関数                                       | ステータス   | 注記                                                                |
+| ---------------------------------------- | ---- | ----------------------------------------------------------------- |
+| `AdbcConnectionNew` / `Init` / `Release` | サポート済み |                                                                   |
+| `AdbcConnectionGetInfo`                  | サポート済み |                                                                   |
+| `AdbcConnectionGetObjects`               | サポート済み | すべての深さに対応                                                         |
+| `AdbcConnectionGetTableSchema`           | サポート済み |                                                                   |
+| `AdbcConnectionGetTableTypes`            | サポート済み |                                                                   |
+| `AdbcConnectionGetOption`                | サポート済み | 現在の `db_schema` を含む                                               |
+| `AdbcConnectionSetOption`                | 部分対応 | 自動コミットを有効のままにする必要があります。`db_schema` の変更は公開されていません                  |
+| `AdbcConnectionCommit` / `Rollback`      | 該当なし | ClickHouse のステートメントは自動コミットされるため、コミットまたはロールバックする従来型のトランザクションはありません |
+| `AdbcConnectionGetStatistics`            | 未対応  | テーブル統計はドライバー経由で公開されていません                                          |
+| `AdbcConnectionReadPartition`            | 該当なし | ドライバーは分散結果パーティションを生成しません                                          |
+| `AdbcConnectionCancel`                   | 未対応  | chDB クエリのキャンセルは、まだ ADBC 経由では公開されていません                             |
+
+<div id="statement">
+  ### ステートメント
+</div>
+
+| 関数                                 | ステータス  | 注記                                              |
+| ---------------------------------- | ------ | ----------------------------------------------- |
+| `AdbcStatementNew` / `Release`     | サポート済み |                                                 |
+| `AdbcStatementSetSqlQuery`         | サポート済み | ClickHouse SQL                                  |
+| `AdbcStatementPrepare`             | サポート済み |                                                 |
+| `AdbcStatementBind` / `BindStream` | サポート済み | 位置依存の `?` パラメータ                                 |
+| `AdbcStatementGetParameterSchema`  | サポート済み |                                                 |
+| `AdbcStatementExecuteQuery`        | サポート済み | Arrow の record batch をストリーミング                   |
+| `AdbcStatementSetOption`           | サポート済み | 一括インジェスト (詳細は以下を参照)                             |
+| `AdbcStatementExecuteSchema`       | 未対応    | 結果スキーマは現在、実行後に利用可能です                            |
+| `AdbcStatementExecutePartitions`   | 該当なし   | 結果はインプロセスの Arrow ストリームとして返されます                  |
+| `AdbcStatementSetSubstraitPlan`    | 該当なし   | chDB は Substrait プランではなく ClickHouse SQL を受け付けます |
+| `AdbcStatementCancel`              | 未対応    | chDB のクエリキャンセルはまだ ADBC 経由で公開されていません             |
+
+一括インジェストでは、デフォルトデータベースまたは名前付きデータベースに対して、`create`、`append`、`create_append`、`replace` モードをサポートしています。
+
+<div id="clickhouse-sql-and-type-behavior">
+  ## ClickHouse SQL と型の動作
+</div>
+
+chDB は ClickHouse SQL とその型システムを使用します。ADBC 経由で chDB にアクセスする場合にも、以下の ClickHouse のセマンティクスが適用されます。
+
+* カラムは、`Nullable(...)` として宣言しない限り Nullable にはなりません。通常の `String` カラムにバインドされた型付き NULL は、NULL ではなく空文字列として格納されます。
+* ClickHouse の識別子のクォーティングを使用してください。例ではバッククォートを使用しています。
+* ClickHouse データベースは ADBC の `db_schema` に対応します。上位のカタログレイヤーは存在しないため、カタログスコープの操作は利用できません。
+* `Decimal` は負のスケールを受け付けず、`Date32` の範囲は 1900-01-01 から 2299-12-31 です。
+* タイムゾーンを指定しない `DateTime64` は、エンジンのタイムゾーンで解釈されます。
+* 現在の ClickHouse Arrow 出力では `Time` 型を表現できないため、ADBC 経由で読み戻すことはできません。
+
+一部の Arrow 型は値を保持しますが、読み戻すと別の Arrow 型になります。
+
+| Arrow 型                                 | 格納形式             | 読み戻し時の型             |
+| --------------------------------------- | ---------------- | ------------------- |
+| `binary`, `large_binary`, `binary_view` | `String`         | `string`            |
+| `fixed_size_binary` (新しいテーブルへの一括取り込み)   | `FixedString(n)` | `fixed_size_binary` |
+| `large_string`, `string_view`           | `String`         | `string`            |
+| `float16`                               | `Float32`        | `float`             |
+| `time32` / `time64` / `timestamp`       | `DateTime64(n)`  | `timestamp`         |
+
+バイナリデータは `String` として格納され、UTF-8 として読み戻されます。したがって、有効な UTF-8 ではないペイロードは、`binary` 値として往復変換することはサポートされていません。
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="bulk-ingestion">
+  ### Arrow からの一括インジェスト
+</div>
+
+```python
+import pyarrow as pa
+from adbc_driver_manager import dbapi
+
+table = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+
+with dbapi.connect(
+    driver="chdb",
+    db_kwargs={"uri": "chdb://"},
+    autocommit=True,
+) as conn:
+    with conn.cursor() as cur:
+        cur.adbc_ingest("events", table, mode="create")
+        cur.execute("SELECT count() FROM events")
+        print(cur.fetchone())
+```
+
+<div id="parameters">
+  ### パラメータ
+</div>
+
+```python
+from adbc_driver_manager import dbapi
+
+with dbapi.connect(
+    driver="chdb",
+    db_kwargs={"uri": "chdb://"},
+    autocommit=True,
+) as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT number FROM numbers(10) WHERE number > ?", (7,))
+        print(cur.fetch_arrow_table())
+```
+
+<div id="c-example">
+  ### C
+</div>
+
+`dbc install chdb` の実行後、C ドライバーマネージャーは名前でドライバーを解決できます。
+
+```c
+#include <arrow-adbc/adbc.h>
+#include <arrow-adbc/adbc_driver_manager.h>
+
+struct AdbcDatabase database = {0};
+struct AdbcError error = {0};
+
+AdbcDatabaseNew(&database, &error);
+AdbcDatabaseSetOption(&database, "driver", "chdb", &error);
+AdbcDatabaseSetOption(&database, "uri", "chdb://", &error);
+AdbcDatabaseInit(&database, &error);
+```
+
+<div id="verification">
+  ## ドライバーの検証方法
+</div>
+
+chDB ADBC リリースビルドでは、Linux x86-64 および arm64、macOS x86-64 および arm64 上でネイティブドライバーに対し、2 つの外部テストスイートを実行します。
+
+* C のコントラクトを確認する Apache Arrow ADBC 適合性スイート
+* SQL レベルの動作、型のラウンドトリップ、メタデータ、一括インジェストを確認する ADBC Driver Foundry 検証スイート
+
+このページのサポート表は、これらの実行結果に基づいています。これらのスイートは [chdb-core リポジトリ](https://github.com/chdb-io/chdb-core/tree/main/programs/local/adbc/validation)にあります。

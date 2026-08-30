@@ -32,6 +32,14 @@ struct Keeper4LWInfo
     uint64_t synced_follower_count;
     uint64_t synced_non_voting_follower_count;
 
+    std::optional<uint64_t> leader_uptime_ms;
+    uint64_t sum_leader_unavailable_time_ms;
+    uint64_t cnt_leader_unavailable_time;
+    std::optional<uint64_t> last_leader_unavailable_time_ms;
+    uint64_t sum_election_time_ms;
+    uint64_t cnt_election_time;
+    std::optional<uint64_t> last_leader_election_time_ms;
+
     String getRole() const
     {
         if (is_standalone)

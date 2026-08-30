@@ -3,10 +3,10 @@
     {
       "group": "ClickHouseについて",
       "pages": [
+        "ja/resources/about/index",
         "ja/resources/about/adopters",
         "ja/resources/about/support"
-      ],
-      "root": "ja/resources/about/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-about.svg",

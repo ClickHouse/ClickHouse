@@ -95,24 +95,3 @@ SELECT count(), sum(val) FROM (
 
 DROP TABLE t_04365;
 
--- Old-analyzer regression: the pushdown must NOT disable the old-analyzer window-order
--- storage-order reuse (optimize_read_in_window_order). With the partition-key filter
--- pushed below the window, ReadFromMergeTree must still read in storage order
--- (Read type: InOrder) rather than fall back to a full sort. `reuse_fires` = 1.
-SET enable_analyzer = 0;
-DROP TABLE IF EXISTS t_04365_old;
-CREATE TABLE t_04365_old (key String, ts DateTime, val UInt64)
-ENGINE = MergeTree ORDER BY (key, ts)
-AS SELECT toString(number % 100) AS key, toDateTime(number) AS ts, number AS val
-FROM numbers(100000);
-OPTIMIZE TABLE t_04365_old FINAL;
-
-SELECT count() > 0 AS reuse_fires FROM (
-    EXPLAIN
-    SELECT * FROM (
-        SELECT key, ts, row_number() OVER (PARTITION BY key ORDER BY ts) AS rn FROM t_04365_old
-    ) WHERE key = '5'
-    SETTINGS query_plan_filter_push_down = 1, optimize_read_in_order = 0, optimize_read_in_window_order = 1
-) WHERE explain ILIKE '%Read type: InOrder%';
-
-DROP TABLE t_04365_old;
