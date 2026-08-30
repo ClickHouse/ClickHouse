@@ -2990,6 +2990,33 @@ private:
     Kind kind = Kind::NO_CONST;
 };
 
+/// `FieldVisitorHash` writes an `Object`'s keys without their lengths, so a key and the value that
+/// follows it can trade bytes and two different objects hash alike.
+static bool fieldHoldsObject(const Field & field)
+{
+    std::vector<const Field *> pending{&field};
+    auto push_elements = [&pending](const FieldVector & elements)
+    {
+        for (const auto & element : elements)
+            pending.push_back(&element);
+    };
+
+    while (!pending.empty())
+    {
+        const Field & current = *pending.back();
+        pending.pop_back();
+        switch (current.getType())
+        {
+            case Field::Types::Object: return true;
+            case Field::Types::Array:  push_elements(current.safeGet<Array>()); break;
+            case Field::Types::Tuple:  push_elements(current.safeGet<Tuple>()); break;
+            case Field::Types::Map:    push_elements(current.safeGet<Map>()); break;
+            default: break;
+        }
+    }
+    return false;
+}
+
 /// Identifies what a chain computes: equal identities transform a range identically. Absent when an
 /// element's result is not a function of its arguments alone. Type NAMES are canonical, while
 /// `DataTypeDateTime::equals` ignores the time zone that a bare `toHour` reads from its argument.
@@ -3033,9 +3060,13 @@ static std::optional<UInt128> monotonicFunctionsChainIdentity(const KeyCondition
             if (dynamic_cast<const IDataTypeDummy *>(const_arg.type.get()))
                 return {};
 
+            const Field const_field = const_column->getField();
+            if (fieldHoldsObject(const_field))
+                return {};
+
             hash.update(static_cast<UInt8>(with_const_arg->getKind()));
             add(const_arg.type->getName());
-            applyVisitor(FieldVisitorHash(hash), const_column->getField());
+            applyVisitor(FieldVisitorHash(hash), const_field);
 
             /// The wrapper forwards `isDeterministic` but not `isStateful`, so ask the wrapped one.
             function = with_const_arg->getWrappedFunction().get();

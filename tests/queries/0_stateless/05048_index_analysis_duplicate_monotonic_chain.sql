@@ -170,12 +170,74 @@ INSERT INTO t_dup_chain_lambda VALUES ([1], 1), ([3], 3), ([5], 5), ([10], 10);
 -- captured columns, so only the lambda body tells them apart, and a function-typed constant describes
 -- its captures rather than the expression it will run. Sharing a transformed range between the two
 -- drops the partition that only the second one matches. The analyzer is pinned because the old one
--- builds no chain for this shape at all, which would leave the arm blind.
+-- builds no chain for this shape at all, which would leave the arm blind. Partition pruning is pinned
+-- for the same reason: the rows below are correct even when every partition is scanned, so without the
+-- pin the arm would pass without ever reaching the path it guards.
 SELECT arraySort(groupArray(v)) FROM
 (
     SELECT v FROM t_dup_chain_lambda
     WHERE arrayMap(x -> x * x, arr) = [100] OR arrayMap(x -> x + x, arr) = [6]
 )
-SETTINGS enable_analyzer = 1;
+SETTINGS enable_analyzer = 1, use_partition_pruning = 1;
+-- The rows above are the same whether or not partition pruning ran, so read the plan too: exactly one
+-- index reports two of the four parts, and that is the partition one. Parallel replicas are off
+-- because without a local plan the initiator's plan holds no `ReadFromMergeTree`.
+SELECT countIf(toUInt64OrZero(extract(explain, 'Parts: (\\d+)/')) = 2
+           AND toUInt64OrZero(extract(explain, 'Parts: \\d+/(\\d+)')) = 4) = 1 FROM
+(
+    EXPLAIN indexes = 1 SELECT v FROM t_dup_chain_lambda
+    WHERE arrayMap(x -> x * x, arr) = [100] OR arrayMap(x -> x + x, arr) = [6]
+)
+SETTINGS enable_analyzer = 1, use_partition_pruning = 1, enable_parallel_replicas = 0,
+    automatic_parallel_replicas_mode = 0;
 
 DROP TABLE t_dup_chain_lambda;
+
+DROP TABLE IF EXISTS t_dup_chain_json;
+CREATE TABLE t_dup_chain_json (k String, v UInt64) ENGINE = MergeTree PARTITION BY k ORDER BY v;
+INSERT INTO t_dup_chain_json VALUES ('p1', 1), ('p2', 2);
+
+-- A constant whose hashed representation does not identify its value must not identify a chain either.
+-- An object's keys are hashed without their lengths, so the two constants below differ yet hash alike:
+-- the first pairs the key `a` with a ten-byte value, and the second holds those ten bytes as its key
+-- and pairs them with a one-byte value. Each atom matches exactly one partition, so adopting the other
+-- atom's transformed range drops a partition that holds a matching row. Partition pruning is pinned
+-- because the rows below are correct when every partition is scanned, which would leave the arm blind.
+SELECT arraySort(groupArray(v)) FROM
+(
+    SELECT v FROM t_dup_chain_json
+    WHERE concat('{"a":"\\u0010\\u0001\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000x"}'::JSON, k) = concat('{"a":"\\u0010\\u0001\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000x"}'::JSON, 'p1')
+       OR concat('{"a\\u0010\\u000A\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000":"x"}'::JSON, k) = concat('{"a\\u0010\\u000A\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000":"x"}'::JSON, 'p2')
+)
+SETTINGS use_partition_pruning = 1;
+
+-- The same application-count oracle for an object-bearing constant: two atoms carrying one identical
+-- constant must apply the chain twice what a single atom does, because such a constant identifies no
+-- chain and nothing may be shared. The one-atom query is the liveness control, since it proves a chain
+-- was built and applied at all. The pins are those the oracles above need, for the same reasons.
+SELECT sum(v) FROM t_dup_chain_json
+WHERE concat('{"z":1}'::JSON, k) >= '{' AND concat('{"z":1}'::JSON, k) <= '~'
+SETTINGS log_comment = '05048_json_two_atoms', use_query_condition_cache = 0,
+    use_statistics_for_part_pruning = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SELECT sum(v) FROM t_dup_chain_json
+WHERE concat('{"z":1}'::JSON, k) >= '{'
+SETTINGS log_comment = '05048_json_one_atom', use_query_condition_cache = 0,
+    use_statistics_for_part_pruning = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT count() = 2 AND max(applications) = 2 * min(applications) AND min(applications) > 0
+   AND uniqExact(marks) = 1
+FROM
+(
+    SELECT
+        argMax(ProfileEvents['IndexMonotonicFunctionChainApplications'], event_time_microseconds) AS applications,
+        argMax(ProfileEvents['SelectedMarksTotal'], event_time_microseconds) AS marks
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+      AND current_database = currentDatabase()
+      AND log_comment IN ('05048_json_two_atoms', '05048_json_one_atom')
+    GROUP BY log_comment
+);
+
+DROP TABLE t_dup_chain_json;
