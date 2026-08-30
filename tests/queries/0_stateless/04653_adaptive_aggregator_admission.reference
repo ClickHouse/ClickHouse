@@ -1,0 +1,10 @@
+Aggregation in order (not admitted)
+1
+Group-by limits (not admitted)
+1
+Serialized query plan carries the settings
+1
+Projection (merge-only step, not admitted)
+1
+Lazy FINAL replacement
+1

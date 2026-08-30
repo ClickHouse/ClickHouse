@@ -99,13 +99,17 @@ MergeTreeBackgroundExecutor<Queue>::~MergeTreeBackgroundExecutor()
 }
 
 template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::requestShutdown()
+{
+    LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+    shutdown = true;
+    has_tasks.notify_all();
+}
+
+template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
 {
-    {
-        LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
-        shutdown = true;
-        has_tasks.notify_all();
-    }
+    requestShutdown();
 
     /// `threadFunction` breaks before popping once `shutdown` is set, so a task that `routine`
     /// re-pushed keeps what it owns alive forever. Draining after `pool->wait()` is what makes it
