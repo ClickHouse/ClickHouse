@@ -1,4 +1,0 @@
-[ 1914.867987] TCPHandler invoked oom-killer: gfp_mask=0x140dca(GFP_HIGHUSER_MOVABLE|__GFP_COMP|__GFP_ZERO), order=0, oom_score_adj=555
-[ 1914.868306] [   3365]     0  3365 62864551 13446720 13321184   125536         0 223768576        0           555 clickhouse-serv
-[ 1914.868316] oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=452119bce7eeee89316ab72c937c6f7d81b9c19dd6f0bfbb6663dbc64ef2c12b,mems_allowed=0,global_oom,task_memcg=/docker/452119bce7eeee89316ab72c937c6f7d81b9c19dd6f0bfbb6663dbc64ef2c12b,task=clickhouse-serv,pid=3365,uid=0
-[ 1914.868868] Out of memory: Killed process 3365 (clickhouse-serv) total-vm:251458204kB, anon-rss:53284736kB, file-rss:502144kB, shmem-rss:0kB, UID:0 pgtables:218524kB oom_score_adj:555
