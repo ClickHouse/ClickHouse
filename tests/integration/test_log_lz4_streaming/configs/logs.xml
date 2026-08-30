@@ -1,5 +1,0 @@
-<clickhouse>
-    <logger>
-        <stream_compress>true</stream_compress>
-    </logger>
-</clickhouse>

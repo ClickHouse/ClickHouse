@@ -1,1 +1,0 @@
-SELECT isConstant('a' = 'b');

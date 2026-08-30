@@ -1,7 +1,0 @@
-<test>
-    <settings>
-        <local_filesystem_read_method>io_uring</local_filesystem_read_method>
-    </settings>
-
-    <query><![CDATA[SELECT sum(WatchID) FROM test.hits]]></query>
-</test>

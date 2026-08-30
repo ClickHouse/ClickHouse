@@ -1,3 +1,0 @@
-<clickhouse>
-    <database_catalog_drop_table_concurrency>256</database_catalog_drop_table_concurrency>
-</clickhouse>

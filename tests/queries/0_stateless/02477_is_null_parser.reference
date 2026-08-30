@@ -1,3 +1,0 @@
-SELECT isNotNull(plus(isNull(1), 1))\nFROM system.one
-SELECT equals(isNull(1), 0)\nFROM system.one
-SELECT CAST(isNull(1), \'Int32\')\nFROM system.one

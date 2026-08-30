@@ -1,8 +1,0 @@
-max_threads: 1 max_insert_threads: 1
-1
-max_threads: 1 max_insert_threads: 4
-1
-max_threads: 7 max_insert_threads: 1
-7
-max_threads: 7 max_insert_threads: 4
-7

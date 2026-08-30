@@ -1,1 +1,0 @@
-WITH\n    foo(1 AS a0) AS a\nSELECT 1\nFROM numbers()\nALL INNER JOIN numbers() ON (1 AS a0)

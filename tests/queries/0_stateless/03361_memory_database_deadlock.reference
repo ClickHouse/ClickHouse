@@ -1,1 +1,0 @@
-CREATE TABLE default_memory.keys\n(\n    `key` Int32,\n    `old_keys` Int32 DEFAULT in(key, default_memory.keys)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192

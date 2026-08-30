@@ -1,9 +1,0 @@
-<functions>
-    <function>
-        <type>executable</type>
-        <name>test_function</name>
-        <return_type>String</return_type>
-        <format>TabSeparated</format>
-        <command>udf.sh</command>
-    </function>
-</functions>

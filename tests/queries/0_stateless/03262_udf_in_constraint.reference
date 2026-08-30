@@ -1,2 +1,0 @@
-CREATE TABLE default.t0\n(\n    `c0` Int32,\n    CONSTRAINT c1 CHECK c0 > 5\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
-10

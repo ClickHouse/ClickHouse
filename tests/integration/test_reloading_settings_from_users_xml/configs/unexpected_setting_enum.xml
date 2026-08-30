@@ -1,9 +1,0 @@
-<clickhouse>
-    <profiles replace="replace">
-        <default>
-            <max_memory_usage>20000000000</max_memory_usage>
-            <load_balancing>a</load_balancing>
-            <replication_alter_partitions_sync>0</replication_alter_partitions_sync>
-        </default>
-    </profiles>
-</clickhouse>

@@ -1,3 +1,0 @@
-<clickhouse>
-    <dictionary_background_reconnect_interval>1500</dictionary_background_reconnect_interval>
-</clickhouse>

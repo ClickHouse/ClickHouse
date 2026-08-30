@@ -1,6 +1,0 @@
-<clickhouse>
-    <top_level_domains_lists>
-        <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-        <no_new_line_list>no_new_line_list.dat</no_new_line_list>
-    </top_level_domains_lists>
-</clickhouse>

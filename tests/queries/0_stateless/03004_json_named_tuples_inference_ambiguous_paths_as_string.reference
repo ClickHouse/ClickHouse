@@ -1,3 +1,0 @@
-obj	Tuple(\n    a Nullable(String))					
-('42')
-('{"b" : 42}')

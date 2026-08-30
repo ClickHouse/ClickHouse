@@ -1,4 +1,0 @@
-.cache
-_instances*
-# Ignore pytest reports in the current directory
-/*.jsonl

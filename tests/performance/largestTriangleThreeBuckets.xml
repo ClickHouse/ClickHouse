@@ -1,9 +1,0 @@
-<test>
-    <settings>
-        <max_threads>8</max_threads>
-    </settings>
-
-    <query>SELECT largestTriangleThreeBuckets(10)(EventTime, ResolutionWidth) FROM test.hits GROUP BY CounterID ORDER BY count() DESC LIMIT 10</query>
-    <query>SELECT largestTriangleThreeBuckets(100)(EventTime, ResolutionWidth) FROM test.hits GROUP BY CounterID ORDER BY count() DESC LIMIT 10</query>
-    <query>SELECT largestTriangleThreeBuckets(1000)(EventTime, ResolutionWidth) FROM test.hits GROUP BY CounterID ORDER BY count() DESC LIMIT 10</query>
-</test>

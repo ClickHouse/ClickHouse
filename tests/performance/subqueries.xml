@@ -1,7 +1,0 @@
-<test>
-    <create_query>create table tab (a UInt32, b UInt32) engine = MergeTree order by (a, b)</create_query>
-    <fill_query>insert into tab values (1, 1)</fill_query>
-    <query>select a, b from tab where (a, b) in (select toUInt32(number) as x, toUInt32(sleep(0.1) + 1) from numbers_mt(16)) settings max_threads = 2, max_block_size = 4</query>
-    <query>select a, b from tab where (1, 1) = (select min(toUInt32(number + 1)) as x, min(toUInt32(sleep(0.1) + 1)) from numbers_mt(16)) settings max_threads = 2, max_block_size = 4</query>
-    <drop_query>DROP TABLE tab</drop_query>
-</test>

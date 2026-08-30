@@ -1,6 +1,0 @@
-<clickhouse>
-    <merge_tree>
-        <parts_to_delay_insert>50</parts_to_delay_insert>
-        <parts_to_throw_insert>50</parts_to_throw_insert>
-    </merge_tree>
-</clickhouse>

@@ -1,6 +1,0 @@
-<clickhouse>
-    <zookeeper>
-        <!-- Don't need real [Zoo]Keeper for this test -->
-        <implementation>testkeeper</implementation>
-    </zookeeper>
-</clickhouse>

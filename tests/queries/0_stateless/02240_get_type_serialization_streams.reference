@@ -1,8 +1,0 @@
-['{ArraySizes}','{ArrayElements, Regular}']
-['{ArraySizes}','{ArrayElements, TupleElement(keys), InlinedStringSizes()}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}']
-['{TupleElement(1), InlinedStringSizes()}','{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), Regular}']
-['{DictionaryKeys}','{DictionaryIndexes}']
-['{NullMap}','{NullableElements, InlinedStringSizes()}','{NullableElements, Regular}']
-['{ArraySizes}','{ArrayElements, Regular}']
-['{ArraySizes}','{ArrayElements, TupleElement(keys), InlinedStringSizes()}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}']
-['{TupleElement(1), InlinedStringSizes()}','{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), InlinedStringSizes()}','{TupleElement(3), Regular}','{TupleElement(4), Regular}']

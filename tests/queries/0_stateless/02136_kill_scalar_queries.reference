@@ -1,1 +1,0 @@
-finished	default_TEST02132KILL_QUERY1	default	select (SELECT max(number) from system.numbers) + 1;

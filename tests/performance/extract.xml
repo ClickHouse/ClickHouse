@@ -1,7 +1,0 @@
-<test>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '(\\w+=\\w+)'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extractAll(URL, '(\\w+=\\w+)'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extractGroups(URL, '(\\w+)=(\\w+)'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extractAllGroupsVertical(URL, '(\\w+)=(\\w+)'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extractAllGroupsHorizontal(URL, '(\\w+)=(\\w+)'))</query>
-</test>

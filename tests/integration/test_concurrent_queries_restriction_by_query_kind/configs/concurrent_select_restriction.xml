@@ -1,3 +1,0 @@
-<clickhouse>
-    <max_concurrent_select_queries>2</max_concurrent_select_queries>
-</clickhouse>

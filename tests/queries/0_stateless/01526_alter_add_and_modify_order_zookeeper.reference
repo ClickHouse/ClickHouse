@@ -1,6 +1,0 @@
-2019-10-01	a	1	aa	1	1	1
-2019-10-01	a	1	aa	1	1	1	0
-CREATE TABLE default.table_for_alter\n(\n    `d` Date,\n    `a` String,\n    `b` UInt8,\n    `x` String,\n    `y` Int8,\n    `version` UInt64,\n    `sign` Int8 DEFAULT 1,\n    `order` UInt32\n)\nENGINE = ReplicatedVersionedCollapsingMergeTree(\'/clickhouse/tables/default/01526_alter_add/t1\', \'1\', sign, version)\nPARTITION BY y\nPRIMARY KEY d\nORDER BY (d, order)\nSETTINGS index_granularity = 8192
-2019-10-01	a	1	aa	1	1	1	0	0
-2019-10-02	b	2	bb	2	2	2	1	2
-CREATE TABLE default.table_for_alter\n(\n    `d` Date,\n    `a` String,\n    `b` UInt8,\n    `x` String,\n    `y` Int8,\n    `version` UInt64,\n    `sign` Int8 DEFAULT 1,\n    `order` UInt32,\n    `datum` UInt32\n)\nENGINE = ReplicatedVersionedCollapsingMergeTree(\'/clickhouse/tables/default/01526_alter_add/t1\', \'1\', sign, version)\nPARTITION BY y\nPRIMARY KEY d\nORDER BY (d, order, datum)\nSETTINGS index_granularity = 8192

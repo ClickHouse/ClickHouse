@@ -1,1 +1,0 @@
-SELECT NOT ((SELECT 1))

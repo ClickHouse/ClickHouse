@@ -1,7 +1,0 @@
-macros:
-  test: 'Hello, world!'
-  shard: s1
-  replica: r1
-  default_path_test: '/clickhouse/tables/{database}/{shard}/'
-  default_name_test: 'table_{table}'
-

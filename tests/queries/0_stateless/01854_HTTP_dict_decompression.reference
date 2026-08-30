@@ -1,6 +1,0 @@
-0 none  True
-1 gzip  True
-2 lzma  True
-3 gzip .gz False
-4 lzma .xz False
-PASSED

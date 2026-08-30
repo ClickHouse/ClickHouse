@@ -1,1 +1,0 @@
-SELECT count(*)\nFROM\n(\n    SELECT number\n    FROM\n    (\n        SELECT number\n        FROM numbers(1000000)\n    )\n    WHERE less(rand64(), multiply(0.01, 18446744073709552000.))\n)

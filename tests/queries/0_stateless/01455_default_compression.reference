@@ -1,8 +1,0 @@
-1	1	1	1
-1	1	1	1
-2	2	2	2
-key	UInt64					
-value1	String				Default	
-value2	UInt64				Delta(8), Default	
-value3	String				Default	
-CREATE TABLE default.compress_table\n(\n    `key` UInt64,\n    `value1` String CODEC(Default),\n    `value2` UInt64 CODEC(Delta(8), Default),\n    `value3` String CODEC(Default)\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192

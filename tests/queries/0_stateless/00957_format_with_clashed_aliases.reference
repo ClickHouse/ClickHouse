@@ -1,7 +1,0 @@
-SELECT
-    1 AS x,
-    x.y
-FROM
-(
-    SELECT 'Hello, world' AS y
-) AS x

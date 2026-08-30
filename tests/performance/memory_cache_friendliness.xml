@@ -1,8 +1,0 @@
-<test>
-    <create_query>CREATE TABLE test_memory (x UInt64) ENGINE Memory</create_query>
-    <fill_query>INSERT INTO test_memory SELECT 1 FROM numbers(1000000000)</fill_query>
-
-    <query>SELECT sum(x * x + x) FROM test_memory</query>
-
-    <drop_query>DROP TABLE IF EXISTS test_memory</drop_query>
-</test>

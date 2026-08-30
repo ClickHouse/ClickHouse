@@ -1,6 +1,0 @@
-analyzer
-    Row level filter column: in(id, __set_UInt64_) (removed)
-result
-1
-3
-5

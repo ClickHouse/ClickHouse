@@ -1,3 +1,0 @@
-<clickhouse>
-    <top_level_domains_path replace="replace">/etc/clickhouse-server/top_level_domains/</top_level_domains_path>
-</clickhouse>

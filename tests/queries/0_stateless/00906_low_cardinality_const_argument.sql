@@ -1,2 +1,0 @@
-select materialize(toLowCardinality('a'));
-

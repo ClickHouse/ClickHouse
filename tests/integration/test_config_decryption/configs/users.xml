@@ -1,8 +1,0 @@
-<clickhouse>
-    <users>
-        <test_user>
-            <password encrypted_by="AES_128_GCM_SIV">96280000000D000000000030D4632962295D46C6FA4ABF007CCEC9C1D0E19DA5AF719C1D9A46C446</password>
-            <profile>default</profile>
-        </test_user>
-    </users>
-</clickhouse>

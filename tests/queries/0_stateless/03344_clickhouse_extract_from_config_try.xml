@@ -1,5 +1,0 @@
-<clickhouse>
-  <merge_tree>
-    <comment>xml</comment>
-  </merge_tree>
-</clickhouse>

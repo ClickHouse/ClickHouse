@@ -1,9 +1,0 @@
-1
-CREATE TABLE default.table_for_rename_replicated\n(\n    `date` Date,\n    `key` UInt64,\n    `value1` String,\n    `value2` String,\n    `value3` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/01213_alter_rename_column_zookeeper_long_default/table_for_rename_replicated\', \'1\')\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
-renamed_value1
-CREATE TABLE default.table_for_rename_replicated\n(\n    `date` Date,\n    `key` UInt64,\n    `renamed_value1` String,\n    `value2` String,\n    `value3` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/01213_alter_rename_column_zookeeper_long_default/table_for_rename_replicated\', \'1\')\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
-1
-date	key	renamed_value1	value2	value3
-2019-10-02	1	1	1	1
-date	key	renamed_value1	value2	value3
-2019-10-02	1	1	1	1

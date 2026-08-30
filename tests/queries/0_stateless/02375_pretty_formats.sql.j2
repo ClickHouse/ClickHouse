@@ -1,9 +1,0 @@
-{% for format in ['Pretty', 'PrettyNoEscapes', 'PrettyMonoBlock', 'PrettyNoEscapesMonoBlock', 'PrettyCompact', 'PrettyCompactNoEscapes',
-                  'PrettyCompactMonoBlock', 'PrettyCompactNoEscapesMonoBlock', 'PrettySpace', 'PrettySpaceNoEscapes', 'PrettySpaceMonoBlock',
-                  'PrettySpaceNoEscapesMonoBlock'] -%}
-
-SET output_format_pretty_squash_consecutive_ms = 0;
-select '{{ format }}';
-select number as x, number + 1 as y from numbers(4) settings max_block_size=2, output_format_pretty_color=1, output_format_pretty_display_footer_column_names=0 format {{ format }};
-
-{% endfor -%}

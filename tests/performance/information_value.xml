@@ -1,4 +1,0 @@
-<test>
-    <query>SELECT categoricalInformationValue(Age &lt; 15, IsMobile) from hits_100m_single</query>
-    <query>SELECT categoricalInformationValue(Age &lt; 15, Age &gt;= 15 and Age &lt; 30, Age &gt;= 30 and Age &lt; 45, Age &gt;= 45 and Age &lt; 60, Age &gt;= 60, IsMobile) from hits_100m_single</query>
-</test>

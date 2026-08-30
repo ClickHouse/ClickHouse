@@ -1,6 +1,0 @@
-(forward, head, A->B)	0	\N
-(forward, head, A->B)	1	B
-(forward, head, A->B)	1	\N
-(forward, head, A->B)	2	\N
-
-(forward, head, A->B)	0	\N

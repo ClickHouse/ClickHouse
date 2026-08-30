@@ -1,2 +1,0 @@
-CREATE TABLE default.concurrent_mutate_kill\n(\n    `key` UInt64,\n    `value` Int64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/01593_concurrent_alter_mutations_kill_default/concurrent_mutate_kill\', \'1\')\nPARTITION BY key % 100\nORDER BY key\nSETTINGS max_replicated_mutations_in_queue = 1000, number_of_free_entries_in_pool_to_execute_mutation = 0, max_replicated_merges_in_queue = 1000, index_granularity = 8192
-499999500000

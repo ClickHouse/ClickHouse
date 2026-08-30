@@ -1,4 +1,0 @@
-<clickhouse>
-    <!-- The wait/busy ratio, not a busy-time budget, decides overload here. -->
-    <os_cpu_busy_time_threshold>0</os_cpu_busy_time_threshold>
-</clickhouse>

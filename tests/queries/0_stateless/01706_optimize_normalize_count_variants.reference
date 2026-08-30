@@ -1,2 +1,0 @@
-SELECT\n    count(),\n    count(1),\n    count(-1),\n    sum(1),\n    count(_CAST(NULL, \'Nullable(Nothing)\'))\nFROM system.one
-SELECT sum(1)\nFROM numbers(10)\nWHERE 0

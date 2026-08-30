@@ -1,4 +1,0 @@
-<clickhouse>
-    <max_replicated_table_num_to_throw>3</max_replicated_table_num_to_throw>
-</clickhouse>
-

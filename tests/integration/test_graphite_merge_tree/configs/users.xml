@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <optimize_on_insert>0</optimize_on_insert>
-        </default>
-    </profiles>
-</clickhouse>

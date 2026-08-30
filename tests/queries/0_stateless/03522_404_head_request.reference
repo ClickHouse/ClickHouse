@@ -1,6 +1,0 @@
-HEAD does not have a message
-HTTP/1.1 404 Not Found
-Connection: Close
-
-GET has a message
-There is no handle /does_not_exist

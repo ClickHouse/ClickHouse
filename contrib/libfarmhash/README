@@ -1,8 +1,0 @@
-Original URL: https://code.google.com/p/farmhash/
-Created from version:
-
-commit afdb2e459d030afd1f3b6116545397509326385e
-Author: gpike@google.com <gpike@google.com@34f43262-9e73-f86a-efff-89e1528fadaf>
-Date:   Sun Mar 1 20:04:23 2015 +0000
-
-    Various additions, updates, and fixes for FarmHash 1.1.

@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <use_hedged_requests>0</use_hedged_requests>
-        </default>
-    </profiles>
-</clickhouse>

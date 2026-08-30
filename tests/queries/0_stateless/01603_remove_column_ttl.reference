@@ -1,6 +1,0 @@
-1	32
-2	0
-CREATE TABLE default.table_with_column_ttl\n(\n    `EventTime` DateTime,\n    `UserID` UInt64,\n    `Age` UInt8\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
-1	32
-2	0
-3	27

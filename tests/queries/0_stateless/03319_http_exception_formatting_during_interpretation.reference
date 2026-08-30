@@ -1,4 +1,0 @@
-< HTTP/1.1 404 Not Found
-< X-ClickHouse-Format: JSONLines
-< X-ClickHouse-Exception-Code: 81
-{"exception": "Code: 81. DB::Exception: Database nonexistent does not exist. (UNKNOWN_DATABASE) "}

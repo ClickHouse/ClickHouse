@@ -1,8 +1,0 @@
-Wrong column name.
-CREATE TABLE default.table_for_bad_alters\n(\n    `key` UInt64,\n    `value1` UInt8,\n    `value2` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/01079_bad_alters_zookeeper_long_default/table_for_bad_alters\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
-CREATE TABLE default.table_for_bad_alters\n(\n    `key` UInt64,\n    `value1` UInt8,\n    `value2` UInt32\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/01079_bad_alters_zookeeper_long_default/table_for_bad_alters\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
-syntax error at begin of string.
-7
-Hello
-World
-Wrong index name.

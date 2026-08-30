@@ -1,2 +1,0 @@
-# Settings -> Configure KDevelop -> Source Formatter -> [C++, C] ; Custom Script Formatter ; Kdevelop: kdev_format_source
-*.c *.cpp *.h *.hpp: mv $TMPFILE $TMPFILE.tmp; cat $TMPFILE.tmp | clang-format -style=file -assume-filename=`pwd`/.clang-format > $TMPFILE

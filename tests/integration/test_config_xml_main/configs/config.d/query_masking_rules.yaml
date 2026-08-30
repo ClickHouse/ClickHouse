@@ -1,4 +1,0 @@
-query_masking_rules:
-  rule:
-    regexp: TOPSECRET.TOPSECRET
-    replace: '[hidden]'

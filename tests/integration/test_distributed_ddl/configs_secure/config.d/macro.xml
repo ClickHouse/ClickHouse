@@ -1,5 +1,0 @@
-<clickhouse>
-        <macros>
-                <cluster>cluster_no_replicas</cluster>
-        </macros>
-</clickhouse>

@@ -1,9 +1,0 @@
-<clickhouse>
-    <users>
-        <default>
-            <access_management>1</access_management>
-            <named_collection_control>1</named_collection_control>
-            <show_named_collections_secrets>1</show_named_collections_secrets>
-        </default>
-    </users>
-</clickhouse>

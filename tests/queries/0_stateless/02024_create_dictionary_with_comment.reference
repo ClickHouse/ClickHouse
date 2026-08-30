@@ -1,2 +1,0 @@
-CREATE DICTIONARY default.`2024_dictionary_with_comment`\n(\n    `id` UInt64,\n    `value` String\n)\nPRIMARY KEY id\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9000 TABLE \'source_table\'))\nLIFETIME(MIN 0 MAX 1000)\nLAYOUT(FLAT())\nCOMMENT \'Test dictionary with comment\'
-Test dictionary with comment

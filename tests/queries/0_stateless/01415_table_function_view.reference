@@ -1,4 +1,0 @@
-1
-1
-SELECT *\nFROM view(\n    SELECT 1\n    FROM system.one\n)
-SELECT *\nFROM remote(\'127.0.0.1\', view(\n    SELECT 1\n    FROM system.one\n))

@@ -1,2 +1,0 @@
-Source from https://github.com/orlp/pdqsort
-Mandatory for Clickhouse, not available in OS packages, we can't use it as submodule.

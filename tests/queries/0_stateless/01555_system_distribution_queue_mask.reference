@@ -1,6 +1,0 @@
-masked flush only
-3,"default:*@127%2E0%2E0%2E1:9000,default:*@127%2E0%2E0%2E2:9000","AUTHENTICATION_FAILED",1
-masked
-3,"default:*@127%2E0%2E0%2E1:9000,default:*@127%2E0%2E0%2E2:9000","AUTHENTICATION_FAILED",1
-no masking
-1,"default@localhost:9000"

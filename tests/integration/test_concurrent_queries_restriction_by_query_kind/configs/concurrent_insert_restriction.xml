@@ -1,3 +1,0 @@
-<clickhouse>
-    <max_concurrent_insert_queries>2</max_concurrent_insert_queries>
-</clickhouse>

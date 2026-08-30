@@ -1,5 +1,0 @@
-{
-	"row_1": {"number":0,"str":"Hello","arr":[]},
-	"row_2": {"number":1,"str":"Hello","arr":[0]},
-	"row_3": {"number":2,"str":"Hello","arr":[0,1]}
-}

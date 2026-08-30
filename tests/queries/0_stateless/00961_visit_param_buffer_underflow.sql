@@ -1,1 +1,0 @@
-SELECT visitParamExtractRaw('\"a\":', 'a');

@@ -1,3 +1,0 @@
-<clickhouse>
-    <max_authentication_methods_per_user>2</max_authentication_methods_per_user>
-</clickhouse>

@@ -1,8 +1,0 @@
-include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
-add_headers_and_sources(clickhouse_dictionaries_embedded .)
-add_headers_and_sources(clickhouse_dictionaries_embedded GeodataProviders)
-add_library(clickhouse_dictionaries_embedded ${clickhouse_dictionaries_embedded_sources})
-target_link_libraries(clickhouse_dictionaries_embedded PRIVATE clickhouse_common_io)
-if (TARGET ch::mysqlxx)
-    target_link_libraries(clickhouse_dictionaries_embedded PRIVATE ch::mysqlxx)
-endif()

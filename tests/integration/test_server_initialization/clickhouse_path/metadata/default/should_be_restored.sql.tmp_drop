@@ -1,1 +1,0 @@
-attach table should_be_restored (n UInt8) engine = File(CSV)

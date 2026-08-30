@@ -1,5 +1,0 @@
-<clickhouse>
-    <quotas>
-        <default remove="1"/>
-    </quotas>
-</clickhouse>

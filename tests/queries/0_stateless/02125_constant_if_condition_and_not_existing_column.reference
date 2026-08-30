@@ -1,9 +1,0 @@
-42
-42
-42
-42
-42
-42
-42
-42
-SELECT\n    x,\n    if((\n        SELECT hasColumnInTable(currentDatabase(), \'test\', \'y\')\n        FROM system.one\n    ), y, concat(x, \'_\'))\nFROM test

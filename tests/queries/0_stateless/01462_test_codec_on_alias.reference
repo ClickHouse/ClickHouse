@@ -1,4 +1,0 @@
-create table compression_codec_on_alias with CODEC on ALIAS type
-create table compression_codec_on_alias with proper CODEC
-alter table compression_codec_on_alias add column (ALIAS type) with CODEC
-alter table compression_codec_on_alias add column (NOT ALIAS type) with CODEC

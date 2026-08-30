@@ -1,5 +1,0 @@
-<clickhouse>
-    <distributed_ddl>
-        <pool_size replace="1">20</pool_size>
-    </distributed_ddl>
-</clickhouse>

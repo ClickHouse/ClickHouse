@@ -1,9 +1,0 @@
-CREATE TEMPORARY TABLE tmp_table\n(\n    `n` UInt64\n)\nENGINE = Memory
-CREATE TEMPORARY TABLE tmp_table\n(\n    `n` UInt64\n)\nENGINE = Memory
-CREATE TEMPORARY TABLE tmp_table\n(\n    `n` UInt64\n)\nENGINE = Memory
-42
-OK
-OK
-3	9
-0
-1

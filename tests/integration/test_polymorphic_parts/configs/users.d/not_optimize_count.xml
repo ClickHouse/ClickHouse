@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <optimize_trivial_count_query>0</optimize_trivial_count_query>
-            <allow_deprecated_syntax_for_merge_tree>1</allow_deprecated_syntax_for_merge_tree>
-        </default>
-    </profiles>
-</clickhouse>

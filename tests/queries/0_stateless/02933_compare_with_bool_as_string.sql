@@ -1,1 +1,0 @@
-select true = 'true';

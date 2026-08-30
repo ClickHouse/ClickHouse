@@ -1,7 +1,0 @@
-#include <Dictionaries/RangeHashedDictionaryGetItemsShortCircuitImpl.txx>
-
-namespace DB
-{
-INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL_FOR_ATTRIBUTE_TYPE(Float32);
-INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL_FOR_ATTRIBUTE_TYPE(Float64);
-}

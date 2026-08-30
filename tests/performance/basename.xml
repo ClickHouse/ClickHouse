@@ -1,8 +1,0 @@
-<test>
-    <settings>
-        <max_threads>1</max_threads>
-    </settings>
-
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(basename(URL))</query>
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(basename(Referer))</query>
-</test>

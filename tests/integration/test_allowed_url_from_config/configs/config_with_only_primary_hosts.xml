@@ -1,8 +1,0 @@
-<clickhouse> 
-    <remote_url_allow_hosts>
-        <host>host:80</host>
-        <host>host:123</host>
-        <host>yandex.ru</host>
-    </remote_url_allow_hosts>
-</clickhouse>
-

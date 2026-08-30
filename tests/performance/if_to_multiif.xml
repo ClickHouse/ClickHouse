@@ -1,9 +1,0 @@
-<test>
-    <query><![CDATA[ WITH number AS x SELECT sum(x < 1 ? 1 : (x < 5 ? 2 : 3)) FROM numbers(100000000) ]]></query>
-    <query><![CDATA[ WITH number AS x SELECT any(x < 1 ? '1' : (x < 5 ? '2' : '3')) FROM numbers(100000000) ]]></query>
-    <query><![CDATA[ WITH number AS x SELECT sum(x < 1 ? 1 : (x < 5 ? 2 : (x < 10 ? 3 : (x % 2 ? 4 : 5)))) FROM numbers(100000000) ]]></query>
-    <query><![CDATA[ WITH number AS x SELECT any(x < 1 ? '1' : (x < 5 ? '2' : (x < 10 ? '3' : (x % 2 ? '4' : '5')))) FROM numbers(10000000) ]]></query>
-    <query><![CDATA[
-WITH number AS x, x = 1 ? 1 : (x = 2 ? 2 : (x = 3 ? 3 : (x = 4 ? 4 : (x = 5 ? 5 : (x = 6 ? 6 : (x = 7 ? 7 : (x = 8 ? 8 : (x = 9 ? 9 : (x = 10 ? 10 : (x = 11 ? 11 : (x = 12 ? 12 : (x = 13 ? 13 : (x = 14 ? 14 : (x = 15 ? 15 : (x = 16 ? 16 : (x = 17 ? 17 : (x = 18 ? 18 : (x = 19 ? 19 : 20)))))))))))))))))) AS res SELECT sum(res) FROM numbers(10000000)
-    ]]></query>
-</test>

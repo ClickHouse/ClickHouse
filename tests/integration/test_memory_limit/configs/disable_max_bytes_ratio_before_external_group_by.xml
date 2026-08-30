@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <max_bytes_ratio_before_external_group_by>0</max_bytes_ratio_before_external_group_by>
-        </default>
-    </profiles>
-</clickhouse>

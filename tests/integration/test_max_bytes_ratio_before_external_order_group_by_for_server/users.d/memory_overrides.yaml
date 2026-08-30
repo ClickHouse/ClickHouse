@@ -1,3 +1,0 @@
-profiles:
-    default:
-        max_memory_usage_for_user: 10Gi

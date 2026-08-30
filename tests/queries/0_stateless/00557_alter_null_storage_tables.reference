@@ -1,3 +1,0 @@
-x	UInt8					
-x	Int64	DEFAULT	toInt64(y)			
-y	String					

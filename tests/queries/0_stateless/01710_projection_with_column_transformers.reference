@@ -1,1 +1,0 @@
-CREATE TABLE default.foo\n(\n    `bar` String,\n    PROJECTION p\n    (\n        SELECT * APPLY groupUniqArray(100)\n    )\n)\nENGINE = MergeTree\nORDER BY bar\nSETTINGS index_granularity = 8192

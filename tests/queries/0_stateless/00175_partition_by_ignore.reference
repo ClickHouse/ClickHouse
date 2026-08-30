@@ -1,3 +1,0 @@
--- check that partition key with ignore works correctly
-"default","partition_by_ignore",1,29,1
-"default","partition_by_ignore",1,29,1

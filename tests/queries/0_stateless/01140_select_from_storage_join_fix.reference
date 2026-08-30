@@ -1,8 +1,0 @@
-1	s	1	String	String
-2	s	2	String	String
-3	s	3	Nullable(String)	String
-4	s	4	String	Nullable(String)
-1	s	1	String	String
-2	s	2	String	String
-3	s	3	Nullable(String)	String
-4	s	4	String	Nullable(String)

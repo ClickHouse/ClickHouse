@@ -1,3 +1,0 @@
-explicit_limit: TOO_DEEP_RECURSION
-stack_backstop: TOO_DEEP_RECURSION
-unlimited_depth: accepted

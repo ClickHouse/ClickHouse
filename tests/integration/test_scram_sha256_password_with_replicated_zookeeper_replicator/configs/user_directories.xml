@@ -1,9 +1,0 @@
-<clickhouse>
-    <user_directories>
-        <replicated>
-            <zookeeper_path>/clickhouse/access/</zookeeper_path>
-        </replicated>
-        <local_directory remove="remove">
-        </local_directory>
-    </user_directories>
-</clickhouse>

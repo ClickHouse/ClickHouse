@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<clickhouse>
-  <!-- 3.600.000ms = 1 hour to basically prevent automatic reloads happening -->
-  <config_reload_interval_ms>3600000</config_reload_interval_ms>
-</clickhouse>

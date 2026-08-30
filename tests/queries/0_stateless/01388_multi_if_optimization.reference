@@ -1,4 +1,0 @@
-SELECT if(equals(number, 1), \'hello\', if(equals(number, 2), \'world\', \'xyz\'))\nFROM numbers(10)
-SELECT if(equals(number, 1), \'hello\', if(equals(number, 2), \'world\', \'xyz\'))\nFROM numbers(10)
-\N
-\N

@@ -1,6 +1,0 @@
-has zero-byte part file: 1
-count on:  1000
-count off: 1000
-restore fsync delta covers all part files: 	1
-encrypted incremental count: 1000
-encrypted incremental restore with fsync_after_insert=1, all part files fsynced: 	1

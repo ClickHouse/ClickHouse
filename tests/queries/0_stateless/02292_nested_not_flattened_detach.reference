@@ -1,4 +1,0 @@
-CREATE TABLE default.t_nested_detach\n(\n    `n` Nested(u UInt32, s String)\n)\nENGINE = Log
-n	Nested(u UInt32, s String)					
-CREATE TABLE default.t_nested_detach\n(\n    `n` Nested(u UInt32, s String)\n)\nENGINE = Log
-n	Nested(u UInt32, s String)					

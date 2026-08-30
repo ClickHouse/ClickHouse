@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <buffer_profile>
-            <max_partitions_per_insert_block>1</max_partitions_per_insert_block>
-        </buffer_profile>
-    </profiles>
-</clickhouse>
-

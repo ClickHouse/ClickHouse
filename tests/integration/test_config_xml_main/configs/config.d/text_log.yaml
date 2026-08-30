@@ -1,4 +1,0 @@
-text_log:
-  database: system
-  table: text_log
-  flush_interval_milliseconds: 7500

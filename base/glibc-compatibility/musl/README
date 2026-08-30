@@ -1,8 +1,0 @@
-Tiny pieces extracted from MUSL library.
-
-git://git.musl-libc.org/musl
-c10bc61508dc52b8315084e628f36a6c3c2dabb1
-
-NOTE: Files was edited.
-
-NOTE: Math related files are pulled from commit 6ad514e4e278f0c3b18eb2db1d45638c9af1c07f.

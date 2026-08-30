@@ -1,9 +1,0 @@
-<clickhouse>
-    <zookeeper>
-        <use_compression>false</use_compression>
-        <node index="1">
-            <host>node1</host>
-            <port>9181</port>
-        </node>
-    </zookeeper>
-</clickhouse>

@@ -1,1 +1,0 @@
-(id = ${id:Escaped}, blockNo = ${blockNo:Escaped}, val1 = ${val1:CSV}, val2 = ${val2:Escaped}, val3 = ${val3:Escaped})

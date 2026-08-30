@@ -1,8 +1,0 @@
-<clickhouse>
-    <merge_tree>
-        <index_granularity>100</index_granularity>
-    </merge_tree>
-    <replicated_merge_tree>
-        <index_granularity>200</index_granularity>
-    </replicated_merge_tree>
-</clickhouse>

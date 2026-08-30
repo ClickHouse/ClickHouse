@@ -1,8 +1,0 @@
-select * from remote(\'127.1\', \'system.one\') format Null;	[]
-select * from remote(\'127.1\', \'system\', \'one\') format Null;	[]
-select * from remote(\'127.1\', system.one) format Null;	[]
-select * from remote(\'127.1\', system, one) format Null;	[]
-select * from remote(\'127.2\', \'system.one\') format Null;	['DESC TABLE system.one']
-select * from remote(\'127.2\', \'system\', \'one\') format Null;	['DESC TABLE system.one']
-select * from remote(\'127.2\', system.one) format Null;	['DESC TABLE system.one']
-select * from remote(\'127.2\', system, one) format Null;	['DESC TABLE system.one']

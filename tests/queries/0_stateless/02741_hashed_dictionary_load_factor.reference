@@ -1,4 +1,0 @@
-test_dictionary_hashed	1000000	0.4768	34000000
-test_dictionary_hashed_load_factor	1000000	0.9537	17000000
-test_dictionary_sparse_hashed	1000000	0.4768	21000000
-test_dictionary_sparse_hashed_load_factor	1000000	0.9537	10000000

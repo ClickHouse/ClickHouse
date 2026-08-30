@@ -1,7 +1,0 @@
-user_directories:
-  users_xml:
-    path: users.yaml
-  local_directory:
-    path: /var/lib/clickhouse/access/
-  "@replace": replace
-

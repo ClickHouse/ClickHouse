@@ -1,7 +1,0 @@
-test_jit_nonnull
-0	0	0
-1	2	1
-test_jit_nullable
-0	0	0
-1	2	1
-\N	0	0

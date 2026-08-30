@@ -1,3 +1,0 @@
-999	1998
-999	1998
-SELECT\n    number,\n    square_number\nFROM\n(\n    WITH\n        multiply(number, 2) AS square_number\n    SELECT\n        number,\n        square_number\n    FROM numbers_indexed\n) AS squares\nWHERE equals(number, 999)

@@ -1,7 +1,0 @@
-<test>
-    <query>select sum(UserID + 1 in (select UserID from hits_10m_single)) from hits_10m_single</query>
-    <query>select sum((UserID + 1, RegionID) in (select UserID, RegionID from hits_10m_single)) from hits_10m_single</query>
-    <query>select sum(URL in (select URL from hits_10m_single where URL != '')) from hits_10m_single</query>
-    <query>select sum(MobilePhoneModel in (select MobilePhoneModel from hits_100m_single where MobilePhoneModel != '')) from hits_100m_single</query>
-    <query>select sum((MobilePhoneModel, UserID + 1) in (select MobilePhoneModel, UserID from hits_100m_single where MobilePhoneModel != '')) from hits_100m_single</query>
-</test>

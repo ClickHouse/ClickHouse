@@ -1,5 +1,0 @@
-<test>
-    <query>SELECT CounterID, EventDate FROM hits_100m_single ORDER BY CounterID, exp(CounterID), sqrt(CounterID) FORMAT Null</query>
-    <query>SELECT CounterID, EventDate FROM hits_100m_single ORDER BY CounterID, EventDate, exp(CounterID), toDateTime(EventDate) FORMAT Null</query>
-    <query>SELECT CounterID, EventDate FROM hits_100m_single ORDER BY CounterID DESC, EventDate DESC, exp(CounterID), toDateTime(EventDate) FORMAT Null</query>
-</test>

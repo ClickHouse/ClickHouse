@@ -1,5 +1,0 @@
-zookeeper:
-  node:
-    host: localhost
-    port: 9181
-    "@index": 1

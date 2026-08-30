@@ -1,2 +1,0 @@
-CREATE TABLE default.m\n(\n    `x` UInt8\n)\nENGINE = Merge(\'_temporary_and_external_tables\', \'^src$\')
-x	UInt8	0

@@ -1,1 +1,0 @@
-([1,2],['a','b'],3,'c',4)	Tuple(\n    `t1.a` Array(UInt32),\n    `t1.s` Array(String),\n    b UInt32,\n    `t2.k` String,\n    `t2.v` UInt32)

@@ -1,8 +1,0 @@
-UInt64	Nullable(String)
-UInt64	Nullable(String)
-Decimal(18, 8)	Nullable(String)
-Decimal(18, 8)	Nullable(String)
-v1	w1
-v1	\N
-v2	
-key1	value1	

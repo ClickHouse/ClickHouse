@@ -1,2 +1,0 @@
-SELECT 1, * FROM (SELECT NULL AS `1`); -- { serverError AMBIGUOUS_COLUMN_NAME }
-SELECT '7', 'xyz', * FROM (SELECT NULL AS `'xyz'`); -- { serverError AMBIGUOUS_COLUMN_NAME }

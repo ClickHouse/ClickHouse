@@ -1,4 +1,0 @@
-a	Tuple(\n    key String,\n    value String)					
-a	Tuple(Tuple(\n    key String,\n    value String))					
-a	Array(Tuple(\n    key String,\n    value String))					
-a	Tuple(UInt8, Tuple(\n    key String,\n    value String))					

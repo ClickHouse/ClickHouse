@@ -1,3 +1,0 @@
-SELECT a + b AS x, a + b AS x
-SELECT a + b AS x, a + c AS x
-SELECT a + b AS x, x

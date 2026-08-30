@@ -1,6 +1,0 @@
-path: /var/lib/clickhouse
-tmp_path: /var/lib/clickhouse/tmp/
-user_files_path: /var/lib/clickhouse/user_files/
-format_schema_path: /var/lib/clickhouse/format_schemas/
-access_control_path: /var/lib/clickhouse/access/
-top_level_domains_path: /var/lib/clickhouse/top_level_domains/

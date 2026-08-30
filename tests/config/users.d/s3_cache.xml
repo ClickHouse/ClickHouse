@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-          <enable_filesystem_cache_on_write_operations>1</enable_filesystem_cache_on_write_operations>
-          <enable_filesystem_cache>1</enable_filesystem_cache>
-        </default>
-    </profiles>
-</clickhouse>

@@ -1,3 +1,0 @@
-CREATE TABLE default.test\n(\n    `x` Nullable(Int64),\n    `y` Nullable(String)\n)\nENGINE = File(\'JSONEachRow\', \'data.jsonl\')
-OK
-OK

@@ -1,4 +1,0 @@
-<test>
-    <query>SELECT min(length(URL)), max(length(URL)) FROM hits_10m_single GROUP BY length(URL) FORMAT Null</query>
-    <query>SELECT any(WatchID), anyLast(WatchID) FROM hits_10m_single GROUP BY WatchID FORMAT Null</query>
-</test>

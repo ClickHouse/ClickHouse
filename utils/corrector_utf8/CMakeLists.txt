@@ -1,2 +1,0 @@
-clickhouse_add_executable(corrector_utf8 corrector_utf8.cpp)
-target_link_libraries(corrector_utf8 PRIVATE clickhouse_common_io clickhouse_common_config)

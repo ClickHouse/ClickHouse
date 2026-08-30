@@ -1,6 +1,0 @@
-(Expression)
-ExpressionTransform
-  (MergingAggregated)
-  MergingAggregatedTransform
-    (ReadFromPreparedSource)
-    SourceFromSingleChunk 0 → 1

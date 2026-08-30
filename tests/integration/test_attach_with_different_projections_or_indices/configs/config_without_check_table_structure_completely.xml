@@ -1,5 +1,0 @@
-<clickhouse>
-    <merge_tree>
-        <enforce_index_structure_match_on_partition_manipulation>false</enforce_index_structure_match_on_partition_manipulation>
-    </merge_tree>
-</clickhouse>
