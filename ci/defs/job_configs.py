@@ -207,6 +207,11 @@ common_stress_job_config = Job.Config(
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/log_parser.py",
+            # `stress_runner.sh` exports the system logs through
+            # `clickhouse_proc.py logs_export_*`. The `ci_logs_sender` user is
+            # covered by `./tests/config` above.
+            "./ci/jobs/scripts/log_export.py",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
         ],
     ),
     timeout=3600 * 3,
@@ -1452,6 +1457,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
                 "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
@@ -1497,6 +1504,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
                 "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
@@ -1527,6 +1536,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
                 "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
@@ -1843,6 +1854,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `create_log_export_config`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./tests/sqlstorm/",
             ],
         ),
