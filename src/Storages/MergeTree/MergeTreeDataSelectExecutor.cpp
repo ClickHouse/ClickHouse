@@ -1980,10 +1980,20 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (!key_condition_useful && !part_offset_condition_useful && !total_offset_condition_useful)
         return part_ranges;
 
-    /// If conditions are relaxed, don't fill exact ranges.
-    if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
+    /// If conditions are relaxed, don't fill exact ranges. The key condition's falsity is judged
+    /// through its exactness condition: relaxed atoms covered by an exact sibling in their
+    /// multi-atom group do not prevent exact ranges (see `KeyCondition::exactnessCondition`).
+    const KeyCondition & key_condition_for_exactness = key_condition.exactnessCondition();
+    if (key_condition_for_exactness.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
         || (total_offset_condition && total_offset_condition->isRelaxed()))
         exact_ranges = nullptr;
+
+    /// When the exactness condition differs from the key condition, `can_be_false` must come from
+    /// it; the full key condition then only supplies the pruning (`can_be_true`). The saturated
+    /// component of `initial_mask` tells which of the two evaluations a caller actually needs
+    /// (see `BoolMask::consider_only_can_be_true`).
+    const KeyCondition * key_condition_for_falsity
+        = (exact_ranges != nullptr && &key_condition_for_exactness != &key_condition) ? &key_condition_for_exactness : nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
@@ -2263,14 +2273,41 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
 
-                return key_condition.checkInRange(
-                    used_key_indices,
-                    sparse_key_left.data(),
-                    sparse_key_right.data(),
-                    sparse_key_types,
-                    equal_boundaries_mask,
-                    initial_mask,
-                    &index_bounds);
+                if (!key_condition_for_falsity || initial_mask.can_be_false)
+                    return key_condition.checkInRange(
+                        used_key_indices,
+                        sparse_key_left.data(),
+                        sparse_key_right.data(),
+                        sparse_key_types,
+                        equal_boundaries_mask,
+                        initial_mask,
+                        &index_bounds);
+
+                /// The exactness condition supplies `can_be_false`; the full condition is
+                /// consulted only when the caller also needs `can_be_true`.
+                BoolMask result = initial_mask.can_be_true
+                    ? initial_mask
+                    : key_condition.checkInRange(
+                          used_key_indices,
+                          sparse_key_left.data(),
+                          sparse_key_right.data(),
+                          sparse_key_types,
+                          equal_boundaries_mask,
+                          BoolMask::consider_only_can_be_true,
+                          &index_bounds);
+
+                result.can_be_false = key_condition_for_falsity
+                    ->checkInRange(
+                        used_key_indices,
+                        sparse_key_left.data(),
+                        sparse_key_right.data(),
+                        sparse_key_types,
+                        equal_boundaries_mask,
+                        BoolMask::consider_only_can_be_false,
+                        &index_bounds)
+                    .can_be_false;
+
+                return result;
             }
 
             if (range.end == marks_count)
@@ -2309,7 +2346,27 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+            if (!key_condition_for_falsity || initial_mask.can_be_false)
+                return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+
+            /// The exactness condition supplies `can_be_false`; the full condition is consulted
+            /// only when the caller also needs `can_be_true`.
+            BoolMask result = initial_mask.can_be_true
+                ? initial_mask
+                : key_condition.checkInRange(
+                      used_key_size, index_left.data(), index_right.data(), key_types, BoolMask::consider_only_can_be_true, &index_bounds);
+
+            result.can_be_false = key_condition_for_falsity
+                ->checkInRange(
+                    used_key_size,
+                    index_left.data(),
+                    index_right.data(),
+                    key_types,
+                    BoolMask::consider_only_can_be_false,
+                    &index_bounds)
+                .can_be_false;
+
+            return result;
         };
 
         auto check_part_offset_condition = [&]()
