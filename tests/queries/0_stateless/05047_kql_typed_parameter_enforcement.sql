@@ -44,3 +44,10 @@ let G = (T:(a:long)) { T | project a }; G(datatable (a:string) ['x']); -- { serv
 let F = (a:long) { a }; print F(2 + 3);
 let F = (a:long) { a }; print F(strlen('abcd'));
 let F = (a:long) { a }; print F(2.5 * 2.0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- A `LowCardinality` argument is enforced by the type its dictionary holds, so a nullable one
+-- stays nullable and a non-nullable one does not become nullable.
+let F = (t:timespan) { t }; print F(toIntervalHour(toLowCardinality(toNullable(1))));
+let F = (t:timespan) { isnull(t) }; print F(toIntervalHour(toLowCardinality(toNullable(1))));
+let F = (t:timespan) { t }; print F(toIntervalHour(toLowCardinality(1)));
+let F = (t:timespan) { t }; print F(toIntervalNanosecond(toLowCardinality(toNullable(1))));
