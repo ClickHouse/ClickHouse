@@ -224,8 +224,7 @@ def test_broken_file_during_split_removes_sent_files(started_cluster):
         ["bash", "-c", f"ls -1 {queue_path}/*.bin | sort -V"]
     ).strip().splitlines()
     assert len(files) == 2
-    file_size = int(node1.exec_in_container(["stat", "-c", "%s", files[-1]]))
-    node1.exec_in_container(["truncate", "-s", str(file_size - 10), files[-1]])
+    node1.exec_in_container(["truncate", "-s", "0", files[-1]])
 
     node1.query("system start distributed sends dist")
     node1.query("system flush distributed dist")
