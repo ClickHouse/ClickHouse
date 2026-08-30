@@ -27,17 +27,22 @@ DROP TABLE t_values_null_default;
 
 -- Blocker 3: the named-tuple insert guard must also apply to Dynamic/JSON destinations in VALUES.
 DROP TABLE IF EXISTS t_values_dynamic;
-CREATE TABLE t_values_dynamic (t Tuple(data Dynamic)) ENGINE = Memory;
--- Matching element name works.
-INSERT INTO t_values_dynamic VALUES (tuple('data')(42));
-SELECT t.data FROM t_values_dynamic;
--- A differently named source field would silently drop the value into a default. It must throw,
--- consistently with INSERT ... SELECT, instead of being permissively cast with a null context.
+CREATE TABLE t_values_dynamic (t Tuple(data Dynamic, other Int32)) ENGINE = Memory;
+-- Matching element names work.
+INSERT INTO t_values_dynamic VALUES (tuple('data', 'other')(42, 1));
+-- A tuple whose element names are disjoint with the destination is converted positionally
+-- and keeps the data (see 05026_named_tuple_cast_unambiguous), on both paths.
+INSERT INTO t_values_dynamic VALUES (tuple('a', 'b')(43, 2));
+INSERT INTO t_values_dynamic SELECT tuple('a', 'b')(44, 3);
+SELECT t.data, t.other FROM t_values_dynamic ORDER BY t.other;
+-- With a common element name the tuples are matched by name, and a source field without a
+-- counterpart would silently drop into a default. It must throw, consistently with
+-- INSERT ... SELECT, instead of being permissively cast with a null context.
 -- The inline VALUES data is parsed in the client (see ClientBase::sendDataFrom), so the guard is
 -- normally applied there and the error is reported as a client error; INSERT ... SELECT is converted
 -- on the server and reports a server error. With async_insert the client sends the block unconverted
 -- and the server-side guard rejects it during WaitForAsyncInsert, so a server error is reported
 -- instead. Either way the conversion must be rejected.
-INSERT INTO t_values_dynamic VALUES (tuple('val')(42)); -- { error CANNOT_CONVERT_TYPE }
-INSERT INTO t_values_dynamic SELECT tuple('val')(42); -- { serverError CANNOT_CONVERT_TYPE }
+INSERT INTO t_values_dynamic VALUES (tuple('data', 'val')(45, 7)); -- { error CANNOT_CONVERT_TYPE }
+INSERT INTO t_values_dynamic SELECT tuple('data', 'val')(45, 7); -- { serverError CANNOT_CONVERT_TYPE }
 DROP TABLE t_values_dynamic;

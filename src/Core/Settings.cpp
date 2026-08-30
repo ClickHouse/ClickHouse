@@ -6584,7 +6584,7 @@ Two ways of naming tuple elements are affected differently by the analyzer:
 - The explicit named-tuple syntax `tuple('a', 'b')(x, y)` carries the names in the function parameters and produces a named tuple in both analyzers.
 )", 0) \
     DECLARE(Bool, allow_named_tuple_conversion_with_extra_source_fields, true, R"(
-Allow conversion between named Tuple types when the source tuple contains fields that do not exist in the destination tuple. Extra source fields are ignored and missing destination fields are filled with default values for backward compatibility. When disabled, such conversions are treated as potentially lossy and an exception is thrown if any extra source fields are lost during conversion.
+Allow conversion between named Tuple types when the source tuple contains fields that do not exist in the destination tuple. Extra source fields are ignored and missing destination fields are filled with default values for backward compatibility. When disabled, such conversions are treated as potentially lossy and an exception is thrown if any extra source fields are lost during conversion. Tuples with fully disjoint sets of element names are converted positionally, lose no fields, and are not affected by this setting.
 )", 0) \
     DECLARE(Bool, allow_named_tuple_conversion_with_extra_source_fields_on_insert, false, R"(
 Additional INSERT-level guard for named Tuple conversion with extra source fields.
