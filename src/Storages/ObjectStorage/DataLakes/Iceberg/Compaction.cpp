@@ -325,8 +325,7 @@ static void writeDataFiles(
     const IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    const String & write_format,
-    CompressionMethod write_compression_method)
+    const String & write_format)
 {
     ColumnMapperPtr column_mapper;
     {
@@ -379,7 +378,11 @@ static void writeDataFiles(
             parser_shared_resources,
             std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
             true /* is_remote_fs */,
-            chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
+            /// `write_compression_method` is the table's *metadata* codec; it says nothing about how a
+            /// data file is compressed. Passing it as the hint would defeat autodetection entirely --
+            /// `chooseCompressionMethod` only looks at the path when the hint is empty or `auto` -- and a
+            /// plain `.parquet` file would then be read as if it were `gzip`.
+            chooseCompressionMethod(data_file->data_object_info->getPath(), "auto"),
             false);
 
         auto write_buffer = object_storage->writeObject(
@@ -1321,15 +1324,17 @@ static void writeMetadataFiles(
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(path_resolver.resolve(generated_metadata_info.path)),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
+        /// `generated_metadata_info.path` already carries the codec suffix the name generator was
+        /// seeded with, so the bytes must be compressed to match it -- a raw write would leave plain
+        /// JSON under a `vN.gz.metadata.json` name, which the next read fails to decompress.
+        Iceberg::writeMessageToFile(
+            json_representation,
+            path_resolver.resolve(generated_metadata_info.path),
+            object_storage,
+            context,
+            /* write_if_none_match */ "",
+            /* write_if_match */ "",
+            generated_metadata_info.compression_method);
     }
 }
 
@@ -1476,8 +1481,7 @@ void compactIcebergTable(
             persistent_table_components.path_resolver,
             format_settings_,
             context_,
-            write_format,
-            persistent_table_components.metadata_compression_method);
+            write_format);
         writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
         /// Invalidate before removing old files: a reader that races in between must miss the
         /// cache and re-read the new metadata rather than hit a stale entry pointing at files
