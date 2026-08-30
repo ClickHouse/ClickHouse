@@ -297,7 +297,7 @@ VortexExpressionPtr VortexExpressionConverter::makeLiteral(
 
     auto make_bool = [&]() -> VortexExpressionPtr
     {
-        UInt64 bool_value;
+        UInt64 bool_value = 0;
         if (converted.getType() == Field::Types::UInt64 || converted.getType() == Field::Types::Bool)
             bool_value = converted.safeGet<UInt64>();
         else if (converted.getType() == Field::Types::Int64 && converted.safeGet<Int64>() >= 0)
