@@ -556,12 +556,13 @@ try
     auto cancellation = std::make_shared<DistributedQueryCancellation>();
 
     /// Just execute the distributed query plan without checking the result
-    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation);
+    auto executor = createDistributedQueryExecutor(
+        query_uuid, distributed_query_plan, nullptr, query_context, cancellation, std::make_shared<WakeupFd>());
 
     try
     {
         executor->start();
-        while (!executor->execute());
+        while (!executor->execute(/*poll_timeout_ms=*/ 100));
         executor->cleanup();
     }
     catch (...)
@@ -590,7 +591,8 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     context->setSetting("distributed_plan_execute_locally", true);
 
     auto exchange_lookup = createExchangeLookup(
-        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context);
+        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
+        /*execute_locally=*/true);
 
     auto header = std::make_shared<const Block>();
     const ExchangeStreamId stream_id("test_exchange", 0, 0);
