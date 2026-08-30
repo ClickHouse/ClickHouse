@@ -84,6 +84,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsString force_data_skipping_indices;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -259,6 +260,11 @@ bool canExcludePartByIndexAnalysis(
     ASTs predicates,
     ContextPtr context)
 {
+    /// The check query rejects a mutation whose predicate does not use a forced index;
+    /// excluding the part here would silently bypass that check.
+    if (context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
+        return false;
+
     /// Only the predicate rewrite/analysis below is allowed to fall back silently: a genuine
     /// error there will surface again when the fallback path executes the check query. The
     /// index analysis call further down reads primary key / minmax metadata and must not have

@@ -3851,17 +3851,12 @@ bool MutateTask::prepare()
         });
     }
 
-    /// The check query only decides whether the part is touched, so it must not fail on
-    /// force_data_skipping_indices; the actual mutation read below still honors the setting.
-    auto context_for_touch_check = Context::createCopy(context_for_reading);
-    context_for_touch_check->resetSettingsToDefaultValue({"force_data_skipping_indices"});
-
     auto is_storage_touched = isStorageTouchedByMutations(
         ctx->source_part,
         mutations_snapshot,
         ctx->metadata_snapshot,
         ctx->commands_for_part,
-        context_for_touch_check,
+        context_for_reading,
         [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
     );
 
