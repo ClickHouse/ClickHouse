@@ -150,8 +150,12 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
     /// However, when the input streams carry disjoint sets of the DISTINCT key values, each stream
     /// can be deduplicated independently, so we keep the streams and skip merging them into one.
+    /// A step that lost its order-guard state in serialization does not know whether reordering its
+    /// output is allowed, so it merges the streams even when they are disjoint (`applyStreamDisjointness`
+    /// already refuses to mark such a step, this is the same decision on the pipeline side).
     bool scattered = false;
-    if (!pre_distinct && (!skip_stream_merging || limit_hint != 0 || has_order_sensitive_post_distinct_limit))
+    if (!pre_distinct
+        && (!skip_stream_merging || limit_hint != 0 || has_order_sensitive_post_distinct_limit || !order_guard_state_is_known))
     {
         /// The streams may also be made disjoint on the spot: repartitioning them by the hash of the
         /// DISTINCT columns routes equal key values into the same stream, which is all the deduplication
@@ -243,7 +247,8 @@ void DistinctStep::serialize(Serialization & ctx) const
     /// Let's not serialize limit_hint.
     /// Ideally, we can get if from a query plan optimization on the follower.
     /// The same holds for `has_order_sensitive_post_distinct_limit`; because neither is restored,
-    /// `deserialize` disables the hash scatter of the final `DISTINCT` on the follower.
+    /// `deserialize` disables both parallel paths of the final `DISTINCT` on the follower: the hash
+    /// scatter and skipping the merge of partition-disjoint streams.
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
@@ -269,7 +274,9 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     auto step = std::make_unique<DistinctStep>(
         ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
     /// Neither `limit_hint` nor `has_order_sensitive_post_distinct_limit` is serialized, so the guard
-    /// against reordering the output of the final `DISTINCT` cannot be reconstructed here.
+    /// against reordering the output of the final `DISTINCT` cannot be reconstructed here. The follower
+    /// optimizes this fragment again, and both `scatterStreamsByHash` and `applyStreamDisjointness`
+    /// refuse to parallelize a step whose guard state is unknown.
     step->forgetOrderGuardState();
     return step;
 }

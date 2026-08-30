@@ -70,6 +70,7 @@ public:
     /// A deserialized step cannot know whether the order of its output is consumed downstream, see
     /// `order_guard_state_is_known`.
     void forgetOrderGuardState() { order_guard_state_is_known = false; }
+    bool isOrderGuardStateKnown() const { return order_guard_state_is_known; }
 
 private:
     void updateOutputHeader() override;
@@ -88,9 +89,10 @@ private:
     bool parallel_distinct = false;
 
     /// `limit_hint` and `has_order_sensitive_post_distinct_limit` are not serialized, and a serialized
-    /// fragment is optimized again on the worker, so a deserialized step would decide whether to
-    /// scatter without knowing that the initiator kept the stream single for a downstream `LIMIT`,
-    /// `OFFSET`, or `LIMIT BY`. Fail close: a step that lost that state never scatters.
+    /// fragment is optimized again on the worker, so a deserialized step would decide whether to keep
+    /// its input in more than one stream without knowing that the initiator kept the stream single for
+    /// a downstream `LIMIT`, `OFFSET`, or `LIMIT BY`. Fail close: a step that lost that state neither
+    /// scatters by hash nor skips the merge of already-disjoint streams.
     bool order_guard_state_is_known = true;
 };
 
