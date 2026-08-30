@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <config.h>
 
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -43,10 +44,7 @@ TokenPostingsInfo makeEmbeddedInfo(const std::vector<uint32_t> & doc_ids)
     TokenPostingsInfo info;
     info.cardinality = static_cast<UInt32>(doc_ids.size());
 
-    auto bitmap = std::make_shared<roaring::Roaring>();
-    for (auto id : doc_ids)
-        bitmap->add(id);
-    info.embedded_postings = bitmap;
+    info.embedded_postings.assign(doc_ids.begin(), doc_ids.end());
 
     if (!doc_ids.empty())
     {
@@ -73,8 +71,7 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
     auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
-    if (info.embedded_postings)
-        info.embedded_postings->toUint32Array(flat->data());
+    std::copy(info.embedded_postings.begin(), info.embedded_postings.end(), flat->begin());
     return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
 }
 
@@ -201,10 +198,12 @@ struct MultiBlockTestData
 /// Build a multi-segment TokenPostingsInfo and data buffer for testing.
 ///
 /// @param blocks  Vector of sorted doc ID vectors, one per segment.
-///                Each segment is encoded independently using PostingListCodecBitpackingImpl.
+///                Each segment is encoded independently using SegmentedPostingListCodec.
 ///
 /// Returns a MultiBlockTestData with the binary buffer, TokenPostingsInfo, and flattened doc list.
-MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> & blocks)
+MultiBlockTestData makeMultiBlockData(
+    const std::vector<std::vector<uint32_t>> & blocks,
+    IPostingListCodec::Type block_codec_type = IPostingListCodec::Type::Bitpacking)
 {
     MultiBlockTestData result;
     auto & info = result.info;
@@ -226,7 +225,7 @@ MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> &
     for (const auto & block_docs : blocks)
     {
         /// Use a segment size large enough to hold all docs in one segment.
-        PostingListCodecBitpackingImpl codec(block_docs.size() + BLOCK_SIZE);
+        SegmentedPostingListCodec codec(block_docs.size() + BLOCK_SIZE, block_codec_type);
         for (auto doc : block_docs)
             codec.insert(doc);
         codec.encode(out, info);
@@ -3622,12 +3621,14 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out;
-    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec), /*has_positions=*/ false, out);
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V1_WithCodec,
+        sparse_index, IPostingListCodec::Type::Bitpacking, /*has_positions=*/ false, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
 
-    EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V1_WithCodec);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::Bitpacking);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
     EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "alpha");
@@ -3637,7 +3638,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
 TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TextIndexHeader::Version::Initial), out);
+    writeVarUInt(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial), out);
     writeVarUInt(1u, out);
 
     auto tokens = ColumnString::create();
@@ -3651,11 +3652,58 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
 
-    EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial));
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V0_Initial);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
     EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "beta");
     EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 7u);
+}
+
+TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
+{
+    auto tokens = ColumnString::create();
+    tokens->insert("gamma");
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(13);
+
+    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
+
+    WriteBufferFromOwnString out_initial;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V0_Initial,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, out_initial);
+
+    WriteBufferFromOwnString out_with_codec;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V1_WithCodec,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, out_with_codec);
+
+    /// The `Initial` header omits the single-byte codec type, so it is exactly one byte shorter.
+    EXPECT_EQ(out_initial.str().size() + 1, out_with_codec.str().size());
+
+    WriteBufferFromOwnString out_with_positions;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V2_WithPositions,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ true, out_with_positions);
+
+    /// The `WithPositions` header adds the single-byte positions flag on top of the codec type.
+    EXPECT_EQ(out_with_codec.str().size() + 1, out_with_positions.str().size());
+
+    ReadBufferFromString in(out_initial.str());
+    auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
+
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V0_Initial);
+    EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
+    EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "gamma");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 13u);
+
+    ReadBufferFromString in_with_positions(out_with_positions.str());
+    auto with_positions_data = TextIndexSerialization::deserializeHeader(in_with_positions);
+
+    EXPECT_EQ(with_positions_data.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
+    EXPECT_TRUE(with_positions_data.has_positions);
 }
 
 // Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and

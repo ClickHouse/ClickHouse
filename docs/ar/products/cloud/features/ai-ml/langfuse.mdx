@@ -41,7 +41,7 @@ doc_type: 'مرجع'
 
 يعتمد Langfuse فقط على مكونات مفتوحة المصدر، ويمكن نشره محليًا أو على بنية تحتية سحابية أو في البيئات المحلية:
 
-* **ClickHouse**: يخزن بيانات الرصد عالية الحجم (traces وspans وgenerations وscores). ويتيح التجميع السريع والتحليلات للوحات المعلومات.
+* **ClickHouse**: يخزن بيانات الرصد عالية الحجم (تتبّعات وspans وgenerations ودرجات). ويتيح التجميع السريع والتحليلات للوحات المعلومات.
 * **Postgres**: يخزن البيانات المعاملاتية مثل حسابات المستخدمين، وإعدادات المشاريع، وتعريفات المطالبات.
 * **Redis**: يتولى وضع الأحداث في قوائم الانتظار والتخزين المؤقت.
 * **S3/Blob Storage**: يخزن حمولات البيانات الكبيرة وبيانات الأحداث الخام.
@@ -54,7 +54,7 @@ flowchart TB
         Worker["Async Worker<br/>(langfuse/worker)"]
         Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Transactional Data)", pos: "b", w: 60, h: 60, constraint: "on" }
         Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Cache, Queue)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
+        ClickHouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "ClickHouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
         S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Raw events, multi-modal attachments)", pos: "b", w: 60, h: 60, constraint: "on" }
     end
     LLM["LLM API/Gateway<br/>(optional; BYO; can be same VPC or VPC-peered)"]
@@ -63,11 +63,11 @@ flowchart TB
     Web --> S3
     Web --> Postgres
     Web --> Cache
-    Web --> Clickhouse
+    Web --> ClickHouse
     Web -..->|"optional for playground"| LLM
 
     Cache --> Worker
-    Worker --> Clickhouse
+    Worker --> ClickHouse
     Worker --> Postgres
     Worker --> S3
     Worker -..->|"optional for evals"| LLM

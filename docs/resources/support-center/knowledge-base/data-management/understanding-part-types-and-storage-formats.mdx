@@ -128,6 +128,10 @@ These two concepts are orthogonal and you can have any combination:
 
 You can inspect the part type and part storage type of existing parts using the [`system.parts`](/reference/system-tables/parts) table:
 
+<Note>
+In open-source ClickHouse, `part_storage_type` is exposed by `system.parts` starting with version 26.9. In version 26.8 and earlier, omit `part_storage_type` from the query and group and order only by `part_type`.
+</Note>
+
 ```sql
 SELECT
     part_type,
