@@ -80,11 +80,16 @@ void SerializationInfoSettings::updateHash(SipHash & hash) const
     hash.update(propagate_types_serialization_versions_to_nested_types);
 }
 
-SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations()
+SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations(bool with_string_size_stream)
 {
     SerializationInfoSettings settings;
     settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
     settings.nullable_serialization_version = MergeTreeNullableSerializationVersion::ALLOW_SPARSE;
+    if (with_string_size_stream)
+    {
+        settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+        settings.propagate_types_serialization_versions_to_nested_types = true;
+    }
     return settings;
 }
 

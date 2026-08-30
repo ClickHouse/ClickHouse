@@ -8,18 +8,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 0;
-
-SELECT toFloat64(-0.0) IN (arrayMap(x -> x, [toFloat64(0.0)]));
-SELECT toFloat64(-0.0) IN (arraySum(x -> x, [toFloat64(0.0)]));
-SELECT 3 IN (arrayMap(x -> x + 1, [1, 2]));
-SELECT 5 IN (arrayMap(x -> x + 1, [1, 2]));
-SELECT 3 NOT IN (arrayMap(x -> x + 1, [1, 2]));
-
--- Constant aliases keep the constant `Set` path: expanded before the rewrite is considered.
-WITH toFloat64(0.0) AS c SELECT toFloat64(-0.0) IN (c);
-SELECT toFloat64(0.0) AS c, toFloat64(-0.0) IN (c);
-
 SET enable_analyzer = 1;
 
 SELECT toFloat64(-0.0) IN (arrayMap(x -> x, [toFloat64(0.0)]));

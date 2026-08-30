@@ -699,10 +699,10 @@ clickhouse://[2001:db8::1234]
 ```
 
 连接字符串可以包含多个主机。
-ClickHouse 命令行客户端会按顺序 (从左到右) 尝试连接这些主机。
+ClickHouse 客户端会按顺序 (从左到右) 尝试连接这些主机。
 连接一旦建立，就不会再尝试连接其余主机。
 
-连接字符串必须作为 `clickHouse-client` 的第一个参数指定。
+连接字符串必须作为 `clickhouse-client` 的第一个参数指定。
 除 `--host` 和 `--port` 外，连接字符串还可以与任意数量的其他[命令行选项](#command-line-options)组合使用。
 
 `query_parameters` 允许以下键：
