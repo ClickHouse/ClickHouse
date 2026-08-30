@@ -299,6 +299,7 @@ public:
                     });
                 }
                 pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
+                pipeline->disableProfileEventUpdate();
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
