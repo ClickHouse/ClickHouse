@@ -11,6 +11,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
@@ -59,6 +60,31 @@ void IDataType::updateHash(SipHash & hash) const
 
     hash.update(getTypeId());
     updateHashImpl(hash);
+}
+
+bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
+{
+    if (!lhs.equals(rhs))
+        return false;
+
+    /// A time zone left out of the type means the session time zone, so it is the same expression as
+    /// that zone spelled out, while two different zones differ however they are spelled.
+    if (const auto * lhs_time_zone = dynamic_cast<const TimezoneMixin *>(&lhs))
+    {
+        if (const auto * rhs_time_zone = dynamic_cast<const TimezoneMixin *>(&rhs))
+            return lhs_time_zone->getTimeZone().getTimeZone() == rhs_time_zone->getTimeZone().getTimeZone();
+    }
+
+    return lhs.getName() == rhs.getName();
+}
+
+void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
+{
+    type.updateHash(hash);
+    if (const auto * time_zone = dynamic_cast<const TimezoneMixin *>(&type))
+        hash.update(time_zone->getTimeZone().getTimeZone());
+    else
+        hash.update(type.getName());
 }
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)

@@ -188,7 +188,8 @@ MatchedTrees::Matches matchTrees(
                                         {
                                             const auto * inner_col = children[i]->column.get();
                                             const auto * outer_col = frame.node->children[i]->column.get();
-                                            if (!inner_col || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
+                                            if (!inner_col
+                                                || !haveSameExpressionIdentity(*children[i]->result_type, *frame.node->children[i]->result_type))
                                             {
                                                 all_children_matched = false;
                                             }

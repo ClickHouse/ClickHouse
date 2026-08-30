@@ -549,6 +549,12 @@ FOR_TYPES_OF_TYPE(DISPATCH)
 #undef DISPATCH
 #undef FOR_TYPES_OF_TYPE
 
+/// Whether the two types are indistinguishable to an expression, and a hash consistent with it.
+/// Finer than `equals`, which answers whether the types are interchangeable for storage and so
+/// ignores the `DateTime` time zone, while a date or time function reads the zone from its argument.
+bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs);
+void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
+
 // Same as isColumnedAsDecimal but also checks value type of underlyig column.
 template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)

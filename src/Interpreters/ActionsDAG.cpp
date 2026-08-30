@@ -1059,7 +1059,7 @@ struct ConstantKeyHash
     size_t operator()(const ConstantKey & k) const
     {
         SipHash h;
-        k.sample->result_type->updateHash(h);
+        updateExpressionIdentityHash(*k.sample->result_type, h);
         k.sample->column->updateHashWithValue(0, h);
         return h.get64();
     }
@@ -1069,7 +1069,7 @@ struct ConstantKeyEqual
 {
     bool operator()(const ConstantKey & a, const ConstantKey & b) const
     {
-        return a.sample->result_type->equals(*b.sample->result_type)
+        return haveSameExpressionIdentity(*a.sample->result_type, *b.sample->result_type)
             && constColumnsEqual(a.sample->column, b.sample->column);
     }
 };

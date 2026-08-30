@@ -172,14 +172,14 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
     const auto & column = constant_value.getColumn();
     const auto & rhs_column = rhs_typed.constant_value.getColumn();
 
-    return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
+    return haveSameExpressionIdentity(*constant_value.getType(), *rhs_typed.constant_value.getType())
            && column->compareAt(0, 0, *rhs_column, 1) == 0;
 }
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
     constant_value.getColumn()->updateHashFast(hash_state);
-    constant_value.getType()->updateHash(hash_state);
+    updateExpressionIdentityHash(*constant_value.getType(), hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
