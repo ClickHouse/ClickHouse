@@ -535,6 +535,36 @@ std::optional<String> optimizeUseNormalProjections(
     projection_query_info.row_level_filter = nullptr;
     if (query.dag && query.filter_node)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
+
+    /// Derive the projection `PREWHERE` before candidate analysis, not only for the winning candidate
+    /// below. `analyzeProjectionCandidate` and `filterPartsAndCollectProjectionCandidates` consult the
+    /// query condition cache (through `estimateNumMarksToRead`), and the entries a projection read
+    /// writes are keyed by the condition of its `PREWHERE` - so without a `PREWHERE` here the analysis
+    /// probes the plain `WHERE` key only, and a warm query (in particular a repeated
+    /// `ORDER BY ... LIMIT n` whose granules the TopK read already excluded) cannot reuse them and
+    /// picks its plan from cold mark counts.
+    ///
+    /// The split depends only on `query.dag` and `query.filter_node`, which are the same for every
+    /// candidate, so the condition hash computed here is exactly the one the winning read is built
+    /// with below. It is derived from a *clone* because `splitAndFillPrewhereInfo` consumes the DAG,
+    /// while `query.dag` and `query.filter_node` must stay intact for the candidate loop (and for the
+    /// real split below, whose result is what the read actually executes).
+    if (query.dag && query.filter_node)
+    {
+        ActionsDAG::NodeMapping old_to_new_nodes;
+        auto filter_dag_clone = query.dag->clone(old_to_new_nodes);
+        const auto * filter_node_clone = old_to_new_nodes.at(query.filter_node);
+        auto analysis_prewhere_info = std::make_shared<PrewhereInfo>();
+        QueryPlanOptimizations::splitAndFillPrewhereInfo(
+            analysis_prewhere_info,
+            true, /// Always remove since this filter node is generated for projection reading
+            std::move(filter_dag_clone),
+            filter_node_clone->result_name,
+            {filter_node_clone},
+            {filter_node_clone});
+        projection_query_info.prewhere_info = std::move(analysis_prewhere_info);
+    }
+
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
     {
@@ -585,6 +615,7 @@ std::optional<String> optimizeUseNormalProjections(
             *parent_reading_select_result,
             projection_query_info,
             reading->getTopKFilterInfo(),
+            reading->isTopKPrewhereQueryConditionCacheAllowed(),
             context);
 
         if (!analyzed)
@@ -681,6 +712,8 @@ std::optional<String> optimizeUseNormalProjections(
     /// Enables PREWHERE on projections to improve read efficiency and leverage query condition cache.
     if (query.dag && query.filter_node)
     {
+        /// Replace the analysis-only `PREWHERE` built above (same shape, but derived from a clone of
+        /// the filter DAG) with the one the read executes, which owns the nodes of `query.dag`.
         projection_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
         query.dag = QueryPlanOptimizations::splitAndFillPrewhereInfo(
             projection_query_info.prewhere_info,
