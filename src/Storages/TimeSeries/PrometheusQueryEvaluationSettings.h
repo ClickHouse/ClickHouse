@@ -28,6 +28,11 @@ struct PrometheusQueryEvaluationSettings
 
     StorageID time_series_storage_id = StorageID::createEmpty();
 
+    /// Set when the PromQL target is a Distributed table over per-shard TimeSeries tables.
+    /// Empty cluster_name means a plain local TimeSeries table and the existing local path is used.
+    String cluster_name;
+    StorageID remote_time_series_storage_id = StorageID::createEmpty();
+
     /// Data types of the corresponding columns in the TimeSeries table.
     /// We use these data types for the columns we read from table function prometheusQuery().
     DataTypePtr timestamp_data_type;

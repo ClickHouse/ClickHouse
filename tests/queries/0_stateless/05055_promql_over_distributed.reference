@@ -1,0 +1,32 @@
+--- both jobs of `m` straddle the two shards, `solo` sits on one of them ---
+a	2
+b	2
+1
+--- instant selector ---
+[('__name__','m'),('host','h1'),('job','a')]	1970-01-01 00:02:20.000	5
+[('__name__','m'),('host','h2'),('job','b')]	1970-01-01 00:02:20.000	500
+[('__name__','m'),('host','h3'),('job','a')]	1970-01-01 00:02:20.000	50
+[('__name__','m'),('host','h4'),('job','b')]	1970-01-01 00:02:20.000	5000
+--- rate(): every sample of a series has to reach the same group ---
+[('host','h1'),('job','a')]	1970-01-01 00:02:20.000	0.1
+[('host','h2'),('job','b')]	1970-01-01 00:02:20.000	10
+[('host','h3'),('job','a')]	1970-01-01 00:02:20.000	1
+[('host','h4'),('job','b')]	1970-01-01 00:02:20.000	100
+--- sum by (job): one row per job, each totalling series from both shards ---
+[('job','a')]	1970-01-01 00:02:20.000	55
+[('job','b')]	1970-01-01 00:02:20.000	5500
+--- sum(): a single row with the total of all four series ---
+[]	1970-01-01 00:02:20.000	5555
+--- a metric present on one shard only ---
+[('__name__','solo'),('host','h5')]	1970-01-01 00:02:20.000	11
+--- range query ---
+[('job','a')]	[('1970-01-01 00:02:00.000',33),('1970-01-01 00:02:10.000',44),('1970-01-01 00:02:20.000',55)]
+[('job','b')]	[('1970-01-01 00:02:00.000',3300),('1970-01-01 00:02:10.000',4400),('1970-01-01 00:02:20.000',5500)]
+--- the distributed answer equals the same PromQL over one local table ---
+1
+1
+--- a Distributed table naming its target database explicitly ---
+[('job','a')]	1970-01-01 00:02:20.000	55
+[('job','b')]	1970-01-01 00:02:20.000	5500
+--- rejected: the target is not a Distributed table over TimeSeries tables ---
+--- the TimeSeries table functions still need a real TimeSeries table ---

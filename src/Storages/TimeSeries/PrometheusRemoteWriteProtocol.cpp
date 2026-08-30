@@ -22,9 +22,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Storages/StorageTimeSeries.h>
+#include <Storages/IStorage.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
@@ -234,7 +235,7 @@ Block makeBlock(
     return block;
 }
 
-void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)
+void insertBlock(Block block, const IStorage & storage, const ContextMutablePtr & context)
 {
     if (!block.rows())
         return;
@@ -296,9 +297,12 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
 PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     StoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext(context_)
-    , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
+    , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
+    /// Check the engine of the target table: a Distributed target is written through its own sink,
+    /// which routes the rows to the TimeSeries table of each shard.
+    resolvePrometheusQueryTarget(*time_series_storage);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
