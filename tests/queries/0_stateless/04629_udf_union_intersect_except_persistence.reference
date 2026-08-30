@@ -14,3 +14,7 @@ reloaded	3
 created	2
 stored	CREATE FUNCTION f AS x -> (SELECT sum(s) FROM ((SELECT 2 AS s) EXCEPT ALL (SELECT 1 AS s)))
 reloaded	2
+--- mv_reload
+created
+reloaded	0
+stored	AS SELECT 0 AS x UNION ALL ((SELECT x FROM default.src) EXCEPT ALL (SELECT 1))

@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 
 # Related: https://github.com/ClickHouse/ClickHouse/pull/107582
-# SQL UDF bodies are a second carrier of the same formatter bug as
-# 04628_union_intersect_except_child_format_parens: normalizeCreateFunctionQuery runs
-# SelectIntersectExceptQueryVisitor over the body, and UserDefinedSQLObjectsDiskStorage
-# writes that normalized AST back out as SQL. An unparenthesized INTERSECT/EXCEPT child
-# of a UNION chain therefore rebinds when the file is re-read, so the function returns
-# different rows after a restart than it did when it was created.
+# What survives a restart is the definition text on disk, so this test reloads it in a
+# fresh process. Two carriers write a normalized AST back out as SQL:
+# `normalizeCreateFunctionQuery` plus `UserDefinedSQLObjectsDiskStorage` for a SQL UDF,
+# and the table metadata file for a materialized view. An unparenthesized
+# INTERSECT/EXCEPT child of a UNION chain rebinds when that text is re-read, so a UDF
+# returns different rows than it did when it was created, and a materialized view is
+# rejected outright. A short `DETACH`/`ATTACH` re-reads the same metadata file but runs
+# only `FunctionNameNormalizer` over it, so the chain stays flat and is accepted; startup
+# applies `SelectIntersectExceptQueryVisitor` first, and only then is the view validated.
 #
 # Each case prints the result in the creating session, the stored SQL, then the result in
-# a fresh process that loads the function from disk. The two results must agree.
+# a fresh process. The two results must agree.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -57,5 +60,24 @@ run_case except_left "SELECT sum(s) FROM ((SELECT 2 AS s EXCEPT SELECT 1 AS s) U
 # A lone INTERSECT/EXCEPT body has no sibling to rebind to, so it must stay unwrapped:
 # this pins the list_of_selects->children.size() > 1 guard.
 run_case except_alone "SELECT sum(s) FROM (SELECT 2 AS s EXCEPT SELECT 1 AS s)"
+
+# The reported failure. `checkAllowedQueries` accepts this definition at DDL time because
+# the first UNION branch has no table expression, but rejects the rebound shape
+# `(SELECT 0 UNION ALL SELECT x FROM src) EXCEPT SELECT 1` that the lost parentheses
+# produce, so without the fix the metadata is unloadable and the server does not start:
+# `MATERIALIZED VIEW support query with multiple simple UNION [ALL] only`.
+MV_PATH="${WORKDIR}/mv_reload"
+mkdir -p "${MV_PATH}"
+echo "--- mv_reload"
+$CLICKHOUSE_LOCAL --path "${MV_PATH}" -q "
+    CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE MATERIALIZED VIEW mv (x UInt64) ENGINE = MergeTree ORDER BY x
+        AS SELECT 0 AS x UNION ALL (SELECT x FROM src EXCEPT SELECT 1);
+    SELECT 'created';
+"
+$CLICKHOUSE_LOCAL --path "${MV_PATH}" -q "
+    SELECT 'reloaded', count() FROM mv;
+    SELECT 'stored', extract(formatQuerySingleLine(create_table_query), 'AS .*') FROM system.tables WHERE name = 'mv';
+"
 
 rm -rf "${WORKDIR}"
