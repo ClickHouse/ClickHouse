@@ -62,6 +62,15 @@ private:
         return Impl::always_returns_float64 ? std::make_shared<DataTypeFloat64>() : nullptr;
     }
 
+    /// Impls whose kernel reads `src` after it has already written `dst` cannot run in place.
+    static constexpr bool impl_reads_src_after_writing_dst = []
+    {
+        if constexpr (requires { Impl::reads_src_after_writing_dst; })
+            return Impl::reads_src_after_writing_dst;
+        else
+            return false;
+    }();
+
     template <typename T, typename ReturnType>
     static void executeInIterations(const T * src_data, ReturnType * dst_data, size_t size)
     {
@@ -138,13 +147,21 @@ private:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        /// Whole-column kernels may re-read the source after writing the destination, so the
-        /// converted values cannot be computed in place in `dst_data`.
-        PODArray<ReturnType> converted(input_rows_count);
-        for (size_t i = 0; i < input_rows_count; ++i)
-            converted[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
+        if constexpr (impl_reads_src_after_writing_dst)
+        {
+            PODArray<ReturnType> converted(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                converted[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
 
-        executeInIterations(converted.data(), dst_data.data(), input_rows_count);
+            executeInIterations(converted.data(), dst_data.data(), input_rows_count);
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                dst_data[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
+
+            executeInIterations(dst_data.data(), dst_data.data(), input_rows_count);
+        }
 
         return dst;
     }
@@ -203,6 +220,8 @@ struct VectorizedFloat64Impl
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 0;
     static constexpr bool always_returns_float64 = true;
+    /// E.g. the `libm` fallback in `FastTrig` re-reads the original arguments after the first pass.
+    static constexpr bool reads_src_after_writing_dst = true;
 
     template <typename T>
     static void execute(const T * __restrict src, size_t size, Float64 * __restrict dst)

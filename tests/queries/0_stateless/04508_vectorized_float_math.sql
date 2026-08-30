@@ -89,3 +89,5 @@ SELECT sin(-0.), cos(-0.), tan(-0.);
 SELECT isNaN(sin(inf)) AND isNaN(cos(-inf)) AND isNaN(tan(nan));
 -- Integer and Float32 inputs also take the vectorized path and return Float64.
 SELECT abs(sin(toUInt32(1)) - 0.8414709848078965) < 1e-15, toTypeName(cos(toFloat32(1))), abs(tan(toInt8(1)) - 1.5574077246549023) < 1e-15;
+-- Float32 and Decimal inputs are promoted into a separate buffer, so the libm fallback still sees the original values.
+SELECT abs(sin(toFloat32(1e9)) - 0.5458434494486996) < 1e-15, abs(cos(toDecimal64(-1e9, 0)) - 0.8378871813639024) < 1e-15, isNaN(sin(toFloat32(inf)));
