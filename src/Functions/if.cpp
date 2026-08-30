@@ -1527,7 +1527,7 @@ Performs conditional branching.
 - If the condition `cond` evaluates to a non-zero value, the function returns the result of the expression `then`.
 - If `cond` evaluates to zero or NULL, the result of the `else` expression is returned.
 
-The setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 
 If enabled, the `then` expression is evaluated only on rows where `cond` is true and the `else` expression where `cond` is false.
 

@@ -46,6 +46,18 @@ namespace
         }
     }
 
+    /// Returns the fixed @ modifier directly applied to a range-vector argument, if any. Range-vector pieces keep
+    /// this node after setEvaluationTime(), so the fixed evaluation time can be resolved here without adding hidden
+    /// state to SQLQueryPiece.
+    const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & argument)
+    {
+        if (argument.type != ResultType::RANGE_VECTOR || !argument.node || argument.node->node_type != NodeType::Offset)
+            return nullptr;
+
+        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(argument.node);
+        return offset_node->hasAtModifier() ? offset_node : nullptr;
+    }
+
     struct ImplInfo
     {
         std::string_view ch_function_name;
@@ -93,10 +105,26 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"deriv",
+             {
+                 "timeSeriesDerivToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"changes",
+             {
+                 "timeSeriesChangesToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"resets",
+             {
+                 "timeSeriesResetsToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
-            /// resets
             /// predict_linear
-            /// deriv
             /// avg_over_time
             /// min_over_time
             /// max_over_time
@@ -131,7 +159,7 @@ bool isFunctionOverRange(std::string_view function_name)
 
 
 SQLQueryPiece applyFunctionOverRange(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     return applyFunctionOverRange(function_node, function_node->function_name, std::move(arguments), context);
 }
@@ -159,9 +187,29 @@ SQLQueryPiece applyFunctionOverRange(
 
     auto argument = std::move(arguments[0]);
 
+    const auto * fixed_at_node = getFixedAtModifier(argument);
+    auto aggregation_start_time = start_time;
+    auto aggregation_end_time = end_time;
+    auto aggregation_step = step;
+
+    if (fixed_at_node)
+    {
+        /// Under a fixed @ modifier the range function is evaluated once at the fixed timestamp, while the
+        /// range-vector argument retains its own inner grid.
+        const auto & fixed_range = context.node_range_getter.get(fixed_at_node->getExpression());
+        chassert(fixed_range.start_time == fixed_range.end_time);
+        aggregation_start_time = fixed_range.start_time;
+        aggregation_end_time = fixed_range.end_time;
+        aggregation_step = DurationType{0};
+    }
+
     SQLQueryPiece res = argument;
     res.node = node;
     res.type = ResultType::INSTANT_VECTOR;
+
+    const auto aggregation_grid_size = stepsInTimeSeriesRange(
+        aggregation_start_time, aggregation_end_time, aggregation_step);
+    const auto result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
     bool has_group = false;
     ASTPtr timestamps;
@@ -272,12 +320,26 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(addParametersToAggregateFunction(
+    auto aggregate_values = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+        timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
+        timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
+        timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
+        timeSeriesDurationToAST(window, context.timestamp_data_type));
+
+    if (fixed_at_node)
+    {
+        /// A fixed @ expression is evaluated once by Prometheus. Repeat the single aggregate result on the outer
+        /// query grid instead of sliding the range function over the outer evaluation timestamps.
+        aggregate_values = makeASTFunction(
+            "arrayResize",
+            make_intrusive<ASTLiteral>(Array{}),
+            make_intrusive<ASTLiteral>(result_grid_size),
+            makeASTFunction(
+                "arrayElement", std::move(aggregate_values), make_intrusive<ASTLiteral>(aggregation_grid_size)));
+    }
+
+    builder.select_list.push_back(std::move(aggregate_values));
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 

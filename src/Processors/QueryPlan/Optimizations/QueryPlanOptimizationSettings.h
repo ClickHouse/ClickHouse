@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -49,10 +50,14 @@ struct QueryPlanOptimizationSettings
     /// --- First-pass optimizations
     bool lift_up_array_join;
     bool push_down_limit;
+    bool aggregation_bucket_top_k;
     bool split_filter;
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool fuse_filter_into_array_join;
+    bool short_circuit_function_evaluation_disabled;
+    bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
@@ -60,6 +65,10 @@ struct QueryPlanOptimizationSettings
     bool lift_up_union;
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
+    bool distinct_partitions_independently;
+    bool window_partitions_independently;
+    bool force_window_partitions_independently;
+    bool creating_set_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
@@ -70,6 +79,8 @@ struct QueryPlanOptimizationSettings
     bool try_use_top_k_optimization;
     bool top_k_through_join;
     bool remove_unused_columns;
+    bool enable_group_by_top_k_optimization;
+    UInt64 top_k_optimization_observation_rows = 65536;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -95,6 +106,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
+    bool use_query_condition_cache_for_top_k;
     bool read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
@@ -105,7 +117,10 @@ struct QueryPlanOptimizationSettings
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
+    bool enable_cascades_optimizer = false;
+
     bool make_distributed_plan = false;
+    bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
@@ -116,12 +131,15 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
+    bool exact_rows_before_limit = false; /// LIMIT must read its input to the end so rows_before_limit_at_least is exact
 
     /// ------------------------------------------------------
 
     /// Other settings related to plan-level optimizations
 
     size_t max_step_description_length = 0;
+
+    size_t max_block_size = 0;
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;
@@ -139,6 +157,8 @@ struct QueryPlanOptimizationSettings
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
+    bool optimize_lazy_materialization_for_object_storage = false;
+    bool optimize_lazy_materialization_for_file = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
@@ -155,6 +175,7 @@ struct QueryPlanOptimizationSettings
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
     bool enable_full_text_index;
+    bool query_plan_optimize_count_from_text_index;
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;

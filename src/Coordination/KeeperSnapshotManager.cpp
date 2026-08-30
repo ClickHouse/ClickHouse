@@ -21,7 +21,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <base/sort.h>
-#include <base/scope_guard.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
@@ -40,6 +39,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int KEEPER_EXCEPTION;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
@@ -103,6 +103,15 @@ namespace
         }
     }
 
+    /// A file fsync does not persist a directory-entry change, so the marker unlink needs the
+    /// directory fsynced too, with the fd opened before the unlink. Snapshots live at the disk
+    /// root; getDirectorySyncGuard("") returns nullptr (no-op) on non-local disks.
+    void removeSnapshotMarker(const DiskPtr & disk, const std::string & tmp_snapshot_file_name)
+    {
+        SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
+        disk->removeFile(tmp_snapshot_file_name);
+    }
+
     void writeNode(std::string_view data, const KeeperNodeStats & stats, SnapshotVersion version, WriteBuffer & out)
     {
         writeBinary(data, out);
@@ -153,6 +162,28 @@ namespace
             if (stats.isTTL())
                 writeBinary(stats.getTTL(), out);
         }
+        else if (stats.isTTL())
+        {
+            /// KeeperContext::validateWriteSnapshotVersion already checked that CREATE_TTL feature
+            /// flag is disabled, so this is pretty unexpected. Still possible if the feature flag
+            /// was disabled after the node was created.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot serialize snapshot with version {}: storage contains TTL node, which requires write_snapshot_version "
+                "{} or higher.",
+                static_cast<uint8_t>(version),
+                static_cast<uint8_t>(SnapshotVersion::V8));
+        }
+
+        if (stats.isContainer() && version < SnapshotVersion::V9)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot serialize snapshot with version {}: storage contains container node, which requires write_snapshot_version "
+                "{} or higher.",
+                static_cast<uint8_t>(version),
+                static_cast<uint8_t>(SnapshotVersion::V9));
+        }
     }
 
     void serializeSnapshotMetadata(const SnapshotMetadataPtr & snapshot_meta, WriteBuffer & out)
@@ -175,31 +206,6 @@ namespace
 
 void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
-    if (snapshot.version < SnapshotVersion::V8)
-    {
-        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
-        if (!snapshot.storage->ttl_paths.empty())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot serialize snapshot with version {}: storage contains {} TTL node(s), which require snapshot "
-                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
-                static_cast<uint8_t>(snapshot.version),
-                snapshot.storage->ttl_paths.size(),
-                static_cast<uint8_t>(SnapshotVersion::V8));
-    }
-    if (snapshot.version < SnapshotVersion::V9)
-    {
-        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
-        if (!snapshot.storage->container_paths.empty())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot serialize snapshot with version {}: storage contains {} container node(s), which require snapshot "
-                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
-                static_cast<uint8_t>(snapshot.version),
-                snapshot.storage->container_paths.size(),
-                static_cast<uint8_t>(SnapshotVersion::V9));
-    }
-
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
 
@@ -238,12 +244,12 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.node_stream->node_count - keeper_context->getSystemNodesWithData().size(), out);
+    writeBinary(snapshot.view->getNodeCount() - keeper_context->getSystemNodesWithData().size(), out);
     std::string_view node_path;
     std::string_view node_data;
     KeeperNodeStats node_stats;
     size_t nodes_seen = 0;
-    while (snapshot.node_stream->next(node_path, node_data, node_stats))
+    while (snapshot.view->next(node_path, node_data, node_stats))
     {
         ++nodes_seen;
         // write only the root system path because of digest
@@ -252,14 +258,14 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 
         /// (This is guaranteed because KeeperStorageSnapshot constructor is called with nuraft's
         ///  commit_lock_ held, and therefore storage can't change between when we get storage->zxid
-        ///  and when we call storage->beginWritingSnapshot().)
+        ///  and when we issue the read view.)
         if (node_stats.mzxid > snapshot.zxid)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node_stats.mzxid, snapshot.zxid);
 
         writeBinary(node_path, out);
         writeNode(node_data, node_stats, snapshot.version, out);
     }
-    chassert(nodes_seen == snapshot.node_stream->node_count);
+    chassert(nodes_seen == snapshot.view->getNodeCount());
 
     /// Session must be saved in a sorted order,
     /// otherwise snapshots will be different
@@ -298,20 +304,9 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
-    : storage(storage_)
-    , version(version_)
-    , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
-    , session_id(storage->session_id_counter)
-    , cluster_config(cluster_config_)
-    , zxid(storage->zxid)
-    , nodes_digest(storage->nodes_digest)
+    : KeeperStorageSnapshot(
+          storage_, std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()), cluster_config_, version_)
 {
-    node_stream = storage->nodes_storage->beginWritingSnapshot();
-    scope_guard snapshot_mode_guard([&] { storage->nodes_storage->finishWritingSnapshot(std::move(node_stream)); });
-    session_and_timeout = storage->getActiveSessions();
-    acl_map = storage->acl_map.getMapping();
-    session_and_auth = storage->committed_session_and_auth;
-    snapshot_mode_guard.release();
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(
@@ -320,22 +315,14 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
     , version(version_)
     , snapshot_meta(snapshot_meta_)
     , session_id(storage->session_id_counter)
+    , view(storage->issueReadView())
     , cluster_config(cluster_config_)
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    node_stream = storage->nodes_storage->beginWritingSnapshot();
-    scope_guard snapshot_mode_guard([&] { storage->nodes_storage->finishWritingSnapshot(std::move(node_stream)); });
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
-    snapshot_mode_guard.release();
-}
-
-KeeperStorageSnapshot::~KeeperStorageSnapshot()
-{
-    if (node_stream)
-        storage->nodes_storage->finishWritingSnapshot(std::move(node_stream));
 }
 
 SnapshotFileInfoPtr
@@ -560,7 +547,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotBufferToFile(nuraft::buf
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
         plain_buf.reset();
-        disk->removeFile(tmp_snapshot_file_name);
+        removeSnapshotMarker(disk, tmp_snapshot_file_name);
     }
     catch (...)
     {
@@ -647,7 +634,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::finalizeSnapshotReceiveToDisk(Snapsho
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
         ctx.write_buf.reset();
-        ctx.disk->removeFile(tmp_snapshot_file_name);
+        removeSnapshotMarker(ctx.disk, tmp_snapshot_file_name);
     }
     catch (...)
     {
@@ -912,10 +899,17 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
         }
 
         writer = disk->writeFile(snapshot_file_name);
+        /// A CompressedWriteBuffer does not own the buffer it writes into, so in that case the file
+        /// buffer needs its own finalize and sync. The zstd decorator owns it and forwards both,
+        /// which is why only the uncompressed branch tracks the file buffer separately.
+        WriteBuffer * unowned_file_buffer = nullptr;
         if (compress_snapshots_zstd)
             compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
         else
+        {
+            unowned_file_buffer = writer.get();
             compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+        }
 
         const size_t bytes_before = compressed_writer->count();
         KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
@@ -924,13 +918,17 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
 
         compressed_writer->finalize();
 
+        if (unowned_file_buffer)
+            unowned_file_buffer->finalize();
+        WriteBuffer & file_buffer = unowned_file_buffer ? *unowned_file_buffer : *compressed_writer;
+
         Stopwatch watch;
-        compressed_writer->sync();
+        file_buffer.sync();
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
         compressed_writer.reset();
         writer.reset();
-        disk->removeFile(tmp_snapshot_file_name);
+        removeSnapshotMarker(disk, tmp_snapshot_file_name);
     }
     catch (...)
     {
