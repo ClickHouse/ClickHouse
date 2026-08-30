@@ -2,6 +2,7 @@
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
@@ -9637,8 +9638,22 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// rewritten to literals on the initiator passes this check naturally. A function unknown
     /// to the factory (e.g. a user-defined function) is conservatively treated as
     /// non-deterministic.
+    NameSet visited_default_columns;
     auto contains_nondeterministic_function = [&](const ASTPtr & ast, const auto & self) -> bool
     {
+        if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && !identifier->isParam())
+        {
+            const auto column_name = identifier->shortName();
+            if (visited_default_columns.insert(column_name).second)
+            {
+                auto column_default = metadata_snapshot->columns.getDefault(column_name);
+                if (column_default && column_default->expression
+                    && (column_default->kind == ColumnDefaultKind::Alias || column_default->kind == ColumnDefaultKind::Ephemeral)
+                    && self(column_default->expression, self))
+                    return true;
+            }
+        }
+
         /// Being deterministic for a lambda expression is completely determined by the
         /// contents of its definition, so just proceed to the children.
         if (const auto * function = ast->as<ASTFunction>(); function && function->name != "lambda")
