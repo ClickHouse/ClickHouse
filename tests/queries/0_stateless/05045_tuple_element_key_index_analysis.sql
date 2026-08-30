@@ -1,6 +1,7 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 -- no-random-settings, no-random-merge-tree-settings: EXPLAIN output pins Granules counts, which
 -- depend on index granularity and analysis settings.
+-- no-parallel-replicas: EXPLAIN output differs under parallel replicas.
 
 -- https://github.com/ClickHouse/ClickHouse/issues/89661
 -- A tuple column orders rows lexicographically by its components, so the key (name, (id, other))
@@ -65,6 +66,11 @@ SELECT count() FROM t_tuple_key WHERE (5, '5') < (id, other) SETTINGS use_primar
 SELECT count() FROM t_tuple_key WHERE (5, '5') < (id, other) SETTINGS force_primary_key = 1;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_tuple_key WHERE (id, other) > (990, '5')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 
+SELECT 'the relaxed tuple comparison also applies to a flat key';
+SELECT count() FROM t_flat_key WHERE (id, other) > (990, '5') SETTINGS use_primary_key = 0;
+SELECT count() FROM t_flat_key WHERE (id, other) > (990, '5') SETTINGS force_primary_key = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_flat_key WHERE (id, other) > (990, '5')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+
 SELECT 'monotonic function of a component';
 SELECT count() FROM t_tuple_key WHERE toInt64(id) = 42 SETTINGS use_primary_key = 0;
 SELECT count() FROM t_tuple_key WHERE toInt64(id) = 42 SETTINGS force_primary_key = 1;
@@ -73,6 +79,21 @@ SELECT 'leading key column alone still uses binary search';
 SELECT count() FROM t_tuple_key WHERE name = '4' SETTINGS use_primary_key = 0;
 SELECT count() FROM t_tuple_key WHERE name = '4' SETTINGS force_primary_key = 1;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_tuple_key WHERE name = '4') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+
+SELECT 'analyze_index_with_tuple_key_elements = 0 disables the analysis';
+SELECT count() FROM t_tuple_key WHERE id = 3 SETTINGS analyze_index_with_tuple_key_elements = 0;
+SELECT count() FROM t_tuple_key WHERE id = 3 SETTINGS analyze_index_with_tuple_key_elements = 0, force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_tuple_key WHERE id = 3 SETTINGS analyze_index_with_tuple_key_elements = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT count() FROM t_flat_key WHERE (id, other) > (990, '5') SETTINGS analyze_index_with_tuple_key_elements = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_flat_key WHERE (id, other) > (990, '5') SETTINGS analyze_index_with_tuple_key_elements = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+
+SELECT 'mutations and lightweight deletes on a tuple element key';
+ALTER TABLE t_tuple_key DELETE WHERE id = 500 SETTINGS mutations_sync = 1;
+SELECT count() FROM t_tuple_key WHERE id = 500 SETTINGS use_primary_key = 0;
+SELECT count() FROM t_tuple_key;
+DELETE FROM t_tuple_key WHERE id = 501;
+SELECT count() FROM t_tuple_key WHERE id = 501 SETTINGS use_primary_key = 0;
+SELECT count() FROM t_tuple_key;
 
 DROP TABLE t_tuple_key;
 DROP TABLE t_flat_key;
@@ -90,6 +111,10 @@ SELECT count() FROM t_tuple_key_desc WHERE name = '1' AND id >= 990 SETTINGS use
 SELECT count() FROM t_tuple_key_desc WHERE name = '1' AND id >= 990 SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1;
 SELECT count() FROM t_tuple_key_desc WHERE name = '1' AND id >= 990 SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_tuple_key_desc WHERE name = '1' AND id >= 990) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT 'relaxed tuple comparison over reverse-sorted components';
+SELECT count() FROM t_tuple_key_desc WHERE (id, other) > (990, '5') SETTINGS use_primary_key = 0;
+SELECT count() FROM t_tuple_key_desc WHERE (id, other) > (990, '5') SETTINGS force_primary_key = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_tuple_key_desc WHERE (id, other) > (990, '5')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 DROP TABLE t_tuple_key_desc;
 
 SELECT 'partition minmax bounds still apply to unexpanded key columns';
@@ -101,6 +126,65 @@ INSERT INTO t_tuple_key_part SELECT toString(number % 2), toString(number % 7), 
 SELECT count() FROM t_tuple_key_part WHERE name = '1' AND id = 3 SETTINGS use_primary_key = 0;
 SELECT count() FROM t_tuple_key_part WHERE name = '1' AND id = 3 SETTINGS force_primary_key = 1, use_partition_minmax_for_primary_key_pruning = 1;
 DROP TABLE t_tuple_key_part;
+
+SELECT 'partition minmax bound on an expanded component, tuple element not loaded in memory';
+-- The unique `name` prefix makes the part skip loading the tuple element into the in-memory
+-- index (primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns), so the partition
+-- minmax bound of the component `id` is the only per-part information about it; partition
+-- pruning and statistics part pruning are disabled to isolate the effect.
+DROP TABLE IF EXISTS t_tuple_key_minmax;
+CREATE TABLE t_tuple_key_minmax (name String, other String, id Int32)
+ENGINE = MergeTree PARTITION BY intDiv(id, 500) ORDER BY (name, (id, other))
+SETTINGS index_granularity = 256, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.5;
+INSERT INTO t_tuple_key_minmax SELECT toString(number), toString(number % 7), toInt32(number % 1000) FROM numbers(10000);
+SELECT count() FROM t_tuple_key_minmax WHERE id = 3 SETTINGS use_primary_key = 0;
+SELECT count() FROM t_tuple_key_minmax WHERE id = 3 SETTINGS use_partition_pruning = 0, use_statistics_for_part_pruning = 0, use_partition_minmax_for_primary_key_pruning = 1, use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_tuple_key_minmax WHERE id = 3 SETTINGS use_partition_pruning = 0, use_statistics_for_part_pruning = 0, use_partition_minmax_for_primary_key_pruning = 1, use_lightweight_primary_key_index_analysis = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_tuple_key_minmax WHERE id = 3 SETTINGS use_partition_pruning = 0, use_statistics_for_part_pruning = 0, use_partition_minmax_for_primary_key_pruning = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_tuple_key_minmax WHERE id = 3 SETTINGS use_partition_pruning = 0, use_statistics_for_part_pruning = 0, use_partition_minmax_for_primary_key_pruning = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+DROP TABLE t_tuple_key_minmax;
+
+SELECT 'relaxed tuple comparison prunes by the partition key';
+DROP TABLE IF EXISTS t_flat_partition;
+CREATE TABLE t_flat_partition (p Int32, q Int32, x String)
+ENGINE = MergeTree PARTITION BY p ORDER BY q
+SETTINGS index_granularity = 64;
+INSERT INTO t_flat_partition SELECT intDiv(number, 100), toInt32(number), toString(number) FROM numbers(1000);
+SELECT count() FROM t_flat_partition WHERE (p, q) > (7, 500) SETTINGS use_partition_pruning = 0;
+SELECT count() FROM t_flat_partition WHERE (p, q) > (7, 500);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_flat_partition WHERE (p, q) > (7, 500)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+DROP TABLE t_flat_partition;
+
+SELECT 'single-component tuple element, reads and mutations';
+DROP TABLE IF EXISTS t_single_tuple;
+CREATE TABLE t_single_tuple (a String, b Int32)
+ENGINE = MergeTree ORDER BY (a, tuple(b))
+SETTINGS index_granularity = 256;
+INSERT INTO t_single_tuple SELECT toString(number % 5), toInt32(number % 100) FROM numbers(10000);
+SELECT count() FROM t_single_tuple WHERE b = 7 SETTINGS use_primary_key = 0;
+SELECT count() FROM t_single_tuple WHERE b = 7 SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_single_tuple WHERE b = 7 SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_single_tuple WHERE b = 7) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+ALTER TABLE t_single_tuple DELETE WHERE b = 7 SETTINGS mutations_sync = 1;
+SELECT count() FROM t_single_tuple WHERE b = 7 SETTINGS use_primary_key = 0;
+SELECT count() FROM t_single_tuple;
+DELETE FROM t_single_tuple WHERE b = 8;
+SELECT count() FROM t_single_tuple WHERE b = 8 SETTINGS use_primary_key = 0;
+SELECT count() FROM t_single_tuple;
+DROP TABLE t_single_tuple;
+
+SELECT 'Nullable component inside a tuple element';
+DROP TABLE IF EXISTS t_tuple_key_null;
+CREATE TABLE t_tuple_key_null (name String, x Nullable(Int32), y String)
+ENGINE = MergeTree ORDER BY (name, (x, y))
+SETTINGS allow_nullable_key = 1, index_granularity = 256;
+INSERT INTO t_tuple_key_null SELECT toString(number % 3), if(number % 11 = 0, NULL, toInt32(number % 100)), toString(number % 5) FROM numbers(10000);
+SELECT count() FROM t_tuple_key_null WHERE x = 42 SETTINGS use_primary_key = 0;
+SELECT count() FROM t_tuple_key_null WHERE x = 42 SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_tuple_key_null WHERE x = 42 SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_tuple_key_null WHERE x IS NULL SETTINGS use_primary_key = 0;
+SELECT count() FROM t_tuple_key_null WHERE x IS NULL SETTINGS force_primary_key = 1;
+DROP TABLE t_tuple_key_null;
 
 SELECT 'a plain column of type Tuple is not expanded';
 DROP TABLE IF EXISTS t_tuple_column;

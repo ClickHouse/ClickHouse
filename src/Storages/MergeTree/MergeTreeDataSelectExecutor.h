@@ -85,6 +85,10 @@ public:
         PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         bool use_query_condition_cache = true) const;
 
+    /// `pk_to_minmax_slot` maps key column positions to partition-minmax index slots, in the
+    /// coordinate space of `key_condition` (which may analyze tuple key elements expanded into
+    /// components, see KeyCondition::getKeyTupleExpansion); it must be built against a condition
+    /// with the same coordinate space, e.g. by buildPrimaryKeyToMinMaxSlotMapping.
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
         const MarkRanges & part_ranges,

@@ -160,19 +160,25 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     }
 }
 
-/// Maps each primary-key column position to the slot of the matching column in a part's partition
-/// minmax index (nullopt when the primary-key column is not a partition-minmax column).
+/// Maps each key column position of `key_condition` to the slot of the matching column in a
+/// part's partition minmax index (nullopt when the key column is not a partition-minmax column).
+/// The positions are in the condition's coordinate space: when the condition analyzes tuple key
+/// elements expanded into their components (see KeyCondition::getKeyTupleExpansion), the mapping
+/// is built over the expanded column names, so a component that is itself a partition column
+/// (e.g. PARTITION BY id ORDER BY (name, (id, other))) gets its bound just like on a flat key.
 static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
-    const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings)
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings, const KeyCondition & key_condition)
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto * key_expansion = key_condition.getKeyTupleExpansion();
+    const Names & pk_column_names = key_expansion ? key_expansion->column_names : primary_key.column_names;
     const auto minmax_names = MergeTreeData::getMinMaxColumns(
         metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
 
-    std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
-    for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+    std::vector<std::optional<size_t>> mapping(pk_column_names.size());
+    for (size_t i = 0; i < pk_column_names.size(); ++i)
     {
-        auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
+        auto it = std::find(minmax_names.begin(), minmax_names.end(), pk_column_names[i]);
         if (it != minmax_names.end())
             mapping[i] = static_cast<size_t>(it - minmax_names.begin());
     }
@@ -193,7 +199,8 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 
     std::vector<std::optional<size_t>> pk_to_minmax_slot;
     if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts.empty())
-        pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
+        pk_to_minmax_slot
+            = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings(), key_condition);
     const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
     for (const auto & part : parts)
@@ -1065,11 +1072,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(settings, query_info) : RowLimits{};
         std::atomic<size_t> total_rows{0};
 
-        /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
+        /// Precompute the part-independent key-position -> partition-minmax-slot mapping once for all parts.
+        /// Every per-part generated condition shares the coordinate space of the unsubstituted one.
         std::vector<std::optional<size_t>> pk_to_minmax_slot;
         if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts_with_ranges.empty())
             pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(
-                metadata_snapshot, parts_with_ranges.front().data_part->storage.getSettings());
+                metadata_snapshot,
+                parts_with_ranges.front().data_part->storage.getSettings(),
+                filter_context.indexes.key_condition->generateUnsubstituted());
         const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
         auto process_part = [&](size_t part_index)
@@ -2006,45 +2016,30 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     else
         chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
 
+    /// `pk_to_minmax_slot` is built by the caller in the same (possibly expanded) coordinate
+    /// space, see buildPrimaryKeyToMinMaxSlotMapping.
     auto index = part->getIndex();
-    std::vector<std::optional<size_t>> expanded_pk_to_minmax_slot;
     if (key_expansion)
     {
         Columns expanded_index;
         expanded_index.reserve(pk_column_names.size());
         for (size_t i = 0; i < index->size(); ++i)
         {
-            const size_t components = i < key_expansion->num_components.size() ? key_expansion->num_components[i] : 1;
-            if (components == 1)
+            const std::optional<size_t> components
+                = i < key_expansion->num_components.size() ? key_expansion->num_components[i] : std::nullopt;
+            if (!components)
             {
                 expanded_index.push_back(index->at(i));
             }
             else
             {
                 const auto & tuple_column = assert_cast<const ColumnTuple &>(*index->at(i));
-                chassert(tuple_column.tupleSize() == components);
-                for (size_t j = 0; j < components; ++j)
+                chassert(tuple_column.tupleSize() == *components);
+                for (size_t j = 0; j < *components; ++j)
                     expanded_index.push_back(tuple_column.getColumnPtr(j));
             }
         }
         index = std::make_shared<Columns>(std::move(expanded_index));
-
-        if (pk_to_minmax_slot)
-        {
-            /// Re-index the partition-minmax mapping by expanded key position. A component of an
-            /// expanded tuple gets no bound: the mapping was built over whole-element names, and a
-            /// tuple element is never a partition minmax column.
-            expanded_pk_to_minmax_slot.reserve(pk_column_names.size());
-            for (size_t i = 0; i < pk_to_minmax_slot->size(); ++i)
-            {
-                const size_t components = i < key_expansion->num_components.size() ? key_expansion->num_components[i] : 1;
-                if (components == 1)
-                    expanded_pk_to_minmax_slot.push_back((*pk_to_minmax_slot)[i]);
-                else
-                    expanded_pk_to_minmax_slot.resize(expanded_pk_to_minmax_slot.size() + components);
-            }
-            pk_to_minmax_slot = &expanded_pk_to_minmax_slot;
-        }
     }
 
     const bool use_sparse_pk_representation
@@ -2241,7 +2236,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     for (size_t i = 0; i < num_analyzed_key_columns; ++i)
         index_bounds.push_back(Range::createWholeUniverseTypeAware(pk_data_types[i]));
 
-    /// pk_to_minmax_slot maps each PK column to its slot in the part's partition-minmax index.
+    /// pk_to_minmax_slot maps each key column of the condition's coordinate space to its slot in
+    /// the part's partition-minmax index.
     if (part_has_minmax_index)
     {
         const auto & hyperrectangle = part_minmax_index->hyperrectangle;
