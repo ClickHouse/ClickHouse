@@ -445,9 +445,12 @@ struct ReplaceRegexpImpl
                 continue;
             }
 
-            if (map_enabled && i >= next_ratio_check)
+            /// The checkpoint must not be gated on `map_enabled`: the match ratio has to keep being
+            /// re-evaluated after the cache is disabled, or a matching suffix behind a rejected prefix
+            /// would pay the pre-check plus the full match for every remaining row.
+            if (i >= next_ratio_check)
             {
-                if (results_cache.size() * 10 > i * 9)
+                if (map_enabled && results_cache.size() * 10 > i * 9)
                 {
                     map_enabled = false;
                     results_cache.clearAndShrink();

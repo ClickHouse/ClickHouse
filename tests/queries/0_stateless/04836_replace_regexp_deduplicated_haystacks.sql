@@ -69,6 +69,12 @@ SELECT countIf(replaceRegexpAll(h, '^ab([0-9]+)', '<\\1>') != replaceRegexpAll(h
 FROM (SELECT if(number % 100 = 50, concat('ab', toString(number % 7), 'cd'), concat('xx', toString(number % 13), 'yy')) AS h FROM numbers(5000))
 SETTINGS max_block_size = 5000;
 
+-- A rejecting distinct prefix followed by a matching distinct suffix: the guards disable the cache and engage
+-- the pre-check on the prefix, and the re-evaluated match ratio turns the pre-check off again on the suffix.
+SELECT countIf(replaceRegexpOne(h, '^ab([0-9]+)', '<\\1>') != replaceRegexpOne(h, materialize('^ab([0-9]+)'), '<\\1>'))
+FROM (SELECT if(number < 1000, concat('xx', toString(number), 'yy'), concat('ab', toString(number), 'cd')) AS h FROM numbers(4000))
+SETTINGS max_block_size = 4000;
+
 -- The values a repeat is expected to produce, so that the cases above cannot pass by both sides being wrong.
 SELECT DISTINCT replaceRegexpAll(h, '([a-z]+)([0-9]+)', '\\2:\\1')
 FROM (SELECT concat('ab', toString(number % 3), 'cd', toString(number % 2)) AS h FROM numbers(100))
