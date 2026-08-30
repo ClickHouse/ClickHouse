@@ -2893,6 +2893,14 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     /// and consumes the join result as an input, matched to `first`'s output by the split itself (no names).
     auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true);
     ActionsDAG after = std::move(split_res.second);
+
+    /// The ArrayJoinStep still explodes the column by name, so bail if another column crossing the step shares
+    /// the join's name (or the result is unused) - otherwise the passenger would be element-typed too.
+    size_t element_inputs = 0;
+    for (const auto * input : after.inputs)
+        element_inputs += (input->result_name == name);
+    if (element_inputs != 1)
+        return {};
     ActionsDAG before = std::move(split_res.first);
     const Node * aj_before = split_res.split_nodes_mapping.at(array_join);
     const Node * arg_before = aj_before->children.at(0);

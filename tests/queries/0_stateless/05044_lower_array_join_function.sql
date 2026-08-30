@@ -61,4 +61,8 @@ SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT
 SELECT (SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTINGS query_plan_lower_array_join_function = 1)
      = (SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTINGS query_plan_lower_array_join_function = 0);
 
+-- the raw array input is reused above the join under a distinct name: the passenger stays an array
+SELECT (SELECT groupArray((l, e)) FROM (SELECT length(a) AS l, arrayJoin(a) AS e FROM t_laj ORDER BY e) SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT groupArray((l, e)) FROM (SELECT length(a) AS l, arrayJoin(a) AS e FROM t_laj ORDER BY e) SETTINGS query_plan_lower_array_join_function = 0);
+
 DROP TABLE t_laj;
