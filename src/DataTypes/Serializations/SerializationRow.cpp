@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 SerializationRow::SerializationRow(Serializations field_serializations_, Strings field_names_)
@@ -109,6 +110,8 @@ namespace
 
     /// Appends exactly one row to every child column, or none at all: a field that throws
     /// mid-row would otherwise leave the children of `tuple` with different sizes.
+    /// `in` must hold exactly one row payload; a payload the fields do not fully consume
+    /// is corrupt, since otherwise the surplus would be silently dropped.
     void readRowFields(
         ColumnTuple & tuple, const Serializations & fields, const FormatSettings & settings, ReadBuffer & in)
     {
@@ -117,6 +120,10 @@ namespace
         {
             for (size_t i = 0; i < fields.size(); ++i)
                 fields[i]->deserializeBinary(tuple.getColumn(i), in, settings);
+
+            if (!in.eof())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Row payload has {} unread bytes after deserializing all {} fields", in.available(), fields.size());
         }
         catch (...)
         {
@@ -162,6 +169,11 @@ void SerializationRow::deserializeBinary(Field & field, ReadBuffer & istr, const
         fs->deserializeBinary(v, rb, settings);
         t.push_back(std::move(v));
     }
+
+    if (!rb.eof())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Row payload has {} unread bytes after deserializing all {} fields", rb.available(), field_serializations.size());
+
     field = std::move(t);
 }
 
@@ -313,13 +325,18 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
         for (size_t i = 0; i < num_fields; ++i)
             tuple.getColumn(i).reserve(tuple.getColumn(i).size() + limit);
 
-    /// Deserialize fields straight from the stream (fields are self-delimiting,
-    /// so the row_size prefix is read but unused here).
-    for (size_t read = 0; read < limit && !stream->eof(); ++read)
+    /// `limit == 0` means "until the end of the stream". Every row is decoded from a
+    /// buffer bounded to its `row_size` payload, so a malformed field cannot bleed into
+    /// the next row and an incomplete payload fails at the row boundary.
+    String row_payload;
+    for (size_t read = 0; (limit == 0 || read < limit) && !stream->eof(); ++read)
     {
-        [[maybe_unused]] UInt64 size = 0;
+        UInt64 size = 0;
         readVarUInt(size, *stream);
-        readRowFields(tuple, field_serializations, format_settings, *stream);
+        row_payload.resize(size);
+        stream->readStrict(row_payload.data(), size);
+        ReadBufferFromString row_buf(row_payload);
+        readRowFields(tuple, field_serializations, format_settings, row_buf);
     }
 }
 

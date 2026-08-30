@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -59,6 +60,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+}
+
+/// Row shares ColumnTuple with Tuple, so a Row argument is compared as the equivalent named Tuple.
+static DataTypePtr lowerRowToTuple(const DataTypePtr & type)
+{
+    if (const auto * row = typeid_cast<const DataTypeRow *>(type.get()))
+        return std::make_shared<DataTypeTuple>(row->getElements(), row->getElementNames());
+    return type;
 }
 
 /// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
@@ -1780,6 +1789,9 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (typeid_cast<const DataTypeRow *>(arguments[0].get()) || typeid_cast<const DataTypeRow *>(arguments[1].get()))
+            return getReturnTypeImpl(DataTypes{lowerRowToTuple(arguments[0]), lowerRowToTuple(arguments[1])});
+
         if ((name == NameEquals::name || name == NameNotEquals::name))
         {
             if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
@@ -1928,6 +1940,14 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         checkStackSize();
+
+        if (typeid_cast<const DataTypeRow *>(arguments[0].type.get()) || typeid_cast<const DataTypeRow *>(arguments[1].type.get()))
+        {
+            ColumnsWithTypeAndName lowered = arguments;
+            for (auto & argument : lowered)
+                argument.type = lowerRowToTuple(argument.type);
+            return executeImpl(lowered, result_type, input_rows_count);
+        }
 
         const auto & col_with_type_and_name_left = arguments[0];
         const auto & col_with_type_and_name_right = arguments[1];

@@ -11,6 +11,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
 
+#include <algorithm>
 #include <unordered_set>
 
 
@@ -135,6 +136,11 @@ SerializationPtr DataTypeRow::doGetSerialization(const SerializationInfoSettings
     for (const auto & e : elems)
         field_serializations.push_back(e->getSerialization(settings));
     return SerializationRow::create(std::move(field_serializations), names);
+}
+
+bool DataTypeRow::isComparable() const
+{
+    return std::all_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->isComparable(); });
 }
 
 DataTypePtr DataTypeRow::getNormalizedType() const

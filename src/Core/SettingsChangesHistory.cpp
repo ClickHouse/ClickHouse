@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_experimental_row_type", false, false, "New experimental setting gating creation of columns with the `Row(...)` data type."},
             {"query_plan_use_row_wrappers", false, true, "New setting toggling the query-plan optimization that routes column reads through a covering `Row(...)` wrapper column."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},

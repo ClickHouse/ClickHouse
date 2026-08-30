@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET allow_experimental_row_type = 1;
+
 DROP TABLE IF EXISTS row_nested;
 DROP TABLE IF EXISTS row_prewhere;
 DROP TABLE IF EXISTS row_double_wrap;

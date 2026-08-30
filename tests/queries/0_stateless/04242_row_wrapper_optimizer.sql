@@ -1,4 +1,6 @@
 -- Tags: no-fasttest
+
+SET allow_experimental_row_type = 1;
 -- Verify that optimizeUseRowWrappers produces the same results regardless of
 -- whether the rewrite fires (which it does when ≥2 covered columns are
 -- requested), and that toggling `query_plan_use_row_wrappers` is safe.

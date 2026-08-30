@@ -1,5 +1,7 @@
 -- Tags: no-fasttest, shard
 
+SET allow_experimental_row_type = 1;
+
 DROP TABLE IF EXISTS row_type_mismatch;
 DROP TABLE IF EXISTS row_final_prewhere;
 DROP TABLE IF EXISTS row_text;

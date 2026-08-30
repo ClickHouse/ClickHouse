@@ -1,4 +1,6 @@
 -- Tags: no-fasttest
+
+SET allow_experimental_row_type = 1;
 -- Basic round-trip: create a Row(...) column populated via MATERIALIZED from
 -- existing columns, INSERT, SELECT both the originals and the wrapper. The
 -- wrapper must reproduce the source values 1-for-1 and render as a tuple

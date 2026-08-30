@@ -1,4 +1,6 @@
 -- Tags: no-fasttest
+
+SET allow_experimental_row_type = 1;
 -- Negative cases: Row(...) wrapper validation rejects malformed declarations.
 
 DROP TABLE IF EXISTS row_validation;

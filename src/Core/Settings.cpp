@@ -8595,6 +8595,9 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, allow_experimental_row_type, false, R"(
+Allows creation of columns with the experimental [Row](/sql-reference/data-types/row) data type in tables.
+)", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_use_row_wrappers, true, R"(
 Toggles a query-plan-level optimization that routes column reads through a `Row(...)` wrapper column when the wrapper covers two or more of the requested columns, reducing per-query file open and seek cost.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.

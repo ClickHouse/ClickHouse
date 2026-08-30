@@ -8,6 +8,11 @@ doc_type: 'reference'
 
 ## Overview {#overview}
 
+:::note
+The `Row` data type is experimental. To create a column of this type, set
+[`allow_experimental_row_type = 1`](#allow-experimental-row-type).
+:::
+
 `Row(name1 T1, name2 T2, …)` is a named, ordered bundle of typed fields that
 is stored as a SINGLE physical column on disk — one length-prefixed binary
 blob per row — in contrast to `Tuple`, which produces one physical column
@@ -74,6 +79,14 @@ two wrappers that share a source column is an error.
 
 ## Settings {#settings}
 
+### `allow_experimental_row_type` {#allow-experimental-row-type}
+
+Default: `0` (disabled).
+
+Allows creation of `Row` columns in tables. Until the on-disk format and the
+optimizer rule have matured, `CREATE TABLE` and `ALTER TABLE ... ADD/MODIFY
+COLUMN` with a `Row` column are rejected unless this setting is enabled.
+
 ### `query_plan_use_row_wrappers` {#query-plan-use-row-wrappers}
 
 Default: `1` (enabled).
@@ -101,4 +114,6 @@ its own; there is no supported way to spell it in a query.
 In every text format a `Row` reads and writes exactly like the named `Tuple` it
 mirrors: a tuple literal such as `('alpha', 10, 'x')` in `TSV` and `Values`, and
 an object such as `{"a":"alpha","b":10,"c":"x"}` in `JSON`. Only the binary
-storage layout differs.
+storage layout differs. Comparison follows `Tuple` as well: a `Row` is comparable
+(lexicographically, field by field) when all of its fields are comparable, so it
+can be used in `ORDER BY` and with comparison operators.

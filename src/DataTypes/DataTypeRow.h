@@ -39,7 +39,7 @@ public:
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return !elems.empty(); }
-    bool isComparable() const override { return false; }
+    bool isComparable() const override;
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
