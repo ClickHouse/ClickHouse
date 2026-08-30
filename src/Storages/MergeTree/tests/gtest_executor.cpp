@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
+#include <array>
 #include <atomic>
 #include <barrier>
 #include <functional>
@@ -437,10 +438,13 @@ private:
 /// once that timeout expires.
 TEST(Executor, ShutdownReleasesPendingTasks)
 {
+    /// More than one task, so that draining a single one is not enough to pass.
+    static constexpr size_t tasks_count = 3;
+
     /// Declared before the executor so they outlive it (its destructor calls `wait`).
-    std::latch step_executed(1);
-    std::atomic<bool> cancelled{false};
-    std::weak_ptr<IExecutableTask> weak_task;
+    std::latch step_executed(tasks_count);
+    std::array<std::atomic<bool>, tasks_count> cancelled{};
+    std::array<std::weak_ptr<IExecutableTask>, tasks_count> weak_tasks;
 
     auto executor = std::make_shared<MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
@@ -455,21 +459,27 @@ TEST(Executor, ShutdownReleasesPendingTasks)
         ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
 
+    for (size_t i = 0; i < tasks_count; ++i)
     {
-        auto task = std::make_shared<NeverFinishingTask>("pending_storage", step_executed, cancelled);
-        weak_task = task;
+        auto task = std::make_shared<NeverFinishingTask>(
+            "pending_storage_" + std::to_string(i), step_executed, cancelled[i]);
+        weak_tasks[i] = task;
         ASSERT_TRUE(executor->trySchedule(std::move(task)));
     }
 
-    /// Wait until a step has run, so the task is known to be cycling through the pending queue
-    /// rather than never having been picked up.
+    /// Wait until every task has run a step, so each is known to be cycling through the pending
+    /// queue rather than never having been picked up. The single worker pops them in turn, and
+    /// `routine` re-pushes each one, so all of them are queued again by the time `wait()` runs.
     step_executed.wait();
 
     executor->wait();
 
-    EXPECT_TRUE(weak_task.expired())
-        << "a task left in the pending queue outlived executor shutdown, so the resources it owns "
-           "(for a merge task, a table share lock) were never released";
-    EXPECT_TRUE(cancelled.load())
-        << "a task left in the pending queue was not cancelled on executor shutdown";
+    for (size_t i = 0; i < tasks_count; ++i)
+    {
+        EXPECT_TRUE(weak_tasks[i].expired())
+            << "task " << i << " was left in the pending queue and outlived executor shutdown, so "
+               "the resources it owns (for a merge task, a table share lock) were never released";
+        EXPECT_TRUE(cancelled[i].load())
+            << "task " << i << " was left in the pending queue and not cancelled on executor shutdown";
+    }
 }
