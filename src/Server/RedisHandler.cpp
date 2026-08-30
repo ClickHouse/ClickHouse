@@ -283,9 +283,9 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             /// All the keys are looked up in one call, so that a single command cannot mix values
             /// from different states of the table.
             std::vector<std::vector<Field>> keys;
-            keys.reserve(mget_request.getKeys().size());
-            for (const auto & key : mget_request.getKeys())
-                keys.push_back({key});
+            keys.reserve(mget_request.getKeysCount());
+            for (size_t i = 0; i < mget_request.getKeysCount(); ++i)
+                keys.push_back({mget_request.getKey(i)});
 
             auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
             const auto & value_column = result_block.getByPosition(0);

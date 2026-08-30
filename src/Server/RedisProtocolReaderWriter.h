@@ -29,6 +29,14 @@ static constexpr Int64 MAX_BULK_STRING_SIZE = 64 * 1024 * 1024;
 /// The total size of all the arguments of a single command: the per-argument limit alone still allows
 /// a client to make the server buffer `MAX_ARRAY_SIZE * MAX_BULK_STRING_SIZE` bytes for one command.
 static constexpr size_t MAX_COMMAND_SIZE = 64 * 1024 * 1024;
+/// The number of elements of a single command. `MAX_ARRAY_SIZE` is far too permissive for a command:
+/// the elements of a command are not only buffered as they arrive, they are also turned into `Field`s
+/// and into the containers holding them, so a command with a million one-byte arguments occupies only
+/// a few `MiB` on the wire but hundreds of `MiB` of server memory.
+static constexpr Int64 MAX_COMMAND_ELEMENTS = 64 * 1024;
+/// The memory charged against `MAX_COMMAND_SIZE` for every element of a command in addition to its
+/// payload: the payload of a one-byte argument is negligible compared to the containers around it.
+static constexpr size_t COMMAND_ELEMENT_MEMORY_OVERHEAD = 128;
 
 enum class DataType : char
 {

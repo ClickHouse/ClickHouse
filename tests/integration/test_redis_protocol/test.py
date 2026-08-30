@@ -316,6 +316,34 @@ def test_oversized_length_prefixes(started_cluster):
     assert b"exceeds the maximum allowed" in response
 
 
+def test_many_tiny_keys_are_rejected(started_cluster):
+    # A command with a huge number of tiny arguments is small on the wire, but every argument is
+    # held several times over on the server, so the number of elements is limited on its own.
+    # The header alone must be enough for the rejection: nothing of the payload is read.
+    response = send_raw_request(started_cluster, b"*1048576\r\n$4\r\nMGET\r\n" + b"$1\r\na\r\n" * 16)
+    assert response.startswith(b"-ERR ")
+    assert b"exceeds the maximum allowed" in response
+
+    # A command that stays under the element limit is still accepted.
+    keys = 1024
+    request = b"*%d\r\n$4\r\nMGET\r\n" % (keys + 1) + b"$1\r\na\r\n" * keys
+    sock = socket.create_connection(
+        (started_cluster.get_instance_ip("node"), server_port), timeout=30
+    )
+    try:
+        sock.sendall(b"*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n" + request)
+        response = b""
+        # `SELECT` answers `+OK`, `MGET` answers an array of Nils, one per key.
+        while response.count(b"\r\n") < keys + 2:
+            chunk = sock.recv(65536)
+            assert chunk
+            response += chunk
+    finally:
+        sock.close()
+    assert response.startswith(b"+OK\r\n*%d\r\n" % keys)
+    assert b"-ERR " not in response
+
+
 def test_low_cardinality_value_column(redis_client):
     # `LowCardinality(String)` is a common type for values, and a missing key still has to be Nil.
     assert redis_client.select(6)

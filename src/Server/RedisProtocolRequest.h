@@ -123,18 +123,21 @@ public:
         Int64 command_len = reader.readInteger();
         if (command_len < 1)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Wrong command length: {}", command_len);
-        if (command_len > MAX_ARRAY_SIZE)
+        if (command_len > MAX_COMMAND_ELEMENTS)
             throw Exception(
                 ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-                "Command length {} exceeds the maximum allowed {}", command_len, MAX_ARRAY_SIZE);
+                "Command length {} exceeds the maximum allowed {}", command_len, MAX_COMMAND_ELEMENTS);
 
         arguments.clear();
         arguments.reserve(command_len);
+        /// Every element is charged its payload plus a fixed overhead, because an element is held
+        /// several times over (as the buffered argument, as a `Field` and inside the containers of
+        /// the lookup), and for short arguments that overhead is what dominates the memory usage.
         size_t total_size = 0;
         for (Int64 i = 0; i < command_len; ++i)
         {
             arguments.push_back(reader.readBulkString());
-            total_size += arguments.back().size();
+            total_size += arguments.back().size() + COMMAND_ELEMENT_MEMORY_OVERHEAD;
             if (total_size > MAX_COMMAND_SIZE)
                 throw Exception(
                     ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
@@ -265,16 +268,16 @@ public:
     {
         if (request.getCommandLen() < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'mget' command");
-        keys.reserve(request.getCommandLen() - 1);
-        for (Int64 i = 1; i < request.getCommandLen(); ++i)
-            keys.push_back(request.getArgument(i));
     }
 
-    const std::vector<String> & getKeys() const { return keys; }
+    /// The keys are not copied out of the request: for a command with many keys the copy alone
+    /// would double the memory occupied by the command.
+    size_t getKeysCount() const { return static_cast<size_t>(request.getCommandLen()) - 1; }
+
+    const String & getKey(size_t index) const { return request.getArgument(index + 1); }
 
 private:
     RedisRequest & request;
-    std::vector<String> keys;
 };
 
 class HGetRequest : public IRequest
