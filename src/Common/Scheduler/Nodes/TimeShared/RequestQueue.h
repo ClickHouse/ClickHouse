@@ -445,7 +445,7 @@ class RequestQueue final : public ISchedulerQueue
     static constexpr Int64 default_max_queued = std::numeric_limits<Int64>::max();
 
 public:
-    RequestQueue(
+    explicit RequestQueue(
         EventQueue & event_queue_,
         const SchedulerNodeInfo & info_ = {},
         SchedulerAlgorithm algorithm_ = SchedulerAlgorithm::Fifo,

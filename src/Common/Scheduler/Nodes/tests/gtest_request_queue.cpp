@@ -67,8 +67,13 @@ struct Fixture
     std::vector<int> dequeueIds()
     {
         std::vector<int> ids;
-        while (auto [req, _] = queue->dequeueRequest(); req)
+        for (;;)
+        {
+            auto [req, _] = queue->dequeueRequest();
+            if (!req)
+                break;
             ids.push_back(static_cast<TestRequest *>(req)->id);
+        }
         return ids;
     }
 };

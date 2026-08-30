@@ -43,6 +43,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"weight", 1.0, 1.0, "New query setting: base scheduling weight of a query within its workload, used by the `fair` workload scheduler."},
+            {"weight_lowering_factor", 1.0, 1.0, "New query setting: factor applied to a query's weight once it crosses a weight-lowering threshold in the `fair` workload scheduler."},
+            {"weight_lowering_age_seconds", 0, 0, "New query setting: wall-clock age threshold after which a query's weight is lowered in the `fair` workload scheduler."},
+            {"weight_lowering_cpu_seconds", 0, 0, "New query setting: attained CPU-seconds threshold after which a query's weight is lowered in the `fair` workload scheduler."},
+            {"weight_lowering_io_bytes", 0, 0, "New query setting: attained IO-bytes threshold after which a query's weight is lowered in the `fair` workload scheduler."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
@@ -66,11 +71,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
-            {"weight", 1.0, 1.0, "New query setting: base scheduling weight of a query within its workload, used by the `fair` workload scheduler."},
-            {"weight_lowering_factor", 1.0, 1.0, "New query setting: factor applied to a query's weight once it crosses a weight-lowering threshold in the `fair` workload scheduler."},
-            {"weight_lowering_age_seconds", 0, 0, "New query setting: wall-clock age threshold after which a query's weight is lowered in the `fair` workload scheduler."},
-            {"weight_lowering_cpu_seconds", 0, 0, "New query setting: attained CPU-seconds threshold after which a query's weight is lowered in the `fair` workload scheduler."},
-            {"weight_lowering_io_bytes", 0, 0, "New query setting: attained IO-bytes threshold after which a query's weight is lowered in the `fair` workload scheduler."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
             {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
