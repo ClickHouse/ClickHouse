@@ -21,13 +21,13 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 * `default_type` — 컬럼 [기본 표현식](/ko/reference/statements/create/table)에 사용되는 절입니다: `DEFAULT`, `MATERIALIZED` 또는 `ALIAS`. 기본 표현식이 없으면 빈 문자열이 반환됩니다.
 * `default_expression` — `DEFAULT` 절 뒤에 지정된 표현식입니다.
 * `comment` — [컬럼 주석](/ko/reference/statements/alter/column#comment-column)입니다.
-* `codec_expression` — 컬럼에 적용되는 [코덱](/ko/reference/statements/create/table#column_compression_codec)입니다.
+* `codec_expression` — 컬럼에 적용되는 [코덱](/ko/reference/statements/create/table/codec)입니다.
 * `ttl_expression` — [TTL](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) 표현식입니다.
-* `is_subcolumn` — 내부 서브컬럼이면 `1`이 되는 플래그입니다. [describe&#95;include&#95;subcolumns](/ko/reference/settings/session-settings#describe_include_subcolumns) 설정으로 서브컬럼 설명이 활성화된 경우에만 결과에 포함됩니다.
+* `is_subcolumn` — 내부 서브컬럼이면 `1`이 되는 플래그입니다. [describe&#95;include&#95;subcolumns](/ko/reference/settings/session-settings/describe-include#describe_include_subcolumns) 설정으로 서브컬럼 설명이 활성화된 경우에만 결과에 포함됩니다.
 
 [Nested](/ko/reference/data-types/nested-data-structures/index) 데이터 구조의 모든 컬럼은 각각 별도로 설명됩니다. 각 컬럼 이름에는 상위 컬럼 이름과 점이 접두사로 붙습니다.
 
-다른 데이터 타입의 내부 서브컬럼을 표시하려면 [describe&#95;include&#95;subcolumns](/ko/reference/settings/session-settings#describe_include_subcolumns) 설정을 사용하십시오.
+다른 데이터 타입의 내부 서브컬럼을 표시하려면 [describe&#95;include&#95;subcolumns](/ko/reference/settings/session-settings/describe-include#describe_include_subcolumns) 설정을 사용하십시오.
 
 **예시**
 
@@ -81,4 +81,4 @@ DESCRIBE (SELECT 1) FORMAT TSV;
 
 **관련 항목**
 
-* [describe&#95;include&#95;subcolumns](/ko/reference/settings/session-settings#describe_include_subcolumns) 설정.
+* [describe&#95;include&#95;subcolumns](/ko/reference/settings/session-settings/describe-include#describe_include_subcolumns) 설정.

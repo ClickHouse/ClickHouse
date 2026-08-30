@@ -1,5 +1,8 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool.h>
+#include <base/scope_guard.h>
 #include <gtest/gtest.h>
 #include <condition_variable>
 #include <limits>
@@ -8,11 +11,16 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+
 TEST(BackgroundSchedulePool, Schedule)
 {
     auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
-    std::atomic<size_t> counter;
+    std::atomic<size_t> counter{0};
     std::mutex mutex;
     std::condition_variable condvar;
 
@@ -20,6 +28,9 @@ TEST(BackgroundSchedulePool, Schedule)
     BackgroundSchedulePoolTaskHolder task;
     task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
+        /// counter is published under the waiter's mutex, so the increment that completes it is
+        /// visible to a waiter that has already evaluated its predicate.
+        std::lock_guard lock(mutex);
         ++counter;
         if (counter < ITERATIONS)
             ASSERT_EQ(task->schedule(), true);
@@ -28,19 +39,28 @@ TEST(BackgroundSchedulePool, Schedule)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
-    std::unique_lock lock(mutex);
-    condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    bool timed_out = false;
+    {
+        std::unique_lock lock(mutex);
+        /// The wait status decides, not the predicate: a dropped notification leaves the predicate
+        /// true, so the predicate overload of wait_for would report success after the deadline.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (counter != ITERATIONS && !timed_out)
+            timed_out = condvar.wait_until(lock, deadline) == std::cv_status::timeout;
+    }
 
-    ASSERT_EQ(counter, ITERATIONS);
-
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
     pool->join();
+
+    EXPECT_FALSE(timed_out) << "timed out with " << counter << " of " << ITERATIONS << " iterations run";
+    ASSERT_EQ(counter, ITERATIONS);
 }
 
 TEST(BackgroundSchedulePool, ScheduleAfter)
 {
     auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
-    std::atomic<size_t> counter;
+    std::atomic<size_t> counter{0};
     std::mutex mutex;
     std::condition_variable condvar;
 
@@ -48,6 +68,9 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     BackgroundSchedulePoolTaskHolder task;
     task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
+        /// counter is published under the waiter's mutex, so the increment that completes it is
+        /// visible to a waiter that has already evaluated its predicate.
+        std::lock_guard lock(mutex);
         ++counter;
         if (counter < ITERATIONS)
             ASSERT_EQ(task->scheduleAfter(1), true);
@@ -56,14 +79,21 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
+    bool timed_out = false;
     {
         std::unique_lock lock(mutex);
-        condvar.wait(lock, [&] { return counter == ITERATIONS; });
+        /// The wait status decides, not the predicate: a dropped notification leaves the predicate
+        /// true, so the predicate overload of wait_for would report success after the deadline.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (counter != ITERATIONS && !timed_out)
+            timed_out = condvar.wait_until(lock, deadline) == std::cv_status::timeout;
     }
 
-    ASSERT_EQ(counter, ITERATIONS);
-
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
     pool->join();
+
+    EXPECT_FALSE(timed_out) << "timed out with " << counter << " of " << ITERATIONS << " iterations run";
+    ASSERT_EQ(counter, ITERATIONS);
 }
 
 /// Previously leads to UB
@@ -282,6 +312,58 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
 
     ASSERT_EQ(task->schedule(), false);
     ASSERT_EQ(delayed_task->scheduleAfter(1), false);
+}
+
+/// Failing to spawn a schedule pool's initial threads must throw a recoverable exception, not
+/// abort the server. The fault injector forces the spawn to throw.
+TEST(BackgroundSchedulePool, CtorThrowsInsteadOfAbortOnSpawnFailure)
+{
+    CannotAllocateThreadFaultInjector::setFaultProbability(1.0);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    bool threw_cannot_schedule = false;
+    try
+    {
+        auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+    }
+    catch (const Exception & e)
+    {
+        threw_cannot_schedule = (e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK);
+    }
+
+    EXPECT_TRUE(threw_cannot_schedule) << "constructor must throw CANNOT_SCHEDULE_TASK, not abort, when it cannot spawn initial threads";
+}
+
+/// The case above fails the first spawn, so `threads` is empty and the teardown has nothing to
+/// join. A partial fault probability makes some constructions fail after a worker already
+/// started, which is what exercises the join. Without it this test aborts rather than fails.
+TEST(BackgroundSchedulePool, CtorJoinsPartiallySpawnedThreadsOnFailure)
+{
+    CannotAllocateThreadFaultInjector::setFaultProbability(0.5);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    size_t threw = 0;
+    size_t constructed = 0;
+    for (size_t i = 0; i < 200; ++i)
+    {
+        try
+        {
+            auto pool
+                = BackgroundSchedulePool::create(8, 8, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+            ++constructed;
+            pool->join();
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SCHEDULE_TASK);
+            ++threw;
+        }
+    }
+
+    /// With 8 initial threads at probability 0.5 both outcomes are overwhelmingly likely to occur;
+    /// the assertion that matters is that neither aborted the process.
+    EXPECT_EQ(threw + constructed, 200u);
+    EXPECT_GT(threw, 0u) << "no construction failed, so the teardown path was never exercised";
 }
 
 /// A huge delay must not wrap into a past deadline and fire immediately.

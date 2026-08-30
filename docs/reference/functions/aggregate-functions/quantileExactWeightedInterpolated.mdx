@@ -49,6 +49,13 @@ Quantile of the specified level. Numeric arguments produce `Float64`, while `Dec
 **Computing exact weighted interpolated quantile**
 
 ```sql title=Query
+CREATE TABLE t (
+    n Int32,
+    val UInt32
+) ENGINE = Memory;
+
+INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);
+
 SELECT quantileExactWeightedInterpolated(n, val) FROM t;
 ```
 

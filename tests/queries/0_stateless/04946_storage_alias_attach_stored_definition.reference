@@ -1,0 +1,16 @@
+-- a stored Alias-to-Alias definition loads
+1
+-- CREATE still rejects an Alias target
+BAD_ARGUMENTS
+-- a full-definition ATTACH still rejects an Alias target
+BAD_ARGUMENTS
+-- CREATE still rejects a self-reference
+BAD_ARGUMENTS
+-- a full-definition ATTACH still rejects a self-reference
+BAD_ARGUMENTS
+-- reading through the chain reaches the target
+1
+2
+-- a stored self-referential definition loads
+-- and reading it is bounded
+TOO_DEEP_RECURSION
