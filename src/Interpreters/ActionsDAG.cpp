@@ -2877,92 +2877,34 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
 std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoin() const
 {
-    /// Pick an ARRAY_JOIN whose argument subtree has no array join, so `before` is array-join-free.
     const Node * array_join = nullptr;
     for (const auto & node : nodes)
-    {
-        if (node.type != ActionType::ARRAY_JOIN)
-            continue;
-
-        bool arg_has_array_join = false;
-        std::stack<const Node *> arg_stack;
-        std::unordered_set<const Node *> arg_visited;
-        arg_stack.push(node.children.at(0));
-        while (!arg_stack.empty())
-        {
-            const auto * cur = arg_stack.top();
-            arg_stack.pop();
-            if (!arg_visited.insert(cur).second)
-                continue;
-            if (cur->type == ActionType::ARRAY_JOIN)
-            {
-                arg_has_array_join = true;
-                break;
-            }
-            for (const auto * child : cur->children)
-                arg_stack.push(child);
-        }
-
-        if (!arg_has_array_join)
+        if (node.type == ActionType::ARRAY_JOIN)
         {
             array_join = &node;
             break;
         }
-    }
-
     if (!array_join)
         return {};
 
     const std::string name = array_join->result_name;
 
-    /// after: split keeps the ARRAY_JOIN in `first`, so `second` is array-join-free and takes its result as input `name`.
-    ActionsDAG after = split({array_join}).second;
+    /// One split gives both halves: the ARRAY_JOIN goes to `first`, so `second` (= after) is array-join-free
+    /// and consumes the join result as an input, matched to `first`'s output by the split itself (no names).
+    auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true);
+    ActionsDAG after = std::move(split_res.second);
+    ActionsDAG before = std::move(split_res.first);
+    const Node * aj_before = split_res.split_nodes_mapping.at(array_join);
+    const Node * arg_before = aj_before->children.at(0);
 
-    /// The before/after hand-off matches columns by name. Bail if the element column is missing/ambiguous, or
-    /// any consumed name is duplicated (ActionsDAG allows it), so we never wire the wrong column.
-    std::unordered_map<std::string_view, size_t> after_input_counts;
-    for (const auto * input : after.inputs)
-        ++after_input_counts[input->result_name];
-    if (after_input_counts[name] != 1)
-        return {};
-    for (const auto & [input_name, count] : after_input_counts)
-        if (count > 1)
-            return {};
-
-    /// before: splitting on the argument keeps the ARRAY_JOIN (its parent) out, so `before` just computes the array.
-    const Node * arg = array_join->children.at(0);
-    auto before_split = split({arg}, /*create_split_nodes_mapping=*/true);
-    ActionsDAG before = std::move(before_split.first);
-    const Node * arg_before = before_split.split_nodes_mapping.at(arg);
-
-    /// `after` may reuse a value computed inside the argument subtree (e.g. arrayJoin(f(a)) and f(a) both used).
-    /// Forward the node `before` already produces for such a name; only truly-original columns become inputs.
-    std::unordered_map<std::string_view, const Node *> before_by_name;
-    for (const auto * output : before.getOutputs())
-        before_by_name.emplace(output->result_name, output);
-    for (const auto * input : before.inputs)
-        before_by_name.emplace(input->result_name, input);
-
-    /// Output exactly what `after` consumes: the array under `name`, and a pass-through of every other column.
-    NodeRawConstPtrs before_outputs;
-    before_outputs.reserve(after.inputs.size());
-    for (const auto * after_input : after.inputs)
-    {
-        if (after_input->result_name == name)
-        {
-            before_outputs.push_back(arg_before->result_name == name ? arg_before : &before.addAlias(*arg_before, name));
-        }
-        else
-        {
-            auto it = before_by_name.find(after_input->result_name);
-            const Node * in = it != before_by_name.end()
-                ? it->second
-                : &before.addInput(after_input->result_name, after_input->result_type);
-            before_by_name.emplace(after_input->result_name, in);
-            before_outputs.push_back(in);
-        }
-    }
-    before.getOutputs() = std::move(before_outputs);
+    /// `before` computed the join result; output the array argument under the same name instead and drop the
+    /// ARRAY_JOIN node so the ArrayJoinStep does the expansion. Erase it directly - its only consumer was that
+    /// output, and removeUnusedActions never prunes an ARRAY_JOIN (it changes the number of rows).
+    const Node * arg_out = arg_before->result_name == name ? arg_before : &before.addAlias(*arg_before, name);
+    for (auto & output : before.outputs)
+        if (output == aj_before)
+            output = arg_out;
+    before.nodes.remove_if([&](const Node & node) { return &node == aj_before; });
     before.removeUnusedActions(/*allow_remove_inputs=*/false);
 
     return SplitArrayJoinResult{std::move(before), std::move(after), name};

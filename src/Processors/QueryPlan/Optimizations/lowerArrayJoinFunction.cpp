@@ -5,25 +5,9 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoin.h>
 #include <Common/typeid_cast.h>
-#include <unordered_set>
 
 namespace DB::QueryPlanOptimizations
 {
-
-/// A computed node can legally share a name with an input (e.g. an implicit `CAST(x, ...) AS x`), and the
-/// before/after hand-off matches columns by name, so we can't tell them apart. Same guard as lazy materialization.
-static bool hasInputNameShadowedByComputedNode(const ActionsDAG & dag)
-{
-    std::unordered_set<std::string_view> input_names;
-    for (const auto * input : dag.getInputs())
-        input_names.insert(input->result_name);
-
-    for (const auto & node : dag.getNodes())
-        if (node.type != ActionsDAG::ActionType::INPUT && input_names.contains(node.result_name))
-            return true;
-
-    return false;
-}
 
 /// Lower an `arrayJoin` function into a real ArrayJoinStep so it gets lazy replication and filter fusion.
 /// Peels one join per call; the driver repeats for the rest (independent joins are a cross product).
@@ -49,10 +33,6 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     /// A query-scope non-deterministic function (rand, ...) is computed once and replicated before the join;
     /// lowering would move it into the post-join filter/expression and evaluate it per expanded row.
     if (dag.hasNonDeterministic())
-        return 0;
-
-    /// Name-based hand-off can't disambiguate a computed node that shadows an input name.
-    if (hasInputNameShadowedByComputedNode(dag))
         return 0;
 
     auto extracted = dag.extractFirstArrayJoin();
