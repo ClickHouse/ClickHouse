@@ -1149,10 +1149,13 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 DROP TABLE edges_merge_dist;
 
--- A `Merge` table mixing local and remote children prunes the child set per query
--- (`_table` / `_database` filters), so a recursive step narrowed to the local child never
--- reaches the remote one — the forcing mode must keep running instead of rejecting the
--- query for a remote child it would not read.
+-- A `Merge` table mixing local and remote children always reads the remote child:
+-- `_table` / `_database` pruning applies only to children that do not read their data
+-- from other tables (`IStorage::readsFromOtherTables`), because the rows of a
+-- `Distributed` child are stamped with the name of the table that actually produced
+-- them. The `ClusterProxy`-served read therefore always happens, whatever the filter
+-- selects, and the forcing mode must fail closed exactly as for an all-remote `Merge` —
+-- even though the sibling local child is not eligible on its own.
 DROP TABLE IF EXISTS edges_merge_mixed;
 CREATE TABLE edges_merge_mixed AS edges ENGINE = Merge(currentDatabase(), '^edges(_dist_replicas)?$');
 
@@ -1165,7 +1168,7 @@ WITH RECURSIVE merge_mixed_local_pr AS
 )
 SELECT sum(n) FROM merge_mixed_local_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
-    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE edges_merge_mixed;
 

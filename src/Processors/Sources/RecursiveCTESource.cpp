@@ -177,20 +177,23 @@ struct ParallelReplicasEngagement
 /// forwards both `getQueryProcessingStage` and `read` to its destination, and a `Merge`
 /// table plans each child with the same query context (`ReadFromMerge` calls the child's
 /// `read` directly, so a remote child's read still goes through `ClusterProxy` and
-/// consults the parallel-replica settings) — it counts as eligible only when every one
-/// of its children does. "Any child eligible" would be too broad: `Merge` prunes the
-/// child set per query (`ReadFromMerge::getSelectedTables` evaluates `_table` /
-/// `_database` filters), so a query over a mixed local/remote `Merge` narrowed to local
-/// children never reaches the remote child, and the forcing mode must not reject it.
-/// Which children survive pruning depends on the query and is not known before planning,
-/// so a mixed `Merge` counts as not eligible — for a query that does read a remote child
+/// consults the parallel-replica settings). `Merge` prunes the child set per query
+/// (`ReadFromMerge::getSelectedTables` evaluates `_table` / `_database` filters), but
+/// only for children that do not read their data from other tables
+/// (`IStorage::readsFromOtherTables`) — a `Distributed` / `Alias` / `Buffer` / nested
+/// `Merge` child stamps its rows with the name of the table that actually produced them
+/// and is always read, so its engagement is unconditional. The prunable children count
+/// only when every one of them is eligible: which of them survive pruning depends on the
+/// query and is not known before planning, so a prunable set with an ineligible member
+/// contributes nothing — for a query that does read an eligible prunable remote child
 /// this under-throws, the same documented trade-off as above: the read stays correct,
-/// parallel replicas are just silently kept off for the recursive step. When every child
-/// is eligible, any non-empty pruned subset still is, so failing closed remains correct
-/// (a filter matching no child at all makes the step an empty plain read; over-throwing
-/// on that degenerate case is accepted), except that a child set mixing engagement
-/// *flavors* keeps only the estimate-subject one, since pruning may leave the local
-/// `MergeTree` child alone (see the `Merge` branch below). A `Merge` whose children are all local cannot
+/// parallel replicas are just silently kept off for the recursive step. When every
+/// prunable child is eligible, any non-empty pruned subset still is, so failing closed
+/// remains correct (a filter matching no prunable child makes their part of the step an
+/// empty plain read; over-throwing on that degenerate case is accepted), except that a
+/// prunable set mixing engagement *flavors* keeps only the estimate-subject one, since
+/// pruning may leave the local `MergeTree` child alone (see the `Merge` branch below).
+/// A `Merge` whose children are all local cannot
 /// engage parallel replicas under the analyzer — the storage-level `MergeTree`
 /// parallel-replica paths are old-analyzer-only, and the planner's rule rejects `Merge`
 /// itself — so it counts as not eligible here.
@@ -218,46 +221,79 @@ ParallelReplicasEngagement mayEngageParallelReplicasForRemoteStorage(const IStor
 
     if (const auto * merge = dynamic_cast<const StorageMerge *>(&storage))
     {
-        /// Eligible only when every child is: the query may prune the child set with
-        /// `_table` / `_database` filters before planning, and any subset of an
-        /// all-eligible child set is still eligible, while a mixed set is not.
+        /// `ReadFromMerge::getSelectedTables` prunes the child set with `_table` /
+        /// `_database` filters before creating child plans, but only the children that do
+        /// not read their data from other tables (`IStorage::readsFromOtherTables`): the
+        /// rows of a `Distributed`, `Alias`, `Buffer` or nested `Merge` child carry the
+        /// name of the table that actually produced them, so such a child is always read
+        /// and the predicate filters its rows. The engagement of a non-prunable child is
+        /// therefore unconditional — even an ineligible sibling cannot remove its read.
+        /// A prunable child's engagement may vanish with the child, so the prunable subset
+        /// is judged as a whole: eligible only when every prunable child is — any subset
+        /// of an all-eligible set is still eligible, while which children survive pruning
+        /// is not known before planning, so a set with an ineligible prunable child
+        /// contributes nothing. For a query that does read an eligible prunable child this
+        /// under-throws — the documented trade-off: the read stays correct, parallel
+        /// replicas are just silently kept off for the recursive step.
         bool has_children = false;
-        ParallelReplicasEngagement children_engagement;
-        bool has_ineligible_child = merge->hasChildTable([&](const StoragePtr & child)
+        bool has_prunable_child = false;
+        bool has_ineligible_prunable_child = false;
+        ParallelReplicasEngagement certain_engagement;
+        ParallelReplicasEngagement prunable_engagement;
+        merge->hasChildTable([&](const StoragePtr & child)
         {
             has_children = true;
             auto child_engagement = mayEngageParallelReplicasForWrappedStorage(child, context);
-            children_engagement.merge(child_engagement);
-            return !child_engagement.any();
+            if (child->readsFromOtherTables())
+            {
+                certain_engagement.merge(child_engagement);
+            }
+            else
+            {
+                has_prunable_child = true;
+                has_ineligible_prunable_child |= !child_engagement.any();
+                prunable_engagement.merge(child_engagement);
+            }
+            return false;
         });
-        if (!has_children || has_ineligible_child)
+        if (!has_children)
             return {};
 
-        /// `ReadFromMerge::getSelectedTables` applies `_table` / `_database`
-        /// filters before creating child plans. Keep this ambiguity with the
-        /// engagement so the forced-mode preflight does not assume that the
-        /// unpruned count of local view reads is the planner's final count.
-        children_engagement.local_merge_tree_read_count_may_be_reduced_by_merge_pruning
-            = children_engagement.local_merge_tree_read_count > 1;
+        ParallelReplicasEngagement children_engagement = certain_engagement;
+        if (has_prunable_child && !has_ineligible_prunable_child)
+        {
+            /// The *flavor* of the prunable engagement has to survive pruning as well. A
+            /// `Merge` whose children are all eligible can still mix flavors — say a view
+            /// over a local `MergeTree` (`local_merge_tree`) and a view over a
+            /// `Distributed` table (`remote`, both ordinary views are prunable) — and the
+            /// two are not interchangeable: only a local `MergeTree` read runs the
+            /// row-count estimate that may silently disable parallel replicas afterwards
+            /// (see `ParallelReplicasEngagement`). Reporting `remote` for a child set the
+            /// query may narrow to the local-`MergeTree` child alone would suppress that
+            /// escape hatch and turn a query the plain planner runs into a
+            /// `SUPPORT_IS_DISABLED` rejection. Which prunable children survive is not
+            /// known before planning, so a mixed prunable set keeps only the
+            /// estimate-subject flavor — unless a non-prunable child already engages
+            /// remotely, which pruning cannot undo. For a query that does read the
+            /// prunable remote child with the threshold set this under-throws — the same
+            /// documented trade-off as above.
+            if (prunable_engagement.remote
+                && (prunable_engagement.local_merge_tree || certain_engagement.local_merge_tree))
+                prunable_engagement.remote = false;
 
-        /// The *flavor* of the engagement has to survive pruning as well. A `Merge` whose
-        /// children are all eligible can still mix flavors — say a view over a local
-        /// `MergeTree` (`local_merge_tree`) and a `Distributed` table (`remote`) — and the
-        /// two are not interchangeable: only a local `MergeTree` read runs the row-count
-        /// estimate that may silently disable parallel replicas afterwards (see
-        /// `ParallelReplicasEngagement`). Reporting `remote` for a child set the query may
-        /// narrow to the local-`MergeTree` child alone would suppress that escape hatch and
-        /// turn a query the plain planner runs into a `SUPPORT_IS_DISABLED` rejection.
-        /// Which children survive pruning is not known before planning, so a mixed set
-        /// keeps only the estimate-subject flavor: the step is still eligible (it fails
-        /// closed when the estimate cannot disable parallel replicas anyway — with
-        /// `parallel_replicas_min_number_of_rows_per_replica = 0` the rejection fires
-        /// exactly as for an all-remote `Merge`), and when the estimate could disable them
-        /// the step silently runs plainly instead. For a query that does read the remote
-        /// child with the threshold set this under-throws — the same documented trade-off
-        /// as above: the read stays correct, parallel replicas are just kept off.
-        if (children_engagement.local_merge_tree && children_engagement.remote)
-            children_engagement.remote = false;
+            /// The planner applies the min-rows estimate only when its candidate plan has
+            /// exactly one `ReadFromMergeTree` step. Pruning can reduce the preflight's
+            /// count, but only by removing prunable children, so keep the ambiguity with
+            /// the engagement only when a prunable child contributes to a count of more
+            /// than one.
+            prunable_engagement.local_merge_tree_read_count_may_be_reduced_by_merge_pruning
+                |= prunable_engagement.local_merge_tree_read_count > 0
+                    && prunable_engagement.local_merge_tree_read_count
+                            + certain_engagement.local_merge_tree_read_count
+                        > 1;
+
+            children_engagement.merge(prunable_engagement);
+        }
 
         return children_engagement;
     }
