@@ -3154,7 +3154,16 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
+    /// Only the single-argument `toString(x)` is injective. The two-argument
+    /// `toString(value, timezone)` form is not injective in `value` (different
+    /// instants can share a formatted string, and a NULL timezone makes the
+    /// result a constant NULL of type `Nullable(Nothing)`), so it must not be
+    /// treated as injective — otherwise `GROUP BY toString(x, NULL)` is wrongly
+    /// simplified to `GROUP BY x`, turning one NULL group into one group per row.
+    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return std::is_same_v<Name, NameToString> && arguments.size() == 1;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
