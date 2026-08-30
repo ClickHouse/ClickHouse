@@ -11,8 +11,6 @@ SET max_threads = 4;
 SET max_block_size = 8192;
 SET group_by_two_level_threshold = 10000;
 SET group_by_two_level_threshold_bytes = 5000000;
--- The adaptive admission rejects any group-by row limit.
-SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS test_skew;
 CREATE TABLE test_skew (k UInt64, v UInt64, s String, nv Nullable(UInt64), arr Array(UInt64), flag UInt8)
