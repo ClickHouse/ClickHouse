@@ -8,6 +8,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/MemorySpillScheduler.h>
 
 #include <algorithm>
 #include <memory>
@@ -304,6 +305,21 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemo
     return result;
 }
 
+ExecutingGraph::RemoveGroupResult ExecutingGraph::removeReadyGroups(Processors & delayed_destruction)
+{
+    std::unique_lock lock(nodes_mutex);
+
+    RemoveGroupResult result;
+    while (auto group = findGroupReadyForRemoval())
+    {
+        auto group_result = removePendingGroup(*group, delayed_destruction);
+        result.removed_nodes.insert_range(group_result.removed_nodes);
+        result.removed_edges.insert_range(group_result.removed_edges);
+    }
+
+    return result;
+}
+
 std::shared_ptr<ExecutingGraph::PendingRemovalGroup> ExecutingGraph::findGroupReadyForRemoval()
 {
     for (const auto & [_, group] : removed_processors)
@@ -529,7 +545,11 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                 }();
 
                 if (update_status != UpdateNodeStatus::Done)
+                {
+                    /// updatePipeline has already queued its removals, but this thread is leaving the graph forever.
+                    removeReadyGroups(delayed_destruction);
                     return update_status;
+                }
 
                 /// Add itself back to be prepared again.
                 updated_processors.push_front(current);
@@ -542,15 +562,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
             {
                 read_lock.unlock();
 
-                RemoveGroupResult remove_result = [&]() -> RemoveGroupResult
-                {
-                    std::unique_lock lock(nodes_mutex);
-
-                    if (auto group = findGroupReadyForRemoval())
-                        return removePendingGroup(*group, delayed_destruction);
-
-                    return {};
-                }();
+                RemoveGroupResult remove_result = removeReadyGroups(delayed_destruction);
 
                 if (!remove_result.removed_edges.empty())
                 {

@@ -18,7 +18,6 @@
 #include <Parsers/stripQuerySettings.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
 #include <string_view>
@@ -699,6 +698,120 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' IDENTIFIED WITH plaintext_password BY 'def123'",
             "throws Only one identified with is permitted"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077-01-01' GRANTS (SELECT(id) ON db.tbl, INSERT ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077\-01\-01' GRANTS \(SELECT\(id\) ON db\.tbl, INSERT ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.*), plaintext_password BY 'def123'",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.\*\), plaintext_password BY 'def123')"
+        },
+        {
+            "ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.tbl)",
+            R"(ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 NOT IDENTIFIED GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH no_password GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS ()",
+            "throws Syntax error"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS SELECT ON db.table",
+            "throws Syntax error"
+        },
+        {
+            /// An explicit no-privileges clause is preserved (it makes a deny-all token) and does not
+            /// collapse to an unparseable `GRANTS ()`.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (USAGE ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(USAGE ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 VALID UNTIL '2025-01-01'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01'"
+        },
+        {
+            /// The `GRANTS` clause of an authentication method is parsed after its deadline clause, and the
+            /// `VALID FOR` interval is parsed as a general expression - which must not swallow the `GRANTS`
+            /// keyword and its parenthesized list as a function call.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR INTERVAL 1 DAY GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR toIntervalDay\(1\) GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            /// The expected output is matched as a regular expression, so the parentheses and the
+            /// plus sign of the interval functions are escaped below.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH",
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR",
+            "ALTER USER user1 VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// The global (user-level) clause must be formatted before the IDENTIFIED list: the parser
+            /// treats VALID UNTIL/VALID FOR as global only while no authentication method has been parsed
+            /// yet, so a clause printed after the list would re-parse as belonging to the last method.
+            /// The round-trip matters for the query text sent to the replicas of an ON CLUSTER DDL query.
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'",
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'"
+        },
+        {
+            /// `IN` is a normal operator in expression parsing, so a trailing access-storage clause
+            /// after `VALID FOR` would be greedily consumed as part of the interval expression;
+            /// the parser must instead hand it back to the access-storage clause of the query.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN some_storage",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN some_storage",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN some_storage",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// An access storage name can also be written as a string literal.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 'some_storage'",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN 'some_storage'",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN 'some_storage'",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// A compound identifier cannot be an access storage name, so it stays part of the
+            /// interval expression (and is rejected by the interval type check at execution time).
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN db.tbl",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(db.tbl\\)"
+        },
+        {
+            /// The same holds for a literal that is not a string: it cannot name an access storage.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 123",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(123\\)"
         }
 })));
 
@@ -713,6 +826,16 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        },
+        {
+            /// `VALID FOR` is a shorthand resolved at query execution time; it must never appear in the
+            /// on-disk (attach) form, so `deserializeAccessEntity` should reject a hand-written definition.
+            "ATTACH USER user1 VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
+        },
+        {
+            "ATTACH USER user1 IDENTIFIED WITH plaintext_password BY 'x' VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
         }
 })));
 
