@@ -6637,6 +6637,15 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
                     continue;
                 }
 
+                /// Sort and deduplicate the probe hashes once, here, instead of leaving that to every
+                /// lookup on every granule/row group: a filter can then intersect them with its own
+                /// sorted value set in one merge pass (see the Parquet `DictionaryLookup`), and the
+                /// duplicates that an `IN` set can produce - different values whose hashes collide, or
+                /// a tuple element repeated across set rows - are probed once instead of many times.
+                std::sort(hashes_for_column.begin(), hashes_for_column.end());
+                hashes_for_column.erase(
+                    std::unique(hashes_for_column.begin(), hashes_for_column.end()), hashes_for_column.end());
+
                 hashes.emplace_back(hashes_for_column);
 
                 key_columns_for_element.push_back(indexes_mapping[i].key_index);
