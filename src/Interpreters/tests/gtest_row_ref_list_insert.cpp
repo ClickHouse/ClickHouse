@@ -136,6 +136,31 @@ TEST(RowRefList, CountSaturationStillIteratesEveryRow)
     EXPECT_EQ(seen_xor, expected_xor);
 }
 
+TEST(RowRefList, SaturatedCountIsNotTruncatedTo32Bits)
+{
+    Arena pool;
+
+    /// `Batch::total_rows` is 56 bits, so a saturated count above 2^32 must survive `rows()` intact:
+    /// a caller sizing an exact allocation from it writes one value per ref, so a narrowed count
+    /// under-allocates. Inserting that many refs is not feasible, so the field is set directly.
+    RowRefList list(/*block_no=*/0, /*row_no=*/0);
+    for (size_t row = 1; row < RowRefList::COUNT_SAT + 2; ++row)
+        list.insert(RowRef(0, row).encode(), pool);
+    ASSERT_FALSE(list.isInline());
+    ASSERT_EQ((list.word >> RowRefList::COUNT_SHIFT) & RowRefList::COUNT_SAT, RowRefList::COUNT_SAT);
+
+    static constexpr UInt64 big = (1ull << 32) + 7;
+    list.asBatch()->total_rows = big;
+    EXPECT_EQ(list.rows(), big);
+    EXPECT_EQ(refWordRows(list.word), big);
+
+    /// The widest value the field can hold must also come back whole.
+    static constexpr UInt64 widest = (1ull << 56) - 1;
+    list.asBatch()->total_rows = widest;
+    EXPECT_EQ(list.rows(), widest);
+    EXPECT_EQ(refWordRows(list.word), widest);
+}
+
 TEST(RowRefList, RangeRepresentation)
 {
     Arena pool;

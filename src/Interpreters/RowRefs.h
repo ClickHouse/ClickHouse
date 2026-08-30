@@ -170,15 +170,16 @@ struct RowRefList
         return reinterpret_cast<Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
-    /// Total number of rows for this key. Load-free unless the count saturated.
-    UInt32 rows() const
+    /// Total number of rows for this key. Load-free unless the count saturated. Wider than the
+    /// in-word counter: past saturation the count comes from `Batch::total_rows`, which is 56 bits.
+    size_t rows() const
     {
         if (isInline())
             return 1;
         const UInt32 count = static_cast<UInt32>((word >> COUNT_SHIFT) & COUNT_SAT);
         if (count != COUNT_SAT)
             return count;
-        return static_cast<UInt32>(asBatch()->total_rows);
+        return asBatch()->total_rows;
     }
 
     /// Encoded ref word of the first row (any-row semantics, e.g. RightAny on MapsAll).
@@ -381,7 +382,7 @@ static_assert(sizeof(RowRefList::Batch) == 64, "RowRefList::Batch must stay one 
 
 /// Number of rows an encoded cell / LazyOutput word represents (inline ref = 1, list = its count,
 /// range = its length), without spelling out a RowRefList at the call site. A zero word yields 0.
-inline UInt32 refWordRows(UInt64 word)
+inline size_t refWordRows(UInt64 word)
 {
     return RowRefList::fromWord(word).rows();
 }

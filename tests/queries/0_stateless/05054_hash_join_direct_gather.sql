@@ -18,9 +18,12 @@ DROP TABLE IF EXISTS dg_list_probe;
 DROP TABLE IF EXISTS dg_nullable;
 DROP TABLE IF EXISTS dg_rowstore;
 DROP TABLE IF EXISTS dg_rowstore_probe;
+DROP TABLE IF EXISTS dg_interval;
+DROP TABLE IF EXISTS dg_asof;
+DROP TABLE IF EXISTS dg_asof_probe;
 
--- One payload column per admitted type. `Interval` is admitted by the gather but cannot be a table
--- column, so it has no arm here.
+-- One payload column per admitted type except `Interval`, which arm 1e carries on its own fixture so
+-- that its column does not move the reference values of every arm that reads this table.
 CREATE TABLE dg_build
 (
     k UInt64,
@@ -85,6 +88,19 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
     log_comment = 'dg_arm1d_per_type', ast_fuzzer_runs = 0;
+
+-- Arm 1e: `Interval` is the one admitted type `dg_build` does not carry. It is storable in a table
+-- (`cannotBeStoredInTables` is not overridden for it), so it gets the same exact-count treatment as
+-- arm 1d: one payload column over 1000 matched probe rows is 1000 gathered values.
+CREATE TABLE dg_interval (k UInt64, iv IntervalDay) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_interval SELECT number, toIntervalDay(number) FROM numbers(2000);
+
+SELECT 'arm1e interval arming', count(), sum(cityHash64(*)), countIf(iv = toIntervalDay(k))
+FROM dg_probe JOIN dg_interval USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
+    enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm1e_per_type_interval', ast_fuzzer_runs = 0;
 
 -- Arm 2: 100 probe keys have no match. With `join_use_nulls = 0` an unmatched right value is the type
 -- default, which is what a zero ref word makes the gather write. `Enum8` defaults to its first value
@@ -208,11 +224,27 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     join_to_sort_maximum_table_rows = 10000,
     log_comment = 'dg_arm9_reranged', ast_fuzzer_runs = 0;
 
+-- Arm asof: `ASOF` is outside the gather's scope, so it never resolves the admission table and both
+-- of its counters stay zero. Zero gathered out of zero admitted is not "everything was gathered", so
+-- the columnar collection still has to be built; skipping it returns empty right-side columns. Ten
+-- build rows per key with distinct `ts` keep the chosen row unique, so the values are deterministic.
+CREATE TABLE dg_asof (k UInt64, ts UInt64, a UInt64, w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_asof SELECT number % 50, intDiv(number, 50) * 10, number * 1000003,
+    toFixedString(leftPad(toString(number), 40, 'w'), 40) FROM numbers(500);
+-- Probe keys 50..79 have no build row at all, which is the arm's `collect_null` half.
+CREATE TABLE dg_asof_probe (k UInt64, ts UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_asof_probe SELECT number, 95 FROM numbers(80);
+
+SELECT 'arm_asof', count(), sum(cityHash64(*)), countIf(a = 0), countIf(w = toFixedString('', 40))
+FROM dg_asof_probe ASOF LEFT JOIN dg_asof ON dg_asof_probe.k = dg_asof.k AND dg_asof_probe.ts >= dg_asof.ts
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    log_comment = 'dg_arm_asof', ast_fuzzer_runs = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
     replaceOne(log_comment, 'dg_', '') AS arm,
-    if(log_comment = 'dg_arm1d_per_type',
+    if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval'),
        toString(max(ProfileEvents['HashJoinDirectGatheredRows'])),
        toString(max(ProfileEvents['HashJoinDirectGatheredRows']) > 0)) AS gathered
 FROM system.query_log
@@ -230,3 +262,6 @@ DROP TABLE dg_list_probe;
 DROP TABLE dg_nullable;
 DROP TABLE dg_rowstore;
 DROP TABLE dg_rowstore_probe;
+DROP TABLE dg_interval;
+DROP TABLE dg_asof;
+DROP TABLE dg_asof_probe;

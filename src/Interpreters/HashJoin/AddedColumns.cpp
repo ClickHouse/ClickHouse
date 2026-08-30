@@ -360,9 +360,11 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     ColumnsWithRowNumbers columns_with_row_numbers;
     [[maybe_unused]] auto & many_columns = columns_with_row_numbers.columns;
     [[maybe_unused]] auto & row_nums = columns_with_row_numbers.row_numbers;
-    /// `fillJoinOutputColumns` skips every gathered destination, so with all of them gathered nothing
-    /// reads this collection. A row store on the same chunk still reaches the code below.
-    [[maybe_unused]] const bool need_columnar_collect = num_direct_gather < num_columnar_dst;
+    /// Nothing reads this collection when every columnar destination was gathered, because
+    /// `fillJoinOutputColumns` skips exactly those destinations. Both counters are zero when the
+    /// admission test did not run at all (ASOF, joinGet), which is not that case.
+    [[maybe_unused]] const bool need_columnar_collect
+        = num_direct_gather == 0 || num_direct_gather < num_columnar_dst;
     if constexpr (from_columns)
     {
         many_columns.reserve(size_to_reserve);
