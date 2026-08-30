@@ -1323,3 +1323,35 @@ def test_url_database_file_scheme_does_not_probe_without_file_grant(node):
     finally:
         node.query(f"DROP USER IF EXISTS {user}")
         node.query(f"DROP DATABASE IF EXISTS {database}")
+
+
+@pytest.mark.parametrize(
+    "node, lazy_expected",
+    [(node_local, True), (node_s3, False), (node_encrypted, False)],
+    ids=["local", "s3", "encrypted"],
+)
+def test_parquet_lazy_materialization_only_on_plain_local_disk(node, lazy_expected):
+    """The lazy `Parquet` materialization pass (`query_plan_optimize_lazy_materialization_for_file`)
+    reopens the recorded paths directly with `stat` + `ReadBufferFromFile`, bypassing `IDisk`.
+    On a policy backed by a non-plain-local disk those paths are object keys (`s3_plain`) or
+    ciphertext backing paths (`DiskEncrypted`), so the optimization must stay off there: the
+    query must keep the single-pass plan and return correct rows instead of throwing
+    `CANNOT_STAT` or rereading the wrong bytes. On a plain local disk the recorded paths are
+    the very files the main pass read, so the optimization must stay available."""
+    node.query(
+        "INSERT INTO FUNCTION file('lazy_mat.parquet', Parquet, 'k UInt64, s String') "
+        "SELECT number, concat('value_', toString(number)) FROM numbers(100) "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+
+    query = (
+        "SELECT k, s FROM file('lazy_mat.parquet', Parquet, 'k UInt64, s String') "
+        "ORDER BY k DESC LIMIT 3"
+    )
+    settings = {"query_plan_optimize_lazy_materialization_for_file": 1}
+
+    result = node.query(query, settings=settings)
+    assert result.split("\n")[:3] == ["99\tvalue_99", "98\tvalue_98", "97\tvalue_97"]
+
+    explain = node.query("EXPLAIN " + query, settings=settings)
+    assert ("LazilyReadFromFile" in explain) == lazy_expected

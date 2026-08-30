@@ -2967,6 +2967,16 @@ bool ReadFromFile::canUseLazyMaterialization() const
     if (!storage->file_renamer.isEmpty())
         return false;
 
+    /// The lazy pass reopens the recorded paths directly with `stat` + `createReadBuffer`,
+    /// bypassing `IDisk`. With a `user_files_policy` volume the paths are `disk->getPath()`-prefixed
+    /// and only a plain local disk guarantees they denote the same host-local bytes the main pass
+    /// read: on a remote disk (e.g. `s3_plain`) they are object keys that cannot be `stat`ed, and on
+    /// `DiskEncrypted` the backing path holds ciphertext instead of the logical file contents.
+    if (storage->user_files_volume)
+        for (const auto & disk : storage->user_files_volume->getDisks())
+            if (!isPlainLocalDisk(*disk))
+                return false;
+
     /// The lazy pass reopens every path and uses the physical row positions from the main pass.
     /// Pipes and pseudo-files are single-pass streams, so their `stat` tokens cannot establish
     /// that the second read sees the same data.
