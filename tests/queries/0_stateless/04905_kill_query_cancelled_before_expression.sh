@@ -204,11 +204,13 @@ run_cancelled_query \
     "kill_query_having_before_expression_${CLICKHOUSE_DATABASE}_$RANDOM" \
     "SELECT number % 10 AS k, count() FROM numbers(1000000) GROUP BY k WITH TOTALS HAVING sipHash64(count()) % 2 >= 0 FORMAT Null SETTINGS max_threads = 1" || exit 1
 
+# The streaming queries read from `numbers(1000000000)`, whose exact size is known up front, so the
+# test profile's `max_rows_to_read` limit would reject them before they start reading a single row.
 run_cancelled_streaming_query \
     expression_transform_before_expression_pause \
     expression_transform_pause \
     "kill_query_expression_before_expression_${CLICKHOUSE_DATABASE}_$RANDOM" \
-    "SELECT sipHash64(number) FROM numbers(1000000000) FORMAT Null SETTINGS max_threads = 1, max_block_size = 8192" || exit 1
+    "SELECT sipHash64(number) FROM numbers(1000000000) FORMAT Null SETTINGS max_threads = 1, max_block_size = 8192, max_rows_to_read = 0" || exit 1
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS kill_query_converting_before_expression"
 # `Null` keeps the table from growing while the query streams: only the conversion of the omitted
@@ -219,7 +221,7 @@ run_cancelled_streaming_query \
     converting_transform_before_expression_pause \
     converting_transform_pause \
     "kill_query_converting_before_expression_${CLICKHOUSE_DATABASE}_$RANDOM" \
-    "INSERT INTO kill_query_converting_before_expression (x) SELECT number FROM numbers(1000000000) SETTINGS max_threads = 1, max_block_size = 8192, min_insert_block_size_rows = 8192, min_insert_block_size_bytes = 0" || exit 1
+    "INSERT INTO kill_query_converting_before_expression (x) SELECT number FROM numbers(1000000000) SETTINGS max_threads = 1, max_block_size = 8192, min_insert_block_size_rows = 8192, min_insert_block_size_bytes = 0, max_rows_to_read = 0" || exit 1
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE kill_query_converting_before_expression"
 
