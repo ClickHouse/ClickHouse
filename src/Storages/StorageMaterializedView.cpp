@@ -888,7 +888,12 @@ void StorageMaterializedView::checkAlterPartitionIsPossible(
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->mutate(commands, local_context);
+    auto target = getTargetTable();
+    /// As in `read`: the interpreter refreshes the outermost storage, which for a materialized
+    /// view is the view itself (a no-op), so a datalake target table would otherwise reach
+    /// `mutate` with no `datalake_table_state` pinned at all.
+    target->updateExternalDynamicMetadataIfExists(local_context);
+    target->mutate(commands, local_context);
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
