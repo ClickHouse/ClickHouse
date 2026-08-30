@@ -1,0 +1,78 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Reader construction is per read task; with many small parts it dominates a query that touches
+         Nested members, subcolumns and sparse columns. Merges are made impossible by the table settings
+         so that the number of parts stays as inserted. -->
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>t_many_parts_wide</value>
+                <value>t_many_parts_compact</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_many_parts_wide
+        (
+            id UInt64,
+            ts DateTime,
+            region LowCardinality(String),
+            mode Enum8('ranked' = 1, 'casual' = 2, 'custom' = 3),
+            kills UInt16,
+            damage UInt32,
+            score Int32,
+            rank Nullable(UInt8),
+            mmr Nullable(Int32),
+            hero LowCardinality(String),
+            items Array(UInt16),
+            bonus UInt32,
+            note String,
+            rounds Nested(idx UInt8, won Bool, dmg UInt32),
+            events Nested(t UInt32, kind LowCardinality(String)),
+            stats Tuple(acc Float32, hs UInt16),
+            tags Map(String, UInt8)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.9,
+            max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            parts_to_delay_insert = 100000, parts_to_throw_insert = 100000
+    </create_query>
+    <create_query>
+        CREATE TABLE t_many_parts_compact AS t_many_parts_wide
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000, ratio_of_defaults_for_sparse_serialization = 0.9,
+            max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            parts_to_delay_insert = 100000, parts_to_throw_insert = 100000
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_many_parts_wide
+        SELECT number, toDateTime('2026-01-01 00:00:00') + number,
+            ['eu', 'na', 'asia', 'sa'][number % 4 + 1], toInt8(number % 3 + 1),
+            toUInt16(number % 40), toUInt32(number * 13 % 100000), toInt32(number % 3000) - 1000,
+            if(number % 7 = 0, NULL, toUInt8(number % 20)), if(number % 11 = 0, NULL, toInt32(number % 5000)),
+            ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'][number % 8 + 1],
+            arrayMap(i -> toUInt16(i), range(number % 6)),
+            if(number % 50 = 0, toUInt32(number % 1000), 0), if(number % 20 = 0, repeat('x', number % 40), ''),
+            arrayMap(i -> toUInt8(i), range(number % 5)), arrayMap(i -> i % 2 = 0, range(number % 5)), arrayMap(i -> toUInt32(i * 3), range(number % 5)),
+            arrayMap(i -> toUInt32(i * 10), range(number % 3)), arrayMap(i -> ['kill', 'death', 'plant'][i % 3 + 1], range(number % 3)),
+            (toFloat32(number % 100) / 100, toUInt16(number % 20)),
+            map('k', toUInt8(number % 2), 'm', toUInt8(number % 3))
+        FROM numbers(100000)
+        SETTINGS max_block_size = 10, max_insert_block_size = 10, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1
+    </fill_query>
+    <fill_query>INSERT INTO t_many_parts_compact SELECT * FROM t_many_parts_wide SETTINGS max_block_size = 10, max_insert_block_size = 10, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1</fill_query>
+
+    <query>SELECT sum(length(rounds.idx)), sum(arraySum(rounds.dmg)), countIf(arrayExists(x -> x, rounds.won)) FROM {table} FORMAT Null</query>
+    <query>SELECT sum(rank.null), sum(items.size0), sum(rounds.idx.size0), sum(stats.hs), sum(length(tags.keys)) FROM {table} FORMAT Null</query>
+    <query>SELECT * FROM {table} FORMAT Null</query>
+    <query>SELECT sum(damage) FROM {table} PREWHERE length(rounds.idx) > 2 WHERE rounds.dmg[1] > 500 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_many_parts_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_many_parts_compact</drop_query>
+</test>
