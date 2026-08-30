@@ -434,36 +434,10 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
     }
 }
 
-double TextIndexAnalyzer::estimatePatternQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const
-{
-    /// Union estimate over scan-discovered tokens (pattern queries declare none at parse time).
-    const double n = static_cast<double>(total_rows);
-    double not_in_any = query_builder.postings
-        ? 1.0 - static_cast<double>(query_builder.postings->cardinality()) / n
-        : 1.0;
-
-    for (const auto & [token, token_info] : query_builder.tokens)
-    {
-        if (hasReadPostings(token))
-            continue;
-        not_in_any *= (1.0 - static_cast<double>(token_info->cardinality) / n);
-    }
-
-    return n * (1.0 - not_in_any);
-}
-
 void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(size_t total_rows)
 {
     if (total_rows == 0)
         return;
-
-    /// Only a union that leaves no row unmatched is bypassed. Reading the postings of such a query
-    /// cannot prune anything, so the read is pure cost. Anything short of that still prunes - a
-    /// pattern matching a quarter of the rows reads a quarter of the granules instead of all of
-    /// them - so bypassing on a selectivity threshold would trade that pruning away. That is what
-    /// `text_index_hint_max_selectivity` (0.2) does for *hints*, where it is safe because the index
-    /// still prunes without them; applied here it would disable pruning outright.
-    const double unmatched_rows_threshold = 0.5;
 
     for (auto & [query_hash, query_builder] : query_builders)
     {
@@ -478,10 +452,22 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(size_t total_rows)
         if (query_builder.tokens.empty())
             continue;
 
-        const double estimated = estimatePatternQueryCardinality(query_builder, total_rows);
-        if (static_cast<double>(total_rows) - estimated < unmatched_rows_threshold)
+        /// Only a token present in every row proves the postings cannot prune, so the bypass needs
+        /// that exact fact rather than an estimate. The independence estimate is not a proof here:
+        /// correlated tokens that all match the same half of the table drive it to `total_rows`
+        /// while the real union still prunes half the part.
+        bool covers_every_row = query_builder.postings && query_builder.postings->cardinality() == total_rows;
+        for (const auto & [token, token_info] : query_builder.tokens)
         {
-            /// Union covers every row, so its postings cannot prune; bypass before reading them.
+            if (covers_every_row)
+                break;
+            if (!hasReadPostings(token) && token_info->cardinality == total_rows)
+                covers_every_row = true;
+        }
+
+        if (covers_every_row)
+        {
+            /// Reading these postings cannot prune anything; bypass before reading them.
             query_builder.markBypassed();
             detachQueryFromTokens(query_hash, query_builder);
             ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternQueryLowSelectivity);
