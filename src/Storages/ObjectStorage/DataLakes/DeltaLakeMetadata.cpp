@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Context.h>
@@ -49,6 +50,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 
 namespace fs = std::filesystem;
@@ -68,11 +70,11 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_delta_kernel_rs;
+    extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
-
 
 namespace
 {
@@ -701,6 +703,35 @@ static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_t
     return supports_delta_kernel && context->getSettingsRef()[Setting::allow_delta_kernel_rs] ;
 }
 
+#if USE_DELTA_KERNEL_RS
+static bool usesBearerAuthentication(const ObjectStoragePtr & object_storage)
+{
+#if USE_AWS_S3
+    if (object_storage->getType() != ObjectStorageType::S3)
+        return false;
+
+    /// Read from the live client because `applyNewSettings` can rebuild it without changing
+    /// the `StorageS3Configuration` that was created with the table.
+    const auto & client_configuration = object_storage->getS3StorageClient()->getClientConfiguration();
+    if (Poco::icompare(client_configuration.http_client, "gcp_oauth") == 0)
+        return true;
+
+    return std::ranges::any_of(client_configuration.extra_headers, [](const HTTPHeaderEntry & header)
+    {
+        return Poco::icompare(header.name, "Authorization") == 0;
+    });
+#else
+    static_cast<void>(object_storage);
+    return false;
+#endif
+}
+
+bool DeltaLakeMetadataDeltaKernel::requiresRecreation(const ObjectStoragePtr & object_storage_) const
+{
+    return usesBearerAuthentication(object_storage_);
+}
+#endif
+
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
 {
     return isDeltaKernelEnabled(context, storage_type);
@@ -717,12 +748,22 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
     ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
-    if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))
+    const auto locked_configuration = configuration.lock();
+    const bool delta_kernel_enabled = isDeltaKernelEnabled(local_context, locked_configuration->getType());
+    const bool uses_bearer_authentication = usesBearerAuthentication(object_storage);
+    if (delta_kernel_enabled && !uses_bearer_authentication)
     {
         return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
+    if (delta_kernel_enabled && uses_bearer_authentication)
+        LOG_DEBUG(getLogger("DeltaLakeMetadata"), "Using the native Delta Lake metadata reader because Delta Kernel does not support bearer authentication");
 #endif
     const auto & settings = local_context->getSettingsRef();
+    if (settings[Setting::delta_lake_reload_schema_for_consistency])
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Schema reload (delta_lake_reload_schema_for_consistency) is not supported without Delta Kernel");
+
     if (settings[Setting::delta_lake_snapshot_version].value != -1)
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,

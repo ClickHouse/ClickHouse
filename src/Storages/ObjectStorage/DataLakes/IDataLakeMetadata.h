@@ -98,6 +98,8 @@ public:
     /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
+    /// Whether a change in object-storage state requires selecting a different metadata implementation.
+    virtual bool requiresRecreation(const ObjectStoragePtr &) const { return false; }
     /// Update metadata to the latest version.
     virtual void update(const ContextPtr &) { }
 
