@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
@@ -372,27 +373,44 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         return false;
     }
 
-    /// Split the parts by index materialization (checksum lookups if materialized)
+    /// Split the parts by index materialization and query compatibility.
     const auto & text_index = *search_query->index.index;
-    auto is_materialized_part = [&](const RangesInDataPart & part_with_ranges)
+    auto is_compatible_indexed_part = [&](const RangesInDataPart & part_with_ranges)
     {
-        return !!text_index.getDeserializedFormat(*part_with_ranges.data_part, text_index.getFileName());
+        auto index_format = text_index.getDeserializedFormat(*part_with_ranges.data_part, text_index.getFileName());
+        if (!index_format)
+            return false;
+
+        /// Plain text indexes have no per-part query configuration.
+        if (search_query->condition->canUseQueryWithPartConfiguration(*search_query->query, std::nullopt))
+            return true;
+
+        const auto & regular = index_format.substreams.front();
+        auto stream = makeTextIndexInputStream(
+            part_with_ranges.data_part->getDataPartStoragePtr(),
+            text_index.getFileName() + regular.suffix,
+            regular.extension,
+            MergeTreeIndexReader::patchSettings(matched->reading->getReaderSettings(), regular.type));
+        stream->seekToStart();
+        auto header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
+        return search_query->condition->canUseQueryWithPartConfiguration(
+            *search_query->query, header.json_path_values_configuration);
     };
 
     const auto & all_parts = matched->reading->getParts();
-    const size_t num_materialized_parts = std::ranges::count_if(all_parts, is_materialized_part);
+    const size_t num_indexed_parts = std::ranges::count_if(all_parts, is_compatible_indexed_part);
 
-    if (num_materialized_parts == 0)
+    if (num_indexed_parts == 0)
     {
-        LOG_DEBUG(logger, "Cannot apply the optimization because the text index is not materialized in any part");
+        LOG_DEBUG(logger, "Cannot apply the optimization because no part has a compatible materialized text index");
         return false;
     }
-    LOG_DEBUG(logger, "Applying the optimization: {} indexed parts, {} unindexed parts", num_materialized_parts, all_parts.size() - num_materialized_parts);
+    LOG_DEBUG(logger, "Applying the optimization: {} compatible indexed parts, {} row-read parts", num_indexed_parts, all_parts.size() - num_indexed_parts);
 
-    const bool is_fully_materialized = num_materialized_parts == all_parts.size();
+    const bool is_fully_indexed = num_indexed_parts == all_parts.size();
 
     RangesInDataParts indexed_parts;
-    if (is_fully_materialized)
+    if (is_fully_indexed)
     {
         indexed_parts = all_parts;
     }
@@ -405,9 +423,9 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         auto & analysis_parts = analysis->parts_with_ranges;
         auto first_indexed = std::stable_partition(
             analysis_parts.begin(), analysis_parts.end(),
-            [&](const RangesInDataPart & part_with_ranges) { return !is_materialized_part(part_with_ranges); });
+            [&](const RangesInDataPart & part_with_ranges) { return !is_compatible_indexed_part(part_with_ranges); });
 
-        indexed_parts.reserve(num_materialized_parts);
+        indexed_parts.reserve(num_indexed_parts);
         std::move(first_indexed, analysis_parts.end(), std::back_inserter(indexed_parts));
         analysis_parts.erase(first_indexed, analysis_parts.end());
 
@@ -432,7 +450,7 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         matched->reading->getNumStreams());
     source_node.step->setStepDescription(description, settings.max_step_description_length);
 
-    if (is_fully_materialized)
+    if (is_fully_indexed)
     {
         aggregating->requestOnlyMergeForAggregateProjection(source_node.step->getOutputHeader());
         node.children.front() = &source_node;

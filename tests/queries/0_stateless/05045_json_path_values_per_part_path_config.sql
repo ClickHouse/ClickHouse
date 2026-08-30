@@ -79,6 +79,9 @@ INSERT INTO json_path_values_per_part_config VALUES (2, '{"value":true}');
 
 SELECT arraySort(groupArray(id)) FROM json_path_values_per_part_config WHERE data.value = true
 SETTINGS force_data_skipping_indices = 'idx', query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM json_path_values_per_part_config WHERE data.value = true
+SETTINGS force_data_skipping_indices = 'idx', query_plan_direct_read_from_text_index = 1,
+    query_plan_optimize_count_from_text_index = 1;
 
 SYSTEM START MERGES json_path_values_per_part_config;
 OPTIMIZE TABLE json_path_values_per_part_config FINAL;
