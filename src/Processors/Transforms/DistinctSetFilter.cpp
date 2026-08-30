@@ -1,8 +1,10 @@
 #include <Processors/Transforms/DistinctSetFilter.h>
 
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <DataTypes/NullableUtils.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 
@@ -192,8 +194,9 @@ namespace
 {
 
 /// Builds the DISTINCT filter for a chunk: filter[i] == 1 for rows whose key was not in the set yet
-/// (the rows are inserted into the set). mask[i] == 0 marks rows that are known duplicates (by the
-/// LowCardinality dictionary index) and are never inserted; mask may be nullptr.
+/// (the rows are inserted into the set). mask[i] == 0 marks rows excluded from the deduplication -
+/// known duplicates by the LowCardinality dictionary index, or NULL-key rows in the skip_null_keys
+/// mode - which are never inserted; mask may be nullptr.
 template <typename Method>
 void buildDistinctFilter(
     Method & method,
@@ -212,7 +215,7 @@ void buildDistinctFilter(
         {
             if (!(*mask)[i])
             {
-                /// Already known duplicate row (by LC index), skip insertion
+                /// The row is excluded from the deduplication, skip insertion.
                 filter[i] = 0;
                 continue;
             }
@@ -234,16 +237,62 @@ void buildDistinctFilter(
     }
 }
 
+/// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
+/// the filter lazily on the first such row.
+void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
+{
+    const size_t null_index = column.getDictionary().getNullValueIndex();
+    const IColumn & indexes_column = *column.getIndexesPtr();
+
+    auto process = [&](const auto & indexes)
+    {
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            if (static_cast<size_t>(indexes[row]) == null_index)
+            {
+                if (keep.empty())
+                    keep.assign(num_rows, static_cast<UInt8>(1));
+                keep[row] = 0;
+            }
+        }
+    };
+
+    switch (column.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): process(assert_cast<const ColumnUInt8 &>(indexes_column).getData()); break;
+        case sizeof(UInt16): process(assert_cast<const ColumnUInt16 &>(indexes_column).getData()); break;
+        case sizeof(UInt32): process(assert_cast<const ColumnUInt32 &>(indexes_column).getData()); break;
+        case sizeof(UInt64): process(assert_cast<const ColumnUInt64 &>(indexes_column).getData()); break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctSetFilter");
+    }
 }
 
-DistinctSetFilter::DistinctSetFilter(const Block & header, const Names & columns, const SizeLimits & set_size_limits_)
+}
+
+DistinctSetFilter::DistinctSetFilter(const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_)
     : key_columns_pos(calculateDistinctKeyColumnsPositions(header, columns))
     , data(std::make_unique<SetVariants>())
     , set_size_limits(set_size_limits_)
+    , skip_null_keys(skip_null_keys_)
 {
     key_types.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
         key_types.push_back(header.getByPosition(pos).type);
+
+    if (skip_null_keys)
+    {
+        /// A constant NULL key component is not a key column (constants are excluded above), but it
+        /// makes every key contain a NULL, so with the skipping enabled nothing can be emitted at all.
+        const size_t num_columns = columns.empty() ? header.columns() : columns.size();
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            const auto pos = columns.empty() ? i : header.getPositionByName(columns[i]);
+            const auto & col = header.getByPosition(pos).column;
+            if (col && isColumnConst(*col) && col->isNullAt(0))
+                has_const_null_key = true;
+        }
+    }
 }
 
 size_t DistinctSetFilter::getTotalRowCount() const
@@ -261,7 +310,9 @@ size_t DistinctSetFilter::getTotalByteCount() const
 bool DistinctSetFilter::supportsKeyExtraction() const
 {
     chassert(data);
-    return data->type != SetVariants::Type::EMPTY && data->type != SetVariants::Type::hashed;
+    /// In the skip_null_keys mode the set stores the nested (non-nullable) key representations, which
+    /// do not match the (nullable) key column types, so the keys cannot be materialized back.
+    return !skip_null_keys && data->type != SetVariants::Type::EMPTY && data->type != SetVariants::Type::hashed;
 }
 
 std::vector<MutableColumns> DistinctSetFilter::extractKeyColumns(size_t max_batch_rows) const
@@ -394,6 +445,37 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
+    /// The consumer skips rows with a NULL in any key component, so they carry no value downstream.
+    /// Instead of pre-filtering the chunk, the NULL rows are masked out of the deduplication: they are
+    /// neither inserted into the set nor selected for the output, and they leave the chunk together
+    /// with the duplicates in the single filtering at the end. extractNestedColumnsAndNullMap also
+    /// replaces the nullable key pointers with their nested columns, so the keys are hashed by the
+    /// nested values, the same way the set fill hashes them (the values at the masked rows are never
+    /// read).
+    ColumnPtr null_map_holder;
+
+    /// Declared outside of the branch: the deduplication mask below may point at it.
+    IColumn::Filter keep;
+    if (skip_null_keys)
+    {
+        ConstNullMapPtr null_map = nullptr;
+        null_map_holder = extractNestedColumnsAndNullMap(column_ptrs, null_map);
+
+        if (null_map && !memoryIsZero(null_map->data(), 0, num_rows))
+        {
+            keep.resize(num_rows);
+            for (size_t i = 0; i < num_rows; ++i)
+                keep[i] = !(*null_map)[i];
+        }
+
+        /// `LowCardinality(Nullable)` keys are not unwrapped by extractNestedColumnsAndNullMap: their
+        /// NULL rows are the rows referencing the dictionary's NULL entry.
+        for (const auto * column : column_ptrs)
+            if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
+                low_cardinality && low_cardinality->nestedIsNullable())
+                markLowCardinalityNullRows(*low_cardinality, keep, num_rows);
+    }
+
     std::optional<IColumn::Filter> lc_mask;
 
     if (key_columns_pos.size() == 1)
@@ -404,6 +486,20 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
         if (lc_mask && lc_mask->empty())
             return {};
     }
+
+    /// The NULL-key rows and the rows that are known duplicates by their LowCardinality index are
+    /// masked out of the deduplication the same way.
+    const IColumn::Filter * mask = nullptr;
+    if (lc_mask && !keep.empty())
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+            (*lc_mask)[i] &= keep[i];
+        mask = &*lc_mask;
+    }
+    else if (lc_mask)
+        mask = &*lc_mask;
+    else if (!keep.empty())
+        mask = &keep;
 
     if (data->empty())
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
@@ -417,7 +513,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, lc_mask ? &*lc_mask : nullptr); \
+            buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); \
         break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M

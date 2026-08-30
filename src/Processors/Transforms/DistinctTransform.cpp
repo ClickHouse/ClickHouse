@@ -1,57 +1,11 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/NullableUtils.h>
 #include <Common/MemoryTrackerUtils.h>
-#include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-/// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
-/// the filter lazily on the first such row.
-void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
-{
-    const size_t null_index = column.getDictionary().getNullValueIndex();
-    const IColumn & indexes_column = *column.getIndexesPtr();
-
-    auto process = [&](const auto & indexes)
-    {
-        for (size_t row = 0; row < num_rows; ++row)
-        {
-            if (static_cast<size_t>(indexes[row]) == null_index)
-            {
-                if (keep.empty())
-                    keep.assign(num_rows, static_cast<UInt8>(1));
-                keep[row] = 0;
-            }
-        }
-    };
-
-    switch (column.getSizeOfIndexType())
-    {
-        case sizeof(UInt8): process(assert_cast<const ColumnUInt8 &>(indexes_column).getData()); break;
-        case sizeof(UInt16): process(assert_cast<const ColumnUInt16 &>(indexes_column).getData()); break;
-        case sizeof(UInt32): process(assert_cast<const ColumnUInt32 &>(indexes_column).getData()); break;
-        case sizeof(UInt64): process(assert_cast<const ColumnUInt64 &>(indexes_column).getData()); break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctTransform");
-    }
-}
-
-}
 
 void DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_rows, size_t set_bytes)
 {
@@ -78,70 +32,12 @@ DistinctTransform::DistinctTransform(
     bool skip_null_keys_,
     const UInt64 max_bytes_before_pass_through_)
     : ISimpleTransform(header_, header_, true)
-    , distinct_set(*header_, columns_, set_size_limits_)
+    , distinct_set(*header_, columns_, set_size_limits_, skip_null_keys_)
     , limit_hint(limit_hint_)
-    , skip_null_keys(skip_null_keys_)
     , max_bytes_before_pass_through(max_bytes_before_pass_through_)
 {
     if (allow_abandoning_)
         abandon_controller.emplace();
-
-    if (skip_null_keys)
-    {
-        const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            const auto pos = columns_.empty() ? i : header_->getPositionByName(columns_[i]);
-            const auto & col = header_->getByPosition(pos).column;
-            if (col && isColumnConst(*col) && col->isNullAt(0))
-                const_null_key = true;
-        }
-    }
-}
-
-void DistinctTransform::skipNullKeyRows(Chunk & chunk) const
-{
-    /// The null maps are inspected directly, so the special column representations must be unwrapped
-    /// first (DistinctSetFilter does the same for its own hashing anyway).
-    removeSpecialColumnRepresentations(chunk);
-    convertToFullIfConst(chunk);
-
-    const size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
-    ColumnRawPtrs key_columns;
-    key_columns.reserve(distinct_set.getKeyColumnsPositions().size());
-    for (const auto pos : distinct_set.getKeyColumnsPositions())
-        key_columns.emplace_back(columns[pos].get());
-
-    ConstNullMapPtr null_map = nullptr;
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
-
-    IColumn::Filter keep;
-    if (null_map && !memoryIsZero(null_map->data(), 0, num_rows))
-    {
-        keep.resize(num_rows);
-        for (size_t i = 0; i < num_rows; ++i)
-            keep[i] = !(*null_map)[i];
-    }
-
-    /// `LowCardinality(Nullable)` keys are not unwrapped by extractNestedColumnsAndNullMap: their NULL
-    /// rows are the rows referencing the dictionary's NULL entry.
-    for (const auto * column : key_columns)
-        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
-            low_cardinality && low_cardinality->nestedIsNullable())
-            markLowCardinalityNullRows(*low_cardinality, keep, num_rows);
-
-    if (!keep.empty())
-    {
-        const auto num_kept = countBytesInFilter(keep);
-        for (auto & column : columns)
-            column = column->filter(keep, num_kept);
-        chunk.setColumns(std::move(columns), num_kept);
-        return;
-    }
-
-    chunk.setColumns(std::move(columns), num_rows);
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -154,7 +50,9 @@ void DistinctTransform::transform(Chunk & chunk)
     if (pass_through || (abandon_controller && abandon_controller->isAbandoned()))
         return;
 
-    if (const_null_key)
+    /// A constant NULL key component makes every key contain a NULL, so a consumer that skips NULL
+    /// keys drops all rows; emit nothing and stop the input.
+    if (distinct_set.hasConstNullKey())
     {
         chunk.setColumns(chunk.cloneEmptyColumns(), 0);
         stopReading();
@@ -176,16 +74,6 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
     }
 
-    /// The consumer skips rows with a NULL in any key component (a set fill with
-    /// `transform_null_in = 0` strips `LowCardinality` and then drops such rows), so they carry no
-    /// value downstream: drop them before deduplication and before the abandon accounting.
-    if (skip_null_keys)
-    {
-        skipNullKeyRows(chunk);
-        if (!chunk.hasRows())
-            return;
-    }
-
     const size_t num_rows = chunk.getNumRows();
     chunk = distinct_set.filter(std::move(chunk));
 
@@ -197,6 +85,10 @@ void DistinctTransform::transform(Chunk & chunk)
 
     if (abandon_controller)
     {
+        /// The rate is measured against the rows the transform received: the rows dropped as NULL keys
+        /// (in the skip_null_keys mode, inside the filter) count as removed by the deduplication, so a
+        /// stream that mostly consists of NULL keys keeps the transform even when the non-NULL part is
+        /// unique - dropping the NULL rows is exactly the reduction the consumer benefits from.
         abandon_controller->update(num_rows, chunk.getNumRows(), distinct_set.getTotalByteCount());
         if (abandon_controller->isAbandoned())
         {

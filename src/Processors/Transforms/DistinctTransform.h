@@ -55,9 +55,8 @@ public:
     /// `allow_abandoning_` permits giving up on mostly-unique input (see `DeduplicationAbandonController`):
     /// the output is then no longer fully deduplicated, so it must only be enabled when the consumer
     /// deduplicates the output anyway.
-    /// `skip_null_keys_` drops rows with a NULL in any key column instead of emitting them, mirroring a
-    /// set fill with `transform_null_in = 0`, which skips such rows; it must only be enabled when the
-    /// consumer drops them anyway.
+    /// `skip_null_keys_` drops rows with a NULL in any key column instead of emitting them (see
+    /// DistinctSetFilter); it must only be enabled when the consumer drops them anyway.
     /// `max_bytes_before_pass_through_` (0 - disabled) is only for a preliminary DISTINCT followed by an
     /// exact one: when the memory usage of the query exceeds it, the transform frees its set and lets all
     /// rows through, leaving the deduplication to the final DISTINCT (which can spill to disk, see
@@ -77,18 +76,10 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    /// Drops the rows that have a NULL in any key component (skip_null_keys mode).
-    void skipNullKeyRows(Chunk & chunk) const;
-
     DistinctSetFilter distinct_set;
     const UInt64 limit_hint;
 
     std::optional<DeduplicationAbandonController> abandon_controller;
-
-    const bool skip_null_keys;
-    /// A constant NULL key component makes every key contain a NULL, so a consumer that skips NULL
-    /// keys drops all rows; the transform then emits nothing and stops the input.
-    bool const_null_key = false;
 
     const UInt64 max_bytes_before_pass_through;
     bool pass_through = false;

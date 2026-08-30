@@ -93,10 +93,19 @@ private:
 class DistinctSetFilter
 {
 public:
-    DistinctSetFilter(const Block & header, const Names & columns, const SizeLimits & set_size_limits_);
+    /// `skip_null_keys_` restricts the key domain: rows with a NULL in any key component are dropped
+    /// instead of deduplicated, mirroring a set fill with `transform_null_in = 0` (the same knob the
+    /// Set class exposes). For real DISTINCT a NULL is a value, so the flag must only be enabled when
+    /// the consumer drops such rows anyway. The remaining keys are then hashed by their nested,
+    /// non-nullable columns, the same way the set fill hashes them.
+    DistinctSetFilter(const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_ = false);
 
     const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
     bool hasKeyColumns() const { return !key_columns_pos.empty(); }
+
+    /// Whether a constant key component is NULL (detected only in the skip_null_keys mode): every key
+    /// then contains a NULL, so a consumer that skips NULL keys receives nothing at all.
+    bool hasConstNullKey() const { return has_const_null_key; }
 
     /// The number of distinct keys seen so far.
     size_t getTotalRowCount() const;
@@ -123,7 +132,9 @@ public:
     /// (their keys are in the set) and isLimitReached starts returning true - the caller should stop
     /// reading, returning the partial result. The limits are enforced here deliberately, so that all
     /// the users of this class share one semantics.
-    /// The result may have no rows (nothing new in the chunk). Chunk infos are preserved.
+    /// In the skip_null_keys mode the rows with a NULL in any key component are dropped.
+    /// The result may have no rows (nothing new in the chunk, or all rows had NULL keys). Chunk infos
+    /// are preserved.
     Chunk filter(Chunk chunk);
 
     /// Whether a size limit with the 'break' overflow mode was reached: no new key can be added to the
@@ -146,6 +157,9 @@ private:
     /// Restrictions on the maximum size of the set.
     const SizeLimits set_size_limits;
     bool limit_reached = false;
+
+    const bool skip_null_keys;
+    bool has_const_null_key = false;
 };
 
 }
