@@ -768,8 +768,8 @@ See also:
 )", 0) \
     \
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
-Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
-corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
+Dynamically trim the trailing zeros of `DateTime64` values, rounding the output scale up to the next
+multiple of three that keeps every significant digit: [0, 3, 6, 9]. An all-zero fraction is dropped.)", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
 Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
 `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
