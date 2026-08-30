@@ -64,7 +64,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);
         ++bucket;
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id));
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id), /*advisory*/ false);
     });
 
     if (bucket != num_buckets)

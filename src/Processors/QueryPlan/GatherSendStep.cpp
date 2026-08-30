@@ -78,7 +78,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"));
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"), /*advisory*/ false);
     });
 
     return std::move(pipelines.front());

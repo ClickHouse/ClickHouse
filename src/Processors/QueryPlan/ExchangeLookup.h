@@ -46,7 +46,10 @@ struct IExchangeLookup : boost::noncopyable
 {
     virtual ~IExchangeLookup() = default;
 
-    virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) = 0;
+    /// An advisory sink carries data the receiver is free to stop reading at any moment (a
+    /// runtime filter): peer disconnects and resets stop the delivery instead of throwing.
+    /// Data streams must pass false so a lost receiver stays an error.
+    virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) = 0;
     virtual std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) = 0;
 };
 

@@ -190,7 +190,7 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         if (!temporary_files)
             throw Exception(
@@ -401,7 +401,7 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
@@ -563,16 +563,16 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) override
     {
         auto it = exchanges.find(exchange_stream_id.exchange_id);
         if (it == exchanges.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
 
         if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSink(input_header, exchange_stream_id);
+            return persistent_exchange_lookup->createSink(input_header, exchange_stream_id, advisory);
         else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSink(input_header, exchange_stream_id);
+            return streaming_exchange_lookup->createSink(input_header, exchange_stream_id, advisory);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
     }

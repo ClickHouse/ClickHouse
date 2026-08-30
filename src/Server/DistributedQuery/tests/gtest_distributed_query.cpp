@@ -612,7 +612,7 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
         builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
         builder.setSinks([&](const SharedHeader & sink_header, Pipe::StreamType) -> ProcessorPtr
         {
-            return exchange_lookup->createSink(sink_header, stream_id);
+            return exchange_lookup->createSink(sink_header, stream_id, /*advisory*/ false);
         });
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         CompletedPipelineExecutor executor(pipeline);

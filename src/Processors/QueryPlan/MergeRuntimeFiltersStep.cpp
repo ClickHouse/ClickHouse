@@ -107,7 +107,7 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
         [&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
         {
             chassert(stream_type == Pipe::StreamType::Main);
-            return settings.exchange_lookup->createSink(header, destination_streams[next_sink++]);
+            return settings.exchange_lookup->createSink(header, destination_streams[next_sink++], /*advisory*/ true);
         });
     if (next_sink != destination_streams.size())
         throw Exception(

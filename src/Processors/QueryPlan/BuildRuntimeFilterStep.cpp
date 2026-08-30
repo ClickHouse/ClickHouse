@@ -394,7 +394,7 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
                 auto output = copy->getOutputs().begin();
                 for (const auto & stream : destination_streams)
                 {
-                    auto sink = settings.exchange_lookup->createSink(partials_header, stream);
+                    auto sink = settings.exchange_lookup->createSink(partials_header, stream, /*advisory*/ true);
                     connect(*output++, sink->getPort());
                     result.emplace_back(std::move(sink));
                 }
@@ -402,7 +402,7 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
             }
             else
             {
-                auto sink = settings.exchange_lookup->createSink(partials_header, destination_streams.front());
+                auto sink = settings.exchange_lookup->createSink(partials_header, destination_streams.front(), /*advisory*/ true);
                 connect(*partial_output, sink->getPort());
                 result.emplace_back(std::move(sink));
             }
