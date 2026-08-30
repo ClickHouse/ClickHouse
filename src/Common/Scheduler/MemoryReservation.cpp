@@ -210,6 +210,12 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
                 throwIfNeeded();
             }
 
+            /// Recovery may have opened and completed while this call was asleep in the approval
+            /// wait above. Re-enter once so the exact completed epoch is reported before returning
+            /// to an executor which may have no runnable task left to provide another checkpoint.
+            if (growth_recovery_active && observed_recovery_epoch == 0)
+                continue;
+
             /// Demand may change while this call waits for approval. Re-snapshot before returning;
             /// otherwise a release can remain invisible until some unrelated worker happens to sync.
             if (waited_for_approval && !growth_recovery_active
