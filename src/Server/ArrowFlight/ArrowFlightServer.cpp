@@ -47,6 +47,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NETWORK_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int UNKNOWN_SETTING;
@@ -438,7 +439,9 @@ void ArrowFlightServer::start()
     auto init_status = Init(options);
     if (!init_status.ok())
     {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed init Arrow Flight Server: {}", init_status.ToString());
+        throw Exception(
+            init_status.IsIOError() ? ErrorCodes::NETWORK_ERROR : ErrorCodes::UNKNOWN_EXCEPTION,
+            "Failed init Arrow Flight Server: {}", init_status.ToString());
     }
 
     initialized = true;
