@@ -250,3 +250,37 @@ FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='if_arrayzip_json_04839' AND column LIKE 'if(%' AND active;
 
 DROP TABLE if_arrayzip_json_04839;
+
+-- Branches need not have branch-local structure either: each arm can be a whole-output donor, the
+-- same aligned shapes single_donor_two_json_04839 covers at top level. They are alternatives for
+-- one output rather than different slots, so both donate and neither may be dropped as ambiguous.
+DROP TABLE IF EXISTS if_donor_two_json_04839;
+CREATE TABLE if_donor_two_json_04839
+(
+    id UInt64,
+    t1 Tuple(a JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_a'), b JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_b')),
+    t2 Tuple(a JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_a'), b JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_b'))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO if_donor_two_json_04839 VALUES (1, ('{"tag_a1":1}', '{"tag_b1":2}'), ('{"tag_a2":3}', '{"tag_b2":4}'));
+
+ALTER TABLE if_donor_two_json_04839
+    MODIFY COLUMN t1 Tuple(a JSON(max_dynamic_paths=5), b JSON(max_dynamic_paths=5)),
+    MODIFY COLUMN t2 Tuple(a JSON(max_dynamic_paths=5), b JSON(max_dynamic_paths=5));
+
+ALTER TABLE if_donor_two_json_04839 ADD PROJECTION p (SELECT id, if(id > 0, assumeNotNull(t1), assumeNotNull(t2)) WHERE id > 0 ORDER BY id);
+ALTER TABLE if_donor_two_json_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+-- Counting the rules rather than printing the type: 1/1 is each slot keeping its own, 0/0 is the
+-- multi-JSON fallback having dropped both donors, and 2 would be one rule copied onto both slots.
+SELECT
+    'if(single-donor branches)',
+    countSubstrings(type, '^tag_a'),
+    countSubstrings(type, '^tag_b')
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='if_donor_two_json_04839' AND column LIKE 'if(%' AND active;
+
+DROP TABLE if_donor_two_json_04839;

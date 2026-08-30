@@ -1403,6 +1403,9 @@ struct ProjectionOutputProvenance
     std::vector<String> map_key_candidates;
     std::vector<String> map_value_candidates;
     bool is_map = false;
+    /// `flat_candidates` are whole-output donors selected per row (the branches of a conditional),
+    /// not different slots, so each one is aligned with the entire result and they merge together.
+    bool aligned_alternatives = false;
 };
 
 /// materialize(x)/CAST(x, T) and the nullability wrappers don't change x's own AST structure; look
@@ -1556,6 +1559,33 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                             auto & target = provenance.tuple_element_candidates[slot];
                             target.insert(target.end(), slot_names.begin(), slot_names.end());
                         }
+                    }
+                }
+                else
+                {
+                    /// No branch-local structure. The branches may still each be a whole-output donor
+                    /// - the aligned shapes this file already preserves at top level, such as
+                    /// `assumeNotNull(t)` or `arrayElement(arr, 1)`. Those are alternatives for the
+                    /// same output rather than different slots, so each is aligned with all of it and
+                    /// they can be merged together instead of falling into the multi-JSON drop below.
+                    Names alternatives;
+                    bool every_branch_is_one_donor = true;
+                    for (const auto & branch : branches)
+                    {
+                        IdentifierNameSet branch_names = collectValueCarryingIdentifierNames(*branch);
+                        if (branch_names.size() != 1)
+                        {
+                            every_branch_is_one_donor = false;
+                            break;
+                        }
+                        alternatives.push_back(*branch_names.begin());
+                    }
+
+                    if (every_branch_is_one_donor)
+                    {
+                        /// Drops the condition's own identifiers, which donate nothing.
+                        provenance.flat_candidates = std::move(alternatives);
+                        provenance.aligned_alternatives = true;
                     }
                 }
             }
@@ -1936,7 +1966,10 @@ static void applyJSONSharedDataPathPoliciesForProjection(
                         non_self_candidates.push_back(name);
                 /// Several flat candidates over an output with several JSON nodes cannot be attributed
                 /// without crossing slots; one aligned donor can - the merge still shape-checks it.
-                if (countJSONObjectTypes(*result_column.type) <= 1 || non_self_candidates.size() == 1)
+                /// Conditional alternatives are each aligned with the whole output, so several of
+                /// them are attributable for the same reason a single donor is.
+                if (countJSONObjectTypes(*result_column.type) <= 1 || non_self_candidates.size() == 1
+                    || provenance->aligned_alternatives)
                     candidate_names.insert(candidate_names.end(), non_self_candidates.begin(), non_self_candidates.end());
             }
 
