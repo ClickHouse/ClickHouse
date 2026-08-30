@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-tsan, no-asan, no-msan, no-debug, no-object-storage, no-fasttest, no-replicated-database
+# Tags: long, no-parallel, no-tsan, no-asan, no-msan, no-debug, no-object-storage, no-fasttest, no-replicated-database, no-flaky-check
+
+# `no-flaky-check`: this test floods `system.trace_log` on purpose (four threads at a 10 ms profiler
+# period with `trace_profile_events` and a 0.9 memory profiler sample probability) while a fifth thread
+# runs `SYSTEM FLUSH LOGS trace_log` in a tight loop. The flaky check repeats it back to back a few
+# dozen times, and any error printed by a client fails the test, so a single flush eventually exceeds
+# the 180 s `waitFlush` deadline and reports `TIMEOUT_EXCEEDED`. In a normal run, where one copy runs
+# among diverse tests, the test is stable, so only the flaky check is excluded.
 
 set -e
 
