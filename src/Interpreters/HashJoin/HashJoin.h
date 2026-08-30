@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -8,10 +9,12 @@
 
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/RowRefs.h>
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -27,6 +30,8 @@ namespace DB
 class TableJoin;
 class ExpressionActions;
 using Sizes = std::vector<size_t>;
+
+class MatchedRowsStats;
 
 namespace JoinStuff
 {
@@ -112,8 +117,8 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        bool is_concurrent_hash_join_ = false,
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     ~HashJoin() override;
 
@@ -141,7 +146,7 @@ public:
     using IJoin::addBlockToJoin;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
-    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
+    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store = nullptr);
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -186,14 +191,26 @@ public:
         size_t bucket_idx, size_t num_buckets) const override;
 
     void onBuildPhaseFinish() override;
+    void onProbePhaseFinish(size_t matched_right_rows) override
+    {
+        hash_table_matches = matched_right_rows;
+        probe_phase_finished = true;
+    }
 
     bool hasPostBuildPhase() const override;
     void runPostBuildPhase() override;
 
-    /// Number of keys in all built JOIN maps.
+    /// Number of unique keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
+    /// Number of right-side rows ingested into the build.
+    size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
+    /// Peak bytes the build occupied
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    StepAnalysisReport getAnalysisReport() const override;
+    const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
 
     bool alwaysReturnsEmptySet() const final;
 
@@ -201,7 +218,7 @@ public:
     JoinStrictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
-    bool anyTakeLastRow() const { return any_take_last_row; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
@@ -241,6 +258,8 @@ public:
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
     /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
     /// they are read back the same way (the output key column is the parent LowCardinality type).
+    /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
+    /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
@@ -248,6 +267,10 @@ public:
         M(key64)                               \
         M(key_string)                          \
         M(key_fixed_string)                    \
+        M(keys32)                              \
+        M(keys64)                              \
+        M(keys128)                             \
+        M(keys256)                             \
         M(low_cardinality_key_string)          \
         M(low_cardinality_key_fixed_string)
 
@@ -418,6 +441,13 @@ public:
     using NullmapList = std::deque<NullMapHolder>;
     using StoredBlocksList = std::list<StoredBlock>;
 
+    enum class RowStoreState : uint8_t
+    {
+        Disabled,
+        Enabled,
+        Initialized,
+    };
+
     struct RightTableData
     {
         Type type = Type::hashed;
@@ -430,6 +460,8 @@ public:
         Block sample_block; /// Block as it would appear in the BlockList
         StoredBlocksList columns; /// Columns of "right" table.
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+        /// Track index of "right" table columns in columns list or row store.
+        ColumnAccessIndexes column_access_indexes;
 
         /// Resolves RowRef::block_no to the stored block.
         /// Shared between all slots of a ConcurrentHashJoin so that block numbers stay
@@ -447,6 +479,9 @@ public:
         size_t keys_to_join = 0;
         /// Whether the right table reranged by key
         bool sorted = false;
+        /// Whether row-major storage is used or not and its layout if it is.
+        RowStoreState row_store_state = RowStoreState::Enabled;
+        RowDataStore::RowLayoutPtr row_store_layout;
 
         /// For range types: the minimum key value and the range size from min_key to max_key.
         struct KeyRange
@@ -503,6 +538,19 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
+    struct RowStoreLayoutWithAccessIndexes
+    {
+        RowDataStore::RowLayoutPtr layout;
+        ColumnAccessIndexes access_indexes;
+    };
+
+    /// Derives the row store layout from the first right block.
+    std::optional<RowStoreLayoutWithAccessIndexes> initRowStore(const Block & block);
+    /// Takes a pre-computed row store layout.
+    void initRowStore(const std::optional<RowStoreLayoutWithAccessIndexes> & layout_with_access_indexes);
+    /// Creates a row store based on the already initialized layout and fills from block columns.
+    RowDataStorePtr createRowStoreForBlock(const Block & block) const;
+
     size_t getAndSetRightTableKeys() const;
 
     bool hasNonJoinedRows();
@@ -524,6 +572,7 @@ public:
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
+    friend class ConcurrentHashJoin;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -551,6 +600,8 @@ private:
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
+
+    std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
 
     std::vector<Sizes> key_sizes;
@@ -576,9 +627,15 @@ private:
     bool enable_lazy_columns_indexing = false;
     bool enable_prefetch = true;
 
+    /// Determines if this HashJoin instance is a slot inside a ConcurrentHashJoin.
+    bool is_concurrent_hash_join = false;
+
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
+
+    /// Peak of bytes observed in the hash table during the build phase
+    size_t peak_build_bytes = 0;
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
@@ -586,8 +643,12 @@ private:
     /// Track if shared runtime filters were already published to keep publication one-shot.
     bool shared_runtime_filters_publish_attempted = false;
 
-    const StatsCollectingParams stats_collecting_params;
+    const HashJoinStatsCollectingParams stats_collecting_params;
     bool build_phase_finished = false;
+    bool probe_phase_finished = false;
+
+    /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
+    size_t hash_table_matches = 0;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
@@ -603,6 +664,8 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
+    JoinResultPtr runJoinDispatch(ScatteredBlock block);
+
     bool preferUseMapsAll() const;
 
     bool isUsedByAnotherAlgorithm() const;
@@ -611,6 +674,7 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
+    bool isRightTableRerangeEnabled() const;
     bool rightTableCanBeReranged() const;
     void tryRerangeRightTableData();
 
@@ -627,7 +691,11 @@ private:
     template <bool is_signed, typename Key, typename MapsTemplate>
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
+    bool isRowStoreSupported() const;
+
     void reinitUsedFlags();
+
+    bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;
 };

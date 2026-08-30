@@ -28,7 +28,24 @@ integration:
   ## 交付语义
 </div>
 
-ClickPipes for Kafka 提供 `at-least-once` 交付语义 (这是最常见的方法之一) 。如果您对交付语义有任何反馈，欢迎通过[联系表单](https://clickhouse.com/company/contact?loc=clickpipes)告诉我们。如果您需要精确一次语义，我们建议使用官方的 [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse) sink。
+ClickPipes for Kafka 默认提供至少一次交付保证，并通过 Kafka 消费者组偏移量跟踪摄取进度。它还可选支持精确一次语义：即使发生 pod (容器组) 重启、消费者再平衡和插入失败，每条 Kafka 记录也只会被插入 ClickHouse 一次。
+
+为实现精确一次交付，ClickPipes 会使用两个值在内部状态存储中记录每个分区的进度：
+
+* **高水位标记** — 已确认插入 ClickHouse 的该分区所有记录所对应的最高偏移量。重启时，ClickPipes 会丢弃偏移量等于或低于此标记的记录，因此已落库的数据不会再次发送。
+* **待处理范围** — 已发送至 ClickHouse 但尚未确认的插入块所覆盖的偏移量范围。发生故障后，ClickPipes 仅重放这些范围。
+
+每个插入块覆盖连续的偏移量范围，并携带格式为 `topic:partition:firstOffset-lastOffset` 的确定性[去重标记](/zh/concepts/features/operations/insert/deduplicating-inserts-on-retries)。重放时，ClickPipes 会生成相同的偏移量范围，因而使用相同的标记，ClickHouse 将拒绝重复数据。由于标记仅取决于偏移量范围，即使重建的块并非逐字节完全一致，重放的数据仍会被去重。
+
+<Note>
+  **去重窗口**
+
+  标记去重受目标表的 [`replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) (默认最近 10,000 个插入块) 和 [`replicated_deduplication_window_seconds`](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (默认一小时) 限制。高吞吐量管道可能很快耗尽按块数计算的窗口，因此建议确认并酌情增大目标表中的这两项设置，以覆盖最坏情况下的重放延迟。标记离开窗口后重放的数据可能会再次插入，因此这种情况下无法保证精确一次。
+</Note>
+
+主要的权衡在于 part 大小。更大的插入块会在 ClickHouse 中生成更少但更大的 [parts](/zh/concepts/core-concepts/parts)，从而降低合并开销。ClickPipes 在构建块时会将一个分区的行保存在内存中，因此可达到的 part 大小取决于管道可用的内存：内存紧张时，它会构建较小的块，表中会累积更多 parts。为管道提供更多内存可使其构建更大的块，从而生成更少的 parts。
+
+当分区数量接近内部插入“工作线程”的数量时，管道的运行效果最佳，因为此时每个工作线程大致处理一个分区，并有足够的内存余量构建大块。工作线程数量和可用内存都会随副本大小和数量而扩缩容，可在 **设置** -&gt; **高级设置** -&gt; **扩缩容** 下配置。
 
 <div id="authentication">
   ## 身份验证
