@@ -1,3 +1,4 @@
+#include <cmath>
 #include <functional>
 #include <iterator>
 #include <Access/ContextAccess.h>
@@ -15,12 +16,16 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
+#include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
@@ -69,8 +74,10 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageURL.h>
 #include <Storages/StorageView.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -119,6 +126,9 @@ extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
+extern const int PARAMETER_OUT_OF_BOUND;
+extern const int UNSUPPORTED_METHOD;
+extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -152,6 +162,22 @@ StoragePtr tableForRead(const DatabasePtr & database, const String & table_name,
         return table;
 
     return database->getTableForRead(table_name, table, local_context);
+}
+
+/// The planner bounds-checks only `max_streams * max_streams_to_max_threads_ratio`, so the product
+/// of the requested number of streams and the (clamped) `max_streams_multiplier_for_merge_tables`
+/// can still exceed the range of `size_t`, and casting such a `Float64` to `size_t` is undefined
+/// behavior.
+size_t applyStreamsMultiplier(size_t requested_num_streams, Float64 num_streams_multiplier)
+{
+    Float64 num_streams = static_cast<Float64>(requested_num_streams) * num_streams_multiplier;
+    if (!canConvertTo<size_t>(num_streams))
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Exceeded limit for the number of streams with `max_streams_multiplier_for_merge_tables`. "
+            "Make sure that `max_streams * max_streams_multiplier_for_merge_tables` is in some reasonable boundaries, "
+            "current value: {}",
+            num_streams);
+    return static_cast<size_t>(num_streams);
 }
 
 /// `ColumnsDescription` registers no subcolumns for an ALIAS column, so a name like `arr.size0`
@@ -454,6 +480,76 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
     return supported_columns;
 }
 
+namespace
+{
+
+/// Does converting a column from `from` to `to` keep the order AND map distinct values to distinct
+/// ones? The `Array` branch composes this elementwise, so a collapsing pair would reorder arrays.
+/// Unrecognised pairs are refused: a false "safe" gives wrong results, a false "unsafe" a pushdown.
+bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
+{
+    if (from.equals(to))
+        return true;
+
+    const WhichDataType which_from(from);
+    const WhichDataType which_to(to);
+
+    /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
+    /// mapping is the identity: the target must agree on the values AND be wide enough not to
+    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
+    if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
+    {
+        if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
+        {
+            if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
+                return true;
+        }
+        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
+            return true;
+    }
+
+    /// Widening an integer keeps the order when the signedness is preserved or the target is
+    /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
+    /// sign bit and a narrowing wraps, so both stay refused. `isInteger` covers the wide types as
+    /// well: `getLeastSupertype` derives `Int128`/`UInt128`/`Int256`/`UInt256` for an ordinary
+    /// column-list-less `Merge` over mixed integer widths, and those casts are just as injective.
+    if (which_from.isInteger() && which_to.isInteger()
+        && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
+        && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
+            || !to.isValueRepresentedByUnsignedInteger()))
+        return true;
+
+    /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
+    /// column orders exactly like its nested type. The wrapper is therefore stripped from either
+    /// side; it never nests, so the stripped side is not `LowCardinality` again.
+    const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
+    const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
+    if (from_lc || to_lc)
+        return conversionPreservesOrder(
+            from_lc ? *from_lc->getDictionaryType() : from, to_lc ? *to_lc->getDictionaryType() : to);
+
+    /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
+    /// place, so only the nested pair matters. Removing it falls through, because a nullable value
+    /// then has to become a concrete one and NULL placement changes.
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
+    {
+        const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
+        return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
+    }
+
+    /// `ColumnArray::compareAt` compares elementwise then by length, so a strictly monotonic element
+    /// conversion orders arrays the same way. Both sides must be `Array`: wrapping or unwrapping one
+    /// changes what is compared. `Tuple` and `Map` need their own analysis and stay refused.
+    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
+    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
+    if (from_array && to_array)
+        return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
+
+    return false;
+}
+
+}
+
 bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
 {
     /// The filter is re-derived against every child, so a subcolumn rides its origin column
@@ -469,7 +565,7 @@ bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
     /// In case of JOIN or ARRAY JOIN the first stage (which includes JOIN/ARRAY JOIN)
@@ -493,6 +589,12 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     DatabaseTablesIterators database_table_iterators = database_name_or_regexp.getDatabaseIterators(local_context);
 
     size_t selected_table_size = 0;
+    bool any_child_conversion_breaks_order = false;
+    /// These are the types `convertAndFilterSourceStream` casts every child stream to, because the
+    /// same snapshot builds the common header (see `read`). Aliases cross that boundary as well, so
+    /// they are compared too; `Ephemeral` is not, since it is never read from a source table.
+    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+    const auto & declared_columns = storage_snapshot->metadata->getColumns();
 
     for (const auto & iterator : database_table_iterators)
     {
@@ -510,6 +612,13 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
                         table->getStorageSnapshot(table_metadata, local_context), query_info));
+
+                for (const auto & child_column : table_metadata->getColumns().get(order_relevant_columns))
+                {
+                    auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
+                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                        any_child_conversion_breaks_order = true;
+                }
             }
 
             iterator->next();
@@ -532,6 +641,12 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// under serialize_query_plan).
     if (to_stage == QueryProcessingStage::WithMergeableState && stage > to_stage)
         stage = QueryProcessingStage::WithMergeableState;
+
+    /// Gated on the effective stage, not on `to_stage`: a single-node `Distributed` child returns
+    /// `Complete` even for a `FetchColumns` request, and that is deliberately kept above.
+    if (stage > QueryProcessingStage::FetchColumns && any_child_conversion_breaks_order)
+        return QueryProcessingStage::FetchColumns;
+
     return stage;
 }
 
@@ -790,9 +905,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
             static_cast<Float64>(tables_count),
-            static_cast<Float64>(
-                std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
-        size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
+            std::floor(std::max(1.0, static_cast<Float64>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
+        size_t num_streams = applyStreamsMultiplier(requested_num_streams, num_streams_multiplier);
 
         pipeline.narrow(num_streams);
     }
@@ -864,7 +978,39 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     Float64 num_streams_multiplier = std::min(
         static_cast<Float64>(tables_count),
         std::max(1.0, static_cast<double>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
-    size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
+    size_t num_streams = applyStreamsMultiplier(requested_num_streams, num_streams_multiplier);
+
+    /// A trivial LIMIT bounds the rows that all child reads can produce. `GenerateRandom`
+    /// creates blocks of `required_max_block_size` rows and limits its sources accordingly.
+    /// Apply the same bound here, so the aggregate guard does not reject a safe limited read
+    /// before the child storage gets the opportunity to apply its reduction.
+    if (query_info_.trivial_limit)
+    {
+        const size_t streams_for_limit = static_cast<size_t>(query_info_.trivial_limit / required_max_block_size)
+            + (query_info_.trivial_limit % required_max_block_size != 0);
+        num_streams = std::min(num_streams, streams_for_limit);
+    }
+
+    /// Check the aggregate source count before building child plans: `Merge` fan-out can keep every
+    /// child below the limit while exceeding it in total. Storages which know a tighter bound expose
+    /// it through `IStorage::getMaxReadStreams`; proxies forward that capability to their nested storage.
+    /// When there are fewer requested streams than tables, every table still gets one stream.
+    /// Otherwise, the current distributor gives every table `num_streams / tables_count` streams
+    /// and discards the remainder.
+    static constexpr size_t max_streams_for_merge_read = 65536;
+    const size_t streams_per_table = tables_count >= num_streams ? 1 : num_streams / tables_count;
+    size_t total_streams = 0;
+    for (const auto & table : selected_tables)
+    {
+        const size_t child_streams = std::get<1>(table)->getMaxReadStreams(streams_per_table, context);
+        if (child_streams > max_streams_for_merge_read - total_streams)
+            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                "Too many streams for a `Merge` table read (the maximum is {}). "
+                "Lower `max_streams_to_max_threads_ratio`, `max_threads`, or `max_streams_multiplier_for_merge_tables`",
+                max_streams_for_merge_read);
+        total_streams += child_streams;
+    }
+
     size_t remaining_streams = num_streams;
 
     if (order_info)
@@ -945,6 +1091,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             remaining_streams -= current_streams;
             current_streams = std::max(1uz, current_streams);
 
+            /// Storages with a tighter source bound may otherwise recreate the raw stream request
+            /// with their optional output resize, so preserve the reported bound here.
+            if (storage->getMaxReadStreams(current_streams, context) < current_streams)
+                modified_context->setSetting("parallelize_output_from_storages", Field(0));
+
             bool sampling_requested = query_info.query->as<ASTSelectQuery>()->sampleSize() != nullptr;
             if (query_info.table_expression_modifiers)
                 sampling_requested = query_info.table_expression_modifiers->hasSampleSizeRatio();
@@ -959,17 +1110,58 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
+                /// An `Alias` reports its target's metadata, so the empty column list belongs to the target.
+                const auto * alias = storage->as<StorageAlias>();
+                const StoragePtr alias_target = alias ? alias->tryGetTargetTable() : nullptr;
+                const IStorage * columns_owner = alias ? alias_target.get() : storage.get();
+
                 /// (Assuming that view has empty list of columns if it's parameterized.)
-                if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
+                const auto * view = columns_owner ? columns_owner->as<StorageView>() : nullptr;
+                if (view && view->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
-                else if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
+
+                if (alias && !alias_target)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
                         "Table {} matched by the regexp of {} is an `Alias` whose target table is missing",
                         storage->getStorageID().getNameForLogs(),
                         storage_merge->getStorageID().getNameForLogs());
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
+
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Table {} matched by the regexp of {} has no columns to read",
+                    storage->getStorageID().getNameForLogs(),
+                    storage_merge->getStorageID().getNameForLogs());
+            }
+
+            /// `StorageMerge::getQueryProcessingStage` refuses a delegated stage when a child's type
+            /// converts to the declared one without preserving the order, but it decides that from
+            /// its own child enumeration and metadata snapshots. This loop reads a later, frozen
+            /// set, so a concurrent `ALTER` of a child, or a table that starts matching the regexp
+            /// in between, can present a child the refusal never saw. `common_processed_stage` is
+            /// already baked into the plan above and cannot be lowered here, and
+            /// `convertAndFilterSourceStream` would put the order-breaking cast above the child's
+            /// own sort or aggregation, so this fails the query instead of returning wrong rows.
+            if (common_processed_stage > QueryProcessingStage::FetchColumns)
+            {
+                const auto & declared_columns = merge_storage_snapshot->metadata->getColumns();
+                const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+                for (const auto & child_column : storage_metadata_snapshot->getColumns().get(order_relevant_columns))
+                {
+                    auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
+                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                        throw Exception(
+                            ErrorCodes::INCOMPATIBLE_COLUMNS,
+                            "Column {} of table {} has type {}, which does not preserve the order when converted to "
+                            "the type {} declared by {}. The query processing stage was chosen before this type was "
+                            "visible, most likely because the table was altered, or started matching the regexp, "
+                            "while the query was being planned. Retry the query",
+                            backQuoteIfNeed(child_column.name),
+                            storage->getStorageID().getNameForLogs(),
+                            child_column.type->getName(),
+                            declared_column->type->getName(),
+                            storage_merge->getStorageID().getNameForLogs());
+                }
             }
 
             auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
@@ -1602,7 +1794,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             modified_context,
             processed_stage,
             max_block_size,
-            UInt32(streams_num));
+            streams_num);
 
         if (!plan.isInitialized())
             return {};
@@ -1794,8 +1986,13 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 continue;
             }
 
+            /// The `_table` and `_database` values of the rows are stamped by the table that
+            /// actually produces the rows. If the child table reads from other tables, its rows
+            /// carry those tables' names, not the child's own name, so pruning the child by its
+            /// name could incorrectly discard the rows the predicate selects. Such children are
+            /// always read, and the predicate is applied to the rows.
             if (storage.get() != storage_merge.get())
-                if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
+                if (!table_filter || storage->readsFromOtherTables() || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
                         if  (!granted_select_on_all_tables)
@@ -2359,7 +2556,7 @@ SELECT * FROM WatchLog;
 
 - `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
 
-    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
+    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read. A table that itself reads from other tables (`Distributed`, `Merge`, `Buffer`, `Alias`) returns rows carrying the name of the table that actually produced them, so such tables are always read and the filter is applied to their rows.
 
 - `_database` — Contains the name of the database from which data was read. Type: [String](/reference/data-types/string).
 
