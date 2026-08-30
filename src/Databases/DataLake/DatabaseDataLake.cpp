@@ -175,6 +175,7 @@ String getLocationSchemeForTableCreation(const std::shared_ptr<DataLake::ICatalo
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         case DatabaseDataLakeCatalogType::S3_TABLES:
         case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
+        case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::GLUE:
         case DatabaseDataLakeCatalogType::PAIMON_REST:
