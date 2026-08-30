@@ -4519,7 +4519,11 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
             if constexpr (can_reserve)
             {
-                if (result_num == 1 && remaining_src_sizes)
+                /// If this merge already crossed `max_rows_to_group_by`, the `checkLimits` on the
+                /// next iteration stops the merge (`throw`/`break`) or stops admitting new keys
+                /// (`any`), so the remaining sources cannot grow the table anymore.
+                const bool limit_reached = params.max_rows_to_group_by && res->sizeWithoutOverflowRow() > params.max_rows_to_group_by;
+                if (result_num == 1 && remaining_src_sizes && !limit_reached)
                     dst.reserve(reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes));
             }
         }
