@@ -1884,8 +1884,8 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     }
 
     /// Cycle the replace form (CREATE / REPLACE / CREATE OR REPLACE); enabling any clears
-    /// IF NOT EXISTS. Window views are excluded — they accept no replace form.
-    if (!create.attach && !create.isTemporary() && !create.is_window_view && fuzz_rand() % 30 == 0)
+    /// IF NOT EXISTS.
+    if (!create.attach && !create.isTemporary() && fuzz_rand() % 30 == 0)
     {
         if (create.is_ordinary_view || create.is_materialized_view)
         {
@@ -1947,10 +1947,10 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         create.attach_as_replicated.reset();
 
     /// Toggle EMPTY (skips the initial insert), mutually exclusive with CLONE. Only regular
-    /// tables, window views, inner-engine MVs and refreshable TO-target MVs accept it;
+    /// tables, inner-engine MVs and refreshable TO-target MVs accept it;
     /// ordinary views and plain TO-target MVs reject it, so restrict the toggle to the rest.
     const bool empty_form_ok = create.select
-        && (create.is_window_view || create.is_materialized_view_with_inner_table()
+        && (create.is_materialized_view_with_inner_table()
             || (create.is_materialized_view_with_external_target() && create.refresh_strategy)
             || (!create.isView() && !create.is_dictionary));
     if (empty_form_ok && fuzz_rand() % 20 == 0)
@@ -5316,7 +5316,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Series analysis over a numeric array (array[, extra params] → Array/number)
         {"seriesDecomposeSTL", "seriesOutliersDetectTukey", "seriesPeriodDetectFFT"},
         /// Tumbling time windows (time_attr, interval[, timezone] → Tuple/DateTime)
-        {"tumble", "tumbleStart", "tumbleEnd", "windowID"},
+        {"tumble", "tumbleStart", "tumbleEnd"},
         /// Hopping time windows (time_attr, hop_interval, window_interval[, timezone] → Tuple/DateTime)
         {"hop", "hopStart", "hopEnd"},
         /// Bitwise unary (integer → integer)

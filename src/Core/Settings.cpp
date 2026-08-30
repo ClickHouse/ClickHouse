@@ -8918,19 +8918,6 @@ Controls how posting lists are applied during text index queries.
 Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
 Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
 )", 0, text_index_density_threshold) \
-    DECLARE(Bool, allow_experimental_window_view, false, R"(
-Enable WINDOW VIEW. Not mature enough.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, window_view_clean_interval, 60, R"(
-The clean interval of window view in seconds to free outdated data.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, window_view_heartbeat_interval, 15, R"(
-The heartbeat interval in seconds to indicate watch query is alive.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, wait_for_window_view_fire_signal_timeout, 10, R"(
-Timeout for waiting for window view fire signal in event time processing
-)", EXPERIMENTAL) \
-    \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
@@ -9274,6 +9261,10 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, allow_experimental_live_view, false) \
     MAKE_OBSOLETE(M, Seconds, live_view_heartbeat_interval, 15) \
     MAKE_OBSOLETE(M, UInt64, max_live_view_insert_blocks_before_refresh, 64) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_window_view, false) \
+    MAKE_OBSOLETE(M, Seconds, window_view_clean_interval, 60) \
+    MAKE_OBSOLETE(M, Seconds, window_view_heartbeat_interval, 15) \
+    MAKE_OBSOLETE(M, Seconds, wait_for_window_view_fire_signal_timeout, 10) \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_cleanup_timeout_ms, 1000) \
     MAKE_OBSOLETE(M, Bool, optimize_fuse_sum_count_avg, 0) \
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
