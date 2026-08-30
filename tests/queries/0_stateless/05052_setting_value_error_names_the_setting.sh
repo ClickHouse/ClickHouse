@@ -6,13 +6,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The message comes from the setting's field, which does not know its own name, so a value of the wrong
 # type or out of range used to be reported without saying which setting was being set.
+# `UInt64` prints as `unsigned long` on Linux and as `unsigned long long` on macOS, so the type name in
+# the out-of-range message is normalized to the former.
 run()
 {
     echo "--- $1"
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "$1" 2>&1 \
         | grep -m1 -oE 'Code: [0-9]+\. DB::Exception: .*' \
         | sed -e 's/^Code: \([0-9]*\)\. DB::Exception: /Code: \1. /' \
-              -e 's/: While executing .*//' -e 's/ (version [^)]*)$//'
+              -e 's/: While executing .*//' -e 's/ (version [^)]*)$//' \
+              -e 's/unsigned long long/unsigned long/'
 }
 
 echo '=== a value of the wrong type or out of range names the setting and the value'

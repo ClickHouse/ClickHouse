@@ -395,16 +395,22 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
+    /// An unknown name is resolved outside the block that adds the context: its message already names
+    /// the setting (and suggests a correction), so nothing has to be added to it.
+    const size_t index = accessor.find(name);
+    if (index == static_cast<size_t>(-1))
+    {
+        getCustomSetting(name) = value;
+        return;
+    }
+
     /// A value of the wrong type or out of range is reported by the setting field itself, which does not
     /// know its own name: `SETTINGS max_threads = 'abc'` used to say only "Cannot parse input: expected
     /// 'eof' before: 'abc'", and `SETTINGS max_block_size = 0` only "A setting's value has to be greater
     /// than 0". Name the setting and the value, the way `stringToValueUtil` already does.
     try
     {
-        if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-            accessor.setValue(*this, index, value);
-        else
-            getCustomSetting(name) = value;
+        accessor.setValue(*this, index, value);
     }
     catch (Exception & e)
     {

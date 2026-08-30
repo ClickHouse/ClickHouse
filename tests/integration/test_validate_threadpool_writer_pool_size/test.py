@@ -18,10 +18,10 @@ def test_invalid_setting():
         with pytest.raises(Exception) as exc_info:
             cluster.start()
 
-            assert (
-                "Code: 36. DB::Exception: A setting's value has to be greater than 0: while setting 'threadpool_writer_pool_size' to value '0'. (BAD_ARGUMENTS)"
-                in str(exc_info.value)
-            )
+        assert (
+            "Code: 36. DB::Exception: A setting's value has to be greater than 0: while setting 'threadpool_writer_pool_size' to value '0'. (BAD_ARGUMENTS)"
+            in str(exc_info.value)
+        )
 
         # Also check that the error logs contain the expected message
         logs = ""
