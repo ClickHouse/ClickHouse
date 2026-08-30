@@ -58,7 +58,7 @@ constexpr std::array supported_functions{
     SupportedFunction{"sumMap", false},
     SupportedFunction{"minMap", false},
     SupportedFunction{"maxMap", false},
-    SupportedFunction{"groupArrayArray", true},
+    SupportedFunction{"groupArrayArray", false},
     SupportedFunction{"groupArrayLastArray", false},
     SupportedFunction{"groupUniqArrayArray", false},
     SupportedFunction{"groupUniqArrayArrayMap", false},
