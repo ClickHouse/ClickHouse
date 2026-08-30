@@ -30,8 +30,6 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
-#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
-
 #include <mutex>
 #include <fmt/ranges.h>
 #include <lz4.h>
