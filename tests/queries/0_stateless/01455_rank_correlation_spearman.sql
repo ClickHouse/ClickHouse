@@ -56,6 +56,18 @@ SELECT roundBankers(rankCorr(x, y), 3) FROM values('x Float64, y Float64', (1, 1
 SELECT 'nan';
 SELECT finalizeAggregation(CAST(unhex('040300000000000000000000000000000000000000000000F03F000000000000000000000000000000000000000000000000000000000000F03F') AS AggregateFunction(rankCorr, Float64, Float64)));
 
+-- Merging concatenates both vectors, so two such states can cancel each other's size skew.
+-- Either merge order stays unrecoverable.
+SELECT 'nan';
+SELECT arrayReduce('rankCorrMerge', [CAST(unhex('01000000000000000000') AS AggregateFunction(rankCorr, Float64, Float64)), CAST(unhex('02030000000000000000000000000000F03F0000000000000000000000000000F03F0000000000000000') AS AggregateFunction(rankCorr, Float64, Float64))]);
+
+SELECT 'nan';
+SELECT arrayReduce('rankCorrMerge', [CAST(unhex('02030000000000000000000000000000F03F0000000000000000000000000000F03F0000000000000000') AS AggregateFunction(rankCorr, Float64, Float64)), CAST(unhex('01000000000000000000') AS AggregateFunction(rankCorr, Float64, Float64))]);
+
+-- An older state with equal sizes was never unpaired, so it still computes.
+SELECT '0.5';
+SELECT finalizeAggregation(CAST(unhex('03030000000000000000000000000000F03F000000000000004000000000000000000000000000000040000000000000F03F') AS AggregateFunction(rankCorr, Float64, Float64)));
+
 DROP TABLE IF EXISTS moons;
 DROP TABLE IF EXISTS circles;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

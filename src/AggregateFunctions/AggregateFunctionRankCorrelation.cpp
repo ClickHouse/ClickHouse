@@ -29,13 +29,16 @@ namespace
 
 struct RankCorrelationData : public StatisticalSample<Float64, Float64>
 {
+    /// add() stores both coordinates of a row or neither, so unequal sample sizes mean a state
+    /// written without row pairing, whose surviving pairs are unrecoverable. merge() concatenates
+    /// the vectors and can cancel the skew, so the verdict is taken where the skew is visible.
+    bool pairing_lost = false;
+
     Float64 getResult()
     {
-        /// add() keeps the samples paired. Unequal sizes mean a state written by an older
-        /// server, which recorded no row pairing, so the surviving pairs are unrecoverable.
         const size_t size = this->size_x;
 
-        if (size != this->size_y || size < 2)
+        if (pairing_lost || size != this->size_y || size < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
 
         const RanksArray ranks_x = computeRanksAndTieCorrection(this->x).first;
@@ -112,6 +115,7 @@ public:
         const auto & b = data(rhs);
 
         a.merge(b, arena);
+        a.pairing_lost |= b.pairing_lost;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -121,7 +125,9 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, arena);
+        auto & sample = data(place);
+        sample.read(buf, arena);
+        sample.pairing_lost |= sample.size_x != sample.size_y;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
