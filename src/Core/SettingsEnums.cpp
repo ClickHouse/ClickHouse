@@ -125,7 +125,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+    {{"kusto",   FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
 IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -377,6 +377,7 @@ IMPLEMENT_SETTING_ENUM(
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
      {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
@@ -482,6 +483,13 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexPostingListCodec::None},
      {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeTextIndexSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v0_initial", MergeTreeTextIndexSerializationVersion::V0_Initial},
+     {"v1_with_codec", MergeTreeTextIndexSerializationVersion::V1_WithCodec},
+     {"v2_with_positions", MergeTreeTextIndexSerializationVersion::V2_WithPositions}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,

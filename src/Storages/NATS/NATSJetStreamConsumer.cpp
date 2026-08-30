@@ -91,7 +91,7 @@ NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & sub
     if (status != NATS_OK)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_NATS,
-            "Failed to subscribe consumer {} to subject {}. Error: {} {}", static_cast<void*>(this), subject, natsStatus_GetText(status), nats_GetLastError(nullptr));
+            "Failed to subscribe consumer {} to subject {}. Error: {} {}", static_cast<void*>(this), subject, natsStatus_GetText(status), getNATSLastError());
 
     NATSSubscriptionPtr result(subscription, &natsSubscription_Destroy);
     natsSubscription_SetPendingLimits(result.get(), -1, -1);

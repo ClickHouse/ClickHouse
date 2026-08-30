@@ -5,7 +5,7 @@ import shlex
 import subprocess
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.find_tests import Targeting
@@ -40,8 +40,59 @@ MAX_FAILS_BEFORE_DROP = 5
 # time guarantee that backstops this.
 MAX_FLAKY_CHECK_MODULES = 10
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
-ncpu = Utils.cpu_count()
-mem_gb = round(Utils.physical_memory() // (1024**3), 1)
+
+# The post-coverage-merge dmesg scan's own file. Distinct from `./ci/tmp/dmesg.log`, which the
+# first scan may already have queued for upload: both dumps redirect, and `>` truncates on open.
+LATE_DMESG_LOG = "./ci/tmp/dmesg-after-merge.log"
+
+# `docker_in_docker.sh`'s own output, which holds the containment decision and any refusal.
+DOCKER_IN_DOCKER_LOG = "./ci/tmp/docker-in-docker.log"
+
+# Images pulled at once. This bounds the daemon's anon working set, which does follow the pulls in
+# flight: measured against the widest batch, 161 MiB at one concurrent pull and 697 MiB at 25. It
+# does not bound the leaf's total charge, because each layer is also written through the leaf's page
+# cache and stays charged there until writeback lands, whatever the concurrency. Sizing the leaf for
+# that is `INTEGRATION_DIND_DAEMON_LIMIT`'s job, not this knob's.
+PREFETCH_PARALLEL_PULLS = 8
+
+# Seconds ALL archiving gets, together, after the hard backstop fired. Sized to complete an
+# ordinary archive (measured: 15 s for 413 MiB of logs) and to bound a stuck one, not to fit
+# inside a cancellation window - no useful bound does, so the diagnostics run first instead.
+TIMED_OUT_ARCHIVE_TIMEOUT = 120
+
+# A host OOM exhausts the whole machine, so any of these is a job-level failure. Both are
+# global-only; `oom_reaper: reaped process` is excluded because the kernel prints it for a
+# cgroup kill too, which would report every capped leaf's kill as a host OOM as well.
+HOST_OOM_DMESG_PATTERNS = (
+    b"Out of memory: Killed process",
+    b"oom-kill:constraint=CONSTRAINT_NONE",
+)
+
+# Kernel records a memory kill is diagnosed from, whichever scope it happened in. Broader than
+# `HOST_OOM_DMESG_PATTERNS`, which selects only the global ones: here a cgroup kill is wanted
+# too, and `oom_reaper` is kept because the surviving lines are read rather than classified.
+OOM_DMESG_MARKERS = ("oom-kill:", "Out of memory:", "oom_reaper:")
+
+# The cgroup leaves `docker_in_docker.sh` creates, and what a kill in each one means. The paths
+# are unqualified because the script only runs under `--cgroupns=private`.
+DIND_CGROUP_ROOT = "/sys/fs/cgroup"
+DIND_LEAF_MEANINGS = {
+    "docker": "Container memory budget exceeded (/docker)",
+    "init": "Harness memory limit exceeded (/init)",
+    "dockerd": "Docker daemon memory limit exceeded (/dockerd)",
+}
+
+# The leaf caps may sum above the job limit, so the job's own cgroup can be what breaches. That is
+# neither a leaf nor a host OOM, so both other detectors ignore it by design.
+DIND_JOB_CGROUP_OOM = "Job memory limit exceeded (all leaves together)"
+
+# `oom_memcg=` is the cgroup whose limit was breached, so its last component is a leaf name only
+# when the breach is one of ours - see `dind_leaf_oom_in_dmesg` for what that discriminates.
+# The kernel prints the fields comma-separated, hence `[^,\s]` rather than `\S`.
+MEMCG_OOM_OWNER = re.compile(rb"oom_memcg=([^,\s]+)")
+# The breached cgroup paired with the victim's own, which is what distinguishes a breach ABOVE the
+# leaves from a breach OF one. The kernel always prints them adjacent and in this order.
+MEMCG_OOM_KILL = re.compile(rb"oom_memcg=([^,\s]+),task_memcg=([^,\s]+)")
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
@@ -52,9 +103,421 @@ MAX_MEM_PER_WORKER = 11
 # cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
 MAX_MEM_PER_WORKER_DIST_EACH = 20
 
-INFRASTRUCTURE_ERROR_PATTERNS = [
+# Bash arithmetic is signed 64-bit, so `[ "$x" -gt 0 ]` errors out above this instead of
+# comparing. Measured: 2**63-1 is accepted, 2**63 exits 2 with "integer expression expected".
+_SHELL_INT_MAX = 2**63 - 1
+
+
+def nested_budget_gb(env=None, physical_memory=None) -> int:
+    """Memory the nested test containers may collectively use, in GiB.
+
+    `CI_DIND_NESTED_BUDGET` is the cap `docker_in_docker.sh` puts on the cgroup that parents
+    them, so deriving worker concurrency from it keeps scheduling and containment on the same
+    number. `Utils.physical_memory` reports HOST memory, which those containers do not get:
+    on the 61.78 GiB runner it budgets 3 x 20 = 60 GiB for a `--dist=each` run inside a
+    40 GiB cap. Runs without the variable (local, or a job that sets no memory limit) keep
+    deriving it from host memory, which is what they do today.
+    """
+    env = os.environ if env is None else env
+    physical = Utils.physical_memory if physical_memory is None else physical_memory
+    budget = env.get("CI_DIND_NESTED_BUDGET")
+    if budget is None:
+        return round(physical() // (1024**3), 1)
+    # `docker_in_docker.sh`'s contract, which this must not diverge from: ASCII digits only,
+    # positive, and no larger than the job limit. Neither `int()` (takes `-1`, ` 5 `, `1_000`)
+    # nor `str.isdigit()` (takes non-ASCII digits) is that contract.
+    ceiling = env.get("CI_DIND_JOB_MEM") or ""
+    ceiling = int(ceiling) if re.fullmatch(r"[0-9]+", ceiling) else _SHELL_INT_MAX
+    if not re.fullmatch(r"[0-9]+", budget) or not 0 < int(budget) <= ceiling:
+        raise ValueError(
+            f"CI_DIND_NESTED_BUDGET is [{budget}], expected a positive byte count no larger "
+            f"than the job limit [{ceiling}]; a zero budget means the reserves leave the "
+            "test containers nothing, so integration tests need a larger host"
+        )
+    return round(int(budget) // (1024**3), 1)
+
+
+def worker_plan(mem_limit_gb: int, cpus: int, dist_each: bool) -> Tuple[int, int]:
+    """`(workers, gb_per_worker)` for a `mem_limit_gb` container budget and `cpus`.
+
+    `dist_each` runs every module on every worker, so a worker's peak footprint is larger.
+
+    A job with no workers is useless, so there is always at least one - but on a carrier too
+    small to hold even one modeled worker that floor would claim memory the budget does not
+    have. Report what such a worker actually gets instead of the model figure, and warn: silently
+    assuming a budget that is not there is the defect this sizing exists to remove.
+    """
+    modeled = MAX_MEM_PER_WORKER_DIST_EACH if dist_each else MAX_MEM_PER_WORKER
+    workers = max(min(cpus // MAX_CPUS_PER_WORKER, mem_limit_gb // modeled), 1)
+    if workers * modeled > mem_limit_gb:
+        print(
+            f"WARNING: a worker is modeled at {modeled} GiB but the container budget is "
+            f"{mem_limit_gb} GiB; running {workers} worker(s) with less memory than the "
+            "integration tests are sized for"
+        )
+        return workers, max(mem_limit_gb // workers, 0)
+    return workers, modeled
+
+
+def pytest_workers(mem_limit_gb: int, cpus: int, dist_each: bool) -> int:
+    """Number of xdist workers to run. See `worker_plan`."""
+    return worker_plan(mem_limit_gb, cpus, dist_each)[0]
+
+
+def planned_workers(
+    args_workers: Optional[int], mem_limit_gb: int, cpus: int, dist_each: bool
+) -> int:
+    """`--workers` when given, else the budget-derived plan. See `worker_plan`."""
+    if args_workers:
+        return args_workers
+    print("ncpu:", cpus)
+    print("mem_gb:", mem_limit_gb)
+    return pytest_workers(mem_limit_gb, cpus, dist_each=dist_each)
+
+
+def _cgroup_field(leaf_path: Path, filename: str, field: str) -> Optional[int]:
+    """`field`'s value in a `key value` cgroup file, or None if it cannot be read."""
+    try:
+        for line in (leaf_path / filename).read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition(" ")
+            if key == field:
+                return int(value)
+    except (OSError, ValueError):
+        # No containment (the permissive path creates no leaves), the other cgroup version, or a
+        # partial read. Absence of evidence is not an error here.
+        return None
+    return None
+
+
+def _cgroup_own_limit_ooms(leaf_path: Path) -> int:
+    """How many times this cgroup breached its OWN memory cap, or 0 if unreadable.
+
+    `memory.events.local`, not the aggregating `memory.events`: the aggregating form also counts
+    a descendant breaching ITS cap, and every test container carries the `mem_limit` its module
+    asked for (12g by default, `tests/integration/helpers/cluster.py`), an outcome that predates
+    this cap and that some modules tolerate deliberately. Reading it would report those as job
+    errors. Measured over 3 alternating pairs: a container exceeding its own cap moves the
+    aggregating `oom_kill` and leaves local `oom` at 0; a collective breach of `/docker` moves
+    local `oom`.
+
+    The field is `oom` rather than `oom_kill` because it has to be correct for both leaf shapes:
+    `/docker` holds the containers as children, so a breach of its cap kills a task charged to a
+    child and only `oom` lands here, while `/init` and `/dockerd` hold their processes directly
+    and set both.
+
+    v1 has no file with those semantics, so it falls back to `memory.oom_control`'s `oom_kill`,
+    which is charged to the KILLED TASK's cgroup. That is exact for the leaves that hold their
+    processes directly and structurally 0 for `/docker`, whose containers are children - so it is
+    a partial signal, and the dmesg scan remains the general v1 detector. `failcnt` is not usable
+    here: measured, it took 775428 increments from reclaimable page cache with 0 kills.
+    """
+    v2 = _cgroup_field(leaf_path, "memory.events.local", "oom")
+    if v2 is not None:
+        return v2
+    return _cgroup_field(leaf_path, "memory.oom_control", "oom_kill") or 0
+
+
+def dind_leaf_root(cgroup_root=DIND_CGROUP_ROOT) -> Path:
+    """Where `docker_in_docker.sh` puts its leaves: `<root>` on v2, `<root>/memory` on v1.
+
+    v1 mounts the memory controller in its own hierarchy, so a reader that assumes the v2 layout
+    finds nothing on the production runners.
+    """
+    root = Path(cgroup_root)
+    if (root / "cgroup.controllers").is_file():
+        return root
+    return root / "memory" if (root / "memory").is_dir() else root
+
+
+def leaf_peak_usage(cgroup_root=DIND_CGROUP_ROOT) -> Dict[str, int]:
+    """Peak bytes each leaf ever charged, for the leaves that report it.
+
+    The reserves are the only numbers here that cannot be derived, and a leaf that was killed
+    reports a peak equal to its own cap: the demand above it is not recorded anywhere, so sizing a
+    reserve from a breached run measures the cap rather than the workload. Printing the peak of a
+    run that did NOT breach is what makes the next reserve a measurement.
+
+    `memory.peak` is cgroup v2 and needs Linux 5.19. On v1 the cap is applied to memory and to
+    memory-plus-swap at the same number, so the memsw peak is the one that can reach it, and the
+    resident-only peak can sit below a cap that swap breached. A missing file is a leaf that cannot
+    report, never an error.
+    """
+    leaf_root = dind_leaf_root(cgroup_root)
+    peaks = {}
+    for leaf in DIND_LEAF_MEANINGS:
+        for name in (
+            "memory.peak",
+            "memory.memsw.max_usage_in_bytes",
+            "memory.max_usage_in_bytes",
+        ):
+            try:
+                peaks[leaf] = int(
+                    (leaf_root / leaf / name).read_text(encoding="utf-8").strip()
+                )
+                break
+            except (OSError, ValueError):
+                continue
+    return peaks
+
+
+def print_leaf_peak_usage(env, cgroup_root=DIND_CGROUP_ROOT) -> Dict[str, int]:
+    """Print `leaf_peak_usage` against each leaf's cap, and return what was printed.
+
+    Only under required containment: elsewhere these paths are the host's cgroups.
+    """
+    if env.get("CI_DIND_REQUIRE_CGROUP_CONTAINMENT") != "1":
+        return {}
+    peaks = leaf_peak_usage(cgroup_root=cgroup_root)
+    caps = {
+        # The cap that was written, which for `/init` and `/dockerd` is not their share of the
+        # budget. Falling back to the reserve would understate the cap and print a false AT CAP.
+        "init": env.get("CI_DIND_INIT_LIMIT") or env.get("CI_DIND_INIT_RESERVE"),
+        "dockerd": env.get("CI_DIND_DAEMON_LIMIT") or env.get("CI_DIND_DAEMON_RESERVE"),
+        "docker": env.get("CI_DIND_NESTED_BUDGET"),
+    }
+    for leaf, peak in sorted(peaks.items()):
+        cap = caps.get(leaf)
+        # A peak at the cap means the leaf was throttled or killed there, so the figure is a
+        # lower bound on what the workload wanted rather than its footprint.
+        censored = " (AT CAP - demand is at least this)" if cap and peak >= int(cap) else ""
+        of_cap = f" of {int(cap) / 1024**3:.2f} GiB cap" if cap else ""
+        print(f"cgroup leaf /{leaf}: peak {peak / 1024**3:.2f} GiB{of_cap}{censored}")
+    return peaks
+
+
+def leaf_oom_results(cgroup_root=DIND_CGROUP_ROOT) -> List[Result]:
+    """One `ERROR` result per `docker_in_docker.sh` leaf that exhausted its own budget.
+
+    Without this the change would remove the only automated report of the condition it enforces:
+    previously such an overrun exhausted host RAM and produced the `CONSTRAINT_NONE` kill the
+    dmesg scan catches, whereas now it is confined to a capped leaf, the killed container's
+    client reports `Connection reset by peer`, and `_mark_infrastructure_errors` would relabel
+    that `SKIPPED` - turning a resource kill into a green job.
+
+    On v1 this covers the leaves that hold their own processes; a collective `/docker` breach is
+    only visible in dmesg there, because the counter moves on the killed child and no post-hoc
+    reading can tell that kill apart from a container reaching the `mem_limit` its own module
+    asked for - by teardown the child cgroup is gone. `dind_unreportable_ooms` names that gap
+    rather than leaving it silent.
+    """
+    leaf_root = dind_leaf_root(cgroup_root)
+    results = []
+    for leaf, meaning in DIND_LEAF_MEANINGS.items():
+        if _cgroup_own_limit_ooms(leaf_root / leaf):
+            results.append(Result(name=meaning, status=Result.Status.ERROR))
+    return results
+
+
+def dind_unreportable_ooms(
+    env, have_dmesg: bool, cgroup_root=DIND_CGROUP_ROOT
+) -> List[str]:
+    """The reports this run cannot produce, so a green result does not rule them out.
+
+    v1's counter is charged to the KILLED TASK's cgroup, so a breach whose victim sits in a
+    descendant never moves the breached cgroup's own counter. Two cgroups here are breached that
+    way: `/docker`, which holds the containers as children, and the job's cgroup, whose leaf caps
+    may sum above it. dmesg is the only signal for either, and reporting nothing without it is
+    indistinguishable from a clean run - a resource kill that reads as clean is the failure mode
+    this whole path exists to remove.
+
+    One probe answers both, since a cgroup and its child are always the same version.
+
+    Only under required containment: elsewhere `/docker` is the host's own cgroup, and naming a
+    gap in reports this run never promised is noise.
+    """
+    if env.get("CI_DIND_REQUIRE_CGROUP_CONTAINMENT") != "1":
+        return []
+    if have_dmesg:
+        return []
+    docker = dind_leaf_root(cgroup_root) / "docker"
+    on_v2 = _cgroup_field(docker, "memory.events.local", "oom") is not None
+    exists = on_v2 or _cgroup_field(docker, "memory.oom_control", "oom_kill") is not None
+    if on_v2 or not exists:
+        return []
+    return [DIND_LEAF_MEANINGS["docker"], DIND_JOB_CGROUP_OOM]
+
+
+def dind_leaf_oom_in_dmesg(dmesg: bytes, leaves=tuple(DIND_LEAF_MEANINGS)) -> Set[str]:
+    """Names of the leaves dmesg records a cgroup OOM against.
+
+    Backstop for `leaf_oom_results`, which reads counters that a mid-run daemon restart or a
+    recreated leaf would reset. Scoped to the breached cgroup because an unscoped
+    `CONSTRAINT_MEMCG` match would also fire on a test container reaching its own `mem_limit`:
+    measured, the two differ only in `oom_memcg=`, which ends at the leaf for a collective
+    breach and at a per-container cgroup otherwise.
+    """
+    return {
+        name
+        for owner in MEMCG_OOM_OWNER.findall(dmesg)
+        if (name := owner.rsplit(b"/", 1)[-1].decode(errors="replace")) in leaves
+    }
+
+
+def job_cgroup_oom(dmesg: bytes, cgroup_root=DIND_CGROUP_ROOT) -> bool:
+    """Whether the job's own cgroup, rather than one of its leaves, breached its cap.
+
+    Under `--cgroupns=private` the namespace root IS the job's cgroup, so its own counter answers
+    this. The dmesg arm covers a counter a mid-run daemon restart reset, and also the v1 case the
+    counter cannot see at all: there the fallback counts victims of the cgroup they belong to, and
+    a parent breach usually kills a task belonging to a child.
+
+    The job's cgroup is identified by the one property that holds under every runtime's naming -
+    it is the parent of the leaves this script created - rather than by a path shape, since
+    production reports `/docker/<id>/init` while a systemd-scoped host reports
+    `/system.slice/docker-<id>.scope/init`.
+    """
+    if _cgroup_own_limit_ooms(dind_leaf_root(cgroup_root)):
+        return True
+    leaves = tuple(name.encode() for name in DIND_LEAF_MEANINGS)
+    for owner, task in MEMCG_OOM_KILL.findall(dmesg):
+        if not task.startswith(owner + b"/"):
+            continue
+        # The victim is below the breached cgroup, so name the first component between them: a
+        # leaf there means the breach is ABOVE every leaf and is the job's own. A leaf breach puts
+        # a container id there, and a container's own kill has owner == task, excluded above.
+        if task[len(owner) + 1 :].split(b"/", 1)[0] in leaves:
+            return True
+    return False
+
+
+def leaf_oom_report(
+    env, dmesg: bytes, cgroup_root=DIND_CGROUP_ROOT
+) -> Tuple[List[Result], bool]:
+    """`(results, attach_dmesg)` for a required-containment run; `([], False)` otherwise.
+
+    An exhausted leaf is what an overrun looks like now that the leaves are capped, and it must
+    not be swallowed: the killed container's client raises `Connection reset by peer`, which
+    `_mark_infrastructure_errors` would relabel `SKIPPED`, so a run the cap killed could finish
+    green.
+
+    Only looks when containment was requested: otherwise these paths are the HOST's cgroups.
+
+    `dmesg` must hold only this run's records: leaf names repeat across the jobs a runner hosts,
+    so an inherited buffer would attribute another job's kill to this one. Callers pass `b""`
+    when they cannot establish that, which leaves the counters as the sole source.
+    """
+    if env.get("CI_DIND_REQUIRE_CGROUP_CONTAINMENT") != "1":
+        return [], False
+    results = leaf_oom_results(cgroup_root=cgroup_root)
+    # A leaf whose counter fired and which also appears in dmesg must yield one row.
+    reported = {
+        leaf
+        for leaf, meaning in DIND_LEAF_MEANINGS.items()
+        if any(r.name == meaning for r in results)
+    }
+    for leaf in sorted(dind_leaf_oom_in_dmesg(dmesg) - reported):
+        meaning = DIND_LEAF_MEANINGS[leaf]
+        results.append(Result(name=meaning, status=Result.Status.ERROR))
+    if job_cgroup_oom(dmesg, cgroup_root=cgroup_root):
+        results.append(Result(name=DIND_JOB_CGROUP_OOM, status=Result.Status.ERROR))
+    # Attached once rather than per leaf: `create_from` stores `files` verbatim, so three
+    # breached leaves plus a host OOM would list the same path four times.
+    return results, bool(results)
+
+
+def prefetch_failure_result(env=None, cgroup_root=DIND_CGROUP_ROOT) -> Result:
+    """The image pre-pull failure, carrying whatever the leaves say about why.
+
+    This path ends the job through `complete_job`, so the end-of-run leaf scan never runs on it.
+    A daemon its own cap killed presents here as a pull failure, and without these rows the job
+    reports only an unexplained infrastructure error.
+
+    `b""` rather than a dmesg dump: this runs before the buffer is cleared, and leaf names repeat
+    across the jobs a runner hosts, so a dump read here could name a previous job's kill. The
+    counters are charged to this run's own cgroups and need no dmesg.
+    """
+    env = os.environ if env is None else env
+    print_leaf_peak_usage(env, cgroup_root=cgroup_root)
+    results, _ = leaf_oom_report(env, b"", cgroup_root=cgroup_root)
+    return Result.create_from(
+        status=Result.Status.ERROR,
+        info="Failed to pre-pull Docker images needed by the test batch",
+        results=results,
+        files=[DOCKER_IN_DOCKER_LOG] if Path(DOCKER_IN_DOCKER_LOG).exists() else None,
+        labels=[Result.Label.INFRA],
+    )
+
+
+def report_late_leaf_ooms(
+    R: Result,
+    env,
+    dmesg: bytes,
+    already_reported: Set[str],
+    lost_coverage_artifact: bool = False,
+    cgroup_root=DIND_CGROUP_ROOT,
+) -> List[Result]:
+    """Append every leaf that breached only after the first scan to `R`, and escalate it.
+
+    The first scan runs before the last `/init` work - the coverage shards' `llvm-profdata
+    merge` - and a merge the cap kills is only printed, never raised, so without this the shard
+    finishes green minus its artifact. The counters are cumulative and the reread is idempotent,
+    hence `already_reported`: one breach yields one row however many scans see it.
+
+    `lost_coverage_artifact` only names a likely consequence of a breach that happened; a merge
+    that failed on its own is pre-existing behavior and stays out of the status.
+
+    Writes `info`, so it owns the failure summary on the runs it fires, the same contract
+    `report_rabbitmq_recreations` follows.
+    """
+    rows = [
+        r
+        for r in leaf_oom_report(env, dmesg, cgroup_root=cgroup_root)[0]
+        if r.name not in already_reported
+    ]
+    if not rows:
+        return []
+    R.results.extend(rows)
+    R.set_error()
+    # `_add_job_summary_to_info` writes `Failures: N/M` only while `info` is empty, so the
+    # write below would delete the count. Emitted here, after the rows, so it counts them.
+    if not R.info:
+        fail_cnt = sum(1 for r in R.results if not r.is_ok())
+        R.set_info(f"Failures: {fail_cnt}/{len(R.results)}")
+    for row in rows:
+        R.set_info(f"{row.name} - infrastructure/resource failure, not bug reproduction")
+    if lost_coverage_artifact:
+        R.set_info("No LLVM coverage artifact was produced, consistent with that kill")
+    return rows
+
+
+def print_timeout_diagnostics(env, cgroup_root=DIND_CGROUP_ROOT) -> None:
+    """Print what a run killed by the time budget was doing, to stdout.
+
+    Everything else on this path is an uploaded artifact, and an upload needs the job to survive
+    long enough to make one. A run that hit the backstop is already past its budget, so the runner
+    cancels it while the archive is still being written and nothing is uploaded at all - measured
+    on job 95139621296, where the archive got 13.3 s. The job LOG is the one channel that is kept
+    regardless, so the small diagnostics go there and go first.
+
+    dmesg is read without clearing or attribution: only the OOM lines are printed, and the point
+    is to say whether the kernel killed anything at all, which the leaf counters cannot answer for
+    a kill in a descendant. Unattributable is not the same as absent, so no result row is derived
+    from it here - `leaf_oom_report` owns that, on a buffer it can scope.
+    """
+    print_leaf_peak_usage(env, cgroup_root=cgroup_root)
+    if not (dmesg := Shell.get_output("dmesg -T", verbose=True)):
+        print("WARNING: no dmesg available, so a kernel kill can neither be shown nor ruled out")
+        return
+    if oom_lines := [l for l in dmesg.splitlines() if any(m in l for m in OOM_DMESG_MARKERS)]:
+        print("Kernel memory kills in dmesg:")
+        for line in oom_lines:
+            print(f"  {line}")
+    else:
+        print("No kernel memory kill in dmesg")
+
+
+ncpu = Utils.cpu_count()
+
+# A timeout says nothing about its own origin: a container orchestration command and
+# the process under test both raise `subprocess.TimeoutExpired`, rendering the same two
+# substrings. These two are therefore matched by the argv that timed out rather than by
+# a plain substring search.
+TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
+]
+
+INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
     "Error response from daemon",
     "Name or service not known",
@@ -69,13 +532,133 @@ INFRASTRUCTURE_ERROR_PATTERNS = [
     "Got exception pulling images:",  # docker pull failure during cluster.start()
 ]
 
+# compose options that consume the token after them, so the subcommand is not the
+# first non-option token but the first one no option has claimed.
+COMPOSE_VALUED_OPTIONS = {
+    "--ansi",
+    "--env-file",
+    "--file",
+    "--parallel",
+    "--profile",
+    "--progress",
+    "--project-directory",
+    "--project-name",
+    "-f",
+    "-p",
+}
+
+# Subcommands whose timeout does not mean the server failed to respond, so exceeding the
+# python-side budget says nothing about the server under test.
+ORCHESTRATION_LIFECYCLE_VERBS = {
+    "config",
+    "create",
+    "down",
+    "images",
+    "login",
+    "logs",
+    "ps",
+    "pull",
+    "rm",
+    "start",
+    "unpause",
+    "up",
+}
+
+# Subcommands that wait on the server exiting: an unguarded `stop` with no `--timeout`
+# (cluster.py:2641) is bounded only by the generated template's `stop_grace_period: 10m`,
+# which outlives the python-side budget, so its timeout means the server did not respond.
+ORCHESTRATION_PRODUCT_VERBS = {"kill", "pause", "restart", "stop"}
+
+# Top-level `docker` subcommands the harness runs on its own behalf, outside compose, and
+# whose timeout is known to arrive here (`run_and_check` re-raises `TimeoutExpired` even
+# under `nothrow`). `exec` and `update` are absent: a test body runs those.
+DOCKER_TOPLEVEL_LIFECYCLE_VERBS = {"login", "ps", "rm"}
+
+
+def _raising_exception_lines(info: str) -> list:
+    """The `E   <ExcType>: <msg>` lines, i.e. the exceptions actually raised.
+
+    Scoped to these lines because an embedded server stack trace can carry a timeout
+    substring tens of kilobytes away from anything that timed out.
+    """
+    return [line for line in info.splitlines() if line.startswith("E ")]
+
+
+def _argv_lists(line: str) -> list:
+    """Every bracketed argv on `line`, in either rendering."""
+    argvs = []
+    for match in re.finditer(r"\[((?:'[^']*'(?:,\s*)?)+)\]", line):
+        argvs.append(re.findall(r"'([^']*)'", match.group(1)))
+    for match in re.finditer(r"\[([^\[\]']+)\]", line):
+        argvs.append(match.group(1).split())
+    return argvs
+
+
+def _orchestration_verb(argv: list):
+    """The docker subcommand `argv` invokes, or None if it is not orchestration."""
+    if len(argv) < 2 or argv[0] != "docker":
+        return None
+    if argv[1] in DOCKER_TOPLEVEL_LIFECYCLE_VERBS:
+        return argv[1]
+    if argv[1] != "compose":
+        return None
+    i = 2
+    while i < len(argv):
+        if argv[i] in COMPOSE_VALUED_OPTIONS:
+            i += 2
+        elif argv[i].startswith("-"):
+            i += 1
+        else:
+            return argv[i]
+    return None
+
+
+def _is_orchestration_lifecycle_timeout(info: str) -> bool:
+    """Whether the timeout is docker's or the registry's rather than the server's.
+
+    Every command a raised exception reports as timing out must be one docker runs on the
+    harness's behalf. A row can name several: `raise ... from ex` makes pytest render both
+    exceptions with their own `E ` prefix, a teardown reports its own commands beside the
+    body's, and captured output is embedded verbatim in the message. So anything else on a
+    timeout-bearing line -- a product-sensitive subcommand, a command that is not
+    orchestration at all, or no argv whatsoever -- means the wait that expired is not
+    known to be docker's.
+
+    An unrecognised subcommand is not a lifecycle one: a new compose verb must be
+    classified deliberately rather than default to suppressing the result.
+    """
+    saw_lifecycle = False
+    for line in _raising_exception_lines(info):
+        if not any(p in line for p in TIMEOUT_ERROR_PATTERNS):
+            continue
+        argvs = _argv_lists(line)
+        if not argvs:
+            return False
+        for argv in argvs:
+            verb = _orchestration_verb(argv)
+            if verb is None or verb in ORCHESTRATION_PRODUCT_VERBS:
+                return False
+            if verb not in ORCHESTRATION_LIFECYCLE_VERBS:
+                return False
+            saw_lifecycle = True
+    return saw_lifecycle
+
+
+def _non_timeout_patterns_match(info: str) -> bool:
+    return any(
+        p in info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        if p not in TIMEOUT_ERROR_PATTERNS
+    )
+
 
 def _is_infrastructure_error(result: Result) -> bool:
     """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
     if result.status == Result.Status.ERROR:
-        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+        return _non_timeout_patterns_match(
+            result.info
+        ) or _is_orchestration_lifecycle_timeout(result.info)
     # Docker compose/pull infrastructure failures may appear with FAIL status
     # when pytest reports fixture (setup phase) errors as test failures.
     # Require both docker context and an infrastructure pattern to avoid
@@ -84,8 +667,9 @@ def _is_infrastructure_error(result: Result) -> bool:
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
-        return has_docker_context and any(
-            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        return has_docker_context and (
+            _non_timeout_patterns_match(result.info)
+            or _is_orchestration_lifecycle_timeout(result.info)
         )
     return False
 
@@ -193,7 +777,7 @@ def quote_tests(tests: List[str]) -> str:
 
 
 def start_docker_in_docker():
-    with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
+    with open(DOCKER_IN_DOCKER_LOG, "w") as log_file:
         dockerd_proc = subprocess.Popen(
             "./ci/jobs/scripts/docker_in_docker.sh",
             stdout=log_file,
@@ -205,6 +789,14 @@ def start_docker_in_docker():
         cmd = "docker info > /dev/null" if i == retries - 1 else "docker info > /dev/null 2>&1"
         if Shell.check(cmd, verbose=True):
             break
+        if dockerd_proc.poll() is not None:
+            # The script exited instead of starting the daemon, e.g. it refused because the
+            # cgroup containment it was asked for could not be established. Say so now rather
+            # than after 40 more seconds of a timeout that names the wrong cause.
+            raise RuntimeError(
+                f"docker_in_docker.sh exited early (rc={dockerd_proc.returncode}); "
+                "see ./ci/tmp/docker-in-docker.log"
+            )
         if i == retries - 1:
             raise RuntimeError(
                 f"Docker daemon didn't responded after {retries} attempts"
@@ -333,9 +925,12 @@ def get_images_from_compose_files(compose_files: List[Path]) -> List[str]:
 
 
 def prefetch_images(
-    images: List[str], retries: int = 3, pull_timeout: int = 300
+    images: List[str],
+    retries: int = 3,
+    pull_timeout: int = 300,
+    parallel: int = PREFETCH_PARALLEL_PULLS,
 ) -> bool:
-    """Pull every image in parallel using `ci/prefetch-integration-test-images`.
+    """Pull the images using `ci/prefetch-integration-test-images`.
 
     Images with no manifest for the current architecture (e.g. amd64-only images
     on arm64 runners) are silently skipped.  Returns True on success, False if any
@@ -350,6 +945,7 @@ def prefetch_images(
         **os.environ,
         "PULL_RETRIES": str(retries),
         "PULL_TIMEOUT": str(pull_timeout),
+        "PULL_PARALLEL": str(parallel),
     }
     return Shell.check(
         f"{script} {' '.join(images)}",
@@ -416,15 +1012,46 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
+def merge_profraw_files(llvm_profdata_cmd: str, run_complete: bool):
     """Merge all profraw files into final profdata file.
 
     Args:
         llvm_profdata_cmd: Path to llvm-profdata tool
-        job_params: List of job parameters for naming output file
+        run_complete: whether the test run executed everything it planned
     """
     import subprocess
     from pathlib import Path
+
+    # Name the profile after this job's own coverage artifact, so the
+    # aggregation can tell which shards arrived from the filenames alone.
+    # JOB_CONFIG has been through dump()/get() by the time a job body runs, so
+    # it is a plain dict here.
+    provides = (Info().job_config or {}).get("provides")
+    assert (
+        isinstance(provides, list)
+        and len(provides) == 1
+        and isinstance(provides[0], str)
+        and provides[0]
+    ), f"expected exactly one provided artifact name, got {provides!r}"
+    final_file = f"./{provides[0]}.profdata"
+
+    # llvm-profdata truncates its -o target in place instead of replacing it,
+    # so a stale profile at the target name must be removed before deciding
+    # whether to merge at all - otherwise a skipped or failed merge would let
+    # the uploader publish the stale file as this shard's contribution.
+    if os.path.exists(final_file):
+        print(f"Removing pre-existing {final_file}", flush=True)
+        os.unlink(final_file)
+
+    # An incomplete run's .profraw files understate coverage, so publish nothing
+    # and let the aggregate job abstain; the inputs stay on disk for inspection.
+    if not run_complete:
+        print(
+            "ERROR: the run timed out or hit an infrastructure error, so this "
+            "shard's coverage is incomplete; publishing no profile",
+            flush=True,
+        )
+        return None
 
     # Find all profraw files
     profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
@@ -433,42 +1060,31 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         print("No profraw files found", flush=True)
         return
 
-    joined_job_params = "_".join(job_params) if job_params else "all"
-    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
-    final_file = f"./it-{joined_job_params}.profdata"
+    # A zero-length .profraw is silently accepted by llvm-profdata at every
+    # --failure-mode, so it would drop one process's coverage with no signal.
+    # Treat it as an incomplete shard and publish no profile.
+    empty_files = [f for f in profraw_files if os.path.getsize(f) == 0]
+    if empty_files:
+        print(
+            f"ERROR: {len(empty_files)} .profraw files are empty, so this shard's coverage "
+            f"is incomplete; publishing no profile: {', '.join(empty_files)}",
+            flush=True,
+        )
+        return None
+
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
+    # --failure-mode=any makes the merge all-or-nothing: on any invalid input it
+    # exits non-zero and writes no file, so the shard is simply absent (and the
+    # aggregate job reports SKIPPED with the shard name) instead of contributing
+    # a silently short profile.
     result = subprocess.run(
-        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=warn"]
+        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=any"]
         + profraw_files
         + ["-o", final_file],
         capture_output=True,
         text=True,
     )
-
-    # Check for corrupted files in stderr
-    corrupted_count = result.stderr.count(
-        "invalid instrumentation profile"
-    ) + result.stderr.count("file header is corrupt")
-    if corrupted_count > 0:
-        print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)
-        # Extract and display corrupted filenames from stderr
-        corrupted_files = set()
-        for line in result.stderr.split("\n"):
-            if (
-                "invalid instrumentation profile" in line
-                or "file header is corrupt" in line
-                or "error:" in line.lower()
-            ):
-                print(f"    {line.strip()}", flush=True)
-                # Extract filename from error message (format: "error: file.profraw: ..." or "warning: file.profraw: ...")
-                parts = line.split(":")
-                if len(parts) >= 2:
-                    potential_file = parts[1].strip()
-                    if potential_file.endswith(".profraw"):
-                        corrupted_files.add(potential_file)
-        if corrupted_files:
-            print(f"  Corrupted files: {', '.join(corrupted_files)}", flush=True)
 
     if result.returncode == 0:
         print(f"Successfully created final coverage file: {final_file}", flush=True)
@@ -628,16 +1244,23 @@ def tail(filepath: str, buff_len: int = 1024) -> List[str]:
 
 def run_pytest_and_collect_results(
     command: str, env: str, report_name: str, timeout: int = None
-) -> Tuple[Result, bool]:
+) -> Tuple[Result, bool, bool]:
     """
     Runs a pytest command and reports whether the run was cut short by a timeout.
 
-    Returns `(test_result, timed_out)`. `timed_out` is True when the run did not finish
-    on its own but was stopped by either:
+    Returns `(test_result, timed_out, hard_killed)`. `timed_out` is True when the run did
+    not finish on its own but was stopped by either:
       - the graceful xdist `--session-timeout` (pytest interrupts itself and writes the
         `xdist.dsession.Interrupted: session-timeout:` marker to the log), or
       - the hard subprocess backstop (`Shell.run` `SIGTERM`s/`SIGKILL`s pytest after
         `timeout` seconds, e.g. when a test hangs past the session-timeout).
+
+    `hard_killed` is True for the second case only. The two differ in how much of the job
+    is left: the graceful timeout is an ordinary budgeted stop with the rest of the job
+    still available, while the backstop only fires after the session-timeout was already
+    missed, which is what a hung run looks like and where the runner cancels the job while
+    post-processing is still going. A caller shortening its work must key on this and not
+    on `timed_out`.
 
     Callers use `timed_out` to tell an empty result set caused by expected time-budget
     exhaustion (best effort, may be downgraded to `SKIPPED`) apart from one caused by a
@@ -657,6 +1280,7 @@ def run_pytest_and_collect_results(
     )
 
     timed_out = False
+    hard_killed = False
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
         f"{temp_path}/{report_name}.log"
     ):
@@ -676,8 +1300,9 @@ def run_pytest_and_collect_results(
         # (a normal run returns well under `timeout`). Treat this as a timeout so an
         # empty result is reported as best-effort rather than as a harness failure.
         timed_out = True
+        hard_killed = True
 
-    return test_result, timed_out
+    return test_result, timed_out, hard_killed
 
 
 def is_empty_best_effort_skip(
@@ -700,6 +1325,34 @@ def is_empty_best_effort_skip(
     False.
     """
     return (is_flaky_check or is_targeted_check) and not has_results and timed_out
+
+
+def finalize_llvm_coverage_status(R: Result, has_error: bool) -> bool:
+    """Apply the coverage job's status rules to `R` and return the surviving `has_error`.
+
+    A coverage shard must not block the pipeline on test failures, hence the `set_success`
+    below. But a resource kill is not a test verdict: clearing `has_error` here would drop
+    the leaf-OOM `ERROR` and let a run the cap killed finish green. `force_ok_exit` is set
+    for coverage jobs regardless, so keeping the error only stops the job from *reporting*
+    success.
+    """
+    has_failure = False
+    for r in R.results:
+        if r.status == Result.Status.FAIL:
+            if r.has_label(Result.Label.OK_ON_RETRY):
+                # Remove label and set to OK
+                r.remove_label(Result.Label.OK_ON_RETRY)
+                r.status = Result.Status.OK
+            else:
+                has_failure = True
+    if has_failure:
+        R.set_failed()
+        R.set_info("Some tests failed during LLVM coverage run")
+    elif has_error:
+        pass  # the caller's `if has_error: set_error()` supplies the status and info
+    else:
+        R.set_success()
+    return has_error
 
 
 def main():
@@ -733,7 +1386,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         [
             "./ci/tmp/logs.tar.gz",
             "./ci/tmp/dmesg.log",
-            "./ci/tmp/docker-in-docker.log",
+            DOCKER_IN_DOCKER_LOG,
         ],
         strict=False,
     )
@@ -748,7 +1401,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             os.environ[key] = value.strip()
 
     java_path = Shell.get_output(
-        "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
+        r"update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
     )
     repeat_option = ""
@@ -787,19 +1440,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # each executing all modules independently with their own isolated Docker cluster
     # (ClickHouseCluster appends PYTEST_XDIST_WORKER to project_name for isolation).
 
-    if args.workers:
-        workers = args.workers
-    else:
-        # --dist=each (flaky/targeted checks) makes every worker run all modules,
-        # so budget more memory per worker than the module-splitting loadfile runs.
-        mem_per_worker = (
-            MAX_MEM_PER_WORKER_DIST_EACH
-            if is_flaky_check or is_targeted_check
-            else MAX_MEM_PER_WORKER
-        )
-        print("ncpu:", ncpu)
-        print("mem_gb:", mem_gb)
-        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // mem_per_worker) or 1
+    # Read the budget here, not at import: `--param` above writes the environment it comes from.
+    workers = planned_workers(
+        args.workers,
+        nested_budget_gb(),
+        ncpu,
+        dist_each=is_flaky_check or is_targeted_check,
+    )
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
     clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
@@ -818,7 +1465,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     break
             else:
                 raise FileNotFoundError(
-                    "Clickhouse binary not found in any of the paths: "
+                    "ClickHouse binary not found in any of the paths: "
                     + ", ".join(paths_to_check)
                     + ". You can also specify path to binary via --path argument"
                 )
@@ -826,7 +1473,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             clickhouse_server_config_dir = args.path_1
     assert Path(
         clickhouse_server_config_dir
-    ), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
+    ), f"ClickHouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     changed_test_modules = []
@@ -1055,11 +1702,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     )
     images_to_prefetch = get_images_from_compose_files(compose_files)
     if not prefetch_images(images_to_prefetch):
-        Result.create_from(
-            status=Result.Status.ERROR,
-            info="Failed to pre-pull Docker images needed by the test batch",
-            labels=[Result.Label.INFRA],
-        ).complete_job()
+        prefetch_failure_result().complete_job()
 
     test_env = {
         "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,
@@ -1071,13 +1714,21 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
-        # PromQL compliance: deterministic JSON for post-hook (see promql_compliance_hook.py).
+        # PromQL compliance: deterministic JSON for upload hook (see promql_compliance_upload_hook.py).
         "COMPLIANCE_RESULT_FILE": os.environ.get(
             "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
         ),
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
+        # %c enables continuous mode: the counters are memory-mapped into the
+        # file and updated as the code runs, so the file is structurally valid
+        # at every instant. Without it the profile is written only at process
+        # exit, and a SIGKILL inside that multi-second write left a half-written
+        # file whose header claims a bogus size - llvm-profdata then aborts with
+        # "LLVM ERROR: out of memory" trying to honour it (observed repeatedly
+        # on this shard family; see LLVM issue #50970). Requires the coverage
+        # build to compile with -mllvm -runtime-counter-relocation.
+        test_env["LLVM_PROFILE_FILE"] = "it-%c%4m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -1101,6 +1752,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # hard subprocess backstop). Used below to keep an empty flaky/targeted result a
     # best-effort SKIPPED only when a timeout actually exhausted the budget.
     timed_out = False
+    # Only the hard backstop, which is where the job is about to be cancelled. See
+    # `run_pytest_and_collect_results`.
+    hard_killed = False
     session_timeout_parallel = 3600 * 2
     session_timeout_sequential = 3600
 
@@ -1143,11 +1797,19 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host.
     # Do this only in CI (non-local runs) and via a non-interactive privileged helper.
+    # Every dmesg-derived verdict, leaf or host-wide, is only admissible on a buffer this cleared.
+    dmesg_cleared = False
     if not info.is_local_run:
         try:
-            Utils.clear_dmesg()
+            dmesg_cleared = Utils.clear_dmesg()
         except Exception as ex:
             print(f"Failed to clear dmesg before integration tests: {ex}")
+        if not dmesg_cleared:
+            print(
+                "WARNING: could not clear dmesg before the tests; the buffer may still hold a "
+                "previous job's records, so leaf OOMs will be reported from the counters only "
+                "and a host OOM is not reportable at all on this run"
+            )
 
     clear_rabbitmq_recreation_scan_inputs()
 
@@ -1167,13 +1829,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if parallel_test_modules:
         log_file = f"{temp_path}/pytest_parallel.log"
-        test_result_parallel, parallel_timed_out = run_pytest_and_collect_results(
+        (
+            test_result_parallel,
+            parallel_timed_out,
+            parallel_hard_killed,
+        ) = run_pytest_and_collect_results(
             command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
         )
         timed_out = timed_out or parallel_timed_out
+        hard_killed = hard_killed or parallel_hard_killed
         test_results.extend(test_result_parallel.results)
         _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
@@ -1192,7 +1859,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
-    if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
+    # Under LLVM coverage the sequential phase runs regardless of how many
+    # parallel tests failed: the coverage shard exists to execute code, and
+    # dropping the phase would silently publish a profile that is short by
+    # every sequential test. Test failures gate the PR through the regular
+    # (non-coverage) jobs. An infrastructure error still skips the phase.
+    if sequential_test_modules and (fail_num < MAX_FAILS_BEFORE_DROP or is_llvm_coverage) and not has_error:
         for attempt in range(sequential_repeat_cnt):
             # Recompute remaining budget for flaky-check at every iteration and stop
             # scheduling new runs once it is exhausted (soft timeout).
@@ -1209,13 +1881,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 iter_session_timeout_sequential = min(
                     session_timeout_sequential, flaky_check_remaining_s
                 )
-            test_result_sequential, sequential_timed_out = run_pytest_and_collect_results(
+            (
+                test_result_sequential,
+                sequential_timed_out,
+                sequential_hard_killed,
+            ) = run_pytest_and_collect_results(
                 command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
             )
             timed_out = timed_out or sequential_timed_out
+            hard_killed = hard_killed or sequential_hard_killed
             test_results.extend(test_result_sequential.results)
             _mark_infrastructure_errors(test_result_sequential.results)
             failed_test_cases.extend(
@@ -1246,7 +1923,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         for r in test_results:
             r.set_label(build_types[0])
 
-        if all(r.is_ok() for r in test_results):
+        # `all` over an empty list is True, which is what a hard-killed primary run leaves, so
+        # entry has to be gated too and not only the continuation below.
+        if test_results and all(r.is_ok() for r in test_results) and not hard_killed:
             for bugfix_bt in build_types[1:]:
                 print(f"\n=== Bugfix validation with {bugfix_bt} ===")
                 bt_clickhouse_path = f"{temp_path}/clickhouse_{bugfix_bt}"
@@ -1260,12 +1939,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 bt_test_results = []
 
                 if parallel_test_modules:
-                    bt_result_parallel, _ = run_pytest_and_collect_results(
+                    (
+                        bt_result_parallel,
+                        bt_parallel_timed_out,
+                        bt_parallel_hard_killed,
+                    ) = run_pytest_and_collect_results(
                         command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                         env=test_env,
                         report_name=f"parallel_{bugfix_bt}",
                         timeout=session_timeout_parallel + 600,
                     )
+                    timed_out = timed_out or bt_parallel_timed_out
+                    hard_killed = hard_killed or bt_parallel_hard_killed
                     bt_test_results.extend(bt_result_parallel.results)
                     _mark_infrastructure_errors(bt_result_parallel.results)
                     if bt_result_parallel.files:
@@ -1276,12 +1961,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
                 bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
                 if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
-                    bt_result_sequential, _ = run_pytest_and_collect_results(
+                    (
+                        bt_result_sequential,
+                        bt_seq_timed_out,
+                        bt_seq_hard_killed,
+                    ) = run_pytest_and_collect_results(
                         command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
                         timeout=session_timeout_sequential + 600,
                     )
+                    timed_out = timed_out or bt_seq_timed_out
+                    hard_killed = hard_killed or bt_seq_hard_killed
                     bt_test_results.extend(bt_result_sequential.results)
                     _mark_infrastructure_errors(bt_result_sequential.results)
                     if bt_result_sequential.files:
@@ -1296,9 +1987,25 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
                 if any(not r.is_ok() for r in bt_test_results):
                     break
+                # A hard-killed run usually produces no results at all, and `any` over an empty
+                # list is False, so the loop would schedule the remaining build types after a
+                # backstop had already fired and postpone the diagnostics past the next one.
+                if hard_killed or not bt_test_results:
+                    print(
+                        f"Bugfix validation with {bugfix_bt} produced no usable outcome; "
+                        "not scheduling the remaining build types"
+                    )
+                    break
+
+    # Before the archive below, which on this path is what the cancellation cuts off.
+    if hard_killed and not info.is_local_run:
+        print_timeout_diagnostics(os.environ)
 
     # Collect logs before re-run
     attached_files = []
+    # Leaf-OOM rows the scan below reports, so the second scan after the `/init` work can tell a
+    # new breach from one it is merely seeing again.
+    reported_leaf_ooms: Set[str] = set()
     if not info.is_local_run:
         failed_suits = []
         # Collect docker compose configs used in tests
@@ -1319,21 +2026,47 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 if log_file.is_file():
                     failed_tests_files.append(str(log_file))
 
-        if failed_suits:
-            attached_files.append(
-                Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
+        # A contained OOM leaves no failing `*.py` row to key on: `_mark_infrastructure_errors`
+        # relabels the killed container's `Connection reset by peer` to the successful `SKIPPED`.
+        _, leaf_breached = leaf_oom_report(os.environ, b"")
+        if failed_suits or leaf_breached:
+            # Bounded and non-fatal only on the timed-out path: elsewhere the archive has the
+            # time it needs, and failing to produce it is a real error.
+            archive_deadline = (
+                time.monotonic() + TIMED_OUT_ARCHIVE_TIMEOUT if hard_killed else None
             )
-            attached_files.append(
-                Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
-            )
-            if Path("./ci/tmp/docker-in-docker.log").exists():
-                attached_files.append("./ci/tmp/docker-in-docker.log")
+            for files, name in (
+                (failed_tests_files, "logs.tar.gz"),
+                (config_files, "configs.tar.gz"),
+            ):
+                # One deadline for all of them, so two bounds cannot sum past the window. A
+                # deadline already spent leaves nothing to archive with, hence the floor of 1.
+                remaining = (
+                    max(int(archive_deadline - time.monotonic()), 1)
+                    if archive_deadline
+                    else None
+                )
+                archive = Utils.compress_files_gz(
+                    files,
+                    f"{temp_path}/{name}",
+                    timeout=remaining,
+                    strict=not hard_killed,
+                )
+                if archive:
+                    attached_files.append(archive)
+                else:
+                    print(
+                        f"WARNING: could not archive {name} within {remaining}s; the "
+                        "diagnostics printed above are what remains"
+                    )
+            if Path(DOCKER_IN_DOCKER_LOG).exists():
+                attached_files.append(DOCKER_IN_DOCKER_LOG)
 
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
-        test_result_retries, _ = run_pytest_and_collect_results(
+        test_result_retries, _, _ = run_pytest_and_collect_results(
             command=f"{quote_tests(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
@@ -1351,38 +2084,72 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Remove iptables rule added in tests
     Shell.check("sudo iptables -D DOCKER-USER 1 ||:", verbose=True)
 
+    # The leaf counters read this container's own cgroup, so they work on every run; only the
+    # host-wide dmesg scan needs a CI host. An empty dmesg leaves the counters as the sole source,
+    # which is what a local run gets. Without it a contained kill is invisible there: the killed
+    # container's client raises `Connection reset by peer`, `_mark_infrastructure_errors` relabels
+    # that `SKIPPED`, and `SKIPPED` is a successful status.
+    dmesg = b""
     if not info.is_local_run:
         print("Dumping dmesg")
-        Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True, strict=True)
-        with open("./ci/tmp/dmesg.log", "rb") as dmesg:
-            dmesg = dmesg.read()
-            if (
-                b"Out of memory: Killed process" in dmesg
-                or b"oom_reaper: reaped process" in dmesg
-                or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
-            ):
-                if is_bugfix_validation:
-                    # A host OOM is an infrastructure/resource failure, not bug
-                    # reproduction. Report it as `ERROR` and set `has_error` so
-                    # the status inversion below is skipped (same as `Timeout`),
-                    # otherwise the inverted `FAIL` would flip the job to green.
-                    test_results.append(
-                        Result(
-                            name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.ERROR
-                        )
-                    )
-                    has_error = True
-                    error_info.append(
-                        "OOM in dmesg - infrastructure/resource failure, "
-                        "not bug reproduction"
-                    )
-                else:
-                    test_results.append(
-                        Result(
-                            name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.FAIL
-                        )
-                    )
-                attached_files.append("./ci/tmp/dmesg.log")
+        # Not `strict`: raising here would skip the report this dump feeds, so a run whose dmesg
+        # is unreadable would lose the counter-based reports too, which do not need dmesg at all.
+        if Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True):
+            with open("./ci/tmp/dmesg.log", "rb") as dmesg_file:
+                dmesg = dmesg_file.read()
+        else:
+            print(
+                "WARNING: could not dump dmesg; leaf OOMs will be reported from the counters only"
+            )
+
+    # `ERROR` plus `has_error` matches the existing OOM treatment on every path, not just
+    # bugfix validation - a resource kill is never a test verdict, and the `ERROR` keeps the
+    # status inversion below from flipping the job green.
+    leaf_scoped_dmesg = dmesg if dmesg_cleared else b""
+    leaf_results, attach_dmesg = leaf_oom_report(os.environ, leaf_scoped_dmesg)
+    for leaf_result in leaf_results:
+        test_results.append(leaf_result)
+        reported_leaf_ooms.add(leaf_result.name)
+        has_error = True
+        error_info.append(
+            f"{leaf_result.name} - infrastructure/resource failure, "
+            "not bug reproduction"
+        )
+
+    if not info.is_local_run:
+        host_oom_in_dmesg = any(
+            pattern in dmesg for pattern in HOST_OOM_DMESG_PATTERNS
+        )
+        if host_oom_in_dmesg:
+            # Attached whichever run the kill belongs to: reading an unattributable dump is
+            # useful, and only the verdict below needs a buffer holding this run alone.
+            attach_dmesg = True
+        if host_oom_in_dmesg and not dmesg_cleared:
+            print(
+                "WARNING: dmesg records a host OOM but the buffer was not cleared for this "
+                "run, so it may be a previous job's; not reporting it as this job's failure"
+            )
+        if host_oom_in_dmesg and dmesg_cleared:
+            if is_bugfix_validation:
+                # A host OOM is an infrastructure/resource failure, not bug
+                # reproduction. Report it as `ERROR` and set `has_error` so
+                # the status inversion below is skipped (same as `Timeout`),
+                # otherwise the inverted `FAIL` would flip the job to green.
+                test_results.append(
+                    Result(name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.ERROR)
+                )
+                has_error = True
+                error_info.append(
+                    "OOM in dmesg - infrastructure/resource failure, "
+                    "not bug reproduction"
+                )
+            else:
+                test_results.append(
+                    Result(name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.FAIL)
+                )
+
+        if attach_dmesg:
+            attached_files.append("./ci/tmp/dmesg.log")
 
     # For targeted, flaky checks, and bugfix validation, the synthetic "Timeout"
     # result must not be propagated as a top-level `FAIL`: for targeted checks a
@@ -1453,25 +2220,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
         files=attached_files,
     )
 
+    # Snapshot the run's health before the blocks below launder `has_error`;
+    # a timed-out or errored run must publish no coverage profile.
+    coverage_run_complete = not timed_out and not has_error
+
     if is_llvm_coverage:
         assert (
             is_bugfix_validation is False
         ), "LLVM coverage with bugfix validation is not supported"
-        has_failure = False
-        for r in R.results:
-            if r.status == Result.Status.FAIL:
-                if r.has_label(Result.Label.OK_ON_RETRY):
-                    # Remove label and set to OK
-                    r.remove_label(Result.Label.OK_ON_RETRY)
-                    r.status = Result.Status.OK
-                else:
-                    has_failure = True
-        if has_failure:
-            R.set_failed()
-            R.set_info("Some tests failed during LLVM coverage run")
-        else:
-            R.set_success()
-            has_error = False
+        has_error = finalize_llvm_coverage_status(R, has_error)
 
     # Capture whether this run saw any infrastructure problems BEFORE the
     # clearing block below resets `has_error`. If the answer is yes, the
@@ -1586,19 +2343,64 @@ tar -czf ./ci/tmp/logs.tar.gz \
             "(process exit code still reflects the actual job status)"
         )
         force_ok_exit = True
+    lost_coverage_artifact = False
     if is_llvm_coverage and llvm_profdata_cmd:
         print("Collecting and merging LLVM coverage files...")
 
         # Merge all profraw files into final profdata file
-        merged_profdata = merge_profraw_files(llvm_profdata_cmd, job_params)
+        merged_profdata = merge_profraw_files(
+            llvm_profdata_cmd, run_complete=coverage_run_complete
+        )
 
         # Attach profdata file to the result report so it is uploaded
         # unconditionally (even when tests fail) and visible in the CI report.
         if merged_profdata and os.path.exists(merged_profdata):
             R.files.append(merged_profdata)
+        else:
+            lost_coverage_artifact = True
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+
+    # After the last `/init` work, so the peaks cover the coverage merge too.
+    print_leaf_peak_usage(os.environ)
+
+    # The merge above is the last `/init` work and is not raised on failure, so a leaf the cap
+    # killed there would reach `complete_job` unreported. Re-dump dmesg: a kill this late is only
+    # in a fresh read, while the counters this also rereads are cumulative. As with the first scan,
+    # the counters work on every run and only the dmesg dump needs a CI host.
+    late_dmesg = b""
+    # Whether this run has a dmesg it can attribute a leaf with, which an empty buffer does not
+    # answer: a successful dump can legitimately be empty, and the file only exists on this path.
+    late_dmesg_dumped = False
+    if not info.is_local_run and dmesg_cleared:
+        # Read only what this re-dump wrote: a surviving earlier file would report a kill
+        # during the merge as absent.
+        if Shell.check(f"dmesg -T > {LATE_DMESG_LOG}", verbose=True):
+            late_dmesg_dumped = True
+            with open(LATE_DMESG_LOG, "rb") as late_dmesg_file:
+                late_dmesg = late_dmesg_file.read()
+        else:
+            print(
+                "WARNING: could not re-dump dmesg after the coverage merge; a leaf killed there "
+                "is only reportable from the counters"
+            )
+    for meaning in dind_unreportable_ooms(os.environ, late_dmesg_dumped):
+        print(
+            f"WARNING: {meaning} cannot be detected on this run (cgroup v1 charges the kill to "
+            "the victim's own cgroup, and no dmesg is available), so a green result does not "
+            "rule it out"
+        )
+    late_breach = report_late_leaf_ooms(
+        R,
+        os.environ,
+        late_dmesg,
+        reported_leaf_ooms,
+        lost_coverage_artifact=lost_coverage_artifact,
+    )
+    # Only on the path that produced the file.
+    if late_breach and late_dmesg_dumped and LATE_DMESG_LOG not in R.files:
+        R.files.append(LATE_DMESG_LOG)
 
     report_rabbitmq_recreations(R)
 

@@ -20,6 +20,7 @@
 #include <Databases/registerDatabases.h>
 #include <Databases/DatabaseURL.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
@@ -45,6 +46,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -63,6 +65,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
+#include <Parsers/registerStatements.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
@@ -118,6 +121,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
+    extern const SettingsString default_format;
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsBool implicit_select;
@@ -139,6 +143,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
@@ -452,6 +457,15 @@ void LocalServer::initialize(Poco::Util::Application & self)
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
+    /// Zero means the number of CPU cores.
+    const size_t shutdown_concurrency = server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        ? server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        : getNumberOfCPUCoresToUse();
+    getDatabaseCatalogShutdownTablesThreadPool().initialize(
+        shutdown_concurrency,
+        0, // Threads are only needed during server shutdown.
+        shutdown_concurrency);
+
     getMergeTreePrefixesDeserializationThreadPool().initialize(
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
@@ -472,11 +486,35 @@ DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & d
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (!system_database)
     {
-        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
         system_database = std::make_shared<DatabaseMemory>(database_name, context);
         DatabaseCatalog::instance().attachDatabase(database_name, system_database);
     }
     return system_database;
+}
+
+void deferDatabaseTables(IDatabase & database, std::function<void(IDatabase &)> populate)
+{
+    dynamic_cast<DatabaseWithOwnTablesBase &>(database).setDeferredPopulation(std::move(populate));
+}
+
+void createMemoryDatabaseWithDeferredTables(ContextPtr context, const String & database_name, std::function<void(IDatabase &)> populate)
+{
+    deferDatabaseTables(*createMemoryDatabaseIfNotExists(context, database_name), std::move(populate));
+}
+
+void attachRemainingSystemTables(ContextPtr context, IDatabase & system_database)
+{
+    attachSystemTablesServerExceptOne(context, system_database, false, false);
+}
+
+void deferSystemDatabaseTables(ContextPtr context, IDatabase & system_database)
+{
+    validateSystemUserQueryLog(context, system_database);
+
+    deferDatabaseTables(system_database,
+        [context](IDatabase & database) { attachRemainingSystemTables(context, database); });
+
+    attachSystemTableOne(context, system_database);
 }
 
 DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
@@ -808,28 +846,35 @@ void LocalServer::startServers(const ServerType & server_type)
             if (server_type.shouldStart(ServerType::Type::HTTP))
             {
                 const char * port_name = "http_port";
-                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                /// Anything the callback throws is reported as a listener bind failure, and only logged
+                /// when `listen_try` is set, so the handler configuration is parsed before it. The port
+                /// check matches the early return in `createServer`.
+                if (!config.getString(port_name, "").empty())
                 {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
-                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    auto handler_factory = createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory");
+                    if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                    {
+                        Poco::Net::ServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
 
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::make_shared<HTTPContext>(global_context),
-                            createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory"),
-                            *server_pool,
-                            socket,
-                            http_params,
-                            /* connection_filter= */ nullptr,
-                            ProfileEvents::InterfaceHTTPReceiveBytes,
-                            ProfileEvents::InterfaceHTTPSendBytes));
-                }, &logger()))
-                    ports_to_register.emplace_back(port_name, servers.back().portNumber());
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            "http://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                std::make_shared<HTTPContext>(global_context),
+                                handler_factory,
+                                *server_pool,
+                                socket,
+                                http_params,
+                                /* connection_filter= */ nullptr,
+                                ProfileEvents::InterfaceHTTPReceiveBytes,
+                                ProfileEvents::InterfaceHTTPSendBytes));
+                    }, &logger()))
+                        ports_to_register.emplace_back(port_name, servers.back().portNumber());
+                }
             }
         }
 
@@ -841,6 +886,13 @@ void LocalServer::startServers(const ServerType & server_type)
         if (server_type.shouldStart(ServerType::Type::HTTP) && !has_active_listener("http_port"))
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Failed to start HTTP listener — check listen_host and http_port configuration");
+
+        /// While serving connections this process must log and continue like `clickhouse-server`: a
+        /// handler throws on client behavior it does not control, and terminating would let one client
+        /// end the process. Set before any accept thread starts, and never restored, since a handler
+        /// can still be draining after `stop`.
+        static ServerErrorHandler listener_error_handler;
+        Poco::ErrorHandler::set(&listener_error_handler);
 
         /// Phase 2: the whole requested set is bound and verified. Only now start the accept threads,
         /// so no listener admits a connection until the entire set is known-good. `createServer` no
@@ -894,8 +946,9 @@ void LocalServer::cleanup()
     {
         connection.reset();
 
-        /// Signal cancellation so that active handlers (e.g. TCPHandler)
-        /// exit their receive loops promptly instead of waiting for socket timeout.
+        /// Signal cancellation: together with stopping the servers below, this makes active
+        /// handlers (e.g. TCPHandler) exit their receive loops promptly instead of waiting
+        /// for socket timeout.
         is_cancelled = true;
 
         /// Stop protocol servers before shutting down context.
@@ -1196,6 +1249,7 @@ try
     }
 
     registerInterpreters();
+    registerStatements();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
@@ -1670,6 +1724,8 @@ void LocalServer::processConfig()
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(getClientConfiguration());
 
+    seedListenerDefaultFormat();
+
     /// Command-line parameters can override settings from the default profile.
     ///
     /// They must land on the *global* context, not only on `client_context`: `LocalConnection`
@@ -1694,8 +1750,10 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("path"))
     {
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
 
         /// Attaching "automatic" tables in the system database is done after attaching the system database.
         /// Consequently, it depends on whether we load it from the path.
@@ -1717,7 +1775,7 @@ void LocalServer::processConfig()
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false, false);
+                deferSystemDatabaseTables(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE));
                 attached_system_database = true;
             }
 
@@ -1732,16 +1790,18 @@ void LocalServer::processConfig()
         }
 
         if (!attached_system_database)
-            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
+            deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
 
         /// Create background tasks necessary for DDL operations like DROP VIEW SYNC,
         /// even in temporary mode (--path not set) without persistent storage
@@ -1803,27 +1863,39 @@ void LocalServer::processConfig()
     /// cross-origin request is rejected by the browser - including the web UI opened from a `file://`
     /// URL, whose origin is `null`. A configuration file with its own `http_options_response` section
     /// replaces these defaults entirely.
+    Poco::Util::AbstractConfiguration::Keys http_options_response_keys;
+    getClientConfiguration().keys("http_options_response", http_options_response_keys);
     if (!getClientConfiguration().has("http_options_response"))
     {
-        static constexpr std::pair<const char *, const char *> default_http_options_response[]
+        if (http_options_response_keys.empty())
         {
-            {"Access-Control-Allow-Origin", "*"},
-            {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
-            {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
-            {"Access-Control-Max-Age", "86400"},
-        };
+            static constexpr std::pair<const char *, const char *> default_http_options_response[]
+            {
+                {"Access-Control-Allow-Origin", "*"},
+                {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
+                {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
+                {"Access-Control-Max-Age", "86400"},
+            };
 
-        /// The configuration layer that receives these keys is a flat key-value map with no notion of a
-        /// parent node, so the section itself has to be set explicitly - otherwise `config.has` does not
-        /// see it and the headers are never applied.
-        getClientConfiguration().setString("http_options_response", "");
+            /// The configuration layer that receives these keys is a flat key-value map with no notion of a
+            /// parent node, so the section itself has to be set explicitly - otherwise `config.has` does not
+            /// see it and the headers are never applied.
+            getClientConfiguration().setString("http_options_response", "");
 
-        for (size_t index = 0; index < std::size(default_http_options_response); ++index)
+            for (size_t index = 0; index < std::size(default_http_options_response); ++index)
+            {
+                const auto & [name, value] = default_http_options_response[index];
+                const String key = fmt::format("http_options_response.header[{}]", index);
+                getClientConfiguration().setString(key + ".name", name);
+                getClientConfiguration().setString(key + ".value", value);
+            }
+        }
+        else
         {
-            const auto & [name, value] = default_http_options_response[index];
-            const String key = fmt::format("http_options_response.header[{}]", index);
-            getClientConfiguration().setString(key + ".name", name);
-            getClientConfiguration().setString(key + ".value", value);
+            /// `argsToConfig` stores post-`--` arguments as flat keys, so a supplied header has children
+            /// but not its parent. Materialize the parent for the HTTP handler without overwriting the
+            /// supplied headers.
+            getClientConfiguration().setString("http_options_response", "");
         }
     }
 
@@ -1927,17 +1999,38 @@ void LocalServer::makeFormatOptionsPrivateToTheClient()
     /// overrides: a remote client asking for `?default_format=JSON` would still be answered in the
     /// local CLI's format. So keep them on `client_context` only. The local display default is still
     /// offered to those sessions, but only through the weaker `default_format` fallback that
-    /// `applyCmdOptions` sets.
+    /// `seedListenerDefaultFormat` sets.
     ///
     /// Only the values this client itself chose are cleared; a `format` inherited from a profile is
     /// left alone, because there it is a deliberate server-side default.
     for (std::string_view name : {"format", "input_format", "output_format"})
         if (cmd_settings->isChanged(name))
             global_context->setSetting(name, String{});
+
+    /// The inverse holds for the `default_format` setting: `seedListenerDefaultFormat` seeds it on
+    /// `global_context` as the fallback format of the sessions of the embedded protocol listeners,
+    /// where it must match a real `clickhouse-server` (`TabSeparated`). `client_context` inherited
+    /// the seed when it was copied from `global_context`, but this client renders results from its
+    /// own `ClientBase::default_output_format` (`PrettyCompact` on a terminal), and a non-empty
+    /// `default_format` setting overrides that display default in the per-query format resolution.
+    /// Reset the seed back to the default (an empty value with the `changed` flag clear - the
+    /// session must not look like the user chose this format, e.g. in `system.settings`), or
+    /// interactive `clickhouse-local` prints `TSV` instead of `PrettyCompact`. A later
+    /// `SET default_format = ...` (or an in-query `SETTINGS` clause) lands on `client_context`
+    /// and keeps working.
+    ///
+    /// Only the synthetic seed is reset, and whether it exists at all is decided by provenance, not
+    /// by the value: `seedListenerDefaultFormat` seeds nothing when the command line or the default
+    /// profile already provided a `default_format`. Such a value is a deliberate user default and
+    /// keeps its role in the per-query format resolution - even when it happens to be the same
+    /// format the seed would have used - mirroring how the `database` and `format` settings preserve
+    /// profile-provided values above.
+    if (listener_default_format_is_seeded)
+        client_context->resetSettingsToDefaultValue({"default_format"});
 }
 
 
-void LocalServer::applyCmdOptions(ContextMutablePtr context)
+void LocalServer::seedListenerDefaultFormat()
 {
     /// Set the local display default as the first-class `default_format` *setting*, not the legacy
     /// `Context::default_format` field. `Context::getDefaultFormat` consults the legacy field before
@@ -1956,8 +2049,22 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
     /// (for example, the version query used during the connection handshake). The interactive
     /// terminal default is only for rendering query results and is applied separately via
     /// `ClientBase::default_output_format`.
-    context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
+    ///
+    /// The seed is only a fallback for the embedded listeners, so it must not shadow a real user
+    /// default: it is applied after `setDefaultProfiles` and only when neither the command line nor
+    /// the default profile has set `default_format` already. That way the provenance of the value is
+    /// known without comparing it to anything - see `makeFormatOptionsPrivateToTheClient`, which
+    /// takes the seed (and only the seed) back out of `client_context`.
+    if (global_context->getSettingsRef()[Setting::default_format].changed)
+        return;
 
+    global_context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
+    listener_default_format_is_seeded = true;
+}
+
+
+void LocalServer::applyCmdOptions(ContextMutablePtr context)
+{
     /// This runs before `setDefaultProfiles`, which snapshots the context for the separate Buffer-table
     /// context, so the command-line settings have to be in place already. They are applied a second
     /// time after the profiles are loaded, where they get to override them.
