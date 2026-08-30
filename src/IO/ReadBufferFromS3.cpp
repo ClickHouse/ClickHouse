@@ -66,6 +66,9 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -362,8 +365,17 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
-    /// Cancellation is checked by callers only after this function classifies the caught exception
-    /// as retryable. This preserves a real non-retryable S3 error if cancellation races with unwinding.
+    const auto exception_code = getCurrentExceptionCode();
+
+    /// Explicit query cancellation is not an S3 read error and must not be retried. In particular,
+    /// `sendRequest` can throw it before issuing a request, so do not report it in S3 error telemetry.
+    if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED
+        || exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+        || exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
+        return false;
+
+    /// Callers check mutable query cancellation state only after this function classifies the caught
+    /// exception as retryable. This preserves a real non-retryable S3 error if cancellation races with unwinding.
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
     LOG_DEBUG(
@@ -395,7 +407,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
     }
 
     /// It doesn't make sense to retry allocator errors
-    if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+    if (exception_code == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
     {
         tryLogCurrentException(log);
         return false;
@@ -403,7 +415,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
 
     /// The object was overwritten in place; re-fetching the same range would just return the new
     /// generation again. Fail fast and let the caller retry the whole read with fresh metadata.
-    if (getCurrentExceptionCode() == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+    if (exception_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
         return false;
 
     return true;

@@ -239,10 +239,11 @@ def test_prefetch_stops_after_max_execution_time(cluster):
     node.query("SYSTEM FLUSH LOGS")
     assert (
         node.query(
-            "SELECT sum(ProfileEvents['S3GetObject']) FROM system.query_log "
+            "SELECT sum(ProfileEvents['S3GetObject']), "
+            "sum(ProfileEvents['ReadBufferFromS3RequestsErrors']) FROM system.query_log "
             f"WHERE query_id='{query_id}' AND type!='QueryStart'"
         ).strip()
-        == "0"
+        == "0\t0"
     )
     assert node.query(f"SELECT sum(id) FROM {table}").strip() == str(sum(range(4096)))
 
