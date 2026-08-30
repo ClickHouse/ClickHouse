@@ -64,6 +64,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"min_window_frame_rows_for_aggregate_tree", std::numeric_limits<UInt64>::max(), 2048, "New setting: the minimum sliding window frame size (in rows) to switch from re-aggregating the whole frame for every row to the incremental algorithm based on a tree of partial aggregate states. previous_value is the maximum UInt64 so `compatibility` with versions before 26.9 effectively disables the incremental algorithm and keeps the pre-existing recompute path (whose floating-point regrouping and argMin/argMax tie choices differ)."},
+            {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -1454,6 +1455,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
+            {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
+            {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
+            {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
