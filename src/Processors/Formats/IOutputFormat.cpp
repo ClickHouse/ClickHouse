@@ -117,6 +117,9 @@ void IOutputFormat::writeFramingPayloadBoundary(FramedPacketKind kind)
     /// so the `out.next()` inside `flushImpl` is a cheap no-op on a string buffer.
     flushImpl();
     framing->onPayload(kind);
+    /// The boundary restarted the payload buffer, so any format-owned buffer that aliases its
+    /// memory has to be re-attached before the format writes the next row (see the declaration).
+    reattachBuffers();
 }
 
 void IOutputFormat::work()

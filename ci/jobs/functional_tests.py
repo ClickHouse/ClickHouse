@@ -4,6 +4,7 @@ import os
 import random
 import subprocess
 import zlib
+from collections.abc import Mapping
 from pathlib import Path
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
@@ -25,6 +26,23 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
+# Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
+# server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and
+# `C_STACKTRACES_LOG` in tests/clickhouse-test.
+STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
+
+
+def collect_stacktrace_logs(cwd):
+    """Existing stacktrace dumps under `cwd`, for attaching to the job result.
+
+    `clickhouse-test` writes them relative to its own cwd, which is the repo
+    root for this job (the test command has no `cd`, unlike fast_test's). They
+    exist only after an abort, so a green run yields nothing.
+    """
+    return [
+        str(Path(cwd) / name) for name in STACKTRACE_LOGS if (Path(cwd) / name).exists()
+    ]
+
 
 def stateless_memory_limit(source):
     """Per-test cgroup memory limit (`clickhouse-test --memory-limit`) for a run
@@ -37,6 +55,32 @@ def stateless_memory_limit(source):
     (and the private `amd_ubsan` lane, an ASan+UBSan binary) lack that substring.
     """
     return 10 * 2**30 if any(san in source for san in SANITIZERS) else 5 * 2**30
+
+
+# Fraction of the job budget one stateful-prep statement may take. Derived from
+# the budget rather than fixed so it follows a retuned job timeout.
+STATEFUL_PREP_STEP_TIMEOUT_RATIO = 0.35
+
+
+def stateful_prep_step_timeout(info):
+    """Per-statement bound for `prepare_stateful_data`, in seconds.
+
+    None on a local run, which leaves the prep unbounded. `JOB_CONFIG` survives
+    serialization as a plain dict, so it is read as a mapping.
+    """
+    if info.is_local_run:
+        return None
+    job_config = info.job_config
+    job_timeout = (
+        job_config.get("timeout")
+        if isinstance(job_config, Mapping)
+        else getattr(job_config, "timeout", None)
+    )
+    if not isinstance(job_timeout, (int, float)) or job_timeout <= 0:
+        raise RuntimeError(
+            f"Cannot derive the stateful prep bound: job timeout is [{job_timeout!r}]"
+        )
+    return int(job_timeout * STATEFUL_PREP_STEP_TIMEOUT_RATIO)
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -155,7 +199,6 @@ def run_tests(
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
-    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -1012,6 +1055,7 @@ def main():
                     build_type=(
                         build_types[0] if is_bugfix_validation else args.options
                     ),
+                    step_timeout=stateful_prep_step_timeout(info),
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -1039,6 +1083,13 @@ def main():
         for note in setup_notes:
             results[-1].set_info(note)
         res = results[-1].is_ok()
+
+    # `clickhouse-test` appends and `git clean -ffd` keeps these gitignored
+    # paths. Outside the `res` guard below: a setup failure skips the tests but
+    # still reaches the attach, uploading a previous job's dump as this run's.
+    if JobStages.TEST in stages:
+        for stale in collect_stacktrace_logs(Utils.cwd()):
+            Path(stale).unlink()
 
     test_result = None
     if res and JobStages.TEST in stages:
@@ -1232,6 +1283,7 @@ def main():
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
                             build_type=bugfix_bt,
+                            step_timeout=stateful_prep_step_timeout(info),
                         ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic
@@ -1522,12 +1574,10 @@ def main():
     if test_result:
         test_result.sort()
 
-    # On a test timeout or a failed hung check the full server stacktrace
-    # dumps land in the working directory (stdout keeps a trimmed preview).
-    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
-        stacktrace_log_path = Path(stacktrace_log)
-        if stacktrace_log_path.exists():
-            debug_files.append(stacktrace_log_path)
+    # Attach the abort-time stacktrace dumps: they are outside the server log
+    # dir `prepare_logs` globs, and stdout keeps only a trimmed preview. Outside
+    # the COLLECT_LOGS stage, which per-test-coverage jobs remove entirely.
+    debug_files += collect_stacktrace_logs(Utils.cwd())
 
     R = Result.create_from(
         results=results,
