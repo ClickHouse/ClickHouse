@@ -32,7 +32,6 @@ CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
 function check_access_both()
 {
     $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
-        SET allow_experimental_ai_functions = 1;
         SELECT aiGenerate('hi', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed('hi', 'test-model', map('credentials', '$collection_name')) FORMAT Null;
@@ -58,7 +57,6 @@ function check_access_both()
 function check_access_both_default()
 {
     $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
-        SET allow_experimental_ai_functions = 1;
         SET ai_function_text_default_credentials = '$collection_name';
         SET ai_function_embedding_default_credentials = '$collection_name';
         SELECT aiGenerate('hi') FORMAT Null;

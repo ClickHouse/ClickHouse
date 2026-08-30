@@ -21,6 +21,7 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/TokenizerFactory.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -110,6 +111,8 @@ void TextSearchQuery::initializeHash()
                 hash_state.update(required_substring);
                 hash_state.update(is_trivial);
                 hash_state.update(required_substring_is_prefix);
+                /// Without it `^lit` and `^lit$` would hash the same, as neither compiles a re2 pattern.
+                hash_state.update(pattern.getMatchKind());
             }
         }
     }
@@ -259,6 +262,25 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
+bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
+{
+    /// The third argument of hasToken is a start position, not a tokenizer.
+    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
+        return false;
+
+    Field const_value;
+    DataTypePtr const_type;
+
+    if (!node.tryGetConstant(const_value, const_type) || const_value.getType() != Field::Types::String)
+        return false;
+
+    auto argument_tokenizer = TokenizerFactory::instance().get(const_value.safeGet<String>());
+    if (argument_tokenizer->getDescription() != tokenizer->getDescription())
+        return false;
+
+    return true;
+}
+
 TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 {
     const auto & settings = getContext()->getSettingsRef();
@@ -326,6 +348,18 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
         return nullptr;
 
     return rpn_element.text_search_queries.front();
+}
+
+bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() != 3)
+        return true;
+
+    RPNBuilderTreeContext rpn_tree_context(getContext());
+    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    const auto function_node = rpn_node.toFunctionNode();
+
+    return tokenizerArgumentMatchesIndex(node.function_base->getName(), function_node.getArgumentAt(2));
 }
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
@@ -642,8 +676,17 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
 
-        if (function_arguments_size != 2)
+        if (function_arguments_size == 3)
+        {
+            /// The index path tokenizes needles with the index tokenizer, so it can answer the
+            /// predicate only when the tokenizer argument denotes that same tokenizer.
+            if (!tokenizerArgumentMatchesIndex(function_name, function.getArgumentAt(2)))
+                return false;
+        }
+        else if (function_arguments_size != 2)
+        {
             return false;
+        }
 
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
