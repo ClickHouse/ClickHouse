@@ -2455,6 +2455,45 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
                 }
                 column_dynamic->setStatistics(rewritten);
             }
+
+            /// The statistics rewrite above only governs what a later promotion rebuilds. A value
+            /// sitting in the shared variant still carries the type name it was written under, in
+            /// the header ahead of its bytes, and that name outlives the policy: it occupies a
+            /// `max_dynamic_types` slot, so the next widening promotes it back out and the retired
+            /// name absorbs values written after the retirement, leaving the current type unable to
+            /// read them. Rewrite the headers too. Only the matcher and prefix change, and neither
+            /// is encoded in the value, so the bytes after the header are copied through untouched.
+            auto & shared_variant = column_dynamic->getSharedVariant();
+            if (!shared_variant.empty())
+            {
+                ColumnString::Chars rewritten_chars;
+                IColumn::Offsets rewritten_offsets;
+                rewritten_offsets.reserve(shared_variant.size());
+                for (size_t i = 0; i != shared_variant.size(); ++i)
+                {
+                    auto row = shared_variant.getDataAt(i);
+                    ReadBufferFromMemory buf(row);
+                    /// A header this column wrote itself is always decodable.
+                    auto value_type = decodeDataType(buf);
+                    size_t header_size = buf.count();
+                    if (containsJSONObjectType(*value_type))
+                    {
+                        WriteBufferFromVector<ColumnString::Chars> header_buf(rewritten_chars, AppendModeTag());
+                        encodeDataType(
+                            replaceNestedJSONObjectType(value_type, object_type->getTypeOfNestedObjects(path + ".")),
+                            header_buf);
+                    }
+                    else
+                    {
+                        rewritten_chars.insert(row.data(), row.data() + header_size);
+                    }
+
+                    rewritten_chars.insert(row.data() + header_size, row.data() + row.size());
+                    rewritten_offsets.push_back(rewritten_chars.size());
+                }
+                shared_variant.getChars().swap(rewritten_chars);
+                shared_variant.getOffsets().swap(rewritten_offsets);
+            }
         }
         return;
     }
