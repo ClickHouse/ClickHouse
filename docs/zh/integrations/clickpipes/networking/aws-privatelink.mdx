@@ -165,7 +165,7 @@ ClickPipes 反向专用终结点可配置为使用以下任一种 AWS PrivateLin
 </Steps>
 
 <div id="msk-multi-vpc">
-  ### MSK multi-VPC connectivity
+  ### MSK 多 VPC 连接
 </div>
 
 [Multi-VPC connectivity](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html) 是 AWS MSK 的内置功能，可将多个 VPC 连接到同一个 MSK 集群。
@@ -176,7 +176,7 @@ ClickPipes 反向专用终结点可配置为使用以下任一种 AWS PrivateLin
 有关详细信息，请参阅[入门](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html)指南。
 
 <Info>
-  更新 MSK 集群策略，并将 `072088201116` 添加到允许的主体列表中。
+  ClickPipes 拥有客户端 VPC，并创建托管 VPC 连接。要建立网络连接，请在 MSK 集群上启用多 VPC 私有连接，并在集群策略中授权 ClickPipes AWS 账户。
   有关详细信息，请参阅 AWS 的[附加集群策略](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html)指南。
 </Info>
 

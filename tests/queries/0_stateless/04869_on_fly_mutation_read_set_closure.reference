@@ -1,0 +1,16 @@
+delete predicate over a materialized chain
+[]
+[]
+[]
+update expression over a materialized chain
+22
+22
+subcolumn identifiers in commands
+[1]
+[(1,(10,0))]
+[(1,(10,0))]
+[1,2]
+[(1,(100,0)),(2,(1000,0))]
+[(1,(100,0)),(2,(1000,0))]
+nested column in a predicate
+[11]

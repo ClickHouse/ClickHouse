@@ -572,6 +572,25 @@ below the threshold)`.
 * `partition_key_only` — لا تُتتبَّع إلا أعمدة مفتاح التقسيم.
 * `with_block_number_offset` — أعمدة مفتاح التقسيم، بالإضافة إلى العمودين الافتراضيين المحفوظين `_block_number` و`_block_offset`. يتيح ذلك الاستبعاد على مستوى الجزء باستخدام هذين العمودين.
 
+<div id="patch_parts_version">
+  ## patch_parts_version
+</div>
+
+<SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "v2"},{"label": "إعداد جديد للتحكم في إصدار التسلسل على القرص لأجزاء التصحيح الناتجة عن التحديثات خفيفة الوزن. تواصل أوضاع التوافق الأقدم كتابة تصحيحات v1، التي تستطيع جميع النسخ المتماثلة في عنقود ذي إصدارات مختلطة قراءتها."}]}]} />
+
+إصدار التسلسل على القرص لأجزاء التصحيح الناتجة عن استعلامات UPDATE خفيفة الوزن.
+
+القيم الممكنة:
+
+* `v1` - التنسيق القديم: تحتوي أجزاء التصحيح على أعمدة النظام `_part, _part_offset` وتُفرز بحسب
+  `(_part, _part_offset)`. في أسوأ الحالات، يقتصر استخدام الذاكرة أثناء التطبيق على حجم جزء التصحيح بالكامل.
+* `v2` - تحتوي أجزاء التصحيح على أعمدة مفتاح الفرز للجدول الرئيسي وتُفرز بحسب
+  `(sorting_key_columns..., _block_number, _block_offset)`. يقتصر استخدام الذاكرة أثناء التطبيق على حجم أكبر مجموعة متتالية لها مفتاح فرز متطابق.
+
+تظل التصحيحات ذات التنسيق القديم المخزنة على القرص قابلة للقراءة بغض النظر عن هذا الإعداد.
+
 <div id="propagate_types_serialization_versions_to_nested_types">
   ## propagate_types_serialization_versions_to_nested_types
 </div>
