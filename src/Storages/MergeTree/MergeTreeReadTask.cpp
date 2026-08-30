@@ -196,6 +196,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
+    chassert(read_info->converted_columns.size() == read_info->task_columns.columns.size());
     chassert(read_info->converted_pre_columns.size() == read_info->task_columns.pre_columns.size());
     chassert(read_info->converted_patch_columns.size() == read_info->task_columns.patch_columns.size());
 

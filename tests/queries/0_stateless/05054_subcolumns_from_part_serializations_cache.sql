@@ -25,7 +25,7 @@ SETTINGS min_bytes_for_wide_part = 1000000000, ratio_of_defaults_for_sparse_seri
 INSERT INTO t_subcolumns_cache_wide SELECT
     number,
     if(number % 3 = 0, NULL, (toUInt8(number), toString(number))),
-    multiIf(number % 3 = 0, toUInt8(number)::Variant(UInt8, String, Array(UInt8)), number % 3 = 1, toString(number)::Variant(UInt8, String, Array(UInt8)), [toUInt8(number)]::Variant(UInt8, String, Array(UInt8))),
+    multiIf(number % 3 = 0, toUInt8(number)::Variant(UInt8, String, Array(UInt8)), number % 3 = 1, concat('s', toString(number))::Variant(UInt8, String, Array(UInt8)), [toUInt8(number)]::Variant(UInt8, String, Array(UInt8))),
     if(number % 10 = 0, number, 0),
     [if(number % 2 = 0, NULL, (toUInt8(number), if(number % 4 = 1, NULL, 'y'))), (1, 'z')],
     map('a', if(number % 2 = 0, NULL, toUInt32(number))),
