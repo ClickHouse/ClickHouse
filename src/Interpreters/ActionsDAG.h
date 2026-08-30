@@ -195,6 +195,10 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
+    /// Same as `addCast`, but the values that cannot be represented in the destination type exactly
+    /// are converted to NULL instead of being wrapped around, saturated or leading to an exception.
+    /// The result type is always Nullable, so `cast_type` must be allowed inside Nullable.
+    const Node & addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.

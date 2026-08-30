@@ -161,6 +161,23 @@ namespace
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
+/// Collapses runs of `/`, leaving `.` and `..` as written: redundant separators are the only
+/// part of a path's spelling that no filesystem lookup depends on. A `..` resolves against the
+/// target of a preceding symlink, not against that symlink's parent, so dropping one lexically
+/// can name a different file.
+std::string collapseRedundantSeparators(const std::string & path)
+{
+    std::string result;
+    result.reserve(path.size());
+    for (char c : path)
+    {
+        if (c == '/' && !result.empty() && result.back() == '/')
+            continue;
+        result.push_back(c);
+    }
+    return result;
+}
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -187,12 +204,15 @@ void listFilesWithRegexpMatchingImpl(
     /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
     /// entry through both the zero-level branch and the recursive descent, so without this
     /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
+    /// The returned path is collapsed so that one file is named by one path whichever branch
+    /// matched it: the prefixes below can end up with a doubled separator, and
+    /// `fs::directory_iterator` preserves the spelling it is handed.
     auto add_matched_path = [&](const std::string & path, size_t bytes)
     {
         if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
         {
             total_bytes_to_read += bytes;
-            result.push_back(path);
+            result.push_back(collapseRedundantSeparators(path));
         }
     };
 
@@ -206,8 +226,9 @@ void listFilesWithRegexpMatchingImpl(
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
             (void)fs::canonical(path_for_ls + for_match);
-            fs::path absolute_path = fs::absolute(path_for_ls + for_match);
-            absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
+            /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
+            /// survive here: the check and the reader would name different files.
+            const fs::path absolute_path = fs::absolute(path_for_ls + for_match).lexically_normal();
             /// This exact-match branch is reached for suffixes without globs, including the
             /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
             /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
@@ -342,6 +363,32 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
     return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
+/// Splits `path` at its last `..`, resolves the head (up to and including that `..`) physically and
+/// appends the tail as written: a `..` resolves against the target of a preceding symlink, while a
+/// symlink in the tail must stay unresolved to stay reachable. `ec` is set only if resolving fails.
+fs::path resolveDotDotForContainmentCheck(const fs::path & path, std::error_code & ec)
+{
+    fs::path head;
+    fs::path tail;
+    for (const auto & component : path)
+    {
+        tail /= component;
+        if (component == "..")
+        {
+            head /= tail;
+            tail.clear();
+        }
+    }
+
+    if (head.empty())
+        return path;
+
+    head = fs::weakly_canonical(head, ec);
+    if (ec)
+        return {};
+    return tail.empty() ? head : head / tail;
+}
+
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 void checkCreationIsAllowed(
     ContextPtr context_global,
@@ -362,6 +409,22 @@ void checkCreationIsAllowed(
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
+}
+
+/// Use this instead of checkCreationIsAllowed for a path that can still carry a `..`.
+void checkCreationIsAllowedResolvingDotDot(
+    ContextPtr context_global,
+    const std::string & db_dir_path,
+    const std::string & path,
+    bool can_be_directory)
+{
+    std::error_code ec;
+    const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
+    if (ec)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot check whether file `{}` is inside `{}`: {}",
+            path, db_dir_path, ec.message());
+
+    checkCreationIsAllowed(context_global, db_dir_path, checked_path, can_be_directory);
 }
 
 /// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
@@ -440,7 +503,10 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
 
     for (const auto & path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
+    {
+        /// Brace expansion runs after the normalization above, so a matched path can still carry a `..`.
+        checkCreationIsAllowedResolvingDotDot(context, user_files_absolute_path, path, can_be_directory);
+    }
 
     return paths;
 }
@@ -1457,7 +1523,7 @@ String StorageFileSource::FilesIterator::next()
             return {};
 
         /// The read task may come from a client impersonating an initiator server, so validate the path.
-        checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
+        checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
 
         return task->path;
     }
@@ -1541,11 +1607,9 @@ void StorageFileSource::beforeDestroy()
                 String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
                 file_path.replace_filename(new_filename);
 
-                // Normalize new path
-                file_path = file_path.lexically_normal();
-
-                // Checking access rights
-                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), file_path, true);
+                // Checking access rights. The path is the one the rename will operate on, so a `..` in
+                // it must be resolved and not folded lexically.
+                checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), file_path.string(), true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
@@ -1593,6 +1657,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
     });
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    pipeline->disableProfileEventUpdate();
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
     return true;
 }
@@ -1714,6 +1779,7 @@ Chunk StorageFileSource::generate()
                 if (storage->format_name == "Distributed")
                 {
                     pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                    pipeline->disableProfileEventUpdate();
                     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                     continue;
                 }
@@ -1923,6 +1989,7 @@ Chunk StorageFileSource::generate()
             });
 
             pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+            pipeline->disableProfileEventUpdate();
             reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
             ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -2543,6 +2610,7 @@ public:
                 });
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                pipeline->disableProfileEventUpdate();
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
                 ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -2809,10 +2877,12 @@ public:
     {
         std::string filepath = partition_strategy->getPathForWrite(path, partition_id);
 
-        fs::create_directories(fs::path(filepath).parent_path());
-
+        /// A partition id is data-derived and may contain `..`, so both checks have to precede the
+        /// first filesystem side effect.
         validatePartitionKey(filepath, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
+        checkCreationIsAllowedResolvingDotDot(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
+
+        fs::create_directories(fs::path(filepath).parent_path());
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
@@ -3187,7 +3257,7 @@ SELECT * FROM file_engine_table
 
 ## Usage in ClickHouse-local {#usage-in-clickhouse-local}
 
-In [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension (`gz`, `br` or `xz`).
+In [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension. The supported values are `none` (no compression), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2`, and `snappy`. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 
 **Example:**
 

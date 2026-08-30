@@ -61,23 +61,23 @@ The trial includes:
 
 When the trial ends or the credits run out, convert to a paid organization through the [ClickHouse Cloud offer on Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
 
-## Copying data from OneLake {#copying-data-from-onelake}
+## Syncing data from OneLake {#syncing-data-from-onelake}
 
-The Copy & Sync flow is how OneLake tables get into ClickHouse:
+The Sync flow is how OneLake tables get into ClickHouse:
 
-1. Open your ClickHouse item and select **Copy & Sync**
-2. Pick a Lakehouse from your workspace
+1. Open your ClickHouse item and select **Sync**
+2. Select **Sync from OneLake** and pick a Lakehouse from your workspace
 3. Select the tables you want to accelerate
-4. Start copying a point-in-time snapshot of your data
+4. Select **Save and sync** to start a point-in-time sync of your data
 
 <Frame>
-  ![Copy & Sync configuration creating a new destination table with sorting key](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-copy-sync-table-selection.webp)
+  ![Sync configuration creating a new destination table with sorting key](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
 </Frame>
 
 You can create a destination table with inferred data types and default configuration based on the schema discovered in OneLake. If you'd prefer more control over the table definition, you can create a table ahead of time and use an existing table as the destination.
 
 <Frame>
-  ![Copy & Sync column mapping from a OneLake source table to an existing ClickHouse table](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-copy-sync-existing-table.webp)
+  ![Sync column mapping from a OneLake source table to an existing ClickHouse table](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
 </Frame>
 
 Sync status is shown per table. Once a table finishes, it is immediately queryable from the SQL console. Large tables sync in the background, so you can keep working while they load.
@@ -95,7 +95,7 @@ Each synced table is powered by a [ClickPipe](/integrations/clickpipes/home), th
 
 ### Cost {#cost}
 
-Copying data from OneLake to ClickHouse is free during the Microsoft Fabric public preview. Billing starts when the Fabric workload reaches general availability. Pricing details will be published when the workload reaches GA.
+Syncing data from OneLake to ClickHouse is free during the Microsoft Fabric public preview. Billing starts when the Fabric workload reaches general availability. Pricing details will be published when the workload reaches GA.
 
 ## SQL console and saved queries {#sql-console-and-saved-queries}
 
@@ -131,7 +131,7 @@ MCP access is opt-in per service and read-only. Enabling it exposes a governed e
 
 ### Open in ClickHouse Cloud {#open-in-clickhouse-cloud}
 
-Select **Open ClickHouse** to open the full ClickHouse Cloud console, signed in with your Microsoft identity. You can copy data into ClickHouse and run any SQL statements from the Fabric workload, but for any administrative tasks you'll need to enter the Cloud Console to manage the service.
+Select **Open in ClickHouse Cloud** to open the full ClickHouse Cloud console, signed in with your Microsoft identity. You can sync data into ClickHouse and run any SQL statements from the Fabric workload, but for any administrative tasks you'll need to enter the Cloud Console to manage the service.
 
 <Frame>
   ![ClickHouse Cloud console service settings reached from the workload](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
@@ -156,7 +156,7 @@ Service health, query performance, and resource usage are monitored from the Cli
 
 ### Monitoring ClickPipes {#monitoring-clickpipes}
 
-Each Copy & Sync from OneLake runs as a ClickPipe. Track copy progress, throughput, and errors on the [ClickPipes page](/integrations/clickpipes/monitoring) in the ClickHouse Cloud console.
+Each sync from OneLake runs as a ClickPipe. Track sync progress, throughput, and errors on the [ClickPipes page](/integrations/clickpipes/monitoring) in the ClickHouse Cloud console.
 
 ## Mapping to ClickHouse Cloud {#mapping-to-clickhouse-cloud}
 
@@ -200,7 +200,7 @@ In your Fabric workspace, select **+ New item** and select **Sample lakehouse** 
 ### Create a ClickHouse item and sync {#create-a-clickhouse-item-and-sync}
 
 1. Create a ClickHouse item in the same workspace, as described in [provisioning](#provisioning)
-2. Open **Copy & Sync**, pick your Lakehouse, and select the `publicholidays` table
+2. Open **Sync**, pick your Lakehouse, and select the `publicholidays` table
 3. Order by the columns you filter on most: `countryOrRegion, date`
 4. Start the sync and the data populates shortly. A table this size finishes in seconds
 
@@ -245,7 +245,7 @@ The ClickHouse workload is in public preview. The limitations below are the curr
 ### Data movement {#data-movement}
 
 * **Copies are point-in-time snapshots.** There is no scheduled or continuous replication yet. To refresh a table with the latest OneLake data, re-run the sync. Updates and deletes in the source table are not propagated to the ClickHouse copy.
-* **Lakehouse tables only.** Copy & Sync reads Delta tables from a Lakehouse in the same workspace. Other Fabric items (Warehouse, KQL databases, mirrored databases) are not yet supported as sources.
+* **Lakehouse tables only.** Sync reads tables from a Lakehouse in the same workspace. 
 * **No write-back to OneLake.** Data flows one way, from OneLake into ClickHouse. Writing query results back to OneLake is planned.
 
 ### Service management {#service-management}
@@ -256,7 +256,8 @@ The ClickHouse workload is in public preview. The limitations below are the curr
 
 ### Access and identity {#access-and-identity}
 
-* **Role changes apply on next open.** Your ClickHouse organization role is mapped from your Fabric workspace role when you open a ClickHouse item. Fabric cannot notify ClickHouse of role changes, so a changed workspace role takes effect the next time you open the item, not immediately.
+* **Role changes apply on next open.** Your ClickHouse organization role is mapped from your Fabric workspace role each time you open a ClickHouse item. Fabric cannot notify ClickHouse of role changes, so a changed workspace role does not take effect immediately.
+* **Removing or downgrading a user in Fabric does not revoke their ClickHouse access.** Because roles are only applied when a user opens a ClickHouse item, a user who is removed from the workspace or downgraded may retain their existing access on the ClickHouse Cloud side, and if they never open the item again that change never propagates at all. To revoke access immediately and reliably, remove the user from the organization in the ClickHouse Cloud console.
 * **Workspace-level access.** Everyone in the workspace can use its ClickHouse items. Granular, per-table permission sync from OneLake is currently not supported.
 * **Console SSO requires an email on your Entra profile.** ClickHouse Cloud users need an email address; if your Microsoft Entra profile has none set, signing in to the Cloud console will fail.
 

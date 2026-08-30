@@ -66,7 +66,8 @@ public:
     /// Returns an ActionsDAG rewriting a haystack column into the Array(String) of postprocessed tokens
     /// the index stores: arrayMap(x -> postprocessor(x), tokens(col, '<tokenizer>')). Array(String)
     /// index columns are mapped directly (elements are already tokens). Only call when hasActions().
-    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description) const;
+    /// `source_ast`, when set, is tokenized instead of `col_name`, so the caller can splice in the preprocessor expression.
+    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast = nullptr) const;
 
 private:
     std::optional<ExpressionActions> actions;
