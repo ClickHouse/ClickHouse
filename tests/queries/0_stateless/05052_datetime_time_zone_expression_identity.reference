@@ -23,3 +23,4 @@ aggregate projection is not read in another zone	0
 aggregate projection is still read in its own zone	1
 implicit and explicit zone under one alias	1970-01-01 00:00:00	1970-01-01 00:00:00
 implicit and explicit zone under one alias, non-UTC session	1970-01-01 09:00:00	1970-01-01 09:00:00
+a custom name is its own sort key	2

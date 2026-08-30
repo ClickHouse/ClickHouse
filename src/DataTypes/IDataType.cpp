@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Common/checkStackSize.h>
+#include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
@@ -68,11 +69,14 @@ bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
         return false;
 
     /// A time zone left out of the type means the session time zone, so it is the same expression as
-    /// that zone spelled out, while two different zones differ however they are spelled.
-    if (const auto * lhs_time_zone = dynamic_cast<const TimezoneMixin *>(&lhs))
+    /// that zone spelled out, while two different zones differ however they are spelled. That is the
+    /// only difference excused here: a custom name is a declared identity of its own.
+    if (!lhs.hasCustomName() && !rhs.hasCustomName())
     {
-        if (const auto * rhs_time_zone = dynamic_cast<const TimezoneMixin *>(&rhs))
-            return lhs_time_zone->getTimeZone().getTimeZone() == rhs_time_zone->getTimeZone().getTimeZone();
+        const auto * lhs_time_zone = dynamic_cast<const TimezoneMixin *>(&lhs);
+        const auto * rhs_time_zone = dynamic_cast<const TimezoneMixin *>(&rhs);
+        if (lhs_time_zone && rhs_time_zone)
+            return getDateLUTTimeZone(lhs_time_zone->getTimeZone()) == getDateLUTTimeZone(rhs_time_zone->getTimeZone());
     }
 
     return lhs.getName() == rhs.getName();
@@ -81,10 +85,17 @@ bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
 {
     type.updateHash(hash);
-    if (const auto * time_zone = dynamic_cast<const TimezoneMixin *>(&type))
-        hash.update(time_zone->getTimeZone().getTimeZone());
-    else
-        hash.update(type.getName());
+
+    if (!type.hasCustomName())
+    {
+        if (const auto * time_zone = dynamic_cast<const TimezoneMixin *>(&type))
+        {
+            hash.update(getDateLUTTimeZone(time_zone->getTimeZone()));
+            return;
+        }
+    }
+
+    hash.update(type.getName());
 }
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)

@@ -203,3 +203,16 @@ SELECT 'another zone as a group key', toHour(toDateTime(0, 'Asia/Tokyo') + x)
 FROM (SELECT materialize(0)::UInt32 AS x)
 GROUP BY toHour(toDateTime(0, 'UTC') + x)
 SETTINGS session_timezone = 'UTC'; -- { serverError NOT_AN_AGGREGATE }
+
+-- An omitted zone is the only difference excused: a declared name of its own is a different
+-- expression, both where the two are compared and where they are used as hash keys.
+SELECT 'a custom name under one alias',
+    toDateTime(0, 'UTC')::SimpleAggregateFunction(any, DateTime('UTC')) AS a, toDateTime(0, 'UTC') AS a
+SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+
+SELECT 'a custom name is its own sort key', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY toDateTime(0, 'UTC')::SimpleAggregateFunction(any, DateTime('UTC')), toDateTime(0, 'UTC')
+) WHERE explain ILIKE '%SORT id%'
+SETTINGS session_timezone = 'UTC';

@@ -549,9 +549,9 @@ FOR_TYPES_OF_TYPE(DISPATCH)
 #undef DISPATCH
 #undef FOR_TYPES_OF_TYPE
 
-/// Whether the two types are indistinguishable to an expression, and a hash consistent with it.
-/// Finer than `equals`, which answers whether the types are interchangeable for storage and so
-/// ignores the `DateTime` time zone, while a date or time function reads the zone from its argument.
+/// Whether the two types make an expression compute the same values, and a hash consistent with it.
+/// Finer than `equals`, which ignores the `DateTime` time zone that a date or time function reads
+/// from its argument. The declared name may still differ, because a zone may be left out of it.
 bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs);
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
 
