@@ -1,4 +1,5 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
@@ -21,13 +22,27 @@ namespace CurrentMetrics
 namespace DB
 {
 
-QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash)
+QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & time_zone)
 {
     SipHash hash;
     hash.update(table_id);
     hash.update(part_name);
     hash.update(condition_hash);
+    /// A date or time function reads the time zone while the condition runs, and the condition itself
+    /// need not mention it, so two sessions with different time zones can compute different matching
+    /// marks for the same condition.
+    hash.update(time_zone);
     return hash.get128();
+}
+
+String QueryConditionCache::resolveTimeZone(std::string_view session_timezone_setting)
+{
+    /// `DateLUT::instance(std::string_view)` would fall back to `DateLUT::instance()` for an empty
+    /// name, which reads the session setting of the current thread's query context. Name the server
+    /// zone directly instead, so the result depends only on the argument.
+    if (session_timezone_setting.empty())
+        return getDateLUTTimeZone(DateLUT::serverTimezoneInstance());
+    return getDateLUTTimeZone(DateLUT::instance(session_timezone_setting));
 }
 
 String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)
@@ -57,13 +72,13 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 }
 
 void QueryConditionCache::write(
-    const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & time_zone, const String & condition,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
     if (table_id == UUIDHelpers::Nil)
         return; /// Issue #92863: Certain database engines provide no table UUIDs
 
-    Key key = makeKey(table_id, part_name, condition_hash);
+    Key key = makeKey(table_id, part_name, condition_hash, time_zone);
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
@@ -120,12 +135,12 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & time_zone, bool increment_profile_events)
 {
     if (table_id == UUIDHelpers::Nil)
         return {}; /// Issue #92864: Certain database engines provide no table UUIDs
 
-    Key key = makeKey(table_id, part_name, condition_hash);
+    Key key = makeKey(table_id, part_name, condition_hash, time_zone);
 
     if (auto entry = cache.get(key))
     {

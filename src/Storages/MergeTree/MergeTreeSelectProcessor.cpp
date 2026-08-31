@@ -440,6 +440,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 data_part_info->getDataPart()->storage.getStorageID().uuid,
                                 part_name,
                                 output->getHash(),
+                                reader_settings.query_condition_cache_time_zone,
                                 prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part_info->getIndexGranularity().getMarksCount(),

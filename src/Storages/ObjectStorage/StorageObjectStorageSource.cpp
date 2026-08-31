@@ -925,6 +925,7 @@ Chunk StorageObjectStorageSource::generate()
                                 storage_id.uuid,
                                 *query_condition_cache_key,
                                 *format_filter_info->condition_hash,
+                                format_filter_info->condition_time_zone,
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
                                 total_groups,
@@ -1055,7 +1056,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
             if (query_condition_cache_key)
                 matching_marks = query_condition_cache->read(
-                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash);
+                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash,
+                    format_filter_info->condition_time_zone);
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;

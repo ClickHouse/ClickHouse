@@ -1,0 +1,35 @@
+-- lambda body
+0
+1
+1000000
+1000000
+-- Dynamic subtype
+0
+1
+1000000
+1000000
+-- function with no temporal type
+0
+1
+1000000
+1000000
+-- omitted time zone inside a wrapper type
+0
+1
+1000000
+1000000
+-- without PREWHERE, lambda body
+0
+1
+1000000
+-- without PREWHERE, function with no temporal type
+0
+1
+1000000
+-- both time zones cached at once
+0
+0
+2
+-- repeated query in one session still hits
+05054_first	1000000	0	1
+05054_second	0	1	0
