@@ -18,18 +18,18 @@ PRIME="db91261aaac942286f3030571640ef2682d3000000c8000000f0b9$(printf 'aa%.0s' {
 # read block (in a server, arbitrary heap memory), and the decoder reported success.
 EVIL="0ef0349f888764523cefcf446b85dee6821300000028000000f0194141414141414141"
 
-echo -n "$PRIME" | xxd -r -p > "${CLICKHOUSE_TMP}/05048_prime.compressed"
-echo -n "$EVIL" | xxd -r -p > "${CLICKHOUSE_TMP}/05048_evil.compressed"
-cat "${CLICKHOUSE_TMP}/05048_prime.compressed" "${CLICKHOUSE_TMP}/05048_evil.compressed" > "${CLICKHOUSE_TMP}/05048_both.compressed"
+echo -n "$PRIME" | xxd -r -p > "${CLICKHOUSE_TMP}/05055_prime.compressed"
+echo -n "$EVIL" | xxd -r -p > "${CLICKHOUSE_TMP}/05055_evil.compressed"
+cat "${CLICKHOUSE_TMP}/05055_prime.compressed" "${CLICKHOUSE_TMP}/05055_evil.compressed" > "${CLICKHOUSE_TMP}/05055_both.compressed"
 
 echo -n 'well-formed block: '
-$CLICKHOUSE_COMPRESSOR --decompress --input "${CLICKHOUSE_TMP}/05048_prime.compressed" --output "${CLICKHOUSE_TMP}/05048_prime.decompressed" 2>&1
-wc -c < "${CLICKHOUSE_TMP}/05048_prime.decompressed" | tr -d ' '
+$CLICKHOUSE_COMPRESSOR --decompress --input "${CLICKHOUSE_TMP}/05055_prime.compressed" --output "${CLICKHOUSE_TMP}/05055_prime.decompressed" 2>&1
+wc -c < "${CLICKHOUSE_TMP}/05055_prime.decompressed" | tr -d ' '
 
 echo -n 'literal past the end of the payload: '
-$CLICKHOUSE_COMPRESSOR --decompress --input "${CLICKHOUSE_TMP}/05048_evil.compressed" --output "${CLICKHOUSE_TMP}/05048_evil.decompressed" 2>&1 | grep -o -m1 'CANNOT_DECOMPRESS'
+$CLICKHOUSE_COMPRESSOR --decompress --input "${CLICKHOUSE_TMP}/05055_evil.compressed" --output "${CLICKHOUSE_TMP}/05055_evil.decompressed" 2>&1 | grep -o -m1 'CANNOT_DECOMPRESS'
 
 echo -n 'the same, after a block that primes the slack: '
-$CLICKHOUSE_COMPRESSOR --decompress --input "${CLICKHOUSE_TMP}/05048_both.compressed" --output "${CLICKHOUSE_TMP}/05048_both.decompressed" 2>&1 | grep -o -m1 'CANNOT_DECOMPRESS'
+$CLICKHOUSE_COMPRESSOR --decompress --input "${CLICKHOUSE_TMP}/05055_both.compressed" --output "${CLICKHOUSE_TMP}/05055_both.decompressed" 2>&1 | grep -o -m1 'CANNOT_DECOMPRESS'
 
-rm -f "${CLICKHOUSE_TMP}"/05048_*.compressed "${CLICKHOUSE_TMP}"/05048_*.decompressed
+rm -f "${CLICKHOUSE_TMP}"/05055_*.compressed "${CLICKHOUSE_TMP}"/05055_*.decompressed
