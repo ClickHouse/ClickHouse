@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <random>
+#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
@@ -97,11 +98,18 @@ static NO_INLINE void insertManyFromRepeatedly(IColumn & dst, const IColumn & sr
     dst.insertManyFrom(src, 0, length);
 }
 
-static void reserveRepeatedArray(IColumn & dst, size_t array_size, size_t length)
+static void reserveRepeatedArray(IColumn & dst, const IColumn & src, size_t length)
 {
     auto & dst_array = assert_cast<ColumnArray &>(dst);
+    const auto & src_array = assert_cast<const ColumnArray &>(src);
     dst_array.getOffsets().reserve_exact(length);
-    dst_array.getData().reserve(length * array_size);
+    dst_array.getData().reserve(length * src_array.getData().size());
+
+    if (auto * dst_string = typeid_cast<ColumnString *>(&dst_array.getData()))
+    {
+        const auto & src_string = assert_cast<const ColumnString &>(src_array.getData());
+        dst_string->getChars().reserve_exact(length * src_string.getChars().size());
+    }
 }
 
 
@@ -135,7 +143,7 @@ static void BM_insertFromRepeatedlyArray(benchmark::State & state)
     {
         state.PauseTiming();
         auto dst = type->createColumn();
-        reserveRepeatedArray(*dst, array_size, length);
+        reserveRepeatedArray(*dst, *src, length);
         state.ResumeTiming();
 
         insertFromRepeatedly(*dst, *src, length);
@@ -155,7 +163,7 @@ static void BM_insertManyFromRepeatedlyArray(benchmark::State & state)
     {
         state.PauseTiming();
         auto dst = type->createColumn();
-        reserveRepeatedArray(*dst, array_size, length);
+        reserveRepeatedArray(*dst, *src, length);
         state.ResumeTiming();
 
         insertManyFromRepeatedly(*dst, *src, length);
