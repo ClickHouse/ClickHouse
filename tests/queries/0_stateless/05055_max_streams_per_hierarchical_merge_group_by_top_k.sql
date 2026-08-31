@@ -1,4 +1,7 @@
 SET optimize_trivial_group_by_limit_query = 0;
+SET serialize_query_plan = 0;
+SET max_rows_to_group_by = 0;
+SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 SELECT '-- the synthesized full sort honors the invalid value --';
 SELECT k
