@@ -1,0 +1,21 @@
+<clickhouse>
+    <prometheus>
+        <port>9093</port>
+        <handlers>
+            <dist_write>
+                <url>/dist/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_dist</table>
+                </handler>
+            </dist_write>
+            <dist_query>
+                <url>/api/v1/query</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prom_dist</table>
+                </handler>
+            </dist_query>
+        </handlers>
+    </prometheus>
+</clickhouse>
