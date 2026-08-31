@@ -1810,7 +1810,7 @@ def test_hive_partitioning_without_setting(cluster):
         f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
     )
     pattern = re.compile(
-        r"DB::Exception: Unknown expression identifier `.*` in scope.*", re.DOTALL
+        r"DB::Exception: Unknown expression identifier .*In scope.*", re.DOTALL
     )
 
     with pytest.raises(Exception, match=pattern):
