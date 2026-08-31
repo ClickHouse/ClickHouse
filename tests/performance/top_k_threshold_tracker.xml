@@ -5,7 +5,10 @@
          threshold check dominates. The always-true `WHERE` disables the upfront mark
          narrowing (`getTopKMarks`), and the query condition cache is off so repeated
          runs keep consulting the tracker. The `Int64` sort column takes the tracker's
-         atomic fast path. -->
+         atomic fast path. The two queries pin `use_top_k_dynamic_filtering` to both
+         values so each one deterministically measures a single path: with `0` only the
+         skip-index `canSkipMark` path, with `1` additionally the `__topKFilter`
+         dynamic filter. -->
 
     <create_query>
         CREATE TABLE topk_tracker (key UInt64, val Int64, INDEX mm_val val TYPE minmax GRANULARITY 1)
@@ -22,7 +25,11 @@
     </fill_query>
 
     <query>
-        SELECT val FROM topk_tracker WHERE key &lt; 1000000000 ORDER BY val LIMIT 10 SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0
+        SELECT val FROM topk_tracker WHERE key &lt; 1000000000 ORDER BY val LIMIT 10 SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0, use_top_k_dynamic_filtering = 0
+    </query>
+
+    <query>
+        SELECT val FROM topk_tracker WHERE key &lt; 1000000000 ORDER BY val LIMIT 10 SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0, use_top_k_dynamic_filtering = 1
     </query>
 
     <drop_query>DROP TABLE IF EXISTS topk_tracker</drop_query>
