@@ -10,10 +10,10 @@
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -405,14 +405,20 @@ void considerEnablingParallelReplicas(
             const auto num_replicas = optimization_settings.max_parallel_replicas;
             /// `output_bytes` is what the boundary step produced on a single node, and the network term
             /// below is what one replica ships to the initiator. Dividing by `num_replicas` assumes the
-            /// replicas partition that output between them, which holds for `Aggregating` (each replica
-            /// aggregates its own share of the rows) and `Sorting`. It does not hold for a row-limiting
-            /// boundary: a shard `LIMIT n` makes *every* replica emit up to `n` rows, so each of them
-            /// ships the full `output_bytes` and the network term must not be divided. Dividing anyway
-            /// would underestimate the cost of the parallel-replicas plan by a factor of `num_replicas`.
+            /// replicas partition that output between them, which holds for a boundary whose output is a
+            /// share of the rows: `Aggregating` (each replica aggregates its own share), a plain
+            /// `Sorting`, or an `Offset` (each replica would emit its share less the skipped rows).
+            ///
+            /// It does not hold for a boundary that keeps a bounded top-N *per replica*, because there
+            /// every replica emits up to `n` rows and ships all of them, so each one sends the whole
+            /// `output_bytes` the single-node plan produced. That covers a shard `LIMIT n` and equally a
+            /// top-N `Sorting` (a sort carrying a limit keeps the local top `limit` rows on each node -
+            /// see `SortingStep::is_partial_top_n`), so both must skip the division. Dividing anyway
+            /// underestimates the cost of the parallel-replicas plan by a factor of `num_replicas`.
             const auto * boundary_step = corresponding_node_in_single_replica_plan->step.get();
-            const bool output_is_replicated
-                = typeid_cast<const LimitStep *>(boundary_step) || typeid_cast<const OffsetStep *>(boundary_step);
+            const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
+            const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
+                || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
             const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
             const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
             const auto replicas_plan_cost_estimation

@@ -52,7 +52,7 @@ public:
     /// output. Note that a `Limit` at the replica-output boundary is a shard limit, so its output is
     /// replicated rather than partitioned: every replica emits up to `limit` rows and ships all of them
     /// to the initiator. `considerEnablingParallelReplicas` accounts for that when pricing the network
-    /// term.
+    /// term, for this step and for a top-N `SortingStep` alike.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
