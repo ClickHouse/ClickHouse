@@ -27,16 +27,32 @@
 namespace DB
 {
 
-/// The CertificateReloader singleton performs 2 functions:
-/// 1. Dynamic reloading of TLS key-pair when requested by server:
+/// The CertificateReloader singleton performs 3 functions:
+/// 1. Dynamic reloading of TLS key-pair and of the trusted CA certificates (`caConfig`) when requested by server:
 ///   Server config reloader notifies CertificateReloader when the config changes.
 ///   On changed config, CertificateReloader reloads certs from disk.
 /// 2. Implement `SSL_CTX_set_cert_cb` to set certificate for a new connection:
 ///   OpenSSL invokes a callback to setup a connection.
+/// 3. Implement `SSL_CTX_set_cert_verify_callback` to verify the peer's certificate of a new connection
+///   against the most recently loaded CA certificates.
+///
+/// An `SSL_CTX` that is shared between threads must not be modified, so instead of touching the contexts on reload,
+/// both callbacks apply the current immutable snapshot (`MultiVersion`) to each new connection.
 class CertificateReloader
 {
 public:
     using stat_t = struct stat;
+
+    /// Owns a reference to a set of trusted CA certificates.
+    struct CAStore
+    {
+        explicit CAStore(X509_STORE * store_) : store(store_) {}
+        CAStore(const CAStore &) = delete;
+        CAStore & operator=(const CAStore &) = delete;
+        ~CAStore() { X509_STORE_free(store); }
+
+        X509_STORE * const store;
+    };
 
     struct Data
     {
@@ -69,6 +85,13 @@ public:
         File cert_file{"certificate"};
         File key_file{"key"};
 
+        /// Trusted CA certificates. Empty if `caConfig` is not set for the prefix,
+        /// then verification keeps using the store the context was created with.
+        MultiVersion<CAStore> ca_store;
+
+        File ca_file{"CA"};
+        bool load_default_cas = false;
+
         explicit MultiData(SSL_CTX * ctx_) : ctx(ctx_) {}
     };
 
@@ -88,7 +111,9 @@ public:
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
-    /// Register an additional SSL_CTX to share certificates with the primary context
+    /// Register an additional SSL_CTX to share certificates and trusted CAs with the primary context of `prefix`.
+    /// Returns true if the context will get its certificate and key from CertificateReloader,
+    /// false if the caller has to configure them on the context itself.
     bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix);
 
     /// Handle configuration reload for all contexts
@@ -96,6 +121,9 @@ public:
 
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
+
+    /// A callback for OpenSSL: verify the peer certificate in `store_ctx` against the current CA certificates.
+    int verifyCertificate(X509_STORE_CTX * store_ctx, const MultiData * pdata) const;
 
     /// The leaf certificate that is currently served for `prefix` connections, if there is one.
     /// It is not necessarily the certificate of the corresponding `SSL_CTX`: certificates are installed
@@ -111,6 +139,7 @@ private:
     /// Unsafe implementation
     void tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
     void tryLoadACMECertificate(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
+    void tryLoadCAImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 
     std::list<MultiData>::iterator findOrInsert(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 

@@ -1,0 +1,218 @@
+"""
+Hot reload of the trusted CA certificates (`openSSL.*.caConfig`).
+
+The certificates in certs/ are produced by certs/generate_certs.sh:
+two unrelated root CAs (ca1, ca2) and one leaf certificate issued by each of them (cert1, cert2).
+Every instance starts with ca.crt = ca1 as the trusted CA and node.crt/node.key = cert1 as its own certificate,
+and the tests overwrite these files in the container to rotate them without restarting anything.
+"""
+
+import time
+import uuid
+
+import pytest
+
+import helpers.keeper_utils as ku
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+
+CONFIG_DIR = "/etc/clickhouse-server/config.d"
+CERT_FILES = [
+    "certs/ca.crt",
+    "certs/ca1.crt",
+    "certs/ca2.crt",
+    "certs/node.crt",
+    "certs/node.key",
+    "certs/cert1.crt",
+    "certs/cert1.key",
+    "certs/cert2.crt",
+    "certs/cert2.key",
+]
+
+# Serves HTTPS and acts as a TLS client towards itself.
+node = cluster.add_instance("node", main_configs=["configs/ssl.xml"] + CERT_FILES)
+
+# Three nodes with embedded Keeper talking Raft over TLS.
+keeper_nodes = [
+    cluster.add_instance(f"node{i}", main_configs=[f"configs/keeper{i}.xml", "configs/ssl.xml"] + CERT_FILES) for i in (1, 2, 3)
+]
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def set_trusted_cas(instance, *cas):
+    """Overwrite ca.crt (the configured `caConfig`) with the given CA certificates."""
+    sources = " ".join(f"{CONFIG_DIR}/{ca}.crt" for ca in cas)
+    instance.exec_in_container(["bash", "-c", f"cat {sources} > {CONFIG_DIR}/ca.crt.tmp && mv {CONFIG_DIR}/ca.crt.tmp {CONFIG_DIR}/ca.crt"])
+
+
+def set_own_certificate(instance, cert):
+    """Overwrite node.crt/node.key (the configured `certificateFile`/`privateKeyFile`) with the given leaf certificate."""
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"cp {CONFIG_DIR}/{cert}.crt {CONFIG_DIR}/node.crt.tmp && mv {CONFIG_DIR}/node.crt.tmp {CONFIG_DIR}/node.crt && "
+            f"cp {CONFIG_DIR}/{cert}.key {CONFIG_DIR}/node.key.tmp && mv {CONFIG_DIR}/node.key.tmp {CONFIG_DIR}/node.key",
+        ]
+    )
+
+
+@pytest.fixture(autouse=True)
+def restore_certificates(started_cluster):
+    yield
+    for instance in [node] + keeper_nodes:
+        set_trusted_cas(instance, "ca1")
+        set_own_certificate(instance, "cert1")
+        instance.query("SYSTEM RELOAD CONFIG")
+    for instance in keeper_nodes:
+        kill_raft_connections(instance)
+    ku.wait_nodes(cluster, keeper_nodes)
+
+
+def https_request_with_client_certificate(cert):
+    """Query the HTTPS port of `node` presenting the given client certificate. Returns the response, or None if the TLS handshake failed."""
+    result = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"curl --silent --show-error --cacert {CONFIG_DIR}/ca1.crt --cert {CONFIG_DIR}/{cert}.crt --key {CONFIG_DIR}/{cert}.key "
+            f"'https://localhost:8443/?query=SELECT%201' 2>&1 || echo CURL_FAILED",
+        ]
+    )
+    return None if "CURL_FAILED" in result else result
+
+
+def assert_eventually(predicate, description, timeout=60):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.5)
+    assert predicate(), description
+
+
+def test_server_reloads_ca(started_cluster):
+    """The CAs used to verify client certificates follow the content of `caConfig` without a restart or an explicit reload."""
+    assert https_request_with_client_certificate("cert1") == "1\n"
+    assert https_request_with_client_certificate("cert2") is None
+
+    # Trust both CAs: the file change alone triggers the reload.
+    set_trusted_cas(node, "ca1", "ca2")
+    assert_eventually(lambda: https_request_with_client_certificate("cert2") == "1\n", "cert2 is accepted after ca2 was added")
+    assert https_request_with_client_certificate("cert1") == "1\n"
+
+    # Drop the old CA: certificates issued by it are not accepted anymore.
+    set_trusted_cas(node, "ca2")
+    assert_eventually(lambda: https_request_with_client_certificate("cert1") is None, "cert1 is rejected after ca1 was removed")
+    assert https_request_with_client_certificate("cert2") == "1\n"
+
+    assert node.contains_in_log("Reloaded CA certificates")
+
+
+def test_client_reloads_ca(started_cluster):
+    """The CAs used to verify server certificates of outgoing connections follow the content of `caConfig`."""
+    # `node` connects to its own HTTPS port, which serves cert1. `Connection: close` rules out reusing a pooled connection.
+    query = "SELECT * FROM url('https://localhost:8443/?query=SELECT%201', 'TSV', 'x UInt8', headers('Connection'='close'))"
+
+    set_trusted_cas(node, "ca2")
+    node.query("SYSTEM RELOAD CONFIG")
+    error = node.query_and_get_error(query)
+    assert "certificate verify failed" in error, error
+
+    set_trusted_cas(node, "ca1")
+    node.query("SYSTEM RELOAD CONFIG")
+    assert node.query(query) == "1\n"
+
+
+def kill_raft_connections(instance):
+    instance.exec_in_container(
+        ["bash", "-c", "ss --kill -tn state established '( dport = :9234 or sport = :9234 )' > /dev/null"], nothrow=True
+    )
+
+
+def raft_port_accepts_client_certificate(instance, target, cert):
+    """Whether the Raft port of `target` completes a TLS handshake with a client that presents `cert`."""
+    # With TLS 1.2 the server verifies the client certificate before the handshake completes on the client side,
+    # so a rejected certificate reliably shows up as a failed handshake in s_client.
+    result = instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"openssl s_client -brief -tls1_2 -connect {target.name}:9234 -cert {CONFIG_DIR}/{cert}.crt -key {CONFIG_DIR}/{cert}.key "
+            f"</dev/null 2>&1 || true",
+        ]
+    )
+    return "CONNECTION ESTABLISHED" in result
+
+
+def raft_port_certificate_issuer(instance, target):
+    return instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"openssl s_client -connect {target.name}:9234 </dev/null 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null || true",
+        ]
+    ).strip()
+
+
+def check_keeper_cluster_works(path):
+    connections = []
+    try:
+        for instance in keeper_nodes:
+            connections.append(ku.get_fake_zk(cluster, instance.name))
+        connections[0].create(path, b"data")
+        for connection in connections:
+            connection.sync(path)
+            assert connection.get(path)[0] == b"data"
+    finally:
+        for connection in connections:
+            connection.stop()
+            connection.close()
+
+
+def reload_and_reconnect_raft():
+    for instance in keeper_nodes:
+        instance.query("SYSTEM RELOAD CONFIG")
+    for instance in keeper_nodes:
+        kill_raft_connections(instance)
+    ku.wait_nodes(cluster, keeper_nodes)
+
+
+def test_keeper_raft_reloads_ca(started_cluster):
+    """Rotate the CA of the Raft connections between Keeper nodes without restarting them."""
+    run = uuid.uuid4().hex
+    ku.wait_nodes(cluster, keeper_nodes)
+    check_keeper_cluster_works(f"/before_{run}")
+    assert "Test Root CA 1" in raft_port_certificate_issuer(keeper_nodes[0], keeper_nodes[1])
+
+    # 1. Trust the new CA in addition to the old one.
+    for instance in keeper_nodes:
+        set_trusted_cas(instance, "ca1", "ca2")
+    reload_and_reconnect_raft()
+    check_keeper_cluster_works(f"/both_cas_{run}")
+
+    # 2. Switch the nodes to certificates issued by the new CA.
+    for instance in keeper_nodes:
+        set_own_certificate(instance, "cert2")
+    reload_and_reconnect_raft()
+    check_keeper_cluster_works(f"/new_certs_{run}")
+    for target in keeper_nodes[1:]:
+        assert "Test Root CA 2" in raft_port_certificate_issuer(keeper_nodes[0], target)
+
+    # 3. Stop trusting the old CA.
+    for instance in keeper_nodes:
+        set_trusted_cas(instance, "ca2")
+    reload_and_reconnect_raft()
+    check_keeper_cluster_works(f"/new_ca_{run}")
+
+    assert raft_port_accepts_client_certificate(keeper_nodes[0], keeper_nodes[1], "cert2")
+    assert not raft_port_accepts_client_certificate(keeper_nodes[0], keeper_nodes[1], "cert1")

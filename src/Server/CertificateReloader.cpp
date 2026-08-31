@@ -23,6 +23,7 @@ CertificateReloader & CertificateReloader::instance()
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int OPENSSL_ERROR;
 }
 
 namespace
@@ -38,6 +39,91 @@ int callSetCertificate(SSL * ssl, void * arg)
     return CertificateReloader::instance().setCertificate(ssl, pdata);
 }
 
+/// Called by OpenSSL instead of `X509_verify_cert` to verify the peer's certificate.
+int callVerifyCertificate(X509_STORE_CTX * store_ctx, void * arg)
+{
+    const CertificateReloader::MultiData * pdata = reinterpret_cast<CertificateReloader::MultiData *>(arg);
+    return CertificateReloader::instance().verifyCertificate(store_ctx, pdata);
+}
+
+int defaultVerifyCertificate(X509_STORE_CTX * store_ctx)
+{
+    /// Same as libssl does when no callback is installed: an error is treated as a verification failure.
+    int ok = X509_verify_cert(store_ctx);
+    return ok < 0 ? 0 : ok;
+}
+
+/// Verify the certificate from `original_ctx` like `X509_verify_cert(original_ctx)` would, but against the trusted certificates in `store`.
+/// libssl prepares `original_ctx` in `ssl_verify_internal` (ssl/ssl_cert.c) before calling the application callback.
+/// The same preparation is carried over to a new `X509_STORE_CTX` that uses `store`, and the outcome is reported back
+/// through `original_ctx`, because that is what libssl looks at after the callback returns.
+int verifyCertificateWithStore(X509_STORE_CTX * original_ctx, X509 * certificate, X509_STORE * store)
+{
+    std::unique_ptr<X509_STORE_CTX, decltype(&X509_STORE_CTX_free)> verify_ctx(X509_STORE_CTX_new(), X509_STORE_CTX_free);
+    if (!verify_ctx)
+    {
+        X509_STORE_CTX_set_error(original_ctx, X509_V_ERR_OUT_OF_MEM);
+        return 0;
+    }
+
+    if (X509_STORE_CTX_init(verify_ctx.get(), store, certificate, X509_STORE_CTX_get0_untrusted(original_ctx)) != 1)
+    {
+        X509_STORE_CTX_set_error(original_ctx, X509_V_ERR_UNSPECIFIED);
+        return 0;
+    }
+
+    /// The connection, for the per-connection verification callbacks (e.g. the ones of Poco and boost::asio) that look it up.
+    int ssl_idx = SSL_get_ex_data_X509_STORE_CTX_idx();
+    SSL * ssl = static_cast<SSL *>(X509_STORE_CTX_get_ex_data(original_ctx, ssl_idx));
+    if (ssl)
+    {
+        if (X509_STORE_CTX_set_ex_data(verify_ctx.get(), ssl_idx, ssl) != 1)
+        {
+            X509_STORE_CTX_set_error(original_ctx, X509_V_ERR_UNSPECIFIED);
+            return 0;
+        }
+        /// Has an effect only if DANE is enabled for the connection.
+        X509_STORE_CTX_set0_dane(verify_ctx.get(), SSL_get0_dane(ssl));
+    }
+
+    /// The default purpose depends on which side is verified. Everything libssl derived from the connection and its `SSL_CTX`
+    /// (verification depth, expected host name, security level, flags, ...) is already in the parameters of `original_ctx`.
+    X509_STORE_CTX_set_default(verify_ctx.get(), (ssl && SSL_is_server(ssl)) ? "ssl_client" : "ssl_server");
+    if (X509_VERIFY_PARAM_set1(X509_STORE_CTX_get0_param(verify_ctx.get()), X509_STORE_CTX_get0_param(original_ctx)) != 1)
+    {
+        X509_STORE_CTX_set_error(original_ctx, X509_V_ERR_UNSPECIFIED);
+        return 0;
+    }
+    X509_STORE_CTX_set_verify_cb(verify_ctx.get(), X509_STORE_CTX_get_verify_cb(original_ctx));
+
+    int ok = defaultVerifyCertificate(verify_ctx.get());
+
+    X509_STORE_CTX_set_error(original_ctx, X509_STORE_CTX_get_error(verify_ctx.get()));
+    X509_STORE_CTX_set_error_depth(original_ctx, X509_STORE_CTX_get_error_depth(verify_ctx.get()));
+    if (STACK_OF(X509) * chain = X509_STORE_CTX_get1_chain(verify_ctx.get()))
+        X509_STORE_CTX_set0_verified_chain(original_ctx, chain);
+    X509_VERIFY_PARAM_move_peername(X509_STORE_CTX_get0_param(original_ctx), X509_STORE_CTX_get0_param(verify_ctx.get()));
+
+    return ok;
+}
+
+/// Load the trusted CA certificates the same way `Poco::Net::Context` does it for the contexts created at startup,
+/// so that a reload results in the same set of trusted certificates as a restart would.
+std::unique_ptr<const CertificateReloader::CAStore> loadCAStore(const std::string & ca_path, bool load_default_cas)
+{
+    Poco::Net::Context::Params params;
+    params.caLocation = ca_path;
+    params.loadDefaultCAs = load_default_cas;
+    /// Only the certificate store is taken from this context, so the usage does not matter.
+    Poco::Net::Context context(Poco::Net::Context::CLIENT_USE, params);
+
+    X509_STORE * store = SSL_CTX_get_cert_store(context.sslContext());
+    if (!store || X509_STORE_up_ref(store) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot get CA certificates from SSL context: {}", Poco::Net::Utility::getLastError());
+
+    return std::make_unique<const CertificateReloader::CAStore>(store);
+}
+
 }
 
 /// This is callback for OpenSSL. It will be called on every connection to obtain a certificate and private key.
@@ -48,6 +134,28 @@ int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::Mu
     if (!current)
         return -1;
     return setCertificateCallback(ssl, current.get(), log);
+}
+
+/// This is callback for OpenSSL. It will be called on every connection that verifies the certificate of the peer.
+int CertificateReloader::verifyCertificate(X509_STORE_CTX * store_ctx, const CertificateReloader::MultiData * pdata) const
+{
+    try
+    {
+        auto ca_store = pdata->ca_store.get();
+        X509 * certificate = X509_STORE_CTX_get0_cert(store_ctx);
+
+        /// Raw public keys (RFC 7250) are verified without CA certificates.
+        if (!ca_store || !certificate)
+            return defaultVerifyCertificate(store_ctx);
+
+        return verifyCertificateWithStore(store_ctx, certificate, ca_store->store);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+        X509_STORE_CTX_set_error(store_ctx, X509_V_ERR_UNSPECIFIED);
+        return 0;
+    }
 }
 
 int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_data, LoggerPtr log)
@@ -142,6 +250,10 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
         data.push_back(MultiData(ctx));
         --it;
         data_index[prefix] = it;
+
+        /// Verify peer certificates against the reloadable CA certificates of this prefix.
+        /// Until (and unless) they are loaded, the callback does exactly what OpenSSL does without it.
+        SSL_CTX_set_cert_verify_callback(ctx, callVerifyCertificate, reinterpret_cast<void *>(&*it));
     }
     return it;
 }
@@ -179,8 +291,45 @@ void CertificateReloader::tryLoadACMECertificate(SSL_CTX * ctx, const std::strin
     }
 }
 
+void CertificateReloader::tryLoadCAImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
+{
+    std::string new_ca_path = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
+    bool new_load_default_cas = config.getBool(prefix + Poco::Net::SSLManager::CFG_ENABLE_DEFAULT_CA, false);
+
+    /// Without `caConfig` the trusted certificates come only from the system locations (if at all), there is nothing to reload.
+    /// But if `caConfig` was there before, keep following the configuration, like a restart would.
+    if (new_ca_path.empty())
+    {
+        auto index_it = data_index.find(prefix);
+        if (index_it == data_index.end() || index_it->second->ca_file.path.empty())
+            return;
+    }
+
+    try
+    {
+        auto it = findOrInsert(ctx, prefix);
+
+        bool ca_file_changed = it->ca_file.changeIfModified(std::move(new_ca_path), log);
+        bool has_ca_store = it->ca_store.get() != nullptr;
+        if (ca_file_changed || !has_ca_store || new_load_default_cas != it->load_default_cas)
+        {
+            LOG_DEBUG(log, "Reloading CA certificates ({}), load default CAs: {}.", it->ca_file.path, new_load_default_cas);
+            it->ca_store.set(loadCAStore(it->ca_file.path, new_load_default_cas));
+            it->load_default_cas = new_load_default_cas;
+            LOG_INFO(log, "Reloaded CA certificates ({}), load default CAs: {}.", it->ca_file.path, new_load_default_cas);
+        }
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+    }
+}
+
 void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
+    /// Trusted CA certificates do not depend on how the own certificate is configured.
+    tryLoadCAImpl(config, ctx, prefix);
+
     /// If at least one of the files is modified - recreate
     std::string new_cert_path = config.getString(prefix + "certificateFile", "");
     std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
@@ -256,9 +405,12 @@ bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::st
 
     MultiData * pdata = &*(it->second);
 
+    /// Share the reloadable CA certificates of this prefix (see `findOrInsert`).
+    SSL_CTX_set_cert_verify_callback(ctx, callVerifyCertificate, reinterpret_cast<void *>(pdata));
+
     /// Verify that certificate data was actually loaded, not just the entry created.
     /// If data is null, return false so caller can use fallback (static cert loading).
-    /// This can happen if initial cert parsing failed in tryLoadImpl.
+    /// This can happen if initial cert parsing failed in tryLoadImpl or if only `caConfig` is set for the prefix.
     if (!pdata->data.get())
     {
         LOG_WARNING(log, "Cannot register additional context for prefix '{}': certificate data not loaded. "
@@ -305,6 +457,14 @@ CertificateReloader::Data::Data(KeyPair _pkey, X509Certificate::List _certs_chai
 
 bool CertificateReloader::File::changeIfModified(std::string new_path, LoggerPtr logger)
 {
+    if (new_path.empty())
+    {
+        bool changed = !path.empty();
+        path.clear();
+        modification_time = {};
+        return changed;
+    }
+
     std::error_code ec;
     std::filesystem::file_time_type new_modification_time = std::filesystem::last_write_time(new_path, ec);
     if (ec)
