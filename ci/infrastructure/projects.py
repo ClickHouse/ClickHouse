@@ -204,7 +204,7 @@ def _mac_runner_pool(
         # Legacy GitHub-runner labels (github:runner-type). Joined with ","
         # into the single tag; runner-init expands them into runner labels.
         # Underscore forms, distinct from the dashed pool/queue name.
-        runner_type=["pr-macos_m2", "pr-macos-m2", "macos-m2"],
+        runner_type=["pr-macos-m2"],
         key_name="awswork",
         user_data_file="./ci/infra/scripts/user_data_macos.txt",
         root_volume_size_gb=100,
@@ -339,7 +339,7 @@ PROJECTS = [
                 availability_zones=["ap-southeast-2b"],
                 instance_type="mac2-m2pro.metal",
                 image_id=MAC_OS_TAHOE_ARM_IMAGE_AMI,
-                quantity_per_az=3,
+                quantity_per_az=10,
                 vpc_name="macos-ap-southeast-2",
             ),
         ],
