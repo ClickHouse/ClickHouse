@@ -390,7 +390,10 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             if (WhichDataType(node.result_type).isSet())
                 return convertSetColumnToAST(*node.column);
 
-            return make_intrusive<ASTLiteral>((*node.column)[0]);
+            return makeASTFunction(
+                "CAST",
+                make_intrusive<ASTLiteral>((*node.column)[0]),
+                make_intrusive<ASTLiteral>(node.result_type->getName()));
         }
 
         case ActionsDAG::ActionType::ALIAS:
