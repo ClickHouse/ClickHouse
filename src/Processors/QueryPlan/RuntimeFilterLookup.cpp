@@ -150,11 +150,11 @@ struct KeyRangeHistogram
     /// 239M `votes` (ORDER BY PostId) to the posts of January 2011 and January 2020 gives a build
     /// side of 588k ids in two clusters, 4.57M-5.37M and 59.5M-60.1M, with 97% of the span between
     /// them empty: the envelope spans 55.5M ids (72% of the table), the two intervals cover 2.8%.
-    /// 4096 buckets is 512 bytes, and resolves that span to ~13k ids - far finer than the ~800k-wide
+    /// 8192 buckets is 1 KiB, and resolves that span to ~16k ids - far finer than the ~800k-wide
     /// clusters that have to be told apart, while the exact extremes below keep the outer bounds
     /// tight. Fewer buckets would start fusing clusters; more would only sharpen edges that
     /// `dropUselessSplits` rounds off anyway.
-    static constexpr size_t buckets = 4096;
+    static constexpr size_t buckets = 8192;
     static constexpr size_t words = buckets / 64;
     /// Flipping the sign bit maps a signed key to a UInt64 of the same ordering.
     static constexpr UInt64 sign_bias = UInt64(1) << 63;
@@ -180,9 +180,17 @@ struct KeyRangeHistogram
         const UInt64 low = std::min(coordinate, min_coordinate);
         const UInt64 high = std::max(coordinate, max_coordinate);
 
+        /// Take a window twice the span that has to fit and start it a quarter of the way in, rather
+        /// than exactly at `low`. Without that slack a build side arriving in descending order would
+        /// undercut the base on every key and remap the whole bitmap each time; with it, every
+        /// rescale grows the span by at least half, so their number is bounded by the width of the
+        /// key domain rather than by the number of keys.
         unsigned new_shift = shift;
-        while (new_shift < 63 && ((high - low) >> new_shift) >= buckets)
+        while (new_shift < 63 && ((high - low) >> new_shift) >= buckets / 2)
             ++new_shift;
+
+        const UInt64 margin = static_cast<UInt64>(buckets / 4) << new_shift;
+        const UInt64 new_base = low > margin ? low - margin : 0;
 
         UInt64 remapped[words] = {};
         for (size_t bucket = 0, last = lastBucket(); bucket <= last; ++bucket)
@@ -192,14 +200,14 @@ struct KeyRangeHistogram
 
             /// A widened bucket can straddle two new ones; set both, the cover must stay a superset.
             const UInt64 bucket_low = base + (static_cast<UInt64>(bucket) << shift);
-            const size_t from = static_cast<size_t>((bucket_low - low) >> new_shift);
-            const size_t to = std::min<size_t>((bucket_low + ((UInt64(1) << shift) - 1) - low) >> new_shift, buckets - 1);
+            const size_t from = static_cast<size_t>((bucket_low - new_base) >> new_shift);
+            const size_t to = std::min<size_t>((bucket_low + ((UInt64(1) << shift) - 1) - new_base) >> new_shift, buckets - 1);
             for (size_t i = from; i <= to; ++i)
                 remapped[i >> 6] |= UInt64(1) << (i & 63);
         }
 
         memcpy(bits, remapped, sizeof(bits));
-        base = low;
+        base = new_base;
         shift = new_shift;
     }
 
