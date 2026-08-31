@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace ProfileEvents
 {
@@ -24,6 +25,26 @@ namespace ErrorCodes
 TextIndexAnalyzer::ReadableRows::ReadableRows(std::vector<RowsRange> ranges_)
     : ranges(std::move(ranges_))
 {
+}
+
+size_t TextIndexAnalyzer::ReadableRows::countReachableBlocks(const TokenPostingsInfo & token_info) const
+{
+    if (token_info.ranges.empty())
+        return 0;
+
+    const RowsRange token_span(token_info.ranges.front().begin, token_info.ranges.back().end);
+    auto it = std::lower_bound(
+        ranges.begin(), ranges.end(), token_span.begin,
+        [](const RowsRange & range, size_t value) { return range.end < value; });
+
+    /// One block can be touched by two adjacent readable ranges, so the blocks are deduplicated -
+    /// this counts what `readPostingsBlocksForToken` reads, which asks per mark range.
+    std::set<size_t> blocks;
+    for (; it != ranges.end() && it->begin <= token_span.end; ++it)
+        for (size_t block : token_info.getBlocksToRead(*it))
+            blocks.insert(block);
+
+    return blocks.size();
 }
 
 std::optional<RowsRange> TextIndexAnalyzer::ReadableRows::clipRowsRange(const RowsRange & rows_range) const
@@ -198,7 +219,7 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
     });
 }
 
-std::optional<RowsRange> TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
+std::optional<size_t> TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
     all_token_infos[token] = token_info;
 
@@ -236,7 +257,7 @@ std::optional<RowsRange> TextIndexAnalyzer::addTokenInfo(std::string_view token,
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
     }
 
-    return token_rows_range;
+    return readable_rows ? readable_rows->countReachableBlocks(*token_info) : token_info->ranges.size();
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)
