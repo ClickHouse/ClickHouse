@@ -24,7 +24,6 @@ CREATE TABLE tab (arr Array(UInt32), d Dynamic, x UInt32)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '', dynamic_serialization_version = 'v3';
 
--- The cache stores nothing for much less data than this.
 INSERT INTO tab SELECT [toUInt32(0)], toDateTime(0)::Dynamic, toUInt32(0) FROM numbers(1_000_000);
 
 -- Each block prints: the warm-up count (legitimately 0), whether the cache really holds an entry (a

@@ -5909,7 +5909,7 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 
     /// A TopK granule-skip decision recorded for one part is computed against the running
     /// `__topKFilter` threshold, which is derived from the rows of *all* parts the query reads.
-    /// The query condition cache key is `(table_uuid, part_name, condition_hash)`, so an entry
+    /// The query condition cache key is `(table_uuid, part_name, condition_hash, time_zone)`, so an entry
     /// written for a part stays matchable as long as that part keeps its name - even after a
     /// *different* part is dropped or mutated and the threshold that made the granule skippable
     /// no longer holds. Fold a hash of the whole part-set snapshot into the salt so that any
