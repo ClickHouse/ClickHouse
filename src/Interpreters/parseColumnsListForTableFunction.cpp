@@ -157,19 +157,31 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.allow_experimental_row_type && typeid_cast<const DataTypeRow *>(&data_type))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create column with type '{}' because experimental Row type is not allowed. "
-                "Set setting allow_experimental_row_type = 1 in order to allow it",
-                data_type.getName());
-        }
     };
 
     validate_callback(*type_to_check);
     if (settings.validate_nested_types)
         type_to_check->forEachChild(validate_callback);
+
+    if (!settings.allow_experimental_row_type)
+    {
+        /// Unlike the checks above, this gate also applies to nested types when
+        /// validate_experimental_and_suspicious_types_inside_nested_types = 0: Row introduces
+        /// a persisted on-disk layout, so e.g. Array(Row(...)) must not bypass the opt-in.
+        auto reject_row = [](const IDataType & data_type)
+        {
+            if (typeid_cast<const DataTypeRow *>(&data_type))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because experimental Row type is not allowed. "
+                    "Set setting allow_experimental_row_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+        };
+        reject_row(*type_to_check);
+        type_to_check->forEachChild(reject_row);
+    }
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)

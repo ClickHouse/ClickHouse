@@ -9,6 +9,7 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
@@ -217,9 +218,11 @@ static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
 
 DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
+    /// Row shares the ColumnTuple representation with Tuple, and casting a Row to a Tuple is
+    /// supported, so lowering here lets the Tuple-only checks below accept Row keys as well.
     DataTypes types{
-        removeNullable(recursiveRemoveLowCardinality(left_type)),
-        removeNullable(recursiveRemoveLowCardinality(right_type))};
+        removeNullable(recursiveRemoveLowCardinality(lowerRowTypesToTuples(left_type))),
+        removeNullable(recursiveRemoveLowCardinality(lowerRowTypesToTuples(right_type)))};
 
     /// Only integer keys need this fallback: a floating-point common subtype can change equality semantics.
     if (!std::ranges::all_of(types, hasOnlyIntegerLeaves))
