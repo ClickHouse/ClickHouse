@@ -28,6 +28,10 @@ struct IsStorageTouched
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
+/// Returns whether the analyzer should be used for mutations.
+/// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
+bool shouldUseAnalyzerForMutations(const ContextPtr & context);
+
 /// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 

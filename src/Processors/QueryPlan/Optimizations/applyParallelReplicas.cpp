@@ -99,6 +99,11 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.isSelectedForTopKFilterOptimization())
         return false;
 
+    /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
+    /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
+    if (read.hasPinnedBlockNumbers())
+        return false;
+
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
     return mergetree_data.supportsReplication()
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
@@ -432,7 +437,7 @@ private:
         /// The split marker is a unary pass-through; the fragment to distribute is the subtree below
         /// it. Clone it structurally: `QueryPlan::addStep` can only replay a linear chain and would
         /// throw on a branching fragment (e.g. a view expanding to UNION ALL, or a JOIN).
-        auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front()));
+        auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front(), query_plan));
 
         ContextPtr context;
         /// Mark only the coordinated reads (collectReadsToDistribute follows a join's coordinated side) so they
