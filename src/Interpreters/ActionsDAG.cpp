@@ -265,7 +265,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, bool skip_input_names) const
 {
     hash_state.update(type);
 
@@ -279,7 +279,7 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) 
     /// every build, and it is the only thing distinguishing one input from another: drop it and every
     /// predicate over same-typed columns collapses onto a single key, which then serves one predicate's
     /// row estimate to an unrelated one.
-    if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
+    if (!result_name.empty() && (!build_independent || (type == ActionType::INPUT && !skip_input_names)))
         hash_state.update(result_name);
 
     if (result_type)
@@ -339,7 +339,15 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) 
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state, build_independent);
+        child->updateHash(hash_state, build_independent, skip_input_names);
+}
+
+UInt64 ActionsDAG::getOutputIdentity(const std::string & name) const
+{
+    SipHash hash;
+    if (const auto * node = tryFindInOutputs(name))
+        node->updateHash(hash, /*build_independent=*/true, /*skip_input_names=*/true);
+    return hash.get64();
 }
 
 UInt64 ActionsDAG::getHash() const

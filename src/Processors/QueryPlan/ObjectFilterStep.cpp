@@ -37,7 +37,11 @@ void ObjectFilterStep::updateOutputHeader()
 
 void ObjectFilterStep::serialize(Serialization & ctx) const
 {
-    writeStringBinary(filter_column_name, ctx.out);
+    /// Position, not name, for a cache key - see `FilterStep::serialize`.
+    if (ctx.for_cache_key)
+        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name), ctx.out);
+    else
+        writeStringBinary(filter_column_name, ctx.out);
 
     actions_dag.serialize(ctx.out, ctx.registry);
 }

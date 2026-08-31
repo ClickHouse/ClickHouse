@@ -120,7 +120,10 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        void updateHash(SipHash & hash_state, bool build_independent = false) const;
+        /// `skip_input_names` additionally drops INPUT names, for a caller whose DAG sits above a read
+        /// and therefore has branch-local inputs (`__table1.x`); at a read the inputs are physical
+        /// columns and their names must be kept. See `ActionsDAG::getOutputIdentity`.
+        void updateHash(SipHash & hash_state, bool build_independent = false, bool skip_input_names = false) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -148,6 +151,14 @@ public:
     static Nodes detachNodes(ActionsDAG && dag);
     const NodeRawConstPtrs & getInputs() const { return inputs; }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
+
+    /// Build-independent identity of the output named `name` - what that output computes, with the
+    /// names this plan build composed left out (see `Node::updateHash`). A step that refers to one of
+    /// its DAG's outputs by name (a filter column, say) writes this instead of the name when
+    /// serializing for a cache key: the name reads `greater(__table1.x, 5_UInt8)` in a shipped fragment
+    /// and `greater(__table2.x, 5_UInt8)` in the plan enclosing it, while this is equal in both. Output
+    /// position is not usable here - the same expression can sit at a different index in the two builds.
+    UInt64 getOutputIdentity(const std::string & name) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 
