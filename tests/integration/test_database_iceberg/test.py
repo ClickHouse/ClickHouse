@@ -2602,6 +2602,89 @@ def test_catalog_commit_pre_dispatch_keeps_error(started_cluster):
     assert _manifest_lists_in_storage(started_cluster, table_name) == manifest_lists_before
 
 
+def test_catalog_commit_net_failure_before_body_keeps_error(started_cluster):
+    # The transport connects and writes the request headers after the request has been counted, so a
+    # connection or header-write failure carries no HTTP status and leaves the commit body unsent.
+    # Such an attempt cannot have applied, so it must keep its own error and have its staged files
+    # cleaned up, rather than be reported as an unknown outcome that keeps them forever.
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_commit_net_before_body_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # Created through ClickHouse so the table owns its storage prefix, which is what makes the
+    # manifest-list listing below a statement about this commit and not about the whole warehouse.
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+
+    before = _current_snapshot(catalog, root_namespace, table_name)
+    manifest_lists_before = _manifest_lists_in_storage(started_cluster, table_name)
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_net_fail_before_body")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_net_fail_before_body")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
+    assert "Injected net failure before the body" in error, error
+
+    # The body never left, so the table is unchanged and still readable.
+    after = _current_snapshot(catalog, root_namespace, table_name)
+    assert after.snapshot_id == before.snapshot_id, (before.snapshot_id, after.snapshot_id)
+    assert _s3_uri_exists(started_cluster.minio_client, after.manifest_list), after.manifest_list
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+    # Nothing was committed, so no manifest list of an attempted commit may be left behind.
+    assert _manifest_lists_in_storage(started_cluster, table_name) == manifest_lists_before
+
+
+def test_catalog_commit_std_exception_before_body_keeps_error(started_cluster):
+    # Same unsent-body case as above but outside the Poco hierarchy, so it reaches the catch-all
+    # handler: that handler must draw the same line, or a failure before the body is written is
+    # reported as an unknown outcome and its staged files are never cleaned up.
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_commit_std_before_body_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # Created through ClickHouse so the table owns its storage prefix, which is what makes the
+    # manifest-list listing below a statement about this commit and not about the whole warehouse.
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+
+    before = _current_snapshot(catalog, root_namespace, table_name)
+    manifest_lists_before = _manifest_lists_in_storage(started_cluster, table_name)
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_std_throw_before_body")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_std_throw_before_body")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
+    assert "Injected std failure before the body" in error, error
+
+    # The body never left, so the table is unchanged and still readable.
+    after = _current_snapshot(catalog, root_namespace, table_name)
+    assert after.snapshot_id == before.snapshot_id, (before.snapshot_id, after.snapshot_id)
+    assert _s3_uri_exists(started_cluster.minio_client, after.manifest_list), after.manifest_list
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+    # Nothing was committed, so no manifest list of an attempted commit may be left behind.
+    assert _manifest_lists_in_storage(started_cluster, table_name) == manifest_lists_before
+
+
 def test_catalog_commit_unknown_keeps_files_on_delete(started_cluster):
     # Same invariant on the mutation commit path: an unknown outcome must not delete the files of
     # the snapshot the catalog now names.

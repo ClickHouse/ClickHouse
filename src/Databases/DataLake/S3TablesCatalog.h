@@ -65,7 +65,8 @@ protected:
         Poco::JSON::Object::Ptr request_body,
         const String & method,
         bool ignore_result,
-        const std::optional<DB::ReadSettings> & read_settings) const override;
+        const std::optional<DB::ReadSettings> & read_settings,
+        bool * request_body_written) const override;
 
 private:
     const String region;

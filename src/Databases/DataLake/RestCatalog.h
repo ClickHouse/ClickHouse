@@ -224,13 +224,16 @@ protected:
 
     /// `read_settings` overrides the context's read settings for this one request. A caller that
     /// must know how many times the request reached the server pins `http_settings.max_tries`.
+    /// `request_body_written`, when not null, is set once the body reaches the socket: the transport
+    /// connects and writes the headers after the request is counted, so only this proves dispatch.
     virtual void sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method,
         bool ignore_result,
-        const std::optional<DB::ReadSettings> & read_settings) const;
+        const std::optional<DB::ReadSettings> & read_settings,
+        bool * request_body_written) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 

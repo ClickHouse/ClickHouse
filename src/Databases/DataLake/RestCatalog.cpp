@@ -83,6 +83,8 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_transport_net_fail[];
     extern const char iceberg_catalog_commit_rejected[];
     extern const char iceberg_catalog_commit_rejected_dispatched[];
+    extern const char iceberg_catalog_commit_net_fail_before_body[];
+    extern const char iceberg_catalog_commit_std_throw_before_body[];
     extern const char iceberg_catalog_commit_conflict[];
     extern const char iceberg_catalog_commit_predispatch_fail[];
     extern const char iceberg_catalog_commit_std_throw[];
@@ -1774,7 +1776,8 @@ void RestCatalog::sendRequest(
     Poco::JSON::Object::Ptr request_body,
     const String & method,
     bool ignore_result,
-    const std::optional<DB::ReadSettings> & read_settings) const
+    const std::optional<DB::ReadSettings> & read_settings,
+    bool * request_body_written) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1792,8 +1795,21 @@ void RestCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str, endpoint](std::ostream & os)
+        out_stream_callback = [body_str, endpoint, request_body_written](std::ostream & os)
         {
+            /// No HTTP status and no body on the socket: models the transport failing to connect or
+            /// to write the headers, both of which happen after the request is counted.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_net_fail_before_body,
+            {
+                throw Poco::Net::NetException("Injected net failure before the body");
+            });
+
+            /// Same position, but outside the Poco hierarchy: reaches the catch-all handler.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_std_throw_before_body,
+            {
+                throw std::runtime_error("Injected std failure before the body");
+            });
+
             /// Before the body is written but after the request is counted: the attempt is
             /// dispatched, so it cannot have taken effect.
             fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected_dispatched,
@@ -1817,6 +1833,9 @@ void RestCatalog::sendRequest(
             });
 
             os << body_str;
+
+            if (request_body_written)
+                *request_body_written = true;
 
             /// Inside the transport's retried region, after the request is counted, so the number
             /// of attempts the request policy allows is observable.
@@ -1886,7 +1905,8 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
             /* request_body */ nullptr,
             Poco::Net::HTTPRequest::HTTP_GET,
             /* ignore_result */ true,
-            /* read_settings */ std::nullopt);
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
         return;
     }
     catch (const DB::HTTPException & e)
@@ -1917,7 +1937,8 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
             request_body,
             Poco::Net::HTTPRequest::HTTP_POST,
             /* ignore_result */ false,
-            /* read_settings */ std::nullopt);
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
     }
     catch (const DB::HTTPException & e)
     {
@@ -1967,7 +1988,8 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
             request_body,
             Poco::Net::HTTPRequest::HTTP_POST,
             /* ignore_result */ false,
-            /* read_settings */ std::nullopt);
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2094,12 +2116,14 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     const Int64 new_snapshot_id = new_snapshot->getValue<Int64>("snapshot-id");
 
-    /// Counted in `ReadWriteBufferFromHTTP::callImpl` on a connected socket immediately before the
-    /// request is written, so an unchanged value proves nothing of this commit reached the catalog.
+    /// Counted in `ReadWriteBufferFromHTTP::callImpl` before the transport connects and writes the
+    /// headers, so an unchanged value proves nothing of this commit reached the catalog.
     const auto requests_sent_before
         = DB::CurrentThread::getProfileEvents()[ProfileEvents::ReadWriteBufferFromHTTPRequestsSent];
     const auto nothing_was_dispatched = [&]
     { return DB::CurrentThread::getProfileEvents()[ProfileEvents::ReadWriteBufferFromHTTPRequestsSent] == requests_sent_before; };
+
+    bool commit_body_written = false;
 
     try
     {
@@ -2121,7 +2145,13 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         });
 
         sendRequest(
-            *state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, commit_read_settings);
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /* ignore_result */ false,
+            commit_read_settings,
+            &commit_body_written);
 
         fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
         {
@@ -2159,7 +2189,9 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (const Poco::Exception & ex)
     {
-        if (nothing_was_dispatched())
+        /// No status, so the catalog never answered and only a body that reached the socket can have
+        /// applied: anything earlier keeps its own error and the caller's cleanup of its files.
+        if (!commit_body_written)
             throw;
 
         /// `doWithRetries` rethrows `Poco::Net::NetException` verbatim, so such a failure carries no status.
@@ -2168,10 +2200,10 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (...)
     {
-        if (nothing_was_dispatched())
+        if (!commit_body_written)
             throw;
 
-        /// Every failure of a dispatched commit is classified, whatever its type.
+        /// Every failure of a commit whose body was written is classified, whatever its type.
         classifyAmbiguousCommit(
             namespace_name,
             table_name,
@@ -2263,7 +2295,8 @@ bool RestCatalog::updateSchema(
             request_body,
             Poco::Net::HTTPRequest::HTTP_POST,
             /* ignore_result */ false,
-            /* read_settings */ std::nullopt);
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2282,7 +2315,13 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     try
     {
         sendRequest(
-            *state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true, /* read_settings */ std::nullopt);
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_DELETE,
+            /* ignore_result */ true,
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
     }
     catch (const DB::HTTPException & ex)
     {

@@ -249,7 +249,13 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     try
     {
         sendRequest(
-            *state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true, /* read_settings */ std::nullopt);
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_DELETE,
+            /* ignore_result */ true,
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
         LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=True)", namespace_name, table_name);
     }
     catch (const DB::HTTPException & ex)
@@ -334,7 +340,8 @@ void S3TablesCatalog::sendRequest(
     Poco::JSON::Object::Ptr request_body,
     const String & method,
     bool ignore_result,
-    const std::optional<DB::ReadSettings> & read_settings) const
+    const std::optional<DB::ReadSettings> & read_settings,
+    bool * request_body_written) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -346,7 +353,13 @@ void S3TablesCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](std::ostream & os) { os << body_str; };
+        out_stream_callback = [body_str, request_body_written](std::ostream & os)
+        {
+            os << body_str;
+
+            if (request_body_written)
+                *request_body_written = true;
+        };
     }
 
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
