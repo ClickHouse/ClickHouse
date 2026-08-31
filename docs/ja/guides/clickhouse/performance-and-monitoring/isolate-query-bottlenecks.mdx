@@ -1,0 +1,243 @@
+---
+slug: /optimize/isolate-query-bottlenecks
+sidebarTitle: 'クエリのボトルネックを切り分ける'
+sidebar_label: 'クエリのボトルネックを切り分ける'
+sidebar_position: 3
+title: 'クエリのボトルネックを切り分ける'
+description: '再現可能な3回の実行結果を比較して、低速なClickHouseクエリのボトルネックを切り分けます'
+doc_type: 'guide'
+keywords: ['クエリ最適化', 'クエリのボトルネック', 'パフォーマンス', 'ベンチマーク']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
+
+一度に変更するクエリの箇所を1つに絞り、安定したベースラインと結果を比較することで、クエリ最適化が容易になります。このガイドでは、クエリを段階的に簡略化し、実行ごとの差分から所要時間に最も大きく影響する操作を特定する方法を説明します。その後、最適化を選択する前に、疑わしいボトルネックを検証できます。
+
+<div id="before-you-begin">
+  ## 始める前に
+</div>
+
+まず、調査対象となる繰り返し発生する低速クエリのパターンを用意します。まだ特定していない場合は、[低速クエリの診断](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)で手順を確認してください。
+
+このガイドの例を記載どおりに実行するには、まだ作成・ロードしていない場合、`nyc_taxi.trips_small_inferred`テーブルを作成してロードします。
+
+<Accordion title="サンプルデータセットをセットアップする">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+サンプルテーブルでは`ORDER BY ()`を使用しているため、日付フィルターで読み取り時に順序キーを利用してデータを除外することはできません。この例はパフォーマンス目標としてではなく、比較手法の練習に使用してください。
+
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+クエリを段階的に簡略化することで、処理ステージを削除する前後の実行時間を比較できます。その差から、スキャンとフィルタリング、グループ化、集計計算、あるいはソートや出力フォーマットなどの後続処理のどれを調査すべきか判断できます。
+
+1. 元のクエリを実行し、ベースラインとなる測定値を取得します。
+2. `GROUP BY` は維持したまま、クエリの集計計算を `count` に置き換え、ソートや出力フォーマットなどの後続処理を削除します。
+3. グループ化を削除し、グループ化しない `count` を実行して、スキャン、フィルタリング、JOIN で残る処理を概算します。
+
+これらの手順は、一般的なグループ化集計クエリにそのまま適用できます。より複雑なクエリでは、同じ原則を一度に1つの `SELECT` ブロックに適用します。同等のデータソースとフィルターを維持し、一度に1つずつ操作を削除して、変更のたびに実行計画を確認してください。
+
+<Note>
+  これらの差は診断のための推定値であり、ClickHouse の実行ステージを正確に測定したものではありません。クエリを変更すると、実行計画、読み取られるカラム、ステージ間で受け渡されるデータが変わる可能性があります。結果から仮説を立て、クエリログと [`EXPLAIN`](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) で検証してください。
+</Note>
+
+<div id="establish-a-repeatable-baseline">
+  ## 再現可能なベースラインを確立する
+</div>
+
+測定結果を比較可能にするため、以下を実践してください。
+
+* すべての比較で同じデータと時間範囲を使用できるよう、`FROM`、`JOIN`、`PREWHERE`、`WHERE` 句は変更しないでください。
+* 同程度のシステム負荷の下で、クエリの各バージョンを複数回実行します。
+* キャッシュ条件を統一します。測定を記録する前に各バージョンのクエリを実行するか、以下に示すキャッシュを無効にしてください。キャッシュありの実行とキャッシュなしの実行を比較しないでください。
+* 最速または最遅の結果に頼るのではなく、ウォームアップ実行後に繰り返し実行した結果の中央値など、代表的な所要時間を記録します。
+* パフォーマンスの差を特定の変更に結び付けられるよう、一度に変更する変数は1つだけにします。
+
+キャッシュなしで診断比較を行う場合は、リモートデータ用のClickHouseファイルシステムキャッシュ、クエリキャッシュ、クエリ条件キャッシュを無効にします。また、実行Cの`count`が、比較対象のscanを回避する最適化済みの実行計画を使用しないよう、暗黙的なプロジェクションも無効にします。
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+SET optimize_use_implicit_projections = 0;
+```
+
+<Note>
+  これらの `SET` ステートメントは、現在のセッションにのみ適用されます。すべての比較クエリをそのセッションで実行するか、すべての実行に同じ設定を適用してください。ファイルシステムキャッシュの設定を変更しても、オペレーティングシステムのページキャッシュやすべての [ClickHouse キャッシュ](/ja/concepts/features/performance/caches/caches)が無効になるわけではありません。完了したら、専用セッションを閉じるか、各設定を以前の値に戻してください。
+</Note>
+
+このワークフローでは、制御された条件でのクエリ実行と、クエリログから取得した測定値を組み合わせます。
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="クエリログ内の候補クエリを特定し、変更を分離してテストするためのワークフロー" />
+
+各実行について、次のように測定値を収集します。
+
+1. 各実行に一意のクエリ ID を割り当てるか、クエリインターフェイスで生成された ID を記録します。たとえば、繰り返し実行する場合は、`bottleneck-a-1`、`bottleneck-a-2`、`bottleneck-a-3` と識別します。`clickhouse-client` では、クエリ実行時に `--query_id your-query-id` を指定します。
+
+2. 同じ条件下で各比較クエリを複数回実行します。ウォームアップ実行は、測定対象の実行とは分けてください。
+
+3. 最近完了したクエリをルックアップする前に、クエリログをフラッシュします。
+
+   ```sql
+   SYSTEM FLUSH LOGS;
+   ```
+
+   `SYSTEM FLUSH LOGS` を実行できない場合は、クエリログが自動的にフラッシュされるまで待ってから、ルックアップを再試行してください。レコードが表示されない場合は、クエリログが有効であること、`system.query_log` を読み取れること、クエリを実行したノードに対してクエリを実行していることを確認してください。
+
+4. 各クエリ ID に対応する完了レコードをルックアップします。`system.query_log` には、完了したクエリの `QueryStart` イベントと `QueryFinish` イベントの両方が記録されます。最終的な実行時間、読み取り行数とバイト数、ピークメモリが含まれる `QueryFinish` でフィルタリングします。
+
+   ```sql
+   SELECT
+       query_id,
+       query_duration_ms,
+       read_rows,
+       read_bytes,
+       memory_usage
+   FROM system.query_log
+   WHERE type = 'QueryFinish'
+     AND query_id = 'your-query-id'
+   ORDER BY event_time_microseconds DESC
+   LIMIT 1;
+   ```
+
+5. クエリの各バージョンについて、測定対象の実行の実行時間の中央値を使用します。測定値を実際の実行に対応付けたままにするため、その中央値に最も近い実行から `read_rows`、`read_bytes`、ピークメモリを記録します。
+
+<Note>
+  分散クエリの場合、開始元クエリの `QueryFinish` レコードにある `memory_usage` は、クラスター全体のピーク値ではありません。`initial_query_id` を使用して、参加ノード上の子 `QueryFinish` レコードを確認してください。
+</Note>
+
+代表的な測定値を整理するには、次のようなテーブルを使用します。フィールドと設定の詳細については、[`system.query_log`](/ja/reference/system-tables/query_log) を参照してください。
+
+<Tabs>
+  <Tab title="テーブル">
+    | 実行 | クエリバージョン           | 代表的な実行時間 | `read_rows` | `read_bytes` | ピークメモリ |
+    | -- | ------------------ | -------- | ----------- | ------------ | ------ |
+    | A  | 元のクエリ              |          |             |              |        |
+    | B  | グループ化した `count`    |          |             |              |        |
+    | C  | グループ化していない `count` |          |             |              |        |
+  </Tab>
+
+  <Tab title="CSV">
+    ```csv title="query-comparison.csv"
+    Run,Query version,Representative duration,read_rows,read_bytes,Peak memory
+    A,Original query,,,,
+    B,Grouped count,,,,
+    C,Ungrouped count,,,,
+    ```
+  </Tab>
+</Tabs>
+
+<div id="run-progressively-simpler-queries">
+  ## クエリを段階的に単純化して実行する
+</div>
+
+3 種類の比較をすべて示すため、この例ではグループ化を含む[日付範囲ワークロード](/ja/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation)を使用します。この手順例に従わずに、別のクエリにこの方法を適用することもできます。クエリに `GROUP BY` が含まれない場合は、以下で説明するように実行 B をスキップしてください。
+
+<Steps>
+  <Step title="実行 A: 元のクエリを測定する" id="run-a-measure-the-original-query">
+    フィルター、グループ化、集計式、ソート、出力を変更せずに、完全なクエリを実行します。これにより、基準となる実行時間、読み取り行数とバイト数、ピークメモリ使用量を把握できます。
+
+    このクエリは乗車記録を支払いタイプ別にグループ化し、複数の集計値を計算します。
+
+    ```sql
+    SELECT
+        payment_type,
+        count() AS trip_count,
+        formatReadableQuantity(sum(trip_distance)) AS total_distance,
+        avg(total_amount) AS total_amount_avg,
+        avg(tip_amount) AS tip_amount_avg
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01'
+    GROUP BY payment_type
+    ORDER BY trip_count DESC;
+    ```
+
+    クエリの測定値を実行 A として記録します。
+  </Step>
+
+  <Step title="実行 B: count を使用してグループ化を維持する" id="run-b-retain-grouping-with-count">
+    クエリの `FROM`、`JOIN`、`PREWHERE`、`WHERE`、およびグループ化キーを維持します。集計式をグループ化された `count` に置き換えます。元のソートや出力式を含め、集計後の処理を削除します。
+
+    ```sql
+    SELECT
+        payment_type,
+        count() AS trip_count
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01'
+    GROUP BY payment_type;
+    ```
+
+    実行 B でも、データのスキャンとフィルタリング、JOIN の実行、グループの構築が行われます。実行時間を実行 A と比較して、元の集計式と集計後の処理の寄与を見積もります。また、集計式を削除すると読み取るカラムが減る可能性があるため、`read_bytes` も比較します。
+
+    元のクエリに `GROUP BY` が含まれない場合、分離するグループ化ステージはありません。実行 B をスキップし、元のクエリを直接実行 C と比較します。
+  </Step>
+
+  <Step title="実行 C: グループ化を削除する" id="run-c-remove-grouping">
+    `GROUP BY` を削除し、単一の `count` を返します。残る処理を比較可能にするため、`FROM`、`JOIN`、`PREWHERE`、および `WHERE` 句は変更しません。
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01';
+    ```
+
+    実行 C は、実行計画に残る操作の基準を提供するものであり、スキャンやフィルタリングを個別に測定するものではありません。実行 B と比較して、グループ化の寄与を見積もります。また、グループ化キーを削除すると読み取るカラムが減る可能性があるため、`read_bytes` も比較します。返される `count` は、維持したフィルターと JOIN を通過して集計に到達する行数を示します。
+
+    実行 C を解釈する前に、実行計画が意図したデータソースを読み取り、維持したフィルターを適用していることを確認します。プロジェクションやメタデータに基づく count によって、実行される処理が変わる可能性があります。スキャンベースの基準を得るには、3 つの実行すべてで、プランに示されている最適化を無効にします。暗黙的なプロジェクションには `optimize_use_implicit_projections = 0`、明示的なプロジェクションには `optimize_use_projections = 0`、テーブルメタデータから取得されるフィルターなしの count には `optimize_trivial_count_query = 0` を使用します。
+
+    実行 C が依然として遅い場合は、まずスキャンとフィルタリングから、そこに残っている操作を調査します。クエリを変更する前に、クエリログと `EXPLAIN` を使用して、疑われるボトルネックを検証します。
+  </Step>
+</Steps>
+
+<div id="interpret-the-differences">
+  ## 差異を解釈する
+</div>
+
+個別の 2 回の計測値を差し引くのではなく、繰り返し実行した際の代表的な実行時間を比較します。大きく一貫した差異は、次に調査すべき箇所を示します。
+
+| 観測結果                | 考えられるボトルネック                                             | 次に調査する項目                                                                                       |
+| ------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 実行 A が実行 B より大幅に遅い  | 集計式、ソート、集計後のその他の処理、または追加で読み取られるカラム                      | コストの高い集計関数、式、`ORDER BY`、`read_bytes`、ピークメモリ使用量を確認します                                           |
+| 実行 B が実行 C より大幅に遅い  | グループ化、グループのカーディナリティ、またはグループ化キーの読み取り                     | グループ化キー、グループ数、`read_bytes`、ピークメモリ使用量を確認します                                                     |
+| 実行 C が依然として遅い       | スキャン、フィルタリング、JOIN、または実行 C に残る別の操作                       | 読み取った行数とバイト数、プライマリキーの使用状況、データスキッピングインデックス、実行計画を確認し、疑わしいボトルネックを検証します                            |
+| 3 回の実行すべてで実行時間がほぼ同じ | レイテンシの原因が 3 つのバージョンすべてに共通しているか、簡略化によって実行計画が変わった可能性があります | 各実行の `read_rows`、`read_bytes`、ピークメモリを比較します。これらも同程度であれば、実行 C に残る操作を調査します。そうでない場合は、実行計画の差異を比較します |
+
+<div id="compare-rows-read-with-count-result">
+  ### 読み取った行数を count の結果と比較する
+</div>
+
+実行 C の `read_rows` を、その `count` の戻り値と比較します。たとえば、`read_rows` が 1 億で `count` が 100 万を返した場合、ClickHouse はカウントされた 1 行あたり約 100 行のソース行をスキャンしたことになります。これは、フィルターによってテーブルから読み取られた行の大半が除外されたことを示しますが、その理由はわかりません。この比率は、単純な単一テーブルスキャンを対象としています。複数のデータソースまたはプロジェクションを含むクエリでは、代わりに実行計画を用いて `read_rows` を解釈してください。
+
+ClickHouse 25.9 以降では、索引の使用状況を確認する前に、クエリ条件キャッシュとデータスキッピングインデックスの動的適用を無効にします。
+
+```sql
+SET use_query_condition_cache = 0;
+SET use_skip_indexes_on_data_read = 0;
+```
+
+次に、[`EXPLAIN indexes = 1`](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) を使用して、ClickHouse が使用した索引と、各索引によって除外されたパーツおよびグラニュールの数を確認します。ClickHouse が想定より多くのグラニュールを選択した場合は、フィルターがテーブルのソートキーに合致しているか、パーティションプルーニングやデータスキッピングインデックスによってさらに多くのグラニュールを除外できるかを確認してください。プランに `Indexes` セクションがない場合、そのクエリについて `EXPLAIN` は索引プルーニングを報告していません。これに対し、テーブル全体を対象とする分析クエリでは、テーブルの大部分を読み取ることが想定されます。
+
+<div id="validate-the-suspected-bottleneck">
+  ## 想定されるボトルネックを検証する
+</div>
+
+比較の結果、ボトルネックの可能性が示された場合は、スキーマやクエリを変更する前に検証します。想定されるレイテンシの原因に応じた根拠を用いてください。
+
+* スキャンまたはフィルタリングのボトルネックについては、前述の設定で `EXPLAIN indexes = 1` を使用し、ClickHouse が使用する索引と、各索引によって除外されるパーツおよびグラニュールの数を確認します。想定したスキャンではなく、実行計画で暗黙的なプロジェクションが使用されていないかも確認してください。
+* グループ化または集約のボトルネックについては、関連するクエリプロファイルイベントとピークメモリ使用量を確認します。
+* 実行 C が依然として遅く、JOIN を含む場合は、一度に 1 つの JOIN を削除した診断用クエリと比較します。所要時間が大幅に短縮される場合、削除した JOIN がかなりの処理負荷を生じさせていることを示唆します。JOIN を削除するとクエリの意味が変わるため、この比較は処理時間の切り分けにのみ使用し、行数の変化は別途解釈してください。
+* 実行 C で維持されている別の操作にボトルネックがある場合は、実行計画と関連するクエリプロファイルイベントを確認します。
+
+`EXPLAIN` が返す索引情報の詳細については、[低速クエリ診断ガイド](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement)を参照してください。対象を絞った変更を 1 つ適用したら、同じ条件下で実行 A、B、C を繰り返します。変更によって意図した処理が削減され、ボトルネックが別の箇所に移っていないことを確認してください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+[最適化アプローチ](/ja/guides/clickhouse/performance-and-monitoring/optimization-approaches)に進み、疑われるボトルネックに対応する、対象を絞った1つ以上の変更を特定します。
