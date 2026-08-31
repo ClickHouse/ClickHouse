@@ -339,7 +339,9 @@ icebergHDFSCluster(cluster_name, path_to_table, [,format])
 icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
-The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
+`format` accepts only `Parquet`, `ORC` or `Avro`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -432,7 +434,9 @@ paimonAzureCluster(cluster_name, connection_string|storage_account_url, containe
 paimonHDFSCluster(cluster_name, path_to_table, [,format])
 ```
 
-The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
+`format` accepts only `Parquet`, `ORC` or `Avro`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -520,7 +524,9 @@ deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 ```
 `deltaLakeS3Cluster` is an alias to `deltaLakeCluster`, both are for S3.
 
-The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
+`format` accepts only `Parquet`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -586,7 +592,9 @@ Allows processing files from Apache [Hudi](https://hudi.apache.org/) tables in A
 hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 ```
 
-The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
+`format` accepts only `Parquet` or `ORC`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 

@@ -26,6 +26,10 @@ TABLES=(
     "${TABLE_PREFIX}_iceberg_default"
     "${TABLE_PREFIX}_iceberg_parquet_lower"
     "${TABLE_PREFIX}_attach_rowbinary"
+    "${TABLE_PREFIX}_paimon_rowbinary"
+    "${TABLE_PREFIX}_paimon_avro"
+    "${TABLE_PREFIX}_hudi_avro"
+    "${TABLE_PREFIX}_hudi_orc"
 )
 
 for table in "${TABLES[@]}"; do
@@ -93,6 +97,41 @@ ${CLICKHOUSE_CLIENT} --query "
     (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_attach_rowbinary', 'RowBinary')
 " 2>&1 | grep -c "is not supported by the" || true
+
+# 9. `Paimon` rejects a row format, like `Iceberg`.
+${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine 1 --query "
+    CREATE TABLE ${TABLE_PREFIX}_paimon_rowbinary (c0 Int)
+    ENGINE = PaimonLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_paimon_rowbinary', 'RowBinary')
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
+# 10. `Avro` is part of the Paimon specification, so it is accepted. This is the
+#     case that separates `Paimon` from `Hudi` and `DeltaLake` below: were the
+#     `Paimon` branch dropped, it would fall back to `Parquet` only and fail here.
+#     Only the absence of the format error is asserted, as in case 8: `Paimon`
+#     reads its schema while creating the table, so the statement still fails on
+#     an empty directory for every format, `Parquet` included. Case 9 is the
+#     control proving this message does appear for `Paimon` when the format is
+#     outside the set.
+${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine 1 --query "
+    CREATE TABLE ${TABLE_PREFIX}_paimon_avro (c0 Int)
+    ENGINE = PaimonLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_paimon_avro', 'Avro')
+" 2>&1 | grep -c "is not supported by the" || true
+
+# 11. `Hudi` base files are columnar, so `Avro` - accepted for `Iceberg` and
+#     `Paimon` above - is rejected here. The rejection fires while parsing the
+#     arguments, before S3 is contacted; the endpoint is a closed local port so
+#     that it refuses immediately rather than hanging if that ever changes.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_hudi_avro (c0 Int)
+    ENGINE = Hudi('http://127.0.0.1:1/bucket/${TABLE_PREFIX}_hudi_avro', 'k', 's', 'Avro')
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
+# 12. `ORC` is accepted for `Hudi`, unlike for `DeltaLake` in case 7.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_hudi_orc (c0 Int)
+    ENGINE = Hudi('http://127.0.0.1:1/bucket/${TABLE_PREFIX}_hudi_orc', 'k', 's', 'ORC')
+" 2>&1 | grep -c "is not supported by the" || true
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${TABLE_PREFIX}_hudi_orc"
 
 # Cleanup.
 for table in "${TABLES[@]}"; do

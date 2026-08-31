@@ -30,11 +30,11 @@ The [`iceberg`](/reference/functions/table-functions/iceberg) table function (al
 **Example syntax:**
 
 ```sql
-icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format])
 
-icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
-icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(path_to_table, [,format])
 ```
 
 <Info>
@@ -75,10 +75,10 @@ The [`icebergS3Cluster`](/reference/functions/table-functions/icebergCluster) fu
 **Example syntax:**
 
 ```sql
-icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format])
 -- icebergCluster is an alias for icebergS3Cluster
 
-icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 ```
 
 **Example (ClickHouse Cloud):**
@@ -108,13 +108,13 @@ The table engine `Iceberg` is an alias to `IcebergS3`.
 
 ```sql
 CREATE TABLE iceberg_table
-    ENGINE = IcebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+    ENGINE = IcebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format])
 
 CREATE TABLE iceberg_table
-    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])
 
 CREATE TABLE iceberg_table
-    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ENGINE = IcebergLocal(path_to_table, [,format])
 ```
 
 <Info>
@@ -162,9 +162,9 @@ The [`deltaLake`](/reference/functions/table-functions/deltalake) table function
 **Example syntax:**
 
 ```sql
-deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure])
 
-deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
 deltaLakeLocal(path, [,format])
 ```
@@ -207,10 +207,10 @@ The [`deltaLakeCluster`](/reference/functions/table-functions/deltalakeCluster) 
 **Example syntax:**
 
 ```sql
-deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure])
 -- deltaLakeS3Cluster is an alias for deltaLakeCluster
 
-deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 ```
 
 <Info>
@@ -291,7 +291,7 @@ The [`hudi`](/reference/functions/table-functions/hudi) table function reads Hud
 **Syntax:**
 
 ```sql
-hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure])
 ```
 
 ### Cluster variant {#hudi-cluster-variant}
@@ -299,7 +299,7 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 The [`hudiCluster`](/reference/functions/table-functions/hudiCluster) function distributes reads across multiple nodes in a ClickHouse cluster. The initiator node dispatches data files dynamically to worker nodes for parallel processing.
 
 ```sql
-hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure])
 ```
 
 ### Table engine {#hudi-table-engine}
@@ -325,14 +325,14 @@ The [`paimon`](/reference/functions/table-functions/paimon) table function (alia
 **Syntax:**
 
 ```sql
-paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
-paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+paimon(url [,access_key_id, secret_access_key] [,format] [,structure])
+paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure])
 
-paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
-paimonHDFS(path_to_table, [,format] [,compression_method])
+paimonHDFS(path_to_table, [,format])
 
-paimonLocal(path_to_table, [,format] [,compression_method])
+paimonLocal(path_to_table, [,format])
 ```
 
 ### Cluster variant {#paimon-cluster-variant}
@@ -340,12 +340,12 @@ paimonLocal(path_to_table, [,format] [,compression_method])
 The [`paimonS3Cluster`](/reference/functions/table-functions/paimonCluster) function distributes reads across multiple nodes in a ClickHouse cluster. The initiator node dispatches data files dynamically to worker nodes for parallel processing. `paimonCluster` is an alias for `paimonS3Cluster`. Variants also exist for Azure ([`paimonAzureCluster`](/reference/functions/table-functions/paimonCluster)) and HDFS ([`paimonHDFSCluster`](/reference/functions/table-functions/paimonCluster)).
 
 ```sql
-paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure])
 -- paimonCluster is an alias for paimonS3Cluster
 
-paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
-paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+paimonHDFSCluster(cluster_name, path_to_table, [,format])
 ```
 
 ### Table engine {#paimon-table-engine}
