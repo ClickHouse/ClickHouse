@@ -1,6 +1,4 @@
-nullable sibling column	0
-nullable sibling column	0
-nullable sibling column	0
-nullable constant	0
-nullable constant	0
-nullable constant	0
+nullable sibling column: index-neutral
+nullable constant: index-neutral
+nullable fixed string constant: index-neutral
+plain non-geometry constant: index-neutral
