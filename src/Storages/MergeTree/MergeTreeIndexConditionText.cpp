@@ -31,6 +31,8 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -929,6 +931,40 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 #endif
 }
 
+/// A `FixedString` constant is compared to a `String` column ignoring its trailing zero padding
+/// (`'hello' = toFixedString('hello', 10)` is true), but the index terms are extracted from the raw
+/// padded bytes. For an n-gram tokenizer that yields n-grams containing `\0`, which never occur in
+/// the stored data, so every granule looked unmatched and matching rows were silently dropped.
+/// Strip the padding the way the comparison does. Stripping can only remove terms from the search,
+/// never add one, so a `FixedString` indexed column stays sound too - it just loses the pruning the
+/// padding n-grams would have given.
+/// `MergeTreeIndexBloomFilter.cpp` does the same for its own condition, in
+/// `coerceStringFieldLikeSearchFunction`.
+static Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
+{
+    auto inner_type = removeNullable(removeLowCardinality(type));
+
+    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
+    {
+        String value = field.safeGet<String>();
+        value.resize(value.find_last_not_of('\0') + 1);
+        return Field(std::move(value));
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
+        array_type && field.getType() == Field::Types::Array)
+    {
+        Array stripped;
+        const auto & elements = field.safeGet<Array>();
+        stripped.reserve(elements.size());
+        for (const auto & element : elements)
+            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
+        return Field(std::move(stripped));
+    }
+
+    return field;
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -993,6 +1029,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
+
+    value_field = stripFixedStringPaddingForTerms(value_field, value_type);
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -1781,11 +1819,16 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     for (size_t row = 0; row < total_row_count; ++row)
     {
         auto ref = set_column.getDataAt(row);
+        String element(ref);
+
+        /// See stripFixedStringPaddingForTerms: a `FixedString` set element carries its padding.
+        if (WhichDataType(set_column.getDataType()).isFixedString())
+            element.resize(element.find_last_not_of('\0') + 1);
 
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (ref.empty())
+        if (element.empty())
         {
             out.text_search_queries.clear();
             return false;
@@ -1794,7 +1837,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        VectorWithMemoryTracking<String> tokens = stringToTokens(Field(String(ref)));
+        VectorWithMemoryTracking<String> tokens = stringToTokens(Field(element));
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.

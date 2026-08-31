@@ -451,6 +451,40 @@ bool isLikePatternFunction(const String & function_name)
 
 }
 
+/// A `FixedString` constant is compared to a `String` column ignoring its trailing zero padding
+/// (`'hello' = toFixedString('hello', 10)` is true), but the index terms are extracted from the raw
+/// padded bytes. For an n-gram tokenizer that yields n-grams containing `\0`, which never occur in
+/// the stored data, so every granule looked unmatched and matching rows were silently dropped.
+/// Strip the padding the way the comparison does. Stripping can only remove terms from the search,
+/// never add one, so a `FixedString` indexed column stays sound too - it just loses the pruning the
+/// padding n-grams would have given.
+/// `MergeTreeIndexBloomFilter.cpp` does the same for its own condition, in
+/// `coerceStringFieldLikeSearchFunction`.
+static Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
+{
+    auto inner_type = removeNullable(removeLowCardinality(type));
+
+    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
+    {
+        String value = field.safeGet<String>();
+        value.resize(value.find_last_not_of('\0') + 1);
+        return Field(std::move(value));
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
+        array_type && field.getType() == Field::Types::Array)
+    {
+        Array stripped;
+        const auto & elements = field.safeGet<Array>();
+        stripped.reserve(elements.size());
+        for (const auto & element : elements)
+            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
+        return Field(std::move(stripped));
+    }
+
+    return field;
+}
+
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -481,7 +515,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    Field const_value = value_field;
+    Field const_value = stripFixedStringPaddingForTerms(value_field, value_type);
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows.
@@ -846,11 +880,20 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
 
+        const bool is_fixed_string_element = WhichDataType(column->getDataType()).isFixedString();
+
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
-            forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
+
+            /// See stripFixedStringPaddingForTerms: a `FixedString` set element carries its padding,
+            /// which the comparison ignores but the tokenizer would not.
+            String element(ref);
+            if (is_fixed_string_element)
+                element.resize(element.find_last_not_of('\0') + 1);
+
+            forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());
         }
     }
 
