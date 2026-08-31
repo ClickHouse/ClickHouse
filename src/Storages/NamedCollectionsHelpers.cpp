@@ -15,7 +15,6 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <algorithm>
 #include <unordered_set>
 
 namespace DB
@@ -119,24 +118,28 @@ namespace
     /// service on a host the operator already chose, and overriding it next to a pinned `host` is an
     /// established way to complete a collection (see `tests/integration/test_storage_mysql`). A port
     /// written as part of a URL is still compared, because there the whole destination is one value.
+    const std::unordered_set<std::string_view> redirect_keys = {
+        "address", "addresses_expr", "connection_settings", "connection_string", "datasource",
+        "endpoint", "host", "hostname", "http_proxy_urls", "kafka_broker_list", "nats_server_list",
+        "nats_url", "rabbitmq_address", "rabbitmq_host_port", "storage_account_url", "uri", "url",
+    };
+
     bool isRedirectKey(const std::string & key)
     {
-        static const std::unordered_set<std::string_view> redirect_keys = {
-            "address", "addresses_expr", "connection_settings", "connection_string", "datasource",
-            "endpoint", "host", "hostname", "http_proxy_urls", "storage_account_url", "uri", "url",
-        };
         return redirect_keys.contains(key);
     }
 
     /// Keys holding a secret that stays attached to the request when some other key is overridden.
     /// Only secrets belong here. A key that merely identifies the caller, such as `user`, is not one:
-    /// listing it would forbid redirects that leak nothing.
+    /// listing it would forbid redirects that leak nothing. Kafka, NATS and RabbitMQ name their keys
+    /// after their engine settings, so they appear here under their own prefix.
     bool hasCredentials(const NamedCollection & collection)
     {
         return collection.hasAny({
             "access_key_id", "access_token", "account_key", "api_key", "connection_string",
-            "credentials.password", "oauth_token", "password", "secret", "secret_access_key",
-            "session_token", "ssl_key",
+            "credentials.password", "kafka_sasl_password", "nats_credential_file", "nats_credentials",
+            "nats_password", "nats_token", "oauth_token", "password", "rabbitmq_password", "secret",
+            "secret_access_key", "session_token", "ssl_key",
         });
     }
 
@@ -177,8 +180,12 @@ namespace
     {
         if (!hasCredentials(collection))
             return false;
-        const auto keys = collection.getKeys();
-        return std::any_of(keys.begin(), keys.end(), [](const auto & key) { return isRedirectKey(key); });
+        for (const auto & key : redirect_keys)
+        {
+            if (collection.has(std::string(key)))
+                return true;
+        }
+        return false;
     }
 
     struct ForbiddenOverride

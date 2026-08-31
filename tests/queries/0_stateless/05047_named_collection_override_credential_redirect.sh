@@ -10,6 +10,7 @@ no_creds="${CLICKHOUSE_TEST_UNIQUE_NAME}_no_creds"
 creds_only="${CLICKHOUSE_TEST_UNIQUE_NAME}_creds_only"
 opted_in="${CLICKHOUSE_TEST_UNIQUE_NAME}_opted_in"
 pinned_host="${CLICKHOUSE_TEST_UNIQUE_NAME}_pinned_host"
+stream_nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_stream"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP NAMED COLLECTION IF EXISTS $pinned;
@@ -17,6 +18,14 @@ DROP NAMED COLLECTION IF EXISTS $no_creds;
 DROP NAMED COLLECTION IF EXISTS $creds_only;
 DROP NAMED COLLECTION IF EXISTS $opted_in;
 DROP NAMED COLLECTION IF EXISTS $pinned_host;
+DROP NAMED COLLECTION IF EXISTS $stream_nc;
+
+CREATE NAMED COLLECTION $stream_nc AS
+    rabbitmq_host_port = 'localhost:5672',
+    rabbitmq_format = 'JSONEachRow',
+    rabbitmq_exchange_name = 'ex',
+    rabbitmq_username = 'root',
+    rabbitmq_password = 'secret';
 
 CREATE NAMED COLLECTION $pinned AS
     url = 'http://127.0.0.1:1/bucket/data/',
@@ -93,6 +102,12 @@ run "DESCRIBE TABLE remote($pinned_host, database='default')"
 echo -n "port: "
 run "DESCRIBE TABLE remote($pinned_host, port=9001)"
 
+echo "-- streaming engines, whose keys carry an engine prefix"
+echo -n "rabbitmq_host_port: "
+run "CREATE TABLE ${CLICKHOUSE_DATABASE}.r_redirect (x UInt8) ENGINE = RabbitMQ($stream_nc, rabbitmq_host_port = 'other:5672')"
+echo -n "key that is not a destination: "
+run "CREATE TABLE ${CLICKHOUSE_DATABASE}.r_ok (x UInt8) ENGINE = RabbitMQ($stream_nc, rabbitmq_vhost = '/')"
+
 echo "-- dictionary source, which takes its overrides from the DDL instead of function arguments"
 # The source configuration is resolved when the dictionary is loaded, not when it is created.
 dict_load() {
@@ -109,9 +124,12 @@ dict_load d_same '127.0.0.1'
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP DICTIONARY IF EXISTS ${CLICKHOUSE_DATABASE}.d_redirect;
 DROP DICTIONARY IF EXISTS ${CLICKHOUSE_DATABASE}.d_same;
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.r_redirect;
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.r_ok;
 DROP NAMED COLLECTION $pinned;
 DROP NAMED COLLECTION $no_creds;
 DROP NAMED COLLECTION $creds_only;
 DROP NAMED COLLECTION $opted_in;
 DROP NAMED COLLECTION $pinned_host;
+DROP NAMED COLLECTION $stream_nc;
 "
