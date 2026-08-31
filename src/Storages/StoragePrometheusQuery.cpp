@@ -108,7 +108,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
     auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
     if (distributed_target)
-        checkPrometheusQueryDistributedRead(time_series_storage_id, context);
+        checkPrometheusQueryDistributedRead(*time_series_storage, context);
 
     /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,
     /// so the data types are taken from the target's own metadata in both cases.

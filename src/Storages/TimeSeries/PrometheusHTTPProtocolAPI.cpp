@@ -152,7 +152,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     if (auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage))
     {
-        checkPrometheusQueryDistributedRead(time_series_storage->getStorageID(), getContext());
+        checkPrometheusQueryDistributedRead(*time_series_storage, getContext());
         evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
         evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
     }

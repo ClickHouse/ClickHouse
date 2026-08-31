@@ -54,32 +54,17 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
             "a prometheus query over a Distributed table requires a TimeSeries table on each shard",
             storage.getStorageID().getNameForLogs());
 
-    /// The generated cluster() call cannot carry the wrapper's DistributedSettings, so a wrapper
-    /// declaring non-default shard-skipping would silently behave differently through a prometheus
-    /// query than through a plain SELECT. Refuse rather than diverge; the query-level
-    /// `skip_unavailable_shards` setting still applies to the generated call. Read from the
-    /// metadata's declared changes: the concern is what the table declares, and the effective
-    /// settings are private to StorageDistributed.
-    if (const auto & settings_changes = distributed->getInMemoryMetadataPtr()->settings_changes)
-        for (const auto & change : settings_changes->as<const ASTSetQuery &>().changes)
-            if (change.name == "skip_unavailable_shards" || change.name == "skip_unavailable_shards_mode")
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "This operation is not supported over table {} because it sets {}: a prometheus query "
-                    "reads through a generated cluster() call, which does not carry the table's "
-                    "Distributed settings",
-                    storage.getStorageID().getNameForLogs(), change.name);
-
     target.remote_time_series_storage_id.database_name = distributed->getRemoteDatabaseName();
     target.remote_time_series_storage_id.table_name = std::move(remote_table_name);
     return target;
 }
 
-void checkPrometheusQueryDistributedRead(const StorageID & storage_id, const ContextPtr & context)
+void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context)
 {
     /// The read is rewritten to cluster(view(timeSeriesSelector(...))) over the shards' TimeSeries
     /// tables and the planner never sees the wrapper again, so its access is enforced here or not
     /// at all.
+    auto storage_id = storage.getStorageID();
     context->checkAccess(AccessType::SELECT, storage_id);
     if (context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER))
         throw Exception(
@@ -87,6 +72,23 @@ void checkPrometheusQueryDistributedRead(const StorageID & storage_id, const Con
             "A row policy on {} is not supported for prometheus queries over a Distributed table: "
             "the read is rewritten to the shards' TimeSeries tables and the policy would not be applied",
             storage_id.getNameForLogs());
+
+    /// The generated cluster() call cannot carry the wrapper's DistributedSettings, so a wrapper
+    /// declaring non-default shard-skipping would silently behave differently through a prometheus
+    /// query than through a plain SELECT. Refuse rather than diverge; the query-level
+    /// `skip_unavailable_shards` setting still applies to the generated call. Read from the
+    /// metadata's declared changes: the concern is what the table declares, and the effective
+    /// settings are private to StorageDistributed.
+    const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    if (const auto & settings_changes = metadata->settings_changes)
+        for (const auto & change : settings_changes->as<const ASTSetQuery &>().changes)
+            if (change.name == "skip_unavailable_shards" || change.name == "skip_unavailable_shards_mode")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "This operation is not supported over table {} because it sets {}: a prometheus query "
+                    "reads through a generated cluster() call, which does not carry the table's "
+                    "Distributed settings",
+                    storage_id.getNameForLogs(), change.name);
 }
 
 }
