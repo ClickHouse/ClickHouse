@@ -3699,7 +3699,12 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
     return isVariantExtension(part_column->type, command.data_type);
 }
 
-static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
+static bool canSkipMutationCommandForPart(
+    const MergeTreeDataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const AlterConversionsPtr & alter_conversions,
+    const MutationCommand & command,
+    const ContextPtr & context)
 {
     if (auto alter = command.ast(); alter && alter->partition)
     {
@@ -3735,10 +3740,22 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     /// ALIAS / EPHEMERAL. In both cases, skip it rather than sending a compact part through the
     /// whole-part rewrite, which would unnecessarily re-serialize every other stored column with
     /// its current codec.
-    if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN
-        && (!part->getColumnsDescription().has(command.column_name)
-            || !metadata_snapshot->getColumns().hasPhysical(command.column_name)))
-        return true;
+    ///
+    /// The stream this part still stores is also stale when the column was dropped and then
+    /// re-added under the same name: the drop is a not-yet-applied alter conversion for this part,
+    /// so the read path already substitutes the default value for it
+    /// (`injectRequiredColumnsRecursively`). Recompressing that stream would keep the pre-drop
+    /// bytes alive under the new column definition, so skip the recompression there as well - the
+    /// pending drop removes the stream anyway.
+    if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+    {
+        const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
+        if (!part->getColumnsDescription().has(command.column_name)
+            || !metadata_snapshot->getColumns().hasPhysical(command.column_name)
+            || (alter_conversions && alter_conversions->isColumnDropped(command.column_name, share_nested)))
+            return true;
+    }
 
     if (canSkipConversionToNullable(part, metadata_snapshot, command))
         return true;
@@ -4059,7 +4076,7 @@ bool MutateTask::prepare()
 
     for (const auto & command : *ctx->commands)
     {
-        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
+        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, alter_conversions, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
 
