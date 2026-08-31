@@ -1,0 +1,21 @@
+<clickhouse>
+    <users>
+        <!-- The user name matches the Common Name of 'client1-cert.pem', and the certificate is listed
+             as the user's ssl_certificate subject: certificate-only authentication must succeed. -->
+        <client1>
+            <ssl_certificates>
+                <common_name>client1</common_name>
+            </ssl_certificates>
+        </client1>
+        <!-- The user name matches the Common Name of 'client2-cert.pem', but the configured subject
+             does not: the user name extraction must not bypass the subject check. -->
+        <client2>
+            <ssl_certificates>
+                <common_name>something-else</common_name>
+            </ssl_certificates>
+        </client2>
+        <jane>
+            <password>qwe123</password>
+        </jane>
+    </users>
+</clickhouse>
