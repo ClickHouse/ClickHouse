@@ -7,7 +7,7 @@ SET explain_query_plan_default = 'legacy';
 SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
-SET optimize_rewrite_like_perfect_affix = 0; -- avoid rewrite of some patterns into startsWith/endsWith
+SET optimize_rewrite_like_perfect_affix = 1;
 
 SELECT 'Accepts arbitrary patterns for LIKE queries';
 
@@ -53,6 +53,9 @@ SELECT groupArray(id) FROM tab WHERE name LIKE 'alpha%' OR name LIKE '%4999%';
 SELECT groupArray(id) FROM tab WHERE name ILIKE '%ALPHA%PROD%';
 SELECT groupArray(id) FROM tab WHERE name ILIKE 'ALPHA%';
 SELECT groupArray(id) FROM tab WHERE name ILIKE '%PROD';
+SELECT groupArray(id) FROM tab WHERE startsWith(name, 'alpha-service');
+SELECT groupArray(id) FROM tab WHERE endsWith(name, 'service-prod');
+SELECT groupArray(id) FROM tab WHERE startsWith(name, '100%');
 
 SELECT '-- with optimization';
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
@@ -75,6 +78,9 @@ SELECT groupArray(id) FROM tab WHERE name LIKE 'alpha%' OR name LIKE '%4999%';
 SELECT groupArray(id) FROM tab WHERE name ILIKE '%ALPHA%PROD%';
 SELECT groupArray(id) FROM tab WHERE name ILIKE 'ALPHA%';
 SELECT groupArray(id) FROM tab WHERE name ILIKE '%PROD';
+SELECT groupArray(id) FROM tab WHERE startsWith(name, 'alpha-service');
+SELECT groupArray(id) FROM tab WHERE endsWith(name, 'service-prod');
+SELECT groupArray(id) FROM tab WHERE startsWith(name, '100%');
 
 SELECT 'The pattern is decided by the index alone, so the original condition is removed';
 
@@ -82,11 +88,14 @@ SELECT 'The pattern is decided by the index alone, so the original condition is 
 SELECT 'infix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION like(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name LIKE '%svc-4999%');
 
-SELECT 'prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION like(%') > 0
+SELECT 'prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION startsWith(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name LIKE 'alpha%');
 
-SELECT 'suffix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION like(%') > 0
+SELECT 'suffix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION endsWith(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name LIKE '%prod');
+
+SELECT 'prefix, no rewrite', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION like(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name LIKE 'alpha%' SETTINGS optimize_rewrite_like_perfect_affix = 0);
 
 SELECT 'multiple needles', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION like(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name LIKE '%alpha%prod%');
@@ -222,12 +231,20 @@ SELECT groupArray(id) FROM tab WHERE name LIKE 'alpha%';
 SELECT groupArray(id) FROM tab WHERE name LIKE 'alpha%' SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE name NOT LIKE 'alpha%';
 SELECT groupArray(id) FROM tab WHERE name NOT LIKE 'alpha%' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE NOT endsWith(name, 'service-prod');
+SELECT groupArray(id) FROM tab WHERE NOT endsWith(name, 'service-prod') SETTINGS use_skip_indexes = 0;
 
--- A UInt8 virtual column cannot carry the NULL a predicate returns for a NULL value, which `NOT` would flip to
--- true. `like` is safe: inversion push-down folds `not(like(...))` into the unsupported `notLike`, so the node
--- is never replaced.
+-- A UInt8 virtual column cannot carry the NULL a predicate returns for a NULL value, which `NOT` flips to true.
+-- An infix pattern is safe because inversion push-down folds `not(like(...))` into the unsupported `notLike`,
+-- but there is no `notStartsWith`, so an affix on a nullable column is left to the original condition.
 SELECT 'not like', countIf(explain LIKE '%\_\_text_index\_%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name NOT LIKE '%service%prod%');
+
+SELECT 'infix', countIf(explain LIKE '%\_\_text_index\_%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name LIKE '%service%prod%');
+
+SELECT 'prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name LIKE 'alpha%');
 
 DROP TABLE tab;
 
@@ -254,6 +271,8 @@ SELECT groupArray(id) FROM tab WHERE name LIKE '%4999-x' SETTINGS use_skip_index
 -- The stored value is 'alpha-prod' plus two zero bytes, so it does not end with 'prod'.
 SELECT groupArray(id) FROM tab WHERE name LIKE '%-prod';
 SELECT groupArray(id) FROM tab WHERE name LIKE '%-prod' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE endsWith(name, '-prod');
+SELECT groupArray(id) FROM tab WHERE endsWith(name, '-prod') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 

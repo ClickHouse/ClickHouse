@@ -17,8 +17,6 @@
     ORDER BY id
   </create_query>
 
-  <!-- A token is the whole value, so the dictionary holds the 100000 distinct names.
-       Only the 'alpha-' prefix and the '-4999-dev' suffix are selective. -->
   <fill_query>
     INSERT INTO tab
     SELECT
@@ -36,6 +34,8 @@
   <query>SELECT count() FROM tab WHERE name LIKE 'alpha-service-4999-pro_'</query>
   <query>SELECT count() FROM tab WHERE name LIKE 'alpha-service-4999-prod'</query>
   <query>SELECT count() FROM tab WHERE name ILIKE '%SERVICE-4999-PROD'</query>
+  <query>SELECT count() FROM tab WHERE startsWith(name, 'alpha-service-4999')</query>
+  <query>SELECT count() FROM tab WHERE endsWith(name, 'service-4999-prod')</query>
 
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
 </test>

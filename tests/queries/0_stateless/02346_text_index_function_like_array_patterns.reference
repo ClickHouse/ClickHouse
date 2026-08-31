@@ -18,6 +18,9 @@ Accepts arbitrary patterns for LIKE queries
 [1,4,6]
 [1,4]
 [1,2,4,6,7]
+[1]
+[1,2]
+[6]
 -- with optimization
 [3]
 [3]
@@ -37,10 +40,14 @@ Accepts arbitrary patterns for LIKE queries
 [1,4,6]
 [1,4]
 [1,2,4,6,7]
+[1]
+[1,2]
+[6]
 The pattern is decided by the index alone, so the original condition is removed
 infix	1	0
 prefix	1	0
 suffix	1	0
+prefix, no rewrite	1	0
 multiple needles	1	0
 underscore	1	0
 wildcard-free	1	0
@@ -97,12 +104,18 @@ A NULL value is not returned by a negated pattern
 [1]
 [2,4]
 [2,4]
+[4]
+[4]
 not like	0
+infix	1
+prefix	0
 A FixedString value keeps its zero padding, which the pattern matches against
 [1]
 [1]
 [3]
 [3]
+[]
+[]
 []
 []
 A LowCardinality value is supported
