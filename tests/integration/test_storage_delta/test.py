@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import string
+import tempfile
 import threading
 import time
 import uuid
@@ -3540,13 +3541,15 @@ def create_empty_delta_table(
         return
 
     # delta-rs cannot write to azurite, so create the table locally and upload it.
-    write_deltalake(
-        f"file:///{path}",
-        empty_table,
-        mode="overwrite",
-        partition_by=partition_by or [],
-    )
-    default_upload_directory(started_cluster, "azure", f"/{path}", "")
+    with tempfile.TemporaryDirectory() as local_dir:
+        local_path = os.path.join(local_dir, path)
+        write_deltalake(
+            f"file://{local_path}",
+            empty_table,
+            mode="overwrite",
+            partition_by=partition_by or [],
+        )
+        default_upload_directory(started_cluster, "azure", local_path, path)
 
 
 def list_delta_data_files(started_cluster, storage_type, path):
@@ -3638,7 +3641,8 @@ def test_writes(started_cluster, storage_type):
     check_data(20)
 
 
-def test_writes_azure_blob_path_with_leading_slash(started_cluster):
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_writes_azure_blob_path_with_leading_slash(started_cluster, partitioned):
     """Azure keeps a leading slash as a part of the blob name, while the Delta log
     commits paths relative to the normalized table root `az://container/path`.
     Data files written through a leading-slash blob path (e.g. produced by a
@@ -3649,15 +3653,21 @@ def test_writes_azure_blob_path_with_leading_slash(started_cluster):
     path = f"{table_name}_data"
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
-    create_empty_delta_table(started_cluster, "azure", path, schema)
+    create_empty_delta_table(
+        started_cluster,
+        "azure",
+        path,
+        schema,
+        partition_by=["id"] if partitioned else None,
+    )
 
     table_function_slash = delta_table_function(started_cluster, "azure", f"/{path}")
     instance.query(
-        f"INSERT INTO TABLE FUNCTION {table_function_slash} SELECT toInt32(number) AS id, toString(number) AS name FROM numbers(10)"
+        f"INSERT INTO TABLE FUNCTION {table_function_slash} SELECT toInt32(number % 2) AS id, toString(number) AS name FROM numbers(10)"
     )
 
     # External readers resolve `add.path` against the committed table root,
-    # so the data file must exist under `{path}/`.
+    # so the data files must exist under `{path}/`.
     data_files = list_delta_data_files(started_cluster, "azure", path)
     stray_files = [
         blob.name
@@ -3665,10 +3675,15 @@ def test_writes_azure_blob_path_with_leading_slash(started_cluster):
             name_starts_with=f"/{path}"
         )
     ]
+    expected_data_files = 2 if partitioned else 1
     assert (
-        len(data_files) == 1
+        len(data_files) == expected_data_files
     ), f"Data files under '{path}/': {data_files}, stray '/{path}/' blobs: {stray_files}"
     assert not stray_files, f"Blobs written under a literal leading slash: {stray_files}"
+    if partitioned:
+        assert all(
+            name.startswith(f"{path}/id=") for name in data_files
+        ), f"Data files: {data_files}"
 
     # The table reads back consistently through both spellings of the path.
     table_function = delta_table_function(started_cluster, "azure", path)

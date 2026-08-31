@@ -336,13 +336,16 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
 
-    /// For non-standard endpoints (e.g., Azurite emulator), set the endpoint explicitly.
-    /// Also allow plain HTTP connections when the endpoint uses http://, since the object-store
-    /// Azure builder defaults to https_only=true and would reject plain HTTP requests.
-    if (!endpoint.storage_account_url.empty() && endpoint.storage_account_url.starts_with("http://"))
+    /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which
+    /// otherwise derives the public `<account>.blob.core.windows.net` host from the account
+    /// name (wrong for Azurite, sovereign clouds, private links). For ConnectionString auth
+    /// the endpoint was already set above from the parsed connection string. Plain HTTP must
+    /// be allowed explicitly, since the object-store builder is https-only by default.
+    if (endpoint.storage_account_url.starts_with("http://") || endpoint.storage_account_url.starts_with("https://"))
     {
         set_option("azure_endpoint", connection_params.getConnectionURL());
-        set_option("azure_allow_http", "true");
+        if (endpoint.storage_account_url.starts_with("http://"))
+            set_option("azure_allow_http", "true");
     }
 
     return options;

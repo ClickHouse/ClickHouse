@@ -2352,7 +2352,8 @@ Delta Lake writes are a Beta feature disabled by default and must be enabled wit
 
 :::note
 Writing using the table engine is supported only through delta kernel.
-Writes work for S3, GCS and Azure (from v26.9).
+Writes work for S3 and GCS, and for Azure from version 26.9.
+Azure workload identity authentication (`extra_credentials(client_id = ..., tenant_id = ...)`) is not supported by delta kernel.
 :::
 
 ### Data cache {#data-cache}
