@@ -362,12 +362,8 @@ L5	5	R5b
 2	L2b	2	R2a
 2	L2b	2	R2b
 3	L3	3	R3a
---- ALL LEFT JOIN: many duplicates with max_joined_block_size_rows ---
-5000	Ok
---- ALL LEFT JOIN: residual predicate with max_joined_block_size_rows ---
-5000	Ok
---- ALL LEFT JOIN: residual predicate re-probes the left block ---
-Ok
+--- ALL LEFT JOIN: many duplicates with max_rows_in_join ---
+5000
 --- INNER JOIN: string key ---
 banana	2	20
 cherry	3	30

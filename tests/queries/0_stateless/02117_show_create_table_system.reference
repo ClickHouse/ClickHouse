@@ -406,7 +406,7 @@ CREATE TABLE system.merge_tree_settings
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
-    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)
+    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12)
 )
 ENGINE = SystemMergeTreeSettings
 COMMENT 'Contains a list of all MergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.'
@@ -474,7 +474,6 @@ CREATE TABLE system.mutations
     `mutation_id` String,
     `command` String,
     `create_time` DateTime,
-    `finish_time` DateTime,
     `block_numbers.partition_id` Array(String),
     `block_numbers.number` Array(Int64),
     `parts_in_progress_names` Array(String),
@@ -533,7 +532,6 @@ CREATE TABLE system.parts
     `name` String,
     `uuid` UUID,
     `part_type` String,
-    `part_storage_type` String,
     `active` UInt8,
     `marks` UInt64,
     `rows` UInt64,
@@ -657,7 +655,6 @@ CREATE TABLE system.parts_columns
     `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
     `estimates.null_count` Nullable(UInt64),
-    `estimates.default_count` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -1031,7 +1028,7 @@ CREATE TABLE system.replicated_merge_tree_settings
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
-    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)
+    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12)
 )
 ENGINE = SystemReplicatedMergeTreeSettings
 COMMENT 'Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. '
@@ -1110,7 +1107,7 @@ CREATE TABLE system.settings
     `default` String,
     `alias_for` String,
     `is_obsolete` UInt8,
-    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)
+    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12)
 )
 ENGINE = SystemSettings
 COMMENT 'Contains a list of all user-level settings (which can be modified in a scope of query or session), their current and default values along with descriptions.'
@@ -1217,7 +1214,6 @@ CREATE TABLE system.tables
     `primary_key` String,
     `sampling_key` String,
     `unique_key` String,
-    `skipping_indices_types` Array(String),
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),

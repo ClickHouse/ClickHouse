@@ -144,26 +144,14 @@ namespace
                     DateTime64 date_time_val = date_time_col.getElement(i);
                     Int64 seconds = date_time_val.value / scale_multiplier;
                     Int64 micros = date_time_val.value % scale_multiplier;
-                    /// Floor the split so `micros` stays non-negative and timezoneOffset() sees the
-                    /// floor second, not the next one (wrong offset at a DST/offset boundary otherwise).
-                    if (micros < 0)
-                    {
-                        seconds -= 1;
-                        micros += scale_multiplier;
-                    }
                     auto time_zone_offset = time_zone.timezoneOffset(seconds);
-                    /// Compute in Int128 (the offset add and scale multiply overflow Int64 near the
-                    /// boundary), then clamp to the representable range.
-                    Int128 time_val = seconds;
+                    Int64 time_val = seconds;
                     if (to_utc)
                         time_val -= time_zone_offset;
                     else
                         time_val += time_zone_offset;
-                    Int128 wide_val = time_val * scale_multiplier + micros;
-                    static constexpr Int128 min_val = std::numeric_limits<Int64>::min();
-                    static constexpr Int128 max_val = std::numeric_limits<Int64>::max();
-                    wide_val = wide_val < min_val ? min_val : (wide_val > max_val ? max_val : wide_val);
-                    result_data[i] = DateTime64(static_cast<Int64>(wide_val));
+                    DateTime64 date_time_64(time_val * scale_multiplier + micros);
+                    result_data[i] = date_time_64;
                 }
                 return result_column;
             }
@@ -195,8 +183,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
         )",
         R"(
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                       2023-03-15 16:00:00 │
-└───────────────────────────────────────────────────────────┘
+│                                     2023-03-15 16:00:00 │
+└─────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUTCTimestamp = {23, 8};
@@ -222,9 +210,9 @@ fromUTCTimestamp(datetime, time_zone)
 SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
         )",
         R"(
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
-│                                                   2023-03-16 18:00:00.000 │
-└───────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
+│                                                 2023-03-16 18:00:00.000 │
+└─────────────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromUTCTimestamp = {22, 1};

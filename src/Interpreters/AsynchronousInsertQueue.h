@@ -12,7 +12,6 @@
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/defines.h>
 
 #include <future>
 #include <variant>
@@ -248,11 +247,11 @@ private:
         mutable std::mutex mutex;
         mutable std::condition_variable are_tasks_available;
 
-        Queue queue TSA_GUARDED_BY(mutex);
-        QueueIteratorByKey iterators TSA_GUARDED_BY(mutex);
+        Queue queue;
+        QueueIteratorByKey iterators;
 
-        OptionalTimePoint last_insert_time TSA_GUARDED_BY(mutex);
-        std::chrono::milliseconds busy_timeout_ms TSA_GUARDED_BY(mutex) {};
+        OptionalTimePoint last_insert_time;
+        std::chrono::milliseconds busy_timeout_ms{};
     };
 
     /// Times of the two most recent queue flushes.
@@ -303,7 +302,7 @@ private:
         const Settings & settings,
         const QueueShard & shard,
         const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
-        std::chrono::steady_clock::time_point now) const TSA_REQUIRES(shard.mutex);
+        std::chrono::steady_clock::time_point now) const;
 
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
@@ -335,10 +334,8 @@ private:
 
     static std::vector<std::string> getInsertQueryIds(InsertData & data);
 
-    void clear();
-
 public:
-    auto getQueueLocked(size_t shard_num) const TSA_NO_THREAD_SAFETY_ANALYSIS
+    auto getQueueLocked(size_t shard_num) const
     {
         const auto & shard = queue_shards[shard_num];
         std::unique_lock lock(shard.mutex);

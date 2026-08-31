@@ -11,7 +11,6 @@
 namespace ProfileEvents
 {
     extern const Event AggregationPreallocatedElementsInHashTables;
-    extern const Event AggregationConvertedToTwoLevel;
 }
 
 namespace DB
@@ -93,51 +92,6 @@ size_t AggregatedDataVariants::size() const
     }
 }
 
-void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
-{
-    chassert(!aggregator);
-    switch (type)
-    {
-        case Type::EMPTY:
-        case Type::without_key:
-            break;
-
-    #define M(NAME, IS_TWO_LEVEL) \
-        case Type::NAME: \
-            (NAME).reset(); \
-            break;
-        APPLY_FOR_AGGREGATED_VARIANTS(M)
-    #undef M
-    }
-    without_key = nullptr;
-    aggregates_pools.clear();
-    aggregates_pool = nullptr;
-    aggregator = nullptr;
-    type = Type::EMPTY;
-}
-
-size_t AggregatedDataVariants::allocatedBytes() const
-{
-    size_t res = 0;
-    for (const auto & pool : aggregates_pools)
-        res += pool->allocatedBytes();
-
-    switch (type)
-    {
-        case Type::EMPTY:
-        case Type::without_key:
-            break;
-
-    #define M(NAME, IS_TWO_LEVEL) \
-        case Type::NAME: \
-            res += (NAME)->data.getBufferSizeInBytes(); \
-            break;
-        APPLY_FOR_AGGREGATED_VARIANTS(M)
-    #undef M
-    }
-    return res;
-}
-
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
 {
     switch (type)
@@ -191,12 +145,7 @@ bool AggregatedDataVariants::isTwoLevel() const
 
 bool AggregatedDataVariants::isConvertibleToTwoLevel() const
 {
-    return isConvertibleToTwoLevel(type);
-}
-
-bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
-{
-    switch (type_)
+    switch (type)
     {
     #define M(NAME) \
         case Type::NAME: \
@@ -212,8 +161,6 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
 
 void AggregatedDataVariants::convertToTwoLevel()
 {
-    ProfileEvents::increment(ProfileEvents::AggregationConvertedToTwoLevel);
-
     if (aggregator)
         LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
 
@@ -472,14 +419,12 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
             return Type::keys256;
     }
 
-    /// If single string key - will use hash table with 16-byte packed string references. Strings that do not fit
-    /// inline are stored separately in Arena. The Aggregator may remap this to the legacy `key_string` method
-    /// (see `Params::enable_packed_string_keys`).
+    /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
     if (keys_size == 1 && isString(types_removed_nullable[0]))
     {
         if (has_low_cardinality)
             return Type::low_cardinality_key_string;
-        return Type::key_packed_string;
+        return Type::key_string;
     }
 
     if (keys_size > 1 && all_keys_are_numbers_or_strings)

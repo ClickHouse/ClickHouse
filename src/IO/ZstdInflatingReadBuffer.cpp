@@ -13,7 +13,7 @@ namespace ErrorCodes
 ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
     : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
 {
-    dctx.reset(ZSTD_createDCtx());
+    dctx = ZSTD_createDCtx();
     input = {nullptr, 0, 0};
     output = {nullptr, 0, 0};
 
@@ -22,11 +22,16 @@ ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_
         throw Exception(ErrorCodes::ZSTD_DECODER_FAILED, "zstd_stream_decoder init failed: zstd version: {}", ZSTD_VERSION_STRING);
     }
 
-    size_t ret = ZSTD_DCtx_setParameter(dctx.get(), ZSTD_d_windowLogMax, zstd_window_log_max);
+    size_t ret = ZSTD_DCtx_setParameter(dctx, ZSTD_d_windowLogMax, zstd_window_log_max);
     if (ZSTD_isError(ret))
     {
         throw Exception(ErrorCodes::ZSTD_DECODER_FAILED, "zstd_stream_decoder init failed: {}", ZSTD_getErrorName(ret));
     }
+}
+
+ZstdInflatingReadBuffer::~ZstdInflatingReadBuffer()
+{
+    ZSTD_freeDCtx(dctx);
 }
 
 bool ZstdInflatingReadBuffer::nextImpl()
@@ -52,7 +57,7 @@ bool ZstdInflatingReadBuffer::nextImpl()
         output.pos = 0;
 
         /// Decompress data and check errors.
-        size_t ret = ZSTD_decompressStream(dctx.get(), &output, &input);
+        size_t ret = ZSTD_decompressStream(dctx, &output, &input);
         if (ZSTD_getErrorCode(ret))
         {
             throw Exception(
@@ -67,7 +72,7 @@ bool ZstdInflatingReadBuffer::nextImpl()
         }
 
         /// Check that something has changed after decompress (input or output position)
-        chassert(output.pos > 0 || in->position() < in->buffer().begin() + input.pos || in->available() == 0);
+        chassert(in->eof() || output.pos > 0 || in->position() < in->buffer().begin() + input.pos);
 
         /// move position to the end of read data
         in->position() = in->buffer().begin() + input.pos;

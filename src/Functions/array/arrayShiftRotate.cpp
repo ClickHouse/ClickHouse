@@ -265,8 +265,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     FunctionDocumentation::Syntax syntax_rotateleft = "arrayRotateLeft(arr, n)";
     FunctionDocumentation::Arguments arguments_rotateleft =
     {
-        {"arr", "The array for which to rotate the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)."}
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_rotateleft = {"An array rotated to the left by the specified number of elements", {"Array(T)"}};
     FunctionDocumentation::Examples examples_rotateleft = {
@@ -283,8 +283,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     FunctionDocumentation::Syntax syntax_rotateright = "arrayRotateRight(arr, n)";
     FunctionDocumentation::Arguments arguments_rotateright =
     {
-        {"arr", "The array for which to rotate the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)."}
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_rotateright = {"An array rotated to the right by the specified number of elements", {"Array(T)"}};
     FunctionDocumentation::Examples examples_rotateright =
@@ -315,8 +315,8 @@ If the number of elements is negative, the array is shifted to the right.
     FunctionDocumentation::Syntax syntax_shiftleft = "arrayShiftLeft(arr, n[, default])";
     FunctionDocumentation::Arguments arguments_shiftleft =
     {
-        {"arr", "The array for which to shift the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/reference/data-types/int-uint)."},
+        {"arr", "The array for which to shift the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
         {"default", "Optional. Default value for new elements."}
     };
     FunctionDocumentation::ReturnedValue returned_value_shiftleft = {"An array shifted to the left by the specified number of elements", {"Array(T)"}};

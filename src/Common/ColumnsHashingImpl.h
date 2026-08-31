@@ -406,37 +406,18 @@ protected:
         }
     }
 
-    /// Build results from the consecutive-keys cache without touching the hash table.
-    /// The caller must ensure the cache holds the result for the sought key: `!cache.empty`
-    /// for `getCachedFindResult`, `cache.found` for `getCachedEmplaceResult` (an emplace can
-    /// reuse the cache only when the key is known to be in the table already).
-    /// Also used by derived methods that can prove key equality with the cached entry without
-    /// calculating the key (see the raw-bytes shortcut in `HashMethodHashed`).
-    ALWAYS_INLINE EmplaceResult getCachedEmplaceResult()
-    {
-        static_assert(consecutive_keys_optimization);
-        if constexpr (has_mapped)
-            return EmplaceResult(cache.value.second, cache.value.second, false);
-        else
-            return EmplaceResult(false);
-    }
-
-    ALWAYS_INLINE FindResult getCachedFindResult()
-    {
-        static_assert(consecutive_keys_optimization);
-        if constexpr (has_mapped)
-            return FindResult(&cache.value.second, cache.found, 0);
-        else
-            return FindResult(cache.found, 0);
-    }
-
     template <bool compute_hash, typename Data, typename KeyHolder>
     ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value)
     {
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
-                return getCachedEmplaceResult();
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                else
+                    return EmplaceResult(false);
+            }
         }
 
         typename Data::LookupResult it;
@@ -468,15 +449,13 @@ protected:
 
             if constexpr (has_mapped)
             {
-                /// The cache stores the internal key type; the parameterless `getKey` may return
-                /// a converted external representation (e.g. `std::string_view` for `PackedStringRef`).
-                cache.value.first = it->getKey(it->getValue());
+                cache.value.first = it->getKey();
                 cache.value.second = it->getMapped();
                 cached = &cache.value.second;
             }
             else
             {
-                cache.value = it->getValue();
+                cache.value = it->getKey();
             }
         }
 
@@ -495,7 +474,12 @@ protected:
             /// Now there's not place where we need this options enabled together
             static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
             if (likely(!cache.empty) && cache.check(key))
-                return getCachedFindResult();
+            {
+                if constexpr (has_mapped)
+                    return FindResult(&cache.value.second, cache.found, 0);
+                else
+                    return FindResult(cache.found, 0);
+            }
         }
 
         auto it = data.find(key);

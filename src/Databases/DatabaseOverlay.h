@@ -99,7 +99,6 @@ public:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
     void checkMetadataFilenameAvailability(const String & table_name) const override;
-    void checkTableNameLength(const String & table_name) const override;
 
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);

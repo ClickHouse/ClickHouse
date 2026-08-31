@@ -82,10 +82,9 @@ private:
 
     ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
     {
-        auto result_data_column = ColumnString::create();
-        auto offsets_column = ColumnArray::ColumnOffsets::create();
-        auto & result_data = *result_data_column;
-        auto & offsets = offsets_column->getData();
+        auto res = ColumnArray::create(ColumnString::create());
+        auto & offsets = res->getOffsets();
+        auto & result_data = assert_cast<ColumnString &>(res->getData());
 
         FormatSettings format_settings;
 
@@ -149,7 +148,7 @@ private:
             offsets.push_back(result_data.size());
         }
 
-        return ColumnArray::create(std::move(result_data_column), std::move(offsets_column));
+        return res;
     }
 
     static void emitValue(

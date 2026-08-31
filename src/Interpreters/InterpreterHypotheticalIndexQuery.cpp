@@ -17,10 +17,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Disks/IDisk.h>
 
-#include <fmt/ranges.h>
-
-#include <algorithm>
-
 namespace DB
 {
 
@@ -111,19 +107,13 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// so calling get() on an unvalidated user AST can dereference absent arguments.
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree->getSettings());
 
-    /// fail closed, a newly registered index type is rejected until someone checks it
-    static constexpr std::string_view supported_types[]
-        {"bloom_filter", "minmax", "ngrambf_v1", "set", "sparse_grams", "tokenbf_v1"};
-    if (!std::ranges::contains(supported_types, index_desc.type))
+    /// Well-formed but unimplemented types are rejected here (validate accepts them).
+    auto index_helper = MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
+    if (index_helper->isTextIndex() || index_helper->isVectorSimilarityIndex())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Hypothetical indexes of type '{}' are not supported. Supported types: {}",
-            index_desc.type,
-            fmt::join(supported_types, ", "));
-
-    /// some argument checks live in the creator, not the validator (tokenizer bounds for
-    /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
-    MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
+            "Hypothetical indexes of type '{}' are not supported",
+            index_desc.type);
 
     /// Old-syntax MergeTree rejects `ALTER TABLE ... ADD INDEX`, so reject it here too.
     if (!merge_tree->is_custom_partitioned)

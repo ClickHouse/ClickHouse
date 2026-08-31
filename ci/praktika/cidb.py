@@ -45,9 +45,7 @@ class CIDB:
         if legacy is not None:
             return legacy
         # Already a legacy string — pass through for idempotency
-        assert (
-            status in cls._STATUS_TO_CIDB.values()
-        ), f"Invalid status [{status}] for CIDB check_status"
+        assert status in cls._STATUS_TO_CIDB.values(), f"Invalid status [{status}] for CIDB check_status"
         return status
 
     @dataclasses.dataclass
@@ -244,31 +242,6 @@ ORDER BY day DESC
                 record.test_context_raw = result_.info
                 yield json.dumps(dataclasses.asdict(record))
 
-    def _post_with_retries(self, params, data, timeout, retries, what):
-        """POST to CI DB, backing off progressively on transport errors and on
-        non-OK responses alike: `requests` does not raise for 4xx/5xx."""
-        retry = 0
-        while True:
-            retry += 1
-            try:
-                response = requests.post(
-                    url=self.url,
-                    params=params,
-                    data=data,
-                    headers=self.auth,
-                    timeout=timeout,
-                )
-                if response.ok:
-                    return response
-                error = f"{what} failed, response code [{response.status_code}], body [{response.text}]"
-            except Exception as ex:
-                error = f"{what} failed, exception [{ex}]"
-
-            print(f"WARNING: CIDB {error} - attempt {retry}/{retries}")
-            if retry >= retries:
-                raise RuntimeError(f"CIDB {error}")
-            time.sleep(2**retry)
-
     def query(self, query: str, retries: int = 5, log_level="warning"):
         """
         Executes a SELECT query on CI DB with retry support.
@@ -284,13 +257,32 @@ ORDER BY day DESC
         if log_level:
             params["send_logs_level"] = log_level
 
-        return self._post_with_retries(
-            params=params,
-            data=query.encode(),
-            timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
-            retries=retries,
-            what="query",
-        ).text
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data=query.encode(),
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+                )
+
+                if response.ok:
+                    return response.text
+                else:
+                    print(
+                        f"WARNING: CIDB query failed (status {response.status_code}) - Attempt {attempt}"
+                    )
+                    if attempt == retries:
+                        raise RuntimeError(
+                            f"Failed to query CI DB. Response code: {response.status_code}, Body: {response.text}"
+                        )
+
+            except Exception as ex:
+                print(f"ERROR: Exception during CI DB query attempt {attempt}: {ex}")
+                if attempt == retries:
+                    raise ex
+                time.sleep(2**attempt)
 
     @staticmethod
     def _prepare_request_body(data):
@@ -298,28 +290,36 @@ ORDER BY day DESC
             return data.encode("utf-8")
         return data
 
-    def insert_rows(self, jsons, retries=3, table=""):
-        """Insert JSONEachRow records into `table`, by default the main results
-        table. Jobs that keep their own table in the CI database pass it here,
-        e.g. the `Revert CI regressions` job and `checks_investigated`."""
-        table = table or Settings.CI_DB_TABLE_NAME
-        assert table
+    def insert_rows(self, jsons, retries=3):
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": f"INSERT INTO {table} FORMAT JSONEachRow",
+            "query": f"INSERT INTO {Settings.CI_DB_TABLE_NAME} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
+        assert Settings.CI_DB_TABLE_NAME
 
-        response = self._post_with_retries(
-            params=params,
-            data=self._prepare_request_body("\n".join(jsons)),
-            timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-            retries=retries,
-            what="insert",
-        )
-        print(response.text)
-        print(f"INFO: {len(jsons)} rows inserted into CIDB")
+        for retry in range(retries):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data=self._prepare_request_body("\n".join(jsons)),
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+                print(response.text)
+                if response.ok:
+                    print(f"INFO: {len(jsons)} rows inserted into CIDB")
+                    break
+                else:
+                    if retry == retries - 1:
+                        raise RuntimeError(
+                            f"Failed to write to CI DB, response code [{response.status_code}]"
+                        )
+            except Exception as ex:
+                if retry == retries - 1:
+                    raise ex
 
     def insert(self, result: Result, result_name_for_cidb=""):
         jsons = []
@@ -405,27 +405,26 @@ ORDER BY day DESC
             "database": Settings.CI_DB_DB_NAME,
             "query": "SELECT 1",
         }
-        try:
-            response = self._post_with_retries(
-                params=params,
-                data="",
-                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                retries=3,
-                what="smoke test",
-            )
-        except Exception as ex:
-            return False, f"CIDB: ERROR: no connection to CI DB [{ex}]"
+        error = ""
+        for retry in range(2):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data="",
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+                if not response.ok:
+                    error = f"ERROR: No connection to CI DB [{response.status_code}/{response.reason}]"
+                elif not response.json() == 1:
+                    print("ERROR: CI DB smoke test failed select 1 == 1")
+                    error = f"ERROR: CI DB smoke test failed [select 1 ==> {response.json()}]"
+                else:
+                    return True, ""
 
-        # A 200 with a non-JSON body (proxy or login page) stays a failed
-        # precheck instead of aborting workflow generation
-        try:
-            payload = response.json()
-        except ValueError as ex:
-            return (
-                False,
-                f"ERROR: CI DB smoke test got a non-JSON body [{ex}]: {response.text[:200]}",
-            )
+            except Exception as ex:
+                print(f"ERROR: Exception [{ex}]")
+                error = f"CIDB: ERROR: Exception [{ex}]"
 
-        if not payload == 1:
-            return False, f"ERROR: CI DB smoke test failed [select 1 ==> {payload}]"
-        return True, ""
+        return False, error

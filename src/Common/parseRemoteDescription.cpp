@@ -25,17 +25,6 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
         return;
     }
 
-    /// The caller feeds every ordinary character as a single-element set; rebuilding
-    /// the whole product would make the parsing quadratic in the description length.
-    if (what.size() == 1)
-    {
-        if (to.size() > max_addresses)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
-        for (auto & elem_to : to)
-            elem_to += what.front();
-        return;
-    }
-
     if (what.size() * to.size() > max_addresses)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
     std::vector<String> res;

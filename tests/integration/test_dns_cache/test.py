@@ -121,9 +121,7 @@ def cluster_ready(cluster_start):
     """
     try:
         for node in cluster_start.instances.values():
-            # Use the default start timeout: sanitizer builds (msan) can take
-            # well over 10s to reopen the TCP port after a restart.
-            node.wait_for_start()
+            node.wait_for_start(10)
 
         yield cluster
 

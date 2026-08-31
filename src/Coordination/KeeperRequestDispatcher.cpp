@@ -3,8 +3,6 @@
 #if USE_NURAFT
 
 #include <Coordination/CoordinationSettings.h>
-#include <Coordination/KeeperCommon.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -13,9 +11,6 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
-#include <Common/assert_cast.h>
-#include <base/sleep.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
 template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
@@ -52,7 +47,6 @@ namespace DB
 
 namespace CoordinationSetting
 {
-    extern const CoordinationSettingsUInt64 dispatch_busy_wait_long_sleep_us;
     extern const CoordinationSettingsUInt64 dispatch_busy_wait_sleep_us;
     extern const CoordinationSettingsUInt64 max_in_flight_request_batches;
     extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
@@ -60,7 +54,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_request_queue_bytes_size;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
-    extern const CoordinationSettingsNonZeroUInt64 max_requests_batch_size;
+    extern const CoordinationSettingsUInt64 max_requests_batch_size;
     extern const CoordinationSettingsUInt64 max_response_queue_bytes_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool optimize_read_order;
@@ -74,11 +68,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-}
-
-namespace FailPoints
-{
-    extern const char keeper_shutdown_delay_before_queue_check[];
 }
 
 static size_t getSubrequestCount(const Coordination::ZooKeeperRequest & request)
@@ -99,58 +88,73 @@ static size_t getResponseBytesCost(const Coordination::ZooKeeperResponse & respo
     return response.bytesSize() + sizeof(Coordination::ZooKeeperResponse);
 }
 
-/// A helper for sleeping while there's no work to do. Sleep duration starts at short_sleep, then
-/// after long_sleep/2 time it exponentially backs off up to long_sleep. So if we get at least one
-/// request every long_sleep/2 the sleeping will add at most short_sleep to request latency.
-/// And if we go idle for >~long_sleep we'll slow down and waste less cpu, but the next request
-/// will get up to long_sleep of added latency.
-struct BusyWaitBackoff
+static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
 {
-    std::chrono::microseconds short_sleep;
-    std::chrono::microseconds long_sleep;
-    /// How long to sleep after i idle iterations:
-    ///  i <= backoff_start: short_sleep
-    ///  i >= backoff_start: short_sleep * 2**(i - backoff_start), saturating at long_sleep
-    size_t backoff_start = 0;
-
-    size_t idle_count = 0;
-    std::chrono::microseconds cur_sleep;
-
-    BusyWaitBackoff(UInt64 short_sleep_us, UInt64 long_sleep_us)
-        : short_sleep(short_sleep_us)
-        , long_sleep(std::max(long_sleep_us, short_sleep_us))
-        /// Do short sleeps for half a long sleep duration.
-        , backoff_start(long_sleep_us / std::max(short_sleep_us, UInt64(1)) / 2)
-        , cur_sleep(short_sleep)
+    if (request->getOpNum() == Coordination::OpNum::Create
+        || request->getOpNum() == Coordination::OpNum::Create2
+        || request->getOpNum() == Coordination::OpNum::CreateTTL
+        || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
+        || request->getOpNum() == Coordination::OpNum::Set)
     {
+        return true;
+    }
+    if (request->getOpNum() == Coordination::OpNum::Multi)
+    {
+        Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
+        /// Add up sizes of create/set requests, subtract sizes of remove requests.
+        /// This doesn't really make sense because we're interested in memory usage of znodes, not requests.
+        /// But we don't know znode sizes at this point (is the Remove removing a small or big znode?),
+        /// so can't do much better here. Maybe it would make sense to move this check to preprocessRequest,
+        /// where we have access to the znode states.
+        Int64 memory_delta = 0;
+        for (const auto & sub_req : multi_req.requests)
+        {
+            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_req);
+            switch (sub_zk_request->getOpNum())
+            {
+                case Coordination::OpNum::Create:
+                case Coordination::OpNum::Create2:
+                case Coordination::OpNum::CreateTTL:
+                case Coordination::OpNum::CreateIfNotExists: {
+                    Coordination::ZooKeeperCreateRequest & create_req
+                        = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
+                    memory_delta += create_req.bytesSize();
+                    break;
+                }
+                case Coordination::OpNum::Set: {
+                    Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
+                    memory_delta += set_req.bytesSize();
+                    break;
+                }
+                case Coordination::OpNum::Remove:
+                case Coordination::OpNum::TryRemove: {
+                    Coordination::ZooKeeperRemoveRequest & remove_req
+                        = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
+                    memory_delta -= remove_req.bytesSize();
+                    break;
+                }
+                case Coordination::OpNum::RemoveRecursive: {
+                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
+                        = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
+                    memory_delta -= remove_req.bytesSize();
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        return memory_delta > 0;
     }
 
-    /// Reset backoff.
-    void notIdle()
-    {
-        idle_count = 0;
-        cur_sleep = short_sleep;
-    }
+    return false;
+}
 
-    void sleep()
-    {
-        std::this_thread::sleep_for(cur_sleep);
-        idle_count += 1;
-        if (idle_count > backoff_start)
-            /// (max is in case short_sleep is 0)
-            cur_sleep = std::min(std::max(cur_sleep * 2, std::chrono::microseconds(1)), long_sleep);
-    }
-};
 
-KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
+KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_)
     : server(server_)
     , keeper_context(server->getKeeperContext())
-    , special_response_router(std::move(special_response_router_))
     , log(getLogger("KeeperRequestDispatcher"))
 {
-    if (!special_response_router)
-        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcher requires a special response router");
-
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
     size_t max_request_queue_size = coordination_settings[CoordinationSetting::max_request_queue_size];
     requests_queue.init(max_request_queue_size);
@@ -179,24 +183,7 @@ void KeeperRequestDispatcher::startupDispatchThread()
     dispatch_thread = ThreadFromGlobalPool([this] { dispatchThread(); });
 }
 
-size_t KeeperRequestDispatcher::drainQueues()
-{
-    /// Don't bother sending replies because client connections should already be closed by now
-    /// (or stuck and timed out).
-    /// Don't need to do anything with in_flight_batches.
-    KeeperRequestForSession request_for_session;
-    while (tryPopRequest(request_for_session)) {}
-    size_t drained_response_bytes = 0;
-    KeeperResponseForSession response_for_session;
-    while (responses_queue.tryPop(response_for_session))
-    {
-        drained_response_bytes += getResponseBytesCost(*response_for_session.response);
-        onResponseDeallocated(*response_for_session.response);
-    }
-    return drained_response_bytes;
-}
-
-void KeeperRequestDispatcher::shutdownRequests()
+void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
 {
     shutting_down.store(true);
     if (dispatch_thread.joinable())
@@ -206,9 +193,20 @@ void KeeperRequestDispatcher::shutdownRequests()
 
     stream.reset();
 
-    /// Free up response queue space before submitting the Close requests below, so that a commit
-    /// landing meanwhile doesn't block nuraft's commit thread in onResponse flow control.
-    drainQueues();
+    /// Drain queues just to check for counter leaks.
+    /// Don't bother sending replies because client connections should already be closed by now
+    /// (or stuck and timed out, if closed_all_connections is false).
+    /// Don't need to do anything with in_flight_batches.
+    KeeperRequestForSession request_for_session;
+    while (tryPopRequest(request_for_session)) {}
+    KeeperResponseForSession response_for_session;
+    while (responses_queue.tryPop(response_for_session))
+        onResponseDeallocated(*response_for_session.response);
+    if (closed_all_connections) // otherwise there might be concurrent putRequest calls or missing onResponseDeallocated calls
+    {
+        chassert(requests_queue_bytes.load() == 0);
+        chassert(response_bytes_in_all_queues.load() == 0);
+    }
 
     /// Send to leader Close requests for active sessions.
     /// Maybe we should go further and do this when client connection is closed for any reason
@@ -259,7 +257,7 @@ void KeeperRequestDispatcher::shutdownRequests()
             std::vector<nuraft::ptr<nuraft::buffer>> entries;
             entries.reserve(close_requests.size());
             for (const auto & r : close_requests)
-                entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
+                entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
 
             temp_stream->append(std::move(entries));
 
@@ -285,25 +283,6 @@ void KeeperRequestDispatcher::shutdownRequests()
                 log,
                 "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count());
-    }
-
-    fiu_do_on(FailPoints::keeper_shutdown_delay_before_queue_check, { sleepForMilliseconds(3000); });
-}
-
-void KeeperRequestDispatcher::drainAndCheckQueues(bool closed_all_connections)
-{
-    /// Drain again after all request/response producers were stopped (if closed_all_connections).
-    size_t drained_response_bytes = drainQueues();
-
-    fiu_do_on(FailPoints::keeper_shutdown_delay_before_queue_check, { sleepForMilliseconds(3000); });
-
-    if (closed_all_connections) // otherwise there might be concurrent putRequest calls or missing onResponseDeallocated calls
-    {
-        /// (test_no_logical_error_on_shutdown_with_late_commit relies on this message, update the
-        ///  test if changing wording or logic.)
-        LOG_DEBUG(log, "Checking dispatcher queue byte accounting, drained {} response bytes", drained_response_bytes);
-        chassert(requests_queue_bytes.load() == 0);
-        chassert(response_bytes_in_all_queues.load() == 0);
     }
 }
 
@@ -583,10 +562,6 @@ void KeeperRequestDispatcher::dispatchThread()
 
         int64_t operation_timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
 
-        BusyWaitBackoff sleep_backoff(
-            keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us],
-            keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_long_sleep_us]);
-
         auto last_stuck_check_time = std::chrono::steady_clock::now();
         while (!shutting_down.load())
         {
@@ -670,7 +645,8 @@ void KeeperRequestDispatcher::dispatchThread()
                 ///  Or maybe there are conditions where this breaks and we instead converge to
                 ///  issuing bursts of 100 requests every 5 seconds, with corresponding
                 ///  throughput of 20 requests/s?)
-                sleep_backoff.sleep();
+                std::this_thread::sleep_for(std::chrono::microseconds(
+                    keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us]));
                 continue;
             }
 
@@ -680,15 +656,12 @@ void KeeperRequestDispatcher::dispatchThread()
             {
                 /// No requests to process. Busy-wait here too.
                 /// TODO: Perhaps we should replace this with a futex wait to improve throughput on
-                ///       latency-bound workloads. E.g. one client doing blocking requests in a
-                ///       loop. (The reasoning from long comment above doesn't apply here because
-                ///       this would typically be notified from KeeperTCPHandler threads, which
-                ///       have plenty of cpu to spare.)
-                sleep_backoff.sleep();
+                ///       latency-bound workloads. E.g. one client doing blocking requests in a loop.
+                std::chrono::microseconds dispatch_busy_wait_sleep(
+                    keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us]);
+                std::this_thread::sleep_for(dispatch_busy_wait_sleep);
                 continue;
             }
-
-            sleep_backoff.notIdle();
 
             /// Pick a batch of requests.
 
@@ -918,7 +891,7 @@ void KeeperRequestDispatcher::dispatchThread()
                 std::vector<nuraft::ptr<nuraft::buffer>> entries;
                 entries.reserve(requests.size());
                 for (const auto & r : requests)
-                    entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
+                    entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
 
                 /// Add information about the batch to the queue of in-flight requests.
 
@@ -1009,10 +982,7 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     response->zxid = 0;
     response->error = error;
     response->enqueue_ts = std::chrono::steady_clock::now();
-    DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
-    if (special_response_router(response_for_session))
-        return;
-    onResponse(std::move(response_for_session));
+    onResponse(DB::KeeperResponseForSession{request_for_session.session_id, response});
 }
 
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
@@ -1044,18 +1014,6 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         req.request->xid != request_for_session.request->xid)
     {
         return;
-    }
-
-    /// SessionID requests all carry session_id -1 and xid 0, so the check above matches any of them,
-    /// including ones originating on other servers (onCommit runs for every committed entry on every
-    /// node). Their identity is (server_id, internal_id).
-    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-    {
-        /// Session id -1 is reserved for SessionID requests, so the matching head is one too.
-        const auto & head = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*req.request);
-        const auto & committed = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
-        if (head.server_id != committed.server_id || head.internal_id != committed.internal_id)
-            return;
     }
 
     if (current_stream_is_suspect.load())
@@ -1134,21 +1092,16 @@ void KeeperRequestDispatcher::responseThread()
     {
         DB::setThreadName(ThreadName::KEEPER_RESPONSE);
 
-        BusyWaitBackoff sleep_backoff(
-            keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us],
-            keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_long_sleep_us]);
-
         while (!shutting_down.load())
         {
             KeeperResponseForSession response_for_session;
             if (!responses_queue.tryPop(response_for_session))
             {
                 /// Busy-wait.
-                sleep_backoff.sleep();
+                std::this_thread::sleep_for(std::chrono::microseconds(
+                    keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us]));
                 continue;
             }
-
-            sleep_backoff.notIdle();
 
             const UInt64 dequeue_time_us = ZooKeeperOpentelemetrySpans::now();
 

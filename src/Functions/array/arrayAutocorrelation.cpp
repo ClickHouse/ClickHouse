@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -319,10 +318,6 @@ public:
 
         if (checkColumn<ColumnNothing>(nested))
         {
-            /// An empty Nothing column represents the literal [], a non-empty one has no readable elements.
-            if (!nested.empty())
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
-
             auto offsets = ColumnArray::ColumnOffsets::create(input_rows_count, 0);
             return ColumnArray::create(ColumnFloat64::create(), std::move(offsets));
         }
@@ -376,13 +371,7 @@ public:
         const IColumn & nested = col_array.getData();
 
         if (checkColumn<ColumnNothing>(nested))
-        {
-            /// An empty Nothing column represents the literal [], a non-empty one has no readable elements.
-            if (!nested.empty())
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
-
             return ColumnArray::create(ColumnFloat64::create(), col_array.getOffsetsPtr());
-        }
 
         if (checkColumn<ColumnVector<UInt8>>(nested))
             return executeWithType<UInt8>(col_array, col_max_lag);

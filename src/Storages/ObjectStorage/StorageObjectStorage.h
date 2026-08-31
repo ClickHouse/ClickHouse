@@ -64,10 +64,6 @@ public:
 
     String getName() const override;
 
-    /// The concrete data format resolved for this table (after schema/format inference).
-    /// Used by the unified `URL` engine to persist the delegate's inferred format.
-    String getFormatName() const { return configuration->format; }
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -101,9 +97,6 @@ public:
     /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
     /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
     bool supportsOptimizationToSubcolumns() const override { return false; }
-    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
-    /// `t.x` on its own and prune on it.
-    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -157,8 +150,6 @@ public:
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
-
-    std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;

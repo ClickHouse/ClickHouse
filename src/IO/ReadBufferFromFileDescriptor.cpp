@@ -160,36 +160,14 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
     poll_fd.fd = fd;
     poll_fd.events = POLLIN | POLLPRI;
 
-    auto timeout_milliseconds = static_cast<int>(
+    const auto timeout_milliseconds = static_cast<int>(
         std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
 
-    /// Retry EINTR with the remaining time, otherwise a periodic signal (e.g. the query profiler's)
-    /// would reset the deadline on every retry and the poll could never expire. Same pattern as
-    /// Epoll::getManyReady, with microsecond accounting so a sub-millisecond signal period still makes progress.
-    Stopwatch watch;
     int result = 0;
-    for (;;)
+    do
     {
         result = ::poll(&poll_fd, 1, timeout_milliseconds);
-        if (result >= 0 || errno != EINTR)
-            break;
-
-        /// A zero timeout is a non-blocking readiness probe (used e.g. to check for a pending cancel):
-        /// there is no deadline to exhaust, so just retry the probe on EINTR. Returning early here
-        /// would let a signal hide an already-ready fd for that check. Only a positive timeout accrues
-        /// against the deadline.
-        if (timeout_microseconds == 0)
-            continue;
-
-        const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
-        if (elapsed_microseconds >= timeout_microseconds)
-        {
-            result = 0;
-            break;
-        }
-        timeout_milliseconds = static_cast<int>(std::min<size_t>(
-            (timeout_microseconds - elapsed_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
-    }
+    } while (result < 0 && errno == EINTR);
 
     if (result < 0)
     {

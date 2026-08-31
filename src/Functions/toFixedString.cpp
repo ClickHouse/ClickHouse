@@ -9,7 +9,7 @@ REGISTER_FUNCTION(FixedString)
 {
     /// toFixedString documentation
     FunctionDocumentation::Description description = R"(
-Converts a [`String`](/reference/data-types/string) argument to a [`FixedString(N)`](/reference/data-types/fixedstring) type (a string of fixed length N).
+Converts a [`String`](/sql-reference/data-types/string) argument to a [`FixedString(N)`](/sql-reference/data-types/fixedstring) type (a string of fixed length N).
 
 If the string has fewer bytes than N, it is padded with null bytes to the right.
 If the string has more bytes than N, an exception is thrown.

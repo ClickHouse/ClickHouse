@@ -9,10 +9,21 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-bool AIQuotaTracker::quotasExceededLocked()
+bool AIQuotaTracker::checkQuotas()
 {
     if (quota_exceeded)
         return true;
+
+    if (max_api_calls > 0 && api_calls >= max_api_calls)
+    {
+        if (throw_on_quota_exceeded)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                "AI API call limit reached: {} calls made, maximum: {}. "
+                "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
+                api_calls, max_api_calls);
+        quota_exceeded = true;
+        return true;
+    }
 
     if (max_input_tokens > 0 && input_tokens >= max_input_tokens)
     {
@@ -39,44 +50,13 @@ bool AIQuotaTracker::quotasExceededLocked()
     return false;
 }
 
-bool AIQuotaTracker::checkQuotas()
+void AIQuotaTracker::recordAttempt()
 {
-    std::lock_guard lock(mutex);
-    return quotasExceededLocked();
-}
-
-bool AIQuotaTracker::recordApiCall()
-{
-    std::lock_guard lock(mutex);
-
-    /// Don't start a new request once any quota is known-exhausted (e.g. another thread's response
-    /// just pushed the token budget over), even though the API-call count itself is still under its
-    /// own limit. This keeps token overshoot to the requests already in flight at that moment.
-    if (quotasExceededLocked())
-        return false;
-
-    if (max_api_calls == 0) /// 0 disables the API-call limit.
-        return true;
-
-    if (api_calls < max_api_calls)
-    {
-        ++api_calls;
-        return true;
-    }
-
-    if (throw_on_quota_exceeded)
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-            "AI API call limit reached: {} calls made, maximum: {}. "
-            "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
-            api_calls, max_api_calls);
-
-    quota_exceeded = true;
-    return false;
+    ++api_calls;
 }
 
 void AIQuotaTracker::recordTokens(UInt64 in_tokens, UInt64 out_tokens)
 {
-    std::lock_guard lock(mutex);
     input_tokens += in_tokens;
     output_tokens += out_tokens;
 }
