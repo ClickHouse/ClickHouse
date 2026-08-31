@@ -70,6 +70,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool allow_experimental_tuple_element_codecs;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -852,6 +853,20 @@ static void applyTupleCodecPatch(
         policy.erase(path);
     for (const auto & [path, codec_ast] : declarations.getSubcolumns())
         policy.set(path, codec_ast);
+}
+
+static bool changesTupleCodecDeclarations(
+    const ColumnCodecDescription & current_policy,
+    const ColumnCodecDescription & declarations)
+{
+    for (const auto & [path, codec] : declarations.getSubcolumns())
+    {
+        auto current = current_policy.getSubcolumns().find(path);
+        if (current == current_policy.getSubcolumns().end()
+            || current->second->formatWithSecretsOneLine() != codec->formatWithSecretsOneLine())
+            return true;
+    }
+    return false;
 }
 
 void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
@@ -2274,6 +2289,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (!command.declared_codec.empty())
             {
+                if (command.declared_codec.hasSubcolumns()
+                    && !context->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Tuple-element CODEC declarations are experimental. Set allow_experimental_tuple_element_codecs = 1 to enable them");
                 validateColumnCodecDescription(command.declared_codec, command.data_type, codec_validation_settings);
             }
 
@@ -2310,6 +2330,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             const auto & current_owner = all_columns.get(column_name);
             const DataTypePtr resulting_type = command.data_type ? command.data_type : current_owner.type;
+            const bool changes_tuple_codec = changesTupleCodecDeclarations(current_owner.codec, command.declared_codec);
+            if (changes_tuple_codec && !context->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Tuple-element CODEC declarations are experimental. Set allow_experimental_tuple_element_codecs = 1 to enable them");
             auto resulting_codec = current_owner.codec.clone();
             applyTupleCodecPatch(
                 resulting_codec,
@@ -2324,8 +2349,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
                 resulting_codec.resetRoot();
 
+            if (command.codec)
+                validateColumnCodecDescription(ColumnCodecDescription(command.codec), resulting_type, codec_validation_settings);
+
             if (!resulting_codec.empty())
-                resulting_codec = validateColumnCodecDescription(resulting_codec, resulting_type, codec_validation_settings);
+                resulting_codec = validateColumnCodecDescription(
+                    resulting_codec,
+                    resulting_type,
+                    changes_tuple_codec ? codec_validation_settings : CodecValidationSettings::trusted());
 
             if (command.codec || !command.declared_codec.empty() || !command.codec_removals.empty())
             {
