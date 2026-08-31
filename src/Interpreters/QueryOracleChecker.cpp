@@ -69,6 +69,7 @@ extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
 extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
 extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
 extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
+extern const Event ASTFuzzerOracleAggregateIfIdentityChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2983,6 +2984,72 @@ bool QueryOracleChecker::checkProjectionEquivalence(const ASTSelectQuery &, cons
     }
 
     LOG_TRACE(logger, "projection-equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkAggregateIfIdentity(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: the -If aggregate combinator must equal the same aggregate computed by a
+    /// DIFFERENT path (arithmetic/if masking), not via FILTER (which may just be rewritten to -If,
+    /// making the check vacuous). All identities below are provably exact for integer inputs:
+    ///   countIf(c)      == sum(toUInt64(c))
+    ///   sumIf(v, c)     == sum(v * toInt64(c))            (v*0=0, v*1=v; both sum the same values)
+    ///   maxIf(v, c)     == max(if(c, v, NULL))            (max ignores the NULL else)
+    ///   minIf(v, c)     == min(if(c, v, NULL))
+    ///   uniqExactIf(v,c)== uniqExact(if(c, v, NULL))      (uniqExact ignores NULL)
+    /// A divergence is a real -If / aggregation bug. Comparison is a single server-side boolean
+    /// (typed computation policy), read via executeScalar.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("aggif", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, v Int64, c UInt8) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, toInt64(number) * 7 - 300, toUInt8(number % 3) FROM numbers(800)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "aggregate-If identity oracle: {}", tbl);
+
+    const String probe =
+        "SELECT (countIf(c = 1) IS NOT DISTINCT FROM sum(toUInt64(c = 1)))"
+        " AND (sumIf(v, c = 1) IS NOT DISTINCT FROM sum(v * toInt64(c = 1)))"
+        " AND (maxIf(v, c = 1) IS NOT DISTINCT FROM max(if(c = 1, v, NULL)))"
+        " AND (minIf(v, c = 1) IS NOT DISTINCT FROM min(if(c = 1, v, NULL)))"
+        " AND (uniqExactIf(v, c = 1) IS NOT DISTINCT FROM uniqExact(if(c = 1, v, NULL)))"
+        " FROM " + tbl;
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false; /// could not evaluate the identity — skip rather than risk a false positive
+
+    UInt64 all_hold = 0;
+    try
+    {
+        all_hold = value->safeGet<UInt64>();
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    if (all_hold != 1)
+    {
+        fixture.preserve();
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "aggregate-If identity oracle mismatch!\n"
+            "One of countIf/sumIf/maxIf/minIf/uniqExactIf disagrees with its masking equivalent on table {}.\n"
+            "Probe: {}",
+            tbl, probe);
+    }
+
+    LOG_TRACE(logger, "aggregate-If identity oracle passed");
     return true;
 }
 
