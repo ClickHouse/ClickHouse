@@ -62,6 +62,7 @@ extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
+extern const SettingsBool make_distributed_plan;
 }
 
 namespace
@@ -243,6 +244,29 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
+/// The plan steps captured the query tree node contexts by pointer at build time, so the
+/// distributed-to-local fallback must flip the setting in place on those same objects
+/// as some optimization steps (Second-pass index analysis) read settings directly from the context tree.
+static void disableDistributedPlanInQueryTreeContexts(const QueryTreeNodePtr & query_tree)
+{
+    std::vector<IQueryTreeNode *> stack;
+    stack.push_back(query_tree.get());
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        if (auto * query_node = node->as<QueryNode>())
+            query_node->getMutableContext()->setSetting("make_distributed_plan", false);
+        else if (auto * union_node = node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("make_distributed_plan", false);
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                stack.push_back(child.get());
+    }
+}
+
 static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
 {
     for (const auto & node : extractAllTableReferences(query_tree))
@@ -408,10 +432,33 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     return std::move(planner).extractQueryPlan();
 }
 
+void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
+{
+    if (!context->getSettingsRef()[Setting::make_distributed_plan])
+        return;
+
+    planner.buildQueryPlanIfNeeded();
+    auto & query_plan = planner.getQueryPlan();
+
+    QueryPlanOptimizationSettings probe_settings(context);
+    if (!query_plan.applyDistributedPlanFallbackToLocal(probe_settings))
+        return;
+
+    /// The decision must land on the context objects, not only on settings snapshots: consumers
+    /// such as `FutureSetFromSubquery::buildSetInplace` read `make_distributed_plan` live from
+    /// the contexts the plan steps captured at build time.
+    context->setSetting("make_distributed_plan", false);
+    disableDistributedPlanInQueryTreeContexts(query_tree);
+}
+
 QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 {
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
+
+    /// Decide the distributed-to-local fallback before the settings snapshots below, so they
+    /// carry the decision.
+    applyDistributedPlanFallbackIfNeeded();
 
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.query_plan_with_parallel_replicas_builder = query_plan_with_parallel_replicas_builder;

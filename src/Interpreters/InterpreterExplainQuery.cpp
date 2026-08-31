@@ -996,6 +996,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                /// Decide the distributed-to-local fallback the same way execution does, so the
+                /// explained plan and the interpreter context match a real run. Skipped without
+                /// `optimize`: the raw plan is shown and no distributed decision is ever made.
+                if (settings.optimize)
+                    interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
@@ -1051,6 +1056,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                    /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
+                    /// distributed-to-local fallback must be decided on the contexts first.
+                    interpreter.applyDistributedPlanFallbackIfNeeded();
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }
@@ -1117,6 +1125,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
+                /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
+                /// distributed-to-local fallback must be decided on the contexts first.
+                interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }

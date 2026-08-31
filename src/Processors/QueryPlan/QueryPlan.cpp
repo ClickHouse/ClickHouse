@@ -241,11 +241,23 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     bool do_optimize)
 {
     checkInitialized();
-    if (do_optimize)
-        optimize(optimization_settings);
 
-    if (optimization_settings.make_distributed_plan)
-        convertToDistributed(optimization_settings);
+    /// The universal decision point for `make_distributed_plan`: every pipeline passes through
+    /// here, directly before both consumers of the flag (the `optimize` below and the
+    /// `convertToDistributed` gate). Entry points that already decided (and possibly propagated
+    /// the fallback into the contexts, see
+    /// `InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded`) pass the flipped
+    /// settings, which makes this call a no-op. Callers that run `optimize` separately must
+    /// decide (or force-clear the flag) before it themselves: the distributed transforms require
+    /// a validated plan.
+    QueryPlanOptimizationSettings effective_settings = optimization_settings;
+    applyDistributedPlanFallbackToLocal(effective_settings);
+
+    if (do_optimize)
+        optimize(effective_settings);
+
+    if (effective_settings.make_distributed_plan)
+        convertToDistributed(effective_settings);
 
     struct Frame
     {
@@ -848,27 +860,47 @@ static void disableProjectionsForDistributedPlan(QueryPlanOptimizationSettings &
 }
 
 
+bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings)
+{
+    if (!settings.make_distributed_plan)
+        return false;
+
+    /// A decision recorded on this object is only re-applied to the given settings, never
+    /// re-verified: the caller may construct fresh settings for every call, i.e.: ReadFromMerge.
+    if (distributed_plan_decision == DistributedPlanDecision::FellBack)
+    {
+        settings.make_distributed_plan = false;
+        return true;
+    }
+    /// Logical exchanges mark an accepted decision made on another object (e.g. a deserialized
+    /// fragment).
+    if (distributed_plan_decision == DistributedPlanDecision::Distributed
+        || QueryPlanOptimizations::planContainsLogicalExchange(*root))
+        return false;
+
+    const auto res = hasPlanUnsupportedStepForDistributed(*root, settings);
+    if (!res.has_value())
+    {
+        distributed_plan_decision = DistributedPlanDecision::Distributed;
+        return false;
+    }
+
+    if (!settings.distributed_plan_fallback_to_local_execution)
+        throw Exception(*res, ErrorCodes::SUPPORT_IS_DISABLED);
+
+    LOG_INFO(
+        getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", res->text);
+    settings.make_distributed_plan = false;
+    distributed_plan_decision = DistributedPlanDecision::FellBack;
+    return true;
+}
+
+
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
 
     QueryPlanOptimizationSettings effective_settings = optimization_settings;
-
-    /// Skip verification for fallback to local execution if plan already contains logical exchanges inserted by first optimize pass.
-    if (effective_settings.make_distributed_plan && !QueryPlanOptimizations::planContainsLogicalExchange(*root))
-    {
-        if (const auto res = hasPlanUnsupportedStepForDistributed(*root, optimization_settings); res.has_value())
-        {
-            if (!effective_settings.distributed_plan_fallback_to_local_execution)
-            {
-                throw Exception(*res, ErrorCodes::SUPPORT_IS_DISABLED);
-            }
-            LOG_INFO(
-                getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", res->text);
-            effective_settings.make_distributed_plan = false;
-            distributed_to_local_fallback_applied = true;
-        }
-    }
 
     if (effective_settings.make_distributed_plan)
         disableProjectionsForDistributedPlan(effective_settings);
@@ -952,16 +984,9 @@ hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOpti
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// The decision in `optimize` fell back to local execution: the distributed transforms never
-    /// ran, and `optimize` already ran the local tail (set/CTE expansion), so there is nothing to
-    /// convert.
-    if (distributed_to_local_fallback_applied)
-        return;
-
-    /// Backstop for the decision in `optimize`: it accepted this plan, so a non-serializable step
-    /// found here was created by an optimization pass after the decision to go with distributed plan. Falling back could happen
-    /// but it would mean we have either gap in pre-pass or in the optimization, and neither is fine
-    /// as it would silently fall back. Abort the plan.
+    /// A non-serializable step found here
+    /// means either a caller skipped the call to `applyDistributedPlanFallbackToLocal`  or an optimization pass created the step after
+    /// the plan was accepted. Neither may silently fall back, so abort the plan.
     std::vector<const IQueryPlanStep *> unsupported_steps{};
     QueryPlanOptimizations::findStepsUnsupportedForRemoteExecution(*root, unsupported_steps);
     if (!unsupported_steps.empty())

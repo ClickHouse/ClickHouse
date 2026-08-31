@@ -70,6 +70,13 @@ public:
 
     QueryPipelineBuilder buildQueryPipeline();
 
+    /// Runs `applyDistributedPlanFallbackToLocal` on the built plan and, when the fallback
+    /// applies, propagates `make_distributed_plan = false` to the interpreter context and to
+    /// every query tree node context in place. Second-pass index analysis reads the setting
+    /// live from the contexts the plan steps captured when it builds `IN`-subquery sets. Must
+    /// run before `QueryPlanOptimizationSettings` is constructed from the context. Idempotent.
+    void applyDistributedPlanFallbackIfNeeded();
+
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
     bool supportsTransactions() const override { return true; }

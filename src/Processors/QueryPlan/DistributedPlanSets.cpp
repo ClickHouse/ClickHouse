@@ -132,8 +132,12 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
         std::make_unique<DistinctStep>(header, transfer_limits, 0, header->getNames(), /*pre_distinct_=*/false));
 
     QueryPlanOptimizationSettings optimization_settings(context);
+    /// An unsupported set source (e.g. `WITH TOTALS` inside the subquery) builds the set locally
+    /// on the initiator; the flipped settings also skip the conversion below.
+    source_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     source_plan.optimize(optimization_settings);
-    source_plan.convertToDistributed(optimization_settings);
+    if (optimization_settings.make_distributed_plan)
+        source_plan.convertToDistributed(optimization_settings);
 }
 
 }
