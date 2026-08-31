@@ -313,6 +313,11 @@ void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
         return;
 
     if (ast_with_alias->parametrised_alias)
+    {
         setAlias(ast, getParamValue(ast_with_alias->parametrised_alias->name));
+        /// The placeholder is fully replaced by the concrete alias. Leaving it in place would make every later
+        /// consumer of the node - formatting, tree hashing, AST JSON serialization - still observe the placeholder.
+        ast_with_alias->parametrised_alias.reset();
+    }
 }
 }
