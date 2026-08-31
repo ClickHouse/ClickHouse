@@ -3731,6 +3731,8 @@ Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
+Whether a hash-based algorithm spills to disk is not part of this choice: [`max_bytes_before_external_join`](#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join) are the spill threshold for all of them, and [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) a hard cap for all of them. The value you pick decides how a join spills: `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect it in memory and switch over once the threshold is crossed.
+
 Most algorithms affect a query only when they are the one selected for it. Some, however, change planning merely by being listed — even as a lower-priority fallback that is not ultimately selected — because the decision is made before the algorithm is picked. There are two such effects:
 
 - Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`. Triggered by `full_sorting_merge` and `parallel_full_sorting_merge`.
