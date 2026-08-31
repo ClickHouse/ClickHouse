@@ -8,7 +8,7 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 
@@ -129,15 +129,12 @@ public:
             return;
         }
 
-        if (if_true_condition_value == 0 && !cond_argument->getResultType()->isNullable())
+        /// `LowCardinality(Nullable(...))` has to be refused just like `Nullable(...)`: an ordinary
+        /// comparison over a `LowCardinality(Nullable(String))` column produces exactly that type,
+        /// and `isNullable` alone is false for the `LowCardinality` wrapper.
+        if (if_true_condition_value == 0 && !isNullableOrLowCardinalityNullable(cond_argument->getResultType()))
         {
             /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
-            DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
-
-            const auto & condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
-            if (condition_result_type->isNullable())
-                not_function_result_type = makeNullable(not_function_result_type);
-
             auto not_function = std::make_shared<FunctionNode>("not");
             not_function->markAsOperator();
 
