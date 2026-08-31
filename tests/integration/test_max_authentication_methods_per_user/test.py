@@ -26,6 +26,14 @@ def started_cluster():
 
 expected_error = "User can not be created/updated because it exceeds the allowed quantity of authentication methods per user"
 
+ssh_key_type = "ssh-ed25519"
+
+ssh_keys = [
+    "AAAAC3NzaC1lZDI1NTE5AAAAIJGzPKVGIUBgsG/kkmEYCZIY99PI5KdHeA5Cibrv9HgW",
+    "AAAAC3NzaC1lZDI1NTE5AAAAIPf2G0r1/KLxLhiP3DUGj0rMIDZ+rf/BnMANAm8DnugR",
+    "AAAAC3NzaC1lZDI1NTE5AAAAILc1kfwrTHeptNprRnKZuYKP6IT3+LZXza8MKmCcJLVh",
+]
+
 
 def test_create(started_cluster):
 
@@ -60,6 +68,52 @@ def test_alter(started_cluster):
     )
 
     limited_node.query("DROP USER u_max_authentication_methods")
+
+
+def test_create_ssh_key_split(started_cluster):
+    limited_node.query("DROP USER IF EXISTS u_ssh_split")
+
+    keys_in_one_method = ", ".join(
+        f"KEY '{key}' TYPE '{ssh_key_type}'" for key in ssh_keys
+    )
+    separate_ssh_methods = ", ".join(
+        f"ssh_key BY KEY '{key}' TYPE '{ssh_key_type}'" for key in ssh_keys
+    )
+    two_keys_in_one_method = ", ".join(
+        f"KEY '{key}' TYPE '{ssh_key_type}'" for key in ssh_keys[:2]
+    )
+
+    assert expected_error in limited_node.query_and_get_error(
+        f"CREATE USER u_ssh_split IDENTIFIED WITH ssh_key BY {keys_in_one_method}"
+    )
+
+    assert expected_error in limited_node.query_and_get_error(
+        f"CREATE USER u_ssh_split IDENTIFIED WITH {separate_ssh_methods}"
+    )
+
+    assert expected_error not in limited_node.query_and_get_answer_with_error(
+        f"CREATE USER u_ssh_split IDENTIFIED WITH ssh_key BY {two_keys_in_one_method}"
+    )
+
+    limited_node.query("DROP USER u_ssh_split")
+
+
+def test_alter_add_ssh_key(started_cluster):
+    limited_node.query("DROP USER IF EXISTS u_ssh_alter")
+
+    two_keys_in_one_method = ", ".join(
+        f"KEY '{key}' TYPE '{ssh_key_type}'" for key in ssh_keys[:2]
+    )
+
+    limited_node.query(
+        f"CREATE USER u_ssh_alter IDENTIFIED WITH ssh_key BY {two_keys_in_one_method}"
+    )
+
+    assert expected_error in limited_node.query_and_get_error(
+        "ALTER USER u_ssh_alter ADD IDENTIFIED WITH plaintext_password BY '1'"
+    )
+
+    limited_node.query("DROP USER u_ssh_alter")
 
 
 def get_query_with_multiple_identified_with(

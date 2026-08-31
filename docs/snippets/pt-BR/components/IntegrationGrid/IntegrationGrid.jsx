@@ -272,8 +272,8 @@ export const IntegrationGrid = () => {
       return {
         slug: item.slug.startsWith("/") ? item.slug : `/${item.slug}`,
         docsLink: item.docsLink,
-        integration_logo: item.logo?.url ? `https://staging-cms.clickhouse.com${item.logo.url}` : "",
-        integration_logo_dark: item.logo_dark?.url ? `https://staging-cms.clickhouse.com${item.logo_dark.url}` : undefined,
+        integration_logo: item.logo?.url ? `https://clickhouse.com${item.logo.url}` : "",
+        integration_logo_dark: item.logo_dark?.url ? `https://clickhouse.com${item.logo_dark.url}` : undefined,
         integration_type: integrationTypes,
         integration_title: item.name,
         integration_tier: integrationTier
@@ -315,7 +315,7 @@ export const IntegrationGrid = () => {
           clearTimeout(timeoutId)
 
           if (!response.ok) {
-            throw new Error(`Erro HTTP! status: ${response.status}`)
+            throw new Error(`HTTP error! status: ${response.status}`)
           }
 
           const data = await response.json()
@@ -595,7 +595,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #1f1f1f;
+          color: #fff;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;
@@ -642,7 +642,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              Todos
+              All
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -670,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              Todos os níveis
+              All tiers
             </button>
             {integrationTiers.map((tier) => (
               <button

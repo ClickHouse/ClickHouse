@@ -24,10 +24,10 @@ ClickHouse поддерживает протокол MySQL. Это позвол�
 
 Если в вашем сценарии используется конкретный инструмент, у которого нет нативного драйвера ClickHouse, и вы хотите работать с ним через интерфейс MySQL, но столкнулись с определёнными несовместимостями, пожалуйста, [создайте issue](https://github.com/ClickHouse/ClickHouse/issues) в репозитории ClickHouse.
 
-::::note
-Чтобы лучше поддерживать SQL-диалект указанных выше BI-инструментов, интерфейс MySQL в ClickHouse неявно выполняет SELECT-запросы с настройкой [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ru/reference/settings/session-settings#prefer_column_name_to_alias).
-Отключить это нельзя, и в редких пограничных случаях это может приводить к различиям в поведении между запросами, отправленными через обычный интерфейс запросов ClickHouse и через интерфейс запросов MySQL.
-::::
+<Note>
+  Чтобы лучше поддерживать SQL-диалект указанных выше BI-инструментов, интерфейс MySQL в ClickHouse неявно выполняет SELECT-запросы с настройкой [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ru/reference/settings/session-settings/prefer#prefer_column_name_to_alias).
+  Отключить это нельзя, и в редких пограничных случаях это может приводить к различиям в поведении между запросами, отправленными через обычный интерфейс запросов ClickHouse и через интерфейс запросов MySQL.
+</Note>
 
 <div id="enabling-the-mysql-interface-on-clickhouse-cloud">
   ## Включение интерфейса MySQL в ClickHouse Cloud
@@ -115,7 +115,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
   ## Включение интерфейса MySQL в самоуправляемом ClickHouse
 </div>
 
-Добавьте настройку [mysql&#95;port](/ru/reference/settings/server-settings/settings#mysql_port) в файл конфигурации сервера. Например, можно указать порт в новом XML-файле в каталоге [`config.d/`](/ru/concepts/features/configuration/server-config/configuration-files):
+Добавьте настройку [mysql&#95;port](/ru/reference/settings/server-settings/settings/mysql#mysql_port) в файл конфигурации сервера. Например, можно указать порт в новом XML-файле в вашем `config.d/` [каталоге](/ru/concepts/features/configuration/server-config/configuration-files):
 
 ```xml
 <clickhouse>

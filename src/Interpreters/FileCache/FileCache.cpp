@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
+#include <Interpreters/FileCache/CacheUsage.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCacheUtils.h>
@@ -29,6 +30,8 @@
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <exception>
 #include <filesystem>
 #include <functional>
@@ -53,12 +56,15 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadErrors;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
+    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheCheckCorrectness;
     extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
+    extern const Event FilesystemCacheIdleClientEvictions;
+    extern const Event FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds;
 }
 
 namespace CurrentMetrics
@@ -69,6 +75,9 @@ namespace CurrentMetrics
     extern const Metric FilesystemCacheEvictionThreads;
     extern const Metric FilesystemCacheEvictionThreadsActive;
     extern const Metric FilesystemCacheEvictionThreadsScheduled;
+    extern const Metric FilesystemCacheDropCacheThreads;
+    extern const Metric FilesystemCacheDropCacheThreadsActive;
+    extern const Metric FilesystemCacheDropCacheThreadsScheduled;
 }
 
 
@@ -86,6 +95,7 @@ namespace FailPoints
     extern const char file_cache_stall_free_space_ratio_keeping_thread[];
     extern const char file_cache_pause_before_do_eviction[];
     extern const char file_cache_simulate_evicting_segment[];
+    extern const char file_cache_background_eviction_push_fail[];
 }
 
 namespace FileCacheSetting
@@ -120,10 +130,15 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 dynamic_resize_lock_wait_ms;
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
+    extern const FileCacheSettingsString system_cache_extensions;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
+    extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
+    extern const FileCacheSettingsUInt64 idle_client_check_interval_sec;
+    extern const FileCacheSettingsNonZeroUInt64 idle_client_eviction_threads;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
+    extern const FileCacheSettingsNonZeroUInt64 drop_cache_threads;
 }
 
 namespace
@@ -267,6 +282,20 @@ bool FileCache::CheckCacheProbability::doCheck()
     return distribution(rndgen);
 }
 
+static std::set<std::string> parseSystemCacheExtensions(const String & raw)
+{
+    std::vector<std::string> parts;
+    boost::split(parts, raw, [](char c) { return c == ',';});
+    std::set<std::string> result;
+    for (auto & ext : parts)
+    {
+        boost::trim(ext);
+        if (!ext.empty())
+            result.insert(ext);
+    }
+    return result;
+}
+
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
     , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
@@ -282,8 +311,16 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
     , keep_up_free_space_eviction_threads(settings[FileCacheSetting::keep_free_space_eviction_threads])
+    , drop_cache_threads(settings[FileCacheSetting::drop_cache_threads])
+    , invalidated_entries_cleanup_threshold(settings[FileCacheSetting::invalidated_entries_cleanup_threshold])
+    , invalidated_entries_cleanup_interval_ms(settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms])
+    , invalidated_entries_cleanup_remove_batch(settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch])
+    , idle_client_ttl_sec(settings[FileCacheSetting::idle_client_ttl_sec])
+    , idle_client_check_interval_sec(settings[FileCacheSetting::idle_client_check_interval_sec])
+    , idle_client_eviction_threads(settings[FileCacheSetting::idle_client_eviction_threads])
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
+    , system_cache_extensions(parseSystemCacheExtensions(settings[FileCacheSetting::system_cache_extensions].value))
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
@@ -359,6 +396,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     if (use_split_cache)
     {
+        /// Backstop for programmatically built settings which bypass
+        /// `FileCacheSettings::validate` (config-loaded settings are rejected there).
+        const auto policy = settings[FileCacheSetting::cache_policy].value;
+        if (policy == FileCachePolicy::LRU_OVERCOMMIT || policy == FileCachePolicy::SLRU_OVERCOMMIT)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`use_split_cache` is not supported with overcommit cache policies");
+
         main_priority = std::make_unique<SplitFileCachePriority>(
             IFileCachePriority::QueueType::Main,
             creator_function,
@@ -380,17 +424,25 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             cache_name
         );
     }
-    main_priority->setCleanupSettings(
-        settings[FileCacheSetting::invalidated_entries_cleanup_threshold],
-        settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms],
-        settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch]);
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
+
+    supports_dynamic_resize = main_priority->supportsDynamicResize();
 
     main_priority->setOnEvictCallback([this](const FileSegment & segment, const String & user_id)
     {
         onSegmentEvicted(segment, user_id);
     });
+
+    /// Idle-client eviction needs per-client usage, which only overcommit policies keep.
+    /// The TTL itself is reloadable; this only fixes whether tracking is possible at all.
+    const auto cache_policy = settings[FileCacheSetting::cache_policy].value;
+    const bool is_overcommit_policy =
+        cache_policy == FileCachePolicy::LRU_OVERCOMMIT || cache_policy == FileCachePolicy::SLRU_OVERCOMMIT;
+    client_tracking_possible = is_overcommit_policy && write_cache_per_user_directory;
+    if (write_cache_per_user_directory && idle_client_ttl_sec.load() > 0 && !is_overcommit_policy)
+        LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
+                         "per-client usage; idle-client eviction is disabled");
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
@@ -410,8 +462,7 @@ FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::pat
     if (!use_split_cache)
         return origin;
 
-    const static std::set<std::string> system_cache_type = {".txt", ".json", ".idx", ".cidx", ".dat"};
-    origin.segment_type = system_cache_type.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
+    origin.segment_type = system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
     return origin;
 }
 
@@ -446,9 +497,9 @@ bool FileCache::skipCacheOnDiskFailure() const
     return skip_cache_on_disk_failure;
 }
 
-String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const
+String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size) const
 {
-    return metadata.getFileSegmentPath(key, offset, segment_kind, origin);
+    return metadata.getFileSegmentPath(key, offset, segment_kind, origin, size);
 }
 
 String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -523,8 +574,18 @@ void FileCache::initializeImpl(bool load_metadata)
 
     try
     {
-        /// Publish the invalidate notifier before loadMetadata spawns threads that can invalidate entries.
-        main_priority->startup(Context::getGlobalContextInstance()->getSchedulePool(), cache_guard);
+        /// Record per-client accesses for idle-client eviction. Installed whenever
+        /// tracking is possible (not gated on the TTL), so the TTL can be toggled live.
+        if (client_tracking_possible)
+            metadata.setClientAccessCallback([this](const std::string & user_id) { main_priority->touchClientAccess(user_id); });
+
+        /// The single maintenance task (invalidated-entries cleanup + idle eviction).
+        /// Publish the wake notifier before loadMetadata can invalidate entries.
+        background_cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
+            StorageID::createEmpty(), "FileCacheBackgroundCleanup", [this] { backgroundCleanupTaskFunc(); });
+        main_priority->setInvalidateNotifier(
+            invalidated_entries_cleanup_threshold, [this] { background_cleanup_task->schedule(); });
+        background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
 
         if (load_metadata)
             loadMetadata();
@@ -533,9 +594,10 @@ void FileCache::initializeImpl(bool load_metadata)
     }
     catch (...)
     {
-        /// startup() may have scheduled the background cleanup task; stop it so a retried
+        /// The cleanup task may already be scheduled; stop it so a retried
         /// initialization does not leave an orphaned task rescheduling on `this`.
-        main_priority->deactivateBackgroundOperations();
+        if (background_cleanup_task)
+            background_cleanup_task->deactivate();
         init_exception = std::current_exception();
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
@@ -551,17 +613,26 @@ void FileCache::initializeImpl(bool load_metadata)
             /* max_free_threads */0,
             /* queue_size */keep_up_free_space_eviction_threads);
 
-        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
+        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
+    }
+
+    if (drop_cache_threads > 1)
+    {
+        /// Concurrent drop requests share the pool: with the queue limited to
+        /// `max_threads`, a request whose workers do not fit blocks in scheduling
+        /// until the previous request's workers finish.
+        drop_cache_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::FilesystemCacheDropCacheThreads,
+            CurrentMetrics::FilesystemCacheDropCacheThreadsActive,
+            CurrentMetrics::FilesystemCacheDropCacheThreadsScheduled,
+            /* max_threads */drop_cache_threads,
+            /* max_free_threads */0,
+            /* queue_size */drop_cache_threads);
     }
 
     is_initialized = true;
     LOG_TEST(log, "Initialized cache from {}", metadata.getBaseDirectory());
-}
-
-CachePriorityGuard::WriteLock FileCache::lockCache() const
-{
-    return cache_guard.writeLock();
 }
 
 FileSegments FileCache::getImpl(
@@ -1212,13 +1283,13 @@ KeyMetadata::iterator FileCache::addFileSegment(
 
 bool FileCache::tryIncreasePriority(FileSegment & file_segment)
 {
-    std::shared_lock lock(dynamic_resize_lock, std::try_to_lock);
-    /// Skip priority increase if cache resize is currently in progress.
-    /// We cannot do queue moves during dynamic resize.
-    if (!lock.owns_lock())
+    /// Skipped while a dynamic resize holds `dynamic_resize_lock` exclusively
+    /// (see the comment on `dynamic_resize_lock`). Policies which cannot resize never take it.
+    std::shared_lock lock(dynamic_resize_lock, std::defer_lock);
+    if (supports_dynamic_resize && !lock.try_lock())
         return false;
     return main_priority->tryIncreasePriority(
-        *file_segment.getQueueIterator(), file_segment.isCompleted(), cache_guard, cache_state_guard);
+        *file_segment.getQueueIterator(), file_segment.isCompleted(), cache_state_guard);
 }
 
 bool FileCache::tryReserve(
@@ -1235,10 +1306,10 @@ bool FileCache::tryReserve(
 
     assertInitialized();
 
-    /// Skip space reservation if dynamic cache resize is currently in progress.
-    /// We cannot do both at the same time.
-    std::shared_lock resize_shared_lock(dynamic_resize_lock, std::try_to_lock);
-    if (!resize_shared_lock.owns_lock())
+    /// Skipped while a dynamic resize holds `dynamic_resize_lock` exclusively
+    /// (see the comment on `dynamic_resize_lock`). Policies which cannot resize never take it.
+    std::shared_lock resize_shared_lock(dynamic_resize_lock, std::defer_lock);
+    if (supports_dynamic_resize && !resize_shared_lock.try_lock())
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfCacheResize);
         failure_reason = "cache is being resized";
@@ -1265,7 +1336,7 @@ bool FileCache::doTryReserve(
     size_t size,
     FileCacheReserveStat & reserve_stat,
     const OriginInfo & origin_info,
-    size_t /* lock_wait_timeout_milliseconds */,
+    size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason)
 {
     auto main_priority_iterator = file_segment.getQueueIterator();
@@ -1296,12 +1367,17 @@ bool FileCache::doTryReserve(
     {
         size_t required_elements_num = main_priority_iterator ? 0 : 1;
 
-        auto lock = cache_state_guard.lock();
-
+        auto lock = cache_state_guard.tryLockFor(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
+        if (!lock)
+        {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
+            failure_reason = "cache contention";
+            return false;
+        }
         /// Check per-query cache limits.
         if (query_limit)
         {
-            query_context = query_limit->tryGetQueryContext(lock);
+            query_context = query_limit->tryGetQueryContext();
             if (query_context)
             {
                 query_priority = &query_context->getPriority();
@@ -1349,7 +1425,6 @@ bool FileCache::doTryReserve(
     }
 
     EvictionCandidates eviction_candidates(main_priority->getOnEvictCallback());
-    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
 
     FailPointInjection::pauseFailPoint(FailPoints::file_cache_pause_before_do_eviction);
 
@@ -1358,7 +1433,7 @@ bool FileCache::doTryReserve(
     if (!doEviction(
         *main_eviction_info, query_eviction_info.get(), file_segment, origin_info,
         main_priority_iterator, reserve_stat, eviction_candidates,
-        invalidated_entries, query_priority, failure_reason))
+        query_priority, failure_reason))
     {
         chassert(!failure_reason.empty());
         return false;
@@ -1369,9 +1444,7 @@ bool FileCache::doTryReserve(
 
     if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite())
     {
-        auto lock = cache_guard.writeLock();
-        eviction_candidates.afterEvictWrite(lock);
-        IFileCachePriority::removeEntries(invalidated_entries, lock);
+        eviction_candidates.afterEvictWrite();
 
         if (!main_priority_iterator)
         {
@@ -1380,25 +1453,29 @@ bool FileCache::doTryReserve(
                 file_segment.getKeyMetadata(),
                 file_segment.offset(),
                 /* size */0,
-                lock,
                 nullptr);
-
-            if (query_context)
-            {
-                query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), lock);
-                if (!query_priority_iterator)
-                    query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, lock);
-            }
         }
     }
-    else if (!invalidated_entries.empty())
-    {
-        if (auto lock = cache_guard.tryWriteLock(); lock.owns_lock())
-            IFileCachePriority::removeEntries(invalidated_entries, lock);
-    }
+
+    bool main_size_incremented = false;
 
     try
     {
+        /// Mirror the new main-priority entry into the query context only when a new main entry
+        /// was created: nothing here decreases the per-query counters, so mirroring every
+        /// reservation would make them grow without bound. The full per-query accounting is
+        /// fixed separately in https://github.com/ClickHouse/ClickHouse/pull/114165.
+        /// Inside the `try` on purpose: if `add` throws, the size-0 main entry must be invalidated.
+        if (query_context && added_new_main_entry)
+        {
+            auto query_lock = query_limit->lock();
+            query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), query_lock);
+            if (!query_priority_iterator)
+                query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, query_lock);
+        }
+
+        /// Blocking, unlike the timed `tryLockFor` taken before eviction: eviction has already
+        /// deleted files from disk, so giving up now would throw that work away and still fail.
         auto lock = cache_state_guard.lock();
         main_eviction_info->releaseHoldSpace(lock);
         if (query_eviction_info)
@@ -1406,6 +1483,7 @@ bool FileCache::doTryReserve(
 
         eviction_candidates.afterEvictState(lock);
         main_priority_iterator->incrementSize(size, lock);
+        main_size_incremented = true;
 
         if (query_priority_iterator)
             query_priority_iterator->incrementSize(size, lock);
@@ -1414,8 +1492,19 @@ bool FileCache::doTryReserve(
     {
         /// Protect against zombie queue entries which are not assigned to any file segment
         /// and are not "invalidated" (which makes them non-removable).
-        if (main_priority_iterator && added_new_main_entry)
-            main_priority_iterator->invalidate();
+        if (added_new_main_entry)
+        {
+            /// A freshly-created entry: `invalidate` zeroes it and hands it to the background
+            /// cleanup, and subtracts any size already added to `main_priority`.
+            if (main_priority_iterator)
+                main_priority_iterator->invalidate();
+        }
+        else if (main_size_incremented)
+        {
+            /// Existing entry: something after `main_priority_iterator->incrementSize` threw.
+            /// Roll it back so `main_priority` stays consistent with `FileSegment::reserved_size`.
+            main_priority_iterator->decrementSize(size);
+        }
 
         throw;
     }
@@ -1437,14 +1526,13 @@ bool FileCache::doTryReserve(
 }
 
 bool FileCache::doEviction(
-    const EvictionInfo & main_eviction_info,
-    const EvictionInfo * query_eviction_info,
+    EvictionInfo & main_eviction_info,
+    EvictionInfo * query_eviction_info,
     FileSegment & file_segment,
     const OriginInfo & origin_info,
     const IFileCachePriority::IteratorPtr & main_priority_iterator,
     FileCacheReserveStat & reserve_stat,
     EvictionCandidates & eviction_candidates,
-    IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
     Priority * query_priority,
     std::string & failure_reason)
 {
@@ -1473,6 +1561,9 @@ bool FileCache::doEviction(
                 CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         };
 
+        /// Under sustained concurrency the `Reserve` eviction cursor is never reset, so eviction
+        /// degrades from strict LRU order to a clock-like sweep. This is a deliberate trade-off:
+        /// resuming from the cursor is cheaper than rescanning the queue head on every reservation.
         const bool resume_reserve_cursor = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
         const auto eviction_cursor = resume_reserve_cursor
             ? IFileCachePriority::EvictionCursor::Reserve
@@ -1487,13 +1578,11 @@ bool FileCache::doEviction(
                     *query_eviction_info,
                     reserve_stat,
                     eviction_candidates,
-                    invalidated_entries,
                     /* reservee */{},
                     eviction_cursor,
                     /* max_candidates_size */0,
                     /* is_total_space_cleanup */false,
                     origin_info,
-                    cache_guard,
                     cache_state_guard))
             {
                 failure_reason = on_cannot_evict_enough_space_message(*query_priority);
@@ -1508,18 +1597,17 @@ bool FileCache::doEviction(
                 main_eviction_info,
                 reserve_stat,
                 eviction_candidates,
-                invalidated_entries,
                 main_priority_iterator,
                 eviction_cursor,
                 /* max_candidates_size */0,
                 /* is_total_space_cleanup */false,
                 origin_info,
-                cache_guard,
                 cache_state_guard))
         {
             failure_reason = on_cannot_evict_enough_space_message(*main_priority);
             return false;
         }
+
     }
 
     /// Remove eviction candidates from filesystem.
@@ -1528,11 +1616,7 @@ bool FileCache::doEviction(
     {
         auto on_failed_evict = [&]()
         {
-            {
-                auto lock = cache_guard.writeLock();
-                eviction_candidates.afterEvictWrite(lock);
-                IFileCachePriority::removeEntries(invalidated_entries, lock);
-            }
+            eviction_candidates.afterEvictWrite();
             eviction_candidates.afterEvictState(cache_state_guard.lock());
         };
         try
@@ -1562,16 +1646,15 @@ namespace
 {
 /// Reschedule delays (ms) and the state-lock acquire timeout for background free-space keeping.
 constexpr size_t free_space_keeping_reschedule_ms = 5000;
-constexpr size_t free_space_keeping_lock_failed_reschedule_ms = 1000;
+constexpr size_t free_space_keeping_retry_reschedule_ms = 1000;
 constexpr size_t free_space_keeping_state_lock_timeout_ms = 1000;
 
-/// A batch handed to a remover: file segments to delete, plus zero-size queue entries to drop.
+/// A batch handed to a remover: file segments to delete.
 struct EvictionBatch
 {
     EvictionCandidatesPtr candidates;
-    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
 };
-using EvictionBatchPtr = std::unique_ptr<EvictionBatch>;
+using EvictionBatchPtr = std::shared_ptr<EvictionBatch>;
 }
 
 void FileCache::freeSpaceRatioKeepingThreadFunc()
@@ -1644,7 +1727,7 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
         auto lock = cache_state_guard.tryLockFor(std::chrono::milliseconds(free_space_keeping_state_lock_timeout_ms));
         if (!lock)
         {
-            reschedule_ms = free_space_keeping_lock_failed_reschedule_ms;
+            reschedule_ms = free_space_keeping_retry_reschedule_ms;
             return;
         }
         eviction_info = collectFreeSpaceEvictionInfo(lock, 0, 0);
@@ -1660,10 +1743,9 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
     auto status = IFileCachePriority::CollectStatus::SUCCESS;
 
     const size_t queue_capacity = std::max<size_t>(2 * keep_up_free_space_eviction_threads, 2);
-    /// Stages done by a single main thread and N evicting thread:
-    /// 1. Main thread iterates eviction candidates and pushes to candidates_to_evict.
-    /// 2. Evicting thread pops from removal queue, evicts and pushes to pending_finalization_queue for finalization.
-    /// 3. Main thread also pops from removed queue and finalizes removal.
+    /// Pipeline: the collector (this thread) pushes candidate batches to pending_eviction_queue;
+    /// N removers evict them (delete files) and forward to pending_finalization_queue, which the
+    /// collector drains and finalizes.
     ConcurrentBoundedQueue<EvictionBatchPtr> pending_eviction_queue(queue_capacity);
     ConcurrentBoundedQueue<EvictionBatchPtr> pending_finalization_queue(queue_capacity);
 
@@ -1683,16 +1765,16 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
         EvictionBatchPtr batch;
         while (blocking ? pending_finalization_queue.pop(batch) : pending_finalization_queue.tryPop(batch))
         {
-            /// The batch leaves the pipeline regardless of the outcome below.
+            /// Subtract the full footprint, failures included: at this point we know what failed, and
+            /// those bytes are still in `current_size` (their queue entries were never invalidated),
+            /// so dropping them from `in_flight` puts them back into the projection and the next pass
+            /// re-targets them. While a batch is in flight its failures are unknown, so the projection
+            /// is optimistic for at most one iteration; the periodic reschedule self-corrects.
             in_flight_size -= batch->candidates->bytes();
             in_flight_elements -= batch->candidates->size();
             try
             {
-                {
-                    auto lock = cache_guard.writeLock();
-                    batch->candidates->afterEvictWrite(lock);
-                    IFileCachePriority::removeEntries(batch->invalidated_entries, lock);
-                }
+                batch->candidates->afterEvictWrite();
                 batch->candidates->afterEvictState(cache_state_guard.lock());
 
                 /// Per-segment eviction metrics are updated in `onSegmentEvictedInTheBackground`.
@@ -1732,7 +1814,10 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
                         }
                         if (!pending_finalization_queue.push(std::move(batch)))
                         {
-                            /// Queue if finished, nothing will come anymore.
+                            /// Unreachable: the queue is finished only by the last remover to exit,
+                            /// and a remover inside push() is still counted in `running_removers`.
+                            /// If reached, the batch destructor invalidates the evicted entries.
+                            chassert(false);
                             break;
                         }
                     }
@@ -1765,7 +1850,7 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
                 auto lock = cache_state_guard.tryLockFor(std::chrono::milliseconds(free_space_keeping_state_lock_timeout_ms));
                 if (!lock)
                 {
-                    reschedule_ms = free_space_keeping_lock_failed_reschedule_ms;
+                    reschedule_ms = free_space_keeping_retry_reschedule_ms;
                     status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
                     break;
                 }
@@ -1777,15 +1862,15 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
             LOG_TRACE(log, "Collecting eviction candidates to keep free space ({}), in flight: {}/{} (size/elements)",
                       eviction_info->toString(), in_flight_size, in_flight_elements);
 
-            auto batch = std::make_unique<EvictionBatch>();
+            auto batch = std::make_shared<EvictionBatch>();
             batch->candidates = std::make_unique<EvictionCandidates>(getOnBackgroundEvictCallback());
             FileCacheReserveStat stat;
             main_priority->collectCandidatesForEviction(
-                *eviction_info, stat, *batch->candidates, batch->invalidated_entries,
+                *eviction_info, stat, *batch->candidates,
                 /* reservee */nullptr, IFileCachePriority::EvictionCursor::Background,
                 /* max_candidates_size */keep_up_free_space_remove_batch,
                 /* is_total_space_cleanup */true, getInternalOrigin(),
-                cache_guard, cache_state_guard);
+                cache_state_guard);
 
             /// Consumed: the next iteration recomputes against the updated live size.
             eviction_info.reset();
@@ -1793,12 +1878,6 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
             const size_t batch_size = batch->candidates->size();
             if (batch_size == 0)
             {
-                /// Zero-size (already invalidated) entries have no file to delete.
-                if (!batch->invalidated_entries.empty())
-                {
-                    IFileCachePriority::removeEntries(batch->invalidated_entries, cache_guard.writeLock());
-                    continue;
-                }
                 /// Eviction was required (`eviction_info` was non-null) but nothing could be
                 /// collected: the cache is still above the target with no releasable candidates.
                 /// Report CANNOT_EVICT so the final log line does not claim the target was drained.
@@ -1809,8 +1888,28 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
             const size_t batch_bytes = batch->candidates->bytes();
 
             /// Keep finalizing while waiting for room, so removers never block on a full queue.
-            while (!pending_eviction_queue.tryPush(std::move(batch), 10))
-                finalize_removed(/* blocking */false);
+            constexpr size_t push_timeout_ms = 10;
+            constexpr size_t max_push_attempts = 1000;
+            bool pushed = false;
+            bool force_push_fail = false;
+            fiu_do_on(FailPoints::file_cache_background_eviction_push_fail, { force_push_fail = true; });
+            for (size_t attempt = 0; !force_push_fail && !pushed && attempt < max_push_attempts; ++attempt)
+            {
+                pushed = pending_eviction_queue.tryPush(batch, push_timeout_ms);
+                if (!pushed)
+                    finalize_removed(/* blocking */false);
+            }
+            if (!pushed)
+            {
+                LOG_WARNING(
+                    log, "Background eviction workers take too much time to evict "
+                    "(max_push_attempts: {}, push_timeout_ms: {})",
+                    max_push_attempts, push_timeout_ms);
+
+                status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
+                reschedule_ms = free_space_keeping_retry_reschedule_ms;
+                break;
+            }
 
             in_flight_size += batch_bytes;
             in_flight_elements += batch_size;
@@ -1836,6 +1935,140 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
 
     LOG_TRACE(log, "Free space ratio keeping thread finished with status `{}`, evicted {} file segments ({} bytes)",
               status, evicted_elements, evicted_size);
+
+    assertCacheCorrectness();
+}
+
+UInt64 FileCache::backgroundCleanupIntervalMs() const
+{
+    /// Invalidated-entries interval, shrunk to the idle-client check cadence
+    /// (default `ttl/10`) while idle-client eviction is enabled.
+    const auto ttl_sec = idle_client_ttl_sec.load();
+    if (ttl_sec == 0)
+        return invalidated_entries_cleanup_interval_ms;
+    const auto check_sec = idle_client_check_interval_sec.load();
+    const auto interval_sec = check_sec > 0 ? check_sec : std::max<UInt64>(1, ttl_sec / 10);
+    return std::min<UInt64>(invalidated_entries_cleanup_interval_ms, interval_sec * 1000);
+}
+
+void FileCache::backgroundCleanupTaskFunc()
+{
+    size_t removed = 0;
+    {
+        Stopwatch watch;
+        try
+        {
+            removed = main_priority->removeInvalidatedEntries(invalidated_entries_cleanup_remove_batch);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        ProfileEvents::increment(
+            ProfileEvents::FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, watch.elapsedMilliseconds());
+    }
+
+    /// Idle-client eviction shares this thread; self-throttled to its own interval.
+    /// Possible only for client-tracking (overcommit) policies; the live TTL gates it.
+    if (client_tracking_possible)
+    {
+        try
+        {
+            evictIdleClients();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    if (shutdown || !background_cleanup_task)
+        return;
+
+    /// A full batch likely means there is more to clean: come back immediately.
+    if (removed == invalidated_entries_cleanup_remove_batch)
+        background_cleanup_task->schedule();
+    else
+        background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
+}
+
+void FileCache::evictIdleClients()
+{
+    /// Wait for `is_initialized`: the cleanup task is scheduled before loadMetadata,
+    /// and purging a client mid-load could race a key still being reconstructed.
+    if (!is_initialized || shutdown)
+        return;
+
+    /// TTL is reloadable: zero means eviction is currently disabled. Access tracking
+    /// keeps running, so last-access stays fresh if it is re-enabled later.
+    const auto ttl_sec = idle_client_ttl_sec.load();
+    if (ttl_sec == 0)
+        return;
+
+    /// Self-throttle to the check interval: the cleanup task can fire more often.
+    /// Runs only on the cleanup-task thread, so `last_idle_eviction` needs no sync.
+    const auto now = std::chrono::steady_clock::now();
+    const auto configured = idle_client_check_interval_sec.load();
+    const std::chrono::seconds check_interval(configured > 0 ? configured : std::max<UInt64>(1, ttl_sec / 10));
+    if (last_idle_eviction.time_since_epoch().count() != 0 && now - last_idle_eviction < check_interval)
+        return;
+    last_idle_eviction = now;
+
+    const std::chrono::seconds ttl(ttl_sec);
+    const auto idle_clients = main_priority->collectIdleClients(ttl);
+    if (idle_clients.empty())
+        return;
+
+    /// Purge clients in parallel: `removeAllKeys` scans all metadata buckets, so a
+    /// large idle set would otherwise serialize behind one another.
+    const auto check_now = CacheUsage::Clock::now();
+    std::atomic<size_t> next_index = 0;
+    auto purge_worker = [&]
+    {
+        for (size_t i = next_index.fetch_add(1, std::memory_order_relaxed);
+             i < idle_clients.size() && !shutdown;
+             i = next_index.fetch_add(1, std::memory_order_relaxed))
+        {
+            const auto & [user_id, usage] = idle_clients[i];
+            try
+            {
+                /// Re-check via the carried usage to skip clients touched since the scan.
+                if (!usage->idleFor(ttl, check_now))
+                    continue;
+
+                if (usage->total_size == 0)
+                    continue;
+
+                /// Report success only on a full purge; held segments are retried next sweep.
+                if (metadata.removeAllKeys(user_id))
+                {
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheIdleClientEvictions);
+                    LOG_INFO(log, "Purged cache for idle client '{}' (idle for >= {} sec)", user_id, ttl_sec);
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to purge idle client cache");
+            }
+        }
+    };
+
+    /// The current (cleanup-task) thread participates, so spawn one fewer worker.
+    const size_t num_extra_threads = std::min<size_t>(idle_clients.size(), idle_client_eviction_threads) - 1;
+    std::vector<ThreadFromGlobalPool> threads;
+    try
+    {
+        threads.reserve(num_extra_threads);
+        for (size_t t = 0; t < num_extra_threads; ++t)
+            threads.emplace_back(purge_worker);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to spawn idle client eviction threads");
+    }
+    purge_worker();
+    for (auto & thread : threads)
+        thread.join();
 }
 
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)
@@ -1889,7 +2122,7 @@ void FileCache::removeAllReleasable(const UserID & user_id)
     assertInitialized();
     assertCacheCorrectness();
 
-    metadata.removeAllKeys(user_id);
+    metadata.removeAllKeys(user_id, drop_cache_pool.get());
 }
 
 void FileCache::loadMetadata()
@@ -1909,7 +2142,7 @@ void FileCache::loadMetadata()
 
     /// Shuffle file_segment_metadatas to have random order in LRUQueue
     /// as at startup all file_segment_metadatas have the same priority.
-    main_priority->shuffle(cache_guard.writeLock());
+    main_priority->shuffle();
 }
 
 void FileCache::loadMetadataImpl()
@@ -2230,14 +2463,35 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         FileSegmentKind kind;
         fs::path path;
         IFileCachePriority::IteratorPtr cache_it; /// filled in phase 2
+        bool size_in_filename; /// whether the size was read from the file name (no `stat` needed)
     };
     std::vector<SegmentToLoad> segments;
+    /// Deduplicate by offset. Encoding the size in the name (`<offset>` -> `<offset>_<size>`, see
+    /// `renameToIncludeSizeInNameUnlocked`) is best-effort: if the target name is already occupied the
+    /// rename fails and the real segment stays under its legacy `<offset>` name next to a stale
+    /// `<offset>_<size>` artifact. Both parse to the same offset, so without deduplication we would
+    /// build two priority entries for one offset and later hit the duplicate-offset path in phase 3
+    /// (a `chassert(false)` in debug builds; a nondeterministic deletion of the real file in release).
+    std::unordered_map<UInt64, size_t> offset_to_index;
 
     for (; offset_it != fs::directory_iterator(); ++offset_it)
     {
+        /// Only regular files hold cache segments. A rename target occupied by a non-regular entry
+        /// (e.g. a leftover directory, as exercised by `RenameToIncludeSizeInNameFailureKeepsSegmentConsistent`)
+        /// is exactly what makes the best-effort rename fail; skip it here so its name is never parsed
+        /// and trusted as a segment (the size of a `<offset>_<size>` entry is read from the name without
+        /// a `stat`). Uses the directory-entry type cached by `directory_iterator` (no extra syscall on
+        /// local filesystems, which always report the entry type).
+        if (!offset_it->is_regular_file())
+        {
+            LOG_WARNING(log, "Unexpected non-regular entry in cache directory: {}", offset_it->path().string());
+            continue;
+        }
+
         auto offset_with_suffix = offset_it->path().filename().string();
         bool parsed = false;
         UInt64 offset = 0;
+        std::optional<UInt64> size_from_name;
 
         auto delim_pos = offset_with_suffix.find('_');
         if (delim_pos == std::string::npos)
@@ -2248,17 +2502,26 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         {
             parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
 
-            if (offset_with_suffix.substr(delim_pos + 1) == "persistent")
+            const auto suffix = offset_with_suffix.substr(delim_pos + 1);
+            if (suffix == "persistent")
             {
                 /// For compatibility. Persistent files are no longer supported.
                 fs::remove(offset_it->path());
                 continue;
             }
-            if (offset_with_suffix.substr(delim_pos + 1) == "temporary")
+            if (suffix == "temporary")
             {
                 fs::remove(offset_it->path());
                 continue;
             }
+
+            /// New format `<offset>_<size>`: the size is encoded in the name, so we can
+            /// load this segment without a `stat` syscall.
+            UInt64 size_value = 0;
+            if (parsed && tryParse<UInt64>(size_value, suffix))
+                size_from_name = size_value;
+            else
+                parsed = false;
         }
 
         if (!parsed)
@@ -2267,14 +2530,36 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             continue;
         }
 
-        auto size = offset_it->file_size();
+        /// Legacy `<offset>` files (and files left by a download that was interrupted before
+        /// the size was encoded into the name) require a `stat` to obtain the size.
+        UInt64 size = size_from_name.has_value() ? *size_from_name : offset_it->file_size();
         if (!size)
         {
             fs::remove(offset_it->path());
             continue;
         }
 
-        segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr});
+        /// If two names map to the same offset (a legacy `<offset>` next to a stale `<offset>_<size>`
+        /// left by a failed best-effort rename), keep the legacy file — its size comes from a real
+        /// `stat`, and it is the segment whose rename failed — and ignore the suffixed duplicate,
+        /// whose size is trusted from the name. Leaving the stale artifact on disk is deliberate:
+        /// removing it here would be a destructive action on this recovery path.
+        if (auto [it, is_new] = offset_to_index.try_emplace(offset, segments.size()); !is_new)
+        {
+            auto & existing = segments[it->second];
+            const bool replace_existing = !size_from_name.has_value() && existing.size_in_filename;
+            LOG_WARNING(
+                log,
+                "Duplicate cache files for offset {}: keeping '{}', ignoring '{}'",
+                offset,
+                replace_existing ? offset_it->path().string() : existing.path.string(),
+                replace_existing ? existing.path.string() : offset_it->path().string());
+            if (replace_existing)
+                existing = {offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr, /* size_in_filename */false};
+            continue;
+        }
+
+        segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr, size_from_name.has_value()});
     }
 
     /// Phase 2: add all segments for the key under a single write lock acquisition.
@@ -2284,7 +2569,6 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     /// happen only if cache configuration changed and max_size became less than it was.
     size_t size_limit = 0;
     {
-        auto lock = cache_guard.writeLock();
         auto state_lock = cache_state_guard.lock();
         size_limit = main_priority->getSizeLimit(state_lock);
 
@@ -2302,7 +2586,6 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     key_metadata,
                     segment.offset,
                     segment.size,
-                    lock,
                     &state_lock,
                     /* is_initial_load */true);
             }
@@ -2328,7 +2611,8 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     /* background_download_enabled */false,
                     this,
                     key_metadata,
-                    segment.cache_it);
+                    segment.cache_it,
+                    /* size_in_filename */segment.size_in_filename);
 
                 inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
             }
@@ -2344,7 +2628,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             }
             else
             {
-                segment.cache_it->remove(cache_guard.writeLock());
+                segment.cache_it->remove();
                 fs::remove(segment.path);
                 chassert(false);
             }
@@ -2420,14 +2704,17 @@ void FileCache::deactivateBackgroundOperations()
     if (load_metadata_main_thread && load_metadata_main_thread->joinable())
         load_metadata_main_thread->join();
 
-    metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
+    /// The single maintenance task: invalidated-entries cleanup + idle-client eviction.
+    if (background_cleanup_task)
+        background_cleanup_task->deactivate();
+
     /// The task is stopped, so no new eviction jobs can be scheduled - drain the rest.
     if (eviction_pool)
         eviction_pool->wait();
-    if (main_priority)
-        main_priority->deactivateBackgroundOperations();
+
+    metadata.shutdown();
 }
 
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
@@ -2456,7 +2743,7 @@ std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const Key & key, c
 IFileCachePriority::PriorityDumpPtr FileCache::dumpQueue()
 {
     assertInitialized();
-    return main_priority->dump(cache_guard.readLock());
+    return main_priority->dump();
 }
 
 IFileCachePriority::Type FileCache::getEvictionPolicyType()
@@ -2537,7 +2824,7 @@ void FileCache::assertCacheCorrectness()
     {
         chassert(file_segment_metadata->file_segment->assertCorrectness());
         return IFileCachePriority::IterationResult::CONTINUE;
-    }, stat, cache_guard.readLock());
+    }, stat);
 
     main_priority->check(cache_state_guard.lock());
 #endif
@@ -2623,21 +2910,31 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
         const bool do_dynamic_resize = (max_size_changed || max_elements_changed) && !slru_ratio_changed;
 
-        if (allow_dynamic_cache_resize && do_dynamic_resize && !main_priority->isOvercommitEviction())
+        if (do_dynamic_resize)
         {
-            auto result_limits = doDynamicResize(current_limits, desired_limits);
+            if (!allow_dynamic_cache_resize)
+            {
+                LOG_WARNING(
+                    log, "Filesystem cache size was modified, "
+                    "but dynamic cache resize is disabled, "
+                    "therefore cache size will not be changed without server restart. "
+                    "To enable dynamic cache resize, "
+                    "add `allow_dynamic_cache_resize` to cache configuration");
+            }
+            else if (!main_priority->supportsDynamicResize())
+            {
+                LOG_WARNING(
+                    log, "Filesystem cache size was modified, "
+                    "but dynamic cache resize is not supported by the current cache policy, "
+                    "therefore cache size will not be changed without server restart");
+            }
+            else
+            {
+                auto result_limits = doDynamicResize(current_limits, desired_limits);
 
-            actual_settings[FileCacheSetting::max_size] = result_limits.max_size;
-            actual_settings[FileCacheSetting::max_elements] = result_limits.max_elements;
-        }
-        else if (do_dynamic_resize)
-        {
-            LOG_WARNING(
-                log, "Filesystem cache size was modified, "
-                "but dynamic cache resize is disabled, "
-                "therefore cache size will not be changed without server restart. "
-                "To enable dynamic cache resize, "
-                "add `allow_dynamic_cache_resize` to cache configuration");
+                actual_settings[FileCacheSetting::max_size] = result_limits.max_size;
+                actual_settings[FileCacheSetting::max_elements] = result_limits.max_elements;
+            }
         }
         else
         {
@@ -2651,6 +2948,34 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])
     {
         max_file_segment_size = actual_settings[FileCacheSetting::max_file_segment_size] = new_settings[FileCacheSetting::max_file_segment_size];
+    }
+
+    if (new_settings[FileCacheSetting::idle_client_ttl_sec] != actual_settings[FileCacheSetting::idle_client_ttl_sec])
+    {
+        const UInt64 new_ttl = new_settings[FileCacheSetting::idle_client_ttl_sec];
+        const bool was_enabled = idle_client_ttl_sec.load() > 0;
+        idle_client_ttl_sec.store(new_ttl);
+
+        LOG_INFO(log, "Changed idle_client_ttl_sec from {} to {}",
+                 actual_settings[FileCacheSetting::idle_client_ttl_sec].value, new_ttl);
+        actual_settings[FileCacheSetting::idle_client_ttl_sec] = new_settings[FileCacheSetting::idle_client_ttl_sec];
+
+        if (new_ttl > 0 && !client_tracking_possible)
+            LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
+                             "per-client usage; idle-client eviction is disabled");
+        /// Just enabled: wake the task so the first sweep does not wait a full interval.
+        else if (new_ttl > 0 && !was_enabled && client_tracking_possible && background_cleanup_task)
+            background_cleanup_task->schedule();
+    }
+
+    if (new_settings[FileCacheSetting::idle_client_check_interval_sec] != actual_settings[FileCacheSetting::idle_client_check_interval_sec])
+    {
+        idle_client_check_interval_sec.store(new_settings[FileCacheSetting::idle_client_check_interval_sec]);
+
+        LOG_INFO(log, "Changed idle_client_check_interval_sec from {} to {}",
+                 actual_settings[FileCacheSetting::idle_client_check_interval_sec].value,
+                 new_settings[FileCacheSetting::idle_client_check_interval_sec].value);
+        actual_settings[FileCacheSetting::idle_client_check_interval_sec] = new_settings[FileCacheSetting::idle_client_check_interval_sec];
     }
 
     if (new_settings[FileCacheSetting::expose_prometheus_eviction_metrics] != actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics])
@@ -2671,6 +2996,15 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & prev_limits,
     if (prev_limits.slru_size_ratio != desired_limits.slru_size_ratio)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic resize of size ratio is not allowed");
 
+    /// A policy whose `modifySizeLimits` cannot apply the limits must not enter
+    /// `doDynamicResizeImpl`, which would collect and remove queue entries and only then fail
+    /// on the `modifySizeLimits` refusal. Checked before `dynamic_resize_lock` is taken.
+    if (!main_priority->supportsDynamicResize())
+    {
+        LOG_WARNING(log, "Dynamic cache resize is not supported by the current cache policy");
+        return prev_limits;
+    }
+
     std::unique_lock resize_lock(dynamic_resize_lock, std::defer_lock);
     if (!resize_lock.try_lock_for(std::chrono::milliseconds(dynamic_resize_lock_wait_ms)))
     {
@@ -2679,8 +3013,6 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & prev_limits,
         return prev_limits;
     }
 
-    SizeLimits result_limits;
-    bool modified_size_limit = false;
     {
         auto cache_lock = cache_state_guard.lock();
 
@@ -2689,20 +3021,23 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & prev_limits,
 
         if (prev_limits.max_elements != main_priority->getElementsLimit(cache_lock))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Current limits inconsistency in elements number");
+    }
 
-        try
-        {
-            modified_size_limit = doDynamicResizeImpl(prev_limits, desired_limits, result_limits, cache_lock);
-            chassert(result_limits.max_size && result_limits.max_elements);
-        }
-        catch (...)
-        {
-            LOG_ERROR(
-                log, "Unexpected error during dynamic cache resize: {}",
-                getCurrentExceptionMessage(true));
+    SizeLimits result_limits;
+    bool modified_size_limit = false;
+    try
+    {
+        modified_size_limit = doDynamicResizeImpl(prev_limits, desired_limits, result_limits);
+        chassert(result_limits.max_size && result_limits.max_elements);
+    }
+    catch (...)
+    {
+        LOG_ERROR(
+            log, "Unexpected error during dynamic cache resize: {}",
+            getCurrentExceptionMessage(true));
 
-            if (!cache_lock.owns_lock())
-                cache_lock.lock();
+        {
+            auto cache_lock = cache_state_guard.lock();
 
             size_t max_size = main_priority->getSizeLimit(cache_lock);
             size_t max_elements = main_priority->getElementsLimit(cache_lock);
@@ -2716,11 +3051,10 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & prev_limits,
                 result_limits.max_size = max_size;
                 result_limits.max_elements = max_elements;
             }
-
-            cache_lock.unlock();
-            assertCacheCorrectness();
-            throw;
         }
+
+        assertCacheCorrectness();
+        throw;
     }
 
     if (modified_size_limit)
@@ -2756,64 +3090,69 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & prev_limits,
 bool FileCache::doDynamicResizeImpl(
     const SizeLimits & prev_limits,
     const SizeLimits & desired_limits,
-    SizeLimits & result_limits,
-    CacheStateGuard::Lock & state_lock)
+    SizeLimits & result_limits)
 {
-    /// In order to not block cache for the duration of cache resize,
-    /// we do:
-    /// a. Take a cache lock.
-    ///     1. Collect eviction candidates,
-    ///     2. If eviction candidates size is non-zero,
-    ///        remove their queue entries.
-    ///        This will release space we consider to be hold for them,
-    ///        so that we can safely modify size limits.
-    ///     3. Modify size limits of cache.
-    /// b. Release a cache lock.
-    ///     1. Do actual eviction from filesystem.
+    /// The state lock is taken in short spans rather than held across the resize: collect the
+    /// eviction info and candidates, remove their queue entries (releasing the space held for
+    /// them) and apply the new limits, then evict from the filesystem with no lock held.
 
-    auto eviction_info = main_priority->collectEvictionInfoForResize(
-        desired_limits.max_size,
-        desired_limits.max_elements,
-        getInternalOrigin(),
-        state_lock);
-
-    chassert(!eviction_info->hasHoldSpace());
-
-    EvictionCandidates eviction_candidates(main_priority->getOnEvictCallback());
-    if (!eviction_info->requiresEviction())
+    /// `supportsDynamicResize` was checked in `doDynamicResize`, and `applySettingsIfPossible`
+    /// only starts a resize when the limits actually differ, so a `false` return can only be a bug.
+    auto modify_size_limits_or_throw = [&](const CacheStateGuard::Lock & state_lock)
     {
-        /// Nothing needs to be evicted,
-        /// just modify the limits and we are done.
+        if (!main_priority->modifySizeLimits(
+                desired_limits.max_size,
+                desired_limits.max_elements,
+                desired_limits.slru_size_ratio,
+                state_lock))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Failed to modify cache size limits from {}/{} to {}/{}",
+                prev_limits.max_size, prev_limits.max_elements,
+                desired_limits.max_size, desired_limits.max_elements);
+        }
+    };
 
-        main_priority->modifySizeLimits(
+    EvictionInfoPtr eviction_info;
+    {
+        auto state_lock = cache_state_guard.lock();
+
+        eviction_info = main_priority->collectEvictionInfoForResize(
             desired_limits.max_size,
             desired_limits.max_elements,
-            desired_limits.slru_size_ratio,
+            getInternalOrigin(),
             state_lock);
 
-        result_limits = desired_limits;
+        chassert(!eviction_info->hasHoldSpace());
 
-        LOG_INFO(
-            log, "Nothing needs to be evicted for new size limits ({})",
-            main_priority->getStateInfoForLog(state_lock));
-        return true;
+        if (!eviction_info->requiresEviction())
+        {
+            /// Nothing needs to be evicted,
+            /// just modify the limits and we are done.
+            modify_size_limits_or_throw(state_lock);
+
+            result_limits = desired_limits;
+
+            LOG_INFO(
+                log, "Nothing needs to be evicted for new size limits ({})",
+                main_priority->getStateInfoForLog(state_lock));
+            return true;
+        }
     }
 
-    state_lock.unlock();
+    EvictionCandidates eviction_candidates(main_priority->getOnEvictCallback());
 
     FileCacheReserveStat stat;
-    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     if (!main_priority->collectCandidatesForEviction(
             *eviction_info,
             stat,
             eviction_candidates,
-            invalidated_entries,
             /* reservee */nullptr,
             IFileCachePriority::EvictionCursor::FromHead,
             /* max_candidates_size */0,
             /* is_total_space_cleanup */true,
             getInternalOrigin(),
-            cache_guard,
             cache_state_guard))
     {
         result_limits = prev_limits;
@@ -2821,12 +3160,10 @@ bool FileCache::doDynamicResizeImpl(
         return false;
     }
 
-    /// Remove only queue entries of eviction candidates.
-    /// Hold the write lock until after modifying size limits,
-    /// to prevent concurrent `tryIncreasePriority` from promoting entries
-    /// into the protected queue between removal and limit modification.
-    auto write_lock = cache_guard.writeLock();
-    eviction_candidates.removeQueueEntries(write_lock);
+    /// `removeQueueEntries` takes and releases each owning-queue guard itself, so the queues are
+    /// unguarded between here and `modifySizeLimits` below; `dynamic_resize_lock` is what keeps
+    /// them from growing in that window.
+    eviction_candidates.removeQueueEntries();
 
     /// Note that (in-memory) metadata about corresponding file segments
     /// (e.g. file segment info in CacheMetadata) will be removed
@@ -2834,24 +3171,30 @@ bool FileCache::doDynamicResizeImpl(
     /// a race on removal of file from filesystsem and
     /// addition of the same file as part of a newly cached file segment.
 
-    state_lock.lock();
-
     /// Modify cache size limits.
     /// From this point cache eviction will follow them.
-    main_priority->modifySizeLimits(
-        desired_limits.max_size,
-        desired_limits.max_elements,
-        desired_limits.slru_size_ratio,
-        state_lock);
-
-    state_lock.unlock();
-    write_lock.unlock();
+    {
+        auto state_lock = cache_state_guard.lock();
+        try
+        {
+            /// A `false` return must not be ignored: the files below would still be evicted while
+            /// the priority kept the old limits. The `catch` restores the removed queue entries.
+            modify_size_limits_or_throw(state_lock);
+        }
+        catch (...)
+        {
+            /// Defensive - reaching this handler should not be possible while
+            /// `dynamic_resize_lock` is held. Nothing is evicted from the filesystem yet, so
+            /// restore the removed queue entries here - `~EvictionCandidates` never restores them.
+            eviction_candidates.restoreQueueEntries(*main_priority, state_lock);
+            throw;
+        }
+    }
 
     /// Do actual eviction from filesystem.
     eviction_candidates.evict();
 
     chassert(!eviction_candidates.requiresAfterEvictWrite());
-    IFileCachePriority::removeEntries(invalidated_entries, cache_guard.writeLock());
 
     auto failed_candidates = eviction_candidates.getFailedCandidates();
     if (failed_candidates.size() == 0)
@@ -2883,59 +3226,22 @@ bool FileCache::doDynamicResizeImpl(
     /// we failed to execute eviction from filesystem.
     /// So here we need to restore removed queue entries to avoid broken cache state.
     /// As this case should be very rare (as it can only happen because of a bug)
-    /// we allow ourselves to be suboptional here in favour of being robust
-    /// and take two locks at the same time to do the restore in the most straightforward way.
-    auto cache_write_lock = cache_guard.writeLock();
-    state_lock.lock();
-
-    /// Increase the max size and max elements
-    /// to the size and number of failed candidates.
-    main_priority->modifySizeLimits(
-        result_limits.max_size,
-        result_limits.max_elements,
-        result_limits.slru_size_ratio,
-        state_lock);
-
-    /// Add failed candidates back to queue.
-    for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
+    /// we allow ourselves to be suboptimal here in favour of being robust.
+    ///
+    /// `restoreFailedQueueEntries` takes each entry's queue write lock itself, so this thread
+    /// must hold no queue lock here; the state lock taken below keeps the size counters
+    /// consistent while the entries are added back.
     {
-        chassert(!key_candidates.empty());
+        auto state_lock = cache_state_guard.lock();
 
-        auto locked_key = key_metadata->tryLock();
-        if (!locked_key)
-        {
-            /// Key cannot be removed,
-            /// because if we failed to remove something from it above,
-            /// then we did not remove it from key metadata,
-            /// so key lock must remain valid.
-            LOG_ERROR(log, "Unexpected state: key {} does not exist", key_metadata->key);
-            chassert(false);
-            continue;
-        }
+        /// Restore the previous limits (see above) so the failed candidates fit again.
+        main_priority->modifySizeLimits(
+            result_limits.max_size,
+            result_limits.max_elements,
+            result_limits.slru_size_ratio,
+            state_lock);
 
-        for (const auto & candidate : key_candidates)
-        {
-            const auto & file_segment = candidate->file_segment;
-            /// Restore the original queue entry size. For partial segments it is reserved size.
-            const auto restored_size = candidate->size();
-
-            LOG_DEBUG(
-                log, "Adding back file segment after failed eviction: {}:{}, restored size: {}, downloaded size: {}",
-                file_segment->key(), file_segment->offset(), restored_size, file_segment->getDownloadedSize());
-
-            auto original_queue_type = eviction_candidates.getOriginalQueueType(candidate.get());
-
-            auto main_priority_iterator = main_priority->addForRestore(
-                key_metadata,
-                file_segment->offset(),
-                restored_size,
-                original_queue_type,
-                cache_write_lock,
-                &state_lock);
-
-            candidate->setRemovedFlag(*locked_key, /* value */false);
-            file_segment->restoreQueueIteratorAfterDelayedRemoval(main_priority_iterator);
-        }
+        eviction_candidates.restoreFailedQueueEntries(*main_priority, state_lock);
     }
 
     return false;
@@ -2947,7 +3253,7 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     if (!query_limit || cache_settings.max_download_size_per_query == 0)
         return {};
 
-    auto lock = cache_guard.writeLock();
+    auto lock = query_limit->lock();
     auto context = query_limit->getOrSetQueryContext(query_id, cache_settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, query_limit.get(), std::move(context));
 }

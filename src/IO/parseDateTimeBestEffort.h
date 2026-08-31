@@ -56,6 +56,15 @@ class ReadBuffer;
   */
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);
+
+/// The same, but additionally reports whether the input contained an explicitly written year of `0000`.
+/// Such a year cannot be represented: internally a year field of `0` means "the year is not specified",
+/// so it is silently replaced with the current (or previous) year, and the returned value is then not the
+/// one the input asked for. This affects every spelling of a zero year the parser accepts - `0000-01-01`,
+/// `01/01/0000`, `00000101`, ... - so a caller that must not silently accept a different point in time
+/// (for example, an access-entity expiration deadline) can reject the value instead.
+void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool & has_explicit_zero_year);
+
 void parseTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);
 bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);
 void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);

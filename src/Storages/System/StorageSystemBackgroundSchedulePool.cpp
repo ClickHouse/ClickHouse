@@ -15,7 +15,7 @@ ColumnsDescription StorageSystemBackgroundSchedulePool::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"pool", std::make_shared<DataTypeString>(), "Pool name. Possible values: `schedule` — general purpose schedule pool, `buffer_flush` — pool for flushing Buffer table data, `distributed` — pool for distributed table operations, `message_broker` — pool for message broker operations."},
+        {"pool", std::make_shared<DataTypeString>(), "Pool name. Possible values: `schedule` (general purpose schedule pool), `buffer_flush` (pool for flushing Buffer table data), `distributed` (pool for distributed table operations), `message_broker` (pool for message broker operations), `streaming` (pool for streaming queries background jobs), `iceberg` (pool for Iceberg table metadata refresh)."},
         {"database", std::make_shared<DataTypeString>(), "Database name."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"table_uuid", std::make_shared<DataTypeUUID>(), "Table UUID."},
@@ -51,10 +51,21 @@ void StorageSystemBackgroundSchedulePool::fillData(MutableColumns & res_columns,
         }
     };
 
-    fill_from_pool(context->getSchedulePool(), "schedule");
-    fill_from_pool(context->getBufferFlushSchedulePool(), "buffer_flush");
-    fill_from_pool(context->getDistributedSchedulePool(), "distributed");
-    fill_from_pool(context->getMessageBrokerSchedulePool(), "message_broker");
+    /// Report only pools that already exist. The schedule pools are created lazily, and reading
+    /// this table must not create one as a side effect (a read-only SELECT should have no effect
+    /// on server state).
+    auto fill_if_exists = [&](const BackgroundSchedulePoolPtr & pool, const String & pool_name)
+    {
+        if (pool)
+            fill_from_pool(*pool, pool_name);
+    };
+
+    fill_if_exists(context->getSchedulePoolIfExists(), "schedule");
+    fill_if_exists(context->getBufferFlushSchedulePoolIfExists(), "buffer_flush");
+    fill_if_exists(context->getDistributedSchedulePoolIfExists(), "distributed");
+    fill_if_exists(context->getMessageBrokerSchedulePoolIfExists(), "message_broker");
+    fill_if_exists(context->getStreamingSchedulePoolIfExists(), "streaming");
+    fill_if_exists(context->getIcebergSchedulePoolIfExists(), "iceberg");
 }
 
 }

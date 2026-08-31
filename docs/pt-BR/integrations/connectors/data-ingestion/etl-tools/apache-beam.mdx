@@ -10,7 +10,7 @@ integration:
 keywords: ['apache beam', 'processamento de streams', 'processamento em lote', 'conector JDBC', 'pipeline de dados']
 ---
 
-import ClickHouseSupportedBadge from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -161,7 +161,7 @@ Você pode ajustar a configuração de `ClickHouseIO.Write` com as seguintes fun
 Considere as seguintes limitações ao usar o conector:
 
 * Até o momento, apenas a operação Sink é compatível. O conector não oferece suporte à operação Source.
-* O ClickHouse realiza desduplicação ao inserir em uma tabela `ReplicatedMergeTree` ou em uma tabela `Distributed` construída sobre uma `ReplicatedMergeTree`. Sem replicação, inserir em uma tabela MergeTree comum pode resultar em duplicatas se uma inserção falhar e depois for repetida com sucesso. No entanto, cada bloco é inserido atomicamente, e o tamanho do bloco pode ser configurado usando `ClickHouseIO.Write.withMaxInsertBlockSize(long)`. A desduplicação é feita usando checksums dos blocos inseridos. Para mais informações sobre desduplicação, consulte [Desduplicação](/pt-BR/concepts/features/operations/insert/deduplication) e [Configuração de desduplicação na inserção](/pt-BR/reference/settings/session-settings#insert_deduplicate).
+* O ClickHouse realiza desduplicação ao inserir em uma tabela `ReplicatedMergeTree` ou em uma tabela `Distributed` construída sobre uma `ReplicatedMergeTree`. Sem replicação, inserir em uma tabela MergeTree comum pode resultar em duplicatas se uma inserção falhar e depois for repetida com sucesso. No entanto, cada bloco é inserido atomicamente, e o tamanho do bloco pode ser configurado usando `ClickHouseIO.Write.withMaxInsertBlockSize(long)`. A desduplicação é feita usando checksums dos blocos inseridos. Para mais informações sobre desduplicação, consulte [Desduplicação](/pt-BR/concepts/features/operations/insert/deduplication) e [Configuração de desduplicação na inserção](/pt-BR/reference/settings/session-settings/insert#insert_deduplicate).
 * O conector não executa nenhuma instrução DDL; portanto, a tabela de destino deve existir antes da inserção.
 
 <div id="related-content">

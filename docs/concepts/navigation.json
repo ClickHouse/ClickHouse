@@ -1,14 +1,13 @@
 {
-  "item": "Concepts",
   "icon": "/images/icons/icon-concepts.svg",
-  "root": "concepts/index",
+  "item": "Concepts",
   "pages": [
     "concepts/index",
     {
-      "group": "Fundamentals",
-      "root": "concepts/core-concepts/index",
       "expanded": true,
+      "group": "Fundamentals",
       "pages": [
+        "concepts/core-concepts/index",
         "concepts/core-concepts/glossary",
         "concepts/core-concepts/parts",
         "concepts/core-concepts/partitions",
@@ -19,14 +18,14 @@
       ]
     },
     {
-      "group": "ClickHouse concepts",
-      "root": "concepts/features/index",
       "expanded": true,
+      "group": "ClickHouse concepts",
       "pages": [
+        "concepts/features/index",
         {
           "group": "Materialized views",
-          "root": "concepts/features/materialized-views/index",
           "pages": [
+            "concepts/features/materialized-views/index",
             "concepts/features/materialized-views/incremental-materialized-view",
             "concepts/features/materialized-views/refreshable-materialized-view",
             "concepts/features/materialized-views/cascading-materialized-views"
@@ -34,8 +33,8 @@
         },
         {
           "group": "Dictionaries",
-          "root": "concepts/features/dictionaries/index",
           "pages": [
+            "concepts/features/dictionaries/index",
             "concepts/features/dictionaries/best-practices"
           ]
         },
@@ -48,8 +47,8 @@
         },
         {
           "group": "Performance",
-          "root": "concepts/features/performance/index",
           "pages": [
+            "concepts/features/performance/index",
             "concepts/features/performance/prewhere",
             "concepts/features/performance/allocation-profiling",
             "concepts/features/performance/allocation-profiling-old",
@@ -74,6 +73,7 @@
               "group": "Troubleshooting",
               "pages": [
                 "concepts/features/performance/troubleshoot/debugging-memory-issues",
+                "concepts/features/performance/troubleshoot/oom-canary",
                 "concepts/features/performance/troubleshoot/performance-test",
                 "concepts/features/performance/troubleshoot/sampling-query-profiler"
               ]
@@ -102,19 +102,17 @@
             },
             {
               "group": "Update",
-              "root": "concepts/features/operations/update/index",
               "pages": [
+                "concepts/features/operations/update/index",
                 "concepts/features/operations/update/overview",
-                "concepts/features/operations/update/on-fly-mutations",
                 "concepts/features/operations/update/replacing-merge-tree"
               ]
             },
             {
               "group": "Delete",
-              "root": "concepts/features/operations/delete/index",
               "pages": [
+                "concepts/features/operations/delete/index",
                 "concepts/features/operations/delete/overview",
-                "concepts/features/operations/delete/delete-mutations",
                 "concepts/features/operations/delete/drop-partition",
                 "concepts/features/operations/delete/lightweight-delete",
                 "concepts/features/operations/delete/truncate",
@@ -151,29 +149,30 @@
                 "concepts/features/configuration/server-config/workload-scheduling",
                 "concepts/features/configuration/server-config/quotas",
                 "concepts/features/configuration/server-config/composable-protocols",
-                "concepts/features/configuration/server-config/startup-scripts"
+                "concepts/features/configuration/server-config/startup-scripts",
+                "concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
         },
         {
           "group": "Security and auth",
-          "root": "concepts/features/security/index",
           "pages": [
+            "concepts/features/security/index",
             "concepts/features/security/access-rights",
             "concepts/features/security/network-ports",
             {
               "group": "TLS",
-              "root": "concepts/features/security/tls/index",
               "pages": [
+                "concepts/features/security/tls/index",
                 "concepts/features/security/tls/configuring-tls",
                 "concepts/features/security/tls/configuring-tls-acme-client"
               ]
             },
             {
               "group": "External authenticators",
-              "root": "concepts/features/security/external-authenticators/index",
               "pages": [
+                "concepts/features/security/external-authenticators/index",
                 {
                   "group": "SSL",
                   "pages": [
@@ -199,6 +198,7 @@
           "group": "Backup and restore",
           "pages": [
             "concepts/features/backup-restore/overview",
+            "concepts/features/backup-restore/restore-settings",
             "concepts/features/backup-restore/local-disk",
             "concepts/features/backup-restore/s3-endpoint",
             "concepts/features/backup-restore/azure-blob-storage",
@@ -208,19 +208,22 @@
         },
         {
           "group": "Interfaces",
-          "root": "concepts/features/interfaces/native-clients-interfaces-index",
           "pages": [
+            "concepts/features/interfaces/native-clients-interfaces-index",
             "concepts/features/interfaces/cli",
             "concepts/features/interfaces/client",
+            "concepts/features/interfaces/mcp",
             {
               "group": "Drivers and interfaces",
-              "root": "concepts/features/interfaces/overview",
               "pages": [
+                "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
+                "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
+                "concepts/features/interfaces/adbc",
                 "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
-                "concepts/features/interfaces/odbc",
+                { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",
                 "concepts/features/interfaces/ssh",
@@ -230,18 +233,24 @@
             },
             "concepts/features/interfaces/cpp",
             "concepts/features/interfaces/schema-inference",
+            "concepts/features/interfaces/documentation-search",
+            "concepts/features/interfaces/web-sql",
+            "concepts/features/interfaces/web-ui-color-coding",
+            "concepts/features/interfaces/web-ui-pinned-columns",
+            "concepts/features/interfaces/web-ui-result-shaping",
             "concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",
-              "root": "concepts/features/interfaces/third-party/index",
-              "pages": []
+              "pages": [
+                "concepts/features/interfaces/third-party/index"
+              ]
             }
           ]
         },
         {
           "group": "Tools and utilities",
-          "root": "concepts/features/tools-and-utilities/index",
           "pages": [
+            "concepts/features/tools-and-utilities/index",
             "concepts/features/tools-and-utilities/backupview",
             "concepts/features/tools-and-utilities/clickhouse-benchmark",
             "concepts/features/tools-and-utilities/clickhouse-compressor",
@@ -258,10 +267,10 @@
       ]
     },
     {
-      "group": "Best practices",
-      "root": "concepts/best-practices/index",
       "expanded": true,
+      "group": "Best practices",
       "pages": [
+        "concepts/best-practices/index",
         "concepts/best-practices/choosing-a-primary-key",
         "concepts/best-practices/select-data-type",
         "concepts/best-practices/use-materialized-views",

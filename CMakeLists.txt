@@ -123,6 +123,17 @@ add_library(global-libs INTERFACE)
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
 
+option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
+if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)
+    set (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN "${CMAKE_BINARY_DIR}/SilkThreadLocalStorageSanitizerPass.so")
+    execute_process (COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}" bash "${CMAKE_SOURCE_DIR}/utils/silk-thread-local-storage-sanitizer/build.sh" "${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}" COMMAND_ERROR_IS_FATAL ANY)
+endif ()
+if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
+    add_compile_definitions (SILK_THREAD_LOCAL_STORAGE_SANITIZER=1)
+endif ()
+
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
@@ -456,6 +467,29 @@ option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
+# CFI requires ThinLTO. Validate here, after ENABLE_THINLTO has been resolved by
+# the option() call above. sanitize.cmake is included earlier (before the option()
+# declaration) so the check must live here where ENABLE_THINLTO is fully defined.
+if (ENABLE_CFI AND NOT ENABLE_THINLTO)
+    message (FATAL_ERROR "ENABLE_CFI requires ENABLE_THINLTO. "
+        "CFI needs -flto=thin and -fwhole-program-vtables which are only applied "
+        "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
+endif ()
+
+if (ENABLE_CFI AND ENABLE_TESTS)
+    message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
+        "ThinLTO (required by CFI) is disabled when building tests. "
+        "Build without tests (ENABLE_TESTS=0) to use CFI.")
+endif ()
+
+# CFI flags are wired into the RelWithDebInfo profile only (CMAKE_*_FLAGS_RELWITHDEBINFO).
+# Other build types would configure successfully and print the CFI status message while
+# silently producing a non-CFI binary, so reject them explicitly.
+if (ENABLE_CFI AND NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+    message (FATAL_ERROR "ENABLE_CFI is only supported with CMAKE_BUILD_TYPE=RelWithDebInfo. "
+        "Current configuration has CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}.")
+endif ()
+
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
@@ -468,6 +502,43 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     if(LINKER_NAME MATCHES "lld")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
     endif()
+
+    if (ENABLE_CFI)
+        # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
+        # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
+        # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
+        # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
+        #
+        # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
+        # visibility the resulting binary crashes with SIGSEGV before main runs. Validated
+        # empirically by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with
+        # signal 11.
+        #
+        # That crash was originally attributed to inline-static singletons like
+        # `Context::global_context_instance` being duplicated per shared object. That is not the
+        # cause. Every `-Wunique-object-duplication` site has since been fixed (the warning now
+        # reports nothing under `-fvisibility=hidden`) and the crash is unchanged: it is
+        # `numa_init()`, a pre-main libc constructor, calling `free()` — which this binary
+        # interposes in `Common/malloc.cpp` — and reaching jemalloc before jemalloc has
+        # initialised. Whether it fires at all depends on static-initialisation order, so it can
+        # appear to come and go with unrelated changes. Fixing that is what would let CFI use
+        # `hidden`; the duplication fixes on their own do not.
+        # CFI vtable visibility is still satisfied for in-binary types because
+        # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
+        # the linker to treat all vtables as internal to the binary.
+        #
+        # CFI is left in the default trap mode: a violation executes an illegal instruction
+        # (SIGILL) and CI's core-dump handler yields a stack trace pinpointing the bad vcall/cast.
+        # Diagnostic mode (`-fno-sanitize-trap=cfi`, which prints a UBSan-style type/location
+        # report) is deliberately NOT used: it makes Clang link `libclang_rt.ubsan_standalone`,
+        # which this toolchain does not ship (only select compiler-rt libs are built from contrib),
+        # so even host tools like `protoc` fail to link — validated by WeeklyCFI run 28943752776.
+        # `-fno-sanitize-recover=cfi` is redundant in trap mode but kept as an explicit marker that
+        # a violation must never be continued past.
+        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+    endif ()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
@@ -508,6 +579,8 @@ elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
+elseif (OS_WASM)
+    include(cmake/wasm/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -601,6 +674,11 @@ endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
+# We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
+if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)
+    message (FATAL_ERROR "SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN is set, but silk is not built in this configuration (disable with -DENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER=OFF)")
+endif ()
+
 # We can only include XRay flags and defines once we know that we're building LLVM
 if (ENABLE_XRAY)
     include (cmake/xray_instrumentation.cmake)
@@ -616,6 +694,8 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
+    # Note: for musl builds (-nostartfiles), the CRT startup files are added to every
+    # executable through the link flags, see cmake/linux/default_libs.cmake.
     add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
 
     get_target_property (type ${target} TYPE)
@@ -736,6 +816,7 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
+        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

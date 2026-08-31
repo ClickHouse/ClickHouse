@@ -290,7 +290,7 @@ SELECT divide(25,5) AS quotient, toTypeName(quotient)
 ```
 
 ```response title=Response
-5 Float64
+5	Float64
 ```
 
 **除以零**
@@ -336,7 +336,7 @@ divideDecimal(x, y[, result_scale])
 **示例 1**
 
 ```sql title=Query
-divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
+SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
 ```
 
 ```response title=Response
@@ -356,9 +356,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 ┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
 │                                             -5.7 │
 └──────────────────────────────────────────────────┘
-┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
-│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
-└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+┌───a─┬───b─┬─divideDecimal(a, b, 1)─┬─divideDecimal(a, b, 5)─┐
+│ -12 │ 2.1 │                   -5.7 │               -5.71428 │
+└─────┴─────┴────────────────────────┴────────────────────────┘
 ```
 
 <div id="divideOrNull">
@@ -438,7 +438,7 @@ SELECT gcd(12, 18)
 
 Introduced in: v20.3.0
 
-检查浮点值是否为有限数。
+检查浮点值是否为有限值。
 
 你也可以使用[三元运算符](/zh/reference/functions/regular-functions/conditional-functions#if)获得类似的结果：`isFinite(x) ? x : y`。
 
@@ -467,7 +467,7 @@ SELECT 1/0 AS infimum, ifNotFinite(infimum,42)
 ```
 
 ```response title=Response
-inf  42
+inf	42
 ```
 
 <div id="intDiv">
@@ -507,9 +507,9 @@ SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
+┌──res─┬─toTypeName(res)─┐
+│ 1000 │ Int64           │
+└──────┴─────────────────┘
 ```
 
 **商不在被除数的取值范围内**
@@ -681,11 +681,11 @@ isInfinite(x)
 **判断一个数值是否为无穷大**
 
 ```sql title=Query
-SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))
+SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 ```
 
 ```response title=Response
-1 0 0
+1	0	0
 ```
 
 <div id="isNaN">
@@ -775,8 +775,8 @@ max2(x, y)
 
 **参数**
 
-* `x` — 第一个值 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
-* `y` — 第二个值 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+* `x` — 第一个值 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`BFloat16`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+* `y` — 第二个值 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`BFloat16`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
 
 **返回值**
 
@@ -896,8 +896,8 @@ min2(x, y)
 
 **参数**
 
-* `x` — 第一个值 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
-* `y` — 第二个值 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+* `x` — 第一个值 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`BFloat16`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+* `y` — 第二个值 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`BFloat16`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
 
 **返回值**
 
@@ -1044,7 +1044,7 @@ SELECT moduloLegacy(10, 3)
 
 引入版本：v25.5.0
 
-计算 `a` 除以 `b` 的余数。与函数 `modulo` 类似，不同之处在于当右侧参数为 0 时，`moduloOrNull` 会返回 NULL。
+计算 `a` 除以 `b` 的余数。与函数 `modulo` 类似，不同之处在于，当该运算原本会引发浮点异常时，`moduloOrNull` 会返回 `NULL`。对于浮点参数，这种情况仅会在除数为 `0` 时发生；对于整数参数，还包括最小负值对 `-1` 取模的情况 (例如 `Int8` 中的 `-128 % -1`) 。
 
 **语法**
 
@@ -1061,7 +1061,8 @@ moduloOrNull(x, y)
 
 **返回值**
 
-返回 `x` 除以 `y` 的余数；当除数为零时，返回 NULL。
+返回 `x` 除以 `y` 的余数；当该运算会引发浮点异常时，返回 `NULL`：
+即当除数为零时，或者对于整数参数，在计算最小负值对 `-1` 取模时。
 
 **示例**
 
@@ -1069,6 +1070,16 @@ moduloOrNull(x, y)
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**最小负整数除以 -1 时的 moduloOrNull**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1191,7 +1202,8 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 **与普通乘法的区别**
 
 ```sql title=Query
-SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
+SELECT multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
+SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 ```
 
 ```response title=Response
@@ -1203,13 +1215,24 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Decimal 类型溢出**
+**使用 multiplyDecimal 不会溢出**
 
 ```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
     multiplyDecimal(a, b);
+```
+
+```response title=Response
+┌─────────────a─┬─────────────b─┬─multiplyDecimal(a, b)─┐
+│ -12.647987876 │ 123.967645643 │       -1567.941279108 │
+└───────────────┴───────────────┴───────────────────────┘
+```
+
+**常规乘法中的 Decimal 溢出**
+
+```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
@@ -1217,12 +1240,8 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
-│ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
-└───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
-Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow:
-While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
+Received exception:
+Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
 ```
 
 <div id="negate">
@@ -1363,7 +1382,7 @@ SELECT positiveModulo(-1, 10)
 
 引入版本：v25.5.0
 
-计算 `a` 除以 `b` 的余数。与函数 `positiveModulo` 类似，不同之处在于，如果右侧参数为 0，`positiveModuloOrNull` 将返回 NULL。
+计算 `a` 除以 `b` 的余数。与函数 `positiveModulo` 类似，不同之处在于，当该运算本应引发浮点异常时，`positiveModuloOrNull` 会返回 `NULL`。对于浮点参数，这种情况只会在除数为 `0` 时发生；对于整数参数，还包括最小负值对 `-1` 取模的情况 (例如 `Int8` 中的 `-128 % -1`) 。
 
 **语法**
 
@@ -1379,11 +1398,12 @@ positiveModuloOrNull(x, y)
 
 **返回值**
 
-返回 `x` 与不大于 `x` 且可被 `y` 整除的最大整数之差；当除数为零时，返回 `null`。
+返回 `x` 与不大于
+`x` 且可被 `y` 整除的最近整数之差；或者当该运算会引发浮点异常时返回 `NULL`：即除数为零，或者对于整数参数，在计算最小负值对 `-1` 取模时。
 
 **示例**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull 的除数为零时**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
@@ -1391,6 +1411,50 @@ SELECT positiveModuloOrNull(5, 0)
 
 ```response title=Response
 \N
+```
+
+**最小负整数对 -1 执行 positiveModuloOrNull**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
+```
+
+```response title=Response
+\N
+```
+
+<div id="sqr">
+  ## sqr
+</div>
+
+引入版本：v26.7.0
+
+计算值 `x` 的平方。
+
+**语法**
+
+```sql
+sqr(x)
+```
+
+**参数**
+
+* `x` — 要进行平方运算的值。 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+
+**返回值**
+
+返回 `x` 与其自身相乘的乘积。
+
+**示例**
+
+**对数值求平方**
+
+```sql title=Query
+SELECT sqr(5)
+```
+
+```response title=Response
+25
 ```
 
 {/*AUTOGENERATED_END*/}

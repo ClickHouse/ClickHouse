@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -24,7 +24,7 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 JupySQL 与 ClickHouse 之间的集成是通过 clickhouse&#95;sqlalchemy 库实现的。该库可让两个系统轻松通信，并使你能够连接到 ClickHouse 并指定 SQL 方言。连接后，你可以直接在 ClickHouse 原生 UI 中运行 SQL 查询，也可以直接在 Jupyter 笔记本中运行。
 
 ```python
-# 安装所需的软件包
+# Install required packages
 %pip install --quiet jupysql clickhouse_sqlalchemy
 ```
 
@@ -34,7 +34,7 @@ JupySQL 与 ClickHouse 之间的集成是通过 clickhouse&#95;sqlalchemy 库实
 import pandas as pd
 from sklearn_evaluation import plot
 
-# 导入 jupysql Jupyter 扩展以创建 SQL 单元格
+# Import jupysql Jupyter extension to create SQL cells
 %load_ext sql
 %config SqlMagic.autocommit=False
 ```

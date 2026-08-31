@@ -25,10 +25,27 @@ Pour en savoir plus sur la compression des messages dans Kafka, nous vous recomm
 * Par défaut, la taille des messages individuels est limitée à 16 Mo (non compressés) avec la plus petite taille de réplique (XS), et à 32 Mo (non compressés) avec des répliques plus grandes.  Les messages qui dépassent cette limite seront rejetés avec une erreur.  Si vous avez besoin de messages plus volumineux, veuillez contacter l&#39;assistance.
 
 <div id="delivery-semantics">
-  ## Garanties de livraison
+  ## Sémantique de livraison
 </div>
 
-ClickPipes for Kafka offre des garanties de livraison `at-least-once` (l’une des approches les plus courantes). N’hésitez pas à nous faire part de vos retours sur les garanties de livraison via ce [formulaire de contact](https://clickhouse.com/company/contact?loc=clickpipes). Si vous avez besoin de garanties exactly-once, nous vous recommandons d’utiliser notre sink officiel [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse).
+Par défaut, ClickPipes for Kafka garantit une livraison au moins une fois et suit la progression de l’ingestion à l’aide des offsets du groupe de consommateurs Kafka. Il prend également en charge, en option, la sémantique exactement une fois, dans laquelle chaque enregistrement Kafka est inséré dans ClickHouse exactement une fois, même en cas de redémarrage de pods, de rééquilibrage des consommateurs ou d’échec d’insertion.
+
+Pour assurer une livraison exactement une fois, ClickPipes enregistre la progression de chaque partition dans son magasin d’état interne à l’aide de deux valeurs :
+
+* **Marque de hautes eaux** — l’offset jusqu’auquel chaque enregistrement de la partition est confirmé comme ayant été inséré dans ClickHouse. Au redémarrage, ClickPipes ignore tout enregistrement dont l’offset est inférieur ou égal à cette marque, afin que les données déjà insérées ne soient jamais renvoyées.
+* **Plages en attente** — les plages d’offsets des blocs d’insertion envoyés à ClickHouse mais pas encore confirmés. Après un échec, ClickPipes rejoue exactement ces plages.
+
+Chaque bloc d’insertion couvre une plage contiguë d’offsets et porte un [jeton de déduplication](/fr/concepts/features/operations/insert/deduplicating-inserts-on-retries) déterministe de la forme `topic:partition:firstOffset-lastOffset`. Lors d’une relecture, ClickPipes reproduit la même plage d’offsets et donc le même jeton, de sorte que ClickHouse rejette le doublon. Comme le jeton dépend uniquement de la plage d’offsets, une relecture est dédupliquée même lorsque le bloc reconstruit n’est pas identique octet pour octet.
+
+<Note>
+  **Fenêtre de déduplication**
+
+  La déduplication par jeton est limitée par [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) de la table cible (les 10 000 blocs d’insertion les plus récents par défaut) et par [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (une heure par défaut). Les pipelines à haut débit peuvent rapidement parcourir toute la fenêtre basée sur le nombre de blocs ; nous recommandons donc de vérifier et, si nécessaire, d’augmenter ces deux paramètres de la table cible afin de couvrir votre délai maximal de relecture. Les données rejouées après que leur jeton a quitté la fenêtre peuvent être insérées de nouveau ; la livraison exactement une fois n’est donc pas garantie dans ce cas.
+</Note>
+
+Le principal compromis concerne la taille des parts. Des blocs d’insertion plus volumineux produisent moins de [parts](/fr/concepts/core-concepts/parts), mais plus grandes, dans ClickHouse, ce qui réduit la surcharge liée aux fusions. ClickPipes conserve en mémoire les lignes d’une partition pendant la création d’un bloc. La taille de part qu’il peut atteindre dépend donc de la mémoire disponible pour le pipeline : lorsque la mémoire est limitée, il crée des blocs plus petits et la table accumule davantage de parts. Allouer davantage de mémoire au pipeline lui permet de créer des blocs plus volumineux et donc moins de parts.
+
+Un pipeline fonctionne de manière optimale lorsque le nombre de partitions est proche du nombre de « workers » d’insertion internes, car chaque worker gère alors approximativement une partition et dispose de suffisamment de mémoire pour créer de grands blocs. Le nombre de workers et la mémoire disponible évoluent avec la taille et le nombre de répliques, que vous configurez dans **Paramètres** -&gt; **Paramètres avancés** -&gt; **Mise à l’échelle**.
 
 <div id="authentication">
   ## Authentification

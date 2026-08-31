@@ -111,7 +111,7 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 
 ClickHouse 现在既可以通过 [jdbc 表函数](/zh/reference/functions/table-functions/jdbc)，也可以通过 [JDBC 表引擎](/zh/reference/engines/table-engines/integrations/jdbc) 访问 MySQL 数据。
 
-执行以下示例最简单的方式，是将其复制并粘贴到 [`clickhouse-client`](/zh/concepts/features/interfaces/cli) 或 [Play UI](/zh/concepts/features/interfaces/http) 中。
+执行以下示例最简单的方式，是将其复制并粘贴到 [`clickhouse-client`](/zh/concepts/features/interfaces/client) 或 [Play UI](/zh/concepts/features/interfaces/http) 中。
 
 * jdbc 表函数：
 
@@ -155,7 +155,7 @@ ClickHouse 现在既可以通过 [jdbc 表函数](/zh/reference/functions/table-
 
 1. 按照本指南第 1 节所述步骤，在专用主机上安装、配置并运行 ClickHouse JDBC Bridge。
 
-2. 在每个 ClickHouse 主机上，将以下配置块添加到 <a href="/zh/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">ClickHouse 服务器配置</a>中 (根据你选择的配置格式，使用 XML 或 YAML 版本之一) ：
+2. 在每个 ClickHouse 主机上，将以下配置块添加到 <a href="/zh/concepts/features/configuration/server-config/configuration-files" target="_blank">ClickHouse 服务器配置</a>中 (根据你选择的配置格式，使用 XML 或 YAML 版本之一) ：
 
 <Tabs>
   <Tab title="XML">

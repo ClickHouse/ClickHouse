@@ -1,21 +1,17 @@
 ---
-title: Impossible d’accéder à un service ClickHouse Cloud
+title: Je ne parviens pas à accéder à un service ClickHouse Cloud
 description: "Résolution des problèmes d’accès aux services ClickHouse Cloud, notamment la configuration de l’IP Access List"
 date: 2024-07-02
-tags: ['Erreurs et exceptions', 'Gestion du Cloud']
-keywords: ['accès à un service cloud', 'IP Access List']
+tags: ['Erreurs et exceptions', 'Gestion Cloud']
+keywords: ['accès à un service Cloud', 'IP Access List']
 doc_type: 'guide'
 ---
-
-{frontMatter.description}
-
-{/* truncate */}
 
 <div id="i-am-unable-to-access-a-clickhouse-cloud-service">
   ## Je ne parviens pas à accéder à un service ClickHouse Cloud
 </div>
 
-Si un message d’erreur semblable à l’un de ceux-ci s’affiche, il est possible que votre IP Access List bloque l’accès :
+Si vous voyez un message d’erreur comme l’un des messages suivants, il est possible que votre IP Access List bloque l’accès :
 
 ```response
 curl: (35) error:02FFF036:system library:func(4095):Connection reset by peer
@@ -33,4 +29,4 @@ ou
 Code: 210. DB::NetException: SSL connection unexpectedly closed (e46453teek.us-east-2.aws.clickhouse-staging.com:9440). (NETWORK_ERROR)
 ```
 
-Vérifiez l’[IP Access List](/fr/products/cloud/guides/security/connectivity/setting-ip-filters) : si vous essayez de vous connecter depuis une adresse située en dehors de la liste autorisée, la connexion échouera.
+Vérifiez l&#39;[IP Access List](/fr/products/cloud/guides/security/connectivity/setting-ip-filters) : si vous essayez de vous connecter depuis une adresse en dehors de la liste autorisée, la connexion échouera.

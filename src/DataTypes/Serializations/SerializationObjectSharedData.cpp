@@ -9,9 +9,10 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
-#include <ranges>
+#include <algorithm>
 
 namespace DB
 {
@@ -21,6 +22,32 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+/// A per-granule count (the number of paths, or the number of substreams of a path) is read from a
+/// possibly-untrusted stream (e.g. a corrupted on-disk `Object` part) and used only as a sizing hint
+/// before the corresponding items are read one by one. It must not be handed to a container's
+/// `reserve` directly, for the same reasons as the outer path lists (see `reserveOrThrowTooManyPaths`
+/// in `SerializationObject.cpp`):
+///   * A count the container cannot hold (`> max_size()`, close to `SIZE_MAX`) would escape as an
+///     uncaught non-`DB::Exception` (`std::length_error`), so reject it as corruption up front.
+///   * A large-but-representable count (e.g. `100000000`) is far below `max_size()` for a
+///     `std::vector<String>`, yet handing it to `reserve` would allocate gigabytes before a single
+///     byte of payload is read and fail as `std::bad_alloc` / OOM.
+/// So cap the hint at `DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS`: the caller's read loop appends each
+/// item as it is decoded (growing the container on demand for a legitimately large count), while a
+/// corrupted over-count trips a normal read error at end of stream instead of a huge allocation.
+template <typename Container>
+void reserveOrThrowTooMany(Container & container, size_t count, const char * what)
+{
+    if (count > container.max_size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON/Object column has too many {}: {}", what, count);
+    container.reserve(std::min(count, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS));
+}
+
 }
 
 SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
@@ -90,9 +117,6 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
     ISerialization::DeserializeBinaryBulkStatePtr map_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_map_states;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_structure_states;
-    /// Some granules can be partially read, we need to remember how many rows
-    /// were already read from the last incomplete granule.
-    size_t last_incomplete_granule_offset = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -237,24 +261,33 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
-        auto shared_data_buckets = splitSharedDataPathsToBuckets(column, offset, end, buckets);
+        /// Build one bucket at a time (and free it before building the next) to reduce peak memory,
+        /// instead of materializing all bucket columns simultaneously.
+        SharedDataBucketsSplitter buckets_splitter(column, offset, end, buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
+            auto bucket_column = buckets_splitter.extractBucket(bucket);
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            serialization_map->serializeBinaryBulkWithMultipleStreams(*shared_data_buckets[bucket], 0, 0, settings, shared_data_state->bucket_map_states[bucket]);
+            serialization_map->serializeBinaryBulkWithMultipleStreams(*bucket_column, 0, 0, settings, shared_data_state->bucket_map_states[bucket]);
             settings.path.pop_back();
         }
     }
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
-        /// First we need to flatten all paths stored in the shared data and separate them into buckets.
-        auto flattened_paths_buckets = flattenAndBucketSharedDataPaths(column, offset, end, dynamic_type, buckets);
-        /// Second, write paths in each bucket separately.
+        /// Flatten and bucket the shared data paths one bucket at a time (building/serializing/freeing
+        /// each bucket's flattened columns before the next) to reduce peak memory, instead of
+        /// materializing all buckets' flattened columns simultaneously.
+        SharedDataBucketsSplitter buckets_splitter(column, offset, end, buckets);
+        /// Accumulate the flattened path names across all buckets in serialization order (bucket 0's
+        /// sorted paths, then bucket 1's, ...) to build the paths indexes for the shared data copy below.
+        std::vector<std::string_view> all_flattened_paths;
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
-            const auto & flattened_paths = flattened_paths_buckets[bucket];
+            auto flattened_paths = buckets_splitter.flattenBucket(bucket, dynamic_type);
+            for (const auto & [path, _] : flattened_paths)
+                all_flattened_paths.push_back(path);
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
 
@@ -486,12 +519,9 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         /// Instead of writing all paths again we create a column that contains indexes
         /// of paths in the total list of paths that we serialized for buckets.
         std::unordered_map<std::string_view, size_t> path_to_index;
-        size_t index = 0;
-        for (const auto & [path, _] : flattened_paths_buckets | std::views::join)
-        {
-            path_to_index[path] = index;
-            ++index;
-        }
+        path_to_index.reserve(all_flattened_paths.size());
+        for (size_t i = 0; i != all_flattened_paths.size(); ++i)
+            path_to_index[all_flattened_paths[i]] = i;
 
         auto [indexes_column, indexes_type] = createPathsIndexes(path_to_index, shared_data_tuple_column.getColumn(0), nested_offset, nested_end);
         indexes_type->getDefaultSerialization()->serializeBinaryBulk(*indexes_column, *copy_indexes_stream, 0, nested_limit);
@@ -626,7 +656,7 @@ void SerializationObjectSharedData::deserializeStructureGranulePrefix(
     readVarUInt(structure_granule.num_paths, buf);
 
     if (structure_state.need_all_paths)
-        structure_granule.all_paths.reserve(structure_granule.num_paths);
+        reserveOrThrowTooMany(structure_granule.all_paths, structure_granule.num_paths, "paths");
 
     /// Read list of paths.
     for (size_t i = 0; i != structure_granule.num_paths; ++i)
@@ -651,7 +681,6 @@ void SerializationObjectSharedData::deserializeStructureGranuleSuffix(ReadBuffer
 }
 
 std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationObjectSharedData::deserializeStructure(
-    size_t rows_offset,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
@@ -684,10 +713,10 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
         deserializeStructureGranulePrefix(*structure_prefix_stream, structure_granule, structure_state);
         settings.path.pop_back();
 
-        if (structure_granule.num_rows != rows_offset + limit)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part", structure_granule.num_rows, rows_offset + limit);
+        if (structure_granule.num_rows != limit)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part", structure_granule.num_rows, limit);
 
-        structure_granule.offset = rows_offset;
+        structure_granule.offset = 0;
         structure_granule.limit = limit;
 
         /// Read suffix of the structure stream.
@@ -713,7 +742,7 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
         if (!settings.continuous_reading)
             structure_state.last_granule_structure.clear();
 
-        size_t rows_to_read = limit + rows_offset;
+        size_t rows_to_read = limit;
         while (rows_to_read != 0)
         {
             auto & current_granule = structure_state.last_granule_structure;
@@ -734,36 +763,20 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
                 remaining_rows_in_granule = current_granule.num_rows;
             }
 
+            /// offset and limit in current granule may be non 0 if we already read from this granule before,
+            /// so start reading from the last read row (offset + limit).
+            current_granule.offset += current_granule.limit;
+
             /// Check if we need to read the whole granule.
             if (remaining_rows_in_granule <= rows_to_read)
             {
-                /// Check if we need to skip all rows in this granule.
-                if (rows_offset >= remaining_rows_in_granule)
-                {
-                    current_granule.offset = current_granule.num_rows;
-                    current_granule.limit = 0;
-                    rows_offset -= remaining_rows_in_granule;
-                }
-                /// Otherwise some rows from this granule will be read.
-                else
-                {
-                    /// offset and limit in current granule may be non 0 if we already read from this granule before.
-                    /// We need to start reading starting from last read row (offset + limit)
-                    current_granule.offset += current_granule.limit + rows_offset;
-                    current_granule.limit = current_granule.num_rows - current_granule.offset;
-                    rows_offset = 0;
-                }
-
+                current_granule.limit = current_granule.num_rows - current_granule.offset;
                 rows_to_read -= remaining_rows_in_granule;
             }
             /// Otherwise we read only the part of the ganule.
             else
             {
-                /// offset and limit in current granule may be non 0 if we already read from this granule before.
-                /// We need to start reading starting from last read row (offset + limit)
-                current_granule.offset += current_granule.limit + rows_offset;
-                current_granule.limit = rows_to_read - rows_offset;
-                rows_offset = 0;
+                current_granule.limit = rows_to_read;
                 rows_to_read = 0;
             }
 
@@ -892,7 +905,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_mark);
                 size_t num_substreams = 0;
                 readVarUInt(num_substreams, *paths_substreams_stream);
-                path_info.substreams.reserve(num_substreams);
+                reserveOrThrowTooMany(path_info.substreams, num_substreams, "substreams for a path");
                 for (size_t i = 0; i != num_substreams; ++i)
                 {
                     path_info.substreams.emplace_back();
@@ -1048,8 +1061,8 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 SubstreamsCache cache_for_subcolumns;
                 for (auto pos : order)
                 {
-                    ColumnPtr subcolumn = subcolumns_infos[pos].type->createColumn();
-                    subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, 0, structure_granule.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
+                    auto subcolumn = subcolumns_infos[pos].type->createColumn();
+                    subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(*subcolumn, structure_granule.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
                     paths_data_granule.paths_subcolumns_data[requested_path][subcolumns_infos[pos].name] = std::move(subcolumn);
                 }
             }
@@ -1059,9 +1072,9 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
                 DeserializeBinaryBulkStatePtr path_state;
-                ColumnPtr dynamic_column = dynamic_type->createColumn();
+                auto dynamic_column = dynamic_type->createColumn();
                 dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_column, 0, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
+                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_column, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
                 paths_data_granule.paths_data[requested_path] = std::move(dynamic_column);
             }
         }
@@ -1075,8 +1088,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
 
 
 void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::DeserializeBinaryBulkStatePtr & state,
@@ -1089,13 +1101,10 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
     if (serialization_version.value == SerializationVersion::MAP)
     {
-        /// If we don't have it in cache, deserialize and put deserialized map in cache.
-        if (!insertDataFromSubstreamsCacheIfAny(cache, settings, column))
-        {
-            size_t prev_size = column->size();
-            serialization_map->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, shared_data_state->map_state, cache);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
-        }
+        /// Deserialize the shared data map and cache it for path subcolumn reads (SerializationObjectSharedDataPath).
+        size_t prev_size = column.size();
+        serialization_map->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, shared_data_state->map_state, cache);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
@@ -1104,23 +1113,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            /// Check if we have map column for this bucket in cache.
-            /// Map column for bucket from cache must contain only rows from current deserialization.
-            if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
-            {
-                shared_data_buckets[bucket] = cached_column_with_num_read_rows->first;
-            }
-            /// If we don't have it in cache, deserialize and put deserialized map in cache.
-            else
-            {
-                shared_data_buckets[bucket] = column->cloneEmpty();
-                serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_buckets[bucket], rows_offset, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
-                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
-            }
+            /// Deserialize the bucket's map and cache it for a path subcolumn read of the same bucket.
+            auto mutable_bucket_column = column.cloneEmpty();
+            serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket_column, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
+            shared_data_buckets[bucket] = std::move(mutable_bucket_column);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
             settings.path.pop_back();
         }
 
-        collectSharedDataFromBuckets(shared_data_buckets, *column->assumeMutable());
+        collectSharedDataFromBuckets(shared_data_buckets, column);
     }
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
@@ -1128,7 +1129,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
             return;
 
-        size_t prev_size = column->size();
+        size_t prev_size = column.size();
 
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
@@ -1158,8 +1159,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 StructureGranule structure_granule;
                 deserializeStructureGranulePrefix(*structure_prefix_stream, structure_granule, *structure_state);
 
-                if (structure_granule.num_rows != rows_offset + limit)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part in bucket {}", structure_granule.num_rows, rows_offset + limit, bucket);
+                if (structure_granule.num_rows != limit)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part in bucket {}", structure_granule.num_rows, limit, bucket);
 
                 paths.insert(paths.end(), structure_granule.all_paths.begin(), structure_granule.all_paths.end());
                 settings.path.pop_back();
@@ -1187,10 +1188,11 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 for (size_t i = 0; i != structure_granule.num_paths; ++i)
                 {
-                    ColumnPtr path_column = dynamic_type->createColumn();
+                    auto path_column = dynamic_type->createColumn();
                     DeserializeBinaryBulkStatePtr path_state;
                     dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                    dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(path_column, structure_granule.num_rows, 0, deserialization_settings, path_state, nullptr);
+                    /// We only need to consume this path's data from the stream to advance to the next path; the column is discarded.
+                    dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
                 }
 
                 settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
@@ -1250,9 +1252,9 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             }
 
             /// Now we have the list of paths stored in this granule and can deserialize shared data copy with paths indexes and values.
-            auto & shared_data_array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
+            auto & shared_data_array_column = assert_cast<ColumnArray &>(column);
             auto & shared_data_tuple_column = assert_cast<ColumnTuple &>(shared_data_array_column.getData());
-            auto & offsets_column = shared_data_array_column.getOffsetsPtr();
+            auto & offsets_column = shared_data_array_column.getOffsetsColumn();
             auto & paths_column = shared_data_tuple_column.getColumn(0);
             auto & values_column = shared_data_tuple_column.getColumn(1);
 
@@ -1263,7 +1265,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (settings.seek_stream_to_current_mark_callback)
                 settings.seek_stream_to_current_mark_callback(settings.path);
 
-            auto [skipped_nested_rows, nested_limit] = SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(offsets_column, rows_offset, limit, settings, cache);
+            size_t nested_limit = SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedLimit(offsets_column, limit, settings, cache);
             settings.path.pop_back();
 
             /// Read paths indexes.
@@ -1272,7 +1274,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!indexes_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy indexes");
 
-            deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(paths), skipped_nested_rows, nested_limit);
+            deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(paths), nested_limit);
             settings.path.pop_back();
 
             /// Read paths values.
@@ -1281,7 +1283,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
-            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
+            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1291,12 +1293,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         {
             /// Collect list of paths from all buckets for each granule.
             std::vector<std::vector<String>> granules_paths;
-            /// Collect offsets and limits for each granule.
-            std::vector<size_t> granules_offsets;
+            /// Collect the number of rows to read for each granule.
             std::vector<size_t> granules_limits;
-
-            if (!settings.continuous_reading)
-                shared_data_state->last_incomplete_granule_offset = 0;
 
             for (size_t bucket = 0; bucket != buckets; ++bucket)
             {
@@ -1305,34 +1303,17 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
                 auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_state->bucket_structure_states[bucket]);
                 /// Read structure for all granules in this bucket.
-                auto structure_granules = deserializeStructure(rows_offset, limit, settings, *structure_state, cache);
+                auto structure_granules = deserializeStructure(limit, settings, *structure_state, cache);
                 if (!structure_granules)
                     return;
 
-                /// Initialize granules_paths/granules_offsets/granules_limits on first bucket.
+                /// Initialize granules_paths/granules_limits on first bucket.
                 if (bucket == 0)
                 {
                     granules_paths.resize(structure_granules->size());
-                    granules_offsets.reserve(structure_granules->size());
                     granules_limits.reserve(structure_granules->size());
                     for (size_t granule = 0; granule != structure_granules->size(); ++granule)
-                    {
-                        granules_offsets.push_back((*structure_granules)[granule].offset);
-                        /// Offset in the first granule includes rows that we could already read before.
-                        if (granule == 0)
-                            granules_offsets.back() -= shared_data_state->last_incomplete_granule_offset;
                         granules_limits.push_back((*structure_granules)[granule].limit);
-                    }
-
-                    if (!structure_granules->empty())
-                    {
-                        /// Update last_incomplete_granule_offset if there are remaining rows in the last granule.
-                        const auto & last_granule = structure_granules->back();
-                        if (last_granule.offset + last_granule.limit < last_granule.num_rows)
-                            shared_data_state->last_incomplete_granule_offset = last_granule.offset + last_granule.limit;
-                        else
-                            shared_data_state->last_incomplete_granule_offset = 0;
-                    }
                 }
 
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
@@ -1344,9 +1325,9 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Now we have a list of all paths stored in this granule. Read shared data copy with paths indexes and values.
             settings.path.push_back(Substream::ObjectSharedDataCopy);
 
-            auto & shared_data_array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
+            auto & shared_data_array_column = assert_cast<ColumnArray &>(column);
             auto & shared_data_tuple_column = assert_cast<ColumnTuple &>(shared_data_array_column.getData());
-            auto & offsets_column = shared_data_array_column.getOffsetsPtr();
+            auto & offsets_column = shared_data_array_column.getOffsetsColumn();
             auto & paths_column = shared_data_tuple_column.getColumn(0);
             auto & values_column = shared_data_tuple_column.getColumn(1);
 
@@ -1355,7 +1336,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             /// Read array sizes.
             settings.path.push_back(Substream::ObjectSharedDataCopySizes);
-            if (!SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, rows_offset + limit, settings, cache))
+            if (!SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, limit, settings, cache))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data copy sizes");
 
             settings.path.pop_back();
@@ -1372,44 +1353,30 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             auto & offsets = shared_data_array_column.getOffsets();
             for (size_t granule = 0; granule != granules_paths.size(); ++granule)
             {
-                /// Calculate how many rows should be skipped in this granule.
-                size_t nested_offset = offsets[offsets_current_granule_start + granules_offsets[granule] - ssize_t(1)] - offsets[offsets_current_granule_start - ssize_t(1)];
-                /// Calculate how many rows should be read in this granule.
+                /// Calculate how many index entries should be read for this granule.
                 size_t nested_limit
-                    = offsets[offsets_current_granule_start + granules_offsets[granule] + granules_limits[granule] - ssize_t(1)]
-                    - offsets[offsets_current_granule_start + granules_offsets[granule] - ssize_t(1)];
+                    = offsets[offsets_current_granule_start + granules_limits[granule] - ssize_t(1)]
+                    - offsets[offsets_current_granule_start - ssize_t(1)];
                 /// Read indexes and collect paths into paths_column.
-                deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(granules_paths[granule]), nested_offset, nested_limit);
-                offsets_current_granule_start += granules_offsets[granule] + granules_limits[granule];
+                deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(granules_paths[granule]), nested_limit);
+                offsets_current_granule_start += granules_limits[granule];
             }
             settings.path.pop_back();
 
             /// Values can be read as usual String column from multiple granules.
-            /// We need to calculate offset and limit for it based on offsets.
-            size_t nested_offset = 0;
-            if (rows_offset)
-            {
-                size_t skipped_idx = std::min(prev_offset_size + rows_offset, offsets.size()) - 1;
-                nested_offset = offsets[skipped_idx] - prev_last_offset;
-
-                for (auto i = prev_offset_size; i + rows_offset < offsets.size(); ++i)
-                    offsets[i] = offsets[i + rows_offset] - nested_offset;
-
-                offsets_column->assumeMutable()->popBack(rows_offset);
-            }
-
+            /// We need to calculate the limit for it based on offsets.
             size_t nested_limit = offsets.back() - prev_last_offset;
 
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
-            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
+            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
         }
 
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
     }
     else
     {

@@ -572,7 +572,7 @@ def test_when_s3_timeout_at_listing(
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_timeout_at_listing/{{_partition_id}}/file',
                 'minio', '{minio_secret_key}',
-                'CSV', auto, 'none'
+                'CSV', auto, 'none', partition_strategy='wildcard'
             )
             PARTITION BY number
         SELECT
