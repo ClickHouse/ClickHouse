@@ -78,6 +78,9 @@ inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const
         dst += 16;
         src += 16;
         n -= 16;
+
+        /// Avoid clang loop-idiom optimization, which transforms vst1q_s8 to built-in memcpy
+        __asm__ __volatile__("" : : : "memory");
     }
 }
 }
