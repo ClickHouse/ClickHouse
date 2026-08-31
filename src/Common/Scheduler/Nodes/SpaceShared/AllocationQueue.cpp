@@ -188,6 +188,7 @@ bool AllocationQueue::retrySuction(ResourceAllocation & allocation)
     {
         if (!canEnterSuction(allocation))
             return false;
+        allocation.memory_growth_recovery_pending = false;
         allocation.memory_growth_suction_priority = true;
         allocation.memory_growth_eviction_order = 0;
         if (suspended_growth == &allocation)
