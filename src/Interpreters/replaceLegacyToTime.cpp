@@ -1,6 +1,5 @@
 #include <Interpreters/replaceLegacyToTime.h>
 
-#include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTTLElement.h>
@@ -11,33 +10,14 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool use_legacy_to_time;
-}
-
-std::string_view legacyToTimeReplacement(const Settings & settings)
-{
-    if (settings[Setting::use_legacy_to_time])
-        return "toTimeWithFixedDate";
-
-    /// An explicitly requested new meaning is an intention worth persisting too: without it the
-    /// stored raw `toTime` would flip to the legacy meaning on a reload under a legacy default
-    /// profile. A session at the plain default expressed nothing, so the spelling is kept.
-    if (settings[Setting::use_legacy_to_time].changed)
-        return "toTimeWithoutDate";
-
-    return {};
-}
-
-bool replaceLegacyToTime(IAST & ast, std::string_view replacement)
+bool replaceLegacyToTime(IAST & ast)
 {
     bool changed = false;
 
     /// The case-insensitive match mirrors the legacy remapping in `FunctionFactory::tryGetImpl`.
     if (auto * function = ast.as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
     {
-        function->name = String(replacement);
+        function->name = "toTimeWithFixedDate";
         changed = true;
     }
 
@@ -49,7 +29,7 @@ bool replaceLegacyToTime(IAST & ast, std::string_view replacement)
     {
         if (child.get() != select_expression_list)
         {
-            changed |= replaceLegacyToTime(*child, replacement);
+            changed |= replaceLegacyToTime(*child);
             continue;
         }
 
@@ -61,7 +41,7 @@ bool replaceLegacyToTime(IAST & ast, std::string_view replacement)
             if (with_alias && with_alias->alias.empty())
                 original_name = expression->getColumnName();
 
-            if (replaceLegacyToTime(*expression, replacement))
+            if (replaceLegacyToTime(*expression))
             {
                 changed = true;
                 if (!original_name.empty())
@@ -74,9 +54,9 @@ bool replaceLegacyToTime(IAST & ast, std::string_view replacement)
     if (auto * ttl_element = ast.as<ASTTTLElement>())
     {
         for (const auto & group_by_key : ttl_element->group_by_key)
-            changed |= replaceLegacyToTime(*group_by_key, replacement);
+            changed |= replaceLegacyToTime(*group_by_key);
         for (const auto & group_by_assignment : ttl_element->group_by_assignments)
-            changed |= replaceLegacyToTime(*group_by_assignment, replacement);
+            changed |= replaceLegacyToTime(*group_by_assignment);
     }
 
     return changed;

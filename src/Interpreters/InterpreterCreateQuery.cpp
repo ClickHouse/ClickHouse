@@ -233,13 +233,11 @@ void substituteUserDefinedFunctionsOutsideEngines(ASTPtr & ast, const ContextPtr
     }
 }
 
-void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & context, std::string_view to_time_replacement)
+void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & context)
 {
-    /// UDF bodies are inlined only under the legacy setting: an explicit new-meaning session keeps
-    /// today's shipped text apart from the `toTime` spelling itself.
-    if (context->getSettingsRef()[Setting::use_legacy_to_time] && !UserDefinedSQLFunctionFactory::instance().empty())
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
         substituteUserDefinedFunctionsOutsideEngines(query, context);
-    replaceLegacyToTime(*query, to_time_replacement);
+    replaceLegacyToTime(*query);
 }
 
 }
@@ -1951,10 +1949,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
     /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
     /// definition (short attach, metadata load, backup restore) already records its spelling.
-    if (const auto to_time_replacement = legacyToTimeReplacement(getContext()->getSettingsRef());
-        !create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
-        && !to_time_replacement.empty()
-        && replaceLegacyToTime(*query_ptr, to_time_replacement))
+    if (!create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
+        && getContext()->getSettingsRef()[Setting::use_legacy_to_time]
+        && replaceLegacyToTime(*query_ptr))
     {
         /// `properties` was derived before the rewrite, and the live table below is built from it while
         /// the metadata written to disk comes from the rewritten query. `CREATE TABLE ... AS src` copies
@@ -1967,9 +1964,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         for (const auto & column : properties.columns)
         {
             if (column.default_desc.expression)
-                replaceLegacyToTime(*column.default_desc.expression, to_time_replacement);
+                replaceLegacyToTime(*column.default_desc.expression);
             if (column.ttl)
-                replaceLegacyToTime(*column.ttl, to_time_replacement);
+                replaceLegacyToTime(*column.ttl);
         }
 
         /// Constraints need the same treatment: `MergeTree` reparses them from the rewritten AST, but most
@@ -3521,9 +3518,8 @@ BlockIO InterpreterCreateQuery::execute()
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
             /// so a worker there would resolve `toTime` with its own default.
-            if (const auto to_time_replacement = legacyToTimeReplacement(getContext()->getSettingsRef());
-                !is_create_database && !create.attach_short_syntax && !is_restore_from_backup
-                && !to_time_replacement.empty())
+            if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
+                && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
             {
                 /// The source definition of `AS` is materialized on the worker, so the initiator cannot
                 /// rewrite it here. Starting with `SETTINGS_IN_ZK_VERSION` the entry carries the query
@@ -3532,7 +3528,7 @@ BlockIO InterpreterCreateQuery::execute()
                 /// for every version of this branch, because the worker-side rewrite skips clones on
                 /// purpose (a re-spelled key would make the partition copy see a different structure), so
                 /// carrying the setting does not make the stored spelling unambiguous.
-                if (getContext()->getSettingsRef()[Setting::use_legacy_to_time] && !create.as_table.empty()
+                if (!create.as_table.empty()
                     && (create.is_clone_as || on_cluster_version == DDLLogEntry::OLDEST_VERSION))
                 {
                     throw Exception(
@@ -3543,7 +3539,7 @@ BlockIO InterpreterCreateQuery::execute()
                         on_cluster_version);
                 }
 
-                normalizeLegacyToTimeInCreateQuery(query_ptr, getContext(), to_time_replacement);
+                normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
             }
 
             return executeQueryOnCluster(create);

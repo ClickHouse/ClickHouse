@@ -1170,7 +1170,6 @@ time component. That function is still available under the name [`toTimeWithFixe
 
 Setting [`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_to_time) to `1` also keeps the name `toTime` bound to the legacy
 function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
-The conversion described here is also available under the alias `toTimeWithoutDate`, which resolves to it regardless of that setting.
 While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
 The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
 :::
@@ -1220,10 +1219,6 @@ SELECT toTime(toDateTime(52225, 'UTC'))
     FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, {}, returned_value_toTime, examples_toTime, introduced_in_toTime, category_toTime};
 
     factory.registerFunction<detail::FunctionToTime>(documentation_toTime);
-
-    /// An unambiguous spelling of this conversion: it resolves to it regardless of `use_legacy_to_time`,
-    /// so a persisted definition can record which meaning of `toTime` it was written with.
-    factory.registerAlias("toTimeWithoutDate", "toTime");
 
     FunctionDocumentation::Description description_toTime64 = R"(
 Converts an input value to type [Time64](/reference/data-types/time64).

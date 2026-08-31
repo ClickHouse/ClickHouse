@@ -6,9 +6,8 @@
 # `CLONE AS` stays rejected, because the worker-side rewrite skips clones on purpose.
 # Names are database-qualified: the pre-`NORMALIZE_CREATE_ON_INITIATOR_VERSION` entry ships the query
 # text as written, so a worker resolves unqualified names in its own default database.
-# The source is created with an explicit `use_legacy_to_time = 0`, so its stored key is the
-# unambiguous `toTimeWithoutDate` spelling, which the legacy rewrite must copy verbatim: the copy
-# keeps the structure of the source instead of being re-spelled to the legacy meaning.
+# The source is created with `use_legacy_to_time = 0`, so its stored key is the raw `toTime` spelling
+# and a verbatim copy is distinguishable from a rewritten one.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

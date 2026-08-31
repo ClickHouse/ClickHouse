@@ -101,8 +101,8 @@ BlockIO InterpreterUpdateQuery::execute()
     /// The spelling must be canonical before the query is enqueued for ON CLUSTER or a Replicated
     /// database: the oldest DDL entry format carries no settings, so the replaying host would
     /// otherwise resolve `toTime` with its own default.
-    if (const auto to_time_replacement = legacyToTimeReplacement(settings); !to_time_replacement.empty())
-        replaceLegacyToTime(*query_ptr, to_time_replacement);
+    if (settings[Setting::use_legacy_to_time])
+        replaceLegacyToTime(*query_ptr);
 
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
