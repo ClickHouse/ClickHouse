@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SECRET_URL="http://leakuser:AVRO_LEAK_CANARY_9f3a2b@registry.invalid:8080/subjects"
 PLAIN_URL="http://registry.invalid:8080/subjects"
 SECRET_DISK="disk(type = 's3', endpoint = 'http://localhost:9000/x', access_key_id = 'AK_LEAK_CANARY', secret_access_key = 'SK_LEAK_CANARY')"
+SECRET_BASE="http://baseuser:URL_BASE_LEAK_CANARY_4c1e7d@base.invalid/dir/"
 
 # A query_log entry is written after the response is sent, so wait for it to appear.
 # An empty result after the last attempt is printed as is and fails the test.
@@ -53,3 +54,13 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}" --data-binary "
 
 echo 'query_log, custom settings (plain, disk)'
 read_query_log "Settings['SQL_05054_plain'], Settings['SQL_05054_disk']" settings_map_mask_disk
+
+# url_base is DECLARE(String, ...), so it is only reached by masking on the value shape.
+echo 'query_log, String setting with a URI password'
+$CLICKHOUSE_CLIENT -q "SELECT 1 FORMAT Null SETTINGS log_comment = 'settings_map_mask_url_base', url_base = '$SECRET_BASE'"
+read_query_log "Settings['url_base']" settings_map_mask_url_base
+
+echo 'processes, String setting with a URI password'
+$CLICKHOUSE_CLIENT -q "
+    SELECT Settings['url_base'] FROM system.processes
+    WHERE query_id = queryID() SETTINGS url_base = '$SECRET_BASE'"
