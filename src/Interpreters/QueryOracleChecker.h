@@ -231,6 +231,10 @@ public:
     /// allow_experimental_correlated_subqueries=1 and skips (fail-close) if unsupported.
     bool checkCorrelatedSubquery(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// CERT cardinality-monotonicity oracle (self-seeded): asserts monotonic count inequalities that
+    /// must hold for ANY data (restriction never increases count, DISTINCT never exceeds count, etc.).
+    bool checkCardinalityMonotonicity(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

@@ -50,6 +50,7 @@ extern const Event ASTFuzzerOracleSequenceFunnelChecks;
 extern const Event ASTFuzzerOracleSubcolumnChecks;
 extern const Event ASTFuzzerOracleViewTtlChecks;
 extern const Event ASTFuzzerOracleCorrelatedSubqueryChecks;
+extern const Event ASTFuzzerOracleCardinalityChecks;
 }
 
 namespace DB
@@ -143,6 +144,7 @@ OracleRegistry::OracleRegistry()
     add("composite subcolumn", ProfileEvents::ASTFuzzerOracleSubcolumnChecks, &QueryOracleChecker::checkDynamicSubcolumn);
     add("view/TTL consistency", ProfileEvents::ASTFuzzerOracleViewTtlChecks, &QueryOracleChecker::checkViewTtlConsistency);
     add("correlated subquery", ProfileEvents::ASTFuzzerOracleCorrelatedSubqueryChecks, &QueryOracleChecker::checkCorrelatedSubquery);
+    add("cardinality monotonicity", ProfileEvents::ASTFuzzerOracleCardinalityChecks, &QueryOracleChecker::checkCardinalityMonotonicity);
 }
 
 const OracleRegistry & OracleRegistry::instance()
