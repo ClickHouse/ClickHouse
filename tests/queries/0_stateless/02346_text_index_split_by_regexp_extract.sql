@@ -92,6 +92,8 @@ DROP TABLE IF EXISTS tab_bad_extract;
 CREATE TABLE tab_bad_extract (id UInt64, doc String, INDEX idx doc TYPE text(tokenizer = splitByRegexp('a', 'x'))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 -- splitByRegexp accepts at most 2 parameters
 CREATE TABLE tab_bad_extract (id UInt64, doc String, INDEX idx doc TYPE text(tokenizer = splitByRegexp('a', 1, 1))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+-- A pattern that can match an empty string is rejected too, same as through the tokens() function
+CREATE TABLE tab_bad_extract (id UInt64, doc String, INDEX idx doc TYPE text(tokenizer = splitByRegexp('[0-9]*', true))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS tab_extract_bool_literal;
 

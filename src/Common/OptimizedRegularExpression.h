@@ -82,11 +82,9 @@ class OptimizedRegularExpression
 public:
     enum Options
     {
-        RE_CASELESS      = 0x00000001,
-        RE_NO_CAPTURE    = 0x00000010,
-        RE_DOT_NL        = 0x00000100,
-        /// POSIX leftmost-longest instead of RE2's default leftmost-first (e.g. `|a` then matches `a`).
-        RE_LONGEST_MATCH = 0x00001000
+        RE_CASELESS   = 0x00000001,
+        RE_NO_CAPTURE = 0x00000010,
+        RE_DOT_NL     = 0x00000100
     };
 
     using Match = OptimizedRegularExpressionDetails::Match;

@@ -20,6 +20,13 @@ SELECT tokens('a', 'splitByRegexp', 'a', materialize(true)); -- { serverError IL
 SELECT tokens('a', 'splitByRegexp', 'a', toInt8(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- Too many arguments
 SELECT tokens('a', 'splitByRegexp', 'a', 1, 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- With match_tokens = true, a pattern that can match an empty string is rejected outright: nextMatchedToken
+-- has no ordinary-RE2-semantics way to skip an empty match without either getting stuck or silently
+-- changing which alternative wins for unrelated, non-empty matches (see the positive tests below)
+SELECT tokens('abc', 'splitByRegexp', 'z*', true); -- { serverError BAD_ARGUMENTS }
+SELECT tokens('123x45', 'splitByRegexp', '[0-9]*', true); -- { serverError BAD_ARGUMENTS }
+SELECT tokens('a', 'splitByRegexp', '|a', true); -- { serverError BAD_ARGUMENTS }
+SELECT tokens('y', 'splitByRegexp', 'x?|y', true); -- { serverError BAD_ARGUMENTS }
 
 -- { echoOn }
 -- Simple literal separator
@@ -104,13 +111,12 @@ SELECT tokens('k=v k2=v2', 'splitByRegexp', '(\\w+)=(\\w+)', 1);
 SELECT tokens('xabcyabcz', 'splitByRegexp', 'abc', 1);
 -- A pattern with a capture group is never "trivial", so the substring-search fast path never applies
 SELECT tokens('abc', 'splitByRegexp', 'a(b)c', 1);
--- A pattern that can only match the empty string yields no tokens, since an empty match is not
--- treated as a match
-SELECT tokens('abc', 'splitByRegexp', 'z*', 1);
--- Scanning does not stop at the first empty match; later non-empty matches are still found
-SELECT tokens('123x45', 'splitByRegexp', '[0-9]*', 1);
--- An empty-matching alternative listed first does not shadow a non-empty one at the same position
-SELECT tokens('a', 'splitByRegexp', '|a', 1);
+-- Ordered alternatives keep ordinary RE2 (leftmost-first) semantics, same as separator mode: 'a' wins
+-- over the longer 'ab', it is not the other way around
+SELECT tokens('ab', 'splitByRegexp', '(a|ab)', true);
+-- Same as above, but each alternative has its own capture group: group 1 ('a') still wins, since the
+-- first alternative that matches at a position is taken regardless of what a later one could capture
+SELECT tokens('ab', 'splitByRegexp', '(a)|(ab)', true);
 -- Multi-byte UTF-8 is preserved inside the capture group (byte offsets must not slice a character)
 SELECT tokens('k:héllo k:wörld', 'splitByRegexp', 'k:(\\p{L}+)', 1);
 -- `\w` is ASCII-only in RE2, so it stops at the first multi-byte character

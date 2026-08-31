@@ -361,10 +361,16 @@ tokens(value, 'array')
         {"granularity", "Only relevant if argument `tokenizer` is `chinese`: An optional parameter, either `coarse_grained` (default) or `fine_grained`, controlling the segmentation granularity.", {"const String"}},
     };
 
-    /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (e.g. `japanese`), so its
-    /// tokenizer list omits `japanese`.
+    /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (`splitByRegexp`, `japanese`,
+    /// `chinese`, `icu` - see `supportsStringLike()`), so its tokenizer list, and the argument entries
+    /// only relevant to those tokenizers, are dropped too.
     FunctionDocumentation::Arguments arguments_like = arguments;
     arguments_like[arg_tokenizer] = {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}};
+    std::erase_if(arguments_like, [](const auto & argument)
+    {
+        return argument.name == "regexp" || argument.name == "match_tokens"
+            || argument.name == "locale" || argument.name == "granularity";
+    });
 
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
     FunctionDocumentation::Examples examples = {

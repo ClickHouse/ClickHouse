@@ -35,8 +35,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-#if USE_ICU
     extern const int BAD_ARGUMENTS;
+#if USE_ICU
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
@@ -321,17 +321,21 @@ SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool matc
     : ITokenizerHelper(Type::SplitByRegexp)
     , regexp_str(regexp_)
     , match_tokens(match_tokens_)
-    /// Captures are tracked in both modes for simplicity. `RE_LONGEST_MATCH` is `match_tokens`-only: it
-    /// fixes `nextMatchedToken` getting stuck on an empty alternative before a non-empty one (e.g. `|a`),
-    /// but would also change which separator wins for overlapping patterns like `a|ab` in the default mode.
-    , regexp(std::make_shared<OptimizedRegularExpression>(
-          regexp_,
-          OptimizedRegularExpression::RE_DOT_NL | (match_tokens_ ? OptimizedRegularExpression::RE_LONGEST_MATCH : 0)))
-    /// A pattern with capture groups is never "trivial" (a plain substring search), so whenever
-    /// `getNumberOfSubpatterns()` is non-zero the RE2 path runs and fills `number_of_subpatterns + 1`
-    /// entries - i.e. index 1 is always populated. See the `chassert` in `nextInStringImpl`.
+    /// Captures are tracked in both modes for simplicity, though only `match_tokens` mode reads them.
+    , regexp(std::make_shared<OptimizedRegularExpression>(regexp_, OptimizedRegularExpression::RE_DOT_NL))
+    /// A pattern with capture groups is never "trivial", so whenever `getNumberOfSubpatterns()` is
+    /// non-zero, index 1 is always populated. See the `chassert` in `nextInStringImpl`.
     , token_group(match_tokens_ && regexp->getNumberOfSubpatterns() > 0 ? 1 : 0)
 {
+    /// Best-effort: reject patterns that can match empty (they'd get `nextMatchedToken` stuck). Not
+    /// exhaustive - a zero-width assertion (`\b`, `$`) can still match empty only in some contexts,
+    /// which this check can't see; `nextMatchedToken` catches that case at the point of use instead.
+    OptimizedRegularExpression::MatchVec probe_matches;
+    if (match_tokens_ && regexp->match("", 0, probe_matches) > 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'{}' tokenizer: pattern '{}' can match an empty string, which is not supported with match_tokens = true",
+            getName(), regexp_);
 }
 
 bool SplitByRegexpTokenizer::nextInStringImpl(
@@ -390,12 +394,11 @@ bool SplitByRegexpTokenizer::nextMatchedToken(
 
         if (whole_match.length == 0)
         {
-            /// Retry at the next byte instead of stopping (as `re.finditer` does for patterns that can
-            /// match empty): a real match further on would otherwise be silently lost, e.g. `[0-9]*` on
-            /// `123x45` would emit only `123`. Can't skip a real match this way: RE2's leftmost search
-            /// would have returned an earlier non-empty match instead, had one existed.
-            ++pos;
-            continue;
+            /// Safety net for context-dependent cases (e.g. `\b`) the constructor's check can't see.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'{}' tokenizer: pattern '{}' matched an empty string, which is not supported with match_tokens = true",
+                getName(), regexp_str);
         }
 
         /// Advance past the whole match, not just the captured span, so matches never overlap.
