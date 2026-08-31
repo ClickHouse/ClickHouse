@@ -55,6 +55,12 @@ namespace
             make_intrusive<ASTLiteral>(context.cluster_name),
             makeASTFunction("view", shard_builder.getSelectQuery()));
 
+        /// With no explicit database the selector must resolve in each shard's own default database,
+        /// which only shipping the query TEXT provides: a serialized plan is built on the initiator,
+        /// where the unqualified name would bind to the initiator's current database instead.
+        if (!context.remote_time_series_storage_id.hasDatabase())
+            cluster_builder.settings_changes.emplace_back("serialize_query_plan", false);
+
         /// SELECT timeSeriesTagsToGroup(tags) AS group, timestamp, value FROM view(<cluster query>)
         /// Groups are node-local: without the view() the whole query goes to the shards, which each restart their own counter.
         SelectQueryBuilder builder;
