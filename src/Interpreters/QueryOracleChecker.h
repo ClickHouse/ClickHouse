@@ -160,6 +160,11 @@ public:
     /// must hold row-for-row over Nullable data (De Morgan, comparison operator symmetry).
     bool checkPredicateDeMorgan(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// ARRAY JOIN identity oracle (self-seeded): INNER ARRAY JOIN emits one row per array element,
+    /// so count() over an array-joined table == sum(length(arr)) and sum(element) == sum(arraySum(arr)).
+    /// A difference is a real ARRAY JOIN bug.
+    bool checkArrayJoinIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
