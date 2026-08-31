@@ -332,7 +332,7 @@ public:
 
         const String & function_name = function_node->getFunctionName();
 
-        Op op;
+        Op op = {};
         bool negated = false;
 
         if (function_name == "equals")
@@ -574,7 +574,7 @@ private:
                 if (first_char >= 'A' && first_char <= 'Z')
                     first_char = first_char - 'A' + 'a';
             }
-            if (std::string_view("bfnrt0").find(first_char) != std::string_view::npos)
+            if (std::string_view("bfnrt0").contains(first_char))
                 return;
         }
 
