@@ -239,8 +239,6 @@ BuildResult insertIntoSlots(
     chassert(slot_space_reserved.size() == num_slots);
     chassert(num_slots >= 1);
 
-    size_t bytes_added = 0;
-
     /// Only this slot's buffers: the others are growing under their own locks.
     auto slot_bytes = [&](size_t slot)
     {
@@ -278,7 +276,9 @@ BuildResult insertIntoSlots(
             *table.pools[slot],
             slot_result);
 
-        bytes_added += slot_bytes(slot) - bytes_before;
+        /// Under the slot lock so a concurrent limit check cannot miss this slot.
+        table.addBytes(table.bucket_bytes, slot_bytes(slot) - bytes_before);
+        table.keys_to_join.fetch_add(slot_result.new_keys, std::memory_order_relaxed);
 
         result.is_inserted |= slot_result.is_inserted;
         result.all_values_unique &= slot_result.all_values_unique;
@@ -304,7 +304,6 @@ BuildResult insertIntoSlots(
             std::lock_guard lock(locks[0].mutex);
             insert_slot(0);
         }
-        table.addBytes(table.bucket_bytes, bytes_added);
         return result;
     }
 
@@ -338,7 +337,6 @@ BuildResult insertIntoSlots(
         }
     }
 
-    table.addBytes(table.bucket_bytes, bytes_added);
     return result;
 }
 
@@ -1289,7 +1287,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     is_inserted = result.is_inserted;
                     if (!result.all_values_unique)
                         all_values_unique.store(false, std::memory_order_relaxed);
-                    data->keys_to_join.fetch_add(result.new_keys, std::memory_order_relaxed);
 
                     if (flag_per_row && !per_row_flags_initialized)
                     {
