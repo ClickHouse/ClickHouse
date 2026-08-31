@@ -349,6 +349,18 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
+
+                /// The restored CREATE runs as internal, so getRequiredAccess() imposes nothing; targets are authorized here.
+                if (create.targets)
+                {
+                    for (const auto & target : create.targets->targets)
+                    {
+                        const auto & target_id = target.table_id;
+                        if (target_id)
+                            required_access.emplace_back(
+                                AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
+                    }
+                }
             }
 
             if (restore_settings.shouldRestoreTableData() && table_info.has_data)

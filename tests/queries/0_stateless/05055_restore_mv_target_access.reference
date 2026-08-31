@@ -1,0 +1,16 @@
+-- forging the backup needs no privilege on the target it renames the view onto
+allowed
+-- restoring the forged view is denied
+denied
+-- and the denial names the target, not some unrelated grant
+1
+-- the view was not created by the rejected restore
+0
+-- the direct CREATE path already requires the same grant
+denied
+-- restoring a view whose target is granted is still allowed
+allowed
+allowed
+-- a view with an inner table carries no target id, so it is still allowed
+allowed
+allowed
