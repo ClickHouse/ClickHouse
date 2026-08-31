@@ -210,7 +210,9 @@ Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-vis
 
 [로그](#logs) 또는 [트레이스](#traces) 쿼리에서 OpenTelemetry가 활성화되어 있으면 트레이스 ID 컬럼이 자동으로 포함됩니다.
 
-트레이스 ID 컬럼을 포함하면 데이터에 &quot;**트레이스 보기**&quot; 및 &quot;**로그 보기**&quot; 링크가 추가됩니다.
+트레이스 ID 컬럼이 있으면 플러그인이 데이터에 &quot;**트레이스 보기**&quot; 및 &quot;**로그 보기**&quot; 링크를 추가할 수 있습니다.
+
+토글은 기본적으로 활성화되어 있습니다. 현재 쿼리 유형의 링크에는 기본값을 구성할 필요가 없지만, 교차 신호 링크는 데이터 소스에 대상 신호의 기본값이 구성된 경우에만 표시됩니다. 데이터 소스의 [트레이스](/ko/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) 및 [로그](/ko/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) 구성 섹션에 있는 **&quot;트레이스 보기&quot; 링크 표시** 및 **&quot;로그 보기&quot; 링크 표시** 토글로 이를 숨길 수 있습니다.
 
 <div id="linking-abilities">
   ### 링크 기능

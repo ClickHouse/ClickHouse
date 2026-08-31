@@ -162,11 +162,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
+
+<div id="disabling-view-logs-links">
+  #### Désactivation des liens « View logs »
+</div>
+
+La section **Corrélation des ID de trace** de la configuration des logs contient le bouton bascule **Afficher les liens « View logs »**.
+Ce bouton bascule détermine si le plugin associe des [liens de données](/fr/integrations/connectors/data-visualization/grafana/query-builder#data-links) « View logs » aux champs d’ID de trace des résultat de la requête.
+Il est activé par défaut. Un lien « View logs » pour le même type de requête ne nécessite pas de valeurs par défaut pour les logs configurées, contrairement à un lien « View logs » inter-signal provenant des résultat de la requête de trace.
+Désactivez le bouton bascule ou définissez `showLogLinks: false` dans YAML pour masquer ces liens.
 
 <div id="traces">
   ### Traces
@@ -193,6 +204,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -205,6 +218,15 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+<div id="disabling-view-trace-links">
+  #### Désactivation des liens « View trace »
+</div>
+
+La section **Corrélation des ID de trace** de la configuration des traces contient le bouton bascule **Afficher les liens « View trace »**.
+Ce bouton bascule détermine si le plugin ajoute des [liens de données](/fr/integrations/connectors/data-visualization/grafana/query-builder#data-links) « View trace » aux champs d’ID de trace dans les résultat de la requête.
+Le bouton bascule est activé par défaut. Un lien « View trace » pour le même type de requête ne nécessite pas de valeurs par défaut configurées pour les traces, contrairement à un lien « View trace » intersignal issu des résultat de la requête de log.
+Désactivez le bouton bascule ou définissez `showTraceLinks: false` dans le YAML pour les masquer.
 
 <div id="column-aliases">
   ### Alias de colonnes
@@ -323,6 +345,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +354,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

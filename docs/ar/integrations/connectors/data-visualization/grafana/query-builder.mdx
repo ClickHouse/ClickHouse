@@ -211,7 +211,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 إذا كان OpenTelemetry مفعّلًا في استعلام [السجلات](#logs) أو [التتبّع](#traces)، فسيُدرج عمود معرّف التتبّع تلقائيًا.
 
-عند تضمين عمود لمعرّف التتبّع، سيُرفق بالبيانات رابطا &quot;**عرض التتبّع**&quot; و&quot;**عرض السجلات**&quot;.
+عند وجود عمود لمعرّف التتبّع، يمكن للإضافة إرفاق رابطَي &quot;**عرض التتبّع**&quot; و&quot;**عرض السجلات**&quot; بالبيانات.
+
+تكون أزرار التبديل مفعّلة افتراضيًا. لا يتطلب رابط نوع الاستعلام الحالي إعدادات افتراضية مهيّأة، بينما لا يظهر الرابط بين الإشارات إلا إذا كانت الإعدادات الافتراضية لإشارة الهدف مهيّأة في مصدر البيانات. يمكنك إخفاؤها باستخدام زري التبديل **إظهار روابط &quot;عرض التتبّع&quot;** و**إظهار روابط &quot;عرض السجلات&quot;** في قسمي تهيئة [التتبّع](/ar/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) و[السجلات](/ar/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) لمصدر البيانات.
 
 <div id="linking-abilities">
   ### قدرات الربط

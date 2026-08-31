@@ -211,7 +211,9 @@ Puedes crear un enlace de datos seleccionando una columna llamada `traceID` en t
 
 Si OpenTelemetry está habilitado en una consulta de [logs](#logs) o [traza](#traces), se incluirá automáticamente una columna de ID de traza.
 
-Al incluir una columna de ID de traza, los enlaces &quot;**Ver traza**&quot; y &quot;**Ver logs**&quot; se añadirán a los datos.
+Cuando hay una columna de ID de traza, el plugin puede añadir enlaces &quot;**Ver traza**&quot; y &quot;**Ver logs**&quot; a los datos.
+
+Los interruptores están habilitados de forma predeterminada. Un enlace para el tipo de consulta actual no requiere valores predeterminados configurados, mientras que un enlace entre señales aparece solo cuando la fuente de datos tiene valores predeterminados configurados para la señal de destino. Puedes ocultarlos con los interruptores **Mostrar enlaces de &quot;Ver traza&quot;** y **Mostrar enlaces de &quot;Ver logs&quot;** en las secciones de configuración de [traza](/es/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) y [logs](/es/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) de la fuente de datos.
 
 <div id="linking-abilities">
   ### Funciones de enlace

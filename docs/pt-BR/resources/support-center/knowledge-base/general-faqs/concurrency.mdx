@@ -8,8 +8,36 @@ doc_type: 'reference'
 keywords: ['concorrência', 'QPS']
 ---
 
-O ClickHouse foi projetado para aplicações analíticas em tempo real que podem atender usuários externos diretamente. Ele pode atender consultas analíticas com baixa latência (menos de 10 milissegundos) e alta concorrência (ultrapassando 10.000 consultas por segundo) em bancos de dados na escala de petabytes, combinando dados históricos e inserções em tempo real.
+Sim. O ClickHouse foi projetado para aplicações analíticas em tempo real que podem atender usuários externos diretamente. Ele pode atender consultas analíticas com baixa latência (menos de 10 milissegundos) e alta concorrência (ultrapassando 10.000 consultas por segundo) em bancos de dados na escala de petabytes, combinando dados históricos e inserções em tempo real.
 
-Isso é possível graças a uma estrutura de índices eficiente, ao cache flexível e a configurações disponíveis, como projeções e visões materializadas.
+<div id="what-makes-high-concurrency-possible">
+  ## O que possibilita alta concorrência
+</div>
 
-O Controle de Acesso Baseado em Funções nativo, as quotas de uso de recursos, os limites configuráveis de complexidade de consulta e o agendador de workload tornam o ClickHouse ideal como camada de serviço sobre dados analíticos.
+Consultas rápidas são a base de um alto QPS. Quanto menos trabalho cada consulta exige, mais consultas um servidor consegue executar simultaneamente. Os principais recursos que reduzem o trabalho por consulta são:
+
+* O [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) da família de mecanismos de tabela MergeTree, que evita a leitura de dados que não correspondem à consulta.
+* Caches, como o [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache), que atende consultas `SELECT` repetidas diretamente com resultados em cache.
+* [Projeções](/pt-BR/concepts/features/projections/projections), que pré-calculam dados no momento da inserção e podem ser selecionadas automaticamente pelo ClickHouse, e [visões materializadas](/pt-BR/concepts/features/materialized-views/index), que armazenam resultados pré-calculados em uma tabela de destino separada, que pode ser consultada diretamente.
+
+<div id="controlling-and-limiting-concurrency">
+  ## Controle e limitação de concorrência
+</div>
+
+Por padrão, o ClickHouse OSS não limita o número de consultas simultâneas. Por padrão, o ClickHouse Cloud define `max_concurrent_queries_for_all_users` como `1000`. Você pode configurar limites em vários níveis:
+
+* [`max_concurrent_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) limita o número total de consultas executadas simultaneamente no servidor. [`max_concurrent_insert_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) e [`max_concurrent_select_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries) aplicam o mesmo limite separadamente às consultas `INSERT` e `SELECT`. Todos os três têm `0` (ilimitado) como valor padrão.
+* [`max_concurrent_queries_for_user`](/pt-BR/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) e [`max_concurrent_queries_for_all_users`](/pt-BR/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) limitam a concorrência por usuário ou entre todos os usuários.
+
+<div id="isolating-workloads">
+  ## Isolamento de workloads
+</div>
+
+Para evitar que workloads concorrentes interfiram entre si, o ClickHouse oferece:
+
+* [Agendamento de workloads](/pt-BR/concepts/features/configuration/server-config/workload-scheduling) para regular como CPU, memória e E/S são compartilhadas entre workloads.
+* [Cotas](/pt-BR/concepts/features/configuration/server-config/quotas) para limitar o uso de recursos por usuário em um intervalo de tempo.
+* [Restrições quanto à complexidade das consultas](/pt-BR/concepts/features/configuration/settings/query-complexity) para impedir que consultas individuais consumam recursos excessivos.
+* [controle de acesso baseado em funções](/pt-BR/concepts/features/security/access-rights) integrado para definir o que cada usuário pode consultar.
+
+Em conjunto, esses recursos tornam o ClickHouse adequado como camada de serviço sobre dados analíticos.

@@ -162,11 +162,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
+
+<div id="disabling-view-logs-links">
+  #### Отключение ссылок «View logs»
+</div>
+
+В разделе **Корреляция Trace ID** конфигурации журналов находится переключатель **Показывать ссылки «View logs»**.
+Этот переключатель определяет, добавляет ли плагин ссылки «View logs» [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) к полям Trace ID в результатах запросов.
+По умолчанию переключатель включен. Для ссылки «View logs» в запросе того же типа не требуется настраивать параметры журналов по умолчанию, однако для межсигнальной ссылки «View logs» из результатов запросов трассировок это необходимо.
+Чтобы скрыть эти ссылки, выключите переключатель или укажите в YAML `showLogLinks: false`.
 
 <div id="traces">
   ### Трассировка
@@ -193,6 +204,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -205,6 +218,15 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+<div id="disabling-view-trace-links">
+  #### Отключение ссылок «View trace»
+</div>
+
+В разделе **Корреляция Trace ID** конфигурации трассировок находится переключатель **Показывать ссылки «View trace»**.
+Он определяет, добавляет ли плагин ссылки «View trace» [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) к полям Trace ID в результатах запросов.
+По умолчанию переключатель включен. Для ссылки «View trace» в результатах запроса того же типа не требуются настроенные значения трассировки по умолчанию, а для межсигнальной ссылки «View trace» из результатов запросов журналов они необходимы.
+Чтобы скрыть эти ссылки, выключите переключатель или задайте в YAML `showTraceLinks: false`.
 
 <div id="column-aliases">
   ### Псевдонимы столбцов
@@ -323,6 +345,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +354,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

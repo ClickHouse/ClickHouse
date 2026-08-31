@@ -162,11 +162,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
+
+<div id="disabling-view-logs-links">
+  #### 禁用“View logs”链接
+</div>
+
+日志配置中的 **Trace ID 关联** 部分包含 **Show &quot;View logs&quot; links** 开关。
+此开关控制插件是否会将“View logs”[数据链接](/zh/integrations/connectors/data-visualization/grafana/query-builder#data-links)添加到查询结果中的 trace ID 字段。
+该开关默认启用。同类查询的“View logs”链接无需配置默认日志；而从 trace 查询结果跳转的跨信号“View logs”链接则需要。
+关闭此开关，或在 YAML 中设置 `showLogLinks: false`，即可将其隐藏。
 
 <div id="traces">
   ### 链路追踪
@@ -193,6 +204,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -205,6 +218,15 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+<div id="disabling-view-trace-links">
+  #### 禁用“查看 trace”链接
+</div>
+
+链路追踪配置中的 **Trace ID 关联**部分包含 **显示“查看 trace”链接**切换开关。
+该开关控制插件是否将“查看 trace”[数据链接](/zh/integrations/connectors/data-visualization/grafana/query-builder#data-links)附加到查询结果中的 trace ID 字段。
+该开关默认启用。同类型查询的“查看 trace”链接无需配置 trace 默认值；而日志查询结果中的跨信号“查看 trace”链接则需要。
+关闭该开关，或在 YAML 中设置 `showTraceLinks: false`，即可将其隐藏。
 
 <div id="column-aliases">
   ### 列别名
@@ -323,6 +345,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +354,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

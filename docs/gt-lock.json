@@ -7,36 +7,36 @@
       "versionId": "e1eaf2ec1e2f85b8419d7b132e370f27c240dfc1938fcf27f60d9b10f0f11751",
       "translations": {
         "zh": {
-          "updatedAt": "2026-08-31T14:45:17.574Z",
+          "updatedAt": "2026-08-31T15:38:55.043Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-31T14:45:16.823Z",
+          "updatedAt": "2026-08-31T15:38:54.398Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-31T14:45:18.008Z",
+          "updatedAt": "2026-08-31T15:38:55.454Z",
           "fileName": "docs.json",
           "postProcessHash": "b254c6dc28d4c31ad42579af5039b182e62428b7e09936c02eccf3e3cad232bd"
         },
         "ar": {
-          "updatedAt": "2026-08-31T14:45:17.802Z",
+          "updatedAt": "2026-08-31T15:38:55.241Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-31T14:45:17.353Z",
+          "updatedAt": "2026-08-31T15:38:54.828Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-31T14:45:16.332Z",
+          "updatedAt": "2026-08-31T15:38:53.791Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-31T14:45:17.091Z",
+          "updatedAt": "2026-08-31T15:38:54.621Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-31T14:45:16.556Z",
+          "updatedAt": "2026-08-31T15:38:54.154Z",
           "fileName": "docs.json"
         }
       },
@@ -81815,51 +81815,50 @@
     },
     {
       "fileId": "2c377401dd4b988cc97f9f58c9ae519086bd42308426fb8b4747d51ea39387db",
-      "versionId": "c55ac3dbeba4ac7cf02b847b855a9448d3eec3d320e422f6390e9761fb48be02",
+      "versionId": "88cf7e3ba7c3622037a97ba9ccc52a79beee895f5f456346677b9200255da916",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.058Z",
-          "fileName": "es/integrations/connectors/data-visualization/grafana/config.mdx",
-          "postProcessHash": "6a2192ea4c4f749ee72119720842dc7f3a688941389764359f8abe3effb741e1"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.058Z",
-          "fileName": "ja/integrations/connectors/data-visualization/grafana/config.mdx",
-          "postProcessHash": "bc9c65da1bc3db48eca019db080793e941d55e1aae634cce722f879059ea5f6e"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.058Z",
-          "fileName": "ko/integrations/connectors/data-visualization/grafana/config.mdx",
-          "postProcessHash": "60605542627a96d79f7e321a3b6b6005610f36736809a74d81705d952ead495f"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.058Z",
-          "fileName": "pt-BR/integrations/connectors/data-visualization/grafana/config.mdx",
-          "postProcessHash": "9a753ab79cbb9bbceace610faf3f46c7b9cc89e6ff856d01db1371c33f31155c"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.058Z",
-          "fileName": "ru/integrations/connectors/data-visualization/grafana/config.mdx",
-          "postProcessHash": "2df12ec623ba6f20fd3c428bc6a29e1300052727955f7f8375021b5814be6d4d"
+        "fr": {
+          "updatedAt": "2026-08-31T15:39:02.346Z",
+          "fileName": "fr/integrations/connectors/data-visualization/grafana/config.mdx",
+          "postProcessHash": "25361eda6120244df0c7c6fa46002039b290606cf4edb0ef5c1aa0619d5766c0"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.059Z",
+          "updatedAt": "2026-08-31T15:39:02.347Z",
           "fileName": "zh/integrations/connectors/data-visualization/grafana/config.mdx",
-          "postProcessHash": "03b665c30e23301cf7cdb8767374c86c626bbd997c55a7ca168c0fdbc110d7fe"
+          "postProcessHash": "ee97845288a6c9892ad9f0cc69c2e8a4b1aa497a206db7ccbf5d59ed57e6becb"
+        },
+        "ru": {
+          "updatedAt": "2026-08-31T15:39:02.348Z",
+          "fileName": "ru/integrations/connectors/data-visualization/grafana/config.mdx",
+          "postProcessHash": "bdefc6b7daf74d280e686797292f3be5d748cad719a4d0e88c0e840fe8e9bdc8"
+        },
+        "ko": {
+          "updatedAt": "2026-08-31T15:39:02.351Z",
+          "fileName": "ko/integrations/connectors/data-visualization/grafana/config.mdx",
+          "postProcessHash": "bee3bf8c8170dde4d70177be8da40241f7e2ad6662d874af88e60f0073940a75"
+        },
+        "es": {
+          "updatedAt": "2026-08-31T15:39:02.352Z",
+          "fileName": "es/integrations/connectors/data-visualization/grafana/config.mdx",
+          "postProcessHash": "4c4e99beee2c14ad82f26679ecd6e48f8d7c79ca2a6c4787685e638934607979"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-31T15:39:02.354Z",
+          "fileName": "pt-BR/integrations/connectors/data-visualization/grafana/config.mdx",
+          "postProcessHash": "3359647aa28f299f56b6659efb54d49ef3aa9add1dca92225c9ac98333119a3d"
+        },
+        "ja": {
+          "updatedAt": "2026-08-31T15:39:02.355Z",
+          "fileName": "ja/integrations/connectors/data-visualization/grafana/config.mdx",
+          "postProcessHash": "7fa5fea940bae586beb98c0178361e22a2ff4d85ed7a77ece5cf6598a1d63045"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.059Z",
+          "updatedAt": "2026-08-31T15:39:02.357Z",
           "fileName": "ar/integrations/connectors/data-visualization/grafana/config.mdx",
-          "postProcessHash": "9772c91eec51daea375be461af9dcbfbd5388e46c64ea92c69307bb3be2bd830"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.059Z",
-          "fileName": "fr/integrations/connectors/data-visualization/grafana/config.mdx",
-          "postProcessHash": "aa7001755106471ba8a4c712885f14a00a704b66bf03f6a22e007878633f8251"
+          "postProcessHash": "aac7353a0ab616824581ca7d9f3b15ce8e9e335c9111c52920b88460dbc4c39d"
         }
       },
-      "fileName": "integrations/connectors/data-visualization/grafana/config.mdx",
-      "staged": false
+      "fileName": "integrations/connectors/data-visualization/grafana/config.mdx"
     },
     {
       "fileId": "df8dddd05d15c7b514f607d2fde35fcd8dc796652c14d7347b0e38484d45003c",
@@ -81911,51 +81910,50 @@
     },
     {
       "fileId": "255804e74f1f4d4a7a703273d438c8cb02c37dce2176a000f7c45bb3ad297564",
-      "versionId": "578cda3521bdf91a4a2987c95c6b0ed52aca0860261b6610bb6502dab6d174a8",
+      "versionId": "2e469a30d46c9fb6c526b56e939f78b1d599d916ddda32debd9a0ac4457d3907",
       "translations": {
+        "ko": {
+          "updatedAt": "2026-08-31T15:39:02.338Z",
+          "fileName": "ko/integrations/connectors/data-visualization/grafana/query-builder.mdx",
+          "postProcessHash": "0caad35c85571b46d9509c1c038582c58421d7c547d5fed8bb946c48ca311453"
+        },
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.060Z",
+          "updatedAt": "2026-08-31T15:39:02.345Z",
           "fileName": "es/integrations/connectors/data-visualization/grafana/query-builder.mdx",
-          "postProcessHash": "d7b4ff7f66c393322deb94df668e14c16c3c5bd92d38f8836530661acb331f5f"
+          "postProcessHash": "62e926e6c0cc34467d4211c87997b8d7a72ef0e76fcd7870bdbf9cc6dd69e6b9"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.060Z",
+          "updatedAt": "2026-08-31T15:39:02.349Z",
           "fileName": "ja/integrations/connectors/data-visualization/grafana/query-builder.mdx",
-          "postProcessHash": "af91aadebeadc686a5683473d60c939b5e4eb21b86cedeb37faa65928db2b092"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.060Z",
-          "fileName": "ko/integrations/connectors/data-visualization/grafana/query-builder.mdx",
-          "postProcessHash": "ced3d7152744af69668565d47713024fc7d4e698a4d039feebb7bcc937addeee"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.060Z",
-          "fileName": "pt-BR/integrations/connectors/data-visualization/grafana/query-builder.mdx",
-          "postProcessHash": "a128e6c02e342ec49875d4e8755ed51138287751dad8b27da356203af25c362a"
+          "postProcessHash": "c4db3f59c0783cae95adc7430edb558e0b79c87f5f8aa6ac5edebfec1fbcc813"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.060Z",
+          "updatedAt": "2026-08-31T15:39:02.350Z",
           "fileName": "ru/integrations/connectors/data-visualization/grafana/query-builder.mdx",
-          "postProcessHash": "8a346a3be5d476b035a0633a694a7662b12b8589ba8b7440ffa037aa1092b011"
+          "postProcessHash": "aad234cf3acf5cedb2ada448ffa8f6e1047b2ec0a66a2a8d7a9a1eee6ac06af8"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-31T15:39:02.352Z",
+          "fileName": "pt-BR/integrations/connectors/data-visualization/grafana/query-builder.mdx",
+          "postProcessHash": "d938c6c8e958a6ae88d8067638714bc61cf9797577148da537d7085ce2da900e"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.060Z",
+          "updatedAt": "2026-08-31T15:39:02.353Z",
           "fileName": "zh/integrations/connectors/data-visualization/grafana/query-builder.mdx",
-          "postProcessHash": "e006ef476e6358f41e77683da8442e70c71f85c8101bb578dbcb3f75500fbdea"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.060Z",
-          "fileName": "ar/integrations/connectors/data-visualization/grafana/query-builder.mdx",
-          "postProcessHash": "51d119bb1d65dbf3af26b9a6709349d8e44875202aed686148ccd62c36816b84"
+          "postProcessHash": "0efa7d2963147e611ee8b048f7ab33c7ae916764fe33bf59c45357c19a075484"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.061Z",
+          "updatedAt": "2026-08-31T15:39:02.355Z",
           "fileName": "fr/integrations/connectors/data-visualization/grafana/query-builder.mdx",
-          "postProcessHash": "686f357c0fe21e2b5125a578c1af1814a8c33d6a8f90fc00f7538b9a6a6f5a6a"
+          "postProcessHash": "c0940156e859308282d778c41c912017ce5801a62a7c4167f03eaa0c65117a83"
+        },
+        "ar": {
+          "updatedAt": "2026-08-31T15:39:02.356Z",
+          "fileName": "ar/integrations/connectors/data-visualization/grafana/query-builder.mdx",
+          "postProcessHash": "a5723b5415fa1add358d69aaa8c6851f378de701034b07f06481f62946615f92"
         }
       },
-      "fileName": "integrations/connectors/data-visualization/grafana/query-builder.mdx",
-      "staged": false
+      "fileName": "integrations/connectors/data-visualization/grafana/query-builder.mdx"
     },
     {
       "fileId": "1a1781126fab289565d8aeb1c508165df742da38a00f6715b93fc58eb8bb0e08",
@@ -91962,51 +91960,50 @@
     },
     {
       "fileId": "34845e123180b3331af6b4c0fe6cb17e088625e767cc02e0eca812cdc925c41c",
-      "versionId": "28af2e0abb66a3031c341d8d0361a522e5afe9d2586f1137cba4d15628e44376",
+      "versionId": "59fe3c5da67f0d8c3a65abfed671d83740f41acb5e1075ff455d4d9bcfab0e23",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.460Z",
-          "fileName": "es/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-          "postProcessHash": "590b05d03af7cfcd025b40bbaf27cd82b524acbc4903916cd11a2588ddbfc956"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.460Z",
-          "fileName": "ja/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-          "postProcessHash": "ea8fa33b25d52deaf4866be25a4bf23eb30eef71d38568d6e879647c34dcdea9"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.460Z",
-          "fileName": "ko/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-          "postProcessHash": "02a1485d78bb892730f239836c7efbae107968e86eee5dae5f81be35ed64675a"
+        "ru": {
+          "updatedAt": "2026-08-31T15:39:02.339Z",
+          "fileName": "ru/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
+          "postProcessHash": "09f7489aad8605fec16adf1e9b2ba9f2b43212a2b5cafa01af39f4446046c565"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.460Z",
+          "updatedAt": "2026-08-31T15:39:02.340Z",
           "fileName": "pt-BR/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-          "postProcessHash": "48f0712ec3ec036b30b12ff283fbef79a4a9e25c319dcfc7fdc7d05eff23d1d5"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.460Z",
-          "fileName": "ru/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-          "postProcessHash": "3f8bf2835c7b5eca40363a485cd33b5fcf48c6f0649fa2e4b610a0e3f1b1da4d"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.460Z",
-          "fileName": "zh/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-          "postProcessHash": "25ca98cd5a72a368ed369de3beb57838a4c7559a3291f1973b728696a39bffe8"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.461Z",
-          "fileName": "ar/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-          "postProcessHash": "ae9cabbbe80ec479754ed6a8bf200f6a535fba1eba9dd95713bc570932ab8caf"
+          "postProcessHash": "06f7ebcf05ee7014c784247144abef7c906bd54c5b5d8b52c3d730097a039111"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.461Z",
+          "updatedAt": "2026-08-31T15:39:02.341Z",
           "fileName": "fr/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-          "postProcessHash": "814a8b84ab4ba4e3515a478ead50e2cc44799c07bc5f8c412e75823b39ad6729"
+          "postProcessHash": "d505b3227db0e1fbd37ad0831c7a3379e30baf3a6a4ad0aefa13f2cd406976b4"
+        },
+        "ko": {
+          "updatedAt": "2026-08-31T15:39:02.342Z",
+          "fileName": "ko/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
+          "postProcessHash": "aa9af352579f0ebcddff07cdfdb80ecf039756e41d13494db5f0dd9585c0d0dd"
+        },
+        "es": {
+          "updatedAt": "2026-08-31T15:39:02.343Z",
+          "fileName": "es/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
+          "postProcessHash": "e652167daa3eb69cbab96b0447ddf9e9dd546fb5d8a9347fd8d969041bd1e8ab"
+        },
+        "ar": {
+          "updatedAt": "2026-08-31T15:39:02.344Z",
+          "fileName": "ar/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
+          "postProcessHash": "49d8686811d5cd2792f345ae07a81eb2878549a6b1618d414c7ab3c635d1277a"
+        },
+        "zh": {
+          "updatedAt": "2026-08-31T15:39:02.344Z",
+          "fileName": "zh/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
+          "postProcessHash": "2c9b45a68edd1b0544ecd351c2359f960bf1461ec2cce1205038a9ba9775f401"
+        },
+        "ja": {
+          "updatedAt": "2026-08-31T15:39:02.348Z",
+          "fileName": "ja/resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
+          "postProcessHash": "50376ac94df5f96816fc025074bff94d20db18bc32dd52b25d0ebebccd6e2b87"
         }
       },
-      "fileName": "resources/support-center/knowledge-base/general-faqs/concurrency.mdx",
-      "staged": false
+      "fileName": "resources/support-center/knowledge-base/general-faqs/concurrency.mdx"
     },
     {
       "fileId": "508df7cfc03c31d2d410c95d89faac9db9d8260c547aa66f883b7ba9cfcfe766",

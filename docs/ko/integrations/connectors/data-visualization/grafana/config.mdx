@@ -162,17 +162,28 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
 
+<div id="disabling-view-logs-links">
+  #### &quot;View logs&quot; 링크 비활성화
+</div>
+
+로그 구성의 **트레이스 ID 연관 관계** 섹션에는 **&quot;View logs&quot; 링크 표시** 토글이 있습니다.
+이 토글은 플러그인이 쿼리 결과의 트레이스 ID 필드에 &quot;View logs&quot; [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links)를 추가할지 여부를 제어합니다.
+이 토글은 기본적으로 활성화되어 있습니다. 동일한 쿼리 유형의 &quot;View logs&quot; 링크에는 로그 기본값을 구성할 필요가 없지만, 트레이스 쿼리 결과에서 교차 신호로 연결되는 &quot;View logs&quot; 링크에는 로그 기본값을 구성해야 합니다.
+링크를 숨기려면 토글을 끄거나 YAML에서 `showLogLinks: false`로 설정하십시오.
+
 <div id="traces">
   ### 트레이스
 </div>
 
-[트레이스용 쿼리 작성](/ko/integrations/connectors/data-visualization/grafana/query-builder#traces) 속도를 높이기 위해, 트레이스 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 실행 가능한 트레이스 검색 쿼리가 쿼리 빌더에 미리 로드되어, 관측성 작업 시 Explore 페이지에서 더 빠르게 탐색할 수 있습니다.
+[트레이스용 쿼리 빌드](/ko/integrations/connectors/data-visualization/grafana/query-builder#traces) 속도를 높이기 위해, 트레이스 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 실행 가능한 트레이스 검색 쿼리가 쿼리 빌더에 미리 로드되어, 관측성 작업 시 Explore 페이지에서 더 빠르게 탐색할 수 있습니다.
 
 OpenTelemetry를 사용하는 경우 &quot;**Use OTel**&quot; 스위치를 활성화하고, **기본 트레이스 테이블**을 `otel_traces`로 설정해야 합니다.
 이렇게 하면 선택한 OTel 스키마 버전을 사용하도록 기본 컬럼이 자동으로 재정의됩니다.
@@ -193,6 +204,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -205,6 +218,15 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+<div id="disabling-view-trace-links">
+  #### &quot;View trace&quot; 링크 비활성화
+</div>
+
+트레이스 구성의 **트레이스 ID 연관 관계** 섹션에는 **Show &quot;View trace&quot; links** 토글이 있습니다.
+이 토글은 플러그인이 쿼리 결과의 트레이스 ID 필드에 &quot;View trace&quot; [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links)를 추가할지 여부를 제어합니다.
+토글은 기본적으로 활성화되어 있습니다. 동일한 쿼리 유형의 &quot;View trace&quot; 링크에는 트레이스 기본값을 구성할 필요가 없지만, 로그 쿼리 결과의 교차 신호 &quot;View trace&quot; 링크에는 필요합니다.
+링크를 숨기려면 토글을 끄거나 YAML에서 `showTraceLinks: false`로 설정하십시오.
 
 <div id="column-aliases">
   ### 컬럼 별칭
@@ -323,6 +345,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +354,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

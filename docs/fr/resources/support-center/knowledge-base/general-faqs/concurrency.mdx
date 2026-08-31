@@ -8,8 +8,36 @@ doc_type: 'reference'
 keywords: ['concurrency', 'QPS']
 ---
 
-ClickHouse est conçu pour les applications analytiques en temps réel capables de servir directement des utilisateurs externes. Il peut traiter des requêtes analytiques avec une faible latence (moins de 10 millisecondes) et une forte concurrence (plus de 10 000 requêtes par seconde) sur des bases de données à l’échelle du pétaoctet, en combinant données historiques et insertions en temps réel.
+Oui. ClickHouse est conçu pour les applications analytiques en temps réel capables de servir directement des utilisateurs externes. Il peut traiter des requêtes analytiques avec une faible latence (moins de 10 millisecondes) et une forte concurrence (plus de 10 000 requêtes par seconde) sur des bases de données à l’échelle du pétaoctet, en combinant données historiques et insertions en temps réel.
 
-Cela est possible grâce à une structure d’indexation efficace, à une mise en cache flexible et à des fonctionnalités telles que les projections et les vues matérialisées.
+<div id="what-makes-high-concurrency-possible">
+  ## Les clés d’une forte concurrence
+</div>
 
-Le contrôle d’accès basé sur les rôles intégré, les quotas d’utilisation des ressources, les garde-fous configurables sur la complexité des requêtes et le planificateur de charge de travail font de ClickHouse une couche de service idéale pour les données analytiques.
+Des requêtes rapides constituent la base d’un QPS élevé. Moins chaque requête nécessite de travail, plus un serveur peut en exécuter simultanément. Les principales fonctionnalités qui réduisent le travail nécessaire par requête sont les suivantes :
+
+* L’[index primaire clairsemé](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) de la famille de moteurs de table MergeTree, qui évite de lire les données ne correspondant pas à la requête.
+* Les caches, tels que le [cache de requêtes](/fr/concepts/features/performance/caches/query-cache), qui répondent directement aux requêtes `SELECT` répétées à partir des résultats mis en cache.
+* Les [projections](/fr/concepts/features/projections/projections), qui précalculent les données au moment de l’insertion et peuvent être sélectionnées automatiquement par ClickHouse, ainsi que les [vues matérialisées](/fr/concepts/features/materialized-views/index), qui stockent des résultats précalculés dans une table cible distincte, que les requêtes peuvent lire directement.
+
+<div id="controlling-and-limiting-concurrency">
+  ## Contrôler et limiter la concurrence
+</div>
+
+Par défaut, ClickHouse OSS ne limite pas le nombre de requêtes concurrentes. ClickHouse Cloud définit `max_concurrent_queries_for_all_users` sur `1000` par défaut. Vous pouvez configurer des limites à plusieurs niveaux :
+
+* [`max_concurrent_queries`](/fr/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) limite le nombre total de requêtes exécutées simultanément sur le serveur. [`max_concurrent_insert_queries`](/fr/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) et [`max_concurrent_select_queries`](/fr/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries) appliquent séparément la même limite aux requêtes `INSERT` et `SELECT`. Ces trois paramètres sont définis sur `0` (sans limite) par défaut.
+* [`max_concurrent_queries_for_user`](/fr/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) et [`max_concurrent_queries_for_all_users`](/fr/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) limitent la concurrence par utilisateur ou pour l’ensemble des utilisateurs.
+
+<div id="isolating-workloads">
+  ## Isolation des workloads
+</div>
+
+Pour éviter que des workloads concurrents n&#39;interfèrent entre eux, ClickHouse propose :
+
+* La [planification des workloads](/fr/concepts/features/configuration/server-config/workload-scheduling) pour réguler le partage du CPU, de la mémoire et des IO entre les workloads.
+* Des [quotas](/fr/concepts/features/configuration/server-config/quotas) pour limiter l&#39;utilisation des ressources par utilisateur sur un intervalle de temps.
+* Des [restrictions sur la complexité des requêtes](/fr/concepts/features/configuration/settings/query-complexity) pour empêcher que des requêtes individuelles ne consomment trop de ressources.
+* Un [contrôle d&#39;accès basé sur les rôles](/fr/concepts/features/security/access-rights) intégré pour définir les requêtes que chaque utilisateur est autorisé à exécuter.
+
+Ensemble, ces mécanismes font de ClickHouse une couche de service adaptée aux données analytiques.

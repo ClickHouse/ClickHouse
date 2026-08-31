@@ -8,8 +8,36 @@ doc_type: 'reference'
 keywords: ['concurrency', 'QPS']
 ---
 
-ClickHouse спроектирован для аналитических приложений реального времени, которые могут напрямую обслуживать внешних пользователей. Он способен обрабатывать аналитические запросы с низкой задержкой (менее 10 миллисекунд) и высоким параллелизмом (свыше 10 000 запросов в секунду) в базах данных петабайтного масштаба, сочетая исторические данные и вставки в реальном времени.
+Да. ClickHouse спроектирован для аналитических приложений реального времени, которые могут напрямую обслуживать внешних пользователей. Он способен обрабатывать аналитические запросы с низкой задержкой (менее 10 миллисекунд) и высоким параллелизмом (свыше 10 000 запросов в секунду) в базах данных петабайтного масштаба, сочетая исторические данные и вставки в реальном времени.
 
-Это возможно благодаря эффективной структуре индексов, гибкому кэшированию и таким возможностям, как проекции и materialized views.
+<div id="what-makes-high-concurrency-possible">
+  ## Что обеспечивает высокий параллелизм
+</div>
 
-Встроенное ролевое управление доступом, квоты на использование ресурсов, настраиваемые ограничения сложности запросов и планировщик рабочих нагрузок делают ClickHouse идеальным слоем обслуживания поверх аналитических данных.
+Быстрые отдельные запросы — основа высокого QPS. Чем меньше работы выполняет каждый запрос, тем больше запросов сервер может выполнять одновременно. Основные возможности, сокращающие объём работы на каждый запрос:
+
+* [Разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) таблиц семейства MergeTree, позволяющий пропускать чтение данных, не соответствующих запросу.
+* Кэши, например [кэш запросов](/ru/concepts/features/performance/caches/query-cache), который возвращает результаты повторяющихся запросов `SELECT` непосредственно из кэша.
+* [Проекции](/ru/concepts/features/projections/projections), которые предварительно вычисляют данные при вставке и могут автоматически выбираться ClickHouse, а также [materialized views](/ru/concepts/features/materialized-views/index), которые хранят предварительно вычисленные результаты в отдельной целевой таблице, к которой запросы могут обращаться напрямую.
+
+<div id="controlling-and-limiting-concurrency">
+  ## Управление и ограничение параллелизма
+</div>
+
+По умолчанию ClickHouse OSS не ограничивает число одновременно выполняемых запросов. В ClickHouse Cloud для `max_concurrent_queries_for_all_users` по умолчанию задано значение `1000`. Ограничения можно настроить на нескольких уровнях:
+
+* [`max_concurrent_queries`](/ru/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) ограничивает общее число одновременно выполняемых запросов на сервере. [`max_concurrent_insert_queries`](/ru/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) и [`max_concurrent_select_queries`](/ru/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries) отдельно задают такое же ограничение для запросов `INSERT` и `SELECT`. Для всех трёх по умолчанию задано значение `0` (без ограничений).
+* [`max_concurrent_queries_for_user`](/ru/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) и [`max_concurrent_queries_for_all_users`](/ru/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) ограничивают параллелизм для каждого пользователя или для всех пользователей.
+
+<div id="isolating-workloads">
+  ## Изоляция рабочих нагрузок
+</div>
+
+Чтобы параллельно выполняющиеся рабочие нагрузки не мешали друг другу, ClickHouse предоставляет:
+
+* [Планирование рабочих нагрузок](/ru/concepts/features/configuration/server-config/workload-scheduling) для управления распределением CPU, памяти и IO между рабочими нагрузками.
+* [Квоты](/ru/concepts/features/configuration/server-config/quotas) для ограничения потребления ресурсов каждым пользователем за определённый интервал времени.
+* [Ограничения на сложность запросов](/ru/concepts/features/configuration/settings/query-complexity) для защиты от отдельных запросов, чрезмерно потребляющих ресурсы.
+* Встроенное [ролевое управление доступом](/ru/concepts/features/security/access-rights) для определения запросов, доступных каждому пользователю.
+
+В совокупности это делает ClickHouse подходящим в качестве обслуживающего слоя поверх аналитических данных.
