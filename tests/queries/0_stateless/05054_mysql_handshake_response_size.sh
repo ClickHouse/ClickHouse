@@ -93,6 +93,17 @@ except (BrokenPipeError, ConnectionResetError, ssl.SSLError, socket.timeout, OSE
 print("user name without a terminator:", outcome(secure))
 secure.close()
 
+# A handshake response over TLS that declares a maximum-size payload but carries a complete,
+# parseable prefix: the packet is truncated, so it must be rejected rather than accepted as if the
+# declared payload had ended.
+sock = connect()
+read_packet(sock)
+secure = start_tls(sock)
+prefix = FIXED_PART + b"default\x00" + b"\x00" + b"mysql_native_password\x00"
+secure.sendall(struct.pack("<I", 0xFFFFFF)[:3] + bytes([2]) + prefix)
+print("truncated packet with a complete prefix:", outcome(secure))
+secure.close()
+
 # A well-formed handshake over TLS still authenticates.
 sock = connect()
 read_packet(sock)
