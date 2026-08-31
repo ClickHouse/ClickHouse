@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+-- no-fasttest: bech32Encode is not built in the fast-test build.
 -- https://github.com/ClickHouse/ClickHouse/issues/117201
 -- `bech32Encode` returns an empty string on any encoding error - most easily, data too long for a
 -- valid Bech32 string - so arbitrarily many distinct inputs share that result. It must not claim to
