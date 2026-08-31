@@ -76,6 +76,11 @@ public:
     /// multiset; a difference is a real skip-index granule-pruning bug.
     bool checkSkipIndexEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Setting-flip sweep: run byte-identical SQL with a result-invariant optimizer/cache setting
+    /// toggled off vs on. Such settings (query condition cache, lazy materialization, plan-level
+    /// PREWHERE move, ...) must never change the result multiset, so a divergence is a real bug.
+    bool checkSettingFlipSweep(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
