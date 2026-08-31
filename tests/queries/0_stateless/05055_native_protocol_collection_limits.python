@@ -150,7 +150,9 @@ def sendTablesStatusRequest(s, num_tables, database_declared_size=None):
     writeVarUInt(5, ba)  # TablesStatusRequest
     writeVarUInt(num_tables, ba)
     if database_declared_size is not None:
-        writeVarUInt(database_declared_size, ba)  # a database name whose value never follows
+        writeVarUInt(
+            database_declared_size, ba
+        )  # a database name whose value never follows
     s.sendall(ba)
 
 
