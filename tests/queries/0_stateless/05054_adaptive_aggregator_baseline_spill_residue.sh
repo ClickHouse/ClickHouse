@@ -37,8 +37,15 @@ SELECT count() FROM
 );
 
 -- The sweep and thaw counters are asserted next to the part count, so the test cannot pass by
--- never engaging the adaptive aggregator or never reaching memory pressure at all.
-SELECT 'parts do not track blocks', coalesce(max(value), 0) < 150 FROM system.events WHERE event = 'ExternalAggregationWritePart';
+-- never engaging the adaptive aggregator or never reaching memory pressure at all. The parts are
+-- bounded by the sweeps rather than by a constant so that the bound holds at any scale: one part
+-- per sweep is the intended rate, one part per block is the defect.
+SELECT 'residue released', sumIf(value, event = 'AdaptiveAggregationResidueReleases') > 0 FROM system.events;
+SELECT 'parts track sweeps not blocks',
+       sumIf(value, event = 'ExternalAggregationWritePart') > 0
+       AND sumIf(value, event = 'ExternalAggregationWritePart')
+           <= sumIf(value, event = 'AdaptiveAggregationPressureSweeps')
+FROM system.events;
 SELECT 'swept under pressure', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationPressureSweeps';
 SELECT 'thawed', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationThaws';
 "
@@ -67,6 +74,41 @@ SELECT count() FROM
     GROUP BY k
 );
 
+-- Going external is what proves the baseline spill decision was actually taken: parts are written
+-- only once query memory crosses the external threshold, which is the condition guarding the
+-- release. Without it the scenario could pass green having never reached the code it covers.
+SELECT 'went external', sumIf(value, event = 'ExternalAggregationWritePart') > 0 FROM system.events;
 SELECT 'gave up without freezing', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationGiveUps';
 SELECT 'no shared table was created', coalesce(max(value), 0) = 0 FROM system.events WHERE event = 'AdaptiveAggregationLocalFreezes';
+"
+
+# A residue exists and the baseline producers are over the external threshold, but no table is
+# two-level and none is worth converting, so the baseline aggregation writes nothing at all here.
+# The release has to follow it: writing the shared table on a block that was never going to spill
+# would put the whole aggregation on the external merge path instead of the in-memory one.
+$CLICKHOUSE_LOCAL --query "
+SET max_threads = 4;
+SET max_block_size = 8192;
+SET enable_adaptive_aggregator = 1;
+SET adaptive_aggregator_freeze_threshold = 1000;
+SET adaptive_aggregator_freeze_threshold_bytes = 0;
+-- Thresholds high enough that no producer table ever reaches either one, so none is two-level and
+-- none is worth converting. They must still be non-zero: two-level aggregation being disabled
+-- outright turns the adaptive aggregator off, and then there is no shared table to leave alone.
+SET group_by_two_level_threshold = 100000000;
+SET group_by_two_level_threshold_bytes = 100000000000;
+SET max_bytes_before_external_group_by = 80000000;
+SET max_bytes_ratio_before_external_group_by = 0;
+SET collect_hash_table_stats_during_aggregation = 0;
+
+SELECT count() FROM
+(
+    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k, uniqExact(number % 5000) AS a
+    FROM numbers_mt(6000000)
+    GROUP BY k
+);
+
+SELECT 'nothing written at all', sumIf(value, event = 'ExternalAggregationWritePart') = 0 FROM system.events;
+SELECT 'residue was there to leave alone', sumIf(value, event = 'AdaptiveAggregationPressureSweeps') > 0 FROM system.events;
+SELECT 'thawed onto the baseline path', sumIf(value, event = 'AdaptiveAggregationThaws') > 0 FROM system.events;
 "

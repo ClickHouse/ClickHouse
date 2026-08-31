@@ -35,6 +35,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationDrainedRecords;
     extern const Event AdaptiveAggregationPressureSweeps;
     extern const Event AdaptiveAggregationPressureDrainedRecords;
+    extern const Event AdaptiveAggregationResidueReleases;
 }
 
 namespace DB
@@ -1678,14 +1679,17 @@ std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregation
 {
     /// The shared table is created by the first freeze, so in a session where no producer ever
     /// froze there is none: a learning thread can stand down under memory pressure alone.
-    if (!shared.initialized.load(std::memory_order_acquire) || !shared.early_drain_variants)
+    if (!shared.initialized.load(std::memory_order_acquire))
         return {};
 
     std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
 
+    /// Read under the coordinator lock: the sweeps replace this pointer while holding it.
+    if (!shared.early_drain_variants)
+        return {};
+
     /// The sweeps detach only at the part floor, so a residue below it is never written by them
-    /// and stays resident until the merge. Write it regardless of the floor: a part smaller than
-    /// the floor is worth more than a residue every later block gets measured against.
+    /// and stays resident until the merge.
     while (shared.early_drain_variants->hasData())
     {
         /// Declared before the table so that reverse-order destruction frees the table first:
@@ -1702,6 +1706,7 @@ std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregation
         /// Writing under the coordinator lock would stall every frozen producer's sweep for the
         /// length of a disk write; only reservations may wait under it.
         sweep_lock.unlock();
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationResidueReleases);
         spillDetachedAdaptiveTable(shared, *detached);
         detached.reset();
         reservation.release();

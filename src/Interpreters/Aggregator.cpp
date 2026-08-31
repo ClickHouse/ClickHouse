@@ -2477,6 +2477,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// part floor, so left resident it keeps every later block over the threshold.
     Int64 spill_decision_memory = current_memory_usage;
     if (adaptive && adaptive->isBaseline() && params.max_bytes_before_external_group_by
+        && result.isTwoLevel() && worth_convert_to_two_level
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
     {
         if (auto sampled = releaseAdaptiveDrainResidue(*adaptive->session))
