@@ -26,12 +26,14 @@ SET max_bytes_ratio_before_external_group_by = 0;
 -- engagement, so without this only the first run of the shape would reach it.
 SET collect_hash_table_stats_during_aggregation = 0;
 
--- A repeat-dominated stream of wide keys with fat states: the tables freeze, the staged stream
--- proves repeat-dominated and thaws every thread back to the baseline path, and the records
--- swept before the thaw stay in the shared table, which holds fewer keys than the spill floor.
+-- A repeat-dominated stream of wide keys: the tables freeze, the staged stream proves
+-- repeat-dominated and thaws every thread back to the baseline path, and the records swept before
+-- the thaw stay in the shared table, which holds fewer keys than the spill floor. The residue is
+-- the dominant resident term through the count and the width of its keys, so releasing it is what
+-- brings query memory back under the threshold.
 SELECT count() FROM
 (
-    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k, uniqExact(number % 5000) AS a
+    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k
     FROM numbers_mt(6000000)
     GROUP BY k
 );
@@ -68,8 +70,7 @@ SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT count() FROM
 (
-    SELECT if(number < 1500000, 'hot', concat(toString(number), repeat('x', 60))) AS k,
-           uniqExact(number % 5000) AS a
+    SELECT if(number < 1500000, 'hot', concat(toString(number), repeat('x', 60))) AS k
     FROM numbers_mt(3000000)
     GROUP BY k
 );
@@ -103,7 +104,7 @@ SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT count() FROM
 (
-    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k, uniqExact(number % 5000) AS a
+    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k
     FROM numbers_mt(6000000)
     GROUP BY k
 );
