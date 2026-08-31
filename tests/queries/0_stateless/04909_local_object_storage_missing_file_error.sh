@@ -21,9 +21,12 @@ ${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 -q "SELECT * FROM paimonLocal('
 # Drop the single data file the manifest points at, keeping all metadata intact.
 rm -f "${TABLE_DIR}"/bucket-0/*.parquet
 
-# The harness runs the client with `--send_logs_level=warning`, so the failure is
-# echoed both as a server log line and as the client's own error - match, don't count.
-${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 -q "SELECT * FROM paimonLocal('${TABLE_DIR}') FORMAT Null" 2>&1 \
-    | grep -q -F "FILE_DOESNT_EXIST" && echo "GOT FILE_DOESNT_EXIST ERROR"
+# The harness runs the client with `--send_logs_level=warning`, so capture the output
+# once and check both the expected error and the absence of the generic wrapper.
+out=$(${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 -q "SELECT * FROM paimonLocal('${TABLE_DIR}') FORMAT Null" 2>&1)
+
+echo "$out" | grep -F -q 'Code: 107' && echo 'code 107: yes' || echo 'code 107: no'
+echo "$out" | grep -F -q 'FILE_DOESNT_EXIST' && echo 'FILE_DOESNT_EXIST: yes' || echo 'FILE_DOESNT_EXIST: no'
+echo "$out" | grep -F -q 'STD_EXCEPTION' && echo 'STD_EXCEPTION: yes' || echo 'STD_EXCEPTION: no'
 
 rm -rf "${TABLE_DIR}"
