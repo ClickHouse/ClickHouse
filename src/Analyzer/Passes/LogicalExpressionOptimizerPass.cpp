@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsBool optimize_and_compare_chain;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
     extern const SettingsBool optimize_redundant_comparisons;
+    extern const SettingsBool group_by_use_nulls;
 }
 
 namespace ErrorCodes
@@ -1785,6 +1786,11 @@ public:
     /// cached result stays valid for the rest of the traversal.
     std::unordered_map<QueryTreeNodePtr, bool> correlated_subquery_cache;
 
+    /// One entry per query level: whether that level's GROUP BY keys are wrapped in Nullable after
+    /// aggregation. Such a key keeps its declared type, while an expression equal to it elsewhere in
+    /// the same level is a Nullable-converted copy of it.
+    std::vector<bool> nullable_group_by_keys_stack;
+
     bool subtreeContainsCorrelatedSubquery(const QueryTreeNodePtr & node)
     {
         if (auto it = correlated_subquery_cache.find(node); it != correlated_subquery_cache.end())
@@ -1809,6 +1815,14 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+            nullable_group_by_keys_stack.push_back(
+                getSettings()[Setting::group_by_use_nulls]
+                && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup()
+                    || query_node->isGroupByWithCube()));
+        else if (node->as<UnionNode>())
+            nullable_group_by_keys_stack.push_back(false);
+
         if (auto * join_node = node->as<JoinNode>())
         {
             /// Operator <=> is not supported outside of JOIN ON section
@@ -1833,6 +1847,11 @@ public:
 
         if (function_node->getFunctionName() == "and")
         {
+            /// Neither optimization below can move a Nullable copy of an expression, so where the
+            /// GROUP BY keys become Nullable they must not move the expression such a copy is of.
+            if (!nullable_group_by_keys_stack.empty() && nullable_group_by_keys_stack.back())
+                return;
+
             /// Run transitive inference first so that the conflict detector can see inferred equalities.
             /// E.g. `x = 3 AND x = y AND y = 5` — the compare-chain pass infers `x = 5`,
             /// then the equals-chain pass detects `x = 3` vs `x = 5` and collapses to FALSE.
@@ -1851,6 +1870,9 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>() || node->as<UnionNode>())
+            nullable_group_by_keys_stack.pop_back();
+
         if (!getSettings()[Setting::optimize_extract_common_expressions])
             return;
 
