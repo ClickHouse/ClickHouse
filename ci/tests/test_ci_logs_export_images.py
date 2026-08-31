@@ -37,6 +37,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "ci"))
 
 from ci.defs.defs import DOCKERS
+from ci.jobs.scripts import log_export
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV
 
 BASE_IMAGE = "clickhouse/integration-test"
@@ -143,18 +144,15 @@ def _aliases(expression):
     return names
 
 
-def _assignment(path, variable):
-    """The literal of a `os.environ["<variable>"] = (...)` assignment in a CI
-    job script. The scripts build the expression from `Info()`, which is not
-    available here, so the literal is read from the source."""
-    source = (REPO_ROOT / path).read_text()
-    match = re.search(
-        r'os\.environ\["' + variable + r'"\] = \((.*?)\n\s*\)\n',
-        source,
-        re.DOTALL,
-    )
-    assert match, f"no assignment of {variable} in {path}"
-    return match.group(1)
+class _FakeInfo:
+    """The CI run identity `log_export` builds the expression from."""
+
+    repo_name = "ClickHouse/ClickHouse"
+    pr_number = 0
+    sha = "0" * 40
+    job_name = "Some job"
+    instance_type = "c5.large"
+    instance_id = "i-01234567"
 
 
 SETUP_LOG_CLUSTER = (
@@ -166,7 +164,7 @@ def _shell_default(variable):
     """The default value of a `VAR=${VAR:-"..."}` assignment in
     setup_log_cluster.sh."""
     match = re.search(
-        r"^" + variable + r"=\$\{" + variable + r':-"(.*)"\}$',
+        "^" + variable + r"=\$\{" + variable + r':-"(.*)"\}$',
         SETUP_LOG_CLUSTER.read_text(),
         re.MULTILINE,
     )
@@ -176,41 +174,27 @@ def _shell_default(variable):
 
 def test_destination_structure_is_shared_with_the_functional_tests():
     """The structure hash of a destination table is computed from the columns,
-    so functional and integration tests only share a table while these two
-    declarations are identical."""
+    so the functional and the integration tests only share a table while these
+    two declarations are identical."""
     assert _shell_default("EXTRA_COLUMNS") == HELPER.EXTRA_COLUMNS
     assert _shell_default("EXTRA_ORDER_BY_COLUMNS") == HELPER.EXTRA_ORDER_BY_COLUMNS
 
 
-@pytest.mark.parametrize(
-    "path,variable",
-    [
-        ("ci/jobs/scripts/clickhouse_proc.py", "EXTRA_COLUMNS_EXPRESSION"),
-        ("ci/jobs/sqlstorm_test.py", "EXTRA_COLUMNS_EXPRESSION"),
-    ],
-)
-def test_job_expression_follows_the_column_order(path, variable):
+def test_job_expression_follows_the_column_order(monkeypatch):
     """A `SELECT {expression}, *` in a different order than EXTRA_COLUMNS gives
     the local sender table a different header than the destination table, so
     `Distributed` converts every exported batch by name and logs a warning for
     each of them - which `system.text_log` then exports as well."""
-    assert _aliases(_assignment(path, variable)) == _extra_column_names(
+    monkeypatch.setattr(log_export, "Info", _FakeInfo)
+    assert _aliases(log_export.extra_columns_expression(0)) == _extra_column_names(
         HELPER.EXTRA_COLUMNS
     )
 
 
-def test_integration_job_expression_follows_the_column_order():
-    """The integration-test job provides the expression in two parts, and the
-    helper inserts the per-server `test_name` and `node_name` between them."""
-    path = "ci/jobs/integration_test_job.py"
-    head = _assignment(path, HELPER.EXTRA_COLUMNS_EXPRESSION_HEAD_ENV)
-    tail = _assignment(path, HELPER.EXTRA_COLUMNS_EXPRESSION_TAIL_ENV)
-    assert _aliases(head) + ["test_name", "node_name"] + _aliases(
-        tail
-    ) == _extra_column_names(HELPER.EXTRA_COLUMNS)
-
-
 def test_helper_expression_follows_the_column_order(monkeypatch):
+    """The integration tests take the expression in two parts and insert the
+    per-server `test_name` and `node_name` between them."""
+    monkeypatch.setattr(log_export, "Info", _FakeInfo)
     monkeypatch.delenv(HELPER.EXTRA_COLUMNS_EXPRESSION_HEAD_ENV, raising=False)
     monkeypatch.delenv(HELPER.EXTRA_COLUMNS_EXPRESSION_TAIL_ENV, raising=False)
     expected = _extra_column_names(HELPER.EXTRA_COLUMNS)
@@ -219,11 +203,11 @@ def test_helper_expression_follows_the_column_order(monkeypatch):
     # And the one built from the values the CI job provides
     monkeypatch.setenv(
         HELPER.EXTRA_COLUMNS_EXPRESSION_HEAD_ENV,
-        _assignment("ci/jobs/integration_test_job.py", "EXTRA_COLUMNS_EXPRESSION_HEAD"),
+        log_export.extra_columns_expression_head(0),
     )
     monkeypatch.setenv(
         HELPER.EXTRA_COLUMNS_EXPRESSION_TAIL_ENV,
-        _assignment("ci/jobs/integration_test_job.py", "EXTRA_COLUMNS_EXPRESSION_TAIL"),
+        log_export.extra_columns_expression_tail(),
     )
     assert _aliases(HELPER._extra_columns_expression("test", "node")) == expected
 
