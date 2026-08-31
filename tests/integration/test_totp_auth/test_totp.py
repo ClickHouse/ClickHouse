@@ -7,6 +7,7 @@ import re
 import struct
 import time
 
+import psycopg2
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -18,6 +19,7 @@ TOTP_SECRET = base64.b32encode(random.randbytes(random.randint(3, 64))).decode()
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=["config/postgresql.xml"],
     user_configs=["config/users.xml"],
 )
 
@@ -46,6 +48,8 @@ def get_one_time_password(
 
 
 def create_config(totp_secret):
+    # `password_scram_sha256_hex` stores the salted password with an empty salt.
+    scram_hex = hashlib.pbkdf2_hmac("sha256", b"abacaba", b"", 4096).hex()
     config = f"""
 <clickhouse>
     <profiles>
@@ -69,6 +73,22 @@ def create_config(totp_secret):
             <profile>default</profile>
             <quota>default</quota>
         </totuser>
+
+        <totuser_scram>
+            <password_scram_sha256_hex>{scram_hex}</password_scram_sha256_hex>
+            <time_based_one_time_password>
+                <secret>{totp_secret}</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </totuser_scram>
 
         <totuser_no_password>
             <no_password></no_password>
@@ -228,6 +248,45 @@ def test_interactive_totp_authentication(started_cluster):
         command=f"{client_command} --password wrongpwd+{get_totp_for_config()}"
     ) as c:
         c.expect(expected_error)
+
+
+def test_postgresql_protocol_requires_totp(started_cluster):
+    """The PostgreSQL protocol must enforce TOTP. A SCRAM proof is derived from the password
+    alone and cannot carry a one-time password, so the server refuses the SCRAM exchange for
+    a `scram_sha256_password` user with TOTP. For cleartext password authentication the client
+    appends the TOTP to the password."""
+
+    def connect(user, password):
+        return psycopg2.connect(
+            host=node.ip_address,
+            port=9005,
+            user=user,
+            password=password,
+            dbname="default",
+        )
+
+    # A SCRAM user with TOTP must be refused: the exchange cannot verify the second factor.
+    with pytest.raises(psycopg2.OperationalError, match="not supported"):
+        connect("totuser_scram", "abacaba")
+
+    with pytest.raises(psycopg2.OperationalError, match="not supported"):
+        connect("totuser_scram", f"abacaba+{get_totp_for_config()}")
+
+    # Cleartext password authentication enforces the second factor.
+    # The message is intentionally generic and does not reveal the reason.
+    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
+        connect("totuser", "aa+bb")
+
+    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
+        connect("totuser", "aa+bb+000000000")
+
+    conn = connect("totuser", f"aa+bb+{get_totp_for_config()}")
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT currentUser()")
+        assert cursor.fetchall() == [("totuser",)]
+    finally:
+        conn.close()
 
 
 def test_one_time_only_no_password(started_cluster):
