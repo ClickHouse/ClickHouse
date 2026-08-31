@@ -19,6 +19,7 @@
         "ja/products/managed-postgres/high-availability",
         "ja/products/managed-postgres/read-replicas",
         "ja/products/managed-postgres/backup-and-restore",
+        "ja/products/managed-postgres/branching",
         "ja/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",

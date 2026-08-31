@@ -337,7 +337,7 @@ void SelectStreamFactory::createForShard(
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
-    /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
+    /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
     /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
     /// Use a clone to keep the original query_tree with specialized functions intact,
     /// since it is reused later for getSampleBlock / plan building.

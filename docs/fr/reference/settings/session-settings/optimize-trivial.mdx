@@ -102,7 +102,7 @@ Voir aussi :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nouveau paramètre qui limite l’agrégation à au plus LIMIT clés distinctes pour les requêtes `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
 
-Active ou désactive l’optimisation de la requête triviale `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (sans fonctions d’agrégation dans la projection, sans clauses `HAVING`/`ORDER BY`/`LIMIT BY`/de fenêtre, et sans modificateurs `GROUP BY`) en définissant `max_rows_to_group_by = n + offset` avec `group_by_overflow_mode = 'any'`. L’agrégation s’arrête dès que `n + offset` clés distinctes ont été produites.
+Active ou désactive l’optimisation de la requête triviale `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (sans fonctions d’agrégation, fonctions de fenêtre ni `arrayJoin` dans la projection, sans clauses `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/de fenêtre, et sans modificateurs `GROUP BY`) en définissant `max_rows_to_group_by = n + offset` avec `group_by_overflow_mode = 'any'`. L’agrégation s’arrête dès que `n + offset` clés distinctes ont été produites.
 
 L’optimisation est désactivée lorsque l’utilisateur a explicitement défini `group_by_overflow_mode` sur une valeur autre que `any` (afin de préserver son comportement explicite `throw`/`break`), ainsi que lorsque l’utilisateur a déjà défini une valeur `max_rows_to_group_by` plus restrictive (l’optimisation serait alors sans effet).
 

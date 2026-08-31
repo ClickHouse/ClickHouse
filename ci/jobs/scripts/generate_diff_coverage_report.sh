@@ -13,6 +13,11 @@ done
 
 cd ci/tmp
 
+# Every exit-0 path names its outcome here, so an absent marker means the script
+# died before reaching one. A stale marker must therefore not survive.
+OUTCOME_MARKER="diff_outcome.txt"
+rm -f "$OUTCOME_MARKER"
+
 if [[ ! -f "llvm_coverage.info" ]]; then
   echo "ERROR: llvm_coverage.info not found"
   exit 1
@@ -64,10 +69,15 @@ export REPO_NAME
 #    llvm_coverage_job.py to parse it into _changed_paths, flipping
 #    _binary_unchanged=False and suppressing the newly-covered analysis even
 #    though the PR binary is genuinely unchanged.
+#
+# `gh` reports a failure as a bare "gh: Not Found (HTTP 404)" naming no resource,
+# so each endpoint is echoed before it is requested.
+echo "Fetching diff: repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT}"
 gh api \
   -H "Accept: application/vnd.github.v3.diff" \
   repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT} \
   > changes.diff
+echo "Fetching changed files: repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT}"
 changed_files=$(gh api \
   repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
   --jq '.files[].filename'
@@ -92,6 +102,7 @@ done < <(echo "$changed_files")
 
 if [ ${#patterns[@]} -eq 0 ]; then
   echo "No coverable C/C++ source files changed (contrib/ is excluded from coverage), skipping differential coverage report"
+  echo "no_cpp_changes" > "$OUTCOME_MARKER"
   exit 0
 fi
 
@@ -126,11 +137,15 @@ baseline_sf_count=$(grep -c '^SF:' baseline.changed.info 2>/dev/null || true)
 
 if [ "$current_sf_count" -eq 0 ] && [ "$baseline_sf_count" -eq 0 ]; then
   echo "No coverage data found for changed files (files may be new or not instrumented), skipping differential coverage report"
+  echo "no_coverage_data" > "$OUTCOME_MARKER"
   exit 0
 fi
 
 if [ "$current_sf_count" -eq 0 ]; then
-  echo "Current coverage is empty for changed files (tests may have been removed or disabled). Skipping genhtml — LBC analysis will run separately."
+  # print_uncovered_code.py reads only current.changed.info, so it has no data
+  # to report in this state either.
+  echo "Current coverage is empty for changed files (tests may have been removed or disabled), skipping differential coverage report"
+  echo "current_coverage_empty" > "$OUTCOME_MARKER"
   exit 0
 fi
 
@@ -165,3 +180,4 @@ genhtml \
   --flat \
   current.changed.info
 
+echo "report_generated" > "$OUTCOME_MARKER"

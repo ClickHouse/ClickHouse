@@ -22,6 +22,20 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 Whether to delete all iceberg files on drop or not.
 
+## iceberg_delete_manifest_decode_concurrency {#iceberg_delete_manifest_decode_concurrency}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row."}]}]}/>
+
+Maximum number of Iceberg delete manifest files decoded concurrently during query execution before any data file is read.
+
+All delete manifests must be decoded before any data file is read, so this work sits on the critical path before the first row is returned. Decoding several at a time overlaps both the object storage round-trips and the per-row pruning work.
+
+Higher values raise peak memory during query initialization when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+
+Must be greater than zero; `1` decodes the manifests one at a time.
+
 ## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge/>

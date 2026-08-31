@@ -149,7 +149,8 @@
                 "ru/concepts/features/configuration/server-config/workload-scheduling",
                 "ru/concepts/features/configuration/server-config/quotas",
                 "ru/concepts/features/configuration/server-config/composable-protocols",
-                "ru/concepts/features/configuration/server-config/startup-scripts"
+                "ru/concepts/features/configuration/server-config/startup-scripts",
+                "ru/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -197,6 +198,7 @@
           "group": "Backup and restore",
           "pages": [
             "ru/concepts/features/backup-restore/overview",
+            "ru/concepts/features/backup-restore/restore-settings",
             "ru/concepts/features/backup-restore/local-disk",
             "ru/concepts/features/backup-restore/s3-endpoint",
             "ru/concepts/features/backup-restore/azure-blob-storage",
@@ -210,15 +212,20 @@
             "ru/concepts/features/interfaces/native-clients-interfaces-index",
             "ru/concepts/features/interfaces/cli",
             "ru/concepts/features/interfaces/client",
+            "ru/concepts/features/interfaces/mcp",
             {
               "group": "Drivers and interfaces",
               "pages": [
                 "ru/concepts/features/interfaces/overview",
                 "ru/concepts/features/interfaces/http",
+                "ru/concepts/features/interfaces/framing-formats",
                 "ru/concepts/features/interfaces/tcp",
+                "ru/concepts/features/interfaces/adbc",
                 "ru/concepts/features/interfaces/jdbc",
                 "ru/concepts/features/interfaces/mysql",
-                "ru/concepts/features/interfaces/odbc",
+                {
+                  "$ref": "features/interfaces/odbc/navigation.json"
+                },
                 "ru/concepts/features/interfaces/postgresql",
                 "ru/concepts/features/interfaces/prometheus",
                 "ru/concepts/features/interfaces/ssh",
@@ -232,6 +239,7 @@
             "ru/concepts/features/interfaces/web-sql",
             "ru/concepts/features/interfaces/web-ui-color-coding",
             "ru/concepts/features/interfaces/web-ui-pinned-columns",
+            "ru/concepts/features/interfaces/web-ui-result-shaping",
             "ru/concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",

@@ -69,6 +69,10 @@ EXCLUDE=(
     04931_variant_max_dynamic_types.parquet
     04932_variant_null.parquet
     04933_variant_binary_and_string.parquet
+    # Hand-crafted DELTA_BYTE_ARRAY files for the 05035 malformed-input test. The first one is
+    # malformed on purpose, so loading it here would print an exception.
+    05035_delta_byte_array_zero_values.parquet
+    05035_delta_byte_array_decimal.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

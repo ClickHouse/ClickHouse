@@ -100,4 +100,13 @@ struct ReplicatedReadStrategy final : IReadStrategy
 
 using ImplementationStrategyPtr = std::shared_ptr<const IImplementationStrategy>;
 
+/// All strategies are stateless, so every rule shares one instance per strategy type and
+/// expressions compare strategies by pointer.
+template <typename Strategy>
+const ImplementationStrategyPtr & strategySingleton()
+{
+    static const ImplementationStrategyPtr instance = std::make_shared<const Strategy>();
+    return instance;
+}
+
 }

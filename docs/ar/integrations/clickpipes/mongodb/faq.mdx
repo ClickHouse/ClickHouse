@@ -108,4 +108,4 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 بالنسبة إلى اتصال Replica Set، يمكنك إعداد PrivateLink لـ MongoDB باستخدام VPC Resource أو VPC Endpoint Service. وإذا اخترت VPC Resource، فستحتاج إلى إنشاء تهيئة مورد `GROUP`، بالإضافة إلى تهيئة مورد `CHILD` لكل عقدة في العنقود. أما إذا اخترت VPC Endpoint Service، فستحتاج إلى إنشاء Endpoint Service منفصلة (وموازن تحميل شبكة NLB منفصل) لكل عقدة في العنقود.
 
-راجع وثائق [AWS PrivateLink for ClickPipes](/ar/integrations/clickpipes/networking/aws-privatelink) لمزيد من التفاصيل. يُرجى التواصل مع دعم ClickHouse للحصول على المساعدة.
+راجع وثائق [AWS PrivateLink](/ar/integrations/clickpipes/networking/aws-privatelink) لمزيد من التفاصيل. يُرجى التواصل مع دعم ClickHouse للحصول على المساعدة.

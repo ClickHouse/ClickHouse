@@ -716,7 +716,10 @@ template <typename JSONParser>
 class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTimeNode(const DataTypeDateTime & datetime_type) : TimezoneMixin(datetime_type) { }
+    explicit DateTimeNode(const DataTypeDateTime & datetime_type)
+        : TimezoneMixin(datetime_type), utc_time_zone(DateLUT::instance("UTC"))
+    {
+    }
 
     bool insertResultToColumn(
         IColumn & column,
@@ -808,6 +811,10 @@ public:
 
         return false;
     }
+
+    /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
+    /// `DateTime` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl & utc_time_zone;
 };
 
 template <typename JSONParser>
@@ -943,7 +950,8 @@ template <typename JSONParser>
 class DateTime64Node : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type) : TimezoneMixin(datetime64_type), scale(datetime64_type.getScale())
+    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type)
+        : TimezoneMixin(datetime64_type), utc_time_zone(DateLUT::instance("UTC")), scale(datetime64_type.getScale())
     {
     }
 
@@ -1057,6 +1065,9 @@ public:
     }
 
 private:
+    /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
+    /// `DateTime64` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl & utc_time_zone;
     UInt32 scale;
 };
 
@@ -1919,6 +1930,8 @@ public:
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
     {
+        SerializationObject::updateMaxDynamicPathsLimitIfNeeded(column, format_settings);
+
         if (element.isNull() && format_settings.null_as_default)
         {
             auto & column_object = assert_cast<ColumnObject &>(column);

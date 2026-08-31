@@ -898,16 +898,16 @@ ClickHouse 측 타입 문자열을 기준으로 디스패치해야 한다면(예
 ```csharp
 public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 {
-    public object ConvertValue(object value, string columnName, string clickHouseType)
+    public object ConvertValue(object value, string columnName, string clickhouseType)
     {
-        if (value is DateTime dt && clickHouseType == "DateTime")
+        if (value is DateTime dt && clickhouseType == "DateTime")
             return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
 
-    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
+    public T ConvertValue<T>(T value, string columnName, string clickhouseType)
     {
-        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickhouseType == "DateTime")
             return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
