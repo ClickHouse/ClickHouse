@@ -65,7 +65,9 @@ TTLCalcTransform::TTLCalcTransform(
             const auto required = expressions.expression->getRequiredColumns();
             bool inputs_present = std::all_of(required.begin(), required.end(),
                 [&](const String & input) { return header_->has(input); });
-            if (!inputs_present)
+            /// The target column matters too: with it absent, a rebuilt info would describe a
+            /// column the part does not store, as fresh and unfinished.
+            if (!inputs_present || !header_->has(name))
             {
                 preserved_column_ttls.emplace_back(name, old_ttl_infos.columns_ttl[name]);
                 continue;
