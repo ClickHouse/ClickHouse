@@ -130,7 +130,7 @@ ALWAYS_INLINE UInt64 remapFlatWord(UInt64 word, const DirectGatherRowRemap * rem
     if (!remap.indexes_data)
         return word;
     const size_t row = refWordRowNo(word);
-    size_t mapped;
+    size_t mapped = 0;
     switch (remap.index_width)
     {
         case 1: mapped = static_cast<const UInt8 *>(remap.indexes_data)[row]; break;
@@ -367,7 +367,7 @@ void gatherVariantRows(ColumnVariant & dst, const DirectGatherNode & node, const
 
     /// The destination's local discriminator per global one; the source side is remapped per block
     /// through `local_to_global_by_block`, because local orders may differ between stored blocks.
-    std::array<ColumnVariant::Discriminator, ColumnVariant::NULL_DISCRIMINATOR> dst_local_by_global;
+    std::array<ColumnVariant::Discriminator, ColumnVariant::NULL_DISCRIMINATOR> dst_local_by_global{};
     for (size_t g = 0; g < num_variants; ++g)
         dst_local_by_global[g] = dst.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(g));
 
