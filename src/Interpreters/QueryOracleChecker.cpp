@@ -7,6 +7,7 @@
 #include <Interpreters/QueryOracles/OracleRegistry.h>
 #include <Interpreters/QueryOracles/OracleExec.h>
 #include <Interpreters/QueryOracles/OracleCompare.h>
+#include <Interpreters/QueryOracles/OracleGate.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -57,6 +58,7 @@ extern const Event ASTFuzzerOracleIdentityWhereChecks;
 extern const Event ASTFuzzerOracleSubqueryWrapChecks;
 extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
 extern const Event ASTFuzzerOracleDistinctViaGroupByChecks;
+extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2439,6 +2441,75 @@ bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, 
     }
 
     LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle passed ({} rows)", ref_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkPrewhereEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// On a single MergeTree-family table, PREWHERE is a transparent read-time optimization of
+    /// WHERE: `SELECT ... WHERE p` and `SELECT ... PREWHERE p` must return the identical multiset.
+    /// A divergence is a real PREWHERE bug. Bespoke gate (isSafeForOracle rejects PREWHERE and is
+    /// too strict here — we need a single physical table, which resolveSingleTableStorage gives us).
+    if (!select.where() || select.prewhere())
+        return false;
+
+    /// PREWHERE is only meaningful on a single MergeTree-family table (no JOIN / subquery / TF).
+    auto storage = resolveSingleTableStorage(select, context);
+    if (!storage || !storage->getName().ends_with("MergeTree"))
+        return false;
+
+    if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
+        return false;
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+    /// A WHERE that defines an alias used elsewhere would move that alias definition into PREWHERE,
+    /// changing scoping; skip such queries.
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+        return false;
+
+    /// Reference: the query as-is (WHERE p), ORDER BY / LIMIT / SETTINGS stripped.
+    auto ref_ast = select.clone();
+    stripOrderAndLimit(ref_ast->as<ASTSelectQuery &>());
+
+    /// Variant: move WHERE into PREWHERE.
+    auto pw_ast = ref_ast->clone();
+    {
+        auto & sel = pw_ast->as<ASTSelectQuery &>();
+        auto predicate = sel.where()->clone();
+        sel.setExpression(ASTSelectQuery::Expression::WHERE, {});
+        sel.setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(predicate));
+    }
+
+    const String ref_sql = formatAST(ref_ast);
+    const String pw_sql = formatAST(pw_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH || pw_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "PREWHERE-equivalence oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "PREWHERE-equivalence oracle: prewhere: {}", pw_sql);
+
+    auto ref_rows_opt = OracleExec::executeRows(ref_sql, context, ResultShape::SortedBag);
+    auto pw_rows_opt = OracleExec::executeRows(pw_sql, context, ResultShape::SortedBag);
+    if (!ref_rows_opt || !pw_rows_opt)
+        return false;
+
+    if (!OracleExec::isStable(ref_sql, *ref_rows_opt, context, ResultShape::SortedBag))
+        return false;
+
+    if (!OracleCompare::equal(*ref_rows_opt, *pw_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "PREWHERE-equivalence oracle mismatch!\n"
+            "Reference (WHERE) query ({} rows): {}\n"
+            "PREWHERE query ({} rows): {}\n{}",
+            ref_rows_opt->size(), ref_sql,
+            pw_rows_opt->size(), pw_sql,
+            OracleCompare::diffSummary(*ref_rows_opt, *pw_rows_opt));
+    }
+
+    LOG_TRACE(logger, "PREWHERE-equivalence oracle passed ({} rows)", ref_rows_opt->size());
     return true;
 }
 
