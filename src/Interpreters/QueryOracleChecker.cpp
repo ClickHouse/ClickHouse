@@ -72,6 +72,7 @@ extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
 extern const Event ASTFuzzerOracleAggregateIfIdentityChecks;
 extern const Event ASTFuzzerOracleNullIdentityChecks;
 extern const Event ASTFuzzerOracleCastRoundtripChecks;
+extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3179,6 +3180,60 @@ bool QueryOracleChecker::checkCastRoundtrip(const ASTSelectQuery &, const Contex
     }
 
     LOG_TRACE(logger, "CAST round-trip oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkAggregateStateColumn(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_39): an AggregateFunction column stores the intermediate -State. A
+    /// state written with -State into an AggregatingMergeTree, persisted across parts, and read back
+    /// with -Merge must equal the direct aggregate over the raw data. Exact aggregates only
+    /// (sum over Int64, count) so cross-part merge cannot differ by float rounding.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("aggstate", context);
+    if (!fixture.valid())
+        return false;
+
+    const String raw = fixture.allocName("raw");
+    const String amt = fixture.allocName("amt");
+    if (!fixture.execute("CREATE TABLE " + raw + " (key UInt8, x Int64) ENGINE = MergeTree ORDER BY key"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + raw + " SELECT number % 8, toInt64(number) * 3 - 400 FROM numbers(1000)"))
+        return false;
+    if (!fixture.execute(
+            "CREATE TABLE " + amt + " (key UInt8, cs AggregateFunction(sum, Int64), cc AggregateFunction(count))"
+            " ENGINE = AggregatingMergeTree ORDER BY key"))
+        return false;
+    /// Two disjoint partitions of raw -> multiple state rows per key, combined at read time.
+    if (!fixture.execute("INSERT INTO " + amt + " SELECT key, sumState(x), countState() FROM " + raw + " WHERE key < 4 GROUP BY key"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + amt + " SELECT key, sumState(x), countState() FROM " + raw + " WHERE key >= 4 GROUP BY key"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "aggregate-state-column oracle: {} (states) vs {} (raw)", amt, raw);
+
+    auto merge_rows_opt = OracleExec::executeRows(
+        "SELECT key, sumMerge(cs), countMerge(cc) FROM " + amt + " GROUP BY key", context, ResultShape::SortedBag);
+    auto direct_rows_opt = OracleExec::executeRows(
+        "SELECT key, sum(x), count() FROM " + raw + " GROUP BY key", context, ResultShape::SortedBag);
+    if (!merge_rows_opt || !direct_rows_opt)
+        return false;
+
+    if (!OracleCompare::equal(*merge_rows_opt, *direct_rows_opt))
+    {
+        fixture.preserve();
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "aggregate-state-column oracle mismatch!\n"
+            "-Merge read of {} ({} rows) vs direct aggregate over {} ({} rows)\n{}",
+            amt, merge_rows_opt->size(), raw, direct_rows_opt->size(),
+            OracleCompare::diffSummary(*merge_rows_opt, *direct_rows_opt));
+    }
+
+    LOG_TRACE(logger, "aggregate-state-column oracle passed");
     return true;
 }
 
