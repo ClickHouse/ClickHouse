@@ -487,6 +487,8 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
+    /// A function not declared `DETERMINISTIC` may return a different value for the same arguments.
+    bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
     bool isSpatialPredicate() const override
     {
         auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");

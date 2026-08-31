@@ -170,7 +170,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isDeterministic() const override { return executable_function->getConfiguration().is_deterministic; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return executable_function->getConfiguration().is_deterministic; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
