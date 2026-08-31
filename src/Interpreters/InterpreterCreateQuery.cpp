@@ -1660,8 +1660,8 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
-/// Blocks dictionary creation in case `enable_xgboost` is disabled, or when ClickHouse wasn't build
-// with XGBoost support
+/// Blocks dictionary creation in case `enable_xgboost` is disabled, or when ClickHouse wasn't built
+/// with XGBoost support
 void checkXGBoostLayoutIsAllowed(const ASTCreateQuery & create, [[maybe_unused]] const ContextPtr & context)
 {
     if (!(create.is_dictionary && create.dictionary && create.dictionary->layout
@@ -1699,13 +1699,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
 
-    checkXGBoostLayoutIsAllowed(create, getContext());
-
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
+
+    if (mode == LoadingStrictnessLevel::CREATE)
+        checkXGBoostLayoutIsAllowed(create, getContext());
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
