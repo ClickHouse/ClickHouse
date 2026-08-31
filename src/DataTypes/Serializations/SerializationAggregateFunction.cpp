@@ -13,6 +13,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <absl/container/inlined_vector.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -23,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -100,14 +102,22 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
 
     Arena & arena = real_column.createOrGetArena();
     real_column.set(function, version);
-    vec.reserve(vec.size() + limit);
 
     size_t size_of_state = function->sizeOfData();
     size_t align_of_state = function->alignOfData();
 
     /// Adjust the size of state to make all states aligned in vector.
     size_t total_size_of_state = (size_of_state + align_of_state - 1) / align_of_state * align_of_state;
-    char * place = arena.alignedAlloc(total_size_of_state * limit, align_of_state);
+
+    /// Both the size of a state and the number of rows come from the data, so their product can
+    /// wrap around: the block would then be allocated smaller than what is written into it.
+    size_t size_of_all_states = 0;
+    if (common::mulOverflow(total_size_of_state, limit, size_of_all_states))
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too large aggregate function states: {} states of {} bytes each", limit, total_size_of_state);
+
+    vec.reserve(vec.size() + limit);
+    char * place = arena.alignedAlloc(size_of_all_states, align_of_state);
 
     function->createAndDeserializeBatch(vec, place, total_size_of_state, limit, istr, version, &arena);
 }
