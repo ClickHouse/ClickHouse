@@ -48,7 +48,7 @@ bool isMergeTreePersistentVirtualColumn(const String & column_name)
         || column_name == BlockOffsetColumn::name;
 }
 
-void validateSQLInsertTableName(const String & table_name, size_t max_parser_depth)
+String parseAndFormatSQLInsertTableName(const String & table_name, size_t max_parser_depth)
 {
     ParserCompoundIdentifier parser(/*table_name_with_optional_uuid=*/ true);
     const auto identifier = parseQuery(
@@ -59,17 +59,23 @@ void validateSQLInsertTableName(const String & table_name, size_t max_parser_dep
         max_parser_depth,
         DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-    if (identifier->as<const ASTTableIdentifier &>().has_uuid)
+    const auto & table_identifier = identifier->as<const ASTTableIdentifier &>();
+    if (table_identifier.has_uuid)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Setting `output_format_sql_insert_table_name` cannot contain a UUID clause when "
             "`output_format_sql_insert_include_table_schema` is enabled");
+
+    return table_identifier.formatWithSecretsOneLine();
 }
 
 }
 
 SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), column_names(header_->getNames()), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_)
+    , column_names(header_->getNames())
+    , format_settings(format_settings_)
+    , table_name(format_settings_.sql_insert.table_name)
 {
     if (format_settings.sql_insert.include_table_schema && format_settings.sql_insert.use_replace)
         throw Exception(
@@ -78,7 +84,7 @@ SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHea
 
     if (format_settings.sql_insert.include_table_schema)
     {
-        validateSQLInsertTableName(format_settings.sql_insert.table_name, format_settings.max_parser_depth);
+        table_name = parseAndFormatSQLInsertTableName(table_name, format_settings.max_parser_depth);
 
         NameSet unique_column_names;
         for (const auto & column_name : column_names)
@@ -109,7 +115,7 @@ void SQLInsertRowOutputFormat::writePrefix()
         return;
 
     writeCString("CREATE TABLE ", out);
-    writeString(format_settings.sql_insert.table_name, out);
+    writeString(table_name, out);
     writeCString("\n(\n", out);
 
     for (size_t i = 0; i != column_names.size(); ++i)
@@ -142,7 +148,7 @@ void SQLInsertRowOutputFormat::printLineStart()
     else
         writeCString("INSERT INTO ", out);
 
-    writeString(format_settings.sql_insert.table_name, out);
+    writeString(table_name, out);
 
     if (format_settings.sql_insert.include_column_names)
         printColumnNames();
@@ -227,11 +233,10 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
     factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");
 
     /// `output_format_sql_insert_table_name`, column names, and (with
-    /// `output_format_sql_insert_include_table_schema`) data type names are written verbatim, so a value
-    /// that is not valid UTF-8 makes the output non-textual. Quoted identifiers and names of `Enum`
-    /// elements can contain arbitrary bytes. All are knowable before any row is written (from the
-    /// settings and the header), so they are detected here and the text framings reject or base64-encode
-    /// the output accordingly.
+    /// `output_format_sql_insert_include_table_schema`) data type names can contain arbitrary bytes, so a value
+    /// that is not valid UTF-8 makes the output non-textual. All are knowable before any row is written
+    /// (from the settings and the header), so they are detected here and the text framings reject or
+    /// base64-encode the output accordingly.
     factory.registerOutputFormatMayProduceRawBytesChecker("SQLInsert", [](const FormatSettings & settings, const Block & header)
     {
         auto is_not_valid_utf8 = [](const std::string & s)

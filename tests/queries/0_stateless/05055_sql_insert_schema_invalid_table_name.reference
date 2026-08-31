@@ -1,0 +1,7 @@
+CREATE TABLE sql_insert_schema_comment_05055
+(
+    `x` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO sql_insert_schema_comment_05055 (`x`) VALUES (1);

@@ -36,6 +36,7 @@ protected:
     size_t rows_in_line = 0;
     Names column_names;
     const FormatSettings format_settings;
+    String table_name;
 };
 
 }
