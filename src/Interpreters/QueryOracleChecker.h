@@ -146,6 +146,11 @@ public:
     /// real lightweight-delete / mutation bug.
     bool checkDeleteMutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// UPDATE-mutation oracle (self-seeded): after ALTER UPDATE x = e WHERE p, the table must equal
+    /// a snapshot with e applied to x on rows matching p and x unchanged elsewhere. A difference is
+    /// a real mutation bug.
+    bool checkUpdateMutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
