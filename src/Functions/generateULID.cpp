@@ -52,7 +52,10 @@ public:
         return std::make_shared<DataTypeFixedString>(ULID_LENGTH);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// No default implementation for constants: it would execute the function once and stamp the
+    /// single generated identifier onto every row, while the optional argument exists precisely to
+    /// obtain independent values. The rest of the generator family (`generateUUIDv4`,
+    /// `generateSnowflakeID`, `rand`) does not opt into it either.
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
     {
