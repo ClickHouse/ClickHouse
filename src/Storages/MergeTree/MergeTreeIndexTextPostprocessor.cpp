@@ -220,7 +220,7 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
 }
 
 ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
-    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description) const
+    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast) const
 {
     chassert(actions);
 
@@ -236,7 +236,7 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
     /// tokens always yields String tokens (normalizing FixedString elements to String to match the build
     /// path and the postprocessor validation) and drops empty tokens, so an empty element never reaches the
     /// postprocessor and cannot fabricate a token the index never stored.
-    ASTPtr tokens_ast = make_intrusive<ASTIdentifier>(col_name);
+    ASTPtr tokens_ast = source_ast ? source_ast->clone() : ASTPtr(make_intrusive<ASTIdentifier>(col_name));
     if (isArray(col_type))
     {
         tokens_ast = makeASTFunction("arrayFlatten",
