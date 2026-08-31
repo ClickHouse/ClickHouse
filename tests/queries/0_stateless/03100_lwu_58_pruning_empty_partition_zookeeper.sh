@@ -60,11 +60,14 @@ $CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO $R2 SELECT 2, 1000000 + number, 1 FROM numbers(30)"
 
+next_block_number=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_prune_empty_03100_58/block_numbers/2'")
+next_block_name=$(printf 'block-%010d' "$next_block_number")
+
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT rmt_lightweight_update_sleep_after_block_allocation"
 
 $CLICKHOUSE_CLIENT --query "UPDATE $R1 SET v = 999 WHERE p = 2 SETTINGS enable_lightweight_update = 1" &
 
-wait_for_block_allocated "/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_prune_empty_03100_58/block_numbers/2" "block-0000000001"
+wait_for_block_allocated "/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_prune_empty_03100_58/block_numbers/2" "$next_block_name"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM START REPLICATION QUEUES $R1"
 
