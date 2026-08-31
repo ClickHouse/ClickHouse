@@ -895,6 +895,17 @@ Minimal amount of data parts which merge selector can pick to merge at once
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
 )", 0) \
+    DECLARE(MergeTreePatchPartsVersion, patch_parts_version, "v2", R"(
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
+)", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
 The maximum uncompressed size of data in all patch parts in bytes.
@@ -1050,6 +1061,58 @@ and increases ClickHouse boot time. Most often this is a consequence of an
 incorrect design (mistakes when choosing a partitioning strategy - too small
 partitions).
 )", 0) \
+    DECLARE(UInt64, max_table_size_rows, 0, R"(
+If the total number of rows in active data parts of the table exceeds this
+value, an `INSERT` is interrupted with the `Table size limit exceeded`
+exception. The limit is checked at the beginning of `INSERT` and when new
+data parts are committed to the working set, including the results of
+background merges and mutations (so a mutation that increases the table size
+beyond the limit will be retried without finishing). Inserts done by
+materialized views are also checked. The limit is not checked on replicated
+fetches, which permits a race condition when parallel inserts into multiple
+replicas overdraft the limit. Committing empty data parts is always allowed,
+so the data can be removed from a table that exceeds the limit, e.g. with
+`TRUNCATE` or `ALTER TABLE ... DROP PARTITION`.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
+    DECLARE(UInt64, max_table_size_bytes_compressed, 0, R"(
+If the total number of compressed bytes (the size on disk) across all active
+and inactive data parts of the table exceeds this value, an `INSERT` is
+interrupted with the `Table size limit exceeded` exception. Inactive parts
+are counted as well because the purpose of this setting is to limit disk
+usage. Note that inactive parts are removed in the background (see the
+`old_parts_lifetime` setting), so the observed size can decrease over time.
+The limit is checked at the beginning of `INSERT` and when new data parts
+are committed to the working set, including the results of background merges
+and mutations. Inserts done by materialized views are also checked. The
+limit is not checked on replicated fetches, which permits a race condition
+when parallel inserts into multiple replicas overdraft the limit. Committing
+empty data parts is always allowed, so the data can be removed from a table
+that exceeds the limit, e.g. with `TRUNCATE` or `ALTER TABLE ... DROP
+PARTITION`.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
+    DECLARE(UInt64, max_table_size_bytes_uncompressed, 0, R"(
+The same as `max_table_size_bytes_compressed`, but the limit is applied to
+the total number of uncompressed bytes across all active and inactive data
+parts of the table.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
     DECLARE(Bool, async_insert, false, R"(
 If true, data from INSERT query is stored in queue and later flushed to
 table in background.
@@ -1137,8 +1200,12 @@ reduce memory usage
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
+Compared against the number of streams a wide part writes, which can greatly exceed its number
+of columns: a `Map` with many buckets, or a deeply nested `Array` or `Tuple`, writes many streams
+for a single column, and one write buffer is allocated per stream.
+
 Possible values:
-- 0 - unlimited
+- 0 - disabled
 - 1 - always enabled
 )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
@@ -1614,6 +1681,20 @@ Only available in ClickHouse Cloud
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, R"(
 Enables requesting FS cache hints from in-memory
 cache on other replicas. Only available in ClickHouse Cloud
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_use_blobs_list_for_parts, false, R"(
+Store parts of a SharedMergeTree table (both Wide and Compact) as a single
+consolidated blob-list metadata node instead of one Keeper node per file.
+Collapses per-part Keeper metadata from O(files) to a small constant while
+keeping one object-storage blob per file. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_blobs_list_inline_file_max_bytes, 0, R"(
+Store files of a blob-list part that are at most this many bytes long (e.g.
+count.txt, metadata_version.txt, minmax indexes) directly inside the
+consolidated blobs.list file instead of a separate object-storage blob,
+saving one blob write and read per small file. 0 disables inlining. Takes
+effect only for parts using the blob-list storage (see
+shared_merge_tree_use_blobs_list_for_parts). Only available in ClickHouse Cloud.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, R"(
 If enabled all the replicas try to fetch part in memory data (like primary
@@ -2191,10 +2272,9 @@ Possible values:
 Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
+    DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
-Only integer-like types are currently adaptive.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
@@ -2204,9 +2284,6 @@ Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
-)", 0) \
-    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, R"(
-Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
@@ -2413,6 +2490,7 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE

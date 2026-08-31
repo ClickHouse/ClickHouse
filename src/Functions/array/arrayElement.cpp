@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -73,6 +74,9 @@ public:
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A lazily replicated array argument is consumed by gathering from the compact nested column.
+    /// When true it materializes the compacted representation to a full column.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
     /// `Nullable(QBit)` with an array of indices must produce `Array(Nullable(T))`,
     /// which cannot be represented by the default nullable wrapper around the result.
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -101,6 +105,19 @@ private:
         const DataTypePtr & result_type,
         ArrayImpl::NullMapBuilder<mode> & builder,
         size_t input_rows_count) const;
+
+    /// Element access over a lazily replicated array (Replicated(Array)) without materializing it.
+    ColumnPtr executeReplicated(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
+    template <typename IndexType>
+    static bool gatherReplicated(
+        const IColumn & index_column,
+        const ColumnIndex & replication_indexes,
+        const ColumnArray::Offsets & offsets,
+        const IColumn & data,
+        IColumn & result,
+        ArrayImpl::NullMapBuilder<mode> & builder);
 
     template <typename DataType>
     static ColumnPtr executeNumberConst(
@@ -3013,6 +3030,11 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// A replicated column can arrive in either position.
+    if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
+        || typeid_cast<const ColumnReplicated *>(arguments[1].column.get()))
+        return executeReplicated(arguments, result_type, input_rows_count);
+
     const bool is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get());
 
     /// The default nullable implementation cannot preserve a NULL `QBit` source for an
@@ -3134,6 +3156,165 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     /// Store the result.
     return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeReplicated(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    ColumnsWithTypeAndName args = arguments;
+
+    const auto * replicated_array = typeid_cast<const ColumnReplicated *>(args[0].column.get());
+    const auto * replicated_index = typeid_cast<const ColumnReplicated *>(args[1].column.get());
+
+    /// When the array and the index are replicated by the same indexes column (they came from the same expansion,
+    /// e.g. one ARRAY JOIN), row i reads nested_array[idx[i]][nested_index[idx[i]]], so the result is the nested
+    /// computation replicated by the same indexes.
+    if (replicated_array && replicated_index
+        && replicated_array->getIndexesColumn().get() == replicated_index->getIndexesColumn().get()
+        && replicated_array->getNestedColumn()->size() == replicated_index->getNestedColumn()->size())
+    {
+        /// Compute on the compact nested columns and stay lazy.(Remove unused indexes)
+        auto compact = replicated_array->getIndexes().buildCompactIndexedColumns(
+            {replicated_array->getNestedColumn(), replicated_index->getNestedColumn()});
+
+        /// Now recurse on the internal rows
+        size_t nested_rows_count = compact.compact_indexed_columns[0]->size();
+        ColumnsWithTypeAndName nested_args
+            = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
+               {compact.compact_indexed_columns[1], args[1].type, args[1].name}};
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
+
+        /// Wrap the result in a new ColumnReplicated with the compacted indexes column
+        return convertToFullColumnIfReplicationNotUseful(
+            ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
+    }
+
+    /// The index argument is a per-row number and when it is replicated independently of the array,
+    /// its repetition has no structure, so materialize it.
+    args[1].column = args[1].column->convertToFullColumnIfReplicated();
+
+    if (!replicated_array)
+        return executeImpl(args, result_type, input_rows_count);
+
+    const auto * col_array = typeid_cast<const ColumnArray *>(replicated_array->getNestedColumn().get());
+
+    /// Fall back to materialization for the shapes the fast path does not cover:
+    /// Replicated over Map, and LowCardinality elements (their handling is layered above this function
+    bool fast_path_supported = col_array
+        && !typeid_cast<const ColumnLowCardinality *>(&col_array->getData())
+        && !typeid_cast<const ColumnMap *>(&col_array->getData());
+    if (!fast_path_supported)
+    {
+        args[0].column = args[0].column->convertToFullColumnIfReplicated();
+        return executeImpl(args, result_type, input_rows_count);
+    }
+
+    if (isColumnConst(*args[1].column))
+    {
+        /// A constant index gives one value per nested row: execute on the compact nested array and replicate the result lazily.
+        /// Compact away nested rows the indexes never reference, so the nested work is proportional to the used rows.
+        auto compact = replicated_array->getIndexes().buildCompactIndexedColumns({replicated_array->getNestedColumn()});
+        size_t nested_rows_count = compact.compact_indexed_columns[0]->size();
+        ColumnsWithTypeAndName nested_args
+            = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
+               {args[1].column->cloneResized(nested_rows_count), args[1].type, args[1].name}};
+
+        /// Recurse on the internal rows
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
+        /// Wrap the result in a new ColumnReplicated with the compacted indexes column
+        return convertToFullColumnIfReplicationNotUseful(
+            ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
+    }
+
+    const auto & offsets = col_array->getOffsets();
+    const IColumn * data = &col_array->getData();
+
+    ArrayImpl::NullMapBuilder<mode> builder;
+    bool is_array_of_nullable = isColumnNullable(*data);
+    if (is_array_of_nullable)
+    {
+        const auto & nullable_data = assert_cast<const ColumnNullable &>(*data);
+        builder.initSource(nullable_data.getNullMapData().data());
+        data = &nullable_data.getNestedColumn();
+    }
+
+    if (builder)
+        builder.initSink(input_rows_count);
+
+    auto result = data->cloneEmpty();
+    result->reserve(input_rows_count);
+
+    const auto & replication_indexes = replicated_array->getIndexes();
+    const auto & index_column = *args[1].column;
+    /// Core loop to build result by dispatching based on the index type
+    if (!(gatherReplicated<UInt8>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt16>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt32>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt64>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int8>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int16>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int32>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int64>(index_column, replication_indexes, offsets, *data, *result, builder)))
+    {
+        /// The index is not a plain numeric column (e.g. Nullable, or an array of indexes):
+        /// materialize the array and let the generic path handle it.
+        args[0].column = args[0].column->convertToFullColumnIfReplicated();
+        return executeImpl(args, result_type, input_rows_count);
+    }
+
+    if (is_array_of_nullable)
+        return ColumnNullable::create(
+            std::move(result), builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+
+    ColumnPtr immutable_result = std::move(result);
+    if (builder && immutable_result->canBeInsideNullable())
+        return ColumnNullable::create(immutable_result, std::move(builder).getNullMapColumnPtr());
+
+    return immutable_result;
+}
+
+template <ArrayElementExceptionMode mode>
+template <typename IndexType>
+bool FunctionArrayElement<mode>::gatherReplicated(
+    const IColumn & index_column,
+    const ColumnIndex & replication_indexes,
+    const ColumnArray::Offsets & offsets,
+    const IColumn & data,
+    IColumn & result,
+    ArrayImpl::NullMapBuilder<mode> & builder)
+{
+    const auto * index_vec = checkAndGetColumn<ColumnVector<IndexType>>(&index_column);
+    if (!index_vec)
+        return false;
+
+    const auto & indices = index_vec->getData();
+    size_t rows = indices.size();
+    /// Each output element is one insertFrom reading directly from the shared nested data
+    for (size_t i = 0; i < rows; ++i)
+    {
+        ssize_t nested_row = replication_indexes.getIndexAt(i);
+        /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
+        ColumnArray::Offset begin = offsets[nested_row - 1];
+        ColumnArray::Offset end = offsets[nested_row];
+
+        IndexType index = indices[i];
+        /// Positive index is 1-based from the beginning of the array, negative counts from the end.
+        /// Any invalid index (zero, out of range) lands outside [begin, end) and produces a default value.
+        size_t insert_position = index > 0 ? begin + index - 1 : end + index;
+        if (begin <= insert_position && insert_position < end)
+        {
+            result.insertFrom(data, insert_position);
+            builder.update(insert_position);
+        }
+        else
+        {
+            result.insertDefault();
+            builder.update();
+        }
+    }
+
+    return true;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -3301,7 +3482,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"},
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "\\N"},
         {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};

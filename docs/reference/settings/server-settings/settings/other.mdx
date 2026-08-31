@@ -508,7 +508,7 @@ Note that configuration files that are loaded separately from the main server co
 
 ## insert_deduplication_version {#insert_deduplication_version}
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Deprecated migration guard. This version supports only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Deprecated migration guard. ClickHouse versions 26.7 and later support only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.
 
 ## io_thread_pool_queue_size {#io_thread_pool_queue_size}
 
@@ -1695,7 +1695,7 @@ until all the dictionaries finish their loading (successfully or not) before rec
 
 ## webassembly_udf_engine {#webassembly_udf_engine}
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />The engine used to execute WebAssembly UDFs. Supported values are 'wasmtime' and 'wasmedge'.
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />The engine used to execute WebAssembly UDFs. The only supported value is 'wasmtime'.
 
 ## webterminal_allowed_origins {#webterminal_allowed_origins}
 
