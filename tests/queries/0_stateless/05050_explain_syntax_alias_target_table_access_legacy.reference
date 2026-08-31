@@ -1,0 +1,33 @@
+-- SELECT on the alias only: EXPLAIN must be denied exactly as the real SELECT
+  SELECT column: ACCESS_DENIED
+  EXPLAIN SYNTAX column: ACCESS_DENIED
+  EXPLAIN AST optimize column: ACCESS_DENIED
+  SELECT asterisk: ACCESS_DENIED
+  EXPLAIN SYNTAX asterisk: ACCESS_DENIED
+  EXPLAIN AST optimize asterisk: ACCESS_DENIED
+  SELECT count(): ACCESS_DENIED
+  EXPLAIN SYNTAX count(): ACCESS_DENIED
+  SELECT in subquery: ACCESS_DENIED
+  EXPLAIN SYNTAX in subquery: ACCESS_DENIED
+-- Column grant on the target: only the reads restricted to that column become allowed
+  SELECT column: OK
+  EXPLAIN SYNTAX column: OK
+  EXPLAIN AST optimize column: OK
+  SELECT asterisk: ACCESS_DENIED
+  EXPLAIN SYNTAX asterisk: ACCESS_DENIED
+  EXPLAIN AST optimize asterisk: ACCESS_DENIED
+  SELECT count(): OK
+  EXPLAIN SYNTAX count(): OK
+  SELECT in subquery: OK
+  EXPLAIN SYNTAX in subquery: OK
+-- Full grant on the target: everything is allowed
+  SELECT column: OK
+  EXPLAIN SYNTAX column: OK
+  EXPLAIN AST optimize column: OK
+  SELECT asterisk: OK
+  EXPLAIN SYNTAX asterisk: OK
+  EXPLAIN AST optimize asterisk: OK
+  SELECT count(): OK
+  EXPLAIN SYNTAX count(): OK
+  SELECT in subquery: OK
+  EXPLAIN SYNTAX in subquery: OK

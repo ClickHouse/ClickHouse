@@ -337,13 +337,17 @@ namespace
         /// Parameterized views are excluded: their base-table access is already enforced by the recursive
         /// `InterpreterSelectQuery` analysis of the subquery `ExpandParameterizedViewsMatcher` expanded them into.
         ///
+        /// An `Alias` table has the same shape - `StorageAlias::read` checks `SELECT` on the target table
+        /// when the plan is built, so the legacy path never reaches it either - and is handled here as well,
+        /// with the same per-table-expression column sets.
+        ///
         /// Returns whether the base-table check ran for the main (FROM, leftmost) regular view - the only one
         /// `StorageView::replaceWithSubquery` below expands and dumps. When it did not (the view's inner query
         /// is legacy-explainable but analyzer-unresolvable, so `checkViewBaseTableAccess` skipped the check),
         /// the caller must leave the view reference unexpanded rather than leak its body. JOIN-side views are
         /// never expanded in the legacy path, so a skipped check there reveals nothing and does not affect the
         /// result.
-        static bool checkNonParameterizedViewBaseTableAccess(
+        static bool checkAccessEnforcedAtReadTime(
             const ASTSelectQuery & select, const ContextPtr & context, const SelectQueryInfo & query_info, const Names & main_table_column_names)
         {
             bool main_view_access_check_performed = true;
@@ -359,14 +363,21 @@ namespace
                     continue;
 
                 auto storage = DatabaseCatalog::instance().tryGetTable(context->resolveStorageID(table_identifier->getTableId()), context);
-                const auto * view = storage ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
-                if (!view || view->isParameterizedView())
+                if (!storage)
                     continue;
 
-                const bool is_main_from_view = table_number == 0 && query_info.view_query && !query_info.is_parameterized_view;
+                const auto * view = typeid_cast<const StorageView *>(storage.get());
+                const auto * alias = storage->as<StorageAlias>();
+                if ((!view || view->isParameterizedView()) && !alias)
+                    continue;
 
+                const bool is_main_table = table_number == 0 && !query_info.is_parameterized_view;
+                const bool is_main_from_view = is_main_table && query_info.view_query;
+
+                /// The columns real execution requests from this storage, i.e. what it passes into
+                /// `storage->read`.
                 Names column_names;
-                if (is_main_from_view)
+                if (is_main_table)
                 {
                     column_names = main_table_column_names;
                 }
@@ -382,9 +393,25 @@ namespace
                         column_names.push_back(required_column.first);
                 }
 
+                if (alias)
+                {
+                    /// An `Alias` table additionally requires `SELECT` on the same columns of the table it
+                    /// points at. Real execution enforces that in `StorageAlias::read`, when the plan is
+                    /// built - which the legacy `EXPLAIN` path, running the interpreter in `analyze()` mode
+                    /// only, never reaches. Reproduce it through the very helper `read` uses, with the same
+                    /// columns it would pass in, so `EXPLAIN SYNTAX` (and `EXPLAIN AST optimize = 1`) is
+                    /// denied exactly where the real `SELECT` is.
+                    alias->getTargetTable(StorageAlias::TargetAccess{context, AccessType::SELECT, column_names});
+                    continue;
+                }
+
+                Names view_column_names = column_names;
+                if (is_main_table && !is_main_from_view)
+                    view_column_names.clear();
+
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 const bool access_check_performed = checkViewBaseTableAccess(
-                    storage, storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
+                    storage, storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, view_column_names);
 
                 if (is_main_from_view)
                     main_view_access_check_performed = access_check_performed;
@@ -392,10 +419,11 @@ namespace
             return main_view_access_check_performed;
         }
 
-        /// Whether this `SELECT` reads from a regular (non-parameterized) view directly, i.e. whether
-        /// `checkNonParameterizedViewBaseTableAccess` would have anything to check for it. Used to keep the
+        /// Whether this `SELECT` reads directly from a table whose access is enforced only when the plan is
+        /// built - a regular (non-parameterized) view or an `Alias` table - i.e. whether
+        /// `checkAccessEnforcedAtReadTime` would have anything to check for it. Used to keep the
         /// nested-subquery walk below from analyzing every subquery of every explained query.
-        static bool referencesNonParameterizedView(const ASTSelectQuery & select, const ContextPtr & context)
+        static bool referencesTableCheckedAtReadTime(const ASTSelectQuery & select, const ContextPtr & context)
         {
             for (const auto * table_expression : getTableExpressions(select))
             {
@@ -415,8 +443,14 @@ namespace
                     continue;
 
                 auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
-                const auto * view = storage ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
+                if (!storage)
+                    continue;
+
+                const auto * view = typeid_cast<const StorageView *>(storage.get());
                 if (view && !view->isParameterizedView())
+                    return true;
+
+                if (storage->as<StorageAlias>())
                     return true;
             }
             return false;
@@ -449,7 +483,7 @@ namespace
         /// expressions into generated per-table subqueries. `JoinedTables::rewriteMultipleJoins` (called from
         /// `InterpreterSelectQuery` before the table join is built) does that for every query joining more
         /// than two tables, replacing each top-level table expression in place. Afterwards no table
-        /// expression names a table any more, so `checkNonParameterizedViewBaseTableAccess` finds no view at
+        /// expression names a table any more, so `checkAccessEnforcedAtReadTime` finds no view at
         /// the top level at all - every one of them now sits inside one of the generated subqueries.
         static bool tablesMayBeRewrittenIntoSubqueries(const ASTSelectQuery & select)
         {
@@ -577,7 +611,7 @@ namespace
             for (const auto & nested_select_node : nested_selects)
             {
                 const auto & nested_select = nested_select_node->as<const ASTSelectQuery &>();
-                if (!referencesNonParameterizedView(nested_select, context)
+                if (!referencesTableCheckedAtReadTime(nested_select, context)
                     && !(include_parameterized_view_candidates && referencesParameterizedViewCandidate(nested_select)))
                     continue;
 
@@ -602,7 +636,7 @@ namespace
                     if (nested_tables_may_be_rewritten_into_subqueries)
                         checkNestedSelectsViewBaseTableAccess(nested_select_copy, data, include_parameterized_view_candidates);
 
-                    checkNonParameterizedViewBaseTableAccess(
+                    checkAccessEnforcedAtReadTime(
                         nested_select_copy->as<const ASTSelectQuery &>(),
                         check_context,
                         interpreter.getQueryInfo(),
@@ -667,7 +701,7 @@ namespace
             /// above from this very query. Run the base-table access check for every regular view referenced,
             /// including JOIN sides, before the FROM view (if any) is rewritten into a subquery.
             const bool main_view_access_check_performed
-                = checkNonParameterizedViewBaseTableAccess(select, data.getContext(), query_info, interpreter.getRequiredColumns());
+                = checkAccessEnforcedAtReadTime(select, data.getContext(), query_info, interpreter.getRequiredColumns());
 
             /// Expand the FROM view body only when its base-table access check actually ran. If it was skipped
             /// (analyzer-unresolvable inner query), expanding would print the view body without any `SELECT`
@@ -1121,7 +1155,7 @@ bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
 /// `enable_analyzer = 0` whose body is legacy-explainable but analyzer-unresolvable. `false` means such
 /// a skip happened: the caller is about to dump a resolved tree whose base-table access was never
 /// verified, and must fall back to a non-resolved dump - the same fail-close the legacy formatter
-/// implements by keeping such a view unexpanded (`checkNonParameterizedViewBaseTableAccess` above).
+/// implements by keeping such a view unexpanded (`checkAccessEnforcedAtReadTime` above).
 bool checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & query_context)
 {
     /// Collect every table referenced anywhere in the query tree, including inside subqueries in
