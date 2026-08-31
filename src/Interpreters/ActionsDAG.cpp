@@ -269,16 +269,17 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) 
 {
     hash_state.update(type);
 
-    /// A column name is a label, not part of what the node computes: the type, the function and the
-    /// children already say that. It is also branch-local - a query tree numbers its tables
-    /// independently, so the same column is `__table1.x` inside a shipped fragment and `__table2.x` in
-    /// the plan enclosing it, and composed names carry the qualifier too, e.g. `in(__table1.x, ...)`.
-    /// So a caller asking for a build-independent key gets the structure without the names. This is the
-    /// same trade `JoinStep` already makes in `calculateHashTableCacheKeys` (types, never names): two
-    /// same-shaped expressions over same-typed columns then share a key, which costs a slightly-off
-    /// `output_bytes` estimate and never a wrong result, while hashing names costs Auto-PR the query
-    /// altogether.
-    if (!result_name.empty() && !build_independent)
+    /// A derived node's name is a label this build chose, not part of what the node computes - the type,
+    /// the function and the children already say that - and it is branch-local: a query tree numbers its
+    /// tables independently, so a composed name reads `in(__table1.x, ...)` in a shipped fragment and
+    /// `in(__table2.x, ...)` in the plan enclosing it, which makes two identical reads hash differently
+    /// and costs Auto-PR the query. A caller asking for a build-independent key gets those names dropped.
+    ///
+    /// An INPUT keeps its name. At a read step an input is a physical column, so its name is the same in
+    /// every build, and it is the only thing distinguishing one input from another: drop it and every
+    /// predicate over same-typed columns collapses onto a single key, which then serves one predicate's
+    /// row estimate to an unrelated one.
+    if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
         hash_state.update(result_name);
 
     if (result_type)
@@ -314,7 +315,26 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) 
         /// is the same situation as the runtime-filter id right above, so treat it the same way when
         /// the caller asked for a build-independent hash.
         const bool is_set = build_independent && result_type && WhichDataType(result_type).isSet();
-        if (!is_runtime_filter_id && !is_set)
+        if (is_set)
+        {
+            /// The `Set` object itself is built per plan, so its value differs between two builds of the
+            /// same query. `FutureSet::getHash` is the set's content-derived identity and is equal across
+            /// builds by construction (`FutureSetFromSubquery` is moved between plans keeping it), so it
+            /// discriminates two different sets of the same type without depending on this build.
+            const IColumn * inner = column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(inner))
+                inner = &column_const->getDataColumn();
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(inner))
+            {
+                if (const auto & future_set = column_set->getData())
+                {
+                    const auto set_hash = future_set->getHash();
+                    hash_state.update(set_hash.low64);
+                    hash_state.update(set_hash.high64);
+                }
+            }
+        }
+        else if (!is_runtime_filter_id)
             column->updateHashWithValue(0, hash_state);
     }
 
