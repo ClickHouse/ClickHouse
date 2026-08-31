@@ -45,6 +45,7 @@ extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 extern const Event ASTFuzzerOracleAlterModifyChecks;
 extern const Event ASTFuzzerOracleLightweightUpdateChecks;
 extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
+extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
 }
 
 namespace DB
@@ -133,6 +134,7 @@ OracleRegistry::OracleRegistry()
     add("ALTER MODIFY widen", ProfileEvents::ASTFuzzerOracleAlterModifyChecks, &QueryOracleChecker::checkAlterModifyWiden);
     add("lightweight update", ProfileEvents::ASTFuzzerOracleLightweightUpdateChecks, &QueryOracleChecker::checkLightweightUpdate);
     add("window equivalence", ProfileEvents::ASTFuzzerOracleWindowEquivalenceChecks, &QueryOracleChecker::checkWindowEquivalence);
+    add("join-order sweep", ProfileEvents::ASTFuzzerOracleJoinOrderSweepChecks, &QueryOracleChecker::checkJoinOrderSweep);
 }
 
 const OracleRegistry & OracleRegistry::instance()

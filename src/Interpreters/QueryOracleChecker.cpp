@@ -92,6 +92,7 @@ extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 extern const Event ASTFuzzerOracleAlterModifyChecks;
 extern const Event ASTFuzzerOracleLightweightUpdateChecks;
 extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
+extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -4163,6 +4164,65 @@ bool QueryOracleChecker::checkWindowEquivalence(const ASTSelectQuery &, const Co
             context, &fixture);
 
     LOG_TRACE(logger, "window equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkJoinOrderSweep(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_14): the join-order optimizer and every physical join algorithm are
+    /// result-preserving — they change which order tables are joined and how, never what rows come out.
+    /// A three-way INNER JOIN run under a randomly chosen (join_algorithm, join-order-limit) variant
+    /// must return the same row multiset as the default. A divergence is a real join-reordering or
+    /// join-algorithm wrong-result bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("joinorder", context);
+    if (!fixture.valid())
+        return false;
+
+    const String j1 = fixture.allocName("a");
+    const String j2 = fixture.allocName("b");
+    const String j3 = fixture.allocName("c");
+    if (!fixture.execute("CREATE TABLE " + j1 + " (a UInt32, x Int64) ENGINE = MergeTree ORDER BY a")
+        || !fixture.execute("CREATE TABLE " + j2 + " (a UInt32, y Int64) ENGINE = MergeTree ORDER BY a")
+        || !fixture.execute("CREATE TABLE " + j3 + " (a UInt32, z Int64) ENGINE = MergeTree ORDER BY a"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + j1 + " SELECT number % 80, toInt64(number) FROM numbers(400)")
+        || !fixture.execute("INSERT INTO " + j2 + " SELECT number % 60, toInt64(number) + 1 FROM numbers(300)")
+        || !fixture.execute("INSERT INTO " + j3 + " SELECT number % 40, toInt64(number) + 2 FROM numbers(200)"))
+        return false;
+
+    const String sql =
+        "SELECT " + j1 + ".a, " + j1 + ".x, " + j2 + ".y, " + j3 + ".z FROM " + j1
+        + " INNER JOIN " + j2 + " ON " + j1 + ".a = " + j2 + ".a"
+        + " INNER JOIN " + j3 + " ON " + j2 + ".a = " + j3 + ".a";
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+
+    static constexpr std::array<std::string_view, 5> algos = {
+        "hash", "parallel_hash", "full_sorting_merge", "grace_hash", "partial_merge"};
+    const std::string_view algo = algos[thread_local_rng() % algos.size()];
+    const UInt64 jo_limit = (thread_local_rng() % 2) ? 0 : 100;
+    LOG_TRACE(logger, "join-order sweep oracle ({}, join_order_limit={}): {}", algo, jo_limit, sql);
+
+    auto ref_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag);
+    auto var_opt = OracleExec::executeRows(
+        sql, context, ResultShape::SortedBag,
+        {{"join_algorithm", Field(String(algo))}, {"query_plan_optimize_join_order_limit", Field(jo_limit)}});
+    if (!ref_opt || !var_opt)
+        return false;
+
+    if (!OracleCompare::equal(*ref_opt, *var_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "join-order sweep oracle mismatch!\n"
+                "default ({} rows) vs join_algorithm='{}', query_plan_optimize_join_order_limit={} ({} rows)\n{}\n{}",
+                ref_opt->size(), algo, jo_limit, var_opt->size(), sql,
+                OracleCompare::diffSummary(*ref_opt, *var_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "join-order sweep oracle passed");
     return true;
 }
 

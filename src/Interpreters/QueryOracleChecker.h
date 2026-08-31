@@ -209,6 +209,10 @@ public:
     /// ROWS/RANGE/GROUPS modes.
     bool checkWindowEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Join-order/algorithm sweep oracle (self-seeded): a multi-join result must be invariant under
+    /// the join-order optimizer and the physical join algorithm.
+    bool checkJoinOrderSweep(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
