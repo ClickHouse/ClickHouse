@@ -11,7 +11,13 @@ doc_type: 'reference'
   ## 설명
 </div>
 
-CREATE HANDLER로 생성된 모든 SQL 정의 HTTP 핸들러 목록을 포함합니다.
+[`CREATE HANDLER`](/ko/reference/statements/create/handler)를 통해 생성된 모든 SQL 정의 HTTP 핸들러의 목록을 포함합니다.
+
+이 테이블을 읽으려면 `SHOW HANDLERS` 권한이 필요합니다. 이 권한이 없으면 테이블이 비어 있는 것으로 표시됩니다. 핸들러의 쿼리에
+포함될 수 있는 시크릿(예: 테이블 함수에 전달되는 자격 증명)은 사용자가 시크릿을 볼 수 있는 경우에만
+`query` 및 `create_query` 컬럼에 표시됩니다(`display_secrets_in_show_and_select` 서버 설정 및 `format_display_secrets_in_show_and_select` 포맷
+설정이 활성화되고 사용자에게 `displaySecretsInShowAndSelect` 권한이 있는 경우). 그렇지 않으면
+`SHOW CREATE TABLE`과 마찬가지로 마스킹됩니다.
 
 <div id="columns">
   ## 컬럼

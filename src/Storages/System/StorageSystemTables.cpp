@@ -453,8 +453,14 @@ public:
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
+        , context_without_sequential_consistency(Context::createCopy(context_))
         , tables_filter(std::move(tables_filter_))
     {
+        /// Table sizes are reported approximately, so there is no need to pay for a Keeper round trip per table.
+        Settings settings = context_->getSettingsCopy();
+        settings[Setting::select_sequential_consistency] = 0;
+        context_without_sequential_consistency->setSettings(settings);
+
         size_t size = tables_->size();
         tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
@@ -934,16 +940,11 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                ContextMutablePtr context_copy = Context::createCopy(context);
-                Settings settings_copy = context_copy->getSettingsCopy();
-                settings_copy[Setting::select_sequential_consistency] = 0;
-                context_copy->setSettings(settings_copy);
-
                 if (columns_mask[src_index++])
                 {
                     try
                     {
-                        auto total_rows = table ? table->totalRows(context) : std::nullopt;
+                        auto total_rows = table ? table->totalRows(context_without_sequential_consistency) : std::nullopt;
                         if (total_rows)
                             res_columns[res_index]->insert(*total_rows);
                         else
@@ -962,7 +963,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table ? table->totalBytes(context_copy) : std::nullopt;
+                        auto total_bytes = table ? table->totalBytes(context_without_sequential_consistency) : std::nullopt;
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else
@@ -981,7 +982,9 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed = can_expose_metadata ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
+                        auto total_bytes_uncompressed = can_expose_metadata
+                            ? table->totalBytesUncompressed(context_without_sequential_consistency->getSettingsRef())
+                            : std::nullopt;
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
@@ -1164,6 +1167,7 @@ private:
     DatabaseTablesCursor databases_cursor;
     NameSet tables;
     ContextPtr context;
+    ContextMutablePtr context_without_sequential_consistency;
     bool done = false;
     TablesFilter tables_filter;
 };
