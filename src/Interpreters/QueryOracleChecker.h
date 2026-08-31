@@ -56,6 +56,11 @@ public:
     /// Tests predicate pushdown through subqueries.
     bool checkSubqueryWrap(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// GROUP BY key permutation oracle: grouping keys form a set, so `GROUP BY a, b` must
+    /// return the identical result multiset as `GROUP BY b, a`. Catches multi-key grouping /
+    /// aggregation bugs that depend on key order.
+    bool checkGroupByKeyPermutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
