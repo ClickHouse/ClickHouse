@@ -47,6 +47,7 @@ extern const Event ASTFuzzerOracleLightweightUpdateChecks;
 extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
 extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
 extern const Event ASTFuzzerOracleSequenceFunnelChecks;
+extern const Event ASTFuzzerOracleSubcolumnChecks;
 }
 
 namespace DB
@@ -137,6 +138,7 @@ OracleRegistry::OracleRegistry()
     add("window equivalence", ProfileEvents::ASTFuzzerOracleWindowEquivalenceChecks, &QueryOracleChecker::checkWindowEquivalence);
     add("join-order sweep", ProfileEvents::ASTFuzzerOracleJoinOrderSweepChecks, &QueryOracleChecker::checkJoinOrderSweep);
     add("sequence funnel", ProfileEvents::ASTFuzzerOracleSequenceFunnelChecks, &QueryOracleChecker::checkSequenceFunnel);
+    add("composite subcolumn", ProfileEvents::ASTFuzzerOracleSubcolumnChecks, &QueryOracleChecker::checkDynamicSubcolumn);
 }
 
 const OracleRegistry & OracleRegistry::instance()
