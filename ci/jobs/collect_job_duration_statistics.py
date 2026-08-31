@@ -8,6 +8,7 @@ from ci.praktika.result import Result
 from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
+from ci.settings.settings import SECRET_CI_DB_CONNECTION
 
 # Job collects overall CI statistics per each job
 
@@ -111,13 +112,10 @@ def get_job_stat_for_interval(name, interval_days, overall_statistics):
 if __name__ == "__main__":
 
     info = Info()
-    url_secret = info.get_secret(Settings.SECRET_CI_DB_URL)
-    user_secret = info.get_secret(Settings.SECRET_CI_DB_USER)
-    passwd_secret = info.get_secret(Settings.SECRET_CI_DB_PASSWORD)
-    url, user, pwd = (
-        url_secret.join_with(user_secret).join_with(passwd_secret).get_value()
+    conn = json.loads(info.get_secret(SECRET_CI_DB_CONNECTION).get_value())
+    cidb = CIDB(
+        url=conn.get("url"), user=conn.get("user"), passwd=conn.get("password")
     )
-    cidb = CIDB(url=url, user=user, passwd=pwd)
 
     BASE_REF = "master"
 

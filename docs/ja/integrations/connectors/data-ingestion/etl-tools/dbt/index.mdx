@@ -59,6 +59,7 @@ dbt は、[ClickHouse がサポートするアダプター](https://github.com/C
 * [x] Ephemeral マテリアライゼーション
 * [x] 分散テーブルのマテリアライゼーション (実験的)
 * [x] 分散増分マテリアライゼーション (実験的)
+* [x] Dictionary マテリアライゼーション (実験的)
 * [x] コントラクト
 * [x] ClickHouse 固有のカラム設定 (Codec、有効期限 (TTL)...)
 * [x] ClickHouse 固有のテーブル設定 (索引、プロジェクション...)
@@ -83,16 +84,14 @@ dbtは5種類のマテリアライゼーションを提供しており、これ�
 
 追加の構文や句によって、基になるデータが変更された場合にこれらのモデルをどのように更新するかが定義されます。dbtでは一般に、パフォーマンスが問題になるまではviewマテリアライゼーションから始めることが推奨されています。tableマテリアライゼーションは、ストレージ使用量の増加と引き換えに、モデルのクエリ結果をtableとして保持することで、クエリ時のパフォーマンスを向上させます。incrementalアプローチはこれをさらに発展させたもので、基になるデータの以降の更新をターゲットテーブルに反映できるようにします。
 
-ClickHouse向けの[現在のアダプター](https://github.com/silentsokolov/dbt-clickhouse)は、**dictionary**、**分散テーブル**、**distributed incremental** のマテリアライゼーションもサポートしています。また、このアダプターはdbtの[スナップショット](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy)および[seeds](https://docs.getdbt.com/docs/building-a-dbt-project/seeds)もサポートしています。
-
 以下は、`dbt-clickhouse`における[実験的機能](/ja/reference/settings/beta-and-experimental-features)です。
 
 | 種類                                      | サポート状況                | 詳細                                                                                                                                                                                                              |
 | --------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Materialized View materialization       | はい。明示的ターゲットでの作成はベータです | [materialized view](/ja/reference/statements/create/view#materialized-view)を作成します。                                                                                                                                 |
-| 分散テーブル materialization       | はい、Experimental       | [分散テーブル](/ja/reference/engines/table-engines/special/distributed)を作成します。                                                                                                                                           |
-| Distributed incremental materialization | はい、Experimental       | 分散テーブルと同じ考え方に基づくincrementalモデルです。すべての戦略がサポートされているわけではない点に注意してください。詳細は[該当ドキュメントのセクション](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-distributed-incremental)を参照してください。 |
-| Dictionary materialization              | はい、Experimental       | [Dictionary](/ja/reference/engines/table-engines/special/dictionary)を作成します。                                                                                                                                        |
+| materialized view マテリアライゼーション       | はい。明示的ターゲットでの作成はベータです | [materialized view](/ja/reference/statements/create/view#materialized-view)を作成します。                                                                                                                                 |
+| 分散テーブルのマテリアライゼーション                  | はい、実験的       | [分散テーブル](/ja/reference/engines/table-engines/special/distributed)を作成します。                                                                                                                                           |
+| 分散増分マテリアライゼーション | はい、実験的       | 分散テーブルと同じ考え方に基づくincrementalモデルです。すべての戦略がサポートされているわけではない点に注意してください。詳細は[該当ドキュメントのセクション](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-distributed-incremental)を参照してください。 |
+| Dictionary マテリアライゼーション              | はい、実験的       | [Dictionary](/ja/reference/engines/table-engines/special/dictionary)を作成します。                                                                                                                                        |
 
 <div id="setup-of-dbt-and-the-clickhouse-adapter">
   ## dbt と ClickHouse アダプターのセットアップ
@@ -176,7 +175,7 @@ CD ステップは、本番の ClickHouse クラスターに対して `dbt build
 
 一般的な戦略の 1 つは、[Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) ジョブを使用することです。この場合、変更されたモデル (およびその上流・下流の依存関係) のみを再デプロイします。このアプローチでは、本番実行のアーティファクト (つまり [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json)) を使用して、プロジェクトの実行時間を短縮し、環境間でスキーマドリフトが発生しないようにします。
 
-開発環境の同期を保ち、古いデプロイ先に対してモデルを実行してしまうのを避けるために、[clone](https://docs.getdbt.com/reference/commands/clone) や [defer](https://docs.getdbt.com/reference/node-selection/defer) を使用できます。
+開発環境の同期を保ち、古いデプロイ先に対してモデルを実行してしまうのを避けるために、[clone](https://docs.getdbt.com/reference/commands/clone) や [defer](https://docs.getdbt.com/reference/node-selection/defer) を使用できます。ClickHouse では、`dbt clone` はゼロコピーの `CLONE` ステートメントを使用して MergeTree テーブルをコピーします。詳細は、以下の [dbt clone によるモデルのクローン](#dbt-clone) を参照してください。
 
 本番環境の運用に影響を与えないようにするため、テスト環境 (つまりステージング環境) には専用の ClickHouse クラスターまたはサービスを使用することを推奨します。テスト環境を実運用に近いものにするには、本番データの一部を使用することに加え、環境間でスキーマドリフトが起きない形で dbt を実行することが重要です。
 
@@ -186,6 +185,19 @@ CD ステップは、本番の ClickHouse クラスターに対して `dbt build
 CI テスト用に専用環境を使用すると、本番環境に影響を与えずに手動テストを行うこともできます。たとえば、テストのために BI ツールの接続先をこの環境に向けることができます。
 
 デプロイメント (つまり CD のステップ) については、本番デプロイメントのアーティファクトを使用して、変更されたモデルだけを更新することを推奨します。そのためには、dbt アーティファクト用の中間ストレージとしてオブジェクトストレージ (例: S3) を設定する必要があります。設定後は、`dbt build --select state:modified+ --state path/to/last/deploy/state.json` のようなコマンドを実行することで、本番での前回実行以降の変更内容に基づき、必要最小限のモデルだけを選択的に再ビルドできます。
+
+<div id="dbt-clone">
+  #### `dbt clone` によるモデルの複製
+</div>
+
+dbt-clickhouse 1.10.1 以降では、[`dbt clone`](https://docs.getdbt.com/reference/commands/clone) コマンドで、ClickHouse のゼロコピー `CREATE OR REPLACE TABLE ... CLONE AS ...` ステートメントを使用し、MergeTree ファミリーのエンジンを使用するテーブルとして materialize されたモデルを複製できます。これにより、基盤となるデータパーツを複製せずにテーブルのコピーが作成されるため、環境を高速かつ低コストで同期できます。たとえば、本番環境の状態をもとに開発環境や [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) 環境をセットアップする場合に便利です。
+
+この方法で複製できないモデルでは、ソース relation を参照する view を作成するという dbt のデフォルトの動作にフォールバックします。
+
+* MergeTree 以外のエンジンを使用するテーブル
+* Distributed materialization
+
+materialized view モデルでは、ターゲットテーブルのみが複製され、materialized view 自体は複製されたテーブル上に作成されます。
 
 <div id="troubleshooting-common-issues">
   ## よくある問題の対処法
@@ -206,6 +218,23 @@ dbt から ClickHouse への接続で問題が発生した場合は、次の条�
 </div>
 
 特定の ClickHouse クエリが原因で、一部の操作は想定より長くかかることがあります。どのクエリに時間がかかっているのかを詳しく把握するには、[ログレベル](https://docs.getdbt.com/reference/global-configs/logs#log-level)を `debug` に上げてください。これにより、各クエリの実行時間が出力されます。たとえば、dbt コマンドに `--log-level debug` を追加すると有効にできます。
+
+<div id="query-id-tracking">
+  ### dbt の実行と ClickHouse クエリの関連付け
+</div>
+
+サーバー側の詳細を確認するには、dbt-clickhouse 1.10.1 以降、アダプターが実行する各ステートメントに固有のクエリ ID (UUID4) が割り当てられ、ClickHouse に転送されます。モデル のメインステートメントの ID は dbt の結果内の `adapter_response` で返されるため、[`run_results.json`](https://docs.getdbt.com/reference/artifacts/run-results-json) などの dbt アーティファクト から取得できます。[`system.query_log`](/ja/reference/system-tables/query_log) テーブルでこの ID を検索すると、そのステートメントの実行時間やリソース使用状況を確認できます。
+
+```sql
+SELECT query_id, query, query_duration_ms, read_rows, memory_usage
+FROM system.query_log
+WHERE query_id = '<query_id from run_results.json>'
+  AND type = 'QueryFinish'
+```
+
+マテリアライゼーションでは通常、モデルごとに複数のステートメント (DDL、挿入など) が実行され、それぞれに固有のクエリ ID が割り当てられます。`run_results.json` のクエリ ID は、モデルのメインステートメントのみを識別します。1 回の実行に含まれるすべてのステートメントを見つけるには、各クエリのテキストに埋め込まれた [dbt クエリコメント](https://docs.getdbt.com/reference/project-configs/query-comment)を使用して `system.query_log` をフィルタリングしてください。
+
+クエリ ID を使用すると、dbt アーティファクト を利用するオブザーバビリティツール (例: Elementary) は、dbt モデルの実行を `system.query_log` のエントリに自動的にリンクできます。
 
 <div id="limitations">
   ## 制限事項

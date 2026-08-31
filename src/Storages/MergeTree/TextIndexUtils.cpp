@@ -175,8 +175,7 @@ void BuildTextIndexTransform::aggregate(const Block & block)
         if (memory_usage_after_update > memory_usage_before_update)
             estimated_allocated_bytes[i] += static_cast<size_t>(memory_usage_after_update - memory_usage_before_update);
 
-        if (aggregator_text.getNumProcessedTokens() > max_processed_tokens
-            || estimated_allocated_bytes[i] > max_allocated_bytes)
+        if (aggregator_text.getNumProcessedTokens() > max_processed_tokens || estimated_allocated_bytes[i] > max_allocated_bytes)
             writeTemporarySegment(i);
     }
 }
@@ -348,63 +347,155 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, &source_postings_serializations[source_num]);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer);
     const auto & tokens = inputs[source_num].tokens;
     cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     queue.push(cursors[source_num]);
 }
 
-std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source_num)
+UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) const
 {
-    const auto & token_info = inputs[source_num].token_infos[queue.current()->getRow()];
+    chassert(merged_part_offsets);
+    UInt64 new_offset = (*merged_part_offsets)[part_index, row_id];
 
-    if (token_info.embedded_postings)
-        return {token_info.embedded_postings};
+    if (new_offset > std::numeric_limits<UInt32>::max())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+            new_offset, std::numeric_limits<UInt32>::max());
+    }
+
+    return static_cast<UInt32>(new_offset);
+}
+
+void MergeTextIndexesTask::appendPostingsToBitmap(std::span<UInt32> row_ids)
+{
+    /// If output bitmap is empty, add values directly to it.
+    /// Otherwise, create a new bitmap and union it with the output bitmap.
+    /// Union works in one pass, while adding row ids with `addMany` shifts those
+    /// already placed, and causes reallocations in case when postings are interleaved.
+    if (output_postings_bitmap.isEmpty())
+        output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
+    else
+        output_postings_bitmap |= PostingList(row_ids.size(), row_ids.data());
+}
+
+void MergeTextIndexesTask::appendPostings(size_t source_num, std::span<UInt32> row_ids)
+{
+    if (row_ids.empty())
+        return;
+
+    if (merged_part_offsets)
+    {
+        size_t part_index = segments[source_num].part_index;
+        for (UInt32 & row_id : row_ids)
+            row_id = adjustPartOffset(part_index, row_id);
+    }
+
+    /// Postings of a token are collected in the buffer while they fit into it.
+    if (output_postings_bitmap.isEmpty() && output_postings_array.size() + row_ids.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    {
+        output_postings_array.insert(row_ids.begin(), row_ids.end());
+        return;
+    }
+
+    if (!output_postings_array.empty())
+    {
+        appendPostingsToBitmap(output_postings_array);
+        output_postings_array.clear();
+    }
+
+    appendPostingsToBitmap(row_ids);
+}
+
+void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info)
+{
+    if (!token_info.embedded_postings.empty())
+    {
+        appendPostings(source_num, token_info.embedded_postings);
+        return;
+    }
 
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto * data_buffer = stream->getDataBuffer();
-    std::vector<PostingListPtr> postings;
-    postings.reserve(token_info.offsets.size());
+    auto & serialization = source_postings_serializations[source_num];
+
+    /// Bitpacked and raw postings are stored as plain row ids: decode them into an array,
+    /// adjust in place and add to the output postings, without materializing an intermediate
+    /// posting list. Roaring postings are decoded into an array only if they must be adjusted.
+    bool deserialize_to_array = merged_part_offsets
+        || token_info.header & (PostingsSerialization::Flags::IsCompressed | PostingsSerialization::Flags::RawPostings);
 
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
-        postings.emplace_back(source_postings_serializations[source_num].deserialize(*data_buffer, token_info.header, token_info.cardinality));
-    }
 
-    return postings;
+        if (deserialize_to_array)
+        {
+            row_ids_buffer.clear();
+            serialization.deserializeToArray(*data_buffer, token_info.header, token_info.cardinality, row_ids_buffer);
+            appendPostings(source_num, row_ids_buffer);
+        }
+        else
+        {
+            /// Flush the array first to keep at most one of the output containers non-empty.
+            if (!output_postings_array.empty())
+            {
+                appendPostingsToBitmap(output_postings_array);
+                output_postings_array.clear();
+            }
+
+            auto posting = serialization.deserializeToBitmap(*data_buffer, token_info.header, token_info.cardinality);
+            output_postings_bitmap |= *posting;
+        }
+    }
 }
 
-PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, PostingListPtr posting_list)
+void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info)
 {
-    if (!merged_part_offsets)
-        return posting_list;
+    auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+    auto * data_buffer = stream->getDataBuffer();
+    stream->seekToMark({token_info.position_offset, 0});
 
-    std::vector<UInt32> offsets(posting_list->cardinality());
-    posting_list->toUint32Array(offsets.data());
-    size_t part_index = segments[source_num].part_index;
+    position_entries_buffer.clear();
+    TextIndexPositionCodec::decode(*data_buffer, position_entries_buffer);
 
-    for (auto & offset : offsets)
+    /// Adjust doc_ids if merging parts with offset remapping.
+    if (merged_part_offsets)
     {
-        UInt64 new_offset = (*merged_part_offsets)[part_index, offset];
-        if (new_offset > std::numeric_limits<UInt32>::max())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
-                new_offset, std::numeric_limits<UInt32>::max());
-        offset = static_cast<UInt32>(new_offset);
+        size_t part_index = segments[source_num].part_index;
+        for (auto & entry : position_entries_buffer)
+            entry = entry.withDocId(adjustPartOffset(part_index, entry.doc_id));
     }
 
-    return std::make_shared<PostingList>(offsets.size(), offsets.data());
+    output_positions.insert(output_positions.end(), position_entries_buffer.begin(), position_entries_buffer.end());
 }
 
 void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-    PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+    TokenPostingsInfo token_info;
 
-    if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-        token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
+    if (output_postings_bitmap.isEmpty())
+    {
+        std::sort(output_postings_array.begin(), output_postings_array.end());
+        auto postings_span = std::span<const UInt32>(output_postings_array.data(), output_postings_array.size());
+
+        token_info = TextIndexSerialization::serializePostings(postings_span, *postings_stream, params, postings_serialization);
+
+        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+            token_info.embedded_postings.assign(output_postings_array.begin(), output_postings_array.end());
+    }
+    else
+    {
+        /// The array is flushed into the bitmap whenever the bitmap becomes non-empty.
+        chassert(output_postings_array.empty());
+        /// The bitmap is populated only when the cardinality exceeds MAX_CARDINALITY_FOR_RAW_POSTINGS, so never embedded here.
+        chassert(!(token_info.header & PostingsSerialization::Flags::EmbeddedPostings));
+
+        PostingListBuilder builder(&output_postings_bitmap);
+        token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+    }
 
     /// Serialize position data if positions are enabled.
     if (params.positions && !output_positions.empty())
@@ -422,6 +513,7 @@ void MergeTextIndexesTask::flushPostingList()
             else
                 output_positions[++out] = output_positions[i];
         }
+
         output_positions.resize(out + 1);
 
         token_info.header |= PostingsSerialization::Flags::HasPositions;
@@ -432,7 +524,8 @@ void MergeTextIndexesTask::flushPostingList()
     }
 
     output_infos.push_back(token_info);
-    output_postings.clear();
+    output_postings_array.clear();
+    output_postings_bitmap.clear();
     output_positions.clear();
 }
 
@@ -469,18 +562,16 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         TextIndexSerialization::serializeTokenInfo(ostr, output_infos[i]);
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
-        {
-            const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
-        }
+            PostingsSerialization::serializeRaw(output_infos[i].embedded_postings, ostr);
     }
 
     output_tokens = ColumnString::create();
-    output_postings.clear();
+    output_postings_bitmap.clear();
+    output_postings_array.clear();
     output_infos.clear();
 }
 
-bool MergeTextIndexesTask::isNewToken(const SortCursor & cursor) const
+bool MergeTextIndexesTask::isNewToken(const TokenSortCursor & cursor) const
 {
     const auto & input_str = assert_cast<const ColumnString &>(*inputs[cursor->order].tokens);
     const auto & output_str = assert_cast<const ColumnString &>(*output_tokens);
@@ -494,16 +585,12 @@ bool MergeTextIndexesTask::executeStep()
     {
         is_initialized = true;
         initializeQueue();
+
         /// Write marks for compatibility with other skip indexes.
-        /// An empty part carries no marks at all, exactly like every other skip index on an
-        /// empty part. Writing one here would leave the marks file with a single mark while
-        /// `getMarksCountForSkipIndex` reports zero, so reading the marks back (e.g. when the
-        /// mark cache is prewarmed on attach) fails with `Too many marks in file`.
-        /// The part is not finalized yet at this stage, so its `index_granularity` is empty;
-        /// rely on the merged row count instead.
-        chassert(new_data_part);
+        /// An empty part carries no marks at all, exactly like every other skip index on an empty part.
         if (num_rows != 0)
         {
+            chassert(new_data_part);
             bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
             writeMarks(output_streams, can_use_adaptive_granularity);
         }
@@ -519,67 +606,46 @@ bool MergeTextIndexesTask::executeStep()
 
     do
     {
-        SortCursor current = queue.current();
+        auto [current_ptr, batch_size] = queue.current();
+        TokenSortCursor & current = *current_ptr;
 
-        if (isNewToken(current))
+        size_t source_num = current->order;
+        auto & source_block = inputs[source_num];
+
+        /// All rows of a batch belong to one dictionary block, whose tokens are strictly
+        /// increasing. Only the first row of the batch can continue the current token.
+        bool first_row_is_new_token = isNewToken(current);
+        size_t row = current->getRow();
+
+        for (size_t i = 0; i < batch_size; ++i, ++row)
         {
-            if (!output_postings.isEmpty())
-                flushPostingList();
-
-            if (output_tokens->size() >= params.dictionary_block_size)
-                flushDictionaryBlock();
-
-            output_tokens->insertFrom(*inputs[current->order].tokens, current->getRow());
-        }
-
-        auto read_postings = readPostingLists(current->order);
-
-        for (auto & posting : read_postings)
-        {
-            posting = adjustPartOffsets(current->order, posting);
-            output_postings |= *posting;
-        }
-
-        /// Read and merge position data if positions are enabled.
-        if (params.positions)
-        {
-            const auto & token_info = inputs[current->order].token_infos[current->getRow()];
-            if (token_info.header & PostingsSerialization::Flags::HasPositions)
+            if (i > 0 || first_row_is_new_token)
             {
-                auto * pos_stream = input_streams[current->order].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-                auto * pos_data_buffer = pos_stream->getDataBuffer();
-                pos_stream->seekToMark({token_info.position_offset, 0});
+                if (!output_postings_bitmap.isEmpty() || !output_postings_array.empty())
+                    flushPostingList();
 
-                PODArray<RoaringishEntry> position_entries;
-                TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
+                if (output_tokens->size() >= params.dictionary_block_size)
+                    flushDictionaryBlock();
 
-                /// Adjust doc_ids if merging parts with offset remapping.
-                if (merged_part_offsets)
-                {
-                    size_t part_index = segments[current->order].part_index;
-                    for (auto & entry : position_entries)
-                    {
-                        UInt64 new_doc_id = (*merged_part_offsets)[part_index, entry.doc_id];
-                        if (new_doc_id > std::numeric_limits<UInt32>::max())
-                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
-                                new_doc_id, std::numeric_limits<UInt32>::max());
-                        entry = entry.withDocId(static_cast<UInt32>(new_doc_id));
-                    }
-                }
-
-                output_positions.insert(output_positions.end(), position_entries.begin(), position_entries.end());
+                auto & output_tokens_str = assert_cast<ColumnString &>(*output_tokens);
+                output_tokens_str.insertFrom(*source_block.tokens, row);
             }
+
+            auto & token_info = source_block.token_infos[row];
+            readAndAppendPostings(source_num, token_info);
+
+            if (params.positions && (token_info.header & PostingsSerialization::Flags::HasPositions))
+                readAndAppendPositions(source_num, token_info);
         }
 
-        if (!current->isLast())
+        if (!current->isLast(batch_size))
         {
-            queue.next();
+            queue.next(batch_size);
         }
         else
         {
             queue.removeTop();
-            readDictionaryBlock(current->order);
+            readDictionaryBlock(source_num);
         }
     } while (queue.isValid() && watch.elapsedMilliseconds() < step_time_ms);
 
@@ -588,7 +654,7 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
-    if (!output_postings.isEmpty())
+    if (!output_postings_bitmap.isEmpty() || !output_postings_array.empty())
         flushPostingList();
 
     if (!output_tokens->empty())

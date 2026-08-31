@@ -1,0 +1,124 @@
+---
+description: 'Os formatos de enquadramento multiplexam dados, totais, extremos, progresso, eventos de perfil e logs do servidor em um único fluxo de resposta por HTTP'
+sidebarTitle: 'Formatos de enquadramento'
+slug: /interfaces/framing-formats
+title: 'Formatos de enquadramento'
+doc_type: 'reference'
+---
+
+Um formato de enquadramento multiplexa diferentes partes da resposta da consulta em um único fluxo: fragmentos de dados, totais e extremos, pacotes de progresso, eventos de perfil (métricas) e logs do servidor — tudo o que o protocolo nativo suporta. Isso permite uma troca de dados mais rica pelo protocolo HTTP.
+
+Os formatos de enquadramento são independentes dos [formatos de saída](/pt-BR/reference/formats): eles encapsulam os bytes produzidos por qualquer formato de saída, separando e possivelmente codificando esses fragmentos de bytes. A concatenação das cargas úteis de todos os pacotes `data`, `totals` e `extremes` é exatamente o que o formato de saída teria produzido sem enquadramento. Os pacotes auxiliares (progresso, logs, eventos de perfil e exceções) são representados em JSON.
+
+O enquadramento também pode tornar um formato de saída mais expressivo — esta é a única exceção deliberada à regra acima. A família de formatos `JSONCompactEachRow` omite totais e extremos em sua saída simples, pois suas linhas seriam indistinguíveis das linhas de dados comuns. Em um formato de enquadramento, o tipo de pacote permite distingui-los; por isso, esses formatos emitem linhas de totais e extremos (em sua sintaxe de linha usual) nos pacotes `totals` e `extremes`. Para esses formatos, a concatenação das cargas úteis apenas dos pacotes `data` é exatamente o que o formato de saída teria produzido sem enquadramento, e os pacotes `totals` e `extremes` carregam linhas adicionais que a saída sem enquadramento não contém. Portanto, um cliente que reconstrói a saída sem enquadramento a partir desse fluxo deve concatenar somente as cargas úteis de `data`.
+
+O formato de enquadramento é selecionado pela configuração no nível da consulta `framing_output_format`. Atualmente, ele se aplica ao protocolo HTTP e é ignorado por outras interfaces.
+
+Os logs do servidor são incluídos como pacotes se a configuração `send_logs_level` estiver definida. Os eventos de perfil são incluídos se a configuração `send_profile_events` estiver ativada (padrão). Os pacotes de progresso e de eventos de perfil são enviados no máximo uma vez a cada `interactive_delay` microssegundos.
+
+Um fluxo bem-sucedido termina com um pacote `progress` final contendo os contadores finais (`result_rows`, `result_bytes`, `memory_usage`), assim como o pacote de progresso final do protocolo nativo. Esses contadores só são conhecidos após o término da consulta; portanto, nenhum pacote `progress` anterior os contém. O pacote `progress` final é gravado após os pacotes finais `log` e `profile_events` emitidos pelo registro em log da finalização da consulta (por exemplo, a entrada de log &quot;uso máximo de memória&quot;), sendo de fato o último pacote do fluxo. Em caso de falha, o pacote `exception` é o último; o pacote `progress` com os contadores finais não é gravado — ele é o terminador de êxito do fluxo — mesmo quando a falha ocorre após o término da própria consulta e os contadores finais já eram conhecidos (por exemplo, em uma falha ao gravar o log da consulta).
+
+Como essa parte final do fluxo é gravada após o registro da entrada `QueryFinish` em `system.query_log`, os eventos de perfil de envio pela rede da consulta (`NetworkSendBytes`, `NetworkSendElapsedMicroseconds`) não incluem o envio dos pacotes finais nem o fechamento da resposta. Também não incluem, quando a resposta é armazenada em buffer (`http_response_buffer_size` ou `wait_end_of_query`), o envio do corpo da resposta armazenado em buffer, que só é transmitido após o término da consulta. Isso corresponde ao protocolo nativo, que também envia seus logs e eventos de perfil finais após a entrada no log da consulta.
+
+Tudo o que uma consulta ativa apenas por meio de sua própria cláusula `SETTINGS` — um formato de enquadramento, `send_logs_level` ou `send_profile_events` — só é conhecido depois que a consulta é analisada sintaticamente. Portanto, os logs e eventos de perfil correspondentes são capturados somente a partir da execução da consulta. Os logs e eventos de perfil das fases de análise sintática, planejamento e análise são capturados somente quando a configuração vem da sessão ou da URL. Em particular, uma consulta que falha durante a análise (antes da execução do pipeline) — por exemplo, por fazer referência a uma tabela desconhecida — e ativa `send_logs_level` somente em sua cláusula `SETTINGS` entrega apenas o pacote `exception`, e não os logs da fase de análise. Defina `send_logs_level` na sessão ou na URL para capturá-los.
+
+A mesma ressalva sobre descoberta tardia se aplica a `send_logs_source_regexp`: a fila de logs filtra as entradas por origem no momento em que cada uma é capturada; portanto, uma regexp definida apenas na cláusula `SETTINGS` da própria consulta só passa a valer a partir da execução da consulta. Os pacotes `log` das fases de análise sintática, planejamento e análise são filtrados pelo valor da configuração na sessão ou na URL — quando ela não é definida nesses locais, não são filtrados — e, por isso, podem incluir origens que não correspondem à regexp no nível da consulta. Por outro lado, as entradas descartadas por uma regexp mais restritiva na sessão ou na URL são perdidas e não são recuperadas por uma regexp mais abrangente no nível da consulta. Defina `send_logs_source_regexp` na sessão ou na URL para filtrar todo o ciclo de vida da consulta.
+
+Se ocorrer uma exceção durante a execução da consulta, ela será enviada como um pacote `exception` (o último pacote do fluxo), independentemente da configuração `http_write_exception_in_output_format`, para que o cliente sempre possa analisar a resposta como um fluxo de pacotes. Depois que a exceção é registrada, o formato de saída não adiciona mais bytes à carga útil: uma consulta que falha antes de produzir qualquer saída não entrega nenhum pacote `data` (nem mesmo a estrutura vazia de documento do formato), e uma consulta que falha no meio do fluxo deixa a carga útil concatenada truncada no ponto da falha, sem o sufixo do formato — a carga útil de uma consulta com falha não deve parecer um documento completo.
+
+Há uma exceção a isso: se a gravação de um pacote falhar parcialmente (por exemplo, se a conexão for interrompida depois que alguns bytes do pacote já tiverem chegado ao cliente), o enquadramento falha de modo seguro e o fluxo é encerrado sem um pacote `exception` final. O sistema nunca tenta reenviar um pacote parcialmente gravado, pois isso acrescentaria uma duplicata após os bytes truncados e corromperia o fluxo. Nessa situação, o cliente observa uma resposta truncada e uma conexão HTTP abortada, em vez de um pacote terminal bem formado. A mesma regra se aplica a uma falha durante o fechamento do próprio fluxo de resposta (descarregamento dos resultados em buffer, finalização da compressão HTTP ou fechamento do soquete): nesse ponto, parte ou todo o fluxo de sucesso já está em trânsito e, portanto, nada é acrescentado a ele — nem um pacote `exception` nem o bloco genérico de erro HTTP —, e o cliente observa uma resposta truncada e uma conexão abortada. Isso também se aplica quando a entrega da própria exceção falha: se a gravação do pacote `exception` terminal falhar (por exemplo, durante o escoamento dos logs finais) após qualquer parte do fluxo de pacotes ter sido produzida — seja ela já transmitida ou ainda presente nos buffers de resposta no servidor (`http_response_buffer_size`) —, o fluxo também será encerrado sem acrescentar nada, para que um corpo de erro HTTP simples nunca seja misturado a um fluxo parcial de pacotes. Uma falha ao gravar os campos do tipo string dos pacotes auxiliares `log`, `profile_events` e `exception` também é considerada uma gravação parcial de pacote, inclusive se ocorrer nos últimos bytes de uma dessas strings: o fluxo então termina com esse pacote truncado e não contém terminador algum — nem um pacote `exception` nem o pacote `progress` de contadores finais —, de modo que um cliente que exige um terminador detectará a falha mesmo quando a própria consulta tiver sido bem-sucedida.
+
+Um formato de enquadramento também é aplicado a consultas que não produzem fluxo de resultados — um `INSERT` bem-sucedido, uma consulta DDL ou qualquer outra consulta sem saída. Essa resposta não contém pacotes `data`, mas ainda altera o `Content-Type` da resposta para o formato de enquadramento e transmite os pacotes `progress`, `log` e `profile_events`, em conformidade com o protocolo nativo. O fluxo termina com um pacote `progress` final que contém os contadores finais (por exemplo, `result_rows` e `result_bytes` com o número de linhas gravadas para um `INSERT`). Como nenhuma carga útil é formatada, o formato de saída é irrelevante para essas consultas e não afeta o fluxo enquadrado.
+
+<div id="available-framing-formats">
+  ## Formatos de enquadramento disponíveis
+</div>
+
+| Nome                                                     | Descrição                                                                        |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [`None`](#framing-format-none)                           | Sem framing: tudo funciona como normalmente.                                     |
+| [`EventStream`](#framing-format-eventstream)             | Eventos HTTP enviados pelo servidor (`text/event-stream`).                       |
+| [`JSONEachPacketBase64`](#framing-format-jsoneachpacket) | Um objeto JSON por pacote; os dados formatados são codificados em Base64.        |
+| [`JSONEachPacketString`](#framing-format-jsoneachpacket) | Um objeto JSON por pacote; os dados formatados são inseridos em uma string JSON. |
+
+<div id="framing-format-none">
+  ## None
+</div>
+
+O padrão. Encaminha de forma transparente tudo o que é aplicável (dados, totais, extremos, progresso) para o formato de saída e ignora tudo o que não é aplicável (métricas, logs). Assim, tudo funciona como no padrão, inclusive formatos que representam o próprio progresso, como `JSONEachRowWithProgress`.
+
+<div id="framing-format-eventstream">
+  ## EventStream
+</div>
+
+Enquadra pacotes como [eventos enviados pelo servidor HTTP](https://html.spec.whatwg.org/multipage/server-sent-events.html) e define o `Content-Type` da resposta como `text/event-stream; charset=UTF-8; payload=base64`. Cada pacote é enviado como um evento nomeado conforme o tipo de pacote: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. Progresso e outros pacotes auxiliares são enviados como JSON.
+
+Eventos enviados pelo servidor são um protocolo de texto que trata quebras de linha (incluindo retornos de carro, `\r`) como delimitadores de campo. Portanto, os bytes produzidos pelo formato de saída não são incorporados literalmente: um bloco de dados formatados é codificado em Base64 em um único campo `data:`, que é decodificado para a carga útil completamente formatada, com todas as suas quebras de linha. É isso que o parâmetro `payload=base64` do `Content-Type` indica. A concatenação das cargas úteis decodificadas dos pacotes `data`, `totals` e `extremes` é exatamente o que o formato de saída teria produzido sem enquadramento, byte a byte, para qualquer formato de saída — texto, binário (`Native`, `RowBinary`) ou de passagem direta bruta (`RawBLOB`, `TSVRaw`).
+
+Os pacotes JSON auxiliares (`progress`, `log`, `profile_events`, `exception`) nunca são codificados: são gravados como um único campo `data:` contendo JSON, sem quebras de linha.
+
+Os formatos de saída `*WithProgress` (`JSONEachRowWithProgress`, `JSONCompactEachRowWithProgress`) gravam o progresso como linhas em banda que fazem parte da própria saída. Já um formato de enquadramento entrega o progresso em pacotes `progress` separados; portanto, não é compatível com esses formatos de saída e os rejeita — use o formato de saída base (por exemplo, `JSONEachRow`) com enquadramento ou o enquadramento `None` com um formato `*WithProgress`.
+
+```bash
+curl "http://localhost:8123/?framing_output_format=EventStream" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+event: data
+data: eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K
+
+event: profile_events
+data: [{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"},{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedBytes","value":"24"}]
+
+event: progress
+data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
+
+```
+
+`EventStream` integra-se ao protocolo HTTP e lança uma exceção quando não se aplica.
+
+<div id="framing-format-jsoneachpacket">
+  ## JSONEachPacketBase64 e JSONEachPacketString
+</div>
+
+Cada pacote é um objeto JSON em uma linha separada (JSON delimitado por novas linhas, `application/x-ndjson`) contendo informações sobre o pacote. Os bytes produzidos pelo formato de saída são colocados no campo `data`: codificados em Base64 em `JSONEachPacketBase64` (adequado para formatos de saída binários) ou como uma string JSON em `JSONEachPacketString`.
+
+As duas variantes codificam o campo `data` de modo diferente; portanto, o `Content-Type` da resposta permite diferenciá-las, como no caso de `EventStream`: `JSONEachPacketBase64` define `application/x-ndjson; charset=UTF-8; payload=base64`, e `JSONEachPacketString` define `application/x-ndjson; payload=string`. Assim, apenas pelos metadados da resposta, um cliente pode determinar se o campo `data` precisa ser decodificado de Base64. `charset=UTF-8` é garantido apenas por `JSONEachPacketBase64`, pois somente a codificação Base64 torna todo o fluxo UTF-8 válido, independentemente dos bytes da carga útil — veja abaixo.
+
+Como `JSONEachPacketString` coloca os bytes da carga útil em uma string JSON, ele se destina a formatos de saída que produzem texto UTF-8 válido. As colunas `String` e `FixedString` podem conter bytes arbitrários; portanto, formatos de saída de texto como `JSONEachRow`, `TSV` ou `CSV` podem emitir UTF-8 inválido para esses valores — assim como o próprio `JSONEachRow` do ClickHouse faz com a configuração padrão `output_format_json_validate_utf8 = 0` — e, nesse caso, não há garantia de que a string JSON resultante e, consequentemente, todo o fluxo NDJSON sejam UTF-8 válidos. `JSONEachPacketString` não valida nem recodifica a carga útil; use `JSONEachPacketBase64` para transportar bytes arbitrários com exatidão.
+
+Formatos de saída que comprovadamente produzem bytes não UTF-8 são rejeitados antecipadamente por `JSONEachPacketString` com um erro, antes da execução da consulta: formatos binários (`Native`, `RowBinary`), formatos de passagem direta bruta (`RawBLOB`, `TSVRaw`), formatos que gravam na saída um nome de coluna, nome de tipo de dados ou nome de elemento `Tuple` não UTF-8 do cabeçalho da consulta e configurações cujos literais definidos por configurações são gravados literalmente pelas serializações e não são UTF-8 válidos — as configurações `format_csv_delimiter`, `format_tsv_null_representation` / `format_csv_null_representation` e `bool_true_representation` / `bool_false_representation`.
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
+Com `JSONEachPacketBase64`, o mesmo pacote de `data` fica assim:
+
+```text
+{"packet":"data","data":"eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K"}
+```
+
+<div id="framing-format-packet-kinds">
+  ## Tipos de pacote
+</div>
+
+| Pacote           | Conteúdo                                                                                                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`           | Bytes produzidos pelo formato de saída para o resultado principal (incluindo o prefixo e o sufixo do formato).                                                                    |
+| `totals`         | Bytes produzidos pelo formato de saída para a linha de totais (`WITH TOTALS`).                                                                                                    |
+| `extremes`       | Bytes produzidos pelo formato de saída para os valores extremos (a configuração `extremes`).                                                                                      |
+| `progress`       | Progresso da consulta em JSON: `read_rows`, `read_bytes`, `total_rows_to_read`, `result_rows`, `result_bytes`, `elapsed_ns`, `memory_usage` (campos com valor zero são omitidos). |
+| `log`            | Uma entrada do log do servidor em JSON: `event_time`, `host_name`, `query_id`, `thread_id`, `priority`, `source`, `text`.                                                         |
+| `profile_events` | Um array de eventos de perfil em JSON: `host_name`, `current_time`, `thread_id`, `type` (`increment` ou `gauge`), `name`, `value`.                                                |
+| `exception`      | A mensagem de exceção em JSON.                                                                                                                                                    |
+
+Ao contrário dos payloads de `data`, `totals` e `extremes` (consulte as observações sobre a exatidão dos bytes acima), os campos do tipo string dos pacotes auxiliares (`query_id`, `text` e `source` de `log`, `name` de `profile_events` e a mensagem de `exception`) não dispõem de uma forma de escape em base64, e alguns deles (por exemplo, `query_id`, obtido da consulta) podem conter bytes arbitrários. Esses campos são sempre convertidos para UTF-8 válido, com sequências inválidas substituídas pelo caractere de substituição (`U+FFFD`), para que os pacotes auxiliares sejam sempre JSON válido.
+
+O processamento simultâneo de várias consultas ainda não foi implementado, mas o design o permite: cada pacote pode ser estendido com informações sobre o índice da consulta entre várias consultas.

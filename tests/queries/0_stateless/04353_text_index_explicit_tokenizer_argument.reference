@@ -1,0 +1,46 @@
+-- matching tokenizer uses the index
+1
+1
+-- matching tokenizer prunes granules
+1
+-- matching tokenizer reaches the direct read
+1
+-- registered alias of the same tokenizer uses the index
+1
+-- whitespace variants of the definition use the index
+1
+-- a different tokenizer still full-scans
+-- 2-argument form is unchanged
+1
+-- results agree across use_skip_indexes x query_plan_direct_read_from_text_index
+1
+1
+1
+1
+2
+1
+2
+1
+2
+-- the same predicate in PREWHERE and WHERE
+1
+-- hasPhrase
+1
+-- an invalid or non-constant tokenizer argument is still rejected
+-- tokenizer parameters are not normalized away
+1
+-- a postprocessor is applied, like in the two-argument form
+2
+-- a preprocessor is applied, like in the two-argument form
+1
+2
+1
+2
+2
+-- expression index
+1
+-- postprocessor with an explicit separator list
+1
+1
+1
+1

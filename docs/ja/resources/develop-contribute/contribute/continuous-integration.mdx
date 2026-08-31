@@ -296,17 +296,17 @@ python -m ci.praktika run "Build (amd_debug)"
 上記の方法でうまくいかない場合は、ビルドログにある cmake オプションを使用し、[一般的なビルド手順](/ja/resources/develop-contribute/build/build) に従ってください。
 
 <div id="functional-stateless-tests">
-  ## stateless 機能テスト
+  ## ステートレスな機能テスト
 </div>
 
-リリース、デバッグ、サニタイザ有効時など、さまざまな構成でビルドされた ClickHouse バイナリに対して、[stateless 機能テスト](/ja/resources/develop-contribute/contribute/tests#functional-tests)を実行します。
+リリース、デバッグ、サニタイザ有効時など、さまざまな構成でビルドされた ClickHouse バイナリに対して、[ステートレスな機能テスト](/ja/resources/develop-contribute/contribute/tests#functional-tests)を実行します。
 どのテストが失敗しているかはレポートを確認し、その後、[こちら](/ja/resources/develop-contribute/contribute/tests#functional-tests)の説明に従ってローカルで再現してください。
-再現には正しいビルド構成を使う必要がある点に注意してください。たとえば、あるテストは AddressSanitizer では失敗しても、Debug では成功することがあります。
+再現には正しいビルド構成を使う必要がある点に注意してください。たとえば、あるテストは AddressSanitizer では失敗しても、デバッグ では成功することがあります。
 バイナリは [CI ビルドチェックページ](/ja/get-started/setup/self-managed/advanced) からダウンロードするか、ローカルでビルドしてください。
 
 プルリクエストでは、名前が `selected tests` で終わるサニタイザジョブの大半は、テストスイート全体を実行しません。
 これらのジョブでは、変更に関連するテストのみを実行します。具体的には、プルリクエストで追加または変更されたテスト、このプルリクエストですでに失敗したテスト、およびカバレッジデータベースに基づいて変更された行を対象とするテストです。
-既存の Wasm UDF テストが MSan と互換性がないため、MSan/WasmEdge ジョブでは引き続きスイート全体を実行します。デバッグおよびプレーンバイナリ構成でもスイート全体が実行され、サニタイザ有効ビルドは[ストレステスト](#stress-test)でテストされ、master ブランチではすべての構成でスイート全体が実行されます。
+デバッグおよびプレーンバイナリ構成でもスイート全体が実行され、サニタイザ有効ビルドは[ストレステスト](#stress-test)でテストされ、master ブランチではすべての構成でスイート全体が実行されます。
 
 <div id="integration-tests">
   ## 結合テスト

@@ -208,3 +208,56 @@ def test_hive_files_cache_is_table_local(started_cluster):
     # Table A is likewise unaffected by table B's reads (independent cache entries).
     assert node.query("SELECT count(*) FROM default.hive_orc_a").strip() == "4"
     assert node.query("SELECT id, score FROM default.hive_orc_a ORDER BY score") == "a\t1\nb\t2\nc\t10\nd\t11\n"
+
+
+def test_selected_rows_not_double_counted(started_cluster):
+    # StorageHiveSource reads each file's format through an inner pipeline
+    # (StorageHive.cpp: QueryPipeline + PullingPipelineExecutor) and reports the chunk it
+    # returns again through ISource auto-progress, so `SelectedRows` / `SelectedBytes` end up
+    # at twice the query's own `read_rows` / `read_bytes` unless that inner pipeline has
+    # profile event updates disabled. See #116301.
+    node = started_cluster.instances["h0_0_0"]
+
+    node.query("DROP TABLE IF EXISTS default.hive_counters")
+    node.query(
+        """
+        CREATE TABLE default.hive_counters (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String))
+        ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+        """
+    )
+
+    # Establish connectivity to the metastore before the measured query, so that the row read
+    # back below is a single execution and not one of several retries.
+    assert query_with_retry(node, "SELECT count(*) FROM default.hive_counters").strip() == "4"
+
+    # The measured query must request non-partition columns: with only partition columns (as in
+    # `count(*)`) `to_read_block` is empty, and for Parquet/ORC the source then serves rows from
+    # file metadata without constructing the inner pipeline at all.
+    query_id = "hive_selected_rows_double_count"
+    node.query(
+        "SELECT id, score FROM default.hive_counters FORMAT Null", query_id=query_id
+    )
+    node.query("SYSTEM FLUSH LOGS query_log")
+
+    read_rows, read_bytes, selected_rows, selected_bytes = (
+        node.query(
+            f"""
+            SELECT read_rows, read_bytes,
+                   ProfileEvents['SelectedRows'], ProfileEvents['SelectedBytes']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+            ORDER BY event_time_microseconds DESC LIMIT 1
+            """
+        )
+        .strip()
+        .split("\t")
+    )
+
+    # The read amounts are pinned as well, so a select that stopped reading the files cannot
+    # satisfy the equalities with both sides at zero.
+    assert read_rows == "4", (read_rows, read_bytes)
+    assert read_bytes != "0", (read_rows, read_bytes)
+    assert selected_rows == read_rows, (selected_rows, read_rows)
+    assert selected_bytes == read_bytes, (selected_bytes, read_bytes)
+
+    node.query("DROP TABLE default.hive_counters SYNC")

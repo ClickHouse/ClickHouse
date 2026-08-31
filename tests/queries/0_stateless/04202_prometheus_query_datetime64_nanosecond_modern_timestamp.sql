@@ -1,7 +1,6 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
--- grammar requires it. The experimental TimeSeries table engine does not
--- round-trip through DatabaseReplicated.
+-- grammar requires it.
 
 -- Regression test for `timeSeriesTimestampToAST`. With `DateTime64(9)` and a
 -- modern Unix timestamp the raw value (e.g. 1.7e18 for 2024-01-01) exceeds
