@@ -1,0 +1,5 @@
+compressible	compressible	{'LZ4':25}
+compressible	compressible.size	{'LZ4':25}
+incompressible	incompressible	{'NONE':25}
+incompressible	incompressible.size	{'LZ4':25}
+200000	3199198	3200000
