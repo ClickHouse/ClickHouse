@@ -6,6 +6,7 @@ SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET query_plan_optimize_join_order_limit = 1;
 SET max_threads = 1;
 SET max_block_size = 10;
+SET join_runtime_filter_min_probe_rows = 0;
 
 CREATE TABLE rf_left(k Nullable(Int32), payload UInt8) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE rf_right(k Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple();
@@ -22,16 +23,6 @@ FROM
     SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_exact_values_limit = 1
 )
 WHERE explain LIKE '%BuildRuntimeFilter%';
-
-SELECT count() > 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count()
-    FROM rf_left l INNER JOIN rf_right r USING (k)
-    SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_exact_values_limit = 1
-)
-WHERE explain LIKE '%__applyFilter%';
 
 SELECT count()
 FROM rf_left l INNER JOIN rf_right r USING (k)

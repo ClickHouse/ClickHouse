@@ -133,9 +133,9 @@ public:
         , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type))
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
-        /// For positive runtime filters we skip NULL rows.
-        /// For exclusion runtime filters keep old behavior and preserve NULLs in `Set`.
-        , exact_values(std::make_shared<Set>(SizeLimits{}, -1, negate && argument_can_have_nulls))
+        /// Keep nullable values hashable in `Set`. Positive filters reject only outer NULL rows
+        /// after lookup, while exclusion filters preserve their existing NULL-aware behavior.
+        , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
     {
         ColumnsWithTypeAndName set_header = { ColumnWithTypeAndName(filter_column_target_type, String()) };
         exact_values->setHeader(set_header);

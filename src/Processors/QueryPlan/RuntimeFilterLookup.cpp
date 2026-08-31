@@ -3,8 +3,8 @@
 #include <optional>
 #include <vector>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -300,45 +300,7 @@ struct PreparedRuntimeFilterColumn
     ColumnPtr full_column;
     const IColumn * key_column = nullptr;
     ConstNullMapPtr null_map = nullptr;
-    ColumnPtr null_map_holder;
 };
-
-bool addNullMapFromColumn(const IColumn & column, PaddedPODArray<UInt8> & null_map)
-{
-    bool has_nulls = false;
-
-    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
-    {
-        const auto & column_null_map = column_nullable->getNullMapData();
-        for (size_t i = 0; i < null_map.size(); ++i)
-        {
-            null_map[i] |= column_null_map[i];
-            has_nulls |= static_cast<bool>(column_null_map[i]);
-        }
-
-        has_nulls |= addNullMapFromColumn(column_nullable->getNestedColumn(), null_map);
-        return has_nulls;
-    }
-
-    if (const auto * tuple = checkAndGetColumn<ColumnTuple>(&column))
-    {
-        for (const auto & element : tuple->getColumns())
-            has_nulls |= addNullMapFromColumn(*element, null_map);
-        return has_nulls;
-    }
-
-    if (column.getDataType() == TypeIndex::Variant || column.getDataType() == TypeIndex::Dynamic)
-    {
-        for (size_t i = 0; i < null_map.size(); ++i)
-        {
-            const bool is_null = column.isNullAt(i);
-            null_map[i] |= is_null;
-            has_nulls |= is_null;
-        }
-    }
-
-    return has_nulls;
-}
 
 PreparedRuntimeFilterColumn prepareRuntimeFilterColumn(const ColumnPtr & column, bool extract_null_map)
 {
@@ -349,13 +311,12 @@ PreparedRuntimeFilterColumn prepareRuntimeFilterColumn(const ColumnPtr & column,
     if (!extract_null_map || prepared.key_column->empty())
         return prepared;
 
-    auto null_map_holder = ColumnUInt8::create(prepared.key_column->size(), static_cast<UInt8>(0));
-    auto & null_map = null_map_holder->getData();
-
-    if (addNullMapFromColumn(*prepared.key_column, null_map))
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(prepared.key_column))
     {
-        prepared.null_map_holder = std::move(null_map_holder);
-        prepared.null_map = &assert_cast<const ColumnUInt8 &>(*prepared.null_map_holder).getData();
+        /// Only an outer Nullable means that the complete join key is SQL NULL.
+        /// NULLs nested in Tuple, Dynamic, or Variant are hashable parts of the key.
+        prepared.key_column = &nullable->getNestedColumn();
+        prepared.null_map = &nullable->getNullMapData();
     }
 
     return prepared;
