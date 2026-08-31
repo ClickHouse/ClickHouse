@@ -4,7 +4,9 @@
 -- consumes the trigger and this one then gets LIMIT_EXCEEDED instead of the injected fault.
 
 SET join_algorithm = 'grace_hash';
-SET max_bytes_in_join = 100000;
+-- Spill early so the rehash path runs, `max_bytes_in_join` would only cap the right side.
+SET max_bytes_before_external_join = 1000000;
+SET max_bytes_ratio_before_external_join = 0;
 SET grace_hash_join_initial_buckets = 1;
 -- With a single build thread the throw unwinds before anything re-enters the join, and the
 -- query then reports the injected fault whether or not the fix is present.
