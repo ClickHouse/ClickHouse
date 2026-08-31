@@ -44,6 +44,16 @@ SELECT parseISO8601Duration('PT1HT1M'); -- { serverError BAD_ARGUMENTS }
 SELECT parseISO8601Duration('P1H'); -- { serverError BAD_ARGUMENTS }
 SELECT parseISO8601Duration('PT1D'); -- { serverError BAD_ARGUMENTS }
 
+-- `LowCardinality` and `Nullable` arguments reach the function through the default implementations,
+-- which apply it to the dictionary and to the values sitting under the null map. Neither of those
+-- positions holds a valid duration, so they must not make the function throw.
+SELECT parseISO8601Duration(x) AS s
+FROM (SELECT CAST(arrayJoin(['PT1S', 'PT2S']) AS LowCardinality(String)) AS x)
+ORDER BY s;
+
+SELECT sum(parseISO8601Duration(x))
+FROM (SELECT arrayJoin(CAST([NULL, 'PT1S'] AS Array(Nullable(String)))) AS x);
+
 -- ISO 8601 also allows a comma as the decimal separator, and RFC 3339 / XSD add signed durations.
 -- Neither is accepted: ClickHouse rejects comma decimals elsewhere, and a sign is not part of the
 -- core grammar.
