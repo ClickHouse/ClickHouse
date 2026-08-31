@@ -138,6 +138,8 @@ public:
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
+    void update(ObjectStoragePtr object_storage, ContextPtr local_context) override;
+
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,
         const String & structure,

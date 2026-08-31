@@ -39,6 +39,18 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
     ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
+
+    if (source_disk_name.has_value())
+    {
+        const auto & config = context->getConfigRef();
+        const String disk_config_prefix = "storage_configuration.disks." + *source_disk_name;
+        if (!config.has(disk_config_prefix))
+            return;
+
+        object_storage_ptr->applyNewSettings(config, disk_config_prefix + ".", context, options);
+        return;
+    }
+
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 

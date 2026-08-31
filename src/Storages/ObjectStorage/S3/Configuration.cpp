@@ -175,16 +175,18 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
             headers_from_ast.begin(), headers_from_ast.end());
     }
 
+    const bool from_disk = source_disk_name.has_value();
+
     auto client = getClient(
-        url, *s3_settings, context, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, /*refresh_credentials_callback*/ std::nullopt,
+        url, *s3_settings, context, /* for_disk_s3 */ from_disk, /*opt_disk_name*/ source_disk_name, /*refresh_credentials_callback*/ std::nullopt,
         is_loading_from_existing_metadata, force_anonymous_load_fallback);
 
-    auto client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
+    auto client_refresher = [refresh_credentials_callback, this, from_disk, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
     {
         if (!refresh_credentials_callback)
             return nullptr;
         auto new_client = getClient(
-            url, *s3_settings, context_, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, refresh_credentials_callback,
+            url, *s3_settings, context_, /* for_disk_s3 */ from_disk, /*opt_disk_name*/ source_disk_name, refresh_credentials_callback,
             is_loading_from_existing_metadata, force_anonymous_load_fallback);
         return new_client;
     };
@@ -194,10 +196,47 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         url,
         *s3_capabilities,
         /*key_generator=*/nullptr,
-        "StorageS3",
-        false,
+        from_disk ? *source_disk_name : "StorageS3",
+        from_disk,
         client_refresher,
-        /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
+        /*client_restricts_server_credentials=*/from_disk ? false : context->shouldRestrictUserQueryS3Credentials());
+}
+
+void StorageS3Configuration::update(ObjectStoragePtr object_storage, ContextPtr local_context)
+{
+    if (!source_disk_name.has_value())
+    {
+        StorageObjectStorageConfiguration::update(object_storage, local_context);
+        return;
+    }
+
+    const auto & config = local_context->getConfigRef();
+    const String disk_config_prefix = "storage_configuration.disks." + *source_disk_name;
+    if (!config.has(disk_config_prefix))
+        return;
+
+    ObjectStoragePtr unwrapped_storage = object_storage;
+    while (auto inner = unwrapped_storage->getUnderlying())
+        unwrapped_storage = std::move(inner);
+    const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*unwrapped_storage);
+    const S3Settings current_settings = s3_object_storage.getS3Settings();
+
+    S3Settings settings_from_disk_config;
+    settings_from_disk_config.loadFromConfigForObjectStorage(
+        config,
+        disk_config_prefix,
+        local_context->getSettingsRef(),
+        url.uri.getScheme(),
+        local_context->getSettingsRef()[Setting::s3_validate_request_settings]);
+
+    S3Settings future_settings = current_settings;
+    if (auto endpoint_settings = local_context->getStorageS3Settings().getSettings(url.uri.toString(), local_context->getUserName()))
+        future_settings.updateIfChanged(*endpoint_settings);
+    future_settings.updateIfChanged(settings_from_disk_config);
+
+    IObjectStorage::ApplyNewSettingsOptions options{
+        .allow_client_change = clientAffectingSettingsChanged(current_settings, future_settings)};
+    object_storage->applyNewSettings(config, disk_config_prefix + ".", local_context, options);
 }
 
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -413,6 +452,7 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
     const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = s3_object_storage.getS3Settings();
+    s3_capabilities = std::make_unique<S3Capabilities>(s3_object_storage.getS3Capabilities());
 
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
     {

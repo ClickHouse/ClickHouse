@@ -1,0 +1,15 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_disk_repro>
+                <type>s3</type>
+                <path>s3_disk_repro/</path>
+                <endpoint>http://minio1:9001/root/data/disk_client_replacement/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </s3_disk_repro>
+        </disks>
+    </storage_configuration>
+
+    <allowed_disks_for_table_engines>s3_disk_repro</allowed_disks_for_table_engines>
+</clickhouse>

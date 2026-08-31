@@ -206,13 +206,6 @@ public:
         getMetadata()->alter(params, context, storage_id, catalog);
     }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
-    {
-        if (ready_object_storage)
-            return ready_object_storage;
-        return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
-    }
-
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         if (auto schema = getMetadata()->getTableSchema(local_context); !schema.empty())
@@ -401,8 +394,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
-        auto disk = context->getDisk(disk_name);
-        ready_object_storage = disk->getObjectStorage();
+        this->source_disk_name = disk_name;
     }
 
     bool supportsPrewhere() const override
@@ -428,7 +420,6 @@ public:
 
 private:
     const DataLakeStorageSettingsPtr settings;
-    ObjectStoragePtr ready_object_storage;
     mutable std::mutex metadata_mutex;
     /// Readers take a copy of this pointer under the lock and use that copy, so a concurrent
     /// republish in update() cannot destroy the object they are still calling into.

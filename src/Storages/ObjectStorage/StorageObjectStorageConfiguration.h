@@ -372,6 +372,8 @@ public:
     /// DDL does not depend on the setting at attach time.
     String url_overridden_by_base_setting;
 
+    std::optional<String> source_disk_name;
+
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
