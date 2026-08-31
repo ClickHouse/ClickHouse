@@ -183,6 +183,10 @@ public:
     /// ORDER BY x WITH FILL FROM f TO t STEP s must produce exactly the grid {f, f+s, ...} positionally.
     bool checkWithFillGrid(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Pipe-operator equivalence oracle (self-seeded): a classic SELECT and its pipe rendering
+    /// (FROM t |> WHERE p |> SELECT ...) must return the same multiset (pipe is pure syntax).
+    bool checkPipeEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
