@@ -3078,11 +3078,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
         time_t current_time,
-        bool force_)
+        bool force_,
+        const NamesAndTypesList & expired_columns_)
         : ITransformingStep(input_header_, input_header_, getTraits())
     {
         transform = std::make_shared<TTLCalcTransform>(
-            context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_);
+            context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_, expired_columns_);
 
         /// Same reasoning as TTLStep: build sets eagerly so subquery progress does not distort
         /// the merge's own rows_read accounting.
@@ -3606,7 +3607,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part,
             global_ctx->time_of_merge,
-            /*force_=*/ true);
+            /*force_=*/ true,
+            global_ctx->merging_columns_expired_by_ttl);
 
         ttl_calc_step->setStepDescription("TTL info recalculation step");
         merge_parts_query_plan.addStep(std::move(ttl_calc_step));
