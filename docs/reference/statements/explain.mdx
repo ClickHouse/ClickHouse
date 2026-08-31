@@ -767,7 +767,7 @@ The maximum number in `parallelism` is computed as a minimum between:
 
 #### Join steps {#explain-analyze-join-steps}
 
-For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. `Left` and `Right` correspond to logical SQL sides. In most of the cases `Left` would also be the probe side of the join, and `Right` would be the build side of the join. However this is not always the case due to the swap that can happen during execution of the join. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the three implementations that setting cannot select: a `CROSS` or `COMMA` join, the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition) that takes an `ON` section determining no join key, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
+For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. `Left` and `Right` correspond to logical SQL sides. In most of the cases `Left` would also be the probe side of the join, and `Right` would be the build side of the join. However this is not always the case due to the swap that can happen during execution of the join. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
 
 The per-side lines share the same shape:
 
@@ -847,19 +847,6 @@ The [`Join`](/reference/engines/table-engines/special/join) table engine follows
 
 **`CROSS`, `COMMA` and a constant `ON`.** Neither side, as described [above](#explain-analyze-join-algorithm-lines).
 
-**Block nested loop join.** The operator that takes an `ON` section determining no join key, unless one of the paths before it claims the condition (see [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow)). It accepts every kind and strictness except `ASOF`, `PASTE` and `ANY FULL`:
-
-| Join | `matched` left | `matched` right |
-|------|----------------|-----------------|
-| `ALL FULL` | yes | yes |
-| `ALL LEFT`, `ANY LEFT`, `SEMI LEFT`, `ANTI LEFT`, `ANY INNER` | yes | no |
-| `ALL RIGHT`, `ANY RIGHT`, `SEMI RIGHT`, `ANTI RIGHT` | with `matches = 1` | yes |
-| `ALL INNER` | with `matches = 1` | no |
-
-The left side is reported without the option wherever the operator already records which left rows matched: every kind that keeps the unmatched left rows needs that record, and so does every strictness that takes at most one pair per left row. The right side is reported wherever the operator keeps its match flags, which is what `RIGHT`, `FULL` and a right-driven `SEMI`/`ANTI` need. `ANY INNER` keeps them too, but only in order to give a right row to a single left row: it stops claiming for a left row that already has its pair, so the flags mark the pairs of the result rather than every match, and are not reported. `ALL INNER` reaches the operator only when `hash` is disabled, since otherwise the condition becomes a `CROSS JOIN` with a filter.
-
-Enabling [`any_join_distinct_right_table_keys`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys) switches `ANY` to the `RightAny` semantics here as well, which reports the left side for every kind and the right side for `RIGHT` and `FULL`; `ANY INNER` is rewritten to `SEMI LEFT`.
-
 Where two algorithms both report a number, the numbers agree. The merge algorithms simply have more information; they do not disagree about what a match is.
 
 #### Algorithm-specific lines {#explain-analyze-join-algorithm-lines}
@@ -904,7 +891,7 @@ For `full_sorting_merge` join only the common `Left:` and `Right:` lines are pri
 
 For `direct` join only the `Left:` line is printed, since the right side is a key-value store that is looked up directly rather than materialized into rows.
 
-For a `CROSS` or `COMMA` join, and for an `ALL INNER JOIN` whose `ON` section has no key equality — which the planner turns into a `CROSS JOIN` with that condition as a filter — a `Buffer:` line describes how the right table was held in memory and a `Spill:` line reports whether it went to disk:
+For a `CROSS` or `COMMA` join, and for any `ON` section without a key equality, a `Buffer:` line describes how the right table was held in memory and a `Spill:` line reports whether it went to disk:
 
 ```txt
 Buffer: memory <peak_memory> · compressed <yes|no>
@@ -916,19 +903,6 @@ Spill: yes · right spilled <right_spilled_bytes>
 - `Spill:` — the same `yes`/`no` flag as for `grace_hash`, with `right spilled <right_spilled_bytes>` reporting the compressed bytes written to disk.
 
 Both sides report `matched not collected` here: a constant predicate either pairs every left row with every right row or with none, so asking which individual rows matched has no answer.
-
-The block nested loop join, which takes every other `ON` section without a key equality, prints the same two lines about the right table it materializes:
-
-```txt
-Buffer: memory <peak_memory> · compressed <yes|no>
-Spill: yes · right spilled <right_spilled_bytes>
-```
-
-- `memory <peak_memory>` — the peak memory the stored right table occupied. It is `0` when every block was written to disk as it arrived, since none of them was ever held in memory.
-- `compressed <yes|no>` — whether at least one stored block was compressed; readers then decompress every stored block.
-- `Spill:` — the same `yes`/`no` flag as for `grace_hash`, with `right spilled <right_spilled_bytes>` reporting the compressed bytes written to disk.
-
-Unlike the `CROSS` case, both sides can report `matched` here, since the operator evaluates a real condition on each pair it examines; which of them does is in the table [above](#explain-analyze-matches).
 
 For a join against the [`Join`](/reference/engines/table-engines/special/join) table engine both sides are reported, together with the `Hash table:` line describing the pre-built table. The right side counts the rows stored in the engine, not the rows of some per-query build.
 
