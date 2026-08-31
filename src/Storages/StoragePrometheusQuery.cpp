@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>
@@ -106,6 +107,10 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
+    /// Checked on every path, not only the Distributed one: the evaluation reads the table's data
+    /// through generated queries the planner does not attribute to this name, and the HTTP API
+    /// enforces the same contract in its constructor.
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
     if (distributed_target)
         checkPrometheusQueryDistributedRead(*time_series_storage, context);

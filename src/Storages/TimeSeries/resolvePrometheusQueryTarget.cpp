@@ -25,6 +25,7 @@ namespace DistributedSetting
 
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
@@ -88,6 +89,24 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
             "A row policy on {} is not supported for prometheus queries over a Distributed table: "
             "the read is rewritten to the shards' TimeSeries tables and the policy would not be applied",
             storage_id.getNameForLogs());
+
+    /// A normal Distributed read remaps the wrapper's additional_table_filters entry onto the
+    /// source table (ClusterProxy::executeQuery), but the generated cluster() call reads through a
+    /// view the planner does not attribute to the wrapper, so a filter aimed at it would silently
+    /// vanish and return rows a plain SELECT would hide. Refused until it is remapped the same way.
+    for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+    {
+        const auto & name_and_filter = filter_entry.safeGet<Tuple>();
+        const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
+        if ((filtered_table == storage_id.getTableName() || filtered_table == storage_id.getFullTableName())
+            && !name_and_filter.at(1).safeGet<String>().empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "An additional_table_filters entry for {} is not supported for prometheus queries over a "
+                "Distributed table: the read is rewritten to the shards' TimeSeries tables and the filter "
+                "would not be applied",
+                storage_id.getNameForLogs());
+    }
 
     /// The generated cluster() call cannot carry the wrapper's DistributedSettings, so a wrapper
     /// declaring non-default shard-skipping would silently behave differently through a prometheus
