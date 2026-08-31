@@ -33,6 +33,10 @@ Choose an option based on whether you want to change the capacity of your existi
 | Warehouses | Creates separate services with dedicated compute and endpoints that share the same data. | You need long-lived compute isolation for different workloads. |
 | On-Demand Compute | Temporarily assigns workers from a managed pool through your existing service and endpoint. | An eligible select query needs additional compute without resizing the service. |
 
+<Note>
+  Scaling support varies by service tier and profile. Horizontal autoscaling is in private preview. On-Demand Compute is also in private preview and supports eligible select queries only.
+</Note>
+
 ## How scaling works in ClickHouse Cloud {#how-scaling-works-in-clickhouse-cloud}
 
 ClickHouse Cloud supports manual horizontal scaling for Scale and Enterprise tier services. Scale tier services also support vertical autoscaling; Enterprise tier vertical autoscaling support depends on the profile, as described below. [Horizontal autoscaling](/products/cloud/features/autoscaling/horizontal-autoscaling) is available in Private Preview for Scale and Enterprise tier services.
