@@ -2311,9 +2311,19 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
 {
     filterTablesAndCreateChildrenPlans();
 
-    /// Disable read-in-order optimization for reverse order with final.
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
+    /// Probe the whole child set before touching any of it, so that the request is all-or-nothing.
+    /// The pass below switches every child reader into read-in-order mode in place, and a child
+    /// that rejects the request is only discovered when it is reached. Without this preflight, a
+    /// `Merge` table mixing a `MergeTree` child with a child that cannot preserve order (an object
+    /// storage table, or a nested `Merge` containing one) would return `false` here - the parent
+    /// keeps its own sorting step - while the earlier children stay in read-in-order mode with a
+    /// narrowed stream budget, `has_outer_limit` and the per-part `PrefetchingConcat` safeguards
+    /// applied: all of the cost of reading in order and none of its benefit.
+    ///
+    /// `canReadInOrder` mirrors the rejection conditions of the mutating pass exactly (reverse
+    /// order with `FINAL`, an object storage child, and both recursively through a nested `Merge`),
+    /// so once it accepts, no child below can refuse.
+    if (!canReadInOrder(order_info_->direction))
         return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
@@ -2353,6 +2363,10 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
                 request_read_in_order_nested,
                 request_read_in_order_object_storage);
 
+    /// Guaranteed by the `canReadInOrder` preflight above: if this ever fires, the two have drifted
+    /// apart and some children have already been mutated, which is exactly what the preflight is
+    /// there to prevent.
+    chassert(ok);
     if (!ok)
         return false;
 
