@@ -95,6 +95,8 @@ The table function is a repeating, effectively infinite source: it trains on the
 
 The set of supported column types is the one the `clickhouse obfuscator` tool implements: the native-width integers (`Int8`/`Int16`/`Int32`/`Int64` and their unsigned counterparts, including `Bool`), `Float32`, `Float64`, `Date`, `DateTime`, `String`, `FixedString`, `UUID`, and `Array` and `Nullable` wrappers around any of those. Every other type - including `Date32`, `DateTime64`, `Decimal`, `Enum`, `IPv4`, `IPv6`, `Tuple`, `Map`, `LowCardinality`, and the wide integers `Int128`/`UInt128`/`Int256`/`UInt256` - is rejected with a `NOT_IMPLEMENTED` exception instead of being passed through unobfuscated. Project such columns away or cast them to a supported type before obfuscating.
 
+It cannot be persisted as a table: `CREATE TABLE ... AS obfuscate(...)` is rejected, because such a table builds its storage from the context captured at DDL time and could not interpret the query argument. Define an ordinary `VIEW` over `obfuscate` instead.
+
 See also the `clickhouse obfuscator` tool, which implements the same algorithm over files.
 )",
             .examples{{"obfuscate", "SELECT * FROM obfuscate(SELECT number, toString(number) FROM numbers(10000)) LIMIT 10", ""}},
