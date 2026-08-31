@@ -393,7 +393,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 else
                 {
                     readStringBinary(data_type_name, *structure_stream);
-                    structure_state->flattened_data_types.push_back(getDataTypesCache().getType(data_type_name));
+                    structure_state->flattened_data_types.push_back(getSimpleDataTypesCache().getType(data_type_name));
                 }
             }
 
@@ -426,11 +426,13 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             }
             else
             {
+                /// These instances become the column's data type, and a `DateTime`/`DateTime64` with no declared zone
+                /// captures the ambient one at construction, so they must not come from a process-wide name-keyed memo.
                 String data_type_name;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
                     readStringBinary(data_type_name, *structure_stream);
-                    variants.push_back(getDataTypesCache().getType(data_type_name));
+                    variants.push_back(getSimpleDataTypesCache().getType(data_type_name));
                 }
             }
             /// Add shared variant, Dynamic column should always have it.
