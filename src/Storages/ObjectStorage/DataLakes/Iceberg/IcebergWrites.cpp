@@ -497,6 +497,19 @@ void generateManifestFile(
             "Iceberg manifest partition arity mismatch: {} partition columns but {} values",
             partition_columns.size(),
             partition_values.size());
+    /// A per-file tuple carries whatever arity the spec in force when that file was written had, which
+    /// is not necessarily the arity of the spec chosen for this manifest, so each tuple is checked.
+    if (per_file_partition_values)
+        for (size_t file_idx = 0; file_idx < per_file_partition_values->size(); ++file_idx)
+            if ((*per_file_partition_values)[file_idx].size() != partition_columns.size())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg manifest partition arity mismatch for data file {}: partition spec {} defines {} "
+                    "columns but the file's partition tuple has {} values",
+                    data_file_names[file_idx].serialize(),
+                    partition_spec_id,
+                    partition_columns.size(),
+                    (*per_file_partition_values)[file_idx].size());
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
