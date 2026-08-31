@@ -2582,7 +2582,7 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
     /// never change the result, so a divergence is a real bug. Both sides run the same text, so the
     /// structural gates that protect AST rewrites do not apply — only determinism + read stability.
     /// Settings already covered by checkDQP are intentionally NOT repeated here.
-    static constexpr std::array<std::string_view, 10> flips = {
+    static constexpr std::array<std::string_view, 13> flips = {
         /// Caches / read-time optimizations.
         "use_query_condition_cache",
         "query_plan_optimize_lazy_materialization",
@@ -2596,6 +2596,10 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
         /// Plan-shape optimizations that keep the result set.
         "query_plan_merge_filters",
         "query_plan_remove_unused_columns",
+        /// Aggregation / sorting execution strategies — a different algorithm, identical result.
+        "optimize_aggregation_in_order",
+        "enable_memory_bound_merging_of_aggregation_results",
+        "optimize_sorting_by_input_stream_properties",
     };
 
     if (!select.tables())
