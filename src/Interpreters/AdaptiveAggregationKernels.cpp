@@ -1674,4 +1674,48 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
         spillDetachedAdaptiveTable(shared, *local);
 }
 
+std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregationSession & shared) const
+{
+    /// The shared table is created by the first freeze, so in a session where no producer ever
+    /// froze there is none: a learning thread can stand down under memory pressure alone.
+    if (!shared.initialized.load(std::memory_order_acquire) || !shared.early_drain_variants)
+        return {};
+
+    std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
+
+    /// The sweeps detach only at the part floor, so a residue below it is never written by them
+    /// and stays resident until the merge. Write it regardless of the floor: a part smaller than
+    /// the floor is worth more than a residue every later block gets measured against.
+    while (shared.early_drain_variants->hasData())
+    {
+        /// Declared before the table so that reverse-order destruction frees the table first:
+        /// the budget is handed on only once the bytes it stands for are really gone.
+        AdaptiveAggregationSession::SpillReservation reservation;
+        AggregatedDataVariantsPtr detached;
+
+        if (!reservation.reserveOrWait(shared, shared.early_drain_variants->allocatedBytes()))
+            return {};
+
+        detached = std::move(shared.early_drain_variants);
+        shared.early_drain_variants = createAdaptiveDrainTable(detached->type);
+
+        /// Writing under the coordinator lock would stall every frozen producer's sweep for the
+        /// length of a disk write; only reservations may wait under it.
+        sweep_lock.unlock();
+        spillDetachedAdaptiveTable(shared, *detached);
+        detached.reset();
+        reservation.release();
+        sweep_lock.lock();
+    }
+
+    /// The whole budget is granted only when nothing is in flight and holding it keeps a new detach
+    /// from starting, while the coordinator lock keeps a sweep from refilling the table, so memory
+    /// already on its way out cannot enter the reading.
+    AdaptiveAggregationSession::SpillReservation quiesce;
+    if (!quiesce.reserveOrWait(shared, adaptive_pressure_detached_bytes_budget))
+        return {};
+
+    return getCurrentQueryMemoryUsage();
+}
+
 }
