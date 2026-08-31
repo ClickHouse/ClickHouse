@@ -106,6 +106,12 @@ DROP TABLE ts_skip_on;
 CREATE TABLE ts_mode_only AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards_mode = 'unavailable';
 SELECT count() > 0 FROM prometheusQuery(ts_mode_only, 'm', 140);
 DROP TABLE ts_mode_only;
+-- A filter aimed at the source table fails closed on the local path too: the selector rewrite
+-- would silently drop it.
+SELECT count() FROM prometheusQuery(ts_all, 'm', 140) SETTINGS additional_table_filters = {'ts_all': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
+-- A short filter key from another current database does not match, exactly as the planner
+-- matches keys: must pass.
+SELECT count() > 0 FROM prometheusQuery(shard_0.ts_local, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''};
 -- A filter aimed at the wrapper cannot be remapped into the generated read: fail closed.
 SELECT * FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
 
