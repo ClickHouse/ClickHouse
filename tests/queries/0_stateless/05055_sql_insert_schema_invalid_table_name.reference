@@ -5,3 +5,17 @@ CREATE TABLE sql_insert_schema_comment_05055
 ENGINE = MergeTree
 ORDER BY tuple();
 INSERT INTO sql_insert_schema_comment_05055 (`x`) VALUES (1);
+CREATE TABLE `weird table`
+(
+    `x` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO `weird table` (`x`) VALUES (2);
+CREATE TABLE `weird database`.`weird table`
+(
+    `x` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO `weird database`.`weird table` (`x`) VALUES (3);

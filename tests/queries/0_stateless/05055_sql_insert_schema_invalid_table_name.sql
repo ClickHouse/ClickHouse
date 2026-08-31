@@ -9,3 +9,15 @@ FORMAT SQLInsert
 SETTINGS
     output_format_sql_insert_include_table_schema = 1,
     output_format_sql_insert_table_name = 'sql_insert_schema_comment_05055 -- ignored';
+
+SELECT toUInt8(2) AS x
+FORMAT SQLInsert
+SETTINGS
+    output_format_sql_insert_include_table_schema = 1,
+    output_format_sql_insert_table_name = '`weird table`';
+
+SELECT toUInt8(3) AS x
+FORMAT SQLInsert
+SETTINGS
+    output_format_sql_insert_include_table_schema = 1,
+    output_format_sql_insert_table_name = '`weird database`.`weird table`';
