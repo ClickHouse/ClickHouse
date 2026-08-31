@@ -26,6 +26,23 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
+# Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
+# server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and
+# `C_STACKTRACES_LOG` in tests/clickhouse-test.
+STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
+
+
+def collect_stacktrace_logs(cwd):
+    """Existing stacktrace dumps under `cwd`, for attaching to the job result.
+
+    `clickhouse-test` writes them relative to its own cwd, which is the repo
+    root for this job (the test command has no `cd`, unlike fast_test's). They
+    exist only after an abort, so a green run yields nothing.
+    """
+    return [
+        str(Path(cwd) / name) for name in STACKTRACE_LOGS if (Path(cwd) / name).exists()
+    ]
+
 
 def stateless_memory_limit(source):
     """Per-test cgroup memory limit (`clickhouse-test --memory-limit`) for a run
@@ -1067,6 +1084,13 @@ def main():
             results[-1].set_info(note)
         res = results[-1].is_ok()
 
+    # `clickhouse-test` appends and `git clean -ffd` keeps these gitignored
+    # paths. Outside the `res` guard below: a setup failure skips the tests but
+    # still reaches the attach, uploading a previous job's dump as this run's.
+    if JobStages.TEST in stages:
+        for stale in collect_stacktrace_logs(Utils.cwd()):
+            Path(stale).unlink()
+
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -1550,12 +1574,10 @@ def main():
     if test_result:
         test_result.sort()
 
-    # On a test timeout or a failed hung check the full server stacktrace
-    # dumps land in the working directory (stdout keeps a trimmed preview).
-    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
-        stacktrace_log_path = Path(stacktrace_log)
-        if stacktrace_log_path.exists():
-            debug_files.append(stacktrace_log_path)
+    # Attach the abort-time stacktrace dumps: they are outside the server log
+    # dir `prepare_logs` globs, and stdout keeps only a trimmed preview. Outside
+    # the COLLECT_LOGS stage, which per-test-coverage jobs remove entirely.
+    debug_files += collect_stacktrace_logs(Utils.cwd())
 
     R = Result.create_from(
         results=results,
