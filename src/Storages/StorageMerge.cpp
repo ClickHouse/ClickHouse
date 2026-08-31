@@ -2335,7 +2335,7 @@ std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
     return plans;
 }
 
-std::optional<std::vector<StorageID>> ReadFromMerge::getExpandableReads(
+const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
 {
     /// The parallel-replicas plan transformation only understands `ReadFromMergeTree` reads and unions of
@@ -2346,10 +2346,13 @@ std::optional<std::vector<StorageID>> ReadFromMerge::getExpandableReads(
     /// `MergeTree` reads. This tells the caller whether that is possible, and which tables the union would
     /// read, without touching the plan - so that the decision to distribute can be taken before anything is
     /// rewritten.
+    if (expandable_reads)
+        return *expandable_reads;
+
     filterTablesAndCreateChildrenPlans();
 
     if (selected_tables.empty() || child_plans->empty())
-        return {};
+        return expandable_reads.emplace();
 
     /// Every child must be a `MergeTree` table read by a plain read step, and none of them may be `FINAL`.
     /// A child read through an interpreter (a `View`, a nested `Merge`) or a table of another engine has no
@@ -2369,14 +2372,21 @@ std::optional<std::vector<StorageID>> ReadFromMerge::getExpandableReads(
     std::vector<StorageID> storage_ids;
     storage_ids.reserve(child_plans->size());
 
+    /// `filterTablesAndCreateChildrenPlans` keeps the two aligned one to one, truncating the tables to the
+    /// plans it managed to build; walk them together, and expand nothing should they ever disagree.
+    chassert(selected_tables.size() == child_plans->size());
+
     auto table_it = selected_tables.begin();
     for (const auto & child : *child_plans)
     {
+        if (table_it == selected_tables.end())
+            return expandable_reads.emplace();
+
         const auto & storage = std::get<1>(*table_it);
         ++table_it;
 
         if (!storage->isMergeTree() || !child.plan.isInitialized())
-            return {};
+            return expandable_reads.emplace();
 
         /// Descend the steps the child plan puts on top of the read - the converting expressions and the
         /// row policy filter of `convertAndFilterSourceStream`. Anything else means the child is not read
@@ -2388,12 +2398,12 @@ std::optional<std::vector<StorageID>> ReadFromMerge::getExpandableReads(
 
         const auto * reading = node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
         if (!reading || reading->isQueryWithFinal() || !can_ship_read(*reading))
-            return {};
+            return expandable_reads.emplace();
 
         storage_ids.push_back(reading->getMergeTreeData().getStorageID());
     }
 
-    return storage_ids;
+    return expandable_reads.emplace(std::move(storage_ids));
 }
 
 QueryPlan ReadFromMerge::expandForParallelReplicas()

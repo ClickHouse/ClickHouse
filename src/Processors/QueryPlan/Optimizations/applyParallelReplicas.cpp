@@ -495,13 +495,11 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
             if (!merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
                 return {};
 
-            const auto storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);
-            if (!storage_ids)
-                return {};
+            const auto & storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);
 
             std::vector<ReadToDistribute> reads;
-            reads.reserve(storage_ids->size());
-            for (const auto & storage_id : *storage_ids)
+            reads.reserve(storage_ids.size());
+            for (const auto & storage_id : storage_ids)
                 reads.push_back({node, storage_id});
             return reads;
         }
@@ -607,7 +605,7 @@ static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
     for (auto * node : merge_nodes)
     {
         auto & merge = typeid_cast<ReadFromMerge &>(*node->step);
-        if (merge.getExpandableReads(mergeTreeReadCanBeShipped))
+        if (!merge.getExpandableReads(mergeTreeReadCanBeShipped).empty())
             query_plan.replaceNodeWithPlan(node, merge.expandForParallelReplicas());
     }
 }
