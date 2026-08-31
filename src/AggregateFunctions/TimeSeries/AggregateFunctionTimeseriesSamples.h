@@ -135,7 +135,8 @@ public:
 
         size_t sample_count = 0;
         readBinaryLittleEndian(sample_count, buf);
-        buffer.reserve(sample_count);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived: `add` grows the buffer for the rest.
+        buffer.reserve(std::min(sample_count, buf.available() / (sizeof(TimestampType) + sizeof(ValueType))));
         /// No order is assumed on the wire (older peers serialize hash-map iteration order): `add` detects disorder while reading and `sort` restores the invariant if it was violated.
         for (size_t s = 0; s < sample_count; ++s)
         {

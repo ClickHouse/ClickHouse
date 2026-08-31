@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadHelpersArena.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -25,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -60,7 +62,7 @@ struct AggregateFunctionMapCombinatorData<String>
     }
     static void readKey(String & key, ReadBuffer & buf)
     {
-        readStringBinary(key, buf);
+        readStringBinaryGrowing(key, buf);
     }
 };
 
@@ -286,6 +288,13 @@ public:
             AggregateDataPtr nested_place = nullptr;
 
             this->data(place).readKey(key, buf);
+
+            /// serialize() walks a map, so a repeated key is not something a writer can emit. Without this
+            /// each repetition allocates a nested state that emplace then drops on the floor.
+            if (merged_maps.contains(key))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Duplicate key in the serialized state of a -Map aggregate function");
+
             nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
             nested_func->create(nested_place);
             merged_maps.emplace(key, nested_place);
