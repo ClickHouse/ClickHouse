@@ -22,6 +22,10 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_local_plan = 0;
+-- What is checked here is the path on which a `Merge` table is read by one replica: the filters pushed
+-- into the plans of its underlying tables, and the sets those filters reference, used to be lost there.
+-- Reading a `Merge` table across replicas instead is a different path with its own tests, so keep it off.
+SET parallel_replicas_allow_merge_tables = 0;
 
 SELECT 'filters are honored';
 -- Each of these used to return 0.
