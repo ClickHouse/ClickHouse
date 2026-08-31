@@ -63,7 +63,7 @@ CONFIG_MTLS_COMBINED_PEM = "/tmp/keeper_client_mtls_combined_pem.xml"
 # Combined-PEM test runs against the plain-TLS keeper (no client-auth requirement)
 # to isolate the tls_cert_file fallback from OpenSSL's chain-reader behaviour.
 CONFIG_COMBINED_PEM = "/tmp/keeper_client_combined_pem.xml"
-# Config that has an <openSSL><client> section but no invalidCertificateHandler.name —
+# Config that has an <openSSL><client> section but no invalidCertificateHandler.name -
 # used to verify that keeper-client seeds RejectCertificateHandler by default.
 CONFIG_SSL_NO_HANDLER = "/tmp/keeper_client_ssl_no_handler.xml"
 
@@ -121,7 +121,7 @@ def run_keeper_client_from_config(config_path: str, query: str = "ls '/keeper'",
     )
 
 
-# Group A — <openSSL><client> config-file TLS (CLI --secure flag, CA from config)
+# Group A - <openSSL><client> config-file TLS (CLI --secure flag, CA from config)
 
 def test_ca_from_config_file(started_cluster):
     """--secure without --tls-* reads the CA from <openSSL><client><caConfig> in the config file."""
@@ -153,7 +153,7 @@ def test_accept_invalid_certificate(started_cluster):
     assert "api_version" in data
 
 
-# Group B — <zookeeper><node><secure>1</secure> config-file TLS (no --secure CLI flag)
+# Group B - <zookeeper><node><secure>1</secure> config-file TLS (no --secure CLI flag)
 
 def test_secure_node_in_zookeeper_config_with_ca(started_cluster):
     """A <zookeeper><node> with <secure>1</secure> triggers TLS; the CA comes from <openSSL><client><caConfig>."""
@@ -167,7 +167,7 @@ def test_secure_node_in_zookeeper_config_without_ca_fails(started_cluster):
     assert "api_version" not in data
 
 
-# Group C — Four-letter-word commands over TLS
+# Group C - Four-letter-word commands over TLS
 
 def test_four_letter_ruok_over_tls_cli(started_cluster):
     """ruok returns imok when the TLS context comes from the CLI --tls-ca-file flag."""
@@ -208,11 +208,11 @@ def test_secure_scheme_in_host_triggers_tls(started_cluster):
     assert data.strip() == "imok"
 
 
-# Group D — Client certificate authentication (mTLS)
+# Group D - Client certificate authentication (mTLS)
 #
 # Keeper is configured with verificationMode=strict so it demands a client cert.
 # The keeper-client gets its cert/key exclusively from <openSSL><client> in the
-# config file — no CLI flags. privateKeyPassphraseHandler.name is intentionally
+# config file - no CLI flags. privateKeyPassphraseHandler.name is intentionally
 # absent, which exercises the default KeyConsoleHandler path (no prompt fires
 # because the key is unencrypted).
 
@@ -298,7 +298,7 @@ def test_combined_pem_cert_key_in_single_file(started_cluster):
     assert "api_version" in data
 
 
-# Group E — SSL connectivity parity with clickhouse-client
+# Group E - SSL connectivity parity with clickhouse-client
 #
 # These tests verify that keeper-client's openSSL.client behaviour matches the
 # server client: RejectCertificateHandler is the seeded default, the standard
@@ -315,7 +315,7 @@ def test_reject_handler_seeded_when_not_in_config(started_cluster):
     """
     data = run_keeper_client(f"-c {CONFIG_SSL_NO_HANDLER}", nothrow=True)
     assert "api_version" not in data, (
-        "expected certificate verification failure but got a successful response — "
+        "expected certificate verification failure but got a successful response - "
         "RejectCertificateHandler was not seeded as the default"
     )
 
@@ -344,7 +344,7 @@ def test_secure_connection_timeout_applies_to_four_letter_command(started_cluste
     assert data.strip() == "imok"
 
 
-# Group F — fingerprint-based SSL context rebuild on reconnect
+# Group F - fingerprint-based SSL context rebuild on reconnect
 #
 # The fingerprint/rebuild logic (connectToKeeper + fingerprintTLSMaterial +
 # SSLManager::shutdown) only activates inside a single keeper-client process when
@@ -385,17 +385,24 @@ def _run_client_interactive(node, port, config_path, result_holder):
 def test_ssl_context_rebuilt_after_config_change_and_reconnect(started_cluster):
     """keeper-client rebuilds the SSL context mid-session when the config changes.
 
+    The rebuild is proven by removing caConfig from config B so that the rebuilt
+    context has no CA and cannot verify the self-signed server certificate.
+    A stale context (cached CA from config A) would still trust the cert and produce
+    a second api_version, so asserting count==1 proves the rebuild happened.
+
     Sequence:
-    1. Connect with config A  (loadDefaultCAFile=false, explicit caConfig).
-    2. First 'ls /keeper' succeeds — proves initial TLS context works.
+    1. Connect with config A (caConfig=server.crt, loadDefaultCAFile=false).
+    2. First 'ls /keeper' succeeds - proves initial TLS context works.
     3. Stop ClickHouse; sleep long enough for the ZooKeeper session to expire.
-    4. Write config B (loadDefaultCAFile=true) over the same path — changes the
-       fingerprint without breaking connectivity.
+    4. Write config B (no caConfig, loadDefaultCAFile=false) - fingerprint changes
+       because the caConfig key and its file-content hash are gone.
     5. Start ClickHouse; wait for Keeper to be ready.
-    6. The second 'ls /keeper' (piped after 35s) arrives; keeper-client detects the
-       expired session, calls connectToKeeper(), re-reads the file, sees a different
-       fingerprint, calls SSLManager::shutdown() + defaultClientContext(), reconnects.
-    7. Second 'ls /keeper' succeeds — proves the rebuilt context is functional.
+    6. The second 'ls /keeper' (piped after 35s) arrives; keeper-client calls
+       connectToKeeper(), sees a new fingerprint, calls SSLManager::shutdown() +
+       initializeClient() + defaultClientContext(), then tries to connect with the
+       rebuilt context that has no CA.
+    7. Second 'ls /keeper' fails certificate verification - proves the rebuilt
+       context applied the new (CA-less) config instead of reusing the stale one.
     """
     mutable_cfg = "/tmp/reconnect_fingerprint_cfg.xml"
     session_timeout_s = 10  # matches config().getInt("session-timeout", 10)
@@ -429,15 +436,16 @@ def test_ssl_context_rebuilt_after_config_change_and_reconnect(started_cluster):
     node1.stop_clickhouse()
     time.sleep(session_timeout_s + 2)  # ensure session expiry
 
-    # Config B: loadDefaultCAFile=true — different fingerprint, still valid CA.
+    # Config B: no caConfig, loadDefaultCAFile=false - fingerprint changes because the
+    # caConfig key and its file-content contribution disappear.  The rebuilt SSL context
+    # will have no CA; the seeded RejectCertificateHandler will reject the server cert.
     node1.exec_in_container(
         [
             "bash",
             "-c",
             f"cat > {mutable_cfg} << 'CONFEOF'\n"
             f"<clickhouse><openSSL><client>\n"
-            f"  <caConfig>{CA_PATH}</caConfig>\n"
-            f"  <loadDefaultCAFile>true</loadDefaultCAFile>\n"
+            f"  <loadDefaultCAFile>false</loadDefaultCAFile>\n"
             f"</client></openSSL></clickhouse>\n"
             f"CONFEOF",
         ]
@@ -447,50 +455,69 @@ def test_ssl_context_rebuilt_after_config_change_and_reconnect(started_cluster):
     keeper_utils.wait_until_connected(cluster, node1, port=SECURE_PORT)
 
     # The bash pipe delivers the second command at t≈35s; wait for the thread.
-    t.join(timeout=60)
+    t.join(timeout=120)
 
     assert len(result) == 1, "keeper-client interactive session did not finish"
     output = result[0]
-    assert output.count("api_version") == 2, (
-        "expected 'api_version' twice (once per ls command) but got:\n" + output
+    # Only the first command must succeed.  If the stale SSL context were reused it
+    # would still trust the server cert and produce a second api_version line.
+    assert output.count("api_version") == 1, (
+        "expected exactly one api_version (first command) - second should fail after"
+        " SSL context rebuild with a CA-less config, but got:\n" + output
     )
 
 
-# Group G — directory-valued caConfig fingerprinting
+# Group G - directory-valued caConfig fingerprinting
 #
 # fingerprintTLSMaterial hashes directory entries (name + size + mtime) when
 # caConfig points to a directory.  Adding or removing a file in that directory
 # must change the fingerprint and trigger an SSL context rebuild on reconnect.
+#
+# The rebuild is proven by starting with a c_rehash'd CA directory that contains
+# the server cert (so the first connection verifies and succeeds), then removing
+# the cert from the directory during the reconnect gap without changing the XML
+# config at all.  If the fingerprint code does NOT detect the directory change, the
+# stale SSL context still trusts the old CA and the second command succeeds.  If it
+# DOES detect the change, the rebuilt context finds an empty directory, has no CA,
+# and RejectCertificateHandler rejects the self-signed server cert - so the second
+# command fails.  count==1 proves the directory-change fingerprinting fired.
 
 
 def test_directory_ca_config_fingerprint_rebuilt_after_dir_change(started_cluster):
-    """SSL context is rebuilt when a file is added to a caConfig directory during reconnect.
+    """SSL context is rebuilt when the CA cert is removed from a c_rehash'd caConfig directory.
+
+    The XML config is never written between the two commands; only the directory
+    contents change.  This isolates the directory-fingerprinting code path from the
+    ordinary key/value config fingerprint.
 
     Sequence:
-    1. Create /tmp/ca_dir_fingerprint/ with one dummy PEM stub; use loadDefaultCAFile=true
-       for the actual CA trust so the test is independent of OpenSSL c_rehash naming.
-    2. Connect — first 'ls /keeper' succeeds.
-    3. Stop ClickHouse; wait for session expiry.
-    4. Add a second dummy file to the CA directory — directory fingerprint changes.
+    1. Create /tmp/ca_dir_rotate/, copy server.crt in with its OpenSSL hash name so
+       OpenSSL accepts the directory as a CA store.
+    2. Config: caConfig=/tmp/ca_dir_rotate/, loadDefaultCAFile=false.
+    3. First 'ls /keeper' succeeds - server cert verified via the directory CA.
+    4. Stop ClickHouse; wait for session expiry; remove all files from the directory.
     5. Start ClickHouse; wait for Keeper to be ready.
-    6. Second 'ls /keeper' arrives; keeper-client detects the expired session, calls
-       connectToKeeper(), re-scans the directory, sees a new fingerprint, rebuilds
-       the SSL context, and reconnects successfully.
+    6. Second 'ls /keeper' arrives; keeper-client calls connectToKeeper(), re-scans
+       the now-empty directory, sees a new fingerprint, rebuilds the SSL context.
+    7. The rebuilt context has no CA; RejectCertificateHandler rejects the server cert -
+       second command fails, proving the directory change triggered the rebuild.
     """
-    ca_dir = "/tmp/ca_dir_fingerprint"
-    mutable_cfg = "/tmp/reconnect_dir_fingerprint_cfg.xml"
+    ca_dir = "/tmp/ca_dir_rotate"
+    mutable_cfg = "/tmp/reconnect_dir_rotate_cfg.xml"
     session_timeout_s = 10
 
-    # Create the CA directory with one initial dummy file.
+    # Create CA directory with the server cert named by its OpenSSL hash, which is the
+    # format SSL_CTX_load_verify_locations requires when loading CAs from a directory.
     node1.exec_in_container(
         [
             "bash",
             "-c",
-            f"mkdir -p {ca_dir} && echo 'stub' > {ca_dir}/initial.pem",
+            f"mkdir -p {ca_dir} && "
+            f"HASH=$(openssl x509 -hash -noout -in {CA_PATH}) && "
+            f"cp {CA_PATH} {ca_dir}/${{HASH}}.0",
         ]
     )
 
-    # Config: caConfig = directory, loadDefaultCAFile=true provides the actual CA.
     node1.exec_in_container(
         [
             "bash",
@@ -498,7 +525,7 @@ def test_directory_ca_config_fingerprint_rebuilt_after_dir_change(started_cluste
             f"cat > {mutable_cfg} << 'CONFEOF'\n"
             f"<clickhouse><openSSL><client>\n"
             f"  <caConfig>{ca_dir}</caConfig>\n"
-            f"  <loadDefaultCAFile>true</loadDefaultCAFile>\n"
+            f"  <loadDefaultCAFile>false</loadDefaultCAFile>\n"
             f"</client></openSSL></clickhouse>\n"
             f"CONFEOF",
         ]
@@ -517,22 +544,24 @@ def test_directory_ca_config_fingerprint_rebuilt_after_dir_change(started_cluste
     node1.stop_clickhouse()
     time.sleep(session_timeout_s + 2)
 
-    # Add a second file to the CA directory — this changes the directory fingerprint.
+    # Remove the CA cert from the directory - directory fingerprint changes.
+    # The XML config file is deliberately NOT changed so only the directory-entry
+    # hashing code can detect the mutation and trigger a context rebuild.
     node1.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"echo 'stub2' > {ca_dir}/added.pem",
-        ]
+        ["bash", "-c", f"rm -f {ca_dir}/*"]
     )
 
     node1.start_clickhouse()
     keeper_utils.wait_until_connected(cluster, node1, port=SECURE_PORT)
 
-    t.join(timeout=60)
+    t.join(timeout=120)
 
     assert len(result) == 1, "keeper-client interactive session did not finish"
     output = result[0]
-    assert output.count("api_version") == 2, (
-        "expected 'api_version' twice (once per ls command) but got:\n" + output
+    # Only the first command must succeed.  A stale SSL context would still cache the
+    # old CA and succeed on the second connection; a properly rebuilt context finds the
+    # empty directory, has no CA, and RejectCertificateHandler rejects the cert.
+    assert output.count("api_version") == 1, (
+        "expected exactly one api_version (first command only) - second should fail"
+        " after directory-change triggered SSL context rebuild, but got:\n" + output
     )
