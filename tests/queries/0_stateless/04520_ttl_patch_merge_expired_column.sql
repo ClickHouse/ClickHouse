@@ -12,7 +12,8 @@ DROP TABLE IF EXISTS t_ttl_patch_expired SYNC;
 CREATE TABLE t_ttl_patch_expired (d DateTime, x DateTime TTL x + INTERVAL 1 SECOND, x2 Int32 TTL d + INTERVAL 1 SECOND, y Int32)
 ENGINE = MergeTree ORDER BY tuple()
 -- A table-level rule reading the expired column: must evaluate over defaults, not fail the merge.
-TTL x + INTERVAL 100 YEAR
+-- 50 years keeps the real bound inside DateTime's range; 100 would wrap past and delete the rows.
+TTL x + INTERVAL 50 YEAR
 SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
 
 INSERT INTO t_ttl_patch_expired VALUES (now() - INTERVAL 1 HOUR, now() - INTERVAL 1 HOUR, 1, 1);
