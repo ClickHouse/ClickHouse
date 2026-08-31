@@ -402,10 +402,7 @@ bool isSQLConsoleStaticAsset(std::string_view resource_path)
     if (resource_path.starts_with("assets/") || resource_path.starts_with("monacoeditorwork/"))
         return true;
 
-    return resource_path == "env.js"
-        || resource_path == "index.html"
-        || resource_path == "third-party-licenses.json"
-        || resource_path == "third-party-license-types.json";
+    return resource_path == "env.js" || resource_path == "index.html";
 }
 
 }
