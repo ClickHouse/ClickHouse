@@ -649,6 +649,7 @@ private:
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
     size_t hash_table_matches = 0;
+    bool hash_table_matches_are_measured = true;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets

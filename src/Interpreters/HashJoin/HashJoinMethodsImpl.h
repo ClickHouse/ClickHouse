@@ -149,12 +149,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             HashJoin::isLowCardinalityType(join.data->type));
     }
 
-    /// Only MapsAll keeps every right row of a key, so only there do the recorded words resolve to
-    /// exact rows. The residual path is excluded: its words count output rows rather than left rows,
-    /// and both metrics come from elsewhere there
-    constexpr bool refs_can_carry_stats = join_features.is_maps_all
-        && (join_features.inner || join_features.left || join_features.full);
-    const bool record_refs_for_stats = refs_can_carry_stats && join.recordsRowRefsForStats();
+    const bool record_refs_for_stats = join_features.refs_can_carry_stats && join.recordsRowRefsForStats();
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
