@@ -144,6 +144,36 @@ const ActionsDAG::Node & createResultPredicate(
 };
 
 
+/// Whether the subtree rooted at `node` contains a function that can give different results for two
+/// rows with equal inputs. Such a conjunct has to stay in the filter: the join condition is evaluated
+/// once per join input row rather than once per output row, and with `enable_join_runtime_filters`
+/// the expression is additionally cloned into the build-side runtime filter, a second and independent
+/// evaluation site. The main filter pushdown refuses to move non-deterministic conjuncts for the same
+/// reason.
+bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
+{
+    std::vector<const ActionsDAG::Node *> stack{node};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(current).second)
+            continue;
+
+        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
+            && !current->function_base->isDeterministicInScopeOfQuery())
+            return true;
+
+        for (const auto * child : current->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
@@ -180,6 +210,12 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         bool is_equality = conjunct->type == ActionsDAG::ActionType::FUNCTION && conjunct->function_base->getName() == "equals";
         if (is_equality)
         {
+            if (subtreeContainsNonDeterministicFunction(conjunct))
+            {
+                rejected_conjuncts.push_back(conjunct);
+                continue;
+            }
+
             const auto * lhs = conjunct->children[0];
             const auto * rhs = conjunct->children[1];
 
