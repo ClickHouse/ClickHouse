@@ -97,6 +97,7 @@ extern const Event ASTFuzzerOracleSequenceFunnelChecks;
 extern const Event ASTFuzzerOracleSubcolumnChecks;
 extern const Event ASTFuzzerOracleViewTtlChecks;
 extern const Event ASTFuzzerOracleCorrelatedSubqueryChecks;
+extern const Event ASTFuzzerOracleCardinalityChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -4476,6 +4477,56 @@ bool QueryOracleChecker::checkCorrelatedSubquery(const ASTSelectQuery &, const C
             context, &fixture);
 
     LOG_TRACE(logger, "correlated subquery oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkCardinalityMonotonicity(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_47, CERT technique): assert monotonic cardinality inequalities that must
+    /// hold for ANY data. Unlike the equality oracles this catches row-count / restriction-monotonicity
+    /// bugs (a filter dropping too many rows, a DISTINCT counting more than the total, etc.). Every probe
+    /// must evaluate to 1; a 0 is a real cardinality bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("cert", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + t + " (a Int64, b UInt8) ENGINE = MergeTree ORDER BY a"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + t + " SELECT toInt64(number % 37) - 18, toUInt8(number % 11) FROM numbers(600)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "cardinality monotonicity oracle: {}", t);
+
+    struct Probe { const char * name; std::string sql; };
+    const std::vector<Probe> probes = {
+        {"count >= uniqExact(a)", "(SELECT count() FROM " + t + ") >= (SELECT uniqExact(a) FROM " + t + ")"},
+        {"restriction never increases count", "(SELECT count() FROM " + t + " WHERE a > 0) <= (SELECT count() FROM " + t + ")"},
+        {"AND restriction monotone", "(SELECT count() FROM " + t + " WHERE a > 0 AND b < 3) <= (SELECT count() FROM " + t + " WHERE a > 0)"},
+        {"count(DISTINCT) <= count", "(SELECT count(DISTINCT a, b) FROM " + t + ") <= (SELECT count() FROM " + t + ")"},
+        {"UNION ALL doubles count", "(SELECT count() FROM (SELECT * FROM " + t + " UNION ALL SELECT * FROM " + t + ")) = 2 * (SELECT count() FROM " + t + ")"},
+        {"finer DISTINCT >= coarser", "(SELECT uniqExact(a) FROM " + t + ") <= (SELECT uniqExact(a, b) FROM " + t + ")"},
+    };
+
+    for (const auto & probe : probes)
+    {
+        auto ok_opt = OracleExec::executeRows("SELECT " + probe.sql, context, ResultShape::SortedBag);
+        if (!ok_opt)
+            return false;
+        if (ok_opt->size() != 1 || (*ok_opt)[0] != "1")
+            raiseOracleMismatch(
+                fmt::format(
+                    "cardinality monotonicity oracle mismatch ({})!\n"
+                    "probe returned {} (expected 1) on {}\nprobe: {}",
+                    probe.name, ok_opt->empty() ? "?" : (*ok_opt)[0], t, probe.sql),
+                context, &fixture);
+    }
+
+    LOG_TRACE(logger, "cardinality monotonicity oracle passed");
     return true;
 }
 
