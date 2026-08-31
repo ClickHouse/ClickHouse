@@ -30,8 +30,10 @@ TTLCalcTransform::TTLCalcTransform(
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
-    bool force_)
+    bool force_,
+    const NamesAndTypesList & expired_columns_)
     : IAccumulatingTransform(header_, header_)
+    , expired_columns(expired_columns_)
     , data_part(data_part_)
     , log(getLogger(storage_.getLogName() + " (TTLCalcTransform)"))
 {
@@ -59,21 +61,15 @@ TTLCalcTransform::TTLCalcTransform(
     {
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
-            auto expressions = getExpressions(description, subqueries_for_sets, context);
-            /// A fully expired column is absent from the stream, so its rule cannot be evaluated;
-            /// the old info stays truthful for it and is put back in finalize().
-            const auto required = expressions.expression->getRequiredColumns();
-            bool inputs_present = std::all_of(required.begin(), required.end(),
-                [&](const String & input) { return header_->has(input); });
-            /// The target column matters too: with it absent, a rebuilt info would describe a
-            /// column the part does not store, as fresh and unfinished.
-            if (!inputs_present || !header_->has(name))
+            /// A rule about an absent column keeps its old info: rebuilt from defaults it would
+            /// describe a column the part does not store, as fresh and unfinished.
+            if (!header_->has(name))
             {
                 preserved_column_ttls.emplace_back(name, old_ttl_infos.columns_ttl[name]);
                 continue;
             }
             algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-                std::move(expressions), description,
+                getExpressions(description, subqueries_for_sets, context), description,
                 TTLUpdateField::COLUMNS_TTL, name, old_ttl_infos.columns_ttl[name], current_time_, force_));
         }
     }
@@ -92,6 +88,10 @@ TTLCalcTransform::TTLCalcTransform(
 void TTLCalcTransform::consume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    /// Rules merely reading a dropped column evaluate over defaults, mirroring TTLTransform.
+    for (const auto & col : expired_columns)
+        if (!block.has(col.name))
+            block.insert({col.type->createColumn()->cloneResized(block.rows()), col.type, col.name});
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
