@@ -1,7 +1,11 @@
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageTimeSeries.h>
@@ -10,8 +14,15 @@
 namespace DB
 {
 
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool skip_unavailable_shards;
+    extern const DistributedSettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
+}
+
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_TABLE_ENGINE;
 }
 
@@ -49,9 +60,37 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
             "a prometheus query over a Distributed table requires a TimeSeries table on each shard",
             storage.getStorageID().getNameForLogs());
 
+    /// The generated cluster() call cannot carry the wrapper's DistributedSettings, so a wrapper
+    /// declaring non-default shard-skipping would silently behave differently through a prometheus
+    /// query than through a plain SELECT. Refuse rather than diverge; the query-level
+    /// `skip_unavailable_shards` setting still applies to the generated call.
+    const auto & distributed_settings = distributed->getDistributedSettingsRef();
+    if (distributed_settings[DistributedSetting::skip_unavailable_shards]
+        || distributed_settings[DistributedSetting::skip_unavailable_shards_mode].changed)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "This operation is not supported over table {} because it sets skip_unavailable_shards or "
+            "skip_unavailable_shards_mode: a prometheus query reads through a generated cluster() call, "
+            "which does not carry the table's Distributed settings",
+            storage.getStorageID().getNameForLogs());
+
     target.remote_time_series_storage_id.database_name = distributed->getRemoteDatabaseName();
     target.remote_time_series_storage_id.table_name = std::move(remote_table_name);
     return target;
+}
+
+void checkPrometheusQueryDistributedRead(const StorageID & storage_id, const ContextPtr & context)
+{
+    /// The read is rewritten to cluster(view(timeSeriesSelector(...))) over the shards' TimeSeries
+    /// tables and the planner never sees the wrapper again, so its access is enforced here or not
+    /// at all.
+    context->checkAccess(AccessType::SELECT, storage_id);
+    if (context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "A row policy on {} is not supported for prometheus queries over a Distributed table: "
+            "the read is rewritten to the shards' TimeSeries tables and the policy would not be applied",
+            storage_id.getNameForLogs());
 }
 
 }
