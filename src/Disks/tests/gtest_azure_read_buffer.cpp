@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -81,8 +82,17 @@ void assertCountsUpFromZero(const std::string & data)
 class MisbehavingRangeTransport : public Azure::Core::Http::HttpTransport
 {
 public:
-    MisbehavingRangeTransport(size_t max_response_size_, size_t served_size_, size_t blob_size_, bool send_etag_)
-        : max_response_size(max_response_size_), served_size(served_size_), blob_size(blob_size_), send_etag(send_etag_)
+    MisbehavingRangeTransport(
+        size_t max_response_size_,
+        size_t served_size_,
+        size_t blob_size_,
+        bool send_etag_,
+        std::optional<int64_t> reported_length_ = {})
+        : max_response_size(max_response_size_)
+        , served_size(served_size_)
+        , blob_size(blob_size_)
+        , send_etag(send_etag_)
+        , reported_length(reported_length_)
     {
     }
 
@@ -105,15 +115,18 @@ public:
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(
             1, 1, Azure::Core::Http::HttpStatusCode::PartialContent, "Partial Content");
 
-        response->SetHeader("Content-Length", std::to_string(response_size));
+        /// The length of the body as the endpoint chooses to report it, which is not necessarily
+        /// the number of bytes the body actually holds.
+        const int64_t length_to_report = reported_length.value_or(static_cast<int64_t>(response_size));
+
+        response->SetHeader("Content-Length", std::to_string(length_to_report));
         response->SetHeader(
             "Content-Range",
             "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(blob_size));
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
         if (send_etag)
             response->SetHeader("ETag", "\"0x8DA000000000000\"");
-        response->SetBodyStream(
-            std::make_unique<LyingBodyStream>(countingBytes(range_start, response_size), static_cast<int64_t>(response_size)));
+        response->SetBodyStream(std::make_unique<LyingBodyStream>(countingBytes(range_start, response_size), length_to_report));
 
         return response;
     }
@@ -123,6 +136,7 @@ private:
     size_t served_size;
     size_t blob_size;
     bool send_etag;
+    std::optional<int64_t> reported_length;
 };
 
 /// Reads a blob from an endpoint that answers every ranged request with at most
@@ -155,6 +169,34 @@ std::string readWithRightBound(
         /* max_single_download_retries */ 1);
 
     buffer.setReadUntilPosition(read_until_position);
+
+    std::string result;
+    DB::readStringUntilEOF(result, buffer);
+    return result;
+}
+
+/// Reads a whole blob of `blob_size` bytes without any right bound, from an endpoint that answers
+/// every request with at most `max_response_size` bytes and reports `reported_length` as the
+/// `Content-Length` of every response no matter how many bytes it actually sends.
+std::string readWithoutRightBound(size_t max_response_size, size_t blob_size, size_t buffer_size, int64_t reported_length)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport
+        = std::make_shared<MisbehavingRangeTransport>(max_response_size, blob_size, blob_size, /* send_etag */ true, reported_length);
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = buffer_size;
+
+    DB::ReadBufferFromAzureBlobStorage buffer(
+        container_client,
+        "blob",
+        read_settings,
+        /* max_single_read_retries */ 1,
+        /* max_single_download_retries */ 1);
 
     std::string result;
     DB::readStringUntilEOF(result, buffer);
@@ -332,6 +374,32 @@ TEST(AzureReadUntilPosition, ResponseWithoutETag)
         data = readWithRightBound(
             /* max_response_size */ 100, /* served_size */ 1000, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64,
             /* max_read_retries */ 1, /* send_etag */ false));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// An unbounded sequential read of an endpoint that under-reports the `Content-Length` of its
+/// response: the reported length must not become the end of the file, otherwise a broken endpoint
+/// can silently truncate the data. The whole 100-byte body of the response must be delivered even
+/// though it claims to be a single byte long.
+TEST(AzureReadWithoutRightBound, LengthSmallerThanResponse)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readWithoutRightBound(
+        /* max_response_size */ 100, /* blob_size */ 100, /* buffer_size */ 64, /* reported_length */ 1));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// An endpoint that reports a length larger than the data it sends must not make the reader hang
+/// or report more data than it received: the end of the body is the end of the file.
+TEST(AzureReadWithoutRightBound, LengthLargerThanBlob)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readWithoutRightBound(
+        /* max_response_size */ 100, /* blob_size */ 100, /* buffer_size */ 64, /* reported_length */ 1000));
 
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsUpFromZero(data);

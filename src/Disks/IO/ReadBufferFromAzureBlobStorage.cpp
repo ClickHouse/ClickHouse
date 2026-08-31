@@ -360,29 +360,21 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     if (data_stream == nullptr)
         throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Null data stream obtained while downloading file {} from Blob Storage", path);
 
-    total_size = getTotalSizeOfCurrentDownload(data_stream->Length(), offset, read_until_position);
-
-    initialized = true;
-}
-
-size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, off_t read_until_position_)
-{
+    /// The offset just past the last byte that the current download is allowed to deliver.
     /// Only `read_until_position`, which is set locally by the caller, is a trustworthy bound:
     /// when it is set, it is authoritative in both directions. An endpoint that answers a ranged
     /// request with more data than was requested must not be able to push bytes past the right
     /// bound into the caller, and an endpoint that answers with less must not be able to move the
     /// end of the file before the right bound either (`nextImpl` reopens the download or throws
     /// on a premature end of the response instead).
-    if (read_until_position_)
-        return static_cast<size_t>(read_until_position_);
+    ///
+    /// For an unbounded read there is no local bound, and the `Content-Length` of the response,
+    /// chosen by the remote endpoint, is deliberately not consulted: a length that under-reports
+    /// the body would otherwise turn into a hard end of the file and silently truncate the data.
+    /// The actual end of the data is wherever the response body actually ends.
+    total_size = read_until_position ? static_cast<size_t>(read_until_position) : std::numeric_limits<size_t>::max();
 
-    /// For an unbounded read, `reported_length` - the `Content-Length` of the response, chosen by
-    /// the remote endpoint - is the only estimate there is. It is used solely to size the reads;
-    /// the actual end of the data is wherever the response body actually ends. A negative value
-    /// means that the length of the response is unknown.
-    return reported_length >= 0
-        ? static_cast<size_t>(offset_) + static_cast<size_t>(reported_length)
-        : std::numeric_limits<size_t>::max();
+    initialized = true;
 }
 
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
