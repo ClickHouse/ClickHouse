@@ -1,0 +1,12 @@
+3	['Compact']
+payload%2Einherited	3	3	3
+payload%2Enumber	3	3	3
+payload%2Etext	3	3	3
+1	1	1	1	1
+1	['Compact']
+payload%2Einherited	1	1
+payload%2Enumber	1	1
+payload%2Etext	1	1
+1	['Compact']
+1	1
+1	1	1	1

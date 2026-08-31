@@ -1,0 +1,12 @@
+payload%2Edefaulted	['LZ4']	1
+payload%2Einherited	['ZSTD(1)']	1
+payload%2Enested%2Einherited	['ZSTD(1)']	1
+payload%2Enested%2Etransformed	['T64, LZ4']	1
+payload%2Etransformed	['Delta(8), LZ4']	1
+1	1	1	1	1
+payload%2Edefaulted	['LZ4']	1
+payload%2Einherited	['ZSTD(1)']	1
+payload%2Enested%2Einherited	['ZSTD(1)']	1
+payload%2Enested%2Etransformed	['T64, LZ4']	1
+payload%2Etransformed	['Delta(8), LZ4']	1
+1	1	1

@@ -1,0 +1,5 @@
+Tuple(id UInt64, value String)
+Tuple(UInt64, String)
+1
+2	2
+1	1

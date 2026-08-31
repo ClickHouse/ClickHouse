@@ -1,0 +1,14 @@
+payload%2Earray_value	['Delta(8), ZSTD(1)']	1
+payload%2Earray_value.size0	['ZSTD(1)']	1
+payload%2Enullable_value	['Delta(8), LZ4']	1
+payload%2Enullable_value.null	['LZ4']	1
+payload%2Eplain_array	['ZSTD(3)']	1
+payload%2Eplain_array.size0	['ZSTD(3)']	1
+1	1	1	1	1	1
+payload%2Earray_value	['Delta(8), ZSTD(1)']	1
+payload%2Earray_value.size0	['ZSTD(1)']	1
+payload%2Enullable_value	['Delta(8), LZ4']	1
+payload%2Enullable_value.null	['LZ4']	1
+payload%2Eplain_array	['ZSTD(3)']	1
+payload%2Eplain_array.size0	['ZSTD(3)']	1
+1	1

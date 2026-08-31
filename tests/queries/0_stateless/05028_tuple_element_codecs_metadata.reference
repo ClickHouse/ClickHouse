@@ -1,0 +1,28 @@
+1	1	1	1
+key	1	0	0	0
+payload	1	6	1	1
+pair	1	2	0	0
+{"name":"key","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"payload","type":"Tuple(id UInt64, text String, nested Tuple(score Float64, label String), defaulted UInt32, `literal.dot` String)","default_type":"","default_expression":"","comment":"","codec_expression":"LZ4","ttl_expression":""}
+{"name":"pair","type":"Tuple(UInt64, String)","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"key","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":"","is_subcolumn":0}
+{"name":"payload","type":"Tuple(id UInt64, text String, nested Tuple(score Float64, label String), defaulted UInt32, `literal.dot` String)","default_type":"","default_expression":"","comment":"","codec_expression":"LZ4","ttl_expression":"","is_subcolumn":0}
+{"name":"pair","type":"Tuple(UInt64, String)","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":"","is_subcolumn":0}
+{"name":"payload.id","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"Delta(8), ZSTD(1)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.text","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(3)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.text.size","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(3)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.nested","type":"Tuple(score Float64, label String)","default_type":"","default_expression":"","comment":"","codec_expression":"LZ4","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.nested.score","type":"Float64","default_type":"","default_expression":"","comment":"","codec_expression":"Gorilla(8), ZSTD(1)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.nested.label","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"LZ4","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.nested.label.size","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"LZ4","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.defaulted","type":"UInt32","default_type":"","default_expression":"","comment":"","codec_expression":"Default","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.literal.dot","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"LZ4HC(4)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.literal.dot.size","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"LZ4HC(4)","ttl_expression":"","is_subcolumn":1}
+{"name":"pair.1","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"T64, LZ4","ttl_expression":"","is_subcolumn":1}
+{"name":"pair.2","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(2)","ttl_expression":"","is_subcolumn":1}
+{"name":"pair.2.size","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(2)","ttl_expression":"","is_subcolumn":1}
+Tuple(id UInt64, text String, nested Tuple(score Float64, label String), defaulted UInt32, `literal.dot` String)	Tuple(UInt64, String)
+1	1
+key	0
+payload	6
+pair	2
