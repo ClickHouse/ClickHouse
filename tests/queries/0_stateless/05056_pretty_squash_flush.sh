@@ -52,7 +52,7 @@ echo '--- framed output'
 framed="${CLICKHOUSE_TMP}/05056_pretty_squash_flush_framed.out"
 : > "$framed"
 
-URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&framing_output_format=JSONEachPacketString&max_block_size=1&interactive_delay=3600000000&output_format_pretty_squash_consecutive_ms=50"
+URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&framing_output_format=JSONEachPacketString&max_block_size=1&interactive_delay=3600000000&output_format_pretty_squash_consecutive_ms=50&max_execution_time=60&cancel_http_readonly_queries_on_client_close=1"
 
 ${CLICKHOUSE_CURL_COMMAND} -q -sS --no-buffer --max-time 60 "$URL" \
     -d "SELECT DISTINCT number % 2 AS x FROM numbers(1e18) FORMAT PrettyCompact" > "$framed" 2>/dev/null &

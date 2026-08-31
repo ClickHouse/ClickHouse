@@ -258,10 +258,6 @@ protected:
 
     std::shared_ptr<IFramingFormat> framing;
 
-private:
-    /// Write the postponed progress update (to the framing format if it is set), under the writing mutex.
-    void writeProgressIfNeededUnlocked();
-
     /// Notify the framing format of a packet boundary of the given kind. Format-owned buffers (for
     /// example the UTF-8 validation adaptor's `WriteBufferValidUTF8`) may still hold a tail of the
     /// bytes written for this part of the output; drain them into the framing payload first (such
@@ -269,6 +265,10 @@ private:
     /// later flush and be emitted under the next boundary's packet kind (and a stream with a single
     /// small block would not be delivered until finalization at all).
     void writeFramingPayloadBoundary(FramedPacketKind kind);
+
+private:
+    /// Write the postponed progress update (to the framing format if it is set), under the writing mutex.
+    void writeProgressIfNeededUnlocked();
 
     size_t rows_read_before = 0;
     bool are_totals_written = false;
