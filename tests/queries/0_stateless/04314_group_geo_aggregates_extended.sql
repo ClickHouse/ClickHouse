@@ -63,7 +63,7 @@ SELECT round(polygonAreaCartesian(groupPolygonUnion(p)), 2) FROM
     FROM numbers(17)
 );
 
--- groupPolygonIntersection reduction path (> 8 chunks)
+-- groupPolygonIntersection eager running-reduction path across 9 inputs
 SELECT 'polygon_intersect_reduction_threshold';
 SELECT round(polygonAreaCartesian(groupPolygonIntersection(p)), 2) FROM
 (

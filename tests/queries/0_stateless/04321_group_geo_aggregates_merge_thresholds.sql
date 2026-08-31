@@ -1,4 +1,4 @@
--- Test merge-side threshold paths (UNION_REDUCTION_THRESHOLD=16, INTERSECT_REDUCTION_THRESHOLD=8)
+-- Test merge-side reduction paths (union threshold and eager running intersection)
 
 -- 1. Union: 17 individual states merged must equal direct result
 SELECT 'polygon_union_merge_threshold_equivalence';
@@ -18,7 +18,7 @@ FROM (
         )) AS merged
 );
 
--- 2. Intersect: 9 individual states merged must equal direct result
+-- 2. Intersect: 9 eagerly reduced individual states merged must equal direct result
 SELECT 'polygon_intersect_merge_threshold_equivalence';
 SELECT round(polygonAreaCartesian(polygonsSymDifferenceCartesian(direct, merged)), 4) < 0.001 AS equiv
 FROM (

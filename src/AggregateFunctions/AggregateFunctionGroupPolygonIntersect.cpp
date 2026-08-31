@@ -28,7 +28,8 @@ extern const int INCORRECT_DATA;
 namespace
 {
 
-constexpr size_t INTERSECT_REDUCTION_THRESHOLD = 8;
+/// Keep accepting version-1 states emitted by the previous chunked implementation.
+constexpr size_t MAX_SERIALIZED_INTERSECT_CHUNKS = 8;
 
 
 enum class IntersectMode : UInt8
@@ -64,14 +65,11 @@ struct GroupPolygonIntersectData
         if (mode == IntersectMode::Uninitialized)
             mode = IntersectMode::NonEmpty;
 
-        /// Intersect the combined chunks before enforcing the budget, mirroring `merge`:
-        /// intersection can only shrink the result, so a valid result must not be rejected
-        /// based on the row/chunk shape of the input. A single not-yet-reducible chunk that
-        /// genuinely exceeds the cap is still rejected by `reduce` -> `recountPoints`.
-        if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+        /// Keep `NonEmpty` as a fully reduced running intersection. Besides bounding state, this
+        /// makes `Empty` observable before the next row is resolved or validated, so an absorbing
+        /// result really can skip all subsequent inputs.
+        if (chunks.size() > 1 || total_points > MAX_POINTS_IN_POLYGONAL_STATE)
             reduce(function_name);
-        else
-            maybeReduce(function_name);
     }
 
     void merge(const GroupPolygonIntersectData & other, const char * function_name)
@@ -95,26 +93,16 @@ struct GroupPolygonIntersectData
             mode = other.mode;
             chunks = other.chunks;
             total_points = other.total_points;
+            if (chunks.size() > 1 || total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+                reduce(function_name);
             return;
         }
 
         total_points += other.total_points;
         chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
 
-        /// Intersect the combined chunks before enforcing the budget. The combined point
-        /// count can exceed the cap only because two partial states have not been intersected
-        /// yet, and intersection can only shrink the result, so a valid result must not be
-        /// rejected merely because of the merge-tree shape.
-        if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
-            reduce(function_name);
-        else
-            maybeReduce(function_name);
-    }
-
-    void maybeReduce(const char * function_name)
-    {
-        if (chunks.size() > INTERSECT_REDUCTION_THRESHOLD)
-            reduce(function_name);
+        /// A merged state must preserve the same eager running-intersection invariant as `add`.
+        reduce(function_name);
     }
 
     /// Balanced pairwise reduction with early-empty short-circuit.
@@ -250,6 +238,7 @@ public:
 
         if (data.mode == IntersectMode::NonEmpty)
         {
+            chassert(data.chunks.size() == 1);
             writeVarUInt(data.chunks.size(), buf);
             for (const auto & chunk : data.chunks)
                 serializeGeoMultiPolygon(chunk, buf);
@@ -286,16 +275,15 @@ public:
                     ErrorCodes::INCORRECT_DATA,
                     "Corrupted state of aggregate function {}: mode is NonEmpty but chunk count is 0",
                     getName());
-            /// `add` and `merge` reduce immediately after crossing this threshold, so the writer
-            /// can never emit a larger chunk vector. Reject unreachable serialized shapes before
-            /// they enter the more expensive intersection reduction path.
-            if (chunk_count > INTERSECT_REDUCTION_THRESHOLD)
+            /// Version-1 states from the previous chunked implementation could contain up to
+            /// eight chunks. Reject larger shapes before the expensive compatibility reduction.
+            if (chunk_count > MAX_SERIALIZED_INTERSECT_CHUNKS)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Corrupted state of aggregate function {}: {} chunks (limit {})",
                     getName(),
                     chunk_count,
-                    INTERSECT_REDUCTION_THRESHOLD);
+                    MAX_SERIALIZED_INTERSECT_CHUNKS);
 
             data.chunks.resize(chunk_count);
             PolygonalStateBudget budget;
@@ -308,6 +296,12 @@ public:
             /// append closing points not charged against `budget.points`. Recount from the
             /// normalized geometry and re-enforce the cap.
             data.total_points = recountPolygonalPointsAndCheck(data.chunks, name);
+
+            /// Restore the eager invariant before this state can be merged or serialized again.
+            /// A legacy state whose chunks are already disjoint becomes the absorbing `Empty`
+            /// state here rather than carrying a logically empty `NonEmpty` value forward.
+            if (data.chunks.size() > 1)
+                data.reduce(name);
         }
     }
 

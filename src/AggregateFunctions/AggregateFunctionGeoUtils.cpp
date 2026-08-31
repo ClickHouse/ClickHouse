@@ -30,12 +30,13 @@ extern const int INCORRECT_DATA;
 namespace
 {
 
-/// Deserialization guards local to the implementation.
+/// Polygonal materialization guards local to the implementation.
 constexpr size_t MIN_POINTS_PER_POLYGONAL_RING = 4;
 constexpr size_t MAX_POINTS_PER_RING = 10'000'000;
 /// A valid writer-emitted ring has at least four points, so this cumulative
 /// metadata budget is derived from the point budget.
 constexpr size_t MAX_RINGS_IN_POLYGONAL_STATE = MAX_POINTS_IN_POLYGONAL_STATE / MIN_POINTS_PER_POLYGONAL_RING;
+constexpr size_t POLYGONAL_MATERIALIZATION_INITIAL_CAPACITY = 4096;
 
 struct ArrayRange
 {
@@ -106,8 +107,7 @@ void validatePointRange(const ArrayRange & range, const char * function_name)
 }
 
 
-size_t appendPointRangeBatch(
-    const ArrayRange & range, size_t & point_index, size_t max_points, CartesianMultiPoint & out)
+size_t appendPointRangeBatch(const ArrayRange & range, size_t & point_index, size_t max_points, CartesianMultiPoint & out)
 {
     const size_t count = std::min(max_points, range.end - point_index);
     const auto columns = getPointColumns(range.data);
@@ -136,27 +136,103 @@ CartesianRing getRingFromColumn(const IColumn & column, size_t row_num, const ch
 }
 
 
-CartesianPolygon getPolygonFromColumn(const IColumn & column, size_t row_num, const char * function_name)
-{
-    const auto rings = getArrayRange(column, row_num);
-    CartesianPolygon polygon;
-    if (rings.begin == rings.end)
-        return polygon;
-
-    polygon.outer() = getRingFromColumn(rings.data, rings.begin, function_name);
-    polygon.inners().reserve(rings.end - rings.begin - 1);
-    for (size_t i = rings.begin + 1; i < rings.end; ++i)
-        polygon.inners().push_back(getRingFromColumn(rings.data, i, function_name));
-    return polygon;
-}
-
-
 [[noreturn]] void throwEmptyOuterWithInner(const char * function_name)
 {
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Argument of aggregate function {} has a polygon with an empty outer ring but non-empty inner rings",
         function_name);
+}
+
+
+[[noreturn]] void throwEmptyInnerRing(const char * function_name)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of aggregate function {} has a polygon with an empty inner ring", function_name);
+}
+
+
+void chargePolygonalInputRing(const ArrayRange & range, size_t & normalized_points, const char * function_name)
+{
+    chassert(range.begin != range.end);
+
+    const size_t raw_points = range.end - range.begin;
+    const auto columns = getPointColumns(range.data);
+    const bool is_closed = columns.x[range.begin] == columns.x[range.end - 1] && columns.y[range.begin] == columns.y[range.end - 1];
+
+    /// `boost::geometry::correct` closes an open ring by appending its first point. Account for
+    /// that point before allocating the Boost geometry so direct input cannot temporarily exceed
+    /// the same point budget enforced on aggregate state.
+    if (raw_points > MAX_POINTS_IN_POLYGONAL_STATE || (!is_closed && raw_points == MAX_POINTS_IN_POLYGONAL_STATE))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Argument of aggregate function {} has too many points after ring normalization (limit {})",
+            function_name,
+            MAX_POINTS_IN_POLYGONAL_STATE);
+
+    const size_t normalized_ring_points = raw_points + (is_closed ? 0 : 1);
+    if (normalized_ring_points < MIN_POINTS_PER_POLYGONAL_RING)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Argument of aggregate function {} has a ring with {} points after normalization (minimum {})",
+            function_name,
+            normalized_ring_points,
+            MIN_POINTS_PER_POLYGONAL_RING);
+
+    if (normalized_ring_points > MAX_POINTS_IN_POLYGONAL_STATE - normalized_points)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Argument of aggregate function {} has too many points after ring normalization (limit {})",
+            function_name,
+            MAX_POINTS_IN_POLYGONAL_STATE);
+    normalized_points += normalized_ring_points;
+}
+
+
+void validatePolygonForMaterialization(const IColumn & column, size_t row_num, size_t & normalized_points, const char * function_name)
+{
+    const auto rings = getArrayRange(column, row_num);
+    if (rings.begin == rings.end)
+        return;
+
+    const auto outer = getArrayRange(rings.data, rings.begin);
+    if (outer.begin == outer.end)
+    {
+        if (rings.end - rings.begin > 1)
+            throwEmptyOuterWithInner(function_name);
+        return;
+    }
+
+    chargePolygonalInputRing(outer, normalized_points, function_name);
+    for (size_t i = rings.begin + 1; i < rings.end; ++i)
+    {
+        const auto inner = getArrayRange(rings.data, i);
+        if (inner.begin == inner.end)
+            throwEmptyInnerRing(function_name);
+        chargePolygonalInputRing(inner, normalized_points, function_name);
+    }
+}
+
+
+CartesianPolygon getPolygonFromColumn(const IColumn & column, size_t row_num, size_t & normalized_points, const char * function_name)
+{
+    const auto rings = getArrayRange(column, row_num);
+    CartesianPolygon polygon;
+    if (rings.begin == rings.end)
+        return polygon;
+
+    /// Validate every ring and charge its normalized point count before allocating any Boost
+    /// ring. In particular, a raw hole count containing empty rings must not drive `reserve` or
+    /// append one empty `CartesianRing` object per hole before validity checking.
+    validatePolygonForMaterialization(column, row_num, normalized_points, function_name);
+
+    polygon.outer() = getRingFromColumn(rings.data, rings.begin, function_name);
+    if (polygon.outer().empty())
+        return polygon;
+
+    polygon.inners().reserve(rings.end - rings.begin - 1);
+    for (size_t i = rings.begin + 1; i < rings.end; ++i)
+        polygon.inners().push_back(getRingFromColumn(rings.data, i, function_name));
+    return polygon;
 }
 
 
@@ -582,13 +658,16 @@ void insertMultiPolygonIntoColumn(const CartesianMultiPolygon & mp, IColumn & to
 CartesianMultiPolygon columnToMultiPolygon(const IColumn & column, size_t row_num, GeometryColumnType geo_type, const char * function_name)
 {
     CartesianMultiPolygon result;
+    size_t normalized_points = 0;
 
     switch (geo_type)
     {
         case GeometryColumnType::Ring: {
-            auto ring = getRingFromColumn(column, row_num, function_name);
-            if (ring.empty())
+            const auto range = getArrayRange(column, row_num);
+            if (range.begin == range.end)
                 break;
+            chargePolygonalInputRing(range, normalized_points, function_name);
+            auto ring = getRingFromColumn(column, row_num, function_name);
             CartesianPolygon polygon;
             polygon.outer() = std::move(ring);
             boost::geometry::correct(polygon);
@@ -596,7 +675,7 @@ CartesianMultiPolygon columnToMultiPolygon(const IColumn & column, size_t row_nu
             break;
         }
         case GeometryColumnType::Polygon: {
-            auto polygon = getPolygonFromColumn(column, row_num, function_name);
+            auto polygon = getPolygonFromColumn(column, row_num, normalized_points, function_name);
             if (polygon.outer().empty())
             {
                 if (!polygon.inners().empty())
@@ -609,10 +688,12 @@ CartesianMultiPolygon columnToMultiPolygon(const IColumn & column, size_t row_nu
         }
         case GeometryColumnType::MultiPolygon: {
             const auto polygons = getArrayRange(column, row_num);
-            result.reserve(polygons.end - polygons.begin);
+            /// Empty polygon slots are skipped, so their raw count is not a safe allocation size.
+            /// Keep the initial allocation bounded and let actual non-empty polygons drive growth.
+            result.reserve(std::min(polygons.end - polygons.begin, POLYGONAL_MATERIALIZATION_INITIAL_CAPACITY));
             for (size_t i = polygons.begin; i < polygons.end; ++i)
             {
-                auto polygon = getPolygonFromColumn(polygons.data, i, function_name);
+                auto polygon = getPolygonFromColumn(polygons.data, i, normalized_points, function_name);
                 if (polygon.outer().empty())
                 {
                     if (!polygon.inners().empty())
@@ -700,9 +781,7 @@ size_t appendConvexHullPointsBatchFromColumn(
                 advanceToNextNonEmptyPolygonOuter(polygons, cursor);
                 break;
             }
-            case GeometryColumnType::Null:
-                cursor.finished = true;
-                break;
+            case GeometryColumnType::Null: cursor.finished = true; break;
         }
         cursor.initialized = true;
     }
@@ -764,8 +843,7 @@ size_t appendConvexHullPointsBatchFromColumn(
             }
             return appended;
         }
-        case GeometryColumnType::Null:
-            return 0;
+        case GeometryColumnType::Null: return 0;
     }
 
     UNREACHABLE();

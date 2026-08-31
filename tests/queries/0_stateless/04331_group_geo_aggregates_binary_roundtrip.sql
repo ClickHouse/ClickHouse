@@ -60,8 +60,8 @@ SELECT round(polygonAreaCartesian(groupPolygonIntersectionMerge(state)), 2) FROM
     )
 );
 
--- 4. `groupPolygonIntersection`: multi-row state round-trip exercises non-trivial chunk count serialization.
-SELECT 'intersect_binary_roundtrip_two_chunks';
+-- 4. `groupPolygonIntersection`: multi-row eager running-intersection state round-trip.
+SELECT 'intersect_binary_roundtrip_multi_row';
 SELECT round(polygonAreaCartesian(groupPolygonIntersectionMerge(state)), 2) FROM
 (
     SELECT CAST(unhex(hex(groupPolygonIntersectionState(p))) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state

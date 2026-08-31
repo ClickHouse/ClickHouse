@@ -1,4 +1,4 @@
--- Test pairwise reduction with odd numbers of chunks
+-- Test reduction with odd numbers of inputs and partial states
 
 -- 1. Union: 5 states (odd) -> pairwise reduction handles tail correctly
 SELECT 'union_5_states_odd';
@@ -37,7 +37,7 @@ FROM (
         )) AS merged
 );
 
--- 2. Intersect: 5 states (odd), non-trivial intersection
+-- 2. Intersect: 5 states (odd), non-trivial eager running intersection
 SELECT 'intersect_5_states_odd';
 SELECT round(polygonAreaCartesian(polygonsSymDifferenceCartesian(direct, merged)), 4) < 0.001 AS equiv
 FROM (
@@ -74,7 +74,7 @@ FROM (
         )) AS merged
 );
 
--- 3. Intersect: 3 states (odd), with early-empty in pairwise tree
+-- 3. Intersect: 3 states (odd), with an eager early-empty result
 SELECT 'intersect_3_states_early_empty';
 SELECT round(polygonAreaCartesian(groupPolygonIntersectionMerge(s)), 4) FROM (
     SELECT groupPolygonIntersectionState(p) AS s FROM (
