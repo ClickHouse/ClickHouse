@@ -1454,6 +1454,7 @@ size_t Aggregator::drainStagedBatch(
         table,
         [&](auto & method)
         {
+            bool no_more_keys = false;
             for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
             {
                 if (is_cancelled.load(std::memory_order_relaxed))
@@ -1467,6 +1468,14 @@ size_t Aggregator::drainStagedBatch(
 
                 drained += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
                     method, table.aggregates_pools.at(b).get(), chunks, b, records, places_scratch, is_cancelled);
+
+                /// This drain feeds the external path, which never runs the merge-time group
+                /// accounting, so `max_rows_to_group_by` is held against the drain table as it
+                /// grows, bucket by bucket. The table holds deduplicated keys, so its size is
+                /// a lower bound on the final group count and a throw-mode crossing is
+                /// definite; checking per bucket makes the query abort within one bucket's
+                /// worth of records past the limit instead of after a whole floor-sized batch.
+                checkLimits(table.size(), no_more_keys);
             }
         });
     return drained;
@@ -1476,6 +1485,7 @@ void Aggregator::spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared,
 {
     if (shared.cancelled.load(std::memory_order_relaxed))
         return;
+
     LOG_TRACE(log, "Adaptive aggregation: writing a detached drain table ({} keys) to disk", table.size());
     consumeToTemporaryFile(table);
 }
