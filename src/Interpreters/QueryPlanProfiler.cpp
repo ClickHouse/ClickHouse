@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryPlanLog.h>
 #include <Interpreters/QueryPlanProfiler.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
@@ -38,6 +39,9 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, bool inter
         return false;
 
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return false;
+
+    if (!context->getQueryPlanLog())
         return false;
 
     return true;
