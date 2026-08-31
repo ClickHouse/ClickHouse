@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
@@ -18,7 +18,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
   ## ai_function_allow_insecure_endpoint
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -30,7 +30,7 @@ false (デフォルト) の場合、AI 関数は、プロンプトと API キー
   ## ai_function_embedding_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新しい設定"}]}]} />
 
@@ -40,7 +40,7 @@ false (デフォルト) の場合、AI 関数は、プロンプトと API キー
   ## ai_function_embedding_max_batch_size
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -52,7 +52,7 @@ false (デフォルト) の場合、AI 関数は、プロンプトと API キー
   ## ai_function_max_api_calls_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,13 +64,13 @@ AI 関数が 1 クエリあたりに送信できる HTTP リクエストの最�
   ## ai_function_max_input_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "新しい設定"}]}]} />
 
-1 回のクエリ内で、すべての AI 関数の API 呼び出しにおける入力 (プロンプト) トークン総数の上限です。これはプロバイダのレスポンスに基づいて累積的に追跡されます。呼び出しの入力トークン数はレスポンスが到着するまでわからないため、この上限は処理中のリクエストごとに 1 回の呼び出し分の入力トークン数まで超過する可能性がある点に注意してください。他の AI クォータと同様に、これはサーバー / クエリフラグメントごとに適用され、分散クエリ全体で合算されることはありません。また、最上位クエリで設定する必要があり、サブクエリの `SETTINGS` オーバーライドは無視されます。無効にするには 0 に設定します。
+1 回のクエリ内で、すべての AI 関数の API 呼び出しにおける入力 (プロンプト) トークン総数の上限です。これはプロバイダのレスポンスに基づいて累積的に追跡されます。呼び出しの入力トークン数はレスポンスが到着するまでわからないため、この上限は処理中のリクエストごとに 1 回の呼び出し分の入力トークン数まで超過する可能性がある点に注意してください。他の AI クォータと同様に、これはサーバー / クエリフラグメントごとに適用され、分散クエリ全体で合算されることはありません。また、最上位クエリで設定する必要があり、サブクエリのオーバーライドは無視されます。無効にするには 0 に設定します。
 
 この上限は、レスポンス内で `usage` オブジェクトを返すプロバイダ (OpenAI、Anthropic、vLLM) に対してのみ適用されます。トークン使用量を返さないプロバイダ (特に HuggingFace TEI) の場合、カウンターは 0 のままになるため、そのような呼び出しを制限するには代わりに `ai_function_max_api_calls_per_query` を使用してください。
 
@@ -78,7 +78,7 @@ AI 関数が 1 クエリあたりに送信できる HTTP リクエストの最�
   ## ai_function_max_output_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="500000" />
 
@@ -92,11 +92,11 @@ AI 関数が 1 クエリあたりに送信できる HTTP リクエストの最�
   ## ai_function_max_retries
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="UInt64" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "一時的なAPIエラーはデフォルトで1回再試行されるため、プロバイダからの単一の429または5xxによってクエリが失敗することはありません。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 個々のAPIリクエストに対して、一時的なエラー発生時に行う再試行の最大回数です。各再試行では、`ai_function_retry_initial_delay_ms` を初期値とする指数バックオフを使用します。
 
@@ -104,7 +104,7 @@ AI 関数が 1 クエリあたりに送信できる HTTP リクエストの最�
   ## ai_function_request_timeout_sec
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -116,7 +116,7 @@ AI 関数 (AI Chat の補完および埋め込み API 呼び出し) が行う個
   ## ai_function_retry_initial_delay_ms
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -128,7 +128,7 @@ AI 関数 (AI Chat の補完および埋め込み API 呼び出し) が行う個
   ## ai_function_text_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新しい設定"}]}]} />
 
@@ -138,7 +138,7 @@ AI 関数 (AI Chat の補完および埋め込み API 呼び出し) が行う個
   ## ai_function_throw_on_error
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -150,12 +150,12 @@ true の場合 (デフォルト) 、再試行をすべて使い切っても AI �
   ## ai_function_throw_on_quota_exceeded
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
-true (デフォルト) の場合、AI 関数のクォータ制限 (`ai_function_max_input_tokens_per_query`、`ai_function_max_output_tokens_per_query`、または `ai_function_max_api_calls_per_query`) を超えると、例外が発生してクエリは中止されます。false の場合、残りの行にはカラムの型のデフォルト値 (String の場合は空文字列) が設定されます。クォータ制限と同様に、これは最上位クエリで設定する必要があります。サブクエリの オーバーライド は無視されます。
+true (デフォルト) の場合、AI 関数のクォータ制限 (`ai_function_max_input_tokens_per_query`、`ai_function_max_output_tokens_per_query`、または `ai_function_max_api_calls_per_query`) を超えると、例外が発生してクエリは中止されます。false の場合、残りの行にはカラム型のデフォルト値 (String の場合は空文字列) が設定されます。クォータ制限と同様に、これは最上位クエリで設定する必要があります。サブクエリの オーバーライド は無視されます。
 
 {/*AUTOGENERATED_END*/}

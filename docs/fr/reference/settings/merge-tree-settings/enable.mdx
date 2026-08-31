@@ -14,6 +14,23 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
+<div id="enable_adaptive_codec_selection">
+  ## enable_adaptive_codec_selection
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
+
+Lorsqu&#39;elle est activée, les fusions et les mutations choisissent un codec par bloc pour les colonnes utilisant le codec par défaut (sans clause `CODEC` ou avec `CODEC(Default)`).
+Les candidats sont le codec par défaut de la table (voir le paramètre `default_compression_codec`), `NONE` et des codecs spécialisés adaptés au type de la colonne.
+Seuls les types de type integer sont actuellement adaptatifs.
+La plus petite sortie est retenue. La compression n&#39;est donc jamais moins efficace que celle du codec par défaut, et les blocs incompressibles sont stockés bruts.
+Une colonne dont le codec par défaut inclut du chiffrement (par exemple, `AES_128_GCM_SIV`) n&#39;est jamais sélectionnée de manière adaptative, de sorte que le chiffrement est toujours appliqué.
+Les codecs utilisés par bloc sont signalés par la fonction de table [`mergeTreeCodecBlockCounts`](/fr/reference/functions/table-functions/index).
+
 <div id="enable_index_granularity_compression">
   ## enable_index_granularity_compression
 </div>

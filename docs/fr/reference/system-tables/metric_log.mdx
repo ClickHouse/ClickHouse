@@ -309,6 +309,7 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de tâches de lecture auxquelles au moins une mutation a été appliquée à la volée
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de mutations appliquées à la volée dans l’ensemble des tâches de lecture
 * `ProfileEvent_PatchesAcquireLockTries` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de tentatives d’acquisition du verrou pour exécuter des lightweight updates
+* `ProfileEvent_PatchesAcquireLockBadVersionRetries` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de nouvelles tentatives d’acquisition du verrou pour les lightweight updates, dues à la validation préalable d’une mise à jour concurrente
 * `ProfileEvent_PatchesAcquireLockMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de microsecondes passées à acquérir le verrou pour exécuter des lightweight updates
 * `ProfileEvent_DiskObjectStorageWaitBlobRemovalMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps passé à attendre la suppression en attente du blob après la validation de la transaction de métadonnées
 * `ProfileEvent_SchedulerIOReadRequests` ([UInt64](/fr/reference/data-types/int-uint)) — Demandes de ressources passées par le scheduler pour les lectures d’E/S.

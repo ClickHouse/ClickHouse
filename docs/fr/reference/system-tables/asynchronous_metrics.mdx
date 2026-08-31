@@ -19,6 +19,8 @@ Contient des métriques calculées périodiquement en arrière-plan. Par exemple
 
 Une métrique est soit scalaire (un seul nombre dans la colonne `value`), soit de type clé-valeur, ventilée par entité, par exemple par cœur de CPU, périphérique de bloc, interface réseau ou disque. Les métriques clé-valeur sont représentées par une seule ligne avec un [Map](/fr/reference/data-types/map) dans la colonne `key_values` (par exemple, `CPUFrequencyMHz` associe chaque numéro de cœur de CPU à sa fréquence), et leur colonne `value` est `NaN`.
 
+Avant la version 26.8, chaque clé correspondait à une métrique scalaire distincte, avec la clé intégrée sous une forme modifiée à son nom (`CPUFrequencyMHz_0`). Le paramètre de serveur [`asynchronous_metrics_key_values_mode`](/fr/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) permet de revenir à cette forme (`legacy_names`) ou d&#39;afficher les deux formes simultanément (`both`) pendant la migration de la surveillance.
+
 <div id="columns">
   ## Colonnes
 </div>

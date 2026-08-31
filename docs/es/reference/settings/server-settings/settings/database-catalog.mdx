@@ -24,6 +24,12 @@ Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />El tamaño del grupo de subprocesos usado para la eliminación de tablas.
 
+<div id="database_catalog_shutdown_table_concurrency">
+  ## database_catalog_shutdown_table_concurrency
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />El tamaño del grupo de subprocesos utilizado para cerrar las tablas cuando se detiene el servidor. Cero significa que el número de hilos es igual al número de núcleos.
+
 <div id="database_catalog_unused_dir_cleanup_period_sec">
   ## database_catalog_unused_dir_cleanup_period_sec
 </div>

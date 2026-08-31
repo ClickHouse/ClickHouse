@@ -19,8 +19,8 @@ Ces paramètres sont générés automatiquement à partir du [code source](https
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Supprime dynamiquement les zéros finaux non significatifs des valeurs datetime64 afin d’ajuster l’échelle de sortie à [0, 3, 6],
-correspondant à « secondes », « millisecondes » et « microsecondes »
+Supprime dynamiquement les zéros finaux des valeurs `DateTime64`, en arrondissant l’échelle de sortie au multiple de trois supérieur suivant
+qui conserve tous les chiffres significatifs : [0, 3, 6, 9]. Une fraction entièrement nulle est supprimée.
 
 <div id="date_time_input_format">
   ## date_time_input_format

@@ -15,18 +15,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_experimental_ai_functions">
-  ## allow_experimental_ai_functions
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Новая настройка"}]}]} />
-
-Включает экспериментальные функции ИИ (например, `aiGenerateContent`). Эти функции выполняют внешние HTTP-запросы к поставщикам ИИ.
-
 <div id="allow_experimental_analyzer">
   ## allow_experimental_analyzer
 </div>
@@ -430,16 +418,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Новая настройка для включения раскрытия подстановочных шаблонов в табличной функции `url` по спискам на HTTP-страницах индекса."}]}]} />
 
 Разрешает экспериментальное раскрытие подстановочных шаблонов для `url()` и `ENGINE = URL` по HTTP-страницам индекса.
-
-<div id="allow_experimental_window_view">
-  ## allow_experimental_window_view
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Включает WINDOW VIEW. Функция пока недостаточно зрелая.
 
 <div id="allow_experimental_ytsaurus_dictionary_source">
   ## allow_experimental_ytsaurus_dictionary_source

@@ -315,6 +315,7 @@ de forma predeterminada). Los datos también se recopilan cuando finaliza la con
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/es/reference/data-types/int-uint)) — Número total de tareas de lectura en las que se aplicó alguna mutación sobre la marcha
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/es/reference/data-types/int-uint)) — Número total de mutaciones aplicadas sobre la marcha en todas las tareas de lectura
 * `ProfileEvent_PatchesAcquireLockTries` ([UInt64](/es/reference/data-types/int-uint)) — Número total de intentos de adquirir un bloqueo para ejecutar actualizaciones ligeras
+* `ProfileEvent_PatchesAcquireLockBadVersionRetries` ([UInt64](/es/reference/data-types/int-uint)) — Número total de reintentos al adquirir el bloqueo para actualizaciones ligeras debido a que una actualización concurrente hizo commit primero
 * `ProfileEvent_PatchesAcquireLockMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Número total de microsegundos empleados en adquirir el bloqueo para ejecutar actualizaciones ligeras
 * `ProfileEvent_DiskObjectStorageWaitBlobRemovalMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo empleado en esperar la eliminación pendiente del blob después de hacer commit de la transacción de metadatos
 * `ProfileEvent_SchedulerIOReadRequests` ([UInt64](/es/reference/data-types/int-uint)) — Solicitudes de recursos que pasaron por el scheduler para lecturas de E/S.

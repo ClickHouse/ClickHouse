@@ -3496,8 +3496,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 Introduzido em: v20.1.0
 
-Converte um valor de entrada em um valor do tipo [DateTime64](/pt-BR/reference/data-types/datetime64), mas retorna o limite inferior de [DateTime64](/pt-BR/reference/data-types/datetime64) se receber um argumento inválido.
-Igual a [toDateTime64](#toDateTime64), mas retorna o limite inferior de [DateTime64](/pt-BR/reference/data-types/datetime64) se receber um argumento inválido.
+Converte um valor de entrada em um valor do tipo [DateTime64](/pt-BR/reference/data-types/datetime64), mas retorna o valor zero de [DateTime64](/pt-BR/reference/data-types/datetime64) (a epoch Unix, `1970-01-01 00:00:00`) se receber um argumento inválido.
+Igual a [toDateTime64](#toDateTime64), mas retorna o valor zero de [DateTime64](/pt-BR/reference/data-types/datetime64) se receber um argumento inválido.
 
 Veja também:
 
@@ -3508,16 +3508,18 @@ Veja também:
 **Sintaxe**
 
 ```sql
-toDateTime64OrZero(x)
+toDateTime64OrZero(x[, precision[, timezone]])
 ```
 
 **Argumentos**
 
 * `x` — Uma representação textual de uma data com hora e precisão de frações de segundo. [`String`](/pt-BR/reference/data-types/string)
+* `precision` — Opcional. A precisão de frações de segundo do valor retornado. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+* `timezone` — Opcional. O fuso horário do valor retornado. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
-Retorna um valor DateTime64 em caso de sucesso; caso contrário, o limite inferior de DateTime64 (`1970-01-01 00:00:00.000`). [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna um valor DateTime64 em caso de sucesso; caso contrário, o valor DateTime64 zero (`1970-01-01 00:00:00`) na precisão solicitada. [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 

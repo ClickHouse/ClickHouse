@@ -24,6 +24,12 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />La taille du pool de threads utilisé pour la suppression des tables.
 
+<div id="database_catalog_shutdown_table_concurrency">
+  ## database_catalog_shutdown_table_concurrency
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Taille du pool de threads utilisé pour arrêter les tables lors de l&#39;arrêt du serveur. Zéro signifie que le nombre de threads est égal au nombre de cœurs.
+
 <div id="database_catalog_unused_dir_cleanup_period_sec">
   ## database_catalog_unused_dir_cleanup_period_sec
 </div>

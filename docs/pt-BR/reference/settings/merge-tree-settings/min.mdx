@@ -32,9 +32,13 @@ retornar Ok durante a verificação de status.
 
 Permite reduzir o uso de memória em tabelas com muitas colunas ao usar buffers de gravação adaptativos.
 
+O valor é comparado ao número de streams que uma parte wide grava, que pode exceder significativamente o número
+de colunas: um `Map` com muitos buckets ou um `Array` ou `Tuple` profundamente aninhado grava muitos streams
+para uma única coluna, e um buffer de gravação é alocado por stream.
+
 Valores possíveis:
 
-* 0 - ilimitado
+* 0 - desabilitado
 * 1 - sempre habilitado
 
 <div id="min_compress_block_size">

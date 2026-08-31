@@ -426,7 +426,18 @@ Tenha cuidado ao usar `GLOBAL`. Para mais informações, consulte a seção [Sub
   ## Conversão implícita de tipos
 </div>
 
-Consultas `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN` e `FULL JOIN` oferecem suporte à conversão implícita de tipos para as &quot;chaves de junção&quot;. No entanto, a consulta não pode ser executada se as chaves de junção das tabelas à esquerda e à direita não puderem ser convertidas para um único tipo (por exemplo, não há nenhum tipo de dado que possa comportar todos os valores de `UInt64` e `Int64`, ou de `String` e `Int32`).
+Consultas `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN` e `SEMI JOIN` oferecem suporte à conversão implícita de tipos para as &quot;chaves de junção&quot;. No entanto, a consulta não pode ser executada se as chaves de junção das tabelas à esquerda e à direita não puderem ser convertidas para um único tipo (por exemplo, `String` e `Int32`).
+
+Não há nenhum tipo de dado que possa comportar todos os valores de `UInt64` e `Int64`, mas essas chaves ainda podem ser associadas: elas são convertidas para o tipo dos valores que esses tipos têm em comum, que é `UInt64`, contendo os valores de `0` a `9223372036854775807`. Um valor fora desse intervalo não é igual a nenhum valor do outro lado, portanto não corresponde a nada.
+
+Isso é aplicado às condições de igualdade na seção `ON` e à seção `USING` de um `INNER JOIN` ou de um `SEMI JOIN`, em que o resultado contém apenas os valores correspondentes. Isso não é aplicado a:
+
+* os tipos de `JOIN` com `USING` que podem emitir linhas sem correspondência (como as junções `LEFT`, `RIGHT`, `FULL` e `ANTI`), em que a chave de junção também é uma coluna do resultado e pode conter os valores sem correspondência;
+* comparações null-safe (`IS NOT DISTINCT FROM`), em que `NULL` corresponde a `NULL`, de modo que os valores convertidos para `NULL` corresponderiam entre si;
+* a desigualdade `ASOF` (a última coluna na lista `USING`), que precisa da ordenação dos valores, não apenas de sua igualdade;
+* um mecanismo de tabela [`Join`](/pt-BR/engines/table-engines/special/join) cuja chave armazenada não seja o próprio tipo comum, pois sua tabela hash é pré-criada com os valores de chave originais e não pode ser convertida (a outra direção, em que apenas a chave de probe precisa ser convertida, é compatível; os wrappers `LowCardinality` e `Nullable` da chave armazenada não importam para essa comparação).
+
+Isso requer o analisador, que é habilitado por padrão; com [`enable_analyzer = 0`](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer), essa consulta ainda é rejeitada.
 
 **Exemplo**
 

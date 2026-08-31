@@ -589,7 +589,7 @@ Notez que les fichiers de configuration chargés séparément de la configuratio
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Garde-fou de migration obsolète. Cette version ne prend en charge que le hash unifié de déduplication des insertions (`new_unified_hash`) ; le serveur refuse de démarrer si ce paramètre est présent avec une autre valeur (comme `old_separate_hashes` ou `compatible_double_hashes`). Terminez la migration de déduplication sur la version précédente avant la mise à niveau en exécutant `compatible_double_hashes` (qui écrit à la fois les hash legacy et unifiés). Pour les tables répliquées, exécutez-le pendant au moins `replicated_deduplication_window_seconds` (une heure par défaut) ; les fenêtres par défaut conservent les hash unifiés de toutes les insertions pendant cette période, ce qui est considéré comme suffisant pour couvrir une boucle de nouvelle tentative d&#39;insert. Pour les tables non répliquées avec `non_replicated_deduplication_window` &gt; 0, la fenêtre est basée sur le nombre d&#39;insertions plutôt que sur le temps ; exécutez donc `compatible_double_hashes` pendant au moins ce nombre d&#39;insertions avant la mise à niveau.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Garde-fou de migration obsolète. Les versions 26.7 et ultérieures de ClickHouse ne prennent en charge que le hash unifié de déduplication des insertions (`new_unified_hash`) ; le serveur refuse de démarrer si ce paramètre est présent avec une autre valeur (comme `old_separate_hashes` ou `compatible_double_hashes`). Terminez la migration de déduplication sur la version précédente avant la mise à niveau en exécutant `compatible_double_hashes` (qui écrit à la fois les hash legacy et unifiés). Pour les tables répliquées, exécutez-le pendant au moins `replicated_deduplication_window_seconds` (une heure par défaut) ; les fenêtres par défaut conservent les hash unifiés de toutes les insertions pendant cette période, ce qui est considéré comme suffisant pour couvrir une boucle de nouvelle tentative d&#39;insert. Pour les tables non répliquées avec `non_replicated_deduplication_window` &gt; 0, la fenêtre est basée sur le nombre d&#39;insertions plutôt que sur le temps ; exécutez donc `compatible_double_hashes` pendant au moins ce nombre d&#39;insertions avant la mise à niveau.
 
 <div id="io_thread_pool_queue_size">
   ## io_thread_pool_queue_size
@@ -1962,7 +1962,7 @@ que tous les dictionnaires aient terminé leur chargement (avec succès ou non) 
   ## webassembly_udf_engine
 </div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />Le moteur utilisé pour exécuter les UDF WebAssembly. Les valeurs prises en charge sont « wasmtime » et « wasmedge ».
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />Le moteur utilisé pour exécuter les UDF WebAssembly. La seule valeur prise en charge est « wasmtime ».
 
 <div id="webterminal_allowed_origins">
   ## webterminal_allowed_origins

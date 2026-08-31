@@ -24,6 +24,24 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />非同期メトリクスで計算する対象を、Keeper 関連のメトリクスのみにします。
 
+<div id="asynchronous_metrics_key_values_mode">
+  ## asynchronous_metrics_key_values_mode
+</div>
+
+<SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
+
+CPU コア、ブロックデバイス、ネットワークインターフェイス、ディスク、温度センサー、メモリコントローラー、ロギングチャネルごとに分割されたキー・バリューの非同期メトリクスを、[`system.asynchronous_metrics`](/ja/reference/system-tables/asynchronous_metrics)、[`system.asynchronous_metric_log`](/ja/reference/system-tables/asynchronous_metric_log)、Prometheus エンドポイント、および Graphite にどの形式でパブリッシュするかを指定します。
+
+設定可能な値:
+
+* `key_values` - 各ファミリーは単一のキー・バリューのメトリクスです。`system.asynchronous_metrics` の `key_values` カラムでは `Map` として、`system.asynchronous_metric_log` ではキーごとに 1 行として、Prometheus では `device="sda"` のようなラベルを持つキーごとに 1 つのサンプルとして、Graphite では `<prefix>.<Metric>.<key>` パスとして公開されます。
+* `legacy_names` - バージョン 26.8 より前と同様に、各キーはキーを名前に組み込んだ個別のスカラーメトリクスです。例: `OSUserTimeCPU3`、`CPUFrequencyMHz_0`、`BlockReadBytes_sda`、`NetworkReceiveBytes_eth0`、`DiskTotal_default`、`Temperature0`、`EDAC0_Correctable`。
+* `both` - 両方の形式を同時にパブリッシュします。監視の移行中に役立ちます。このモードでは二重計上に注意してください。`sum(value) ... WHERE metric LIKE 'NetworkReceiveBytes%'` のように、プレフィックスに一致するメトリクス名で集計すると、各値が 2 回カウントされます。
+
+バージョン 26.8 以降に導入されたキー・バリューのメトリクスファミリーにはレガシー名がなく、常にキー・バリュー形式でパブリッシュされます。
+
+この設定はオンザフライで適用されます。非同期メトリクスが更新されるたびに再読み込みされるため、再起動せずに形式を切り替えるには `SYSTEM RELOAD CONFIG` で十分です。
+
 <div id="asynchronous_metrics_update_period_s">
   ## asynchronous_metrics_update_period_s
 </div>

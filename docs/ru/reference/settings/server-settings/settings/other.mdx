@@ -590,7 +590,7 @@ Refreshable materialized views всегда получают значения п
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Устаревший защитный механизм миграции. Эта версия поддерживает только единый хеш дедупликации вставки (`new_unified_hash`); сервер откажется запускаться, если этот параметр указан с любым другим значением (например, `old_separate_hashes` или `compatible_double_hashes`). Перед обновлением завершите миграцию дедупликации в предыдущей версии, запустив `compatible_double_hashes` (он записывает и устаревшие, и унифицированные хеши). Для реплицированных таблиц запускайте его как минимум в течение `replicated_deduplication_window_seconds` (по умолчанию один час); окна по умолчанию хранят унифицированные хеши всех вставок за этот период, и этого считается достаточно, чтобы покрыть цикл повторных попыток вставки. Для нереплицируемых таблиц с `non_replicated_deduplication_window` &gt; 0 окно определяется количеством, а не временем, поэтому перед обновлением запускайте `compatible_double_hashes` как минимум для такого числа вставок.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Устаревший защитный механизм миграции. ClickHouse версий 26.7 и новее поддерживает только единый хеш дедупликации вставки (`new_unified_hash`); сервер откажется запускаться, если этот параметр указан с любым другим значением (например, `old_separate_hashes` или `compatible_double_hashes`). Перед обновлением завершите миграцию дедупликации в предыдущей версии, запустив `compatible_double_hashes` (он записывает и устаревшие, и унифицированные хеши). Для реплицированных таблиц запускайте его как минимум в течение `replicated_deduplication_window_seconds` (по умолчанию один час); окна по умолчанию хранят унифицированные хеши всех вставок за этот период, и этого считается достаточно, чтобы покрыть цикл повторных попыток вставки. Для нереплицируемых таблиц с `non_replicated_deduplication_window` &gt; 0 окно определяется количеством, а не временем, поэтому перед обновлением запускайте `compatible_double_hashes` как минимум для такого числа вставок.
 
 <div id="io_thread_pool_queue_size">
   ## io_thread_pool_queue_size
@@ -1964,7 +1964,7 @@ DDL-запросы будут ожидать только реплики из т
   ## webassembly_udf_engine
 </div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />Движок, используемый для исполнения WebAssembly UDF. Поддерживаются значения &#39;wasmtime&#39; и &#39;wasmedge&#39;.
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />Движок, используемый для исполнения WebAssembly UDF. Единственное поддерживаемое значение — &#39;wasmtime&#39;.
 
 <div id="webterminal_allowed_origins">
   ## webterminal_allowed_origins

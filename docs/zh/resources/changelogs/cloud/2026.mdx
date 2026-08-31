@@ -12,8 +12,24 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 除本 ClickHouse Cloud 更新日志外，请参阅 [Cloud Compatibility](/zh/products/cloud/guides/cloud-compatibility) 页面。
 
+<Update label="2026 年 8 月 31 日">
+  本周，ClickHouse Cloud 通过在台北和马来西亚新增 AWS 区域，进一步扩大了全球覆盖范围；同时为 Private Service Connect 新增 Global Access 支持，并让 SAML 用户能更轻松地在组织之间切换。
+
+  ### 新增 AWS 区域：台北和马来西亚
+
+  ClickHouse Cloud 现已在 AWS 台北 (`ap-east-2`) 和 AWS 马来西亚 (`ap-southeast-5`) 推出。这两个区域均设置为支持 ClickPipes 的私有区域。详情请参阅[支持的区域文档](/zh/cloud/reference/supported-regions)和[私有区域注意事项](/zh/cloud/reference/supported-regions#private-regions)。
+
+  ### Private Service Connect 支持 Global Access
+
+  GCP 上的 Private Service Connect (PSC) 现已支持 Global Access。启用后，同一 VPC 内其他 GCP 区域中的客户端可连接到 PSC 端点，包括 ClickHouse Cloud 未原生支持的区域，例如 `asia-northeast3` (首尔) 。ClickHouse Cloud 服务和 PSC 端点必须位于同一 GCP 区域。
+
+  ### 在 SAML 组织之间切换
+
+  属于多个 SAML 组织的 SAML 用户现在可直接通过组织切换器在组织之间切换，系统会在后台重新进行身份验证。无需再为每个组织的 URL 添加书签，也无需手动退出后重新登录——只需为主要组织添加书签，然后从那里切换即可。这涵盖 SAML 组织之间的切换；现有的非 SAML 组织切换方式保持不变。
+</Update>
+
 <Update label="2026 年 8 月 17 日">
-  本周更新扩大了平台覆盖范围，并提升了运维可观测性。Managed Postgres 现已在 GCP 上向部分设计合作伙伴开放，ClickStack 资源可通过官方 Terraform provider 进行管理，新的账单通知可在 credits 到期或服务中断前向客户发出预警。我们还改进了 ClickHouse 智能体的链路追踪功能，并优化了 SAML 登录体验。
+  本周更新扩大了平台覆盖范围，并提升了运维可观测性。Managed Postgres 现已在 GCP 上向部分设计合作伙伴开放，ClickStack 资源可通过官方 Terraform provider 进行管理，新的计费通知可在 credits 到期或服务中断前向客户发出预警。我们还改进了 ClickHouse 智能体的链路追踪功能，并优化了 SAML 登录体验。
 
   ### Managed Postgres 现已在 GCP 上推出
 
@@ -25,7 +41,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### 新增 credits 和付款通知
 
-  账单通知现可通过 ClickHouse Cloud Notification Center 管理，并可通过控制台、电子邮件和 Slack 发送。客户会在预付费额度或试用 credits 即将到期或耗尽时提前收到通知；在添加 credits、付款方式变更或账户进入欠费宽限期时，也会收到通知。这样一来，客户可在服务中断前有更多时间续订、添加 credits 或解决付款问题。
+  计费通知现可通过 ClickHouse Cloud Notification Center 管理，并可通过控制台、电子邮件和 Slack 发送。客户会在预付费额度或试用 credits 即将到期或耗尽时提前收到通知；在添加 credits、付款方式变更或账户进入欠费宽限期时，也会收到通知。这样一来，客户可在服务中断前有更多时间续订、添加 credits 或解决付款问题。
 
   ### 从 ClickHouse 智能体打开 Langfuse 会话链路追踪
 
@@ -37,19 +53,19 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Update>
 
 <Update label="2026 年 7 月 13 日">
-  本周更新包括通过标准 HTTPS 实现的 sticky 副本路由、自定义计费周期起始日期，以及对象存储 ClickPipes 的新初始加载控制功能。
+  本周更新包括通过标准 HTTPS 实现粘性副本路由、自定义计费周期开始日期，以及对象存储 ClickPipes 的新初始加载控制选项。
 
-  ### 通过 HTTPS 实现 sticky 副本路由 (私有预览)
+  ### 通过 HTTPS 进行粘性副本路由 (私有预览)
 
-  现在，您只需在常规 service URL 后添加 `?session_id=` 参数，即可通过标准 HTTPS 将查询固定到特定副本，无需使用特殊主机名或更改 DNS。这可让临时表等会话范围对象在多次查询之间保持可用，并有助于重复查询命中已预热的副本本地缓存。该功能正以私有预览形式向所有 Enterprise 客户推出，并可按需向 Scale 客户提供。现有基于子域的路由方式将继续可用，但最终会迁移到这种方法。请参阅 [replica-aware routing](/zh/products/cloud/features/infrastructure/replica-aware-routing) 文档。
+  现在，您可以通过在常规服务 URL 中添加 `?session_id=` 参数，经由标准 HTTPS 将查询固定到特定副本，无需特殊主机名或 DNS 变更。这可让临时表等会话范围内的对象在多次查询间保持可用，并使重复查询命中已预热的副本本地缓存。该功能正以私有预览形式向所有 Enterprise 客户推出，并可应 Scale 客户请求提供。现有的基于子域名的路由仍可正常使用，但最终将迁移至此方法。请参阅[副本感知路由](/zh/products/cloud/features/infrastructure/replica-aware-routing)文档。
 
   ### 自定义计费周期开始日期
 
-  您现在可以申请更改组织的计费日期，也就是每个计费周期在每月开始的日期，例如让 invoice 与自然月对齐。请提交支持工单并注明您希望的日期。计费日期按 UTC 计算，每张 invoice 覆盖从该计费日期开始至次月同一日期 (不含该日期) 之前的使用量。
+  现在，您可以请求更改组织的计费日期，即每个计费周期开始的日期，例如使发票与自然月对齐。请提交支持工单并注明您希望的日期。计费日期采用 UTC，每张发票涵盖从计费日期起至次月同一日期之前的使用量。
 
   ### 跳过对象存储 ClickPipes 的初始加载
 
-  对象存储 [ClickPipes](/zh/integrations/clickpipes/home) (S3、GCS 和 Azure Blob 存储) 现在在您创建管道时提供两种控制初始加载的方式：**Start after**，会跳过直到并包括给定对象键的文件；以及 **Skip initial load**，会完全跳过预先存在的文件，只处理新的对象通知。此前，新管道总是会回填路径中的每个文件。这两个选项对于给定管道是互斥且永久的：已跳过的回填之后无法再触发。可在 UI、Cloud API 以及 Terraform v3.18.0 及更高版本中使用。
+  对象存储 [ClickPipes](/zh/integrations/clickpipes/home) (S3、GCS 和 Azure Blob Storage) 现在在创建管道时提供两种控制初始加载的方法：**开始于之后**，跳过截至并包括指定对象键的文件；以及 **跳过初始加载**，完全跳过已有文件，仅处理新的对象通知。此前，新管道始终会回填路径中的每个文件。这两个选项对于给定管道而言互斥且不可更改：已跳过的回填无法在之后触发。可在 UI、Cloud API 以及 Terraform v3.18.0 及更高版本中使用。
 </Update>
 
 <Update label="2026 年 6 月 30 日">

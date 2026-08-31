@@ -28,12 +28,12 @@ s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structur
 
 حيث:
 
-* path — ‏عنوان URL للحاوية يتضمّن مسار الملف. يدعم هذا محارف بدل التالية في وضع القراءة فقط: `*`، `?`، `{abc,def}` و `{N..M}`، حيث إن `N` و `M` أرقام، و`'abc'` و`'def'` سلاسل نصية. لمزيد من المعلومات، راجع الوثائق حول [استخدام محارف بدل في المسار](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
+* path — ‏عنوان URL للحاوية يتضمّن مسار الملف. يدعم هذا محارف البدل التالية في وضع القراءة فقط: `*`، `?`، `{abc,def}` و `{N..M}`، حيث إن `N` و `M` أرقام، و`'abc'` و`'def'` سلاسل نصية. لمزيد من المعلومات، راجع الوثائق حول [استخدام محارف البدل في المسار](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * format — ‏[التنسيق](/ar/reference/formats/index#formats-overview) الخاص بالملف.
 * structure — بنية الجدول. التنسيق: `'column1_name column1_type, column2_name column2_type, ...'`.
-* compression — هذه المعلمة اختيارية. القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. بشكل افتراضي، يُكتشف الضغط تلقائيًا من امتداد الملف.
+* compression — هذه المعلمة اختيارية. القيم المدعومة: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. بشكل افتراضي، يُكتشف الضغط تلقائيًا من امتداد الملف. بالنسبة إلى `snappy`، يُحدد تنسيق النقل بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (تكون قيمته `basic` افتراضيًا).
 
-يتيح استخدام محارف بدل في تعبير المسار الإشارة إلى عدة ملفات، ويفسح المجال للمعالجة المتوازية.
+يتيح استخدام محارف البدل في تعبير المسار الإشارة إلى عدة ملفات، ويفسح المجال للمعالجة المتوازية.
 
 <div id="preparation">
   ### التحضير
@@ -359,7 +359,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — ‏عنوان URL للحاوية مع مسار للملف. يدعم محارف البدل التالية في وضع القراءة فقط: `*` و `?` و `{abc,def}` و `{N..M}`، حيث إن N و M — أرقام، و &#39;abc&#39; و &#39;def&#39; — سلاسل نصية. لمزيد من المعلومات، راجع [هنا](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `format` — [تنسيق](/ar/reference/formats/index#formats-overview) الملف.
 * `aws_access_key_id`, `aws_secret_access_key` - بيانات اعتماد طويلة الأمد لمستخدم حساب AWS. يمكنك استخدامها لمصادقة طلباتك. هذه المعلمة اختيارية. إذا لم تُحدَّد بيانات الاعتماد، فستُستخدم قيم ملف الإعدادات. لمزيد من المعلومات، راجع [إدارة بيانات الاعتماد](#managing-credentials).
-* `compression` — نوع الضغط. القيم المدعومة: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. هذه المعلمة اختيارية. وبشكل افتراضي، سيُكتشَف نوع الضغط تلقائيًا استنادًا إلى امتداد الملف.
+* `compression` — نوع الضغط. القيم المدعومة: none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. هذه المعلمة اختيارية. وبشكل افتراضي، سيُكتشَف نوع الضغط تلقائيًا استنادًا إلى امتداد الملف. بالنسبة إلى `snappy`، يُحدَّد تنسيق النقل بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (‏`basic` افتراضيًا).
 
 <div id="reading-data">
   ### قراءة البيانات

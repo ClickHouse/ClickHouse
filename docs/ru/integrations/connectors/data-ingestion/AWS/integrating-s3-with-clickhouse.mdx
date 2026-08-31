@@ -31,7 +31,7 @@ s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structur
 * path — URL бакета с путём к файлу. В режиме только для чтения поддерживаются следующие подстановочные шаблоны: `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, а `'abc'`, `'def'` — строки. Дополнительные сведения см. в документации по [использованию подстановочных шаблонов в path](/ru/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * format — [Формат](/ru/reference/formats/index#formats-overview) файла.
 * structure — Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.
-* compression — Параметр необязателен. Поддерживаемые значения: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. По умолчанию сжатие определяется автоматически по расширению файла.
+* compression — Параметр необязателен. Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие определяется автоматически по расширению файла. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (`basic` по умолчанию).
 
 Использование подстановочных шаблонов в выражении path позволяет указывать несколько файлов и открывает возможности для параллельной обработки.
 
@@ -359,7 +359,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — URL бакета с путем к файлу. В режиме только для чтения поддерживаются следующие подстановочные шаблоны: `*`, `?`, `{abc,def}` и `{N..M}`, где N, M — числа, &#39;abc&#39;, &#39;def&#39; — строки. Дополнительную информацию см. [здесь](/ru/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `format` — [формат](/ru/reference/formats/index#formats-overview) файла.
 * `aws_access_key_id`, `aws_secret_access_key` - Долгосрочные учетные данные пользователя учетной записи AWS. Их можно использовать для аутентификации запросов. Параметр необязателен. Если учетные данные не указаны, используются значения из файла конфигурации. Дополнительную информацию см. в разделе [Управление учетными данными](#managing-credentials).
-* `compression` — Тип сжатия. Поддерживаемые значения: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. Параметр необязателен. По умолчанию тип сжатия определяется автоматически по расширению файла.
+* `compression` — Тип сжатия. Поддерживаемые значения: none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. Параметр необязателен. По умолчанию тип сжатия определяется автоматически по расширению файла. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (по умолчанию — `basic`).
 
 <div id="reading-data">
   ### Чтение данных

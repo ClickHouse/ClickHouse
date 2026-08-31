@@ -24,6 +24,24 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Fait en sorte que les métriques asynchrones ne calculent que les métriques liées à Keeper.
 
+<div id="asynchronous_metrics_key_values_mode">
+  ## asynchronous_metrics_key_values_mode
+</div>
+
+<SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
+
+Détermine sous quelle forme sont publiées les métriques asynchrones clé-valeur — celles ventilées par cœur de CPU, périphérique bloc, interface réseau, disque, capteur de température, contrôleur de mémoire ou canal de journalisation — dans [`system.asynchronous_metrics`](/fr/reference/system-tables/asynchronous_metrics), [`system.asynchronous_metric_log`](/fr/reference/system-tables/asynchronous_metric_log), le point de terminaison Prometheus et Graphite.
+
+Valeurs possibles :
+
+* `key_values` - chaque famille est une métrique clé-valeur unique : un `Map` dans la colonne `key_values` de `system.asynchronous_metrics`, une ligne par clé dans `system.asynchronous_metric_log`, un échantillon Prometheus par clé portant un label tel que `device="sda"`, et un chemin Graphite `<prefix>.<Metric>.<key>`.
+* `legacy_names` - chaque clé est une métrique scalaire distincte dont le nom incorpore la clé, comme avant la version 26.8 : `OSUserTimeCPU3`, `CPUFrequencyMHz_0`, `BlockReadBytes_sda`, `NetworkReceiveBytes_eth0`, `DiskTotal_default`, `Temperature0`, `EDAC0_Correctable`, etc.
+* `both` - les deux formes sont publiées simultanément, ce qui est utile pendant la migration de la supervision. Attention au double comptage dans ce mode : une agrégation sur des noms de métriques correspondant à un préfixe, telle que `sum(value) ... WHERE metric LIKE 'NetworkReceiveBytes%'`, compte chaque valeur deux fois.
+
+Une famille de métriques clé-valeur introduite après la version 26.8 n’a pas de nom legacy et est toujours publiée sous forme clé-valeur.
+
+Le paramètre est appliqué à la volée : il est relu à chaque mise à jour des métriques asynchrones ; `SYSTEM RELOAD CONFIG` suffit donc pour changer de forme sans redémarrage.
+
 <div id="asynchronous_metrics_update_period_s">
   ## asynchronous_metrics_update_period_s
 </div>

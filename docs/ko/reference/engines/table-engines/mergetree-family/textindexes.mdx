@@ -806,7 +806,7 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 
 함수 [hasToken](/ko/reference/functions/regular-functions/string-search-functions#hasToken)은 주어진 단일 토큰과 일치하는지 확인합니다.
 
-앞서 설명한 함수들과 달리, 이 함수들은 검색어를 토큰화하지 않습니다(입력이 단일 토큰이라고 가정합니다).
+`hasAnyTokens` 및 `hasAllTokens`와 달리, 이 함수는 검색어를 토큰화하지 않습니다(입력이 단일 토큰이라고 가정합니다).
 
 예시:
 

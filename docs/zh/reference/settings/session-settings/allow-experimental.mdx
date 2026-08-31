@@ -15,18 +15,6 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="allow_experimental_ai_functions">
-  ## allow_experimental_ai_functions
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新增设置"}]}]} />
-
-启用实验性 AI 函数 (例如 `aiGenerateContent`) 。这些函数会向 AI 提供商发起外部 HTTP 调用。
-
 <div id="allow_experimental_analyzer">
   ## allow_experimental_analyzer
 </div>
@@ -430,16 +418,6 @@ Cloud 默认值：`1`。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "新增设置：通过列出 HTTP 索引页，为 `url` 表函数启用通配符展开。"}]}]} />
 
 允许 `url()` 和 `ENGINE = URL` 通过 HTTP 索引页进行 Experimental 通配符展开。
-
-<div id="allow_experimental_window_view">
-  ## allow_experimental_window_view
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-启用 WINDOW VIEW。该功能尚不成熟。
 
 <div id="allow_experimental_ytsaurus_dictionary_source">
   ## allow_experimental_ytsaurus_dictionary_source

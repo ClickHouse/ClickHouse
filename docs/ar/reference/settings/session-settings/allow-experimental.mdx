@@ -15,18 +15,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_experimental_ai_functions">
-  ## allow_experimental_ai_functions
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
-
-فعّل دوال الذكاء الاصطناعي التجريبية (مثل `aiGenerateContent`). تُجري هذه الدوال طلبات HTTP خارجية إلى مزوّدي الذكاء الاصطناعي.
-
 <div id="allow_experimental_analyzer">
   ## allow_experimental_analyzer
 </div>
@@ -430,16 +418,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لتمكين توسيع أحرف البدل في دالة الجدول `url` عبر إدراج صفحات فهرس HTTP."}]}]} />
 
 يسمح بالتوسيع التجريبي لأحرف البدل لكلٍّ من `url()` و `ENGINE = URL` استنادًا إلى صفحات فهرس HTTP.
-
-<div id="allow_experimental_window_view">
-  ## allow_experimental_window_view
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-يُمكّن WINDOW VIEW. لا تزال هذه الميزة غير ناضجة بما يكفي.
 
 <div id="allow_experimental_ytsaurus_dictionary_source">
   ## allow_experimental_ytsaurus_dictionary_source

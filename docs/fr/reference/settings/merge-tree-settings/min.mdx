@@ -32,9 +32,13 @@ renvoi de Ok lors de la vérification de l&#39;état.
 
 Permet de réduire l’utilisation de la mémoire des tables comportant un grand nombre de colonnes grâce à des tampons d’écriture adaptatifs.
 
+Comparé au nombre de flux qu’une partie large écrit, qui peut largement dépasser son nombre
+de colonnes : un `Map` comportant de nombreux buckets, ou un `Array` ou `Tuple` profondément imbriqué, écrit de nombreux flux
+pour une seule colonne, et un tampon d’écriture est alloué par flux.
+
 Valeurs possibles :
 
-* 0 - illimité
+* 0 - désactivé
 * 1 - toujours activé
 
 <div id="min_compress_block_size">

@@ -24,6 +24,24 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Ограничивает вычисление асинхронных метрик только метриками, связанными с Keeper.
 
+<div id="asynchronous_metrics_key_values_mode">
+  ## asynchronous_metrics_key_values_mode
+</div>
+
+<SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
+
+В какой форме публикуются асинхронные метрики «ключ-значение» — с разбивкой по ядрам CPU, блочным устройствам, сетевым интерфейсам, дискам, датчикам температуры, контроллерам памяти или каналам журналирования — в [`system.asynchronous_metrics`](/ru/reference/system-tables/asynchronous_metrics), [`system.asynchronous_metric_log`](/ru/reference/system-tables/asynchronous_metric_log), конечной точке Prometheus и Graphite.
+
+Возможные значения:
+
+* `key_values` — каждое семейство представлено одной метрикой «ключ-значение»: `Map` в столбце `key_values` таблицы `system.asynchronous_metrics`, одна строка на ключ в `system.asynchronous_metric_log`, один сэмпл Prometheus на ключ с меткой, например `device="sda"`, и путь Graphite `<prefix>.<Metric>.<key>`.
+* `legacy_names` — каждый ключ представляет собой отдельную скалярную метрику с ключом, включённым в её имя, как было до версии 26.8: `OSUserTimeCPU3`, `CPUFrequencyMHz_0`, `BlockReadBytes_sda`, `NetworkReceiveBytes_eth0`, `DiskTotal_default`, `Temperature0`, `EDAC0_Correctable` и так далее.
+* `both` — обе формы публикуются одновременно, что полезно при миграции мониторинга. В этом режиме остерегайтесь двойного подсчёта: агрегирование по именам метрик, соответствующим префиксу, например `sum(value) ... WHERE metric LIKE 'NetworkReceiveBytes%'`, учитывает каждое значение дважды.
+
+Семейство метрик «ключ-значение», появившееся после версии 26.8, не имеет устаревшего имени и всегда публикуется в форме «ключ-значение».
+
+Настройка применяется на лету: она перечитывается при каждом обновлении асинхронных метрик, поэтому для переключения формы без перезапуска достаточно `SYSTEM RELOAD CONFIG`.
+
 <div id="asynchronous_metrics_update_period_s">
   ## asynchronous_metrics_update_period_s
 </div>

@@ -3496,8 +3496,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 도입 버전: v20.1.0
 
-입력 값을 [DateTime64](/ko/reference/data-types/datetime64) 유형의 값으로 변환하지만, 유효하지 않은 인수가 전달되면 [DateTime64](/ko/reference/data-types/datetime64)의 하한값을 반환합니다.
-[toDateTime64](#toDateTime64)와 동일하지만, 유효하지 않은 인수가 전달되면 [DateTime64](/ko/reference/data-types/datetime64)의 하한값을 반환합니다.
+입력 값을 [DateTime64](/ko/reference/data-types/datetime64) 유형의 값으로 변환하지만, 유효하지 않은 인수가 전달되면 0 [DateTime64](/ko/reference/data-types/datetime64) 값(Unix epoch, `1970-01-01 00:00:00`)을 반환합니다.
+[toDateTime64](#toDateTime64)와 동일하지만, 유효하지 않은 인수가 전달되면 0 [DateTime64](/ko/reference/data-types/datetime64) 값을 반환합니다.
 
 관련 항목:
 
@@ -3508,16 +3508,18 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 **구문**
 
 ```sql
-toDateTime64OrZero(x)
+toDateTime64OrZero(x[, precision[, timezone]])
 ```
 
 **인수**
 
 * `x` — 날짜, 시간, 초 미만 정밀도를 포함한 문자열 표현입니다. [`String`](/ko/reference/data-types/string)
+* `precision` — 선택 사항입니다. 반환 값의 초 미만 정밀도입니다. [`UInt8`](/ko/reference/data-types/int-uint)
+* `timezone` — 선택 사항입니다. 반환 값의 시간대입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
-성공하면 DateTime64 값을 반환하고, 그렇지 않으면 DateTime64의 하한값(`1970-01-01 00:00:00.000`)을 반환합니다. [`DateTime64`](/ko/reference/data-types/datetime64)
+성공하면 DateTime64 값을 반환하고, 그렇지 않으면 요청된 정밀도의 제로 DateTime64 값(`1970-01-01 00:00:00`)을 반환합니다. [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 

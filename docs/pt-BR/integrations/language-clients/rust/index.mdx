@@ -45,12 +45,12 @@ Veja também: [página no crates.io](https://crates.io/crates/clickhouse).
   ## Features do Cargo
 </div>
 
-* `lz4` (habilitado por padrão) — habilita as variantes `Compression::Lz4` e `Compression::Lz4Hc(_)`. Quando habilitado, `Compression::Lz4` é usado por padrão em todas as consultas, exceto em `WATCH`.
+* `lz4` (habilitado por padrão) — habilita as variantes `Compression::Lz4` e `Compression::Lz4Hc(_)`. Quando habilitado, `Compression::Lz4` é usado por padrão em todas as consultas, exceto em `WATCH`, que é aceita apenas por versões do ClickHouse anteriores à v26.9.
 * `native-tls` — oferece suporte a URLs com o esquema `HTTPS` via `hyper-tls`, que faz link com o OpenSSL.
 * `rustls-tls` — oferece suporte a URLs com o esquema `HTTPS` via `hyper-rustls`, que não faz link com o OpenSSL.
 * `inserter` — habilita `client.inserter()`.
 * `test-util` — adiciona mocks. Veja [o exemplo](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). Use-o apenas em `dev-dependencies`.
-* `watch` — habilita a funcionalidade `client.watch`. Consulte a seção correspondente para mais detalhes.
+* `watch` — habilita a funcionalidade `client.watch`. Ela emite uma consulta `WATCH`, que foi removida no ClickHouse v26.9 junto com `WINDOW VIEW`, portanto só funciona com servidores mais antigos.
 * `uuid` — adiciona `serde::uuid` para trabalhar com a crate [uuid](https://docs.rs/uuid).
 * `time` — adiciona `serde::time` para trabalhar com a crate [time](https://docs.rs/time).
 
@@ -556,7 +556,7 @@ struct MyRow {
   ## Simulação
 </div>
 
-O crate fornece utilitários para simular o servidor CH e testar consultas DDL, `SELECT`, `INSERT` e `WATCH`. Esse recurso pode ser habilitado com a feature `test-util`. Use-o **apenas** como `dev-dependency`.
+O crate fornece utilitários para simular o servidor CH e testar consultas DDL, `SELECT`, `INSERT` e `WATCH` (`WATCH` é aceito apenas por versões do ClickHouse anteriores à v26.9). Esse recurso pode ser habilitado com a feature `test-util`. Use-o **apenas** como `dev-dependency`.
 
 Veja [o exemplo](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs).
 

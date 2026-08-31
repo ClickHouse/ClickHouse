@@ -3496,8 +3496,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 أُضيفت في: v20.1.0
 
-يحوِّل قيمة الإدخال إلى قيمة من النوع [DateTime64](/ar/reference/data-types/datetime64)، لكنه يعيد الحد الأدنى لـ [DateTime64](/ar/reference/data-types/datetime64) إذا استلم وسيطة غير صالحة.
-وهو مماثل لـ [toDateTime64](#toDateTime64)، لكنه يعيد الحد الأدنى لـ [DateTime64](/ar/reference/data-types/datetime64) إذا استلم وسيطة غير صالحة.
+يحوِّل قيمة الإدخال إلى قيمة من النوع [DateTime64](/ar/reference/data-types/datetime64)، لكنه يعيد قيمة [DateTime64](/ar/reference/data-types/datetime64) الصفرية (حقبة Unix، `1970-01-01 00:00:00`) إذا استلم وسيطة غير صالحة.
+وهو مماثل لـ [toDateTime64](#toDateTime64)، لكنه يعيد قيمة [DateTime64](/ar/reference/data-types/datetime64) الصفرية إذا استلم وسيطة غير صالحة.
 
 راجع أيضًا:
 
@@ -3505,19 +3505,21 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 * [toDateTime64OrNull](#toDateTime64OrNull).
 * [toDateTime64OrDefault](#toDateTime64OrDefault).
 
-**البنية**
+**الصيغة**
 
 ```sql
-toDateTime64OrZero(x)
+toDateTime64OrZero(x[, precision[, timezone]])
 ```
 
 **الوسيطات**
 
 * `x` — تمثيل نصي لتاريخ ووقت بدقة أجزاء من الثانية. [`String`](/ar/reference/data-types/string)
+* `precision` — اختياري. دقة أجزاء الثانية للقيمة المعادة. [`UInt8`](/ar/reference/data-types/int-uint)
+* `timezone` — اختياري. المنطقة الزمنية للقيمة المعادة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تعيد قيمة من النوع DateTime64 عند النجاح، وإلا فتعيد الحد الأدنى لـ DateTime64 (`1970-01-01 00:00:00.000`). [`DateTime64`](/ar/reference/data-types/datetime64)
+تعيد قيمة من النوع DateTime64 عند النجاح، وإلا فتعيد قيمة DateTime64 الصفرية (`1970-01-01 00:00:00`) بالدقة المطلوبة. [`DateTime64`](/ar/reference/data-types/datetime64)
 
 **أمثلة**
 

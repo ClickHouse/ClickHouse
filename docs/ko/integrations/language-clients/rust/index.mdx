@@ -45,12 +45,12 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
   ## Cargo 기능
 </div>
 
-* `lz4` (기본적으로 활성화됨) — `Compression::Lz4` 및 `Compression::Lz4Hc(_)` variant를 활성화합니다. 활성화되면 `WATCH`를 제외한 모든 쿼리에 기본적으로 `Compression::Lz4`가 사용됩니다.
+* `lz4` (기본적으로 활성화됨) — `Compression::Lz4` 및 `Compression::Lz4Hc(_)` variant를 활성화합니다. 활성화되면 v26.9 이전 ClickHouse에서만 허용되는 `WATCH`를 제외한 모든 쿼리에 기본적으로 `Compression::Lz4`가 사용됩니다.
 * `native-tls` — OpenSSL에 링크되는 `hyper-tls`를 통해 `HTTPS` 스키마의 URL을 지원합니다.
 * `rustls-tls` — OpenSSL에 링크되지 않는 `hyper-rustls`를 통해 `HTTPS` 스키마의 URL을 지원합니다.
 * `inserter` — `client.inserter()`를 활성화합니다.
 * `test-util` — 모의 객체를 추가합니다. [예시](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs)를 참조하십시오. `dev-dependencies`에서만 사용하십시오.
-* `watch` — `client.watch` 기능을 활성화합니다. 자세한 내용은 해당 섹션을 참조하십시오.
+* `watch` — `client.watch` 기능을 활성화합니다. `WATCH` 쿼리를 실행하며, 이 쿼리는 `WINDOW VIEW`와 함께 ClickHouse v26.9에서 제거되었으므로 이전 서버에서만 작동합니다.
 * `uuid` — [uuid](https://docs.rs/uuid) 크레이트와 함께 사용할 수 있도록 `serde::uuid`를 추가합니다.
 * `time` — [time](https://docs.rs/time) 크레이트와 함께 사용할 수 있도록 `serde::time`를 추가합니다.
 
@@ -556,7 +556,7 @@ struct MyRow {
   ## 모킹
 </div>
 
-이 크레이트는 CH 서버를 모킹하고 DDL, `SELECT`, `INSERT`, `WATCH` 쿼리를 테스트하기 위한 유틸리티를 제공합니다. 이 기능은 `test-util` 기능을 활성화하면 사용할 수 있습니다. **반드시** 개발 의존성으로만 사용하세요.
+이 크레이트는 CH 서버를 모킹하고 DDL, `SELECT`, `INSERT`, `WATCH` 쿼리를 테스트하기 위한 유틸리티를 제공합니다(`WATCH`는 v26.9 이전 버전의 ClickHouse에서만 허용됩니다). 이 기능은 `test-util` 기능을 활성화하면 사용할 수 있습니다. **반드시** 개발 의존성으로만 사용하세요.
 
 [예시](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs)를 참조하세요.
 

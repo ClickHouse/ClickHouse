@@ -807,7 +807,7 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 
 関数 [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken) は、指定した単一のトークンに対して照合を行います。
 
-前述の関数とは異なり、これらの関数は検索語をトークン化しません (入力が単一のトークンであることを前提としています) 。
+`hasAnyTokens` および `hasAllTokens` とは異なり、検索語をトークン化しません (入力が単一のトークンであることを前提としています) 。
 
 例:
 

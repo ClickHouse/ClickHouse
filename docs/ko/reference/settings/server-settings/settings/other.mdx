@@ -589,7 +589,7 @@ false이면 [`default_normal_view_sql_security`](/ko/reference/settings/session-
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />지원 중단된 마이그레이션 보호 설정입니다. 이 버전은 통합 삽입 중복 제거 해시(`new_unified_hash`)만 지원하며, 이 설정이 다른 값(예: `old_separate_hashes` 또는 `compatible_double_hashes`)으로 지정되어 있으면 서버가 시작되지 않습니다. 업그레이드하기 전에 이전 버전에서 `compatible_double_hashes`를 실행해(레거시 해시와 통합 해시를 모두 기록함) 중복 제거 마이그레이션을 완료하십시오. 복제된 테이블(Replicated Table)의 경우 최소 `replicated_deduplication_window_seconds` 동안 실행하십시오(기본값은 1시간). 기본 윈도우는 해당 기간 동안 모든 삽입의 통합 해시를 유지하므로, 일반적으로 삽입 재시도 루프를 커버하기에 충분한 것으로 간주됩니다. `non_replicated_deduplication_window` &gt; 0인 비복제 테이블의 경우 윈도우는 시간 기준이 아니라 개수 기준이므로, 업그레이드하기 전에 최소 그 횟수만큼 삽입이 수행되도록 `compatible_double_hashes`를 실행하십시오.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />지원 중단된 마이그레이션 보호 설정입니다. ClickHouse 26.7 이상 버전은 통합 삽입 중복 제거 해시(`new_unified_hash`)만 지원하며, 이 설정이 다른 값(예: `old_separate_hashes` 또는 `compatible_double_hashes`)으로 지정되어 있으면 서버가 시작되지 않습니다. 업그레이드하기 전에 이전 버전에서 `compatible_double_hashes`를 실행해(레거시 해시와 통합 해시를 모두 기록함) 중복 제거 마이그레이션을 완료하십시오. 복제된 테이블(Replicated Table)의 경우 최소 `replicated_deduplication_window_seconds` 동안 실행하십시오(기본값은 1시간). 기본 윈도우는 해당 기간 동안 모든 삽입의 통합 해시를 유지하므로, 일반적으로 삽입 재시도 루프를 커버하기에 충분한 것으로 간주됩니다. `non_replicated_deduplication_window` &gt; 0인 비복제 테이블의 경우 윈도우는 시간 기준이 아니라 개수 기준이므로, 업그레이드하기 전에 최소 그 횟수만큼 삽입이 수행되도록 `compatible_double_hashes`를 실행하십시오.
 
 <div id="io_thread_pool_queue_size">
   ## io_thread_pool_queue_size
@@ -1960,7 +1960,7 @@ DateTime 필드를 텍스트 포맷(화면이나 파일에 출력되는 형식)�
   ## webassembly_udf_engine
 </div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />WebAssembly UDF를 실행하는 데 사용하는 engine입니다. 지원되는 값은 &#39;wasmtime&#39;과 &#39;wasmedge&#39;입니다.
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />WebAssembly UDF를 실행하는 데 사용하는 engine입니다. 지원되는 유일한 값은 &#39;wasmtime&#39;입니다.
 
 <div id="webterminal_allowed_origins">
   ## webterminal_allowed_origins

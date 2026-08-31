@@ -805,7 +805,7 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 
 函数 [hasToken](/zh/reference/functions/regular-functions/string-search-functions#hasToken) 用于匹配单个给定标记。
 
-与前面提到的函数不同，它不会对搜索词进行分词 (即假定输入为单个标记) 。
+与 `hasAnyTokens` 和 `hasAllTokens` 不同，它不会对搜索词进行分词 (即假定输入为单个标记) 。
 
 示例：
 

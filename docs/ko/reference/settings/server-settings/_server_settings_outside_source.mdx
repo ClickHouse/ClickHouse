@@ -1400,13 +1400,13 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 
 설정:
 
-* `endpoint` – prometheus server가 메트릭을 스크래핑할 HTTP endpoint입니다. &#39;/&#39;로 시작해야 합니다.
+* `endpoint` – prometheus 서버가 메트릭을 스크래핑할 HTTP endpoint입니다. &#39;/&#39;로 시작해야 합니다.
 * `port` – `endpoint`에 사용할 포트입니다.
 * `metrics` – [system.metrics](/ko/reference/system-tables/metrics) 테이블의 메트릭을 노출합니다.
 * `events` – [system.events](/ko/reference/system-tables/events) 테이블의 메트릭을 노출합니다.
-* `asynchronous_metrics` – [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블의 현재 메트릭 값을 노출합니다.
-* `errors` - 마지막 server 재시작 이후 오류 코드별 오류 수를 노출합니다. 이 정보는 [system.errors](/ko/reference/system-tables/errors)에서도 확인할 수 있습니다.
-* `labels` – 노출되는 모든 메트릭에 추가되는 상수 레이블입니다. 각 하위 요소는 하나의 레이블을 정의합니다. 요소 이름은 레이블 이름이어야 하며(`[a-zA-Z_][a-zA-Z0-9_]*`와 일치해야 함), 요소 값은 레이블 값입니다. 레이블 값은 `from_env` 속성과 같은 표준 구성 치환을 지원합니다. 레이블 이름이 `__`로 시작하는 경우(Prometheus에서 예약됨) 또는 이 엔드포인트가 활성화된 섹션 중 하나에 이미 사용하는 레이블과 충돌하는 경우 거부됩니다. 그렇지 않으면 샘플에 동일한 레이블 이름이 두 번 포함됩니다. 따라서 예약된 집합은 엔드포인트에서 현재 노출하는 항목을 따릅니다. `histograms`가 활성화된 경우 `le`, `info`가 활성화된 경우 `ClickHouse_Info` 레이블(`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), `histograms`/`dimensional_metrics`가 활성화된 경우 노출된 히스토그램 또는 차원 메트릭 패밀리에서 사용하는 모든 레이블(예: `group`, `direction`, `operation_type`)이 해당합니다. 이는 엔드포인트가 실제로 노출하는 항목에 따라 달라지므로, 한 엔드포인트에서는 유효한 이름이 다른 엔드포인트에서는 거부될 수 있습니다. 예를 들어 Keeper `keeper_metrics_only` 엔드포인트는 `keeper_*` 패밀리만 노출하므로 서버 패밀리에서만 사용되는 레이블은 여기에서 허용됩니다.
+* `asynchronous_metrics` – [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블의 현재 메트릭 값을 노출합니다. 키-값 메트릭(CPU 코어, 블록 디바이스, 네트워크 인터페이스 또는 디스크별로 분류되는 메트릭)은 키당 하나의 샘플로 노출되며, 키는 레이블로 포함됩니다: `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"}`. [`asynchronous_metrics_key_values_mode`](/ko/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 서버 설정을 사용하면 대신 26.8 이전의 맹글링된 이름(`ClickHouseAsyncMetrics_BlockReadBytes_sda`)으로 또는 두 방식 모두로 노출할 수 있습니다.
+* `errors` - 마지막 서버 재시작 이후 오류 코드별 오류 수를 노출합니다. 이 정보는 [system.errors](/ko/reference/system-tables/errors)에서도 확인할 수 있습니다.
+* `labels` – 노출되는 모든 메트릭에 추가되는 상수 레이블입니다. 각 하위 요소는 하나의 레이블을 정의합니다. 요소 이름은 레이블 이름이어야 하며(`[a-zA-Z_][a-zA-Z0-9_]*`와 일치해야 함), 요소 값은 레이블 값입니다. 레이블 값은 `from_env` 속성과 같은 표준 구성 치환을 지원합니다. 레이블 이름이 `__`로 시작하는 경우(Prometheus에서 예약됨) 또는 이 엔드포인트가 활성화된 섹션 중 하나에 이미 사용하는 레이블과 충돌하는 경우 거부됩니다. 그렇지 않으면 샘플에 동일한 레이블 이름이 두 번 포함됩니다. 따라서 예약된 집합은 엔드포인트에서 현재 노출하는 항목을 따릅니다. `histograms`가 활성화된 경우 `le`, `info`가 활성화된 경우 `ClickHouse_Info` 레이블(`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), `asynchronous_metrics`가 활성화되고 [`asynchronous_metrics_key_values_mode`](/ko/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 서버 설정에 따라 키-값 형식으로 게시되는 경우 키-값 비동기 메트릭의 키 레이블(`channel`, `cpu`, `device`, `disk`, `interface`, `mc`, `sensor`), `histograms`/`dimensional_metrics`가 활성화된 경우 노출된 히스토그램 또는 차원 메트릭 패밀리에서 사용하는 모든 레이블(예: `group`, `direction`, `operation_type`)이 해당합니다. 이는 엔드포인트가 실제로 노출하는 항목에 따라 달라지므로, 한 엔드포인트에서는 유효한 이름이 다른 엔드포인트에서는 거부될 수 있습니다. 예를 들어 Keeper `keeper_metrics_only` 엔드포인트는 `keeper_*` 패밀리만 노출하므로 서버 패밀리에서만 사용되는 레이블은 여기에서 허용됩니다. 상수 레이블은 구성을 로드할 때 `SYSTEM RELOAD CONFIG`를 포함하여 동일한 규칙으로 검증됩니다. 이러한 레이블을 추가하거나 키 레이블이 기록되도록 `asynchronous_metrics_key_values_mode`를 변경하여 상수 레이블이 충돌하게 만드는 다시 로드는 적용되기 전에 전체가 거부되므로 동일한 레이블이 두 번 노출되지 않습니다. 허용된 모드 변경은 메트릭을 노출하는 엔드포인트를 다시 생성하므로 새 형식과 동일한 구성의 레이블이 함께 게시됩니다.
 
 **예시**
 

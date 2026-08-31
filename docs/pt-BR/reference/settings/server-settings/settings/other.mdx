@@ -589,7 +589,7 @@ Observe que os arquivos de configuração carregados separadamente da configura�
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Mecanismo obsoleto de proteção de migração. Esta versão oferece suporte apenas ao hash unificado de desduplicação de insert (`new_unified_hash`); o servidor se recusa a iniciar se essa configuração estiver presente com qualquer outro valor (como `old_separate_hashes` ou `compatible_double_hashes`). Conclua a migração de desduplicação na versão anterior antes de fazer o upgrade executando `compatible_double_hashes` (que grava tanto os hashes legados quanto os unificados). Para tabelas replicadas, execute isso por pelo menos `replicated_deduplication_window_seconds` (uma hora por padrão); as janelas padrão retêm os hashes unificados de todos os inserts durante essa janela, o que é considerado suficiente para cobrir um ciclo de nova tentativa de insert. Para tabelas não replicadas com `non_replicated_deduplication_window` &gt; 0, a janela é baseada em contagem, e não em tempo; portanto, execute `compatible_double_hashes` por pelo menos essa quantidade de inserts antes de fazer o upgrade.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Mecanismo obsoleto de proteção de migração. As versões 26.7 e posteriores do ClickHouse oferecem suporte apenas ao hash unificado de desduplicação de insert (`new_unified_hash`); o servidor se recusa a iniciar se essa configuração estiver presente com qualquer outro valor (como `old_separate_hashes` ou `compatible_double_hashes`). Conclua a migração de desduplicação na versão anterior antes de fazer o upgrade executando `compatible_double_hashes` (que grava tanto os hashes legados quanto os unificados). Para tabelas replicadas, execute isso por pelo menos `replicated_deduplication_window_seconds` (uma hora por padrão); as janelas padrão retêm os hashes unificados de todos os inserts durante essa janela, o que é considerado suficiente para cobrir um ciclo de nova tentativa de insert. Para tabelas não replicadas com `non_replicated_deduplication_window` &gt; 0, a janela é baseada em contagem, e não em tempo; portanto, execute `compatible_double_hashes` por pelo menos essa quantidade de inserts antes de fazer o upgrade.
 
 <div id="io_thread_pool_queue_size">
   ## io_thread_pool_queue_size
@@ -1962,7 +1962,7 @@ até que todos os dicionários concluam o carregamento (com sucesso ou não) ant
   ## webassembly_udf_engine
 </div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />O motor usado para executar UDFs em WebAssembly. Os valores compatíveis são &#39;wasmtime&#39; e &#39;wasmedge&#39;.
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />O motor usado para executar UDFs em WebAssembly. O único valor compatível é &#39;wasmtime&#39;.
 
 <div id="webterminal_allowed_origins">
   ## webterminal_allowed_origins

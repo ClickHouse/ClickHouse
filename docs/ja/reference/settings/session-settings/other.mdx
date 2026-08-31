@@ -22,9 +22,9 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "アダプティブアグリゲータ（`enable_adaptive_aggregator`）がスレッドのローカルハッシュテーブルをフリーズするキー数を設定する新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "アダプティブアグリゲータ（`enable_adaptive_aggregator`）がスレッドのローカルハッシュテーブルを凍結するキー数を設定する新しい設定。"}]}]} />
 
-アダプティブアグリゲータがスレッドのローカルハッシュテーブルをフリーズするキー数です (`enable_adaptive_aggregator` を参照) 。値を小さくすると、フリーズされたテーブルはキャッシュに収まりやすくなり、大きくすると頻出キーをより多く保持できます。0 を指定すると、最初の機会にテーブルをフリーズします。この場合、アルゴリズムは分片アグリゲータ (`enable_sharding_aggregator`) と同様に動作します。各キーは hash によってルーティングされ、単一の所有者によって集計されますが、スキャン中にスレッド間で交換されるのではなく、マージフェーズまで処理が延期されます。
+アダプティブアグリゲータがスレッドのローカルハッシュテーブルを凍結するキー数です (`enable_adaptive_aggregator` を参照) 。値を小さくすると、凍結されたテーブルはキャッシュに収まりやすくなり、大きくすると頻出キーをより多く保持できます。0 を指定すると、最初の機会にテーブルを凍結します。この場合、アルゴリズムはキー hash による純粋な分片と同様に動作します。各キーは hash によってルーティングされ、単一の所有者によって集計されますが、スキャン中にスレッド間で交換されるのではなく、マージフェーズまで処理が延期されます。
 
 <div id="adaptive_aggregator_freeze_threshold_bytes">
   ## adaptive_aggregator_freeze_threshold_bytes
@@ -1854,7 +1854,7 @@ TCP が keepalive プローブの送信を開始するまでに、接続がア�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-空の INSERT を許可または禁止します。デフォルトで有効になっており、空の INSERT ではエラーが発生します。[`clickhouse-client`](/ja/concepts/features/interfaces/cli) を使用する INSERT、または [gRPC インターフェイス](/ja/concepts/features/interfaces/grpc) を使用する INSERT にのみ適用されます。
+空の INSERT を許可または禁止します。デフォルトで有効になっており、空の INSERT ではエラーが発生します。[`clickhouse-client`](/ja/concepts/features/interfaces/client) を使用する INSERT、または [gRPC インターフェイス](/ja/concepts/features/interfaces/grpc) を使用する INSERT にのみ適用されます。
 
 <div id="time_series_prefer_recent_samples_table">
   ## time_series_prefer_recent_samples_table

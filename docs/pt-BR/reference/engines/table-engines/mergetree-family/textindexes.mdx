@@ -806,7 +806,7 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 
 A função [hasToken](/pt-BR/reference/functions/regular-functions/string-search-functions#hasToken) faz correspondência com um único token fornecido.
 
-Ao contrário das funções mencionadas anteriormente, ela não tokeniza o termo de busca (parte do pressuposto de que a entrada é um único token).
+Ao contrário de `hasAnyTokens` e `hasAllTokens`, ela não tokeniza o termo de busca (parte do pressuposto de que a entrada é um único token).
 
 Exemplo:
 

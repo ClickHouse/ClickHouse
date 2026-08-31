@@ -12,6 +12,22 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 この ClickHouse Cloud changelog に加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility) ページもご覧ください。
 
+<Update label="2026年8月31日">
+  今週は、台北とマレーシアに新たな AWS リージョンを追加して ClickHouse Cloud のグローバルな対応範囲を拡大し、Private Service Connect の Global Access をサポートするとともに、SAML ユーザーが組織間を移動しやすくしました。
+
+  ### 新しい AWS リージョン：台北とマレーシア
+
+  ClickHouse Cloud が AWS 台北 (`ap-east-2`) および AWS マレーシア (`ap-southeast-5`) で利用可能になりました。どちらも ClickPipes をサポートする Private Region として設定されています。詳細については、[サポート対象リージョンのドキュメント](/ja/cloud/reference/supported-regions)および[Private Region に関する考慮事項](/ja/cloud/reference/supported-regions#private-regions)をご覧ください。
+
+  ### Private Service Connect が Global Access をサポート
+
+  GCP の Private Service Connect (PSC) が Global Access をサポートするようになりました。有効にすると、同じ VPC 内の他の GCP リージョンにあるクライアントから PSC エンドポイントに接続できます。これには、`asia-northeast3` (ソウル) など、ClickHouse Cloud でネイティブにサポートされていないリージョンからの接続も含まれます。ClickHouse Cloud サービスと PSC エンドポイントは、同じ GCP リージョンに維持する必要があります。
+
+  ### SAML 組織間の切り替え
+
+  複数の SAML 組織に所属する SAML ユーザーは、組織切り替えツールから直接組織を切り替えられるようになりました。この際、バックグラウンドで再認証が行われます。各組織の URL をブックマークしたり、手動でログアウトして再度ログインしたりする必要はなくなりました。メインの組織をブックマークし、そこから切り替えるだけです。これは SAML 間の切り替えを対象としており、既存の非 SAML 組織の切り替えに変更はありません。
+</Update>
+
 <Update label="2026年8月17日">
   今週の更新では、プラットフォームの対応範囲を拡大し、運用の可視性を向上させました。Managed Postgres は一部のデザインパートナー向けに GCP で利用可能になり、ClickStack リソースは公式 Terraform プロバイダーで管理できるようになりました。また、新しい請求通知により、クレジットの期限切れやサービス中断の前に早期通知を受け取れるようになりました。さらに、ClickHouse Agents のトレーシングを改善し、SAML サインインもよりスムーズになりました。
 
@@ -37,19 +53,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Update>
 
 <Update label="2026年7月13日">
-  今週の更新には、通常の HTTPS 経由での sticky レプリカルーティング、請求期間 の開始日のカスタマイズ、オブジェクトストレージ ClickPipes 向けの新しい初期ロード制御が含まれます。
+  今週の更新には、通常の HTTPS 経由でのスティッキーなレプリカルーティング、カスタム請求期間開始日、オブジェクトストレージ ClickPipes の新しい初期ロード制御が含まれます。
 
-  ### HTTPS 経由の sticky レプリカルーティング (プライベートプレビュー)
+  ### HTTPS 経由でのスティッキーなレプリカルーティング (プライベートプレビュー)
 
-  通常の service URL に `?session_id=` パラメータを追加するだけで、特別なホスト名や DNS の変更なしに、標準的な HTTPS 経由で クエリ を特定の レプリカ に固定できるようになりました。これにより、一時テーブルのような session スコープのオブジェクトを クエリ 間で利用し続けることができ、繰り返し実行される クエリ が レプリカ ローカルのウォームキャッシュにヒットしやすくなります。これは、すべての Enterprise 顧客に対してプライベートプレビューで順次提供されており、Scale 顧客についてはリクエストに応じて利用できます。既存のサブドメインベースのルーティングも引き続き動作しますが、最終的にはこの方式へ移行する予定です。[レプリカ対応ルーティング](/ja/products/cloud/features/infrastructure/replica-aware-routing) のドキュメントをご覧ください。
+  通常のサービス URL に `?session_id=` パラメーターを追加することで、特別なホスト名や DNS の変更なしに、標準 HTTPS 経由でクエリを特定のレプリカに固定できるようになりました。これにより、一時テーブルなどのセッションスコープのオブジェクトをクエリ間で利用可能な状態に保ち、繰り返しのクエリでウォーム状態のレプリカローカルキャッシュに到達しやすくなります。Enterprise のすべてのお客様と、ご要望に応じて Scale のお客様を対象に、プライベートプレビューとして順次提供されます。既存のサブドメインベースのルーティングは引き続き機能しますが、最終的にはこの方式に移行します。[レプリカ対応ルーティング](/ja/products/cloud/features/infrastructure/replica-aware-routing)のドキュメントをご覧ください。
 
-  ### 請求期間 開始日のカスタマイズ
+  ### カスタム請求期間開始日
 
-  組織 の billing date、つまり各 請求期間 が始まる月内の日付を、たとえば請求書を暦月に合わせるために変更依頼できるようになりました。希望する日付を記載してサポートチケットを作成してください。Billing date は UTC で適用され、各 invoice には billing date から翌月の同じ日付まで (ただしその日付自体は含まない) の usage が含まれます。
+  組織の請求日、つまり各請求期間が開始する月内の日付について、たとえば請求書を暦月に合わせるために、変更をリクエストできるようになりました。希望する日付を記載してサポートチケットを作成してください。請求日は UTC で適用され、各請求書には請求日から翌月の同じ日付の直前までの利用量が含まれます。
 
   ### オブジェクトストレージ ClickPipes の初期ロードをスキップ
 
-  オブジェクトストレージ [ClickPipes](/ja/integrations/clickpipes/home) (S3、GCS、Azure Blob Storage) では、パイプ 作成時の初期ロードを制御する 2 つの方法が利用できるようになりました。**Start after** は指定した object key までのファイルをその key 自体も含めてスキップし、**Skip initial load** は既存ファイルを完全にスキップして、新しい object notification のみを処理します。これまでは、新しい パイプ は常にそのパス内のすべてのファイルを backfill していました。これら 2 つのオプションは相互排他的であり、指定した パイプ に対して永続的です。スキップした backfill は後から実行できません。UI、Cloud API、Terraform v3.18.0 以降で利用できます。
+  オブジェクトストレージ [ClickPipes](/ja/integrations/clickpipes/home) (S3、GCS、Azure Blob Storage) では、パイプの作成時に初期ロードを制御する 2 つの方法が提供されるようになりました。指定したオブジェクトキーまでのファイルを含めてスキップする **Start after** と、既存のファイルを完全にスキップして新しいオブジェクト通知のみを処理する **Skip initial load** です。以前は、新しいパイプは常にパス内のすべてのファイルをバックフィルしていました。この 2 つのオプションは相互排他的であり、特定のパイプに対して永続的です。スキップしたバックフィルを後で実行することはできません。UI、Cloud API、Terraform v3.18.0 以降で利用可能です。
 </Update>
 
 <Update label="2026年6月30日">

@@ -591,7 +591,7 @@ false の場合、作成時に [`default_normal_view_sql_security`](/ja/referenc
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />非推奨の移行ガードです。このバージョンでサポートされる統一された挿入の重複排除ハッシュは `new_unified_hash` のみであり、この設定がそれ以外の値 (`old_separate_hashes` や `compatible_double_hashes` など) で指定されている場合、サーバーは起動を拒否します。アップグレード前に、前のバージョンで `compatible_double_hashes` (legacy ハッシュと統一ハッシュの両方を書き込みます) を実行し、重複排除の移行を完了してください。レプリケートテーブルでは、少なくとも `replicated_deduplication_window_seconds` (デフォルトでは 1 時間) の間これを実行してください。デフォルトの window は、その期間内のすべての insert の統一ハッシュを保持するため、insert の再試行ループをカバーするには十分と見なされます。`non_replicated_deduplication_window` &gt; 0 の非レプリケートテーブルでは、window は時間ベースではなく件数ベースになるため、アップグレード前に少なくともその件数の insert に対して `compatible_double_hashes` を実行してください。
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />非推奨の移行ガードです。ClickHouse バージョン 26.7 以降でサポートされる統一された挿入の重複排除ハッシュは `new_unified_hash` のみであり、この設定がそれ以外の値 (`old_separate_hashes` や `compatible_double_hashes` など) で指定されている場合、サーバーは起動を拒否します。アップグレード前に、前のバージョンで `compatible_double_hashes` (legacy ハッシュと統一ハッシュの両方を書き込みます) を実行し、重複排除の移行を完了してください。レプリケートテーブルでは、少なくとも `replicated_deduplication_window_seconds` (デフォルトでは 1 時間) の間これを実行してください。デフォルトの window は、その期間内のすべての insert の統一ハッシュを保持するため、insert の再試行ループをカバーするには十分と見なされます。`non_replicated_deduplication_window` &gt; 0 の非レプリケートテーブルでは、window は時間ベースではなく件数ベースになるため、アップグレード前に少なくともその件数の insert に対して `compatible_double_hashes` を実行してください。
 
 <div id="io_thread_pool_queue_size">
   ## io_thread_pool_queue_size
@@ -1960,7 +1960,7 @@ Dictionary がクエリで初めて使用されたとき、まだロードされ
   ## webassembly_udf_engine
 </div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />WebAssembly UDF を実行するためのエンジンです。サポートされる値は &#39;wasmtime&#39; と &#39;wasmedge&#39; です。
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />WebAssembly UDF を実行するためのエンジンです。サポートされる値は &#39;wasmtime&#39; のみです。
 
 <div id="webterminal_allowed_origins">
   ## webterminal_allowed_origins

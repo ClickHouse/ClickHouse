@@ -24,7 +24,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "新增设置，用于指定自适应聚合器（`enable_adaptive_aggregator`）冻结线程本地哈希表时的键数量。"}]}]} />
 
-自适应聚合器冻结线程本地哈希表时的键数量 (参见 `enable_adaptive_aggregator`) 。较小的值可使冻结后的表保持在缓存中，较大的值则可让其吸收更多高频键。值为 0 时，表会在首次有机会时冻结，这会使该算法的行为类似于分片聚合器 (`enable_sharding_aggregator`) ：每个键都根据其哈希进行路由，并由单个所有者聚合；区别仅在于，聚合会延后到合并阶段，而不是在扫描期间在线程之间交换。
+自适应聚合器冻结线程本地哈希表时的键数量 (参见 `enable_adaptive_aggregator`) 。较小的值可使冻结后的表保持在缓存中，较大的值则可让其吸收更多高频键。值为 0 时，表会在首次有机会时冻结，这会使该算法的行为类似于按键哈希进行的纯分片：每个键都根据其哈希进行路由，并由单个所有者聚合；区别仅在于，聚合会延后到合并阶段，而不是在扫描期间在线程之间交换。
 
 <div id="adaptive_aggregator_freeze_threshold_bytes">
   ## adaptive_aggregator_freeze_threshold_bytes
@@ -1847,7 +1847,7 @@ TCPHandler 收到查询后休眠的时长
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-允许或禁止空 INSERT，默认启用 (空插入时会抛出错误) 。仅适用于通过 [`ClickHouse 客户端`](/zh/concepts/features/interfaces/cli) 或 [gRPC 接口](/zh/concepts/features/interfaces/grpc) 执行的 INSERT。
+允许或禁止空 INSERT，默认启用 (空插入时会抛出错误) 。仅适用于通过 [`ClickHouse 客户端`](/zh/concepts/features/interfaces/client) 或 [gRPC 接口](/zh/concepts/features/interfaces/grpc) 执行的 INSERT。
 
 <div id="time_series_prefer_recent_samples_table">
   ## time_series_prefer_recent_samples_table

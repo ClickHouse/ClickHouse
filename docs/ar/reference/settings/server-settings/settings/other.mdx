@@ -589,7 +589,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />آلية حماية للترحيل، وهي مهملة. لا يدعم هذا الإصدار سوى قيمة hash الموحّدة لآلية insert deduplication (`new_unified_hash`)؛ ويرفض الخادم بدء التشغيل إذا وُجد هذا الإعداد بأي قيمة أخرى (مثل `old_separate_hashes` أو `compatible_double_hashes`). أكمِل ترحيل إزالة التكرار على الإصدار السابق قبل الترقية، وذلك بتشغيل `compatible_double_hashes` (الذي يكتب كلًا من قيم hash القديمة والموحّدة). بالنسبة إلى الجداول المكررة، شغّله لمدة لا تقل عن `replicated_deduplication_window_seconds` (ساعة واحدة افتراضيًا)؛ إذ تحتفظ النوافذ الافتراضية بقيم hash الموحّدة لجميع عمليات insert خلال تلك النافذة، ويُعد ذلك كافيًا لتغطية حلقة retry لعملية insert. أما بالنسبة إلى الجداول غير المكررة التي تكون فيها `non_replicated_deduplication_window` &gt; 0، فالنافذة تعتمد على العدد لا على الوقت، لذا شغّل `compatible_double_hashes` لما لا يقل عن هذا العدد من عمليات insert قبل الترقية.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />آلية حماية للترحيل، وهي مهملة. لا تدعم إصدارات ClickHouse 26.7 والإصدارات الأحدث سوى قيمة التجزئة الموحّدة لآلية insert deduplication (`new_unified_hash`)؛ ويرفض الخادم بدء التشغيل إذا وُجد هذا الإعداد بأي قيمة أخرى (مثل `old_separate_hashes` أو `compatible_double_hashes`). أكمِل ترحيل إزالة التكرار على الإصدار السابق قبل الترقية، وذلك بتشغيل `compatible_double_hashes` (الذي يكتب كلًا من قيم التجزئة القديمة والموحّدة). بالنسبة إلى الجداول المكررة، شغّله لمدة لا تقل عن `replicated_deduplication_window_seconds` (ساعة واحدة افتراضيًا)؛ إذ تحتفظ النوافذ الافتراضية بقيم التجزئة الموحّدة لجميع عمليات insert خلال تلك النافذة، ويُعد ذلك كافيًا لتغطية حلقة retry لعملية insert. أما بالنسبة إلى الجداول غير المكررة التي تكون فيها `non_replicated_deduplication_window` &gt; 0، فالنافذة تعتمد على العدد لا على الوقت، لذا شغّل `compatible_double_hashes` لما لا يقل عن هذا العدد من عمليات insert قبل الترقية.
 
 <div id="io_thread_pool_queue_size">
   ## io_thread_pool_queue_size
@@ -1962,7 +1962,7 @@ curl 127.0.0.1:9363/metrics
   ## webassembly_udf_engine
 </div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />المحرّك المستخدم لتشغيل WebAssembly UDFs. القيم المدعومة هي &#39;wasmtime&#39; و &#39;wasmedge&#39;.
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />المحرّك المستخدم لتشغيل WebAssembly UDFs. القيمة المدعومة الوحيدة هي &#39;wasmtime&#39;.
 
 <div id="webterminal_allowed_origins">
   ## webterminal_allowed_origins

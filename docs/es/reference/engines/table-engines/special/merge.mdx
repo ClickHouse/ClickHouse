@@ -114,7 +114,7 @@ SELECT * FROM WatchLog;
 
 * `_table` — El nombre de la tabla desde la que se leyeron los datos. Tipo: [String](/es/reference/data-types/string).
 
-  Si filtra por `_table` (por ejemplo, `WHERE _table='xyz'`), solo se leen las tablas que cumplen la condición de filtrado.
+  Si filtra por `_table` (por ejemplo, `WHERE _table='xyz'`), solo se leen las tablas que cumplen la condición de filtrado. Una tabla que a su vez lee de otras tablas (`Distributed`, `Merge`, `Buffer`, `Alias`) devuelve filas con el nombre de la tabla que realmente las produjo, por lo que dichas tablas siempre se leen y el filtro se aplica a sus filas.
 
 * `_database` — Contiene el nombre de la base de datos desde la que se leyeron los datos. Tipo: [String](/es/reference/data-types/string).
 

@@ -426,7 +426,18 @@ SETTINGS max_block_size = 2;
   ## 隐式类型转换
 </div>
 
-`INNER JOIN`、`LEFT JOIN`、`RIGHT JOIN` 和 `FULL JOIN` 查询支持对&quot;连接键&quot;进行隐式类型转换。但是，如果左表和右表中的连接键无法转换为同一种类型，则查询无法执行 (例如，不存在一种数据类型能够同时容纳 `UInt64` 和 `Int64` 的所有值，或 `String` 和 `Int32` 的所有值) 。
+`INNER JOIN`、`LEFT JOIN`、`RIGHT JOIN`、`FULL JOIN` 和 `SEMI JOIN` 查询支持对&quot;连接键&quot;进行隐式类型转换。但是，如果左表和右表中的连接键无法转换为同一种类型，则查询无法执行 (例如，`String` 和 `Int32`) 。
+
+不存在一种数据类型能够同时容纳 `UInt64` 和 `Int64` 的所有值，但此类键仍可进行连接：它们会被转换为这两种类型共有值所属的类型，即 `UInt64`，可容纳从 `0` 到 `9223372036854775807` 的值。此范围之外的值不等于另一侧的任何值，因此不会匹配任何内容。
+
+这适用于 `ON` 部分中的相等条件，以及 `INNER JOIN` 或 `SEMI JOIN` 的 `USING` 部分，此时结果仅包含匹配的值。不适用于：
+
+* 使用 `USING` 且可能输出未匹配行的 `JOIN` 类型 (如 `LEFT`、`RIGHT`、`FULL` 和 `ANTI` 连接) ，因为连接键同时也是结果中的一列，并且可以容纳未匹配的值；
+* NULL 安全比较 (`IS NOT DISTINCT FROM`) ，其中 `NULL` 与 `NULL` 匹配，因此转换为 `NULL` 的值会彼此匹配；
+* `ASOF` 不等式 (`USING` 列表中的最后一列) ，因为它需要值的顺序，而不仅仅是它们是否相等；
+* 存储键本身不是公共类型的 [`Join`](/zh/engines/table-engines/special/join) 表引擎，因为其哈希表是基于原始键值预先构建的，无法转换 (支持反方向，即只需转换探测键；存储键的 `LowCardinality` 和 `Nullable` 包装器对此比较没有影响) 。
+
+这需要默认启用的 analyzer；使用 [`enable_analyzer = 0`](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer) 时，此类查询仍会被拒绝。
 
 **示例**
 

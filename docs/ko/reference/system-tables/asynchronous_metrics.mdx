@@ -19,6 +19,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 
 메트릭은 스칼라(`value` 컬럼의 단일 숫자)이거나 키-값 메트릭입니다. 키-값 메트릭은 CPU 코어, 블록 디바이스, 네트워크 인터페이스 또는 디스크 등 엔터티별로 분류됩니다. 키-값 메트릭은 `key_values` 컬럼의 [Map](/ko/reference/data-types/map)을 포함하는 단일 행으로 표현되며(예: `CPUFrequencyMHz`는 각 CPU 코어 번호를 해당 주파수에 매핑합니다), `value` 컬럼은 `NaN`입니다.
 
+26.8 버전 이전에는 각 키가 이름에 키를 변형해 포함한 별도의 스칼라 메트릭이었습니다(`CPUFrequencyMHz_0`). [`asynchronous_metrics_key_values_mode`](/ko/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 서버 설정을 사용하면 해당 형식(`legacy_names`)으로 되돌리거나, 모니터링을 마이그레이션하는 동안 두 형식을 동시에 표시할 수 있습니다(`both`).
+
 <div id="columns">
   ## 컬럼
 </div>

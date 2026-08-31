@@ -288,8 +288,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_QueryBackupThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리가 &#39;max&#95;backup&#95;bandwidth&#39; 스로틀링을 따르기 위해 대기한 총 시간입니다.
 * `ProfileEvent_DistrCacheReadThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39; 스로틀러를 통과한 바이트 수입니다.
 * `ProfileEvent_DistrCacheReadThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리가 &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39; 스로틀링을 따르기 위해 대기한 총 시간입니다.
-* `ProfileEvent_DistrCacheWriteThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — `max&#95;distributed&#95;cache&#95;write&#95;bandwidth&#95;for&#95;server` 스로틀러를 통과한 총 바이트 수입니다.
-* `ProfileEvent_DistrCacheWriteThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — `max&#95;distributed&#95;cache&#95;write&#95;bandwidth&#95;for&#95;server` 스로틀링 설정에 맞추기 위해 쿼리가 대기한 총 시간입니다.
+* `ProfileEvent_DistrCacheWriteThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;distributed&#95;cache&#95;write&#95;bandwidth&#95;for&#95;server&#39; 스로틀러를 통과한 바이트 수입니다.
+* `ProfileEvent_DistrCacheWriteThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리가 &#39;max&#95;distributed&#95;cache&#95;write&#95;bandwidth&#95;for&#95;server&#39; 스로틀링을 따르기 위해 대기한 총 시간입니다.
 * `ProfileEvent_ThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 스로틀링 설정에 맞추기 위해 쿼리가 대기한 총 시간입니다.
 * `ProfileEvent_ReadTasksWithAppliedPatches` ([UInt64](/ko/reference/data-types/int-uint)) — 패치 파트가 하나라도 적용된 읽기 작업의 총 개수입니다.
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 읽기 작업에서 적용된 패치 파트의 총 개수입니다.
@@ -308,6 +308,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/ko/reference/data-types/int-uint)) — on-the-fly 뮤테이션이 하나라도 적용된 읽기 작업의 총 개수입니다.
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 읽기 작업에서 on-the-fly로 적용된 뮤테이션의 총 개수입니다.
 * `ProfileEvent_PatchesAcquireLockTries` ([UInt64](/ko/reference/data-types/int-uint)) — 경량 업데이트를 실행하기 위해 잠금을 획득하려고 시도한 총 횟수입니다.
+* `ProfileEvent_PatchesAcquireLockBadVersionRetries` ([UInt64](/ko/reference/data-types/int-uint)) — 동시 업데이트가 먼저 커밋되어 경량 업데이트의 잠금을 획득하는 과정에서 재시도한 총 횟수입니다.
 * `ProfileEvent_PatchesAcquireLockMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 경량 업데이트를 실행하기 위해 잠금을 획득하는 데 소요된 총 마이크로초입니다.
 * `ProfileEvent_DiskObjectStorageWaitBlobRemovalMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 메타데이터 트랜잭션을 commit한 후 대기 중인 blob 제거를 기다리는 데 소요된 시간입니다.
 * `ProfileEvent_SchedulerIOReadRequests` ([UInt64](/ko/reference/data-types/int-uint)) — IO 읽기를 위해 scheduler를 통과한 리소스 요청의 총 개수입니다.
@@ -823,7 +824,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — SLRU 캐시 정책에서 protected 큐에서 probationary 큐로 강등(이동)된 파일 세그먼트 수입니다. 이는 캐시 내부 이동이며, 축출이 아닙니다.
 * `ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시에서 백그라운드 다운로드 대상으로 전송된 파일 세그먼트 수
 * `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 해제할 수 없는 상태여서 제거를 건너뛴 파일 세그먼트 수
-* `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 제거 중 상태여서 제거를 건너뛴 파일 세그먼트 수
+* `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 제거 중 상태여서 제거를 건너뛬 파일 세그먼트 수
 * `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 이동 중 상태여서 제거를 건너뛬 파일 세그먼트 수
 * `ProfileEvent_FilesystemCacheEvictionTries` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시 제거 시도 횟수
 * `ProfileEvent_FilesystemCacheEvictionReusedIterator` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시 반복자 재사용 횟수
@@ -858,7 +859,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_FileSegmentHolderCompleteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 세그먼트 holder complete()에 소요된 시간
 * `ProfileEvent_FileSegmentFailToIncreasePriority` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 잠금 경합이 심해 우선순위를 높이지 못한 횟수
 * `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 잠금 경합이 심해 공간 예약을 건너뛴 횟수
-* `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfCacheResize` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 크기 조정 중이어서 공간 예약을 건너뛴 횟수
+* `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfCacheResize` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 크기 조정 중이어서 공간 예약을 건너뛬 횟수
 * `ProfileEvent_FilesystemCacheHoldFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 유지 중인 파일 시스템 캐시 파일 세그먼트 수
 * `ProfileEvent_FilesystemCacheUnusedHoldFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 유지 중이지만 사용되지 않은 파일 시스템 캐시 파일 세그먼트 수(seek 또는 LIMIT n 등으로 인해)
 * `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadRun` ([UInt64](/ko/reference/data-types/int-uint)) — 백그라운드 스레드가 여유 공간 유지 작업을 실행한 횟수

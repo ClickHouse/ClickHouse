@@ -209,6 +209,10 @@ ORDER BY event_time DESC;
 берутся из ключа `credentials` в необязательной карте параметров или из настройки
 `ai_function_text_default_credentials`, если в карте этот ключ отсутствует.
 
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -232,7 +236,6 @@ aiClassify(text, categories[, params])
 **Классификация тональности**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -243,7 +246,6 @@ positive
 **Классификация столбца с явно указанными учётными данными**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
@@ -255,7 +257,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 Добавленный в: v26.6.0
 
-Генерирует эмбеддинг-вектор для заданного текста с использованием настроенного AI-провайдера.
+Генерирует эмбеддинг-вектор для заданного текста с использованием настроенного провайдера ИИ.
 
 Функция отправляет текст в настроенную конечную точку для эмбеддингов и возвращает полученный вектор как `Array(Float32)`.
 В пределах одного блока строк входные данные группируются в батчи до
@@ -298,21 +300,18 @@ aiEmbed(text, model[, params])
 **Эмбеддинг одной строки (`credentials` можно опустить, если задана настройка `ai_function_embedding_default_credentials`)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **С явно заданной размерностью**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **Вычислить эмбеддинги для столбца с текстами**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (title String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
@@ -335,6 +334,10 @@ JSON-кодированной схемой вида `'{"field_a": "description o
 Учетные данные (именованная коллекция, задающая провайдера, модель, конечную точку и, при необходимости, ключ API)
 берутся из ключа `credentials` необязательной карты параметров или из настройки
 `ai_function_text_default_credentials`, если в карте этот ключ отсутствует.
+
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одинаковых аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -359,7 +362,6 @@ aiExtract(text, instruction_or_schema[, params])
 **Инструкция в свободной форме**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -370,7 +372,6 @@ late and damaged package
 **Извлечение схемы**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (review String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
@@ -399,6 +400,10 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 Примечание: при использовании `aiFilter` в `JOIN ... ON` LLM вызывается один раз для каждой пары кандидатов, что может быть затратно.
 
+<Note>
+  Эта функция недетерминированная: при одинаковых аргументах она может возвращать разные результаты.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -422,7 +427,6 @@ aiFilter(text, condition[, params])
 **Фильтрация гневных отзывов**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (body String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
@@ -431,7 +435,6 @@ SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping
 **Фильтрация столбца с явно указанными учётными данными**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
@@ -445,7 +448,7 @@ SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_crede
 
 Генерирует произвольный текст по промпту с помощью провайдера LLM.
 
-Функция отправляет промпт настроенному AI-провайдеру и возвращает сгенерированный текст.
+Функция отправляет промпт настроенному провайдеру ИИ и возвращает сгенерированный текст.
 
 Учетные данные (именованная коллекция с указанием провайдера, модели, конечной точки и, при необходимости, ключа API)
 берутся из ключа `credentials` необязательной карты параметров или из настройки
@@ -454,6 +457,10 @@ SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_crede
 Необязательная карта параметров также может задавать `system_prompt` (инструкцию, определяющую
 поведение модели, например тон, формат или роль), `temperature`, `max_tokens` и `model`. Если `system_prompt`
 не задан, по умолчанию используется: `You are a helpful assistant. Provide a clear and concise response.`
+
+<Note>
+  Эта функция недетерминированная: при одинаковых аргументах она может возвращать разные результаты.
+</Note>
 
 **Синтаксис**
 
@@ -466,7 +473,7 @@ aiGenerate(prompt[, params])
 **Аргументы**
 
 * `prompt` — Пользовательский промпт или вопрос, отправляемый модели. [`String`](/ru/reference/data-types/string)
-* `params` — Необязательный константный `Map(String, String)` с параметрами. Специфичные для функции ключи: `temperature` (температура сэмплирования, управляющая случайностью; по умолчанию `0.7`), `max_tokens` (максимальное число выходных токенов за один вызов; по умолчанию `1024`), `system_prompt` (константная системная инструкция, определяющая поведение модели; по умолчанию — общий промпт ассистента). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `params` — Необязательный константный `Map(String, String)` с параметрами. Специфичные для функции ключи: `temperature` (температура сэмплирования, управляющая случайностью; по умолчанию `0.7`), `max_tokens` (максимальное количество выходных токенов за один вызов; по умолчанию `1024`), `system_prompt` (константная системная инструкция, определяющая поведение модели; по умолчанию — общий промпт ассистента). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
 
 **Возвращаемое значение**
 
@@ -477,7 +484,6 @@ aiGenerate(prompt[, params])
 **Простой вопрос**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -488,14 +494,12 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **С явно указанными учётными данными и системным промптом**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **Сводка значений столбца**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
@@ -533,6 +537,10 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 отклоняется с ошибкой `AI_PROVIDER_RESPONSE_TRUNCATED` (или возвращается значение по умолчанию для столбца, когда `ai_function_throw_on_error`
 отключён), а не возвращается частично замаскированный текст.
 
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -556,7 +564,6 @@ aiRedact(text, categories[, params])
 **Маскирование определённых категорий**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -567,7 +574,6 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **Маскировка категорий PII по умолчанию с помощью пользовательского токена**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE tickets (body String) ENGINE = Memory;
 INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
@@ -619,14 +625,12 @@ aiSimilarity(text1, text2, model[, params])
 **Сравнение двух строк (`credentials` можно не указывать, если задана настройка `ai_function_embedding_default_credentials`)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Ранжируйте отзывы по схожести с запросом**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE product_reviews (review String) ENGINE = Memory;
 INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
@@ -635,7 +639,6 @@ SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well 
 **Семантическая дедупликация с использованием self-join**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
 INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
@@ -654,6 +657,10 @@ SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title
 Учетные данные (именованная коллекция, задающая провайдера, модель, конечную точку и, при необходимости, ключ API)
 берутся из ключа `credentials` необязательной карты параметров или из
 настройки `ai_function_text_default_credentials`, если в карте этот ключ отсутствует.
+
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты при одинаковых аргументах.
+</Note>
 
 **Синтаксис**
 
@@ -678,7 +685,6 @@ aiTranslate(text, target_language[, params])
 **Перевод на французский**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -689,7 +695,6 @@ Bonjour le monde!
 **Перевести на японский с учетом инструкций по стилю**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5

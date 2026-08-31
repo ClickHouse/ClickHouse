@@ -45,12 +45,12 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
   ## ميزات Cargo
 </div>
 
-* `lz4` (مفعّلة افتراضيًا) — تفعّل البديلين `Compression::Lz4` و`Compression::Lz4Hc(_)`. وإذا كانت مفعّلة، فسيُستخدم `Compression::Lz4` افتراضيًا في جميع الاستعلامات باستثناء `WATCH`.
+* `lz4` (مفعّلة افتراضيًا) — تفعّل البديلين `Compression::Lz4` و`Compression::Lz4Hc(_)`. وإذا كانت مفعّلة، فسيُستخدم `Compression::Lz4` افتراضيًا في جميع الاستعلامات باستثناء `WATCH`، الذي لا تقبله إلا إصدارات ClickHouse الأقدم من v26.9.
 * `native-tls` — تدعم عناوين URL ذات مخطط `HTTPS` عبر `hyper-tls`، والذي يرتبط بـ OpenSSL.
 * `rustls-tls` — تدعم عناوين URL ذات مخطط `HTTPS` عبر `hyper-rustls`، والذي لا يرتبط بـ OpenSSL.
 * `inserter` — تفعّل `client.inserter()`.
-* `test-util` — تضيف mocks. راجع [المثال](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). استخدمها فقط في `dev-dependencies`.
-* `watch` — تفعّل وظيفة `client.watch`. راجع القسم المقابل لمزيد من التفاصيل.
+* `test-util` — تضيف كائنات محاكاة. راجع [المثال](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). استخدمها فقط في `dev-dependencies`.
+* `watch` — تفعّل وظيفة `client.watch`. وهي تصدر استعلام `WATCH`، الذي أُزيل في ClickHouse v26.9 مع `WINDOW VIEW`، لذا فهي لا تعمل إلا مع الخوادم الأقدم.
 * `uuid` — تضيف `serde::uuid` للعمل مع حزمة ‏[uuid](https://docs.rs/uuid).
 * `time` — تضيف `serde::time` للعمل مع حزمة ‏[time](https://docs.rs/time).
 
@@ -556,7 +556,7 @@ struct MyRow {
   ## المحاكاة
 </div>
 
-توفر الحزمة أدوات مساعدة لمحاكاة خادم CH واختبار استعلامات DDL و`SELECT` و`INSERT` و`WATCH`. ويمكن تمكين هذه الوظيفة باستخدام الميزة `test-util`. استخدمها **فقط** كاعتماد تطويري.
+توفر الحزمة أدوات مساعدة لمحاكاة خادم CH واختبار استعلامات DDL و`SELECT` و`INSERT` و`WATCH` (لا يقبل `WATCH` إلا ClickHouse الأقدم من v26.9). ويمكن تمكين هذه الوظيفة باستخدام الميزة `test-util`. استخدمها **فقط** كاعتماد تطويري.
 
 راجع [المثال](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs).
 

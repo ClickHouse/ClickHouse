@@ -19,6 +19,8 @@ Contiene métricas que se calculan periódicamente en segundo plano. Por ejemplo
 
 Una métrica es escalar (un único número en la columna `value`) o de clave-valor: desglosada por entidad, como por núcleo de CPU, dispositivo de bloques, interfaz de red o disco. Las métricas de clave-valor se representan como una única fila con un [Map](/es/reference/data-types/map) en la columna `key_values` (por ejemplo, `CPUFrequencyMHz` asigna la frecuencia a cada núcleo de CPU), y su columna `value` es `NaN`.
 
+Antes de la versión 26.8, cada clave era una métrica escalar independiente con la clave incorporada de forma modificada en su nombre (`CPUFrequencyMHz_0`). La configuración del servidor [`asynchronous_metrics_key_values_mode`](/es/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) permite volver a ese formato (`legacy_names`) o mostrar ambos formatos a la vez (`both`) durante la migración de la monitorización.
+
 <div id="columns">
   ## Columnas
 </div>

@@ -589,7 +589,7 @@ HSTS 的过期时间，单位为秒。
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />已弃用的迁移保护设置。此版本仅支持统一的插入去重哈希 (`new_unified_hash`) ；如果存在此设置且值为任何其他值 (例如 `old_separate_hashes` 或 `compatible_double_hashes`) ，服务器将拒绝启动。升级前，请先在上一版本中运行 `compatible_double_hashes` 完成去重迁移 (该模式会同时写入旧版哈希和统一哈希) 。对于复制表，请至少运行 `replicated_deduplication_window_seconds` 对应的时长 (默认一小时) ；默认窗口会保留该窗口内所有 insert 的统一哈希，通常足以覆盖 insert 重试循环。对于 `non_replicated_deduplication_window` &gt; 0 的非复制表，该窗口按计数而非按时间计算，因此升级前请至少运行 `compatible_double_hashes` 达到相同数量的 insert。
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />已弃用的迁移保护设置。ClickHouse 26.7 及更高版本仅支持统一的插入去重哈希 (`new_unified_hash`) ；如果存在此设置且值为任何其他值 (例如 `old_separate_hashes` 或 `compatible_double_hashes`) ，服务器将拒绝启动。升级前，请先在上一版本中运行 `compatible_double_hashes` 完成去重迁移 (该模式会同时写入旧版哈希和统一哈希) 。对于复制表，请至少运行 `replicated_deduplication_window_seconds` 对应的时长 (默认一小时) ；默认窗口会保留该窗口内所有 insert 的统一哈希，通常足以覆盖 insert 重试循环。对于 `non_replicated_deduplication_window` &gt; 0 的非复制表，该窗口按计数而非按时间计算，因此升级前请至少运行 `compatible_double_hashes` 达到相同数量的 insert。
 
 <div id="io_thread_pool_queue_size">
   ## io_thread_pool_queue_size
@@ -1958,7 +1958,7 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
   ## webassembly_udf_engine
 </div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />用于执行 WebAssembly UDF 的引擎。支持的取值为 &#39;wasmtime&#39; 和 &#39;wasmedge&#39;。
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />用于执行 WebAssembly UDF 的引擎。唯一支持的取值为 &#39;wasmtime&#39;。
 
 <div id="webterminal_allowed_origins">
   ## webterminal_allowed_origins

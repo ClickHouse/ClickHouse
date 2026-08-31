@@ -24,7 +24,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "إعداد جديد لتحديد عدد المفاتيح الذي عنده يجمّد المُجمِّع التكيفي (`enable_adaptive_aggregator`) جدول التجزئة المحلي الخاص بالخيط."}]}]} />
 
-عدد المفاتيح الذي عنده يجمّد المُجمِّع التكيفي جدول التجزئة المحلي الخاص بالخيط (راجع `enable_adaptive_aggregator`). تُبقي القيم الأصغر الجداول المجمّدة ضمن الذاكرة المخبئية، بينما تتيح القيم الأكبر لها استيعاب قدر أكبر من المفاتيح المتكررة. تؤدي القيمة 0 إلى تجميد الجداول عند أول فرصة، مما يجعل الخوارزمية تعمل بصورة مشابهة للمُجمِّع المُجزّأ (`enable_sharding_aggregator`): يُوجَّه كل مفتاح وفقًا لتجزئته ويُجمَّع لدى مالك واحد، لكن يُؤجَّل ذلك إلى مرحلة الدمج بدلًا من تبادله بين الخيوط أثناء الفحص.
+عدد المفاتيح الذي عنده يجمّد المُجمِّع التكيفي جدول التجزئة المحلي الخاص بالخيط (راجع `enable_adaptive_aggregator`). تُبقي القيم الأصغر الجداول المجمّدة ضمن ذاكرة التخزين المؤقت، بينما تتيح القيم الأكبر لها استيعاب قدر أكبر من المفاتيح المتكررة. تؤدي القيمة 0 إلى تجميد الجداول عند أول فرصة، مما يجعل الخوارزمية تعمل كتجزئة خالصة وفقًا لتجزئة المفتاح: يُوجَّه كل مفتاح وفقًا لتجزئته ويُجمَّع لدى مالك واحد، لكن يُؤجَّل ذلك إلى مرحلة الدمج بدلًا من تبادله بين الخيوط أثناء الفحص.
 
 <div id="adaptive_aggregator_freeze_threshold_bytes">
   ## adaptive_aggregator_freeze_threshold_bytes
@@ -1856,7 +1856,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-يسمح بعمليات INSERT الفارغة أو يمنعها، وهو مفعّل افتراضيًا (ويؤدي إلى ظهور خطأ عند تنفيذ عملية insert فارغة). لا ينطبق هذا إلا على عمليات INSERT التي تستخدم [`clickhouse-client`](/ar/concepts/features/interfaces/cli) أو [واجهة gRPC](/ar/concepts/features/interfaces/grpc).
+يسمح بعمليات INSERT الفارغة أو يمنعها، وهو مفعّل افتراضيًا (ويؤدي إلى ظهور خطأ عند تنفيذ عملية insert فارغة). لا ينطبق هذا إلا على عمليات INSERT التي تستخدم [`clickhouse-client`](/ar/concepts/features/interfaces/client) أو [واجهة gRPC](/ar/concepts/features/interfaces/grpc).
 
 <div id="time_series_prefer_recent_samples_table">
   ## time_series_prefer_recent_samples_table

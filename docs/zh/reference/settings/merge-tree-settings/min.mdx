@@ -31,9 +31,11 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 通过使用自适应写入缓冲区，可降低包含大量列的表的内存使用量。
 
+该值会与宽分片写入的流数量进行比较，后者可能远超列数：包含许多桶的 `Map`，或深度嵌套的 `Array` 或 `Tuple`，单个列会写入许多流，且每个流都会分配一个写入缓冲区。
+
 可选值：
 
-* 0 - 不受限制
+* 0 - 禁用
 * 1 - 始终启用
 
 <div id="min_compress_block_size">

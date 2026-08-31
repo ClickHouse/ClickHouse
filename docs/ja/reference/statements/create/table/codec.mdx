@@ -146,7 +146,7 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
   ### ALP
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — 浮動小数点データ向けの適応型可逆圧縮です。`Float32` と `Float64` をサポートします。詳細については、[ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)を参照してください。
 
@@ -157,7 +157,7 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
 * `ALP(RD)` — Real Doubles バリアント。各値のビットパターンを再解釈し、高位部分 (符号 + 指数 + 仮数の上位ビット) と低位部分に分割します。高位部分は Dictionary エンコード (最大 8 エントリ) され、低位部分はビットパッキングされます。多くの値で上位ビットが共通している場合に最適です。
 
 <Note>
-  このコーデックは実験的機能であり、使用するには `SET enable_alp_codec = 1` が必要です。
+  このコーデックはベータ版であり、使用するには `SET enable_alp_codec = 1` が必要です。
 </Note>
 
 <div id="fpc">
@@ -286,9 +286,9 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge />
 
-上記の特殊用途のコーデックは適切なデータを大幅に圧縮できますが、選択には専門知識が必要であり、時間とともにデータが変化するカラムに常に最適な単一の選択肢があるとは限りません。MergeTree 設定 [`allow_experimental_adaptive_codec_selection`](/ja/reference/settings/merge-tree-settings) を有効にすると、ClickHouse が自動的に選択します。デフォルトのコーデック (`CODEC(Default)` または `CODEC` の指定なし) を使用するカラムでは、各ブロックはテーブル&#39;のデフォルトコーデック、`NONE`、およびカラム型に適した特殊用途のコーデックの中から、最も小さく圧縮できるコーデックで書き込まれます。
+上記の特殊用途のコーデックは適切なデータを大幅に圧縮できますが、選択には専門知識が必要であり、時間とともにデータが変化するカラムに常に最適な単一の選択肢があるとは限りません。MergeTree 設定 [`enable_adaptive_codec_selection`](/ja/reference/settings/merge-tree-settings) を有効にすると、ClickHouse が自動的に選択します。デフォルトのコーデック (`CODEC(Default)` または `CODEC` の指定なし) を使用するカラムでは、各ブロックはテーブル&#39;のデフォルトコーデック、`NONE`、およびカラム型に適した特殊用途のコーデックの中から、最も小さく圧縮できるコーデックで書き込まれます。
 
-ブロックがデフォルトコーデック使用時より大きくなることはなく、圧縮できないデータは生データとして保存されます (圧縮するとファイルがわずかに大きくなり、読み取りも遅くなるためです) 。この処理は、いずれにしてもデータが再圧縮される、バックグラウンドでのマージとミューテーション時に行われます。挿入速度には影響しません。ディスクから取得するデータ量が減り、クエリで読み取るすべてのブロックはまず展開する必要があり、特殊なコーデックはデフォルトの `LZ4` より高速に展開できるため、クエリは多くの場合高速になります。各ブロックには書き込み時に使用したコーデックが記録されるため、読み取り時に設定は不要です。また、すべてのデータを読み取り可能なまま、いつでもこの機能を無効にできます。
+ブロックがデフォルトコーデック使用時より大きくなることはなく、圧縮できないデータは生データとして保存されます (圧縮するとファイルがわずかに大きくなり、読み取りも遅くなるためです) 。この処理は、いずれにしてもデータが再圧縮される、バックグラウンドでのマージとミューテーション時に行われます。挿入速度には影響しません。ディスクから取得するデータ量が減り、クエリで読み取るすべてのブロックはまず展開する必要があり、特殊用途のコーデックはデフォルトの `LZ4` より高速に展開できるため、クエリは多くの場合高速になります。各ブロックには書き込み時に使用したコーデックが記録されるため、読み取り時に設定は不要です。また、すべてのデータを読み取り可能なまま、いつでもこの機能を無効にできます。
 
 ```sql
 CREATE TABLE adaptive
@@ -298,7 +298,7 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;

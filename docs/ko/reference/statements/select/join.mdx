@@ -426,7 +426,18 @@ SETTINGS max_block_size = 2;
   ## 암시적 타입 변환
 </div>
 
-`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN` 쿼리는 &quot;조인 키&quot;에 대한 암시적 타입 변환을 지원합니다. 하지만 왼쪽 테이블과 오른쪽 테이블의 join 키를 하나의 타입으로 변환할 수 없으면 쿼리를 실행할 수 없습니다(예를 들어 `UInt64`와 `Int64`의 모든 값을 모두 표현할 수 있는 데이터 타입이 없거나, `String`과 `Int32`를 함께 표현할 수 있는 데이터 타입이 없는 경우).
+`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `SEMI JOIN` 쿼리는 &quot;조인 키&quot;에 대한 암시적 타입 변환을 지원합니다. 하지만 왼쪽 테이블과 오른쪽 테이블의 조인 키를 하나의 타입으로 변환할 수 없으면 쿼리를 실행할 수 없습니다(예를 들어 `String`과 `Int32`를 함께 표현할 수 있는 데이터 타입이 없는 경우).
+
+`UInt64`와 `Int64`의 모든 값을 모두 표현할 수 있는 데이터 타입은 없지만, 이러한 키는 여전히 조인할 수 있습니다. 이 키들은 두 타입이 공통으로 갖는 값의 타입인 `UInt64`로 변환되며, 이는 `0`부터 `9223372036854775807`까지의 값을 담습니다. 이 범위를 벗어난 값은 반대쪽의 어떤 값과도 같지 않으므로 아무것과도 일치하지 않습니다.
+
+이는 `ON` 절의 동등 조건과, 결과에 일치하는 값만 포함되는 `INNER JOIN` 또는 `SEMI JOIN`의 `USING` 섹션에 적용됩니다. 다음에는 적용되지 않습니다:
+
+* 일치하지 않는 행을 출력할 수 있는 `USING`을 사용하는 `JOIN` 유형(예: `LEFT`, `RIGHT`, `FULL`, `ANTI` 조인). 이 경우 조인 키도 결과의 컬럼이며 일치하지 않는 값을 담을 수 있습니다.
+* `NULL`이 `NULL`과 일치하는 null-safe 비교(`IS NOT DISTINCT FROM`). 이 경우 `NULL`로 변환된 값들이 서로 일치하게 됩니다.
+* 값의 동등성뿐 아니라 순서도 필요한 `ASOF` 부등식(`USING` 목록의 마지막 컬럼).
+* 저장된 키 자체가 공통 타입이 아닌 [`Join`](/ko/engines/table-engines/special/join) 테이블 엔진. 해시 테이블이 원래 키 값으로 미리 구축되어 있어 변환할 수 없기 때문입니다(변환해야 하는 것이 probe 키뿐인 반대 방향은 지원됩니다. 저장된 키의 `LowCardinality` 및 `Nullable` 래퍼는 이 비교에 영향을 주지 않습니다).
+
+기본적으로 활성화된 분석기가 필요합니다. [`enable_analyzer = 0`](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer)을 사용하면 이러한 쿼리는 여전히 거부됩니다.
 
 **예시**
 

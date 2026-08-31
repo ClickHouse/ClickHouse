@@ -146,7 +146,7 @@ ClickHouse 支持通用编解码器和专用编解码器。
   ### ALP
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — 用于浮点数据的自适应无损压缩。支持 `Float32` 和 `Float64`。详情请参阅 [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)。
 
@@ -157,7 +157,7 @@ ClickHouse 支持通用编解码器和专用编解码器。
 * `ALP(RD)` — Real Doubles 变体。重新解释每个值的位模式，并将其拆分为高位部分 (符号位 + 指数 + 高位尾数位) 和低位部分。高位部分采用字典编码 (最多 8 个条目) ，低位部分采用位打包。当大量值具有相同的高位时效果最佳。
 
 <Note>
-  此编解码器处于 Experimental 状态，使用前需执行 `SET enable_alp_codec = 1`。
+  此编解码器处于 Beta 状态，使用前需执行 `SET enable_alp_codec = 1`。
 </Note>
 
 <div id="fpc">
@@ -286,7 +286,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge />
 
-上述专用编解码器可以大幅缩小合适的数据，但选择它们需要专业知识，而且没有一种编解码器适用于数据会随时间变化的列。启用 MergeTree 设置 [`allow_experimental_adaptive_codec_selection`](/zh/reference/settings/merge-tree-settings) 后，ClickHouse 会自动为你选择。对于使用默认编解码器 (`CODEC(Default)` 或未指定 `CODEC`) 的列，每个块都会使用压缩后体积最小的编解码器写入；该编解码器从表的默认编解码器、`NONE` 以及适合该列类型的专用编解码器中选出。
+上述专用编解码器可以大幅缩小合适的数据，但选择它们需要专业知识，而且没有一种编解码器适用于数据会随时间变化的列。启用 MergeTree 设置 [`enable_adaptive_codec_selection`](/zh/reference/settings/merge-tree-settings) 后，ClickHouse 会自动为你选择。对于使用默认编解码器 (`CODEC(Default)` 或未指定 `CODEC`) 的列，每个块都会使用压缩后体积最小的编解码器写入；该编解码器从表的默认编解码器、`NONE` 以及适合该列类型的专用编解码器中选出。
 
 块的大小绝不会超过使用默认编解码器时的大小，无法压缩的数据会以原始形式存储 (压缩会生成稍大且读取更慢的文件) 。这项工作会在后台合并和变更期间进行，因为此时数据本来就需要重新压缩。插入速度不受影响。查询通常会更快：从磁盘拉取的数据更少，查询读取的每个块都必须先解压，而专用编解码器的解压速度比默认的 `LZ4` 更快。每个块都会记录写入时使用的编解码器，因此读取时无需任何设置；该功能也可随时关闭，且所有数据仍可读取。
 
@@ -298,13 +298,13 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-你可以通过 [`mergeTreeCodecBlockCounts`](/zh/reference/functions/table-functions/mergeTreeCodecBlockCounts) 表函数查看其工作原理。这里的 `time` 持续递增，因此只存储块内变化比特的 `T64` 在每个块上的表现都优于默认 codec。`user_id` 包含任何 codec 都无法压缩的哈希值，因此其块以 raw 形式存储：
+你可以通过 [`mergeTreeCodecBlockCounts`](/zh/reference/functions/table-functions/mergeTreeCodecBlockCounts) 表函数查看其工作原理。这里的 `time` 持续递增，因此只存储块内变化比特的 `T64` 在每个块上的表现都优于默认编解码器。`user_id` 包含任何编解码器都无法压缩的哈希值，因此其块以原始形式存储：
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');

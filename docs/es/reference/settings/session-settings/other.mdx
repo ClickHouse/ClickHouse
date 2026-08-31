@@ -24,7 +24,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "Nueva configuración para establecer el número de claves a partir del cual el agregador adaptativo (`enable_adaptive_aggregator`) congela la tabla hash local de un hilo."}]}]} />
 
-El número de claves a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulte `enable_adaptive_aggregator`). Los valores menores mantienen las tablas congeladas en caché, mientras que los valores mayores permiten que absorban más claves frecuentes. El valor 0 congela las tablas en la primera oportunidad, lo que hace que el algoritmo se comporte de forma similar al agregador con segmentación (`enable_sharding_aggregator`): cada clave se enruta según su hash y se agrega en un único propietario, pero se difiere a la fase de fusión en lugar de intercambiarse entre hilos durante el escaneo.
+El número de claves a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulte `enable_adaptive_aggregator`). Los valores menores mantienen las tablas congeladas en caché, mientras que los valores mayores permiten que absorban más claves frecuentes. El valor 0 congela las tablas en la primera oportunidad, lo que hace que el algoritmo se comporte como una segmentación pura por el hash de la clave: cada clave se enruta según su hash y se agrega en un único propietario, pero se difiere a la fase de fusión en lugar de intercambiarse entre hilos durante el escaneo.
 
 <div id="adaptive_aggregator_freeze_threshold_bytes">
   ## adaptive_aggregator_freeze_threshold_bytes
@@ -1857,7 +1857,7 @@ Tiempo de espera para bloquear la caché al reservar espacio para datos temporal
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Permite o prohíbe los INSERT vacíos; está habilitada de forma predeterminada (lanza un error si el insert está vacío). Solo se aplica a los INSERT que usan [`clickhouse-client`](/es/concepts/features/interfaces/cli) o la [interfaz gRPC](/es/concepts/features/interfaces/grpc).
+Permite o prohíbe los INSERT vacíos; está habilitada de forma predeterminada (lanza un error si el insert está vacío). Solo se aplica a los INSERT que usan [`clickhouse-client`](/es/concepts/features/interfaces/client) o la [interfaz gRPC](/es/concepts/features/interfaces/grpc).
 
 <div id="time_series_prefer_recent_samples_table">
   ## time_series_prefer_recent_samples_table

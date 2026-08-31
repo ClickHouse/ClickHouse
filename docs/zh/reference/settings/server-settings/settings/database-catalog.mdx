@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />用于删除表操作的线程池大小。
 
+<div id="database_catalog_shutdown_table_concurrency">
+  ## database_catalog_shutdown_table_concurrency
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />服务器停止时用于关闭表的线程池大小。零表示线程数等于 CPU 核心数。
+
 <div id="database_catalog_unused_dir_cleanup_period_sec">
   ## database_catalog_unused_dir_cleanup_period_sec
 </div>

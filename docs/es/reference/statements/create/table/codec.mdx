@@ -146,7 +146,7 @@ Estos códecs están diseñados para mejorar la eficacia de la compresión aprov
   ### ALP
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — Compresión adaptativa sin pérdida para datos de coma flotante. Admite `Float32` y `Float64`. Para más información, consulte [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
@@ -157,7 +157,7 @@ El códec acepta un argumento de variante opcional:
 * `ALP(RD)` — Variante Real Doubles. Reinterpreta el patrón de bits de cada valor y lo divide en una parte alta (signo + exponente + bits superiores de la mantisa) y una parte baja. Las partes altas se codifican mediante diccionario (hasta 8 entradas) y las partes bajas se empaquetan en bits. Funciona mejor cuando muchos valores comparten los mismos bits altos.
 
 <Note>
-  Este códec es experimental y requiere `SET enable_alp_codec = 1` para poder utilizarse.
+  Este códec está en beta y requiere `SET enable_alp_codec = 1` para poder utilizarse.
 </Note>
 
 <div id="fpc">
@@ -286,7 +286,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge />
 
-Los códecs especializados anteriores pueden reducir drásticamente el tamaño de los datos adecuados, pero elegirlos requiere experiencia, y ninguna opción única se adapta a una columna cuyos datos cambian con el tiempo. Con la configuración de MergeTree [`allow_experimental_adaptive_codec_selection`](/es/reference/settings/merge-tree-settings) habilitada, ClickHouse elige por usted. Para las columnas que usan el códec predeterminado (`CODEC(Default)` o ningún `CODEC`), cada bloque se escribe con el códec que permite comprimirlo al menor tamaño, elegido entre el códec predeterminado de la tabla, `NONE` y los códecs especializados adecuados para el tipo de columna.
+Los códecs especializados anteriores pueden reducir drásticamente el tamaño de los datos adecuados, pero elegirlos requiere experiencia, y ninguna opción única se adapta a una columna cuyos datos cambian con el tiempo. Con la configuración de MergeTree [`enable_adaptive_codec_selection`](/es/reference/settings/merge-tree-settings) habilitada, ClickHouse elige por usted. Para las columnas que usan el códec predeterminado (`CODEC(Default)` o ningún `CODEC`), cada bloque se escribe con el códec que permite comprimirlo al menor tamaño, elegido entre el códec predeterminado de la tabla, `NONE` y los códecs especializados adecuados para el tipo de columna.
 
 Un bloque nunca ocupa más espacio que con el códec predeterminado, y los datos incompresibles se almacenan sin procesar (comprimirlos produciría un archivo ligeramente más grande y más lento de leer). El trabajo se realiza en segundo plano, durante las combinaciones y mutaciones, cuando los datos se recomprimen de todos modos. La velocidad de inserción no se ve afectada. Las consultas suelen ser más rápidas: se recuperan menos datos del disco, cada bloque que lee una consulta debe descomprimirse primero y los códecs especializados se descomprimen más rápido que el `LZ4` predeterminado. Cada bloque registra el códec con el que se escribió, por lo que la lectura no requiere ninguna configuración, y la funcionalidad puede desactivarse en cualquier momento sin que los datos dejen de ser legibles.
 
@@ -298,7 +298,7 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;

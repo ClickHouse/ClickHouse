@@ -3496,8 +3496,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 Добавленный в: v20.1.0
 
-Преобразует входное значение в значение типа [DateTime64](/ru/reference/data-types/datetime64), но при получении некорректного аргумента возвращает нижнюю границу [DateTime64](/ru/reference/data-types/datetime64).
-То же, что и [toDateTime64](#toDateTime64), но при получении некорректного аргумента возвращает нижнюю границу [DateTime64](/ru/reference/data-types/datetime64).
+Преобразует входное значение в значение типа [DateTime64](/ru/reference/data-types/datetime64), но при получении некорректного аргумента возвращает нулевое значение [DateTime64](/ru/reference/data-types/datetime64) (эпоху Unix, `1970-01-01 00:00:00`).
+То же, что и [toDateTime64](#toDateTime64), но при получении некорректного аргумента возвращает нулевое значение [DateTime64](/ru/reference/data-types/datetime64).
 
 См. также:
 
@@ -3508,16 +3508,18 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 **Синтаксис**
 
 ```sql
-toDateTime64OrZero(x)
+toDateTime64OrZero(x[, precision[, timezone]])
 ```
 
 **Аргументы**
 
 * `x` — Строковое представление даты и времени с субсекундной точностью. [`String`](/ru/reference/data-types/string)
+* `precision` — Необязательный параметр. Субсекундная точность возвращаемого значения. [`UInt8`](/ru/reference/data-types/int-uint)
+* `timezone` — Необязательный параметр. Часовой пояс возвращаемого значения. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
-Если преобразование успешно, возвращает значение DateTime64, в противном случае — нижнюю границу типа DateTime64 (`1970-01-01 00:00:00.000`). [`DateTime64`](/ru/reference/data-types/datetime64)
+Если преобразование успешно, возвращает значение DateTime64, в противном случае — нулевое значение DateTime64 (`1970-01-01 00:00:00`) с запрошенной точностью. [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 

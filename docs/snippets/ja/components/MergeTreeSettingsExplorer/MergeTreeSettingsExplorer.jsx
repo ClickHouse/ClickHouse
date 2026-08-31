@@ -37,9 +37,8 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_experimental_*",
-      count: 4,
+      count: 3,
       settings: [
-        { name: "allow_experimental_adaptive_codec_selection", path: "/allow-experimental#allow_experimental_adaptive_codec_selection", default: "0" },
         { name: "allow_experimental_replacing_merge_with_cleanup", path: "/allow-experimental#allow_experimental_replacing_merge_with_cleanup", default: "0" },
         { name: "allow_experimental_reverse_key", path: "/allow-experimental#allow_experimental_reverse_key", default: "0" },
         { name: "allow_experimental_text_index_phrase_search", path: "/allow-experimental#allow_experimental_text_index_phrase_search", default: "0" }
@@ -177,8 +176,9 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 6,
+      count: 7,
       settings: [
+        { name: "enable_adaptive_codec_selection", path: "/enable#enable_adaptive_codec_selection", default: "0" },
         { name: "enable_index_granularity_compression", path: "/enable#enable_index_granularity_compression", default: "1" },
         { name: "enable_max_bytes_limit_for_min_age_to_force_merge", path: "/enable#enable_max_bytes_limit_for_min_age_to_force_merge", default: "1" },
         { name: "enable_mixed_granularity_parts", path: "/enable#enable_mixed_granularity_parts", default: "1" },
@@ -1043,7 +1043,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "設定" : "設定項目"}`
+    const countLabel = `${entry.count} 設定`
 
     return (
       <div key={key} className="min-w-max">

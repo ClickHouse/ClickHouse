@@ -426,7 +426,18 @@ Tenga cuidado al usar `GLOBAL`. Para obtener más información, consulte la secc
   ## Conversión implícita de tipos
 </div>
 
-Las consultas `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN` y `FULL JOIN` admiten la conversión implícita de tipos para las &quot;claves de JOIN&quot;. Sin embargo, la consulta no puede ejecutarse si las claves de JOIN de las tablas izquierda y derecha no pueden convertirse a un único tipo (por ejemplo, no existe ningún tipo de dato que pueda contener todos los valores de `UInt64` e `Int64`, o de `String` e `Int32`).
+Las consultas `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN` y `SEMI JOIN` admiten la conversión implícita de tipos para las &quot;claves de JOIN&quot;. Sin embargo, la consulta no puede ejecutarse si las claves de JOIN de las tablas izquierda y derecha no pueden convertirse a un único tipo (por ejemplo, `String` e `Int32`).
+
+No existe ningún tipo de dato que pueda contener todos los valores de `UInt64` e `Int64`, pero dichas claves aún pueden combinarse: se convierten al tipo de los valores que estos tipos tienen en común, que es `UInt64`, el cual contiene los valores de `0` a `9223372036854775807`. Un valor fuera de este rango no es igual a ningún valor del otro lado, por lo que no coincide con nada.
+
+Esto se aplica a las condiciones de igualdad de la sección `ON` y a la sección `USING` de un `INNER JOIN` o un `SEMI JOIN`, donde el resultado contiene solo los valores coincidentes. No se aplica a:
+
+* los tipos de `JOIN` con `USING` que pueden emitir filas sin coincidencias (como los joins `LEFT`, `RIGHT`, `FULL` y `ANTI`), donde la clave de JOIN también es una columna del resultado y puede contener los valores sin coincidencias;
+* las comparaciones seguras para valores nulos (`IS NOT DISTINCT FROM`), donde `NULL` coincide con `NULL`, por lo que los valores convertidos a `NULL` coincidirían entre sí;
+* la desigualdad `ASOF` (la última columna de la lista `USING`), que necesita el orden de los valores, no solo su igualdad;
+* un motor de tabla [`Join`](/es/engines/table-engines/special/join) cuya clave almacenada no sea el tipo común en sí, porque su tabla hash se crea previamente sobre los valores de clave originales y no puede convertirse (se admite la otra dirección, donde solo debe convertirse la clave de sondeo; las envolturas `LowCardinality` y `Nullable` de la clave almacenada no importan para esta comparación).
+
+Requiere el analizador, que está habilitado de forma predeterminada; con [`enable_analyzer = 0`](/es/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer), dicha consulta sigue siendo rechazada.
 
 **Ejemplo**
 

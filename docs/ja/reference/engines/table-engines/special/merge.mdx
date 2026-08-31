@@ -113,7 +113,7 @@ SELECT * FROM WatchLog;
 
 * `_table` — データの読み取り元であるテーブルの名前です。型: [String](/ja/reference/data-types/string).
 
-  `_table` でフィルタすると (たとえば `WHERE _table='xyz'`) 、フィルタ条件を満たすテーブルだけが読み取られます。
+  `_table` でフィルタすると (たとえば `WHERE _table='xyz'`) 、フィルタ条件を満たすテーブルだけが読み取られます。他のテーブルから読み取るテーブル (`Distributed`、`Merge`、`Buffer`、`Alias`) は、実際に行を生成したテーブルの名前を持つ行を返すため、このようなテーブルは常に読み取られ、その行にフィルタが適用されます。
 
 * `_database` — データの読み取り元であるデータベースの名前が含まれます。型: [String](/ja/reference/data-types/string).
 

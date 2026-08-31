@@ -24,6 +24,24 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />اجعل المقاييس غير المتزامنة تقتصر على احتساب المقاييس المرتبطة بـ Keeper فقط.
 
+<div id="asynchronous_metrics_key_values_mode">
+  ## asynchronous_metrics_key_values_mode
+</div>
+
+<SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
+
+الصيغة التي تُنشر بها المقاييس غير المتزامنة للمفتاح-القيمة، أي المقاييس المفصّلة حسب نواة CPU أو جهاز كتلي أو واجهة شبكة أو قرص أو مستشعر حرارة أو وحدة تحكم بالذاكرة أو قناة تسجيل، في [`system.asynchronous_metrics`](/ar/reference/system-tables/asynchronous_metrics) و[`system.asynchronous_metric_log`](/ar/reference/system-tables/asynchronous_metric_log) ونقطة نهاية Prometheus وGraphite.
+
+القيم الممكنة:
+
+* `key_values` - كل عائلة عبارة عن مقياس مفتاح-قيمة واحد: `Map` في العمود `key_values` ضمن `system.asynchronous_metrics`، وصف واحد لكل مفتاح في `system.asynchronous_metric_log`، وعينة Prometheus واحدة لكل مفتاح تحمل تسمية مثل `device="sda"`، ومسار Graphite بالشكل `<prefix>.<Metric>.<key>`.
+* `legacy_names` - كل مفتاح مقياس قياسي منفصل يُدمج المفتاح في اسمه، كما كان قبل الإصدار 26.8: `OSUserTimeCPU3` و`CPUFrequencyMHz_0` و`BlockReadBytes_sda` و`NetworkReceiveBytes_eth0` و`DiskTotal_default` و`Temperature0` و`EDAC0_Correctable` وما إلى ذلك.
+* `both` - تُنشر الصيغتان معًا، وهذا مفيد أثناء ترحيل المراقبة. احذر من العد المزدوج في هذا الوضع: إذ إن التجميع على أسماء المقاييس المطابقة لبادئة، مثل `sum(value) ... WHERE metric LIKE 'NetworkReceiveBytes%'`، يحتسب كل قيمة مرتين.
+
+ليس لعائلة مقاييس المفتاح-القيمة التي أُضيفت بعد الإصدار 26.8 اسم قديم، وتُنشر دائمًا بصيغة المفتاح-القيمة.
+
+يُطبّق الإعداد أثناء التشغيل: يُعاد قراءته عند كل تحديث للمقاييس غير المتزامنة، لذا يكفي `SYSTEM RELOAD CONFIG` لتبديل الصيغة دون إعادة تشغيل.
+
 <div id="asynchronous_metrics_update_period_s">
   ## asynchronous_metrics_update_period_s
 </div>

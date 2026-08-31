@@ -146,7 +146,7 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
   ### ALP
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — 부동 소수점 데이터용 적응형 무손실 압축입니다. `Float32` 및 `Float64`를 지원합니다. 자세한 내용은 [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)을 참조하십시오.
 
@@ -157,7 +157,7 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
 * `ALP(RD)` — Real Doubles variant입니다. 각 값의 비트 패턴을 재해석하여 상위 부분(부호 + 지수 + 상위 가수 비트)과 하위 부분으로 나눕니다. 상위 부분은 딕셔너리 인코딩(최대 8개 항목)하고, 하위 부분은 비트 패킹합니다. 많은 값이 동일한 상위 비트를 공유할 때 가장 적합합니다.
 
 <Note>
-  이 코덱은 실험적 기능이며, 사용하려면 `SET enable_alp_codec = 1`을 설정해야 합니다.
+  이 코덱은 베타 기능이며, 사용하려면 `SET enable_alp_codec = 1`을 설정해야 합니다.
 </Note>
 
 <div id="fpc">
@@ -286,7 +286,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge />
 
-위의 특수 코덱은 적절한 데이터를 크게 줄일 수 있지만, 이를 선택하려면 전문 지식이 필요합니다. 또한 시간이 지남에 따라 데이터가 변하는 컬럼에는 하나의 선택지가 항상 적합하지는 않습니다. MergeTree 설정 [`allow_experimental_adaptive_codec_selection`](/ko/reference/settings/merge-tree-settings)을 활성화하면 ClickHouse가 대신 선택합니다. 기본 코덱(`CODEC(Default)` 또는 `CODEC`을 전혀 지정하지 않은 경우)을 사용하는 컬럼에서는 각 블록을 테이블의 기본 코덱, `NONE`, 컬럼 타입에 적합한 특수 코덱 중 가장 작은 크기로 압축되는 코덱으로 기록합니다.
+위의 특수 코덱은 적절한 데이터를 크게 줄일 수 있지만, 이를 선택하려면 전문 지식이 필요합니다. 또한 시간이 지남에 따라 데이터가 변하는 컬럼에는 하나의 선택지가 항상 적합하지는 않습니다. MergeTree 설정 [`enable_adaptive_codec_selection`](/ko/reference/settings/merge-tree-settings)을 활성화하면 ClickHouse가 대신 선택합니다. 기본 코덱(`CODEC(Default)` 또는 `CODEC`을 전혀 지정하지 않은 경우)을 사용하는 컬럼에서는 각 블록을 테이블의 기본 코덱, `NONE`, 컬럼 타입에 적합한 특수 코덱 중 가장 작은 크기로 압축되는 코덱으로 기록합니다.
 
 블록은 기본 코덱으로 압축했을 때보다 절대 커지지 않으며, 압축할 수 없는 데이터는 원본 그대로 저장됩니다(압축하면 읽기 속도가 더 느린 약간 더 큰 파일이 생성됩니다). 이 작업은 어차피 데이터가 다시 압축되는 머지와 뮤테이션 과정에서 백그라운드로 수행됩니다. 삽입 속도에는 영향이 없습니다. 쿼리는 더 빨라지는 경우가 많습니다. 디스크에서 읽어오는 데이터가 줄어들고, 쿼리가 읽는 모든 블록은 먼저 압축을 해제해야 하며, 특수 코덱은 기본 `LZ4`보다 압축 해제 속도가 빠르기 때문입니다. 각 블록에는 기록할 때 사용한 코덱이 저장되므로 읽을 때 별도 설정이 필요하지 않습니다. 또한 모든 데이터를 계속 읽을 수 있으므로 언제든지 이 기능을 끌 수 있습니다.
 
@@ -298,7 +298,7 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;

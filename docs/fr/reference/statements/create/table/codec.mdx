@@ -146,7 +146,7 @@ Ces codecs sont conçus pour améliorer l&#39;efficacité de la compression en e
   ### ALP
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — Compression adaptative sans perte pour les données à virgule flottante. Prend en charge `Float32` et `Float64`. Pour plus de détails, consultez [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
@@ -157,7 +157,7 @@ Le codec accepte un argument de variante facultatif :
 * `ALP(RD)` — Variante Real Doubles. Réinterprète la représentation binaire de chaque valeur et la divise en une partie haute (signe + exposant + bits de poids fort de la mantisse) et une partie basse. Les parties hautes sont encodées par dictionnaire (jusqu’à 8 entrées) et les parties basses sont empaquetées en bits. Fonctionne mieux lorsque de nombreuses valeurs partagent les mêmes bits de poids fort.
 
 <Note>
-  Ce codec est expérimental et nécessite `SET enable_alp_codec = 1` pour être utilisé.
+  Ce codec est en bêta et nécessite `SET enable_alp_codec = 1` pour être utilisé.
 </Note>
 
 <div id="fpc">
@@ -281,12 +281,12 @@ ENGINE = MergeTree ORDER BY x;
 ```
 
 <div id="adaptive-codec-selection">
-  ## Sélection adaptative des codecs
+  ## Sélection adaptative de codec
 </div>
 
 <ExperimentalBadge />
 
-Les codecs spécialisés ci-dessus peuvent considérablement réduire la taille des données, mais leur sélection exige une expertise, et aucun choix unique ne convient à une colonne dont les données évoluent au fil du temps. Lorsque le paramètre MergeTree [`allow_experimental_adaptive_codec_selection`](/fr/reference/settings/merge-tree-settings) est activé, ClickHouse effectue ce choix pour vous. Pour les colonnes qui utilisent le codec par défaut (`CODEC(Default)` ou aucune clause `CODEC`), chaque bloc est écrit avec le codec qui offre la compression la plus efficace, choisi parmi le codec par défaut de la table, `NONE` et les codecs spécialisés adaptés au type de la colonne.
+Les codecs spécialisés ci-dessus peuvent considérablement réduire la taille des données, mais leur sélection exige une expertise, et aucun choix unique ne convient à une colonne dont les données évoluent au fil du temps. Lorsque le paramètre MergeTree [`enable_adaptive_codec_selection`](/fr/reference/settings/merge-tree-settings) est activé, ClickHouse effectue ce choix pour vous. Pour les colonnes qui utilisent le codec par défaut (`CODEC(Default)` ou aucune clause `CODEC`), chaque bloc est écrit avec le codec qui offre la compression la plus efficace, choisi parmi le codec par défaut de la table, `NONE` et les codecs spécialisés adaptés au type de la colonne.
 
 Un bloc n&#39;est jamais plus volumineux qu&#39;il ne le serait avec le codec par défaut, et les données incompressibles sont stockées brutes (les compresser produirait un fichier légèrement plus volumineux et plus lent à lire). Ce travail s&#39;effectue en arrière-plan, lors des merges et des mutations, où les données sont de toute façon recompressées. La vitesse d&#39;insertion n&#39;est pas affectée. Les requêtes sont souvent plus rapides : moins de données sont lues sur le disque, chaque bloc lu par une requête doit d&#39;abord être décompressé, et les codecs spécialisés se décompressent plus rapidement que le codec par défaut `LZ4`. Chaque bloc enregistre le codec avec lequel il a été écrit, de sorte qu&#39;aucun paramètre n&#39;est nécessaire pour la lecture, et cette fonctionnalité peut être désactivée à tout moment sans compromettre la lisibilité des données.
 
@@ -298,7 +298,7 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;

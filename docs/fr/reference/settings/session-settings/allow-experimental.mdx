@@ -15,18 +15,6 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_experimental_ai_functions">
-  ## allow_experimental_ai_functions
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
-
-Active les fonctions d’IA expérimentales (par ex. `aiGenerateContent`). Ces fonctions envoient des requêtes HTTP à des fournisseurs d’IA externes.
-
 <div id="allow_experimental_analyzer">
   ## allow_experimental_analyzer
 </div>
@@ -430,16 +418,6 @@ Permet de créer des tables avec la clause `UNIQUE KEY` sur les moteurs de la fa
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer l’expansion des caractères génériques dans la fonction de table `url` en énumérant les pages d’index HTTP."}]}]} />
 
 Autorise l’expansion expérimentale des caractères génériques pour `url()` et `ENGINE = URL` à partir des pages d’index HTTP.
-
-<div id="allow_experimental_window_view">
-  ## allow_experimental_window_view
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Active WINDOW VIEW. Fonctionnalité pas encore assez mature.
 
 <div id="allow_experimental_ytsaurus_dictionary_source">
   ## allow_experimental_ytsaurus_dictionary_source

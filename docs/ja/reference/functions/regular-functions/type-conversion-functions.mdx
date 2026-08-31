@@ -3496,8 +3496,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 導入バージョン: v20.1.0
 
-入力値を [DateTime64](/ja/reference/data-types/datetime64) 型の値に変換します。ただし、無効な引数を受け取った場合は [DateTime64](/ja/reference/data-types/datetime64) の下限値を返します。
-[toDateTime64](#toDateTime64) と同様ですが、無効な引数を受け取った場合は [DateTime64](/ja/reference/data-types/datetime64) の下限値を返します。
+入力値を [DateTime64](/ja/reference/data-types/datetime64) 型の値に変換します。ただし、無効な引数を受け取った場合はゼロの [DateTime64](/ja/reference/data-types/datetime64) 値 (Unix epoch、`1970-01-01 00:00:00`) を返します。
+[toDateTime64](#toDateTime64) と同様ですが、無効な引数を受け取った場合はゼロの [DateTime64](/ja/reference/data-types/datetime64) 値を返します。
 
 関連項目:
 
@@ -3508,16 +3508,18 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 **構文**
 
 ```sql
-toDateTime64OrZero(x)
+toDateTime64OrZero(x[, precision[, timezone]])
 ```
 
 **引数**
 
 * `x` — 日時を秒未満の精度まで含む文字列表現。[`String`](/ja/reference/data-types/string)
+* `precision` — 任意。戻り値の秒未満の精度。[`UInt8`](/ja/reference/data-types/int-uint)
+* `timezone` — 任意。戻り値のタイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-成功した場合は DateTime64 値を返し、失敗した場合は DateTime64 の下限値 (`1970-01-01 00:00:00.000`) を返します。[`DateTime64`](/ja/reference/data-types/datetime64)
+成功した場合は DateTime64 値を返し、失敗した場合は指定された精度でゼロ DateTime64 値 (`1970-01-01 00:00:00`) を返します。[`DateTime64`](/ja/reference/data-types/datetime64)
 
 **例**
 

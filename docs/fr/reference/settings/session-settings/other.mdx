@@ -24,7 +24,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "Nouveau paramètre définissant le nombre de clés à partir duquel l’agrégateur adaptatif (`enable_adaptive_aggregator`) fige la table de hachage locale d’un thread."}]}]} />
 
-Nombre de clés à partir duquel l’agrégateur adaptatif fige la table de hachage locale d’un thread (voir `enable_adaptive_aggregator`). Des valeurs plus faibles maintiennent les tables figées dans le cache, tandis que des valeurs plus élevées leur permettent d’absorber davantage de clés fréquentes. La valeur 0 fige les tables dès que possible, ce qui fait que l’algorithme se comporte de manière similaire à l’agrégateur partitionné (`enable_sharding_aggregator`) : chaque clé est routée selon son hash et agrégée par un seul propriétaire, mais l’opération est reportée à la phase de fusion au lieu d’être échangée entre les threads pendant le parcours.
+Nombre de clés à partir duquel l’agrégateur adaptatif fige la table de hachage locale d’un thread (voir `enable_adaptive_aggregator`). Des valeurs plus faibles maintiennent les tables figées dans le cache, tandis que des valeurs plus élevées leur permettent d’absorber davantage de clés fréquentes. La valeur 0 fige les tables dès que possible, ce qui fait que l’algorithme se comporte comme un partitionnement pur selon le hash de la clé : chaque clé est routée selon son hash et agrégée par un seul propriétaire, mais l’opération est reportée à la phase de fusion au lieu d’être échangée entre les threads pendant le parcours.
 
 <div id="adaptive_aggregator_freeze_threshold_bytes">
   ## adaptive_aggregator_freeze_threshold_bytes
@@ -1857,7 +1857,7 @@ Délai d&#39;attente pour verrouiller le cache lors de la réservation d&#39;esp
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Autorise ou interdit les `INSERT` vides. Ce paramètre est activé par défaut (et déclenche une erreur en cas d&#39;insert vide). S&#39;applique uniquement aux `INSERT` effectués avec [`clickhouse-client`](/fr/concepts/features/interfaces/cli) ou via l&#39;[interface gRPC](/fr/concepts/features/interfaces/grpc).
+Autorise ou interdit les `INSERT` vides. Ce paramètre est activé par défaut (et déclenche une erreur en cas d&#39;insert vide). S&#39;applique uniquement aux `INSERT` effectués avec [`clickhouse-client`](/fr/concepts/features/interfaces/client) ou via l&#39;[interface gRPC](/fr/concepts/features/interfaces/grpc).
 
 <div id="time_series_prefer_recent_samples_table">
   ## time_series_prefer_recent_samples_table

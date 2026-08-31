@@ -146,7 +146,7 @@ Estes codecs foram projetados para tornar a compressão mais eficaz ao explorar 
   ### ALP
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — Compressão adaptativa sem perdas para dados de ponto flutuante. Compatível com `Float32` e `Float64`. Para mais detalhes, consulte [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
@@ -157,7 +157,7 @@ O codec aceita um argumento de variante opcional:
 * `ALP(RD)` — Variante Real Doubles. Reinterpreta o padrão de bits de cada valor e o divide em uma parte alta (sinal + expoente + bits mais significativos da mantissa) e uma parte baixa. As partes altas são codificadas por dicionário (até 8 entradas), e as partes baixas são empacotadas em bits. Funciona melhor quando muitos valores compartilham os mesmos bits altos.
 
 <Note>
-  Este codec é experimental e requer `SET enable_alp_codec = 1` para ser usado.
+  Este codec está em beta e requer `SET enable_alp_codec = 1` para ser usado.
 </Note>
 
 <div id="fpc">
@@ -286,7 +286,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge />
 
-Os codecs especializados acima podem reduzir drasticamente o tamanho dos dados adequados, mas escolhê-los exige conhecimento especializado, e nenhuma escolha única serve para uma coluna cujos dados mudam ao longo do tempo. Com a configuração do MergeTree [`allow_experimental_adaptive_codec_selection`](/pt-BR/reference/settings/merge-tree-settings) habilitada, o ClickHouse escolhe por você. Para colunas que usam o codec padrão (`CODEC(Default)` ou nenhum `CODEC`), cada bloco é gravado com o codec que resulta na menor compressão, escolhido entre o codec padrão da tabela, `NONE` e codecs especializados adequados ao tipo da coluna.
+Os codecs especializados acima podem reduzir drasticamente o tamanho dos dados adequados, mas escolhê-los exige conhecimento especializado, e nenhuma escolha única serve para uma coluna cujos dados mudam ao longo do tempo. Com a configuração do MergeTree [`enable_adaptive_codec_selection`](/pt-BR/reference/settings/merge-tree-settings) habilitada, o ClickHouse escolhe por você. Para colunas que usam o codec padrão (`CODEC(Default)` ou nenhum `CODEC`), cada bloco é gravado com o codec que resulta na menor compressão, escolhido entre o codec padrão da tabela, `NONE` e codecs especializados adequados ao tipo da coluna.
 
 Um bloco nunca fica maior do que ficaria com o codec padrão, e dados incomprimíveis são armazenados em formato bruto (compri-los produziria um arquivo um pouco maior e mais lento de ler). O trabalho é feito em segundo plano, durante merges e mutações, quando os dados já são recomprimidos. A velocidade de inserção não é afetada. As consultas geralmente ficam mais rápidas: menos dados são lidos do disco, cada bloco lido por uma consulta precisa ser descomprimido primeiro, e codecs especializados descomprimem mais rápido que o `LZ4` padrão. Cada bloco registra o codec usado para gravá-lo, portanto a leitura não exige nenhuma configuração, e o recurso pode ser desativado a qualquer momento, mantendo todos os dados legíveis.
 
@@ -298,13 +298,13 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-Você pode observar como isso funciona com a função de tabela [`mergeTreeCodecBlockCounts`](/pt-BR/reference/functions/table-functions/mergeTreeCodecBlockCounts). Aqui, `time` aumenta continuamente, portanto `T64`, que armazena apenas os bits que variam dentro de um bloco, superou o codec padrão em todos os blocos. `user_id` contém hashes que nenhum codec consegue comprimir, portanto seus blocos foram armazenados sem processamento:
+Você pode observar como isso funciona com a função de tabela [`mergeTreeCodecBlockCounts`](/pt-BR/reference/functions/table-functions/mergeTreeCodecBlockCounts). Aqui, `time` aumenta continuamente, portanto `T64`, que armazena apenas os bits que variam dentro de um bloco, superou o codec padrão em todos os blocos. `user_id` contém hashes que nenhum codec consegue comprimir, portanto seus blocos foram armazenados em formato bruto:
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');

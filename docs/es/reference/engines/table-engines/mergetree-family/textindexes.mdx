@@ -798,15 +798,15 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 </div>
 
 <Note>
-  `hasToken` presenta ciertos inconvenientes cuando se usa para lookups en índices de texto con tokenizadores que no son `splitByNonAlpha` y/o expresiones de preprocesador/postprocesador.
+  `hasToken` presenta ciertos inconvenientes cuando se usa para lookups en índices de texto con tokenizadores que no son `splitByNonAlpha` y/o expresiones de preprocesador/posprocesamiento.
   Recomendamos usar en su lugar `hasAnyTokens` y `hasAllTokens`.
 
-  Las variantes sin distinción entre mayúsculas y minúsculas `hasTokenCaseInsensitive` y `hasTokenCaseInsensitiveOrNull` no reconocen los índices de texto: siempre se ejecutan como un escaneo completo de filas, incluso en columnas con índice de texto. Para la coincidencia sin distinción entre mayúsculas y minúsculas, use un preprocesador o postprocesador `lower(...)` y combínelo con `hasToken` / `hasAllTokens` / `hasAnyTokens`.
+  Las variantes sin distinción entre mayúsculas y minúsculas `hasTokenCaseInsensitive` y `hasTokenCaseInsensitiveOrNull` no reconocen los índices de texto: siempre se ejecutan como un escaneo completo de filas, incluso en columnas con índice de texto. Para la coincidencia sin distinción entre mayúsculas y minúsculas, use un preprocesador o una expresión de posprocesamiento `lower(...)` y combínelo con `hasToken` / `hasAllTokens` / `hasAnyTokens`.
 </Note>
 
 La función [hasToken](/es/reference/functions/regular-functions/string-search-functions#hasToken) busca la coincidencia de un único token dado.
 
-A diferencia de las funciones mencionadas anteriormente, no tokenizan el término de búsqueda (asumen que la entrada es un único token).
+A diferencia de `hasAnyTokens` y `hasAllTokens`, no tokeniza el término de búsqueda (asume que la entrada es un único token).
 
 Ejemplo:
 

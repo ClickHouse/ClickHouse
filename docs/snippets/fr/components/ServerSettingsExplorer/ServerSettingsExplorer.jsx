@@ -176,10 +176,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "database_catalog_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "database_catalog_drop_error_cooldown_sec", path: "/database-catalog#database_catalog_drop_error_cooldown_sec", default: "5" },
         { name: "database_catalog_drop_table_concurrency", path: "/database-catalog#database_catalog_drop_table_concurrency", default: "16" },
+        { name: "database_catalog_shutdown_table_concurrency", path: "/database-catalog#database_catalog_shutdown_table_concurrency", default: "0" },
         { name: "database_catalog_unused_dir_cleanup_period_sec", path: "/database-catalog#database_catalog_unused_dir_cleanup_period_sec", default: "86400" },
         { name: "database_catalog_unused_dir_hide_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_hide_timeout_sec", default: "3600" },
         { name: "database_catalog_unused_dir_rm_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_rm_timeout_sec", default: "2592000" }
@@ -1588,7 +1589,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
                 </span>
                 {item.value.default !== undefined && (
                   <span title="Valeur par défaut" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
-                    (par défaut : {item.value.default})
+                    (par défaut : {item.value.default})
                   </span>
                 )}
               </div>

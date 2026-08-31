@@ -14,6 +14,23 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
+<div id="enable_adaptive_codec_selection">
+  ## enable_adaptive_codec_selection
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración."}]}]} />
+
+Cuando está habilitada, las operaciones de fusión y las mutaciones eligen un códec por bloque para las columnas que usan el códec predeterminado (sin cláusula `CODEC` o con `CODEC(Default)`).
+Los candidatos son el códec predeterminado de la tabla (consulte la configuración `default_compression_codec`), `NONE` y códecs especializados adecuados para el tipo de columna.
+Actualmente, solo los tipos similares a los enteros son adaptativos.
+Se elige la salida más pequeña. Por lo tanto, la compresión nunca es peor que la predeterminada y los bloques no comprimibles se almacenan sin procesar.
+Una columna cuyo códec predeterminado incluye cifrado (por ejemplo, `AES_128_GCM_SIV`) nunca se selecciona de forma adaptativa, por lo que el cifrado siempre se aplica.
+Los códecs por bloque se indican mediante la función de tabla [`mergeTreeCodecBlockCounts`](/es/reference/functions/table-functions/index).
+
 <div id="enable_index_granularity_compression">
   ## enable_index_granularity_compression
 </div>

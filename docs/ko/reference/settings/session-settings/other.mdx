@@ -24,7 +24,7 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "적응형 집계기(`enable_adaptive_aggregator`)가 스레드의 로컬 해시 테이블을 고정하는 키 수를 설정하는 새로운 설정입니다."}]}]} />
 
-적응형 집계기가 스레드의 로컬 해시 테이블을 고정하는 키 수입니다(`enable_adaptive_aggregator` 참조). 값이 작을수록 고정된 테이블이 캐시에 상주하고, 값이 클수록 자주 사용되는 키를 더 많이 수용할 수 있습니다. 0으로 설정하면 가능한 첫 시점에 테이블을 고정하므로 알고리즘이 세그먼트 분할 집계기(`enable_sharding_aggregator`)와 유사하게 동작합니다. 즉, 모든 키는 해시에 따라 라우팅되어 단일 소유자가 집계하지만, 스캔 중 스레드 간에 교환하는 대신 머지 단계로 처리를 미룹니다.
+적응형 집계기가 스레드의 로컬 해시 테이블을 고정하는 키 수입니다(`enable_adaptive_aggregator` 참조). 값이 작을수록 고정된 테이블이 캐시에 상주하고, 값이 클수록 자주 사용되는 키를 더 많이 수용할 수 있습니다. 0으로 설정하면 가능한 첫 시점에 테이블을 고정하므로 알고리즘이 키 해시에 따른 순수 세그먼트 분할과 유사하게 동작합니다. 즉, 모든 키는 해시에 따라 라우팅되어 단일 소유자가 집계하지만, 스캔 중 스레드 간에 교환하는 대신 머지 단계로 처리를 미룹니다.
 
 <div id="adaptive_aggregator_freeze_threshold_bytes">
   ## adaptive_aggregator_freeze_threshold_bytes
@@ -1846,7 +1846,7 @@ TCP가 keepalive probe 전송을 시작하기 전에 연결이 유휴 상태로 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-빈 INSERT를 허용하거나 금지합니다. 기본적으로 활성화되어 있으며, 빈 삽입이 발생하면 오류를 반환합니다. [`clickhouse-client`](/ko/concepts/features/interfaces/cli) 또는 [gRPC 인터페이스](/ko/concepts/features/interfaces/grpc)를 사용하는 INSERT에만 적용됩니다.
+빈 INSERT를 허용하거나 금지합니다. 기본적으로 활성화되어 있으며, 빈 삽입이 발생하면 오류를 반환합니다. [`clickhouse-client`](/ko/concepts/features/interfaces/client) 또는 [gRPC 인터페이스](/ko/concepts/features/interfaces/grpc)를 사용하는 INSERT에만 적용됩니다.
 
 <div id="time_series_prefer_recent_samples_table">
   ## time_series_prefer_recent_samples_table

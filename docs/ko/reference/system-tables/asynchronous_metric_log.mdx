@@ -18,6 +18,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 
 `system.asynchronous_metrics`의 키-값 메트릭(CPU 코어, 블록 디바이스, 네트워크 인터페이스 또는 디스크별로 분류되는 메트릭)은 키당 하나의 행으로 기록되며, 키는 `key` 컬럼에 저장됩니다. 스칼라 메트릭의 경우 `key` 컬럼은 비어 있습니다.
 
+버전 26.8 이전에는 모든 키가 이름에 키가 변형되어 포함된 별도의 스칼라 메트릭이었습니다(`BlockReadBytes_sda`). [`asynchronous_metrics_key_values_mode`](/ko/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 서버 설정을 사용하면 해당 형식으로 다시 전환하거나(`legacy_names`), 모니터링을 마이그레이션하는 동안 두 형식을 동시에 기록할 수 있습니다(`both`).
+
 <div id="columns">
   ## 컬럼
 </div>

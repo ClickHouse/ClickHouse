@@ -12,6 +12,22 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 Además de este registro de cambios de Cloud, consulte la página de [compatibilidad de Cloud](/es/products/cloud/guides/cloud-compatibility).
 
+<Update label="31 de agosto de 2026">
+  Esta semana amplía el alcance global de ClickHouse Cloud con nuevas regiones de AWS en Taipéi y Malasia, añade compatibilidad con Global Access para Private Service Connect y facilita a los usuarios de SAML el cambio entre organizaciones.
+
+  ### Nuevas regiones de AWS: Taipéi y Malasia
+
+  ClickHouse Cloud ya está disponible en AWS Taipéi (`ap-east-2`) y AWS Malasia (`ap-southeast-5`). Ambas están configuradas como Private Regions con compatibilidad con ClickPipes. Consulte la [documentación de regiones compatibles](/es/cloud/reference/supported-regions) y las [consideraciones sobre Private Regions](/es/cloud/reference/supported-regions#private-regions) para obtener más detalles.
+
+  ### Private Service Connect admite Global Access
+
+  Private Service Connect (PSC) en GCP ahora admite Global Access. Cuando está habilitado, los clientes de otras regiones de GCP dentro de la misma VPC pueden conectarse al endpoint de PSC, incluso desde regiones que no son compatibles de forma nativa con ClickHouse Cloud, como `asia-northeast3` (Seúl). El servicio de ClickHouse Cloud y el endpoint de PSC deben permanecer en la misma región de GCP.
+
+  ### Cambie entre organizaciones SAML
+
+  Los usuarios de SAML que pertenecen a varias organizaciones SAML ahora pueden cambiar directamente entre ellas desde el selector de organizaciones, que los vuelve a autenticar en segundo plano. Ya no es necesario guardar en marcadores la URL de cada organización ni cerrar sesión y volver a iniciarla manualmente; basta con guardar en marcadores su organización principal y cambiar desde allí. Esto cubre el cambio de SAML a SAML; el cambio existente entre organizaciones que no usan SAML no cambia.
+</Update>
+
 <Update label="17 de agosto de 2026">
   Las actualizaciones de esta semana amplían el alcance de la plataforma y mejoran la visibilidad operativa. Managed Postgres ya está disponible en GCP para determinados socios de diseño, los recursos de ClickStack se pueden administrar mediante el proveedor oficial de Terraform y las nuevas notificaciones de facturación avisan a los clientes con antelación antes de que los créditos caduquen o se interrumpa el servicio. También hemos mejorado el tracing de ClickHouse Agents y la experiencia de inicio de sesión con SAML.
 
@@ -37,19 +53,19 @@ Además de este registro de cambios de Cloud, consulte la página de [compatibil
 </Update>
 
 <Update label="13 de julio de 2026">
-  Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de almacenamiento de objetos.
+  Las actualizaciones de esta semana incluyen el enrutamiento persistente a réplicas mediante HTTPS estándar, fechas de inicio de período de facturación personalizadas y nuevos controles de carga inicial para ClickPipes de almacenamiento de objetos.
 
-  ### Enrutamiento sticky de réplicas a través de HTTPS (vista previa privada)
+  ### Enrutamiento persistente a réplicas mediante HTTPS (vista previa privada)
 
-  Ahora puedes fijar las consultas a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre consultas los objetos con alcance de session, como las tablas temporales, y ayuda a que las consultas repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en vista previa privada para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/es/products/cloud/features/infrastructure/replica-aware-routing).
+  Ahora puede fijar las consultas a una réplica específica mediante HTTPS estándar añadiendo un parámetro `?session_id=` a la URL normal de su servicio, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre consultas los objetos con ámbito de sesión, como las tablas temporales, y ayuda a que las consultas repetidas accedan a cachés locales de la réplica ya calentadas. Se está implementando en vista previa privada para todos los clientes Enterprise y, previa solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulte la documentación sobre [enrutamiento con reconocimiento de réplicas](/es/products/cloud/features/infrastructure/replica-aware-routing).
 
-  ### Fechas de inicio personalizadas para el período de facturación
+  ### Fechas de inicio de período de facturación personalizadas
 
-  Ahora puedes solicitar un cambio en la fecha de facturación de tu organización, es decir, el día del mes en que comienza cada período de facturación, por ejemplo, para alinear las facturas con el mes natural. Abre un ticket de soporte con la fecha solicitada. Las fechas de facturación se aplican en UTC, y cada factura cubre el uso desde la fecha de facturación hasta la misma fecha del mes siguiente (sin incluirla).
+  Ahora puede solicitar un cambio en la fecha de facturación de su organización, el día del mes en que comienza cada período de facturación, por ejemplo, para alinear las facturas con el mes calendario. Abra un ticket de soporte con la fecha solicitada. Las fechas de facturación se aplican en UTC y cada factura cubre el uso desde la fecha de facturación hasta la misma fecha del mes siguiente (sin incluirla).
 
-  ### Omitir la carga inicial para los ClickPipes de almacenamiento de objetos
+  ### Omitir la carga inicial para ClickPipes de almacenamiento de objetos
 
-  Los [ClickPipes](/es/integrations/clickpipes/home) de almacenamiento de objetos (S3, GCS y Azure Blob Storage) ahora ofrecen dos formas de controlar la carga inicial al crear un pipe: **Start after**, que omite los archivos hasta una clave de object determinada, incluyéndola, y **Skip initial load**, que omite por completo los archivos preexistentes y procesa solo las notificaciones de nuevos object. Anteriormente, un pipe nuevo siempre hacía backfill de todos los archivos de la ruta. Las dos opciones son mutuamente excluyentes y permanentes para un pipe determinado: un backfill omitido no puede activarse más adelante. Disponible en la UI, en la API de Cloud y en Terraform v3.18.0 y posteriores.
+  Los [ClickPipes](/es/integrations/clickpipes/home) de almacenamiento de objetos (S3, GCS y Azure Blob Storage) ahora ofrecen dos formas de controlar la carga inicial al crear un pipe: **Iniciar después de**, que omite los archivos hasta una clave de objeto determinada, incluida esta, y **Omitir carga inicial**, que omite por completo los archivos preexistentes y procesa solo las notificaciones de objetos nuevos. Anteriormente, un pipe nuevo siempre realizaba un backfill de todos los archivos de la ruta. Las dos opciones son mutuamente excluyentes y permanentes para un pipe determinado: un backfill omitido no se puede activar posteriormente. Disponible en la UI, la API de Cloud y Terraform v3.18.0 y versiones posteriores.
 </Update>
 
 <Update label="30 de junio de 2026">

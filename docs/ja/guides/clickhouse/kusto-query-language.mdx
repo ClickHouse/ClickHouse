@@ -1,0 +1,189 @@
+---
+title: 'ClickHouse の Kusto Query Language (KQL)'
+description: '実験的な KQL ダイアレクトでサポートされる機能と、意図的にサポートされていない機能'
+keywords: ['KQL', 'Kusto', 'ダイアレクト']
+sidebarTitle: 'Kusto Query Language (KQL)'
+slug: /guides/kusto-query-language
+doc_type: 'guide'
+---
+
+ClickHouse では、SQL の代わりに [Kusto Query Language](https://learn.microsoft.com/en-us/kusto/query/)
+のサブセットを解析できます。このダイアレクトは**実験的**で、デフォルトでは無効です。
+
+```sql
+SET allow_experimental_kusto_dialect = 1;
+SET dialect = 'kusto';
+
+StormEvents
+| where State == 'FLORIDA' and DamageProperty > 0
+| summarize Total = sum(DamageProperty) by EventType
+| top 5 by Total
+```
+
+`SET dialect = 'clickhouse'` を実行すると、元に戻せます。KQL ダイアレクトが有効な間に認識される SQL ステートメントは `SET` だけなので、セッションはいつでもこの状態から抜け出せます。
+
+<div id="what-is-supported">
+  ## サポート対象
+</div>
+
+これは意図的に限定されたサブセットです。KQL 構文は、Kusto のドキュメントで定義されているセマンティクスに従って変換されるか、名前を示したパースエラーとして拒否されます。暗黙的に近似されることはありません。
+クエリが解析できた場合、その結果は Kusto&#39;s の結果と一致することを意図しています。
+
+**ログソース**: テーブル名、`print`、`datatable`、`range`、丸かっこで囲まれたパイプライン、`union`。
+`range` は、数値から数値へ、datetime から timespan へ、または timespan から
+timespan へ進みます。
+
+**演算子**: `where` / `filter`、`extend`、`project`、`project-away`、`project-keep`、
+`project-rename`、`summarize`、`sort by` / `order by`、`take` / `limit`、`top`、`distinct`、
+`count`、`mv-expand`、`join`、`union`、`as`、`render`。
+
+**スカラー演算子**: `==`、`!=`、`<`、`<=`、`>`、`>=`、`=~`、`!~`、`in`、`in~`、`between`、
+`contains`、`startswith`、`endswith`、`has`、`hasprefix`、`hassuffix`、これらの `_cs`
+ (大文字と小文字を区別する) 形式および `!` (否定) 形式、`has_any`、`has_all`、`matches regex`。
+`in` と `!in` は、先頭のカラムから値を取得する表形式の式も受け取ります
+ (`x in (T | project key)`) 。`in~` はリストのみを受け取ります。`in (...)` 内の単独の名前が
+どの `let` にもバインドされていない場合、パーサーにはカラムとテーブルを区別するためのスキーマがないため、
+カラムとして解釈されます。テーブルを `let` でバインドするか、修飾する (`db.table`) か、表形式にするためにパイプを追加してください。
+
+**文**: スカラー、表形式の式全体、または **関数** をバインドする `let`:
+
+```sql
+let MultiplyByN = (val: long, n: long = 2) { val * n };
+let RecentErrors = (since: timespan) { Logs | where Level == 'Error' and Timestamp > ago(since) };
+
+RecentErrors(1h) | summarize Count = count() by Component
+```
+
+関数は、省略可能なリテラルのデフォルト値を持つスカラー引数と、先頭に指定する必要がある `T: (*)` または `T: (col: type, ...)` として宣言された表形式引数を受け取ります。カラム名を指定する表形式引数では、ボディから参照できるのは引数のそのカラムだけです。そのため、実際の引数にそのカラムが含まれていても、宣言されていないカラムをボディで参照すると拒否されます。`T: (*)`
+では引数がそのまま渡されます。宣言された型は呼び出し時に検証されます。
+引数 (または表形式引数で宣言されたカラム) の型が宣言された KQL 型に該当しない場合は拒否され、`long` から `real` のような損失のない変換は適用されます。また、宣言された型に収まらない値 (たとえば `int` のオーバーフロー) は、暗黙的に切り捨てられるのではなくエラーになります。引数は
+任意の順序で名前付きで渡せます (`f(c = 7, a = 12)`) 。ボディは任意の数の `let` ステートメントに続く
+1 つの式で構成され、外側のバインディングを参照できます。ボディがパイプラインである関数は値ではなくテーブルとなるため、式が想定される場所、つまり
+`extend`、`where`、`print` では拒否されます。引数なしの関数は、
+括弧ありでもなしでも呼び出せます。`view ()` は受け入れられ、ここでは `union *` のワイルドカードを解決しないため、
+`()` と同じ意味になります。Kusto と同様に、再帰は拒否されます。
+
+`let` によるバインディングは、その直後のステートメントに対してのみ有効です。これは 1 つの KQL ステートメントが 1 つの
+ClickHouse クエリに対応するためであり、バインディングが同時実行クエリに漏れることも防ぎます。同じ名前を 2 つのステートメントで必要とする場合は、2 回バインドする必要があります。
+
+**リテラル**: 文字列 (逐語文字列の `@'...'` を含む) 、数値、`datetime(...)`、`guid(...)`、
+`1d` / `2.5h` / `500ms` のような期間、および `dynamic([...])` Array。
+
+約 130 種類のスカラー関数と集約関数が変換されます。Kusto と同様に、集約
+関数は `summarize` の集約リスト内でのみ呼び出せます。`print count()` は
+同名の ClickHouse 集約関数にそのまま渡されるのではなく、拒否されます。
+
+**ClickHouse 関数**にもアクセスできます。KQL レジストリが認識しない名前は、
+記述したスペルのまま ClickHouse に渡されるため、クエリではサーバーが提供するあらゆる機能を使用できます。
+
+```sql
+SET dialect = 'kusto';
+
+StormEvents
+| extend Bucket = toStartOfHour(StartTime), Fingerprint = cityHash64(EventType)
+| summarize Events = count() by Bucket
+```
+
+例外は、Kusto 自体で定義されているものの、このダイアレクトでは実装されていない名前です。これらは
+そのまま受け渡されるのではなく拒否されるため、Kusto の名前が知らないうちに別の意味として解釈されることはありません。
+`range` が最も分かりやすい例です。Kusto では `range(1, 3, 1)` は `[1, 2, 3]` ですが、
+ClickHouse では `[1, 2]` になるため、KQL でこれを記述すると誤った結果ではなくエラーになります。
+
+<div id="coverage-against-the-kusto-reference">
+  ## Kusto リファレンスに対するカバレッジ
+</div>
+
+Microsoft が公開している索引
+ ([表形式演算子](https://learn.microsoft.com/en-us/kusto/query/queries)、
+[スカラー関数](https://learn.microsoft.com/en-us/kusto/query/scalar-functions)、
+[集約関数](https://learn.microsoft.com/en-us/kusto/query/aggregation-functions)) に基づく比較:
+
+|               | Kusto ドキュメント | ここでサポート |
+| ------------- | ------------ | ------- |
+| 表形式演算子        | 52           | 20      |
+| スカラー関数および集約関数 | 307          | 162     |
+| ユーザー定義関数      | はい           | はい      |
+
+サポート対象の演算子は、Microsoft の *Learn common operators* チュートリアルで取り上げられているものに、
+`datatable`、`range`、`print`、`union`、`join` を加えたものです。これらにより、そのチュートリアルと KQL Quick Reference で扱われる形式のクエリを十分にカバーできます。
+
+<div id="what-is-not-supported">
+  ## サポートされていないもの
+</div>
+
+誤訳されるのではなく、パースエラーとして拒否されます。
+
+* 演算子: `search`、`parse`、`mv-apply`、`lookup`、`evaluate`、`invoke`、`facet`、
+  `top-nested`、`make-series`、`sample`、`serialize`、`partition`、および演算子としての `range`。
+* 関数: `series_*` ファミリー、`bag_*` / `pack_*`、`parse_url`、`parse_csv`、
+  `parse_json`、`todynamic`、`toscalar`、`format_timespan`、`format_datetime`、`extract_all`、
+  `range`、`percentiles*` ファミリー、および `row_*` ウィンドウ関数。
+   (`format_datetime` と `extract_all` は近似変換ではなく拒否されます。Kusto の
+  `yyyy-MM-dd` フォーマット指定子は ClickHouse のものとは異なり、Kusto の `extract_all` は
+  キャプチャグループごとに 1 つの配列を返すためです。) 
+* 異なる意味を持つ ClickHouse 関数と名前が衝突する Kusto 関数: `range` (上記参照) 、
+  `repeat`、`replace`、`translate`、`materialize`。これらをそのまま通すと、
+  意図せず別の結果が計算されます。たとえば Kusto の `repeat(1, 3)` は配列 `[1, 1, 1]` を返しますが、
+  ClickHouse の `repeat` は文字列を繰り返します。そのため、いずれも名前に基づいて拒否されます。
+* GeoJSON を受け取る、または返す地理空間関数。すべての `geo_*_to_central_point` と、
+  ポリゴンおよび線を扱うすべての関数です。通常の経度/緯度で動作する Point、geohash、H3 関数は
+  *サポートされています*。`geo_point_to_s2cell` はサポートされていません。ClickHouse には
+  S2 トークン形式がないためです。
+* `dynamic` **オブジェクト** (`dynamic({"a": 1})`) 、メンバーアクセス (`x.y`) 、キーによる
+  ルックアップ (`x['k']`) 。`dynamic` 配列のみが ClickHouse の `Array` にマッピングされます。
+  `datatable` スキーマ、`typeof(...)`、または関数パラメータで **宣言された型**としての `dynamic` も
+  拒否されます。この注釈には要素型がないため、忠実にマッピングする先がありません。
+* `cluster(...)` や `database(...)` などの、クラスター間およびデータベース間の参照。
+* クエリおよび `join` ヒント (`hint.strategy`、`hint.shufflekey`、...) 。
+* 演算子オプション: `mv-expand ... to typeof(T)` / `limit N` / `bagexpansion`、`summarize`
+  ヒント、`union kind=` / `withsource=` / `isfuzzy=`、`join hint.*`。
+* `project-away` および `project-keep` のワイルドカードカラムパターン (`project-away Tmp*`) :
+  展開にはスキーマが必要ですが、パース時には利用できません。カラムを明示的に列挙してください。
+* `evaluate` プラグインの仕組み全体と、それに伴う `bag_unpack`、`pivot`、`narrow`、
+  `python`、`R` など。
+* アプリケーションステートメント: `alias database`、`declare pattern`、
+  `declare query_parameters`、`restrict access to`。
+* 難読化された文字列リテラル (`h"..."`) および複数行リテラル (トリプルバッククォート) 。
+
+<div id="behaviour-worth-knowing">
+  ## 知っておくべき動作
+</div>
+
+* **期間は `Interval` 値です。** `1d` は `toIntervalNanosecond(86400000000000)` になります。
+  数値ではなく Kusto 形式 (`1.00:00:00`) で表示するには、
+  `interval_output_format = 'kusto'` を設定します。
+* **除算は Kusto の動作に従います**：`7 / 2` は両方のオペランドが整数であるため `3` となり、
+  期間を期間で除算すると実数の比率になります (`15ms / 10ms` は `1.5`) 。これは、
+  引数の型に基づいて判定する `kqlDivide` によって実装されています。
+* **2 つの日時を減算すると秒数が返されます**。Kusto では期間が返されます。
+  期間の加算または減算は期待どおりに動作します。
+* **`sort` のデフォルトは降順です**。SQL とは異なり、null は小さい側に配置されます。
+* **`project-rename` はリネームしたカラムを行の末尾に移動します**。Kusto は元の
+  位置を維持しますが、これを再現するにはパース時にスキーマを把握する必要があります。
+* **`union` ではオペランドに互換性のあるスキーマが必要です。** Kusto はすべての
+  カラムのユニオンに拡張し、不足分を null で埋めますが、ClickHouse の `UNION ALL` はそうしません。
+* **文字列演算子は `LIKE` パターンではなく、マッチング関数です。** `contains '50%'` は
+  リテラルのパーセント記号を検索します。
+* **Kusto と同様に、`geo_*` は緯度より先に経度を取ります。** `geo_distance_2points` は
+  ClickHouse の高速な近似関数 `greatCircleDistance` を使用します。これは Kusto とは
+  有効数字の 4 桁目で異なり、1500 km では約 600 m の差があります。また、`use_spheroid = true` は
+  Kusto と同様に楕円体の式である `geoDistance` を選択します。完全な一致を目指しているわけではありません。
+  これらの関数は通常、レポートではなくフィルタリングに使用されます。[-180, 180] または
+  [-90, 90] の範囲外の座標では、Kusto が返す null ではなく意味のない数値が返されることに注意してください。
+  どちらの ClickHouse 関数も引数の範囲チェックを行わず、チェックには行ごとに 8 回の
+  比較が必要になります。
+* **`dayofweek()` は数値ではなく期間を返します**：月曜日は `1.00:00:00` です。
+* **`tohex()` は負の値を 64 ビット幅で表示します。** Kusto は引数自体の型の幅で
+  表示しますが、その型はパース時には判別できません。
+* **日時は実際の `DateTime64` 値です**。そのため、Kusto 形式の
+   (`2017-01-01T00:00:00.0000000`) ではなく、ClickHouse 形式
+   (`2017-01-01 00:00:00`) で表示されます。以前の実装では整形された*文字列*が生成され、
+  Kusto のように見えても日時として比較やソートはできませんでした。
+* **ClickHouse のパラメトリック集約関数** (`quantileExact(0.5)(x)`) には KQL での表記がありません。
+  `medianExact(x)` などの名前付き代替関数を使用してください。
+
+<div id="reporting-a-problem">
+  ## 問題の報告
+</div>
+
+パースはされるものの、Kusto では返されない結果を返すクエリはバグです。両方の結果を添えて報告してください。拒否されるものの必要なクエリは機能リクエストです。上記の一覧は、拒否されるすべての名前を列挙するのではなく、その境界を示すものです。特定のクエリについては、パースエラーそのものが正式な回答であり、これらはいずれも恒久的なものではありません。

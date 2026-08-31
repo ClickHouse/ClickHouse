@@ -589,7 +589,7 @@ Tenga en cuenta que los archivos de configuración que se cargan por separado de
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Mecanismo de protección de migración obsoleto. Esta versión admite solo el hash unificado de deduplicación de inserciones (`new_unified_hash`); el servidor se niega a iniciarse si esta configuración está presente con cualquier otro valor (como `old_separate_hashes` o `compatible_double_hashes`). Complete la migración de deduplicación en la versión anterior antes de actualizar ejecutando `compatible_double_hashes` (que escribe tanto los hash legacy como los unificados). En las tablas replicadas, ejecútelo durante al menos `replicated_deduplication_window_seconds` (una hora de forma predeterminada); las ventanas predeterminadas conservan los hash unificados de todas las inserciones durante ese intervalo, lo que se considera suficiente para cubrir un bucle de reintentos de inserción. En las tablas no replicadas con `non_replicated_deduplication_window` &gt; 0, la ventana se basa en el recuento en lugar del tiempo, así que ejecute `compatible_double_hashes` durante al menos esa cantidad de inserciones antes de actualizar.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Mecanismo de protección de migración obsoleto. Las versiones 26.7 y posteriores de ClickHouse admiten solo el hash unificado de deduplicación de inserciones (`new_unified_hash`); el servidor se niega a iniciarse si esta configuración está presente con cualquier otro valor (como `old_separate_hashes` o `compatible_double_hashes`). Complete la migración de deduplicación en la versión anterior antes de actualizar ejecutando `compatible_double_hashes` (que escribe tanto los hash legacy como los unificados). En las tablas replicadas, ejecútelo durante al menos `replicated_deduplication_window_seconds` (una hora de forma predeterminada); las ventanas predeterminadas conservan los hash unificados de todas las inserciones durante ese intervalo, lo que se considera suficiente para cubrir un bucle de reintentos de inserción. En las tablas no replicadas con `non_replicated_deduplication_window` &gt; 0, la ventana se basa en el recuento en lugar del tiempo, así que ejecute `compatible_double_hashes` durante al menos esa cantidad de inserciones antes de actualizar.
 
 <div id="io_thread_pool_queue_size">
   ## io_thread_pool_queue_size
@@ -1962,7 +1962,7 @@ hasta que todos los diccionarios terminen de cargarse (correctamente o no) antes
   ## webassembly_udf_engine
 </div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />El motor que se utiliza para ejecutar UDFs de WebAssembly. Los valores admitidos son &#39;wasmtime&#39; y &#39;wasmedge&#39;.
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />El motor que se utiliza para ejecutar UDFs de WebAssembly. El único valor admitido es &#39;wasmtime&#39;.
 
 <div id="webterminal_allowed_origins">
   ## webterminal_allowed_origins

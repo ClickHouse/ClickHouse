@@ -3496,8 +3496,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 引入版本：v20.1.0
 
-将输入值转换为 [DateTime64](/zh/reference/data-types/datetime64) 类型的值；如果接收到无效参数，则返回 [DateTime64](/zh/reference/data-types/datetime64) 的下界值。
-与 [toDateTime64](#toDateTime64) 相同，但在接收到无效参数时会返回 [DateTime64](/zh/reference/data-types/datetime64) 的下界值。
+将输入值转换为 [DateTime64](/zh/reference/data-types/datetime64) 类型的值；如果接收到无效参数，则返回零 [DateTime64](/zh/reference/data-types/datetime64) 值 (Unix 纪元，`1970-01-01 00:00:00`) 。
+与 [toDateTime64](#toDateTime64) 相同，但在接收到无效参数时会返回零 [DateTime64](/zh/reference/data-types/datetime64) 值。
 
 另请参见：
 
@@ -3508,16 +3508,18 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 **语法**
 
 ```sql
-toDateTime64OrZero(x)
+toDateTime64OrZero(x[, precision[, timezone]])
 ```
 
 **参数**
 
 * `x` — 带有子秒级精度的日期时间字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `precision` — 可选。返回值的子秒级精度。[`UInt8`](/zh/reference/data-types/int-uint)
+* `timezone` — 可选。返回值的时区。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
-成功时返回 DateTime64 值，否则返回 DateTime64 的下界值 (`1970-01-01 00:00:00.000`) 。[`DateTime64`](/zh/reference/data-types/datetime64)
+成功时返回 DateTime64 值，否则返回请求精度下的零 DateTime64 值 (`1970-01-01 00:00:00`) 。[`DateTime64`](/zh/reference/data-types/datetime64)
 
 **示例**
 

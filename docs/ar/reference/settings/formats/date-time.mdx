@@ -19,8 +19,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-احذف الأصفار اللاحقة من قيم datetime64 ديناميكيًا لضبط مقياس الإخراج إلى [0, 3, 6]،
-بما يقابل &#39;الثواني&#39; و&#39;المللي ثانية&#39; و&#39;الميكروثانية&#39;
+احذف الأصفار اللاحقة من قيم `DateTime64` ديناميكيًا، مع تقريب مقياس الإخراج إلى الأعلى إلى المضاعف التالي للعدد ثلاثة الذي يحافظ على جميع الأرقام المهمة: [0, 3, 6, 9]. ويُحذف الجزء الكسري إذا كانت جميع أرقامه أصفارًا.
 
 <div id="date_time_input_format">
   ## date_time_input_format

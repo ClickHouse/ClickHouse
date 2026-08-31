@@ -207,7 +207,11 @@ LLM 프로바이더를 사용해 주어진 텍스트를 제공된 카테고리 �
 
 자격 증명(프로바이더, 모델, 엔드포인트와 선택적으로 API Key를 지정하는 명명된 컬렉션)은
 선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 이 키가 없으면
-`ai_function_text_default_credentials` 설정에서 가져옵니다.
+`ai_function_text_default_credentials` SETTING에서 가져옵니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -221,7 +225,7 @@ aiClassify(text, categories[, params])
 
 * `text` — 분류할 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `categories` — 후보 카테고리 레이블의 상수 목록입니다. [`Array(String)`](/ko/reference/data-types/array)
-* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`)입니다. 공통 매개변수 `credentials` 및 `model`도 적용됩니다([AI FUNCTION](/ko/reference/functions/regular-functions/ai-functions) 참고). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`)입니다. 공통 매개변수 `credentials` 및 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참고). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 
@@ -232,7 +236,6 @@ aiClassify(text, categories[, params])
 **감정 분류**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -243,7 +246,6 @@ positive
 **명시적 자격 증명을 사용해 컬럼 분류**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
@@ -264,10 +266,10 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 자격 증명(프로바이더, 엔드포인트, 그리고 선택적으로 API Key를 지정하는 명명된 컬렉션)은
 매개변수 맵의 `credentials` 키에서 가져오며, 맵에서 이를 생략한 경우
-`ai_function_embedding_default_credentials` 설정에서 가져옵니다. 임베딩 엔드포인트는
-chat 엔드포인트와 다르므로 `aiEmbed`는 텍스트 FUNCTION와 별도의 기본 자격 증명 설정을 사용한다는 점에 유의하십시오.
+`ai_function_embedding_default_credentials` SETTING에서 가져옵니다. 임베딩 엔드포인트는
+chat 엔드포인트와 다르므로 `aiEmbed`는 텍스트 함수와 별도의 기본 자격 증명 SETTING을 사용한다는 점에 유의하십시오.
 
-`model`은 필수 위치 인수(상수 `String`)입니다. 텍스트 FUNCTION와 달리
+`model`은 필수 위치 인수(상수 `String`)입니다. 텍스트 함수와 달리
 `aiEmbed`는 명명된 컬렉션이나 매개변수 맵에서 `model`을 읽지 않습니다. `model`을 정의하는 명명된 컬렉션은
 거부됩니다.
 
@@ -286,7 +288,7 @@ aiEmbed(text, model[, params])
 
 * `text` — 임베딩할 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `model` — 임베딩 모델 이름입니다. [`const String`](/ko/reference/data-types/string)
-* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 `dimensions`입니다(출력 벡터의 대상 차원 수이며, `0`이거나 생략하면 모델의 네이티브 크기를 의미합니다). 공통 매개변수 `credentials`도 적용됩니다([AI FUNCTION](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 `dimensions`입니다(출력 벡터의 대상 차원 수이며, `0`이거나 생략하면 모델의 네이티브 크기를 의미합니다). 공통 매개변수 `credentials`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 
@@ -294,24 +296,21 @@ aiEmbed(text, model[, params])
 
 **예시**
 
-**단일 문자열 임베딩(`ai_function_embedding_default_credentials` 설정이 지정된 경우 `credentials`는 생략할 수 있습니다)**
+**단일 문자열 임베딩(`ai_function_embedding_default_credentials` SETTING이 지정된 경우 `credentials`는 생략할 수 있습니다)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **차원을 명시적으로 지정하는 경우**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **텍스트 컬럼 임베드하기**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (title String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
@@ -333,7 +332,11 @@ LLM 프로바이더를 사용해 비구조화 텍스트에서 구조화된 정�
 
 자격 증명(프로바이더, 모델, 엔드포인트 및 선택적으로 API Key를 지정하는 명명된 컬렉션)은
 선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 이 항목이 없으면
-`ai_function_text_default_credentials` setting에서 가져옵니다.
+`ai_function_text_default_credentials` SETTING에서 가져옵니다.
+
+<Note>
+  이 FUNCTION은 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -347,7 +350,7 @@ aiExtract(text, instruction_or_schema[, params])
 
 * `text` — 정보를 추출할 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `instruction_or_schema` — 자유 형식의 추출 지침 또는 추출할 필드를 설명하는 상수 JSON 객체입니다. [`const String`](/ko/reference/data-types/string)
-* `params` — 선택 사항인 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`)와 `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`)입니다. 공통 매개변수 `credentials` 및 `model`도 적용됩니다([AI FUNCTION](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택 사항인 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`)와 `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`)입니다. 공통 매개변수 `credentials` 및 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 
@@ -358,7 +361,6 @@ aiExtract(text, instruction_or_schema[, params])
 **자유 형식 추출 지침**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -369,7 +371,6 @@ late and damaged package
 **스키마 추출**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (review String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
@@ -390,6 +391,10 @@ LLM 프로바이더를 사용하여 지정된 텍스트에 자연어 조건을 �
 자격 증명(LLM 프로바이더, 모델, 엔드포인트 및 선택적으로 API Key를 지정하는 명명된 컬렉션)은 선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 해당 항목이 없으면 `ai_function_text_default_credentials` SETTING에서 가져옵니다.
 
 Note: `JOIN ... ON`에서 `aiFilter`를 사용하면 candidate 쌍마다 LLM을 한 번씩 평가하므로 비용이 많이 들 수 있습니다.
+
+<Note>
+  이 FUNCTION은 비결정적입니다. 동일한 인수에 대해 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -414,16 +419,14 @@ aiFilter(text, condition[, params])
 **부정적인 리뷰 필터링**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (body String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
-**명시적으로 제공한 자격 증명으로 컬럼 필터링**
+**명시적 자격 증명으로 컬럼 필터링**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
@@ -441,11 +444,15 @@ LLM 프로바이더를 사용해 프롬프트로부터 자유 형식의 텍스�
 
 자격 증명(프로바이더, 모델, 엔드포인트, 그리고 선택적으로 API Key를 지정하는 명명된 컬렉션)은
 선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 해당 항목이 없으면
-`ai_function_text_default_credentials` 설정에서 가져옵니다.
+`ai_function_text_default_credentials` SETTING에서 가져옵니다.
 
 선택적 매개변수 맵에서는 `system_prompt`(어조, 포맷, 역할 등 모델의 동작을 안내하는
 지시문), `temperature`, `max_tokens`, `model`도 설정할 수 있습니다. `system_prompt`가
 설정되지 않으면 기본값은 다음과 같습니다: `You are a helpful assistant. Provide a clear and concise response.`
+
+<Note>
+  이 FUNCTION은 비결정적입니다. 동일한 인수에 대해 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -458,7 +465,7 @@ aiGenerate(prompt[, params])
 **인수**
 
 * `prompt` — 모델에 보낼 사용자 프롬프트 또는 질문입니다. [`String`](/ko/reference/data-types/string)
-* `params` — 선택적 상수 `Map(String, String)` 매개변수 맵입니다. FUNCTION별 키는 다음과 같습니다: `temperature` (무작위성을 제어하는 샘플링 온도, 기본값 `0.7`), `max_tokens` (호출당 최대 출력 토큰 수, 기본값 `1024`), `system_prompt` (모델 동작을 안내하는 상수 시스템 수준 지침, 기본값은 일반적인 어시스턴트 프롬프트). 공통 매개변수인 `credentials`와 `model`도 적용됩니다([AI FUNCTION](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수 맵입니다. FUNCTION별 키는 다음과 같습니다: `temperature` (무작위성을 제어하는 샘플링 온도, 기본값 `0.7`), `max_tokens` (호출당 최대 출력 토큰 수, 기본값 `1024`), `system_prompt` (모델 동작을 안내하는 상수 시스템 수준 지침, 기본값은 일반적인 어시스턴트 프롬프트). 공통 매개변수인 `credentials`와 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 
@@ -469,7 +476,6 @@ aiGenerate(prompt[, params])
 **간단한 질문**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -480,14 +486,12 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **명시적 자격 증명과 시스템 프롬프트 사용**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **컬럼 값 요약**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
@@ -525,6 +529,10 @@ LLM 프로바이더를 사용하여 지정된 텍스트에서 개인 식별 정�
 부분적으로 마스킹된 텍스트를 반환하는 대신 `AI_PROVIDER_RESPONSE_TRUNCATED`로 거부되며(`ai_function_throw_on_error`가
 비활성화된 경우에는 컬럼 기본값을 반환합니다).
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -537,7 +545,7 @@ aiRedact(text, categories[, params])
 
 * `text` — 마스킹할 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `categories` — 마스킹할 PII 카테고리의 상수 목록입니다(예: `['name', 'ssn', 'credit_card']`). 빈 배열을 지정하면 일반적인 카테고리(이름, 이메일, 전화번호, 주소, 신용카드, IP 주소)의 기본 집합이 사용됩니다. [`Array(String)`](/ko/reference/data-types/array)
-* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 다음과 같습니다. `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024` — `aiRedact`는 전체 텍스트를 반환하므로 입력 토큰 수보다 크게 설정해야 합니다. 제한값이 너무 낮아 응답이 잘리면 부분적으로 마스킹된 텍스트를 반환하는 대신 거부됩니다), `replacement`(감지된 각 PII 스팬을 대체할 토큰, 기본값 `[REDACTED]`). 공통 매개변수인 `credentials` 및 `model`도 적용됩니다([AI FUNCTION](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 다음과 같습니다. `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024` — `aiRedact`는 전체 텍스트를 반환하므로 입력 토큰 수보다 크게 설정해야 합니다. 제한값이 너무 낮아 응답이 잘리면 부분적으로 마스킹된 텍스트를 반환하는 대신 거부됩니다), `replacement`(감지된 각 PII 스팬을 대체할 토큰, 기본값 `[REDACTED]`). 공통 매개변수인 `credentials` 및 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 
@@ -548,7 +556,6 @@ aiRedact(text, categories[, params])
 **특정 카테고리 마스킹**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -559,7 +566,6 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **사용자 정의 토큰으로 기본 PII 카테고리를 마스킹합니다**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE tickets (body String) ENGINE = Memory;
 INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
@@ -582,7 +588,7 @@ SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 배칭, 자격 증명 및 `dimensions` 매개변수는
-`ai_function_embedding_default_credentials` 기본 자격 증명 설정을 포함하여 `aiEmbed`와 동일합니다.
+`ai_function_embedding_default_credentials` 기본 자격 증명 SETTING을 포함하여 `aiEmbed`와 동일합니다.
 
 `aiEmbed`와 마찬가지로 `model`은 명명된 컬렉션이나 매개변수 맵에서 읽어 오지 않는
 필수 위치 인수(상수 `String`)입니다.
@@ -600,7 +606,7 @@ aiSimilarity(text1, text2, model[, params])
 * `text1` — 첫 번째 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `text2` — 두 번째 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `model` — 임베딩 모델 이름입니다. [`const String`](/ko/reference/data-types/string)
-* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 `dimensions`입니다(임베딩의 대상 차원 수이며, `0` 또는 생략 시 모델의 네이티브 크기를 사용합니다). 공통 매개변수 `credentials`도 적용됩니다([AI FUNCTION](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. FUNCTION별 키는 `dimensions`입니다(임베딩의 대상 차원 수이며, `0` 또는 생략 시 모델의 네이티브 크기를 사용합니다). 공통 매개변수 `credentials`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 
@@ -608,17 +614,15 @@ aiSimilarity(text1, text2, model[, params])
 
 **예시**
 
-**두 문자열 비교(`ai_function_embedding_default_credentials` 설정이 지정되어 있으면 `credentials`를 생략할 수 있음)**
+**두 문자열 비교(`ai_function_embedding_default_credentials` SETTING이 지정되어 있으면 `credentials`를 생략할 수 있음)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **쿼리와의 유사도에 따라 리뷰 순위 지정**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE product_reviews (review String) ENGINE = Memory;
 INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
@@ -627,7 +631,6 @@ SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well 
 **self-join을 통한 의미 기반 중복 제거**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
 INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
@@ -645,7 +648,11 @@ SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title
 
 자격 증명(프로바이더, model, 엔드포인트, 그리고 선택적으로 API Key를 지정하는 명명된 컬렉션)은
 선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 해당 항목이 없으면
-`ai_function_text_default_credentials` 설정에서 가져옵니다.
+`ai_function_text_default_credentials` SETTING에서 가져옵니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -659,7 +666,7 @@ aiTranslate(text, target_language[, params])
 
 * `text` — 번역할 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `target_language` — 대상 언어 이름 또는 BCP-47 코드입니다(예: `'French'`, `'es-MX'`). [`String`](/ko/reference/data-types/string)
-* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 다음과 같습니다. `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.3`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`), `instructions`(번역기에 대한 추가 스타일 또는 방언 지침). 공통 매개변수인 `credentials`와 `model`도 적용됩니다([AI FUNCTION](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 다음과 같습니다. `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.3`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`), `instructions`(번역기에 대한 추가 스타일 또는 방언 지침). 공통 매개변수인 `credentials`와 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 
@@ -670,7 +677,6 @@ aiTranslate(text, target_language[, params])
 **프랑스어로 번역**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -681,7 +687,6 @@ Bonjour le monde!
 **스타일 지침에 따라 일본어로 번역**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5

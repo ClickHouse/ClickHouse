@@ -15,18 +15,6 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_experimental_ai_functions">
-  ## allow_experimental_ai_functions
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
-
-Ativa funções de IA experimentais (por exemplo, `aiGenerateContent`). Essas funções fazem chamadas HTTP externas para provedores de IA.
-
 <div id="allow_experimental_analyzer">
   ## allow_experimental_analyzer
 </div>
@@ -430,16 +418,6 @@ Permite criar tabelas com a cláusula `UNIQUE KEY` em motores da família MergeT
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para permitir a expansão de curingas na função de tabela `url` por meio da listagem de páginas de índice HTTP."}]}]} />
 
 Permite a expansão experimental de curingas para `url()` e `ENGINE = URL` por meio de páginas de índice HTTP.
-
-<div id="allow_experimental_window_view">
-  ## allow_experimental_window_view
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Habilita WINDOW VIEW. Ainda não está suficientemente maduro.
 
 <div id="allow_experimental_ytsaurus_dictionary_source">
   ## allow_experimental_ytsaurus_dictionary_source

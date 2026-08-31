@@ -15,18 +15,6 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="allow_experimental_ai_functions">
-  ## allow_experimental_ai_functions
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
-
-実験的なAI関数 (例: `aiGenerateContent`) を有効にします。これらの関数は、AIプロバイダに対して外部HTTPリクエストを送信します。
-
 <div id="allow_experimental_analyzer">
   ## allow_experimental_analyzer
 </div>
@@ -430,16 +418,6 @@ MergeTree ファミリーのエンジンで `UNIQUE KEY` 句を使用したテ�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "HTTPインデックスページを列挙して `url` テーブル関数のワイルドカード展開を有効にするための新しい設定。"}]}]} />
 
 HTTPインデックスページを使用して、`url()` および `ENGINE = URL` での実験的なワイルドカード展開を許可します。
-
-<div id="allow_experimental_window_view">
-  ## allow_experimental_window_view
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-WINDOW VIEW を有効にします。まだ十分に安定していません。
 
 <div id="allow_experimental_ytsaurus_dictionary_source">
   ## allow_experimental_ytsaurus_dictionary_source
