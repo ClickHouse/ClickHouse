@@ -1971,13 +1971,19 @@ void ActionsDAG::appendInputsForUnusedColumns(const Block & sample_block)
         positions.pop_front();
     }
 
+    /// Append in `sample_block` order rather than in `names_map` traversal order. The latter depends on
+    /// the hash of the column names, so the same DAG built over `__table1.*` and over `__table2.*` can
+    /// order these inputs differently, and that order is observable: `serialize` writes node ids and the
+    /// input list, which feeds the plan cache key (see `Node::updateHash`).
+    std::vector<size_t> positions_to_append;
     for (const auto & [_, positions] : names_map)
+        positions_to_append.insert(positions_to_append.end(), positions.begin(), positions.end());
+    std::sort(positions_to_append.begin(), positions_to_append.end());
+
+    for (auto pos : positions_to_append)
     {
-        for (auto pos : positions)
-        {
-            const auto & col = sample_block.getByPosition(pos);
-            addInput(col.name, col.type);
-        }
+        const auto & col = sample_block.getByPosition(pos);
+        addInput(col.name, col.type);
     }
 }
 
