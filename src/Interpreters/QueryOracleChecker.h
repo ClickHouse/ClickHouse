@@ -66,6 +66,11 @@ public:
     /// execution paths (DistinctStep vs aggregation), so a divergence is a real bug.
     bool checkDistinctViaGroupBy(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// PREWHERE-equivalence oracle: on a single MergeTree-family table, `SELECT ... WHERE p` must
+    /// return the identical result multiset as `SELECT ... PREWHERE p` (PREWHERE is a transparent
+    /// read-time optimization of WHERE). A divergence is a real PREWHERE bug.
+    bool checkPrewhereEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
