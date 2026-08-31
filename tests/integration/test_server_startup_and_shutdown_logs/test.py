@@ -67,7 +67,7 @@ def test_server_no_logging(started_cluster):
 
     assert not instance.contains_in_log("HTTP Request for HTTPHandler-factory")
 
-    # shutdown Clickhouse
+    # shutdown ClickHouse
     instance.stop_clickhouse()
 
     assert instance.contains_in_log("Set root logger in level trace before shutdown")

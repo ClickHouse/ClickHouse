@@ -20,6 +20,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
+#include <array>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -87,7 +88,11 @@ void SchemaConverter::prepareForReading()
             continue;
         size_t idx = col.idx_in_output_block.value();
         if (found_columns.at(idx))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "There are multiple columns with name `{}` in the parquet file", sample_block->getByPosition(idx).name);
+            throw Exception(
+                ErrorCodes::DUPLICATE_COLUMN,
+                "There are multiple columns with name `{}` in the parquet file. Note that a nested element is addressed by "
+                "its flattened path, so it collides with a top-level column that has a dot in its name",
+                sample_block->getByPosition(idx).name);
         found_columns[idx] = true;
 
         for (size_t i = col.primitive_start; i < col.primitive_end; ++i)
@@ -952,27 +957,46 @@ void SchemaConverter::processPrimitiveColumn(
         return true;
     };
 
-    auto is_output_type_decimal = [&](size_t expected_size, UInt32 expected_scale) -> bool
+    /// Decides whether min/max stats can be used when convertField produces a DecimalField with
+    /// the given value size and scale (parquet DECIMAL and timestamp/time columns).
+    /// If the output type is a Decimal/DateTime64 with the same size and scale, stats are used
+    /// directly; if size or scale differs, the Field additionally goes through
+    /// tryConvertFieldToType, which rescales it the same way as the castColumn that is applied
+    /// to the values - see PageDecoderInfo::cast_stats_to_output_type.
+    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale)
     {
         const IDataType * output_type = type_hint ? type_hint.get() : out_inferred_type.get();
         WhichDataType which(output_type->getTypeId());
+        bool same = false;
         if (which.isDecimal())
-            return output_type->getSizeOfValueInMemory() == expected_size && getDecimalScale(*output_type) == expected_scale;
+            same = output_type->getSizeOfValueInMemory() == decoded_size && getDecimalScale(*output_type) == decoded_scale;
         else if (which.isDateTime64())
-            return 8 == expected_size && assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == expected_scale;
-        return false;
+        {
+            /// tryConvertFieldToType supports DateTime64 target only for Decimal64 source Field.
+            if (decoded_size != 8)
+                return;
+            same = assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == decoded_scale;
+        }
+        else
+            return;
+        out_decoder.allow_stats = true;
+        out_decoder.cast_stats_to_output_type = !same;
     };
 
-    auto is_output_type_float = [&](size_t expected_size) -> bool
+    /// Same for floats. convertField produces a Float64 Field (also for Float32 values - Field
+    /// has no separate Float32 type), so only the Float64 -> Float32 direction needs the Field
+    /// conversion (rounding to nearest, same as the castColumn that is applied to the values).
+    auto allow_float_stats = [&](size_t decoded_size)
     {
         size_t size = 0;
         switch (get_output_type_index())
         {
             case TypeIndex::Float32: size = 4; break;
             case TypeIndex::Float64: size = 8; break;
-            default: return false;
+            default: return;
         }
-        return size == expected_size;
+        out_decoder.allow_stats = true;
+        out_decoder.cast_stats_to_output_type = decoded_size == 8 && size == 4;
     };
 
     auto is_output_type_string = [&]() -> bool
@@ -983,7 +1007,7 @@ void SchemaConverter::processPrimitiveColumn(
     /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
     /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
     /// matching size, use a trivial FixedSizeConverter.
-    /// E.g. don't do Decimal endianness conversion of INT96 timestamp conversion.
+    /// E.g. don't do Decimal endianness conversion or INT96 timestamp conversion.
     if (const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type_hint.get()))
     {
         size_t size = 0;
@@ -1160,8 +1184,8 @@ void SchemaConverter::processPrimitiveColumn(
             /// hint. It's pretty important for min/max stats to work with timestamps, so we add
             /// this special case.
             ///
-            /// We could generalize it and allow arbitrary Decimal scale and signedness conversions,
-            /// but it doesn't seem worth the complexity and risk of bugs.
+            /// (cast_stats_to_output_type doesn't cover this case because tryConvertFieldToType
+            /// doesn't support Decimal64 -> DateTime conversion.)
             converter->field_timestamp_from_millis = true;
             converter->field_signed = false;
             out_decoder.allow_stats = true;
@@ -1169,7 +1193,7 @@ void SchemaConverter::processPrimitiveColumn(
         else
         {
             converter->field_decimal_scale = scale;
-            out_decoder.allow_stats = is_output_type_decimal(sizeof(Int64), scale);
+            allow_decimal_stats(sizeof(Int64), scale);
             if (converter->input_size == 4)
                 /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
                 /// particular cast is not supported for some reason.
@@ -1230,6 +1254,96 @@ void SchemaConverter::processPrimitiveColumn(
         UInt32 precision = logical.__isset.DECIMAL ? logical.DECIMAL.precision : element.precision;
         UInt32 scale = logical.__isset.DECIMAL ? logical.DECIMAL.scale : element.scale;
         precision = std::max(precision, scale);
+
+        if (type_hint && (type == parq::Type::FIXED_LEN_BYTE_ARRAY || type == parq::Type::BYTE_ARRAY))
+        {
+            const TypeIndex requested_type = type_hint->getTypeId();
+            const bool requested_wide_integer =
+                requested_type == TypeIndex::Int128 || requested_type == TypeIndex::UInt128
+                || requested_type == TypeIndex::Int256 || requested_type == TypeIndex::UInt256;
+            if (requested_wide_integer)
+            {
+                if (scale != 0)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Parquet Decimal with nonzero scale {} cannot be read directly as {}",
+                        scale,
+                        type_hint->getName());
+
+                const bool requested_128 = requested_type == TypeIndex::Int128 || requested_type == TypeIndex::UInt128;
+                const bool requested_signed = requested_type == TypeIndex::Int128 || requested_type == TypeIndex::Int256;
+                const UInt32 max_precision = requested_128 ? 39 : (requested_signed ? 77 : 78);
+
+                if (precision == 0 || precision > max_precision)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Parquet Decimal precision {} cannot be represented as {}",
+                        precision,
+                        type_hint->getName());
+                size_t input_size = 0;
+                if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                {
+                    if (element.type_length <= 0)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet Decimal width must be positive");
+                    input_size = size_t(element.type_length);
+
+                    /// Maximum precision for an n-byte signed fixed array is
+                    /// `floor(log10(2^(8n - 1) - 1))`. Widths above 33 bytes can represent every
+                    /// precision accepted by a ClickHouse wide integer.
+                    static constexpr std::array<UInt8, 33> max_decimal_precision_by_width{
+                        2, 4, 6, 9, 11, 14, 16, 18, 21, 23, 26,
+                        28, 31, 33, 35, 38, 40, 43, 45, 47, 50, 52,
+                        55, 57, 59, 62, 64, 67, 69, 71, 74, 76, 79};
+                    if (input_size <= max_decimal_precision_by_width.size()
+                        && precision > max_decimal_precision_by_width[input_size - 1])
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Parquet Decimal width {} is too small for precision {}",
+                            input_size,
+                            precision);
+                }
+
+                out_inferred_type = type_hint;
+                out_decoded_type = type_hint;
+                switch (requested_type)
+                {
+                    case TypeIndex::Int128:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<Int128>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<Int128>>();
+                        break;
+                    case TypeIndex::UInt128:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<UInt128>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<UInt128>>();
+                        break;
+                    case TypeIndex::Int256:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<Int256>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<Int256>>();
+                        break;
+                    case TypeIndex::UInt256:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<UInt256>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<UInt256>>();
+                        break;
+                    default:
+                        UNREACHABLE();
+                }
+                out_decoder.allow_stats = true;
+                return;
+            }
+        }
+
+        if (precision > 76)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Parquet Decimal precision {} exceeds the maximum supported ClickHouse Decimal precision 76; an explicit compatible wide-integer structure is required",
+                precision);
 
         /// Precision of the Decimal type exactly as wide as one decoded value. Legal parquet can
         /// make it exceed `precision` (e.g. INT64 with precision 9), so it, not `precision`,
@@ -1310,7 +1424,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
             out_decoded_type = std::move(decoded_type);
 
-        out_decoder.allow_stats = is_output_type_decimal(decoded_size, scale);
+        allow_decimal_stats(decoded_size, scale);
 
         return;
     }
@@ -1397,7 +1511,7 @@ void SchemaConverter::processPrimitiveColumn(
         {
             out_inferred_type = std::make_shared<DataTypeFloat32>();
             auto converter = std::make_shared<FloatConverter<float>>();
-            out_decoder.allow_stats = is_output_type_float(converter->input_size);
+            allow_float_stats(converter->input_size);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
@@ -1405,7 +1519,7 @@ void SchemaConverter::processPrimitiveColumn(
         {
             out_inferred_type = std::make_shared<DataTypeFloat64>();
             auto converter = std::make_shared<FloatConverter<double>>();
-            out_decoder.allow_stats = is_output_type_float(converter->input_size);
+            allow_float_stats(converter->input_size);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }

@@ -472,11 +472,33 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         for (const auto & object : object_batch)
             responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
 
-        client_ptr->SubmitBatch(requests);
-
         ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
         if (is_disk)
             ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
+
+        try
+        {
+            client_ptr->SubmitBatch(requests);
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            /// A batch-level failure skips the per-object response loop below, so record one Delete attempt
+            /// per object before rethrowing. Preserve the real HTTP status (as the per-object path below
+            /// does) so these failures stay queryable by error_code.
+            const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
+            for (const auto & object : object_batch)
+                add_log_entry(object, elapsed, static_cast<Int32>(e.StatusCode), e.Message);
+            throw;
+        }
+        catch (...)
+        {
+            /// Non-Azure failure (e.g. a credential AuthenticationException) carries no HTTP status.
+            const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
+            const auto batch_error = getCurrentExceptionMessage(false);
+            for (const auto & object : object_batch)
+                add_log_entry(object, elapsed, -1, batch_error);
+            throw;
+        }
 
         size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
         std::exception_ptr throw_at_end;

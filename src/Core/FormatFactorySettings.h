@@ -594,6 +594,9 @@ When enabled, dots in JSON keys will be escaped during parsing.
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
+    DECLARE(UInt64, input_format_json_max_object_size, 512 * 1024 * 1024, R"(
+Maximum allowed size of a single JSON object in bytes. Objects exceeding this limit are rejected as likely malformed. This protects against memory exhaustion when a malformed JSON document is parsed as a single object. The same limit is applied in both parallel and non-parallel parsing paths. Set to 0 to disable the check.
+)", 0) \
     DECLARE(Bool, input_format_json_empty_as_default, false, R"(
 When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
@@ -765,8 +768,8 @@ See also:
 )", 0) \
     \
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
-Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
-corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
+Dynamically trim the trailing zeros of `DateTime64` values, rounding the output scale up to the next
+multiple of three that keeps every significant digit: [0, 3, 6, 9]. An all-zero fraction is dropped.)", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
 Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
 `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
@@ -1206,6 +1209,9 @@ Use Parquet String type instead of Binary for String columns.
 )", 0) \
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
 Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_wide_integer_as_decimal, false, R"(
+Write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standards-compliant Parquet `DECIMAL` values in big-endian byte order. The default keeps the legacy unannotated little-endian `FIXED_LEN_BYTE_ARRAY` representation for compatibility with older ClickHouse versions. The decimal representation enables interoperable numeric statistics, but some Parquet readers do not support precisions above 38 or 76.
 )", 0) \
     DECLARE(ParquetCompression, output_format_parquet_compression_method, "zstd", R"(
 Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)

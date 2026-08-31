@@ -96,6 +96,8 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     if (*buf->position() != '{')
         throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{{'.");
 
+    const size_t start_count = buf->count();
+
     ++buf->position();
     ++balance;
 
@@ -103,6 +105,17 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 
     while (balance)
     {
+        if (format_settings.json.max_row_size_for_json_each_row
+            && buf->count() - start_count > format_settings.json.max_row_size_for_json_each_row)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Size of JSON object at position {} is extremely large. "
+                "Expected not greater than {} bytes, but current is {} bytes per object. "
+                "Increase the value of setting 'input_format_json_max_object_size' "
+                "or check your data manually, most likely JSON is malformed",
+                buf->count(),
+                format_settings.json.max_row_size_for_json_each_row,
+                buf->count() - start_count);
+
         if (buf->eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing JSON object.");
 
@@ -266,7 +279,13 @@ SELECT * FROM json_square_brackets;
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsString", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngineCreator("JSONAsString", [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
+    {
+        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        {
+            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
+        };
+    });
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
@@ -362,7 +381,13 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factor
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsObject", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngineCreator("JSONAsObject", [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
+    {
+        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        {
+            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
+        };
+    });
 }
 
 void registerJSONAsObjectSchemaReader(FormatFactory & factory);

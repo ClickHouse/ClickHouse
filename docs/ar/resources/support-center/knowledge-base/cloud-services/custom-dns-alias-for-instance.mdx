@@ -1,8 +1,8 @@
 ---
-title: إنشاء اسم مستعار DNS مخصص بإعداد وكيل عكسي
-description: تعرّف على كيفية إعداد اسم مستعار DNS مخصص لمثيلك باستخدام وكيل عكسي
+title: إنشاء اسم مستعار DNS مخصص عبر إعداد وكيل عكسي
+description: تعرّف على كيفية إعداد اسم مستعار DNS مخصص للمثيل الخاص بك باستخدام وكيل عكسي
 date: 2025-05-16
-tags: ['إدارة الخادم', 'الأمان والمصادقة']
+tags: ['مسؤول الخادم', 'الأمان والمصادقة']
 keywords: ['اسم مستعار DNS مخصص', 'DNS']
 hide_title: true
 ---
@@ -15,9 +15,9 @@ hide_title: true
   # اسم مستعار DNS مخصص عبر إعداد وكيل عكسي
 </div>
 
-> في هذه المقالة من قاعدة المعرفة، سنرشدك إلى كيفية إعداد اسم DNS مستعار
-> مخصص لمثيل ClickHouse Cloud الخاص بك باستخدام وكيل عكسي
-> مثل Nginx لعميل ClickHouse الأصلي.
+> في هذه المقالة من قاعدة المعرفة، سنشرح لك كيفية إعداد
+> اسم مستعار DNS مخصص لمثيل ClickHouse Cloud لديك باستخدام
+> وكيل عكسي مثل Nginx للعميل الأصلي لـ ClickHouse.
 
 <div id="create-certificate">
   ## أنشئ شهادة موقَّعة ذاتيًا
@@ -27,10 +27,10 @@ hide_title: true
   لا حاجة إلى هذه الخطوة إذا كنت تستخدم شهادات موقَّعة.
 </Note>
 
-أنشئ شهادة موقَّعة ذاتيًا لاسم النطاق الذي تختاره.
+أنشئ شهادة موقَّعة ذاتيًا باستخدام اسم النطاق الذي تختاره.
 في هذا المثال، سنستخدم اسم النطاق `xyz-customdomain.com` وننشئ
 شهادة باسم `MyCertificate.crt`. راجع [&quot;إنشاء شهادات SSL&quot;](/ar/concepts/features/security/tls/configuring-tls#2-create-tls-certificates)
-للاطلاع على مزيد من التفاصيل.
+للمزيد من التفاصيل.
 
 أضف الشهادة إلى `/etc/clickhouse-client/config.xml`:
 
@@ -89,15 +89,15 @@ stream {
 }
 ```
 
-حيث إن `isrgrootx1.pem` هو الشهادة الجذرية الخاصة بـ ClickHouse Cloud، ويمكنك
+حيث إن `isrgrootx1.pem` هي شهادة الجذر الخاصة بـ ClickHouse Cloud، ويمكنك
 تنزيلها من [هنا](https://letsencrypt.org/certs/isrgrootx1.pem).
 
 <div id="update-hosts-file">
-  ## تحديث ملف hosts
+  ## حدّث ملف hosts
 </div>
 
 <Note>
-  لا حاجة إلى الخطوة التالية إذا كنت تستخدم متحكمات النطاق الخاصة بك
+  الخطوة التالية غير مطلوبة إذا كنت تستخدم وحدات تحكم المجال الخاصة بك
 </Note>
 
 أضف ما يلي إلى ملف `/etc/hosts` على خادم Nginx:
@@ -108,13 +108,13 @@ stream {
 10.X.Y.Z  xyz-customdomain.com
 ```
 
-حيث إن `10.X.Y.Z` هو عنوان IP لخادم Nginx المحدد لديك.
+حيث إن `10.X.Y.Z` هو عنوان IP لخادم Nginx الخاص بك.
 
 <div id="connect-to-cloud-using-alias">
   ## الاتصال بـ Cloud باستخدام اسم مستعار
 </div>
 
-أنت الآن جاهز للاتصال باستخدام الاسم المستعار المخصص لك:
+أنت الآن جاهز للاتصال باستخدام الاسم المستعار المخصص:
 
 ```bash
 clickhouse-client --host xyz.customdomain.com --secure --password 'xxxxxxx'
