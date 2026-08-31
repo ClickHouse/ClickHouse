@@ -552,9 +552,11 @@ FOR_TYPES_OF_TYPE(DISPATCH)
 /// Whether the two types are `equals`-equal and agree on the time zone a date or time function
 /// reads from its argument, at every temporal position and at any depth. A zone this walk cannot
 /// reach, inside a declared name or inside a type that keeps its nested types from `forEachChild`,
-/// is left to the declared name of the whole type. The hash may tell apart types this predicate
-/// calls the same, never the reverse.
+/// is left to the declared name of the whole type.
 bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs);
+
+/// Appends the time zones the predicate above compares beyond `equals`. A type that carries no zone
+/// the walk can reach keeps the digest its caller has already produced.
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
 
 // Same as isColumnedAsDecimal but also checks value type of underlyig column.

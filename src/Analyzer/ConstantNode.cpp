@@ -179,6 +179,7 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
     constant_value.getColumn()->updateHashFast(hash_state);
+    constant_value.getType()->updateHash(hash_state);
     updateExpressionIdentityHash(*constant_value.getType(), hash_state);
 }
 

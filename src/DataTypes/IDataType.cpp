@@ -94,6 +94,20 @@ bool keepsANestedTypeOutOfReach(const IDataType & type)
     return type_id == TypeIndex::AggregateFunction || type_id == TypeIndex::Function || type_id == TypeIndex::QBit;
 }
 
+bool carriesAReachableTimeZone(const IDataType & type)
+{
+    if (dynamic_cast<const TimezoneMixin *>(&type))
+        return true;
+
+    bool found = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (dynamic_cast<const TimezoneMixin *>(&child))
+            found = true;
+    });
+    return found;
+}
+
 ExpressionIdentity collectExpressionIdentity(const IDataType & type)
 {
     ExpressionIdentity identity;
@@ -145,20 +159,16 @@ bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
 
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
 {
-    type.updateHash(hash);
+    if (!carriesAReachableTimeZone(type))
+        return;
 
-    const auto identity = collectExpressionIdentity(type);
-    for (const auto & component : identity.components)
+    for (const auto & component : collectExpressionIdentity(type).components)
     {
         hash.update(component.time_zone.size());
         hash.update(component.time_zone);
         hash.update(component.declared_name.size());
         hash.update(component.declared_name);
     }
-
-    /// Whatever `haveSameExpressionIdentity` decides on has to be in the hash.
-    if (!identity.has_time_zone)
-        hash.update(type.getName());
 }
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
