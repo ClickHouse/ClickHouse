@@ -4,7 +4,7 @@
       "group": "ClickHouse Cloud",
       "pages": [
         {
-          "group": "Get started",
+          "group": "البدء",
           "pages": [
             "ar/products/cloud/getting-started/cloud-get-started",
             "ar/products/cloud/getting-started/intro",
@@ -12,7 +12,7 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "المزايا",
           "pages": [
             "ar/products/cloud/features/cloud-tiers",
             "ar/products/cloud/features/cli",
@@ -22,7 +22,7 @@
             "ar/products/cloud/reference/supported-regions",
             {
               "expanded": false,
-              "group": "SQL console",
+              "group": "وحدة تحكم SQL",
               "pages": [
                 "ar/products/cloud/features/sql-console-features/sql-console",
                 "ar/products/cloud/features/sql-console-features/query-insights",
@@ -34,10 +34,10 @@
             },
             {
               "expanded": false,
-              "group": "Infrastructure",
+              "group": "البنية التحتية",
               "pages": [
                 {
-                  "group": "Automatic scaling",
+                  "group": "التوسع التلقائي",
                   "pages": [
                     "ar/products/cloud/features/autoscaling/overview",
                     "ar/products/cloud/features/autoscaling/vertical",
@@ -51,6 +51,7 @@
                 },
                 "ar/products/cloud/features/large-single-replica-services",
                 "ar/products/cloud/features/infrastructure/parallel-replicas",
+                "ar/products/cloud/features/infrastructure/replica-aware-routing",
                 "ar/products/cloud/features/infrastructure/deployment-options",
                 "ar/products/cloud/features/infrastructure/shared-catalog",
                 "ar/products/cloud/features/infrastructure/shared-merge-tree",
@@ -59,10 +60,10 @@
             },
             {
               "expanded": false,
-              "group": "Admin",
+              "group": "المسؤول",
               "pages": [
                 {
-                  "group": "Cloud API",
+                  "group": "واجهة برمجة تطبيقات Cloud",
                   "pages": [
                     "ar/products/cloud/features/admin-features/api/api-overview",
                     "ar/products/cloud/features/admin-features/api/openapi",
@@ -75,7 +76,7 @@
             "ar/products/cloud/features/security",
             {
               "expanded": false,
-              "group": "Monitoring",
+              "group": "المراقبة",
               "pages": [
                 "ar/products/cloud/features/monitoring/overview",
                 "ar/products/cloud/features/monitoring/cloud-console",
@@ -87,7 +88,7 @@
               ]
             },
             {
-              "group": "Backups",
+              "group": "النسخ الاحتياطية",
               "pages": [
                 "ar/products/cloud/features/backups/overview"
               ]
@@ -111,7 +112,7 @@
                     "ar/products/cloud/features/ai-ml/agents/quickstart",
                     "ar/products/cloud/features/ai-ml/agents/chat",
                     {
-                      "group": "Agent Builder",
+                      "group": "منشئ الوكلاء",
                       "pages": [
                         "ar/products/cloud/features/ai-ml/agents/builder/index",
                         "ar/products/cloud/features/ai-ml/agents/builder/model-parameters",
@@ -136,7 +137,7 @@
           ]
         },
         {
-          "group": "Cloud reference",
+          "group": "مرجع Cloud",
           "pages": [
             "ar/products/cloud/reference/index",
             "ar/products/cloud/reference/service-uptime",
@@ -151,12 +152,12 @@
           ]
         },
         {
-          "group": "Billing",
+          "group": "الفوترة",
           "pages": [
             "ar/products/cloud/reference/billing/billing-overview",
             {
               "expanded": false,
-              "group": "Marketplace",
+              "group": "السوق",
               "pages": [
                 "ar/products/cloud/reference/billing/marketplace/overview",
                 "ar/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -185,11 +186,11 @@
           ]
         },
         {
-          "group": "Guides",
+          "group": "الأدلة",
           "pages": [
             "ar/products/cloud/guides/index",
             {
-              "group": "Best practices",
+              "group": "أفضل الممارسات",
               "pages": [
                 "ar/products/cloud/guides/best-practices/index",
                 "ar/products/cloud/guides/best-practices/multitenancy",
@@ -198,7 +199,7 @@
             },
             {
               "expanded": false,
-              "group": "General",
+              "group": "عام",
               "pages": [
                 "ar/products/cloud/guides/cloud-compatibility",
                 "ar/products/cloud/guides/production-readiness"
@@ -206,14 +207,14 @@
             },
             {
               "expanded": false,
-              "group": "Migration",
+              "group": "الترحيل",
               "pages": [
                 "ar/products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
               "expanded": false,
-              "group": "SQL console",
+              "group": "وحدة تحكم SQL",
               "pages": [
                 "ar/products/cloud/guides/sql-console/connection-details",
                 "ar/products/cloud/guides/sql-console/query-endpoints"
@@ -221,14 +222,14 @@
             },
             {
               "expanded": false,
-              "group": "Backups",
+              "group": "النسخ الاحتياطية",
               "pages": [
                 "ar/products/cloud/guides/backups/index",
                 "ar/products/cloud/guides/backups/review-and-restore-backups",
                 "ar/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "Bring Your Own Backup",
+                  "group": "استخدم نسختك الاحتياطية الخاصة",
                   "pages": [
                     "ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "ar/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -239,7 +240,7 @@
             },
             {
               "expanded": false,
-              "group": "Data sources",
+              "group": "مصادر البيانات",
               "pages": [
                 "ar/products/cloud/guides/data-sources/index",
                 "ar/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -251,11 +252,11 @@
             },
             {
               "expanded": false,
-              "group": "Infrastructure",
+              "group": "البنية التحتية",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Deployment modes",
+                  "group": "أوضاع النشر",
                   "pages": [
                     "ar/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
                     "ar/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
@@ -265,11 +266,11 @@
             },
             {
               "expanded": false,
-              "group": "Security",
+              "group": "الأمان",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Cloud access management",
+                  "group": "إدارة الوصول إلى Cloud",
                   "pages": [
                     "ar/products/cloud/guides/security/cloud-access-management/index",
                     "ar/products/cloud/guides/security/cloud-access-management/manage-my-account",
@@ -288,12 +289,12 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Connectivity",
+                  "group": "الاتصال",
                   "pages": [
                     "ar/products/cloud/guides/security/connectivity/setting-ip-filters",
                     {
                       "expanded": false,
-                      "group": "Private networking",
+                      "group": "الشبكات الخاصة",
                       "pages": [
                         "ar/products/cloud/guides/security/connectivity/private-networking/index",
                         "ar/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -305,7 +306,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Audit logging",
+                  "group": "تسجيل التدقيق",
                   "pages": [
                     "ar/products/cloud/guides/security/audit-logging/index",
                     "ar/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -315,7 +316,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Data security",
+                  "group": "أمن البيانات",
                   "pages": [
                     "ar/products/cloud/guides/security/data-masking",
                     "ar/products/cloud/guides/security/cmek"
@@ -323,7 +324,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Compliance",
+                  "group": "الامتثال",
                   "pages": [
                     "ar/products/cloud/guides/security/compliance/hipaa-onboarding",
                     "ar/products/cloud/guides/security/compliance/pci-onboarding"
@@ -334,7 +335,7 @@
           ]
         },
         {
-          "group": "API reference",
+          "group": "مرجع واجهة برمجة التطبيقات",
           "openapi": {
             "directory": "ar/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"

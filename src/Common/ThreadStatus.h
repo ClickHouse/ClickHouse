@@ -10,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/MemorySpillScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
@@ -70,6 +69,9 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
+class MemorySpillScheduler;
+using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
+
 class ThreadGroup
 {
     /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
@@ -94,7 +96,7 @@ public:
 
     const Int32 os_threads_nice_value;
 
-    MemorySpillScheduler::Ptr memory_spill_scheduler;
+    MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -180,8 +182,9 @@ private:
 class ThreadStatus : public boost::noncopyable
 {
 public:
-    /// Linux's PID (or TGID) (the same id is shown by ps util)
-    const UInt64 thread_id = 0;
+    static constexpr UInt64 NO_OS_THREAD = 0;
+
+    const UInt64 thread_id = NO_OS_THREAD;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -265,8 +268,17 @@ protected:
 
     LoggerPtr log = nullptr;
 
+private:
+    explicit ThreadStatus(UInt64 thread_id_);
+
+    /// Whether this ThreadStatus owns a dedicated OS thread (as opposed to a fiber).
+    bool boundToOSThread() const { return thread_id != NO_OS_THREAD; }
+
 public:
-    explicit ThreadStatus();
+    struct NoOSThreadTag {};
+
+    ThreadStatus();
+    explicit ThreadStatus(NoOSThreadTag);
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
@@ -320,6 +332,7 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+    void publishUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 
