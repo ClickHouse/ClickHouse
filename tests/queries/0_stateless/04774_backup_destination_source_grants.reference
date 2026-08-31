@@ -40,6 +40,8 @@ denied
 0
 -- SOURCES covers the new source, so an admin-level grant needs no update
 allowed
+-- the source name also accepts the Disk spelling the locator itself uses
+allowed
 -- re-attaching an already-authorized database does not re-demand the grant
 allowed
 42

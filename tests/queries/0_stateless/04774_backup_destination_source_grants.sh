@@ -130,6 +130,11 @@ ${CLICKHOUSE_CLIENT} -q "GRANT SOURCES ON *.* TO $user"
 deny_or_allow "RESTORE TABLE $src.t AS $db.rd6 FROM $bk_disk FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "REVOKE SOURCES ON *.* FROM $user"
 
+echo "-- the source name also accepts the Disk spelling the locator itself uses"
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON Disk TO $user"
+deny_or_allow "RESTORE TABLE $src.t AS $db.rd7 FROM $bk_disk FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "REVOKE READ ON DISK FROM $user"
+
 echo "-- re-attaching an already-authorized database does not re-demand the grant"
 ${CLICKHOUSE_CLIENT} --user "$user" -q "DETACH DATABASE ${db}_b2"
 deny_or_allow "ATTACH DATABASE ${db}_b2"
