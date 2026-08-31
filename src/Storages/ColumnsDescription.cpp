@@ -1406,7 +1406,8 @@ void collectColumnDependenciesFromAST(
     const ASTPtr & node,
     const NameSet & candidate_names,
     const ColumnsDescription & columns,
-    NameSet & dependencies)
+    NameSet & dependencies,
+    bool follow_subcolumns)
 {
     if (!node)
         return;
@@ -1418,7 +1419,11 @@ void collectColumnDependenciesFromAST(
         String name = column_name;
         /// A subcolumn path (e.g. `t.x`) is a read of its owning storage column.
         if (const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        {
+            if (column->isSubcolumn() && !follow_subcolumns)
+                continue;
             name = column->getNameInStorage();
+        }
 
         if (candidate_names.contains(name))
             dependencies.insert(name);
@@ -1561,7 +1566,10 @@ void detectRecursiveDefaultCycles(
         NameSet dependencies;
         if (auto it = alias_to_expression.find(vertex); it != alias_to_expression.end())
         {
-            collectColumnDependenciesFromAST(it->second, alias_names, columns, dependencies);
+            /// A read through a subcolumn path does not close a `DEFAULT` cycle at DDL time: such an
+            /// expression list is accepted, and an insert that leaves every column of the cycle out
+            /// reports the unresolvable name instead (see `04040_defaults_dependency_order`).
+            collectColumnDependenciesFromAST(it->second, alias_names, columns, dependencies, /*follow_subcolumns=*/false);
             for (const auto & dependency : dependencies)
                 dfs(dependency);
         }

@@ -1,5 +1,8 @@
--- CREATE: cycle through a tuple subcolumn
--- ALTER: cycle through a tuple subcolumn
-
+-- CREATE: reference cycle through a tuple subcolumn is accepted
+7	(7)
+9	(9)
+-- CREATE: cycle between whole-column reads is still rejected
+-- ALTER: reference cycle through a tuple subcolumn is accepted
+y.x
 -- acyclic subcolumn reads are still accepted
 42	(41)

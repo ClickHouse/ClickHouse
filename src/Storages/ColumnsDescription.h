@@ -340,11 +340,12 @@ ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_defaul
 ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
 
 /// Insert into `dependencies` the columns from `candidate_names` that `node` reads,
-/// excluding names bound by lambda arguments inside the expression. Subcolumn references
-/// (e.g. `t.x`) are canonicalized to their owning storage column of `columns` before the
-/// membership test, so reading a column through a subcolumn path still counts as a
-/// dependency on that column.
-void collectColumnDependenciesFromAST(const ASTPtr & node, const NameSet & candidate_names, const ColumnsDescription & columns, NameSet & dependencies);
+/// excluding names bound by lambda arguments inside the expression. With
+/// `follow_subcolumns = true`, subcolumn references (e.g. `t.x`) are canonicalized to their owning
+/// storage column of `columns` before the membership test, so reading a column through a subcolumn
+/// path still counts as a dependency on that column. With `follow_subcolumns = false`, only
+/// whole-column reads produce an edge, which is what the `DEFAULT` cycle graph uses.
+void collectColumnDependenciesFromAST(const ASTPtr & node, const NameSet & candidate_names, const ColumnsDescription & columns, NameSet & dependencies, bool follow_subcolumns = true);
 void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTPtr & expanded_alias_expression, const ColumnsDescription & columns);
 
 /// Throw if the fully expanded body of the ALIAS column `alias_column_name` references a name from

@@ -123,6 +123,9 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
 }
 
+namespace
+{
+
 ASTPtr cloneAndValidateExpandedDefaultExpression(
     const String & column_name,
     const ColumnDefault & column_default,
@@ -201,6 +204,8 @@ void addColumnsRequiredForDefaultConversions(
                 required_columns.push_back(dependency_in_storage);
         }
     }
+}
+
 }
 
 /// A mutation command's predicate and `UPDATE` expressions are stored as serialized SQL text and

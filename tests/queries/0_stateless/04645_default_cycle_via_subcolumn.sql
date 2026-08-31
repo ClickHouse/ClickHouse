@@ -1,16 +1,32 @@
--- A default expression that reads another column through a subcolumn path (`y.x`) depends on
--- the whole storage column `y`, so such an edge must participate in the `DEFAULT` cycle graph.
--- Otherwise a real cycle `a -> y -> a` slips through the DDL validation and only explodes later.
+-- A default expression that reads another column through a subcolumn path (`y.x`) does not close a
+-- `DEFAULT` cycle at DDL time: the table is created, and the dependency is resolved per insert from
+-- the columns that are actually supplied. This mirrors `04040_defaults_dependency_order`, which pins
+-- the same behaviour for a three-column cycle of tuple subcolumn reads on `master`. Only cycles
+-- between whole-column reads are rejected up front.
 
-SELECT '-- CREATE: cycle through a tuple subcolumn';
+SELECT '-- CREATE: reference cycle through a tuple subcolumn is accepted';
 DROP TABLE IF EXISTS t_default_cycle_subcolumn;
 CREATE TABLE t_default_cycle_subcolumn
 (
     a UInt8 DEFAULT y.x,
     y Tuple(x UInt8) DEFAULT tuple(a)
+) ENGINE = MergeTree ORDER BY tuple();
+
+-- Supplying either column resolves the other one.
+INSERT INTO t_default_cycle_subcolumn (a) VALUES (7);
+INSERT INTO t_default_cycle_subcolumn (y) VALUES (tuple(9));
+SELECT a, y FROM t_default_cycle_subcolumn ORDER BY a;
+DROP TABLE t_default_cycle_subcolumn;
+
+SELECT '-- CREATE: cycle between whole-column reads is still rejected';
+DROP TABLE IF EXISTS t_default_cycle_whole_column;
+CREATE TABLE t_default_cycle_whole_column
+(
+    a UInt8 DEFAULT y + 1,
+    y UInt8 DEFAULT a + 1
 ) ENGINE = MergeTree ORDER BY tuple(); -- { serverError CYCLIC_ALIASES }
 
-SELECT '-- ALTER: cycle through a tuple subcolumn';
+SELECT '-- ALTER: reference cycle through a tuple subcolumn is accepted';
 DROP TABLE IF EXISTS t_alter_cycle_subcolumn;
 CREATE TABLE t_alter_cycle_subcolumn
 (
@@ -18,9 +34,8 @@ CREATE TABLE t_alter_cycle_subcolumn
     y Tuple(x UInt8) DEFAULT tuple(a)
 ) ENGINE = MergeTree ORDER BY tuple();
 
-ALTER TABLE t_alter_cycle_subcolumn MODIFY COLUMN a UInt8 DEFAULT y.x; -- { serverError CYCLIC_ALIASES }
+ALTER TABLE t_alter_cycle_subcolumn MODIFY COLUMN a UInt8 DEFAULT y.x;
 
--- The rejected `ALTER` did not change the metadata.
 SELECT default_expression FROM system.columns
 WHERE database = currentDatabase() AND table = 't_alter_cycle_subcolumn' AND name = 'a';
 
