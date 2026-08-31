@@ -81,6 +81,7 @@ extern const Event ASTFuzzerOracleDeleteMutationChecks;
 extern const Event ASTFuzzerOracleUpdateMutationChecks;
 extern const Event ASTFuzzerOracleMaterializeIndexChecks;
 extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
+extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3528,6 +3529,56 @@ bool QueryOracleChecker::checkPredicateDeMorgan(const ASTSelectQuery &, const Co
             context, &fixture);
 
     LOG_TRACE(logger, "De-Morgan predicate oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkArrayJoinIdentity(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_04): INNER ARRAY JOIN emits exactly one output row per element of the
+    /// joined array (empty arrays contribute nothing), so over an array-joined table:
+    ///   count()               == sum(length(arr))
+    ///   sum(element)           == sum(arraySum(arr))
+    /// A difference is a real ARRAY JOIN bug. Compared as one server-side boolean via scalar
+    /// subqueries (typed-computation policy).
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("arrayjoin", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, arr Array(Int32)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    /// Varied array lengths including empty (number % 7 = 0).
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number,"
+            " if(number % 7 = 0, emptyArrayInt32(), arrayMap(x -> toInt32(x) - 2, range(number % 5)))"
+            " FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "ARRAY JOIN identity oracle: {}", tbl);
+
+    const String probe =
+        "SELECT ((SELECT count() FROM " + tbl + " ARRAY JOIN arr) IS NOT DISTINCT FROM (SELECT sum(length(arr)) FROM " + tbl + "))"
+        " AND ((SELECT sum(e) FROM " + tbl + " ARRAY JOIN arr AS e) IS NOT DISTINCT FROM (SELECT sum(arraySum(arr)) FROM " + tbl + "))";
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false;
+    UInt64 ok = 0;
+    try { ok = value->safeGet<UInt64>(); } catch (...) { return false; }
+
+    if (ok != 1)
+        raiseOracleMismatch(
+            fmt::format(
+                "ARRAY JOIN identity oracle mismatch!\n"
+                "count()/sum over ARRAY JOIN disagrees with sum(length)/sum(arraySum) on table {}.\nProbe: {}",
+                tbl, probe),
+            context, &fixture);
+
+    LOG_TRACE(logger, "ARRAY JOIN identity oracle passed");
     return true;
 }
 

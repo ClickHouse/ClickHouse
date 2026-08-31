@@ -34,6 +34,7 @@ extern const Event ASTFuzzerOracleDeleteMutationChecks;
 extern const Event ASTFuzzerOracleUpdateMutationChecks;
 extern const Event ASTFuzzerOracleMaterializeIndexChecks;
 extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
+extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
 }
 
 namespace DB
@@ -111,6 +112,7 @@ OracleRegistry::OracleRegistry()
     add("UPDATE mutation", ProfileEvents::ASTFuzzerOracleUpdateMutationChecks, &QueryOracleChecker::checkUpdateMutation);
     add("MATERIALIZE INDEX invariance", ProfileEvents::ASTFuzzerOracleMaterializeIndexChecks, &QueryOracleChecker::checkMaterializeIndexInvariance);
     add("De-Morgan predicate", ProfileEvents::ASTFuzzerOraclePredicateDeMorganChecks, &QueryOracleChecker::checkPredicateDeMorgan);
+    add("ARRAY JOIN identity", ProfileEvents::ASTFuzzerOracleArrayJoinIdentityChecks, &QueryOracleChecker::checkArrayJoinIdentity);
 }
 
 const OracleRegistry & OracleRegistry::instance()
