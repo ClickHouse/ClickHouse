@@ -1,5 +1,6 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <Common/quoteString.h>
 #include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
@@ -29,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 String ConstraintsDescription::toString() const
@@ -134,6 +136,31 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     }
 
     return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
+}
+
+void ConstraintsDescription::assertPreserveRowCount(const ContextPtr context, const NamesAndTypesList & source_columns) const
+{
+    /// `arrayJoin` is the one action that changes the number of rows in a block, while
+    /// `CheckConstraintsTransform` indexes the result column positionally against the rows of the block
+    /// being inserted: a longer result reads past the end of the block's columns, and a shorter one
+    /// blames a violation on the wrong row. `arrayJoin` is rejected for skip indexes, keys, mutations,
+    /// `PREWHERE` and row policies for the same reason.
+    auto check_expressions = getExpressions(context, source_columns);
+
+    size_t expression_index = 0;
+    for (const auto & constraint : constraints)
+    {
+        const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
+        if (constraint_ptr->type != ASTConstraintDeclaration::Type::CHECK)
+            continue;
+
+        if (check_expressions.at(expression_index)->hasArrayJoin())
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
+                backQuote(constraint_ptr->name));
+
+        ++expression_index;
+    }
 }
 
 ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,

@@ -867,6 +867,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+        if (mode < LoadingStrictnessLevel::ATTACH)
+            properties.constraints.assertPreserveRowCount(getContext(), properties.columns.getAllPhysical());
     }
     else if (!create.as_table.empty())
     {
