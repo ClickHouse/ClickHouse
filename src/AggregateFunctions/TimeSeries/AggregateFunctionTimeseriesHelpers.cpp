@@ -300,9 +300,9 @@ timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sampl
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesRateToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesRateToGrid = {"Returns rate values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the rate value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesRateToGrid = {
@@ -398,9 +398,9 @@ timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(s
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesIncreaseToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesIncreaseToGrid = {"Returns increase values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the increase value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesIncreaseToGrid = {
@@ -495,9 +495,9 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samp
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesDeltaToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesDeltaToGrid = {"Returns delta values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the delta value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesDeltaToGrid = {
@@ -592,9 +592,9 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesInstantRateToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesInstantRateToGrid = {"Returns irate values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the instant rate value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesInstantRateToGrid = {
@@ -690,9 +690,9 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesInstantDeltaToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesInstantDeltaToGrid = {"Returns idelta values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the instant delta value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesInstantDeltaToGrid = {
@@ -787,9 +787,9 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samp
         {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesDerivToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesDerivToGrid = {"`deriv` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the derivative value for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesDerivToGrid = {
@@ -883,9 +883,9 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
         {"predict_offset", "Specifies number of seconds of offset to add to prediction time.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesPredictLinearToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesPredictLinearToGrid = {"`predict_linear` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the rate value for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesPredictLinearToGrid = {
@@ -982,9 +982,9 @@ timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sa
         {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesChangesToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesChangesToGrid = {"`changes` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the changes value for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesChangesToGrid = {
@@ -1077,9 +1077,9 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sam
         {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesResetsToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesResetsToGrid = {"`resets` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the resets value for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesResetsToGrid = {
@@ -1175,9 +1175,9 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
         {"staleness_window", "Specifies the maximum staleness of the most recent sample in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesResampleToGridWithStaleness = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesResampleToGridWithStaleness = {"Returns time series values re-sampled to the specified grid. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesResampleToGridWithStaleness = {
