@@ -226,14 +226,12 @@ void MergeTreeDataPartWriterWide::addStreams(
         const auto & subtype = substream_path.back().data.type;
         CompressionCodecPtr compression_codec;
 
-        /// If we can use special codec then just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
-        {
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
-        }
-        else /// otherwise return only generic codecs and don't use info about the` data_type
+        else
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+
+        compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, substream_path, compression_codec);
 
         /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
         /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch

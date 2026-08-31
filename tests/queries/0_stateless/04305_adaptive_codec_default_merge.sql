@@ -11,7 +11,7 @@ CREATE TABLE t_adaptive_on
 (
     a UInt64,              -- no codec, narrow range -> T64
     b UInt64 CODEC(LZ4),   -- explicit codec -> stays LZ4
-    c String,              -- no specialized candidate -> NONE or default per block
+    c String,              -- no specialized candidate -> NONE or default per block (its `.size` substream has one and goes adaptive)
     d Int128,              -- no specialized candidate -> NONE or default per block
     e Nullable(Int64),     -- candidate leaf -> T64
     f Array(Int32)         -- candidate leaf -> T64
