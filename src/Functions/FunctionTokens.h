@@ -126,13 +126,13 @@ public:
         if (const auto * col_const = checkAndGetColumn<ColumnConst>(column))
         {
             if (col_const->onlyNull())
-                return result_type->createColumnConst(col_const->size(), Array{});
+                return execute_constant("", col_const->size());
 
             const auto * data_column = &col_const->getDataColumn();
             if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(data_column))
             {
                 if (col_nullable->isNullAt(0))
-                    return result_type->createColumnConst(col_const->size(), Array{});
+                    return execute_constant("", col_const->size());
                 data_column = &col_nullable->getNestedColumn();
             }
 
@@ -178,12 +178,9 @@ public:
                 current_src_offset = src_offsets[i];
                 Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
-                /// For NULL values, produce empty array.
+                /// Evaluate NULL values over the default nested value rather than the hidden nested data.
                 if (null_map && (*null_map)[i])
-                {
-                    res_offsets.push_back(current_dst_offset);
-                    continue;
-                }
+                    pos = end;
 
                 generator.set(pos, end);
                 size_t j = 0;

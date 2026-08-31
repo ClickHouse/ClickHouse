@@ -74,6 +74,7 @@ SELECT '-- Test splitByChar with nullable';
 SELECT splitByChar(',', toNullable('a,b,c'));
 SELECT splitByChar(',', toNullable('a,b')) FROM numbers(2);
 SELECT splitByChar(',', CAST(NULL AS Nullable(String)));
+SELECT splitByChar(',', nullIf(materialize('a,b'), materialize('a,b')));
 SELECT splitByChar(',', toNullable(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- Test splitByNonAlpha with nullable';

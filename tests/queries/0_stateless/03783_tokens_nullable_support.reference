@@ -16,7 +16,7 @@
 []
 ['click','house']
 ['a','b']
-[]
+['']
 ['c','d']
 ['1','22']
 []
@@ -52,16 +52,17 @@ hello, world
 ['a','b','c']
 ['a','b']
 ['a','b']
-[]
+['']
+['']
 -- Test splitByNonAlpha with nullable
 ['hello','world','123']
 []
 -- Test splitByRegexp with nullable
 ['a','b','c','']
-[]
+['']
 -- Test splitByString with nullable
 ['a','b','c']
-[]
+['']
 -- Test splitByWhitespace with nullable
 ['hello','world','test']
 []
