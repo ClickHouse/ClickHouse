@@ -95,6 +95,7 @@ extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
 extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
 extern const Event ASTFuzzerOracleSequenceFunnelChecks;
 extern const Event ASTFuzzerOracleSubcolumnChecks;
+extern const Event ASTFuzzerOracleViewTtlChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -4338,6 +4339,86 @@ bool QueryOracleChecker::checkDynamicSubcolumn(const ASTSelectQuery &, const Con
             context, &fixture);
 
     LOG_TRACE(logger, "composite subcolumn oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkViewTtlConsistency(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_33 arms b, c):
+    ///   (b) MATERIALIZED VIEW consistency — a SummingMergeTree MV target, incrementally maintained
+    ///       across inserts, must equal the ground truth recomputed by a full scan of the base.
+    ///   (c) recompression-TTL result-invariance — a `TTL ... RECOMPRESS` merge changes storage
+    ///       compression only, so OPTIMIZE FINAL must preserve every row. (Delete-TTL is NOT
+    ///       result-invariant and is intentionally excluded.)
+    /// A divergence in either arm is a real MV-maintenance or TTL-recompression bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("viewttl", context);
+    if (!fixture.valid())
+        return false;
+
+    /// ---- Arm b: materialized-view consistency ----
+    const String base = fixture.allocName("base");
+    const String tgt = fixture.allocName("tgt");
+    if (!fixture.execute("CREATE TABLE " + base + " (k UInt8, v Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + tgt + " (k UInt8, s Int64, c UInt64) ENGINE = SummingMergeTree ORDER BY k"))
+        return false;
+    const String mv = "__oracle_mv_" + base.substr(base.rfind('_') + 1);
+    if (!fixture.createAuxiliary(
+            "CREATE MATERIALIZED VIEW " + mv + " TO " + tgt + " AS SELECT k, sum(v) AS s, count() AS c FROM " + base + " GROUP BY k",
+            "DROP VIEW IF EXISTS " + mv))
+        return false;
+    /// Two inserts so the MV maintains state incrementally across parts.
+    if (!fixture.execute("INSERT INTO " + base + " SELECT number % 8, toInt64(number) - 100 FROM numbers(400)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + base + " SELECT number % 8, toInt64(number) FROM numbers(250)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "view/TTL consistency oracle: {} / {} / {}", base, tgt, mv);
+
+    auto mv_opt = OracleExec::executeRows("SELECT k, sum(s), sum(c) FROM " + tgt + " GROUP BY k", context, ResultShape::SortedBag);
+    auto gt_opt = OracleExec::executeRows("SELECT k, sum(v), count() FROM " + base + " GROUP BY k", context, ResultShape::SortedBag);
+    if (!mv_opt || !gt_opt)
+        return false;
+    if (!OracleCompare::equal(*mv_opt, *gt_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "view/TTL consistency oracle mismatch (MV vs ground truth)!\n"
+                "MV target ({} rows) vs recomputed from base ({} rows) on {}/{}\n{}",
+                mv_opt->size(), gt_opt->size(), tgt, base,
+                OracleCompare::diffSummary(*mv_opt, *gt_opt)),
+            context, &fixture);
+
+    /// ---- Arm c: recompression-TTL result-invariance ----
+    const String rc = fixture.allocName("rc");
+    if (!fixture.execute(
+            "CREATE TABLE " + rc + " (id UInt32, d Date, v Int64) ENGINE = MergeTree ORDER BY id "
+            "TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(3)) SETTINGS min_bytes_for_wide_part = 0"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + rc + " SELECT number, today() - 10, toInt64(number) FROM numbers(500)"))
+        return false;
+
+    auto pre_opt = OracleExec::executeRows("SELECT id, v FROM " + rc, context, ResultShape::SortedBag);
+    if (!pre_opt)
+        return false;
+    if (!fixture.execute("OPTIMIZE TABLE " + rc + " FINAL"))
+        return false;
+    auto post_opt = OracleExec::executeRows("SELECT id, v FROM " + rc, context, ResultShape::SortedBag);
+    if (!post_opt)
+        return false;
+    if (!OracleCompare::equal(*pre_opt, *post_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "view/TTL consistency oracle mismatch (recompression changed data)!\n"
+                "before RECOMPRESS TTL merge ({} rows) vs after OPTIMIZE FINAL ({} rows) on {}\n{}",
+                pre_opt->size(), post_opt->size(), rc,
+                OracleCompare::diffSummary(*pre_opt, *post_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "view/TTL consistency oracle passed");
     return true;
 }
 
