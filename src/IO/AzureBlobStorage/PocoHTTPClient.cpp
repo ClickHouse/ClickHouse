@@ -365,11 +365,10 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     const auto & method = request.GetMethod().ToString();
     const auto url = request.GetUrl();
 
-    /// Enforce remote_url_allow_hosts on the host actually used: only redirects
-    /// were re-checked before, but the request host can differ from the endpoint
-    /// validated at CREATE time (OneLake writes go to the `.dfs` host, reads to
-    /// `.blob`). Normalize scheme and host as Poco::URI does at CREATE time (the
-    /// scheme resolves the default port; the host is lower-cased) so both agree.
+    /// Enforce remote_url_allow_hosts on the host actually used by SQL-created
+    /// storage. Configured disks are trusted, as they are for S3. Normalize scheme
+    /// and host as Poco::URI does at CREATE time so both checks agree.
+    if (!for_disk_azure)
     {
         Poco::URI request_uri;
         request_uri.setScheme(url.GetScheme());

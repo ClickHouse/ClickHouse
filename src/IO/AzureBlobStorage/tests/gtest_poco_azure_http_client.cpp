@@ -10,6 +10,7 @@
 #include <azure/core/http/http.hpp>
 #include <azure/core/io/body_stream.hpp>
 
+#include <Poco/AutoPtr.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServer.h>
@@ -18,8 +19,11 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/StreamCopier.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <fmt/format.h>
+
+#include <sstream>
 
 namespace
 {
@@ -153,6 +157,36 @@ TEST(PocoAzureHTTPClient, SetsContentLengthFromBodyStream)
         EXPECT_TRUE(captured.body.empty());
     }
 
+    server.stop();
+}
+
+TEST(PocoAzureHTTPClient, ConfiguredDiskSkipsRemoteHostFilter)
+{
+    CapturedRequest captured;
+    Poco::Net::ServerSocket server_socket(Poco::Net::SocketAddress("127.0.0.1", 0));
+    Poco::Net::HTTPServer server(
+        new CapturingRequestHandlerFactory(captured), server_socket, new Poco::Net::HTTPServerParams);
+    server.start();
+
+    std::stringstream config_stream(
+        "<clickhouse><remote_url_allow_hosts><host>blocked.invalid</host></remote_url_allow_hosts></clickhouse>");
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration(config_stream));
+    DB::RemoteHostFilter remote_host_filter;
+    remote_host_filter.setValuesFromConfig(*config);
+
+    DB::PocoAzureHTTPClient client(DB::PocoAzureHTTPClientConfiguration{
+        .remote_host_filter = remote_host_filter,
+        .max_redirects = 3,
+        .for_disk_azure = true,
+        .request_throttler = {},
+        .extra_headers = {},
+    });
+
+    const auto url = fmt::format("http://{}/blob", server_socket.address().toString());
+    Azure::Core::Http::Request request(Azure::Core::Http::HttpMethod::Get, Azure::Core::Url(url));
+    auto response = client.Send(request, Azure::Core::Context());
+
+    EXPECT_EQ(static_cast<int>(response->GetStatusCode()), 200);
     server.stop();
 }
 
