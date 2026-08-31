@@ -125,6 +125,11 @@ public:
     /// exactly (CAST(CAST(x AS String) AS T) == x); a violation is a real CAST/parse bug.
     bool checkCastRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Aggregate-state-column oracle (self-seeded): a -State written into an AggregatingMergeTree
+    /// column, persisted across parts, and read back with -Merge must equal the direct aggregate
+    /// over the raw data; a difference is a real aggregate state-I/O bug.
+    bool checkAggregateStateColumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
