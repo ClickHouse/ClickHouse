@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -93,7 +94,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
-        optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
@@ -103,6 +103,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
+        optimization_settings.short_circuit_function_evaluation_disabled,
     };
 
     while (!stack.empty())
@@ -224,7 +225,6 @@ void optimizeTreeSecondPass(
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
-        optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
@@ -265,10 +265,13 @@ void optimizeTreeSecondPass(
 
     if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
+        /// Sets taken out of the referenced subplans before they are cloned; re-attached below.
+        PreparedSets::Subqueries materialized_sets;
+
         /// Materialize subplan references before other optimizations.
         traverseQueryPlan(stack, root, [&](auto & frame_node)
         {
-            materializeQueryPlanReferences(frame_node, nodes);
+            materializeQueryPlanReferences(frame_node, nodes, materialized_sets);
         });
 
         /// Remove CommonSubplanSteps (they must be not used at that point).
@@ -276,6 +279,22 @@ void optimizeTreeSecondPass(
         {
             optimizeUnusedCommonSubplans(frame_node);
         });
+
+        /// A single builder above the root dominates every copy of a materialized subplan, so each set
+        /// is ready before any copy's `in()` is evaluated, regardless of join kind, join algorithm or
+        /// scheduling. Every extracted set must be re-attached: a set with no builder left in the plan
+        /// stays unbuilt, and `FunctionIn` then reports it as not ready.
+        if (!materialized_sets.empty())
+        {
+            auto step = std::make_unique<DelayedCreatingSetsStep>(
+                root.step->getOutputHeader(),
+                std::move(materialized_sets),
+                optimization_settings.network_transfer_limits,
+                optimization_settings.prepared_sets_cache);
+
+            auto * child = &nodes.emplace_back(std::move(root));
+            root = QueryPlan::Node{std::move(step), {child}};
+        }
     }
 
     /// Compute aggregation hash-table preallocation keys here, BEFORE join runtime filters are added
@@ -569,8 +588,6 @@ void optimizeTreeSecondPass(
                 const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
                 local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
                 local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
-                local_optimization_settings.read_in_order_through_spilling_join
-                    = subquery_optimization_settings.read_in_order_through_spilling_join;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions

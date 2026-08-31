@@ -292,10 +292,21 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->column)
         {
-            auto literal = make_intrusive<ASTLiteral>(node->column->getField());
+            ASTPtr literal;
+            if (typeMayContainDecimal(*node->result_type))
+                /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) exactly so
+                /// the shard does not re-parse them through Float64 or DateTime64 text heuristics.
+                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
+            else
+                /// Other types keep their raw Field literal. In particular a DateTime serialized as local
+                /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
+                /// share one text, and parsing picks one side), whereas the raw Unix-timestamp literal is exact.
+                literal = make_intrusive<ASTLiteral>(node->column->getField());
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
+            /// makeCastToTypeNameAST skips the wrap when the exact serialization already cast the value to
+            /// the result type (scalar Decimal/DateTime64/Time64), avoiding a redundant identity cast.
+            auto casted_literal = makeCastToTypeNameAST(std::move(literal), node->result_type->getName());
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
@@ -719,6 +730,7 @@ void ReadFromRemote::addLazyPipe(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
+        remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
@@ -813,6 +825,7 @@ void ReadFromRemote::addPipe(
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
+            remote_query_executor->setQueryPlanFallbackStage(stage);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
             remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
@@ -844,6 +857,7 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
