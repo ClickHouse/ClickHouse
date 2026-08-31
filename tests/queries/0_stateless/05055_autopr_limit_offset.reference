@@ -1,0 +1,5 @@
+input_stats_collected	output_stats_collected
+1	1
+log_comment	stats_collected	pr_used
+05055_autopr_limit_query_0	1	0
+05055_autopr_limit_query_1	0	0

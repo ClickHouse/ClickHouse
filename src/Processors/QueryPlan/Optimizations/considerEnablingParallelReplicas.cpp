@@ -9,6 +9,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -401,9 +403,20 @@ void considerEnablingParallelReplicas(
                 ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
                 : SIZE_MAX;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
+            /// `output_bytes` is what the boundary step produced on a single node, and the network term
+            /// below is what one replica ships to the initiator. Dividing by `num_replicas` assumes the
+            /// replicas partition that output between them, which holds for `Aggregating` (each replica
+            /// aggregates its own share of the rows) and `Sorting`. It does not hold for a row-limiting
+            /// boundary: a shard `LIMIT n` makes *every* replica emit up to `n` rows, so each of them
+            /// ships the full `output_bytes` and the network term must not be divided. Dividing anyway
+            /// would underestimate the cost of the parallel-replicas plan by a factor of `num_replicas`.
+            const auto * boundary_step = corresponding_node_in_single_replica_plan->step.get();
+            const bool output_is_replicated
+                = typeid_cast<const LimitStep *>(boundary_step) || typeid_cast<const OffsetStep *>(boundary_step);
+            const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
             const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
             const auto replicas_plan_cost_estimation
-                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / num_replicas;
+                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / output_replicas_divisor;
             LOG_DEBUG(
                 getLogger("optimizeTree"),
                 "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
@@ -412,7 +425,7 @@ void considerEnablingParallelReplicas(
                 stats->input_bytes,
                 std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads),
                 stats->output_bytes,
-                num_replicas,
+                output_replicas_divisor,
                 local_plan_cost_estimation,
                 replicas_plan_cost_estimation);
             if (local_plan_cost_estimation > replicas_plan_cost_estimation)

@@ -48,6 +48,11 @@ public:
 
     bool hasCorrelatedExpressions() const override { return false; }
 
+    /// `transformPipeline` hands the updater to the `LimitTransform`, which records the post-limit
+    /// output. Note that a `Limit` at the replica-output boundary is a shard limit, so its output is
+    /// replicated rather than partitioned: every replica emits up to `limit` rows and ships all of them
+    /// to the initiator. `considerEnablingParallelReplicas` accounts for that when pricing the network
+    /// term.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
