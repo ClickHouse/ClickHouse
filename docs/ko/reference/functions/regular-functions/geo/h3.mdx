@@ -328,7 +328,9 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
   ## h3PolygonToCells
 </div>
 
-제공된 Geometry(링 또는 (multi-)polygon)에 포함된 지정된 해상도의 육각형을 반환합니다.
+제공된 Geometry(링 또는 (multi-)polygon)에 포함된 지정된 해상도의 육각형을 반환합니다. Geometry가 육각형의 중심을 포함할 때 해당 육각형이 포함된 것으로 간주하며, 이는 [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment)의 포함 모드 `0`입니다.
+
+Geometry의 모든 꼭짓점은 구면 위에 있어야 합니다. 경도는 `[-180, 180]`, 위도는 `[-90, 90]`도 범위여야 합니다. 반환되는 셀의 순서는 보장되지 않으므로 순서가 중요할 때는 배열을 정렬하십시오.
 
 **구문**
 
@@ -356,12 +358,12 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
-│ 608692970769612799 │
-│ 608692971927240703 │
 │ 608692970585063423 │
-│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
+│ 608692970769612799 │
+│ 608692970819944447 │
+│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
@@ -371,6 +373,8 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 </div>
 
 H3 Experimental 포함 모드를 사용하여 제공된 geometry가 차지하는 영역을 지정된 해상도의 육각형으로 덮어 반환합니다. geometry는 링 또는 (multi-)polygon일 수 있습니다.
+
+geometry의 모든 꼭짓점은 구면 위에 있어야 합니다. 경도는 `[-180, 180]`, 위도는 `[-90, 90]`도 범위여야 합니다. 반환되는 셀의 순서는 보장되지 않으므로 순서가 중요할 때는 배열을 정렬하십시오.
 
 이 함수는 `flags`를 다음 H3 포함 모드에 매핑합니다:
 
@@ -396,7 +400,7 @@ h3PolygonToCellsWithContainment(geometry, resolution, flags)
 
 **반환 값**
 
-* 선택한 포함 모드에 따른 H3 인덱스 배열입니다. [Array](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+* 선택한 포함 모드에 따른 H3 인덱스 배열입니다. [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
 
 **예시**
 

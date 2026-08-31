@@ -328,7 +328,9 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
   ## h3PolygonToCells
 </div>
 
-Retorna os hexágonos (na resolução especificada) contidos na geometria fornecida, seja um ring ou um (multi-)polygon.
+Retorna os hexágonos (na resolução especificada) contidos na geometria fornecida, seja um anel ou um (multi-)polígono. Um hexágono é considerado contido quando a geometria contém seu centro, que corresponde ao modo de contenção `0` de [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment).
+
+Todos os vértices da geometria devem estar na esfera: longitude no intervalo `[-180, 180]` e latitude em `[-90, 90]` graus. A ordem das células retornadas não é garantida; portanto, ordene o array quando a ordem for importante.
 
 **Sintaxe**
 
@@ -339,9 +341,9 @@ h3PolygonToCells(geometry, resolution)
 **Argumentos**
 
 * `geometry` pode ser um dos seguintes [Tipos de dados Geo](/pt-BR/reference/data-types/geo) ou seus tipos primitivos subjacentes:
-  * [Ring](/pt-BR/reference/data-types/geo#ring)
-  * [Polygon](/pt-BR/reference/data-types/geo#polygon)
-  * [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon)
+  * [anel](/pt-BR/reference/data-types/geo#ring)
+  * [polígono](/pt-BR/reference/data-types/geo#polygon)
+  * [multipolígono](/pt-BR/reference/data-types/geo#multipolygon)
 * `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
 
 **Valores retornados**
@@ -356,12 +358,12 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
-│ 608692970769612799 │
-│ 608692971927240703 │
 │ 608692970585063423 │
-│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
+│ 608692970769612799 │
+│ 608692970819944447 │
+│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
@@ -370,7 +372,9 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
   ## h3PolygonToCellsWithContainment
 </div>
 
-Retorna os hexágonos (na resolução especificada) que cobrem a geometria fornecida, seja um anel ou um (multi)polígono, usando os modos experimentais de contenção do H3.
+Retorna os hexágonos (na resolução especificada) que cobrem a geometria fornecida, seja um anel ou um (multi-)polígono, usando os modos experimentais de contenção do H3.
+
+Todos os vértices da geometria devem estar na esfera: longitude no intervalo `[-180, 180]` e latitude no intervalo `[-90, 90]`, em graus. A ordem das células retornadas não é garantida; portanto, ordene o array quando a ordem for importante.
 
 Esta função associa as `flags` aos modos de contenção do H3:
 
@@ -387,9 +391,9 @@ h3PolygonToCellsWithContainment(geometry, resolution, flags)
 
 **Argumentos**
 
-* `geometry` pode ser um dos seguintes [Tipos de Dados Geo](/pt-BR/reference/data-types/geo) ou seus respectivos tipos primitivos:
-  * [ring](/pt-BR/reference/data-types/geo#ring)
-  * [Polygon](/pt-BR/reference/data-types/geo#polygon)
+* `geometry` pode ser um dos seguintes [Tipos de Dados Geo](/pt-BR/reference/data-types/geo) ou seu tipo primitivo subjacente:
+  * [anel](/pt-BR/reference/data-types/geo#ring)
+  * [polígono](/pt-BR/reference/data-types/geo#polygon)
   * [multipolígono](/pt-BR/reference/data-types/geo#multipolygon)
 * `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
 * `flags` — Modo de contenção. Intervalo: `[0, 3]`. Use literais inteiros como `0`, `1`, `2` e `3`, ou valores [UInt32](/pt-BR/reference/data-types/int-uint) (por exemplo, `toUInt32(2)`). Os valores são passados para a API H3 como `UInt32`. Outros tipos inteiros nativos são convertidos com exatidão.

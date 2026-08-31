@@ -328,7 +328,9 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
   ## h3PolygonToCells
 </div>
 
-Renvoie les hexagones (à la résolution spécifiée) compris dans la géométrie fournie, qu’il s’agisse d’un Ring ou d’un (multi-)Polygon.
+Renvoie les hexagones (à la résolution spécifiée) compris dans la géométrie fournie, qu’il s’agisse d’un Ring ou d’un (multi-)Polygon. Un hexagone est considéré comme contenu lorsque la géométrie contient son centre, ce qui correspond au mode de containment `0` de [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment).
+
+Chaque sommet de la géométrie doit se trouver sur la sphère : longitude dans la plage `[-180, 180]` et latitude dans la plage `[-90, 90]` degrés. L’ordre des cellules renvoyées n’est pas garanti ; triez donc le tableau lorsque l’ordre est important.
 
 **Syntaxe**
 
@@ -338,7 +340,7 @@ h3PolygonToCells(geometry, resolution)
 
 **Arguments**
 
-* `geometry` peut être l’un des [Geo Data Types](/fr/reference/data-types/geo) suivants ou l’un de leurs types primitifs sous-jacents :
+* `geometry` peut être l’un des [types de données Geo](/fr/reference/data-types/geo) suivants ou l’un de leurs types primitifs sous-jacents :
   * [Ring](/fr/reference/data-types/geo#ring)
   * [Polygon](/fr/reference/data-types/geo#polygon)
   * [MultiPolygon](/fr/reference/data-types/geo#multipolygon)
@@ -356,12 +358,12 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
-│ 608692970769612799 │
-│ 608692971927240703 │
 │ 608692970585063423 │
-│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
+│ 608692970769612799 │
+│ 608692970819944447 │
+│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
@@ -371,6 +373,8 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 </div>
 
 Renvoie les hexagones (à la résolution spécifiée) qui recouvrent la géométrie fournie — un `ring` ou un `(multi-)polygon` — en utilisant les modes de containment expérimentaux de H3.
+
+Chaque sommet de la géométrie doit se trouver sur la sphère : longitude comprise dans la plage `[-180, 180]` et latitude comprise dans la plage `[-90, 90]` degrés. L’ordre des cellules renvoyées n’est pas garanti ; triez donc le tableau lorsque l’ordre est important.
 
 Cette fonction associe les `flags` aux modes de containment H3 :
 

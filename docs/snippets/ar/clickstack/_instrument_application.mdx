@@ -2,132 +2,175 @@
 title: إضافة الرصد إلى التطبيق
 ---
 
+import { AgentPrompt } from '/snippets/ar/components/AgentPrompt/AgentPrompt.jsx';
+
+<div id="instrument-the-application">
+  ## أضِف أدوات القياس عن بُعد إلى التطبيق
+</div>
+
 <Steps>
-  <Step title="استنساخ التطبيق وتشغيله" id="clone-and-run-the-application">
-    استنسخ المستودع، وثبّت التبعيات، وأنشئ ملف `.env`:
-
-    ```bash
-    git clone https://github.com/ClickHouse/hn-news-analyzer.git
-    cd hn-news-analyzer
-    npm install
-    cp .env.example .env
-    ```
-
-    يتصل مصدر بيانات ClickHouse افتراضيًا بالعُنقود التجريبي العام المخصّص للقراءة فقط، لذا يعمل التطبيق دون أي إعداد إضافي. ابدأه:
+  <Step title="شغّل التطبيق" id="run-the-application">
+    من الدليل المستنسخ `hn-news-analyzer`، شغّل التطبيق. يتصل مصدر بيانات ClickHouse افتراضيًا بالعنقود التجريبي العام للقراءة فقط، لذا يعمل دون الحاجة إلى أي إعداد إضافي:
 
     ```bash
     ./run.sh
     ```
 
-    افتح [http://localhost:5001](http://localhost:5001). سترى محدِّد السنة، وإحصاءات موجزة، ومخططًا للنشاط، وجدولي أهم المستخدمين والنطاقات، ومربع بحث. جرّب التنقّل: بدّل بين السنوات، وتعمّق في القصص.
+    افتح [http://localhost:5001](http://localhost:5001). سترى محدِّدًا للسنة، وإحصاءات موجزة، ومخططًا للنشاط، وجدولي أبرز المستخدمين والنطاقات، ومربع بحث. استكشف التطبيق بالنقر: بدّل السنوات وتعمّق في القصص.
 
     <Frame>
-      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="تطبيق HackerNews Analyzer قيد التشغيل محليًا" />
+      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="تطبيق HackerNews Analyzer يعمل محليًا" />
     </Frame>
 
-    في هذه المرحلة، يكون التطبيق قيد التشغيل لكنه غير مُهيّأ لجمع بيانات الرصد. لا يعرض ClickStack أي بيانات، إذ إنه ينتظر بيانات القياس عن بُعد. هذه هي حالة &quot;قبل&quot;.
+    في هذه المرحلة، يكون التطبيق قيد التشغيل لكنه غير مزوَّد بأدوات التتبّع. لا يعرض ClickStack أي بيانات، إذ ينتظر بيانات التتبّع.
   </Step>
 
-  <Step title="احصل على تفاصيل الاتصال" id="get-connection-details">
-    يحتاج التطبيق إلى قيمتين للوصول إلى المجمّع:
-
-    * `OTEL_EXPORTER_OTLP_ENDPOINT`: نقطة نهاية OTLP التي يتيحها المجمّع لديك (وغالبًا ما تكون على المنفذ `4318` لـ OTLP عبر HTTP).
-    * `OTEL_EXPORTER_OTLP_HEADERS`: ترويسة التفويض التي تتضمن رمز الاستيعاب الخاص بك، بالصيغة `authorization=<token>`.
-
-    افتح `.env` واضبطهما:
+  <Step title="تهيئة البيئة" id="configure-environment">
+    تقرأ حِزم SDK متغيرات exporter القياسية لـ OpenTelemetry. وهي غير مُضمَّنة برمجيًا في شيفرة المصدر. افتح `.env` واضبط:
 
     ```bash
     OTEL_SERVICE_NAME=hn-analyzer-api
-    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_ENDPOINT=<your-otlp-http-endpoint>
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
     OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-ingestion-token>
+    OTEL_TRACES_EXPORTER=otlp
+    OTEL_METRICS_EXPORTER=otlp
+    OTEL_LOGS_EXPORTER=otlp
     ```
 
-    تستخدم حزمة SDK المتغير `OTEL_EXPORTER_OTLP_HEADERS` لضبط ترويسة التفويض لجميع الإشارات الثلاث: التتبعات والمقاييس والسجلات. إذا كان المُجمِّع يعمل محليًا ولا يفرض المصادقة، فيمكنك ترك القيمة فارغة (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`)، لكن يجب أن يكون المتغير موجودًا؛ إذ تتجاوز حزمة SDK التهيئة بالكامل إذا لم يكن مضبوطًا أو كان فارغًا تمامًا.
+    `OTEL_EXPORTER_OTLP_ENDPOINT` هي نقطة نهاية OTLP/HTTP (المنفذ `4318`). و`OTEL_EXPORTER_OTLP_HEADERS` هو رأس التفويض، بالصيغة `authorization=<token>` من دون بادئة `Bearer`.
+
+    إذا لم يفرض الجامع مصادقة، فاترك الرمز فارغًا (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`). يجب أن يبقى المتغير موجودًا؛ إذ تتخطى حزمة SDK التهيئة إذا لم يكن معيّنًا أو كان فارغًا بالكامل.
+
+    تعيد Browser SDK استخدام هذه القيم نفسها. يضمّن `vite.config.ts` نقطة النهاية والرمز في الحزمة العامة وقت البناء، لذا استخدم رمز استيعاب مؤقتًا، وليس رمزًا مخصصًا للإنتاج.
   </Step>
 
-  <Step title="أضِف أدوات القياس عن بُعد إلى التطبيق" id="instrument-the-application">
-    تتضمن عملية إضافة القياس عن بُعد ثلاثة أجزاء: تثبيت SDKs، وتبديل أمر التشغيل، وتمكين Browser SDK. ولا يغيّر أيٌّ من ذلك منطق العمل في التطبيق.
+  <Step title="زوّد التطبيق بأدوات القياس عن بُعد" id="instrument">
+    اختر مسارًا واحدًا. تنتهي المسارات الثلاثة بالتطبيق نفسه المزوّد بأدوات القياس.
 
-    ### تثبيت SDKs
+    <Tabs>
+      <Tab title="إضافة أدوات القياس باستخدام agent" id="instrument-with-an-agent">
+        بعد استنساخ المستودع وتعبئة ملف `.env`، الصق هذا الـprompt في agent برمجي **من داخل ذلك الدليل** لإضافة أدوات القياس إلى التطبيق.
 
-    ثبّت OpenTelemetry SDKs لكلٍ من الواجهة الخلفية والمتصفح:
+        <AgentPrompt
+          prompt="استخدم curl لتنزيل هذا الملف وقراءته واتباع تعليماته: github.com/ClickHouse/hn-news-analyzer/blob/main/agent.md"
+          description="بعد استنساخ hn-news-analyzer وتعبئة .env، شغّل هذا الـprompt من داخل ذلك الدليل. يعمل مع Claude Code وCursor وCodex وغير ذلك من coding agents."
+          outline={[
+"تأكد من أنك في دليل hn-news-analyzer المستنسخ وأن ملف .env يحتوي بالفعل على قيم OTEL_EXPORTER_OTLP_*. توقّف إذا كان أي منهما مفقودًا.",
+"ثبّت @hyperdx/node-opentelemetry وغيّر run.sh لاستخدام opentelemetry-instrument.",
+"ثبّت @hyperdx/browser وفعّل HyperDX.init وHyperDX.addAction.",
+"شغّل التطبيق، وتأكد من اجتياز فحوصات health لـOTLP، ثم اطلب مني التنقل في التطبيق على http://localhost:5001.",
+]}
+        />
+      </Tab>
 
-    ```bash
-    npm install @hyperdx/node-opentelemetry @hyperdx/browser
-    ```
+      <Tab title="إضافة أدوات القياس يدويًا" id="instrument-manually">
+        تتضمن إضافة أدوات القياس ثلاثة أجزاء: تثبيت SDKs، وتغيير أمر التشغيل، وتفعيل Browser SDK. ولا يغيّر أي منها business logic للتطبيق.
 
-    ### استخدم CLI الخاص بـ opentelemetry-instrument
+        ### تثبيت Node SDK
 
-    يُشغَّل التطبيق بواسطة `run.sh`، والذي يحتوي في أسفله على سطرَي `exec`: أحدهما نشط والآخر مُعلَّق. بدّل السطر النشط بحيث يتم تشغيل Node عبر `opentelemetry-instrument`:
+        ```bash
+        npm install @hyperdx/node-opentelemetry
+        ```
 
-    ```diff
-     # BEFORE: plain node, no instrumentation, collector stays silent:
-    -exec node scripts/entrypoint.js
-    +# exec node scripts/entrypoint.js
+        ### تفعيل wrapper في run.sh
 
-     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
-    -# exec npx opentelemetry-instrument scripts/entrypoint.js
-    +exec npx opentelemetry-instrument scripts/entrypoint.js
-    ```
+        يوجد سطرا `exec` في نهاية `run.sh`. علّق سطر `node` العادي وأزل التعليق عن السطر المزوّد بأدوات القياس:
 
-    هذا هو التغيير الكامل في الـbackend. يتم تحميل `auto-instrumentation` بواسطة `opentelemetry-instrument` عند بدء العملية.
+        ```diff
+         # قبل: node عادي، بلا أدوات قياس:
+        -exec node scripts/entrypoint.js
+        +# exec node scripts/entrypoint.js
 
-    ### فعِّل Browser SDK
+         # بعد: المصدر نفسه، مُغلّف بواسطة opentelemetry-instrument:
+        -# exec npx opentelemetry-instrument scripts/entrypoint.js
+        +exec npx opentelemetry-instrument scripts/entrypoint.js
+        ```
 
-    لالتقاط التتبعات الموزعة (من المتصفح إلى الـbackend) وميزة إعادة تشغيل الجلسات، فعِّل Browser SDK في `src/web/telemetry.ts`. أزل التعليق عن سطر الاستيراد وكتلة `HyperDX.init({...})`:
+        استمر في التشغيل عبر `scripts/entrypoint.js`. يستدعي هذا البرنامج الوسيط `require('console')` حتى يلتف التقاط console حول `console.log`. يؤدي توجيه `opentelemetry-instrument` مباشرةً إلى `dist/server/index.js` إلى إرسال traces، لكنه يُسقط logs بصمت.
 
-    ```javascript
-    import HyperDX from '@hyperdx/browser';
+        ### تفعيل Browser SDK
 
-    export function initTelemetry(): void {
-      HyperDX.init({
-        url: __OTLP_ENDPOINT__,
-        apiKey: __OTLP_AUTH_TOKEN__,
-        service: 'hn-analyzer-web',
-        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
-        consoleCapture: true,
-        advancedNetworkCapture: true,
-      });
-    }
-    ```
+        ```bash
+        npm install @hyperdx/browser
+        ```
 
-    لا حاجة إلى أي تعديلات إضافية على `.env`. يمثّل `__OTLP_ENDPOINT__` و`__OTLP_AUTH_TOKEN__` ثابتين لوقت الترجمة يُدرجهما `vite.config.ts`: نقطة النهاية هي `OTEL_EXPORTER_OTLP_ENDPOINT`، ويُستخرج الرمز المميّز من `OTEL_EXPORTER_OTLP_HEADERS`، وهما القيمتان نفسيهما اللتان تستخدمهما الواجهة الخلفية.
+        في `src/web/telemetry.ts`، أزل التعليق عن سطر الاستيراد وكتلة `HyperDX.init({...})` و`HyperDX.addAction` في `recordAction()`:
 
-    <Warning>
-      يكون رمز الإدخال مضمّنًا في حزمة المتصفح العامة، ويمكن لأي شخص قراءته عند فحص تبويب `Network`.
-    </Warning>
+        ```diff
+        -// import HyperDX from '@hyperdx/browser';
+        +import HyperDX from '@hyperdx/browser';
+
+         export function initTelemetry(): void {
+        -  // HyperDX.init({
+        -  //   url: __OTLP_ENDPOINT__,
+        -  //   apiKey: __OTLP_AUTH_TOKEN__,
+        -  //   service: 'hn-analyzer-web',
+        -  //   tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        -  //   consoleCapture: true,
+        -  //   advancedNetworkCapture: true,
+        -  // });
+        +  HyperDX.init({
+        +    url: __OTLP_ENDPOINT__,
+        +    apiKey: __OTLP_AUTH_TOKEN__,
+        +    service: 'hn-analyzer-web',
+        +    tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        +    consoleCapture: true,
+        +    advancedNetworkCapture: true,
+        +  });
+         }
+        ```
+
+        إن `__OTLP_ENDPOINT__` و`__OTLP_AUTH_TOKEN__` ثوابت وقت الترجمة البرمجية، ويحقنها `vite.config.ts` من قيم `OTEL_EXPORTER_OTLP_*` نفسها التي تستخدمها الواجهة الخلفية.
+
+        <Warning>
+          يُضمَّن token الاستيعاب في حزمة المتصفح العامة، ويمكن لأي شخص يفحص علامة تبويب Network قراءته. استخدم token مؤقتًا.
+        </Warning>
+      </Tab>
+
+      <Tab title="استخدم فرعًا مجهزًا مسبقًا بأدوات القياس" id="use-the-instrumented-branch">
+        لتجاوز إضافة أدوات القياس والبدء بتطبيق مجهز بها مسبقًا، نفّذ checkout لفرع [`instrumented`](https://github.com/ClickHouse/hn-news-analyzer/tree/instrumented).
+
+        ```bash
+        git checkout instrumented
+        npm install
+        ```
+
+        لا تشغّل `./reset.sh` على هذا الفرع إلا إذا أردت إزالة SDKs.
+      </Tab>
+    </Tabs>
   </Step>
 
-  <Step title="أنشئ حركة مرور واعرض بيانات القياس عن بُعد" id="generate-traffic-and-view-telemetry">
-    أعِد تشغيل التطبيق حتى يدخل أمر التشغيل الجديد وحزمة المتصفح المنشأة حديثًا حيّز التنفيذ:
+  <Step title="أنشئ حركة مرور واعرض بيانات التتبّع" id="generate-traffic-and-view-telemetry">
+    أعد تشغيل التطبيق لتفعيل أمر التشغيل الجديد وحزمة المتصفح التي أُنشئت حديثًا:
 
     ```bash
     # Ctrl-C the previous run, then:
     ./run.sh
     ```
 
-    أعِد تحميل علامة تبويب المتصفح لكي يقدّم Vite الحزمة المحدَّثة، ثم حدِّث التطبيق بضع مرات، وبدّل بين السنوات، وانقر للدخول إلى القصص لتوليد بعض الزيارات.
+    تأكد من أن رسالة بدء التشغيل تطبع ثلاثة أسطر «Health check passed» لـ `/v1/traces` و`/v1/metrics` و`/v1/logs`. أعد تحميل علامة تبويب المتصفح لكي يقدّم Vite الحزمة المحدّثة، ثم بدّل بين السنوات وانقر على القصص لإنشاء حركة مرور.
 
-    افتح واجهة ClickStack:
+    افتح واجهة مستخدم ClickStack:
 
-    1. انتقل إلى **Search** وصفِّ النتائج لآخر 5 دقائق. ستبدأ سجلات `hn-analyzer-api` بالظهور تباعًا.
-
-    <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="سجلات ClickStack" />
-    </Frame>
-
-    2. انقر على أحد الطلبات ثم تنقّل صعودًا عبر التتبّع. سترى مقطع التتبّع (span) الخاص بمعالج Express، ومقطع HTTP فرعيًا يشير إلى عنقود ClickHouse مع مدة الشبكة الفعلية، وسجلات `console.log` مرتبطة على التتبّع نفسه.
+    1. انتقل إلى **Search** وطبّق عامل تصفية لآخر 5 دقائق. ستظهر سجلات `hn-analyzer-api` تباعًا.
 
     <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="تتبعات ClickStack" />
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="بحث ClickStack يعرض سجلات hn-analyzer-api من آخر خمس دقائق" />
     </Frame>
 
-    3. افتح **Session Replay** لتشغيل فيديو يمكنك التنقّل خلاله لجلسة في المتصفح، متزامنًا مع المخطط الزمني للتتبّع.
+    2. انقر على طلب وتتبّع الـ trace صعودًا. سترى span لمعالج Express، وspan HTTP تابعًا يشير إلى `sql-clickhouse.clickhouse.com` مع مدة شبكة فعلية، وسجلات `console.log` مرتبطة بالـ trace نفسه.
 
     <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="جلسات ClickStack" />
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="trace في ClickStack يتضمن span لمعالج Express وspan HTTP تابعًا إلى ClickHouse" />
     </Frame>
 
-    تظهر السجلات والمقاييس والتتبعات وإعادات تشغيل الجلسات كلها في الواجهة نفسها، وتستخدم لغة الاستعلام نفسها، وترتبط تلقائيًا ببعضها بعضًا.
+    3. افتح **Session Replay** لتشغيل فيديو قابل للتمرير لجلسة متصفح، متزامن مع المخطط الزمني للـ trace.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="إعادة تشغيل جلسة ClickStack متزامنة مع المخطط الزمني للـ trace" />
+    </Frame>
+
+    تظهر السجلات والمقاييس والتتبعات وإعادات تشغيل الجلسات في واجهة المستخدم نفسها، وتستخدم لغة الاستعلام نفسها، وترتبط تلقائيًا.
   </Step>
 </Steps>

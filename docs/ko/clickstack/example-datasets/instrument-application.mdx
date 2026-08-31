@@ -1,24 +1,49 @@
 ---
 slug: /use-cases/observability/clickstack/example-datasets/instrument-app
-title: 'Managed ClickStack으로 애플리케이션 계측하기'
-sidebarTitle: 'HackerNews 분석기 데모'
-description: 'OpenTelemetry를 사용해 Node.js 애플리케이션을 계측하고 로그, 메트릭, 트레이스를 Managed ClickStack으로 전송하는 가이드'
+title: 'HackerNews Analyzer 데모'
+sidebarTitle: 'HackerNews Analyzer 데모'
+description: 'agent로 Node.js 앱을 계측하고 로그, 트레이스, 메트릭, 세션 리플레이를 ClickStack으로 전송합니다'
 doc_type: 'guide'
-keywords: ['clickstack', '계측', 'opentelemetry', 'Managed ClickStack', '관측성']
+keywords: ['ClickStack', 'HackerNews Analyzer', 'OpenTelemetry', 'instrumentation', '세션 리플레이', 'Node.js', 'OTLP']
 ---
 
 import InstrumentApplication from '/snippets/ko/clickstack/_instrument_application.mdx';
 
-이 가이드는 OpenTelemetry를 사용해 간단한 Node.js 애플리케이션을 계측하고, 해당 logs, 메트릭, traces를 [Managed ClickStack](/ko/clickstack/getting-started/managed)으로 전송하는 방법을 설명합니다. 백엔드는 애플리케이션 소스 코드를 변경하지 않아도 계측됩니다.
+<Note>
+  **요약**
 
-[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)는 공개 ClickHouse 데모 인스턴스에 호스팅된 HackerNews 데이터셋을 쿼리하는 작은 Node.js 앱입니다. 모든 차트, 테이블, 검색 상자는 실제 ClickHouse 쿼리로 동작하므로, 모든 상호작용에서 트레이스가 생성되며 그 주요 스팬은 백엔드에서 ClickHouse로 전송되는 HTTPS 호출입니다.
+  [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)를 복제하고 `.env`에 OTLP 엔드포인트와 토큰을 입력한 후 agent 프롬프트를 붙여넣으십시오. backend에는 OpenTelemetry import가 필요하지 않습니다. agent가 프로세스 시작 시 `@hyperdx/node-opentelemetry`를 연결합니다.
+
+  소요 시간: 약 10분
+</Note>
+
+HackerNews Analyzer는 공개 ClickHouse 데모에서 호스팅되는 HackerNews 데이터셋을 쿼리하는 Node.js 앱입니다. 모든 차트, 테이블, 검색 상자는 실제 ClickHouse 쿼리이므로 모든 상호작용에서 trace가 생성됩니다. 이 trace의 주 스팬은 backend에서 ClickHouse로 전송되는 HTTPS 호출입니다.
+
+이는 로컬 Docker ClickStack에서 브라우저 전용 앱을 계측하는 [세션 리플레이 데모](/ko/clickstack/example-datasets/session-replay)와는 다른 작업입니다. 여기서는 하나의 앱에서 backend 자동 계측, ClickHouse 쿼리 스팬, 세션 리플레이를 모두 사용할 수 있습니다.
 
 <div id="prerequisites">
   ## 사전 요구 사항
 </div>
 
-* Managed ClickStack 서비스로 수집되도록 구성되어 있으며 접근 가능한 OTel collector가 필요합니다. OTLP endpoint와 수집 토큰이 필요합니다.
-* Node 18+ 및 npm.
+* Node 18+ 및 npm
+* ClickStack OTLP/HTTP 엔드포인트 및 수집 토큰:
+  * **ClickHouse Cloud:** service를 열고 **ClickStack** → **OpenTelemetry exporter 구성** → **Env vars**로 이동합니다. protocol은 `http/protobuf`입니다. headers는 `Bearer` prefix 없이 `authorization=<ingestion token>`으로 설정합니다.
+  * **로컬 collector:** `http://localhost:4318`을 사용합니다. collector가 보안 설정되지 않은 경우 `authorization=`을 비워 둡니다.
+
+<div id="clone-the-repository">
+  ## 리포지토리 복제
+</div>
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) 리포지토리를 복제하고 의존성을 설치한 다음 환경 변수 템플릿을 복사합니다:
+
+```bash
+git clone https://github.com/ClickHouse/hn-news-analyzer.git
+cd hn-news-analyzer
+npm install
+cp .env.example .env
+```
+
+다음 단계에서 `.env`를 작성한 후, 이 디렉터리에서 애플리케이션 계측을 수행합니다.
 
 <InstrumentApplication />
 
@@ -26,7 +51,8 @@ import InstrumentApplication from '/snippets/ko/clickstack/_instrument_applicati
   ## 더 알아보기
 </div>
 
+* [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): 이 가이드에서 계측하는 데모 리포지토리입니다.
 * [세션 리플레이](/ko/clickstack/features/session-replay): 기능 개요, SDK 옵션, 개인정보 보호 제어.
-* [Session Replay Demo](/ko/clickstack/example-datasets/session-replay): 로컬 ClickStack 인스턴스로 실행하는 독립형 데모입니다.
+* [세션 리플레이 데모](/ko/clickstack/example-datasets/session-replay): 로컬 ClickStack 인스턴스로 실행하는 독립형 데모입니다.
 * [ClickStack 시작하기](/ko/clickstack/getting-started/index): ClickStack을 배포하고 첫 데이터를 수집합니다.
 * [모든 샘플 데이터셋](/ko/clickstack/example-datasets/index): 다른 예시 데이터셋과 가이드입니다.
