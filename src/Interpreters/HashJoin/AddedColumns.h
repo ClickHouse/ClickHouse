@@ -111,6 +111,10 @@ struct LazyOutput
         hash_table_matches += rows;
     }
 
+    /// Ref-free counterpart of `addRef`: the match count is independent of ref retention, so it
+    /// stays exact for a probe that emits no right column and therefore keeps no refs.
+    void countMatch(UInt64 ref_word) { hash_table_matches += refWordRows(ref_word); }
+
     void addDefault()
     {
         row_refs.emplace_back(0);

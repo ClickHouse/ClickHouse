@@ -95,6 +95,58 @@ WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabed_by_runtime_stats' AND type = 'QueryFinish');
 
+SELECT '--- Hash table matches recorded by a probe that emits no right column ---';
+
+-- A probe that emits no right column, such as `SELECT count()`, matches the same right rows as the
+-- full output query and must record the same number of matches. Otherwise it lowers the cached match
+-- count for the identical join, and the next full output run loses the row store.
+SET param__internal_join_table_stat_hints = '{}';
+
+CREATE TABLE right_wide (k UInt64, v1 Int64, v2 UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO right_wide SELECT number, number, number FROM numbers(20000);
+
+-- Separate table for `parallel_hash`: `join_algorithm` is not part of the match stats cache key.
+CREATE TABLE right_wide_ph (k UInt64, v1 Int64, v2 UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO right_wide_ph SELECT number, number, number FROM numbers(20000);
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 0, log_comment = 'rs_hash_1_warm';
+
+SELECT count() FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_hash_2_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_hash_3_after_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, enable_hash_join_row_store = 0, log_comment = 'rs_hash_4_row_store_off';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 0, log_comment = 'rs_par_1_warm';
+
+SELECT count() FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_par_2_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_par_3_after_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, enable_hash_join_row_store = 0, log_comment = 'rs_par_4_row_store_off';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The `_2_no_emit_probe` and `_4_row_store_off` rows read 0 and show the counter can report an
+-- unbuilt row store; the `_1_warm` and `_3_after_no_emit_probe` rows must read 1.
+SELECT log_comment, ProfileEvents['JoinBuildRowStoreMicroseconds'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+  AND log_comment IN ('rs_hash_1_warm', 'rs_hash_2_no_emit_probe', 'rs_hash_3_after_no_emit_probe', 'rs_hash_4_row_store_off',
+                      'rs_par_1_warm', 'rs_par_2_no_emit_probe', 'rs_par_3_after_no_emit_probe', 'rs_par_4_row_store_off')
+ORDER BY log_comment;
+
+DROP TABLE right_wide_ph;
+DROP TABLE right_wide;
+
 -- Keep the row store enabled regardless of cardinality estimates.
 SET min_rows_ratio_for_hash_join_row_store = 0;
 

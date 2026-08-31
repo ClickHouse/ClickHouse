@@ -442,6 +442,10 @@ void AddedColumns<true>::appendFromBlock(UInt64 ref_word, bool)
     {
         lazy_output.addRef(ref_word);
     }
+    else
+    {
+        lazy_output.countMatch(ref_word);
+    }
 }
 
 }

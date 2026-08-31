@@ -6,6 +6,15 @@ rs_disabled_by_planner	0
 --- Hash table matches feedback loop test ---
 rs_collect_runtime_stats	1
 rs_disabed_by_runtime_stats	0
+--- Hash table matches recorded by a probe that emits no right column ---
+rs_hash_1_warm	1
+rs_hash_2_no_emit_probe	0
+rs_hash_3_after_no_emit_probe	1
+rs_hash_4_row_store_off	0
+rs_par_1_warm	1
+rs_par_2_no_emit_probe	0
+rs_par_3_after_no_emit_probe	1
+rs_par_4_row_store_off	0
 --- INNER JOIN ---
 7	2024-01-01 00:00:07	7	0	0	0
 7	2024-01-01 00:00:07	7	\N	5	dup
