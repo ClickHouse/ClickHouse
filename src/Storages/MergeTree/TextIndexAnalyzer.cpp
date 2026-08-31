@@ -475,6 +475,12 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(size_t total_rows)
         if (query_builder.tokens.empty())
             continue;
 
+        /// Every matched posting already read (embedded lists are folded during the dictionary
+        /// scan): the union is exact and in memory, so there is no read left to save and
+        /// bypassing would trade the finished answer for a scan of the column.
+        if (!query_builder.needReadPostings())
+            continue;
+
         /// Only a token present in every row proves the postings cannot prune, so the bypass needs
         /// that exact fact rather than an estimate. The independence estimate is not a proof here:
         /// correlated tokens that all match the same half of the table drive it to `total_rows`
