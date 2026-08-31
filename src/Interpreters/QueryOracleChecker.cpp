@@ -6,6 +6,7 @@
 #include <Interpreters/QueryOracles/OracleSettings.h>
 #include <Interpreters/QueryOracles/OracleRegistry.h>
 #include <Interpreters/QueryOracles/OracleExec.h>
+#include <Interpreters/QueryOracles/OracleCompare.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -54,6 +55,7 @@ extern const Event ASTFuzzerOracleTLPHavingChecks;
 extern const Event ASTFuzzerOracleDQPChecks;
 extern const Event ASTFuzzerOracleIdentityWhereChecks;
 extern const Event ASTFuzzerOracleSubqueryWrapChecks;
+extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2277,6 +2279,76 @@ String formatChangedSettings(const ContextPtr & context)
     }
     return buf.str();
 }
+}
+
+bool QueryOracleChecker::checkGroupByKeyPermutation(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// GROUP BY keys form a set, so permuting them cannot change the grouping and must yield the
+    /// identical result multiset. A divergence is a real multi-key grouping / aggregation bug
+    /// (e.g. two-level aggregation or aggregator key ordering that is sensitive to key order).
+    if (!select.groupBy())
+        return false;
+    /// `GROUP BY ALL` has no explicit key list to permute; the totals/subtotal modifiers are
+    /// order-sensitive (ROLLUP(a,b) != ROLLUP(b,a)). The global gate already rejects the
+    /// modifiers, but guard here too.
+    if (select.group_by_all || select.group_by_with_rollup || select.group_by_with_cube
+        || select.group_by_with_grouping_sets || select.group_by_with_totals)
+        return false;
+
+    auto & keys = select.groupBy()->children;
+    if (keys.size() < 2)
+        return false; /// nothing to permute
+
+    if (!isSafeForOracle(select))
+        return false;
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    /// Reference: the query with ORDER BY / LIMIT / SETTINGS stripped (multiset comparison).
+    auto ref_ast = select.clone();
+    stripOrderAndLimit(ref_ast->as<ASTSelectQuery &>());
+
+    /// Metamorphic: identical, but with the GROUP BY keys reversed.
+    auto perm_ast = ref_ast->clone();
+    {
+        auto & sel = perm_ast->as<ASTSelectQuery &>();
+        auto & perm_keys = sel.groupBy()->children;
+        std::reverse(perm_keys.begin(), perm_keys.end());
+    }
+
+    const String ref_sql = formatAST(ref_ast);
+    const String perm_sql = formatAST(perm_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH || perm_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "GROUP BY key permutation oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "GROUP BY key permutation oracle: permuted: {}", perm_sql);
+
+    auto ref_rows_opt = OracleExec::executeRows(ref_sql, context, ResultShape::SortedBag);
+    auto perm_rows_opt = OracleExec::executeRows(perm_sql, context, ResultShape::SortedBag);
+    if (!ref_rows_opt || !perm_rows_opt)
+        return false; /// output exceeded the result cap — skip rather than compare partial results
+
+    /// Both sides read the corpus table in separate executions; require the reference to
+    /// reproduce before trusting a mismatch (see the OracleExec::isStable stability rule).
+    if (!OracleExec::isStable(ref_sql, *ref_rows_opt, context, ResultShape::SortedBag))
+        return false;
+
+    if (!OracleCompare::equal(*ref_rows_opt, *perm_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "GROUP BY key permutation oracle mismatch!\n"
+            "Reference query ({} rows): {}\n"
+            "Permuted-keys query ({} rows): {}\n{}",
+            ref_rows_opt->size(), ref_sql,
+            perm_rows_opt->size(), perm_sql,
+            OracleCompare::diffSummary(*ref_rows_opt, *perm_rows_opt));
+    }
+
+    LOG_TRACE(logger, "GROUP BY key permutation oracle passed ({} rows)", ref_rows_opt->size());
+    return true;
 }
 
 bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr & context)
