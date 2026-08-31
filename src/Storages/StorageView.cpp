@@ -615,6 +615,23 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
     {
         return nullptr;
     }
+
+    /// The pushdown replaces the view with its inner query and reads the `Distributed` table
+    /// directly, so `StorageView::readImpl` never runs and the plan carries no security-barrier
+    /// step: the outer predicate is merged with the view's own `WHERE` and evaluated on the
+    /// shards below it, which is exactly what the barrier forbids. Decline the rewrite for a
+    /// barrier view that can hide rows, the same fail-closed rule the other pre-plan decisions
+    /// use. (`DEFINER` is rejected above regardless of the setting.)
+    if (isSecurityBarrier(*snapshot->metadata, context))
+    {
+        auto storage_id = getStorageID();
+        auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+        if (has_row_policy || canHideRows(inner_query, getViewContext(context, snapshot, this), /*remote_source_is_read_identically=*/ true))
+            return nullptr;
+    }
+
     return underlying;
 }
 
@@ -935,7 +952,7 @@ bool StorageView::isSecurityBarrier(const StorageInMemoryMetadata & metadata, co
     return context->getServerSettings()[ServerSetting::sql_security_views_are_optimization_barriers];
 }
 
-bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & context)
+bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & context, bool remote_source_is_read_identically)
 {
     if (!inner_query)
         return true;
@@ -1048,7 +1065,7 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
 
     /// A view can hide rows of its own, and these engines read other tables, which may be views.
     const auto & engine = table->getName();
-    if (table->isView() || table->isRemote() || engine == "Merge" || engine == "Buffer")
+    if (table->isView() || (table->isRemote() && !remote_source_is_read_identically) || engine == "Merge" || engine == "Buffer")
         return true;
 
     /// `MaterializedPostgreSQL` rewrites every read of its data with `FINAL` and a `_sign = 1`

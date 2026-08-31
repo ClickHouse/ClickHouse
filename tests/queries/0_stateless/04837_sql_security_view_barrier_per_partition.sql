@@ -9,13 +9,18 @@
 -- and resource usage below the seal then depend on the rows the view drops. Both walks now
 -- fail closed on a barrier step.
 
--- The three `allow_*_partitions_independently` settings are deliberately left at their
--- defaults (all `1`): the point of the test is that the rewrites are live and still do not
--- cross the barrier. Everything else the plan shape depends on is pinned, because the test
--- also runs with randomized settings; none of these affects what the barrier guards.
+-- The `allow_*_partitions_independently` settings are pinned to their defaults (all `1`) and
+-- `max_number_of_partitions_for_independent_distinct` is kept above the eight partitions the
+-- table has: the point of the test is that the rewrites are live and still do not cross the
+-- barrier, and the harness randomizes all of them. Everything else the plan shape depends on
+-- is pinned for the same reason; none of these affects what the barrier guards.
 SET max_threads = 8,
     enable_parallel_replicas = 0, make_distributed_plan = 0,
     max_rows_to_group_by = 0, max_rows_in_distinct = 0, max_bytes_in_distinct = 0,
+    allow_distinct_partitions_independently = 1, force_distinct_partitions_independently = 0,
+    allow_limit_by_partitions_independently = 1,
+    allow_aggregate_partitions_independently = 1,
+    max_number_of_partitions_for_independent_distinct = 128,
     explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t04837;

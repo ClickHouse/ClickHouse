@@ -84,7 +84,14 @@ public:
     /// projection-only view keeps the fully optimizable path even when `isSecurityBarrier` holds;
     /// anything unproven counts as able to hide rows. The plan-level marking stays exact either
     /// way — `readImpl` marks only the steps that actually drop rows.
-    static bool canHideRows(const ASTPtr & inner_query, const ContextPtr & context);
+    /// `remote_source_is_read_identically` relaxes the fail-closed treatment of a remote source
+    /// table for the one caller whose alternative reads that same source in exactly the same way -
+    /// the trivial-view pushdown to `Distributed`. There, whatever the shards resolve the table to
+    /// (possibly a filtering view of their own) is read through the same `StorageDistributed::read`
+    /// with or without the rewrite, and a barrier below it is enforced by the shard's own planner,
+    /// so the remote source is not a reason to give up on the view itself. It is deliberately not
+    /// propagated into nested subqueries.
+    static bool canHideRows(const ASTPtr & inner_query, const ContextPtr & context, bool remote_source_is_read_identically = false);
 
 protected:
     bool is_parameterized_view;
