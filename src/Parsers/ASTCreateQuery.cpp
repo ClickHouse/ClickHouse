@@ -15,6 +15,7 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/CreateQueryUUIDs.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
@@ -32,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
 ASTPtr ASTStorage::clone() const
 {
     auto res = make_intrusive<ASTStorage>(*this);
@@ -96,6 +98,20 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
     };
 
     readDeclarationList.operator()<ASTColumnDeclaration>("columns", columns);
+
+    /// A column-level PRIMARY KEY is a parser-intermediate bit in a CREATE column list:
+    /// `ParserTablePropertiesDeclarationList` transfers it into `primary_key_from_columns` (which
+    /// `ParserCreateQuery` then normalizes into the storage definition or rejects) and clears the
+    /// flag, so the final AST never carries it here. `InterpreterCreateQuery` ignores the flag while
+    /// `ASTColumnDeclaration::formatImpl` still prints `PRIMARY KEY`, so accepting it from JSON would
+    /// execute one definition and persist another. The flag stays legal in `ALTER` column commands,
+    /// where the declaration is not part of a `Columns` node.
+    if (columns)
+        for (const auto & element : columns->children)
+            if (element->as<ASTColumnDeclaration &>().primary_key_specifier)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "A column-level 'primary_key_specifier' is not allowed in `Columns` during AST JSON deserialization");
+
     readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
@@ -384,41 +400,65 @@ ASTPtr ASTCreateQuery::clone() const
     auto res = make_intrusive<ASTCreateQuery>(*this);
     res->children.clear();
 
-    if (columns_list)
-        res->set(res->columns_list, columns_list->clone());
-    if (aliases_list)
-        res->set(res->aliases_list, aliases_list->clone());
-    if (storage)
-        res->set(res->storage, storage->clone());
-    if (select)
-        res->set(res->select, select->clone());
-    if (table_overrides)
-        res->set(res->table_overrides, table_overrides->clone());
-    if (targets)
-        res->set(res->targets, targets->clone());
-    if (sql_security)
-        res->set(res->sql_security, sql_security->clone());
-    if (watermark_function)
-        res->set(res->watermark_function, watermark_function->clone());
-    if (lateness_function)
-        res->set(res->lateness_function, lateness_function->clone());
+    /// The parser adds the database/table children before everything else; reproduce that order
+    /// so the clone has the same tree hash.
+    cloneTableOptions(*res);
 
-    if (dictionary)
+    if (is_dictionary)
     {
         chassert(is_dictionary);
-        res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
-        res->set(res->dictionary, dictionary->clone());
+        if (dictionary_attributes_list)
+            res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
+        if (dictionary)
+            res->set(res->dictionary, dictionary->clone());
+        if (comment)
+            res->set(res->comment, comment->clone());
+    }
+    else if (is_ordinary_view || is_materialized_view)
+    {
+        if (columns_list)
+            res->set(res->columns_list, columns_list->clone());
+        if (aliases_list)
+            res->set(res->aliases_list, aliases_list->clone());
+        if (refresh_strategy)
+            res->set(res->refresh_strategy, refresh_strategy->clone());
+        if (comment)
+            res->set(res->comment, comment->clone());
+        if (sql_security)
+            res->set(res->sql_security, sql_security->clone());
+        if (select)
+            res->set(res->select, select->clone());
+        if (targets)
+            res->set(res->targets, targets->clone());
+    }
+    else if (database && !table)
+    {
+        if (storage)
+            res->set(res->storage, storage->clone());
+        if (comment)
+            res->set(res->comment, comment->clone());
+        if (table_overrides)
+            res->set(res->table_overrides, table_overrides->clone());
+    }
+    else
+    {
+        if (columns_list)
+            res->set(res->columns_list, columns_list->clone());
+        if (storage)
+            res->set(res->storage, storage->clone());
+        if (as_table_function)
+            res->set(res->as_table_function, as_table_function->clone());
+        if (comment)
+            res->set(res->comment, comment->clone());
+        if (sql_security)
+            res->set(res->sql_security, sql_security->clone());
+        if (select)
+            res->set(res->select, select->clone());
+        if (targets)
+            res->set(res->targets, targets->clone());
     }
 
-    if (refresh_strategy)
-        res->set(res->refresh_strategy, refresh_strategy->clone());
-    if (as_table_function)
-        res->set(res->as_table_function, as_table_function->clone());
-    if (comment)
-        res->set(res->comment, comment->clone());
-
     cloneOutputOptions(*res);
-    cloneTableOptions(*res);
 
     return res;
 }
@@ -431,6 +471,41 @@ String ASTCreateQuery::getID(char delim) const
         res += (delim + getDatabase());
     res += (delim + getTable());
     return res;
+}
+
+void ASTCreateQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// These members select the CREATE form or add clauses, but do not appear in `children`.
+    /// `has_uuid_clause` and `attach_short_syntax` are intentionally excluded: they are parser-
+    /// normalization / internal state that formatting does not preserve (see their declarations).
+    const auto update_string = [&hash_state](const String & value)
+    {
+        hash_state.update(value.size());
+        hash_state.update(value);
+    };
+
+    update_string(cluster);
+    update_string(as_database);
+    update_string(as_table);
+    update_string(attach_from_path);
+    hash_state.update(attach_as_replicated.has_value());
+    if (attach_as_replicated.has_value())
+        hash_state.update(*attach_as_replicated);
+    hash_state.update(if_not_exists);
+    hash_state.update(is_ordinary_view);
+    hash_state.update(is_materialized_view);
+    hash_state.update(is_time_series_table);
+    hash_state.update(is_populate);
+    hash_state.update(is_create_empty);
+    hash_state.update(is_clone_as);
+    hash_state.update(replace_view);
+    hash_state.update(has_uuid);
+    hash_state.update(has_inner_uuid_clause);
+    hash_state.update(is_dictionary);
+    hash_state.update(replace_table);
+    hash_state.update(create_or_replace);
+    hash_state.update(has_attach_from_path);
+    ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTCreateQuery::writeJSON(WriteBuffer & out) const
@@ -463,7 +538,6 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("if_not_exists", if_not_exists);
     w.writeBool("is_ordinary_view", is_ordinary_view);
     w.writeBool("is_materialized_view", is_materialized_view);
-    w.writeBool("is_window_view", is_window_view);
     w.writeBool("is_time_series_table", is_time_series_table);
     w.writeBool("is_populate", is_populate);
     w.writeBool("is_create_empty", is_create_empty);
@@ -475,11 +549,8 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     if (uuid != UUIDHelpers::Nil)
         w.writeString("uuid", toString(uuid));
     w.writeBool("is_dictionary", is_dictionary);
-    w.writeBool("is_watermark_strictly_ascending", is_watermark_strictly_ascending);
-    w.writeBool("is_watermark_ascending", is_watermark_ascending);
-    w.writeBool("is_watermark_bounded", is_watermark_bounded);
-    w.writeBool("allowed_lateness", allowed_lateness);
-    w.writeBool("attach_short_syntax", attach_short_syntax);
+    /// `attach_short_syntax` is interpreter-only state for re-attaching an existing metadata
+    /// file. It has no SQL spelling and must not be exposed through `clickhouse_json`.
     w.writeBool("replace_table", replace_table);
     w.writeBool("create_or_replace", create_or_replace);
     w.writeBool("has_attach_from_path", has_attach_from_path);
@@ -489,8 +560,6 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("columns_list", columns_list);
     w.writeChild("aliases_list", aliases_list);
     w.writeChild("storage", storage);
-    w.writeChild("watermark_function", watermark_function);
-    w.writeChild("lateness_function", lateness_function);
     w.writeChild("as_table_function", as_table_function);
     w.writeChild("select", select);
     w.writeChild("targets", targets);
@@ -537,7 +606,6 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if_not_exists = r.getBool("if_not_exists");
     is_ordinary_view = r.getBool("is_ordinary_view");
     is_materialized_view = r.getBool("is_materialized_view");
-    is_window_view = r.getBool("is_window_view");
     is_time_series_table = r.getBool("is_time_series_table");
     is_populate = r.getBool("is_populate");
     is_create_empty = r.getBool("is_create_empty");
@@ -549,29 +617,43 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("uuid"))
         uuid = parseFromString<UUID>(r.getString("uuid"));
     is_dictionary = r.getBool("is_dictionary");
-    is_watermark_strictly_ascending = r.getBool("is_watermark_strictly_ascending");
-    is_watermark_ascending = r.getBool("is_watermark_ascending");
-    is_watermark_bounded = r.getBool("is_watermark_bounded");
-    allowed_lateness = r.getBool("allowed_lateness");
-    attach_short_syntax = r.getBool("attach_short_syntax");
+    if (r.has("attach_short_syntax"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'attach_short_syntax' is internal-only and is not allowed during AST JSON deserialization");
     replace_table = r.getBool("replace_table");
     create_or_replace = r.getBool("create_or_replace");
     has_attach_from_path = r.getBool("has_attach_from_path");
     if (r.has("attach_as_replicated"))
         attach_as_replicated = r.getBool("attach_as_replicated");
 
-    /// `attach_short_syntax`, `has_attach_from_path` / `attach_from_path`, and `attach_as_replicated`
-    /// are produced only for `ATTACH TABLE` forms: the parser gates the `FROM '<path>'` and
-    /// `AS [NOT] REPLICATED` clauses behind `attach`, and `attach_short_syntax` is set only when the
-    /// interpreter re-attaches a detached table. Reject them from non-`ATTACH` JSON so `clickhouse_json`
+    /// `WINDOW VIEW` was removed, so the fields above no longer include `is_window_view`, the watermark
+    /// strategies, `allowed_lateness`, or the `watermark_function` / `lateness_function` children, and
+    /// `JSONObjectReader` ignores keys it does not read. Dropping them silently would deserialize a legacy
+    /// window-view payload as an ordinary `CREATE TABLE ... AS SELECT`, which `isCreateQueryWithImmediateInsertSelect`
+    /// then executes as an immediate-population table create - a different query than the JSON describes.
+    /// Fail closed instead. The flags are rejected only when set, because `writeJSON` emitted them for
+    /// every `CREATE` form (`writeBool` always writes the key, `false` included), while `writeChild`
+    /// skipped null children, so their mere presence carries no information.
+    if (r.getBool("is_window_view")
+        || r.getBool("is_watermark_strictly_ascending")
+        || r.getBool("is_watermark_ascending")
+        || r.getBool("is_watermark_bounded")
+        || r.getBool("allowed_lateness")
+        || r.has("watermark_function")
+        || r.has("lateness_function"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` JSON carries `WINDOW VIEW` state ('is_window_view', a watermark strategy, "
+            "'allowed_lateness', 'watermark_function' or 'lateness_function') during AST JSON deserialization, "
+            "but `WINDOW VIEW` was removed");
+
+    /// `has_attach_from_path` / `attach_from_path` and `attach_as_replicated` are produced only for
+    /// `ATTACH TABLE` forms: the parser gates the `FROM '<path>'` and `AS [NOT] REPLICATED` clauses
+    /// behind `attach`. Reject them from non-`ATTACH` JSON so `clickhouse_json`
     /// cannot build a parser-impossible `CREATE TABLE` whose formatting hides attach-only state that
     /// `InterpreterCreateQuery` still consumes (and which would also trip the `attach || !has_attach_from_path`
     /// assertion in `formatImpl`).
     if (!attach)
     {
-        if (attach_short_syntax)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'attach_short_syntax' is only valid for ATTACH queries during AST JSON deserialization");
         if (has_attach_from_path || !attach_from_path.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'attach_from_path' / 'has_attach_from_path' are only valid for ATTACH queries during AST JSON deserialization");
@@ -594,6 +676,9 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (has_uuid != (uuid != UUIDHelpers::Nil))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'has_uuid' must match whether a non-Nil 'uuid' is present during AST JSON deserialization");
+    if (attach && has_uuid_clause && uuid == UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ATTACH queries cannot use a Nil UUID during AST JSON deserialization");
 
     /// Restore concrete-typed members with `readChildOfType` so a wrong node type from malformed
     /// `clickhouse_json` is rejected with `BAD_ARGUMENTS` here, instead of reaching `set` as a
@@ -621,19 +706,17 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(storage, child);
 
-    child = r.readChild("watermark_function");
-    if (child)
-        set(watermark_function, child);
-
-    child = r.readChild("lateness_function");
-    if (child)
-        set(lateness_function, child);
-
     /// `as_table_function` is parser-produced as an `ASTFunction` (`AS table_function(...)`);
     /// `InterpreterCreateQuery::setEngine` does `as_table_function->as<ASTFunction>()->name`.
     child = r.readChildOfType<ASTFunction>("as_table_function");
     if (child)
         set(as_table_function, child);
+
+    /// A table created from a table function has no storage definition of its own, so the grammar
+    /// accepts only one of the two and formatting prints them in an order it cannot read back.
+    if (storage && as_table_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares both 'storage' and 'as_table_function' during AST JSON deserialization");
 
     child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
@@ -642,6 +725,11 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTViewTargets>("targets");
     if (child)
         set(targets, child);
+
+    const bool has_inner_uuid = targets && targets->as<const ASTViewTargets &>().hasInnerUUID(ViewTarget::To);
+    if (has_inner_uuid_clause != has_inner_uuid)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'has_inner_uuid_clause' must match whether a non-Nil `TO INNER UUID` target is present during AST JSON deserialization");
 
     /// `comment` is parsed by `ParserStringLiteral`; `StorageFactory::get`/`DatabaseFactory::get`
     /// read `comment->as<ASTLiteral &>().value.safeGet<String>()`, so require a string literal here.
@@ -687,7 +775,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         set(refresh_strategy, child);
 
     /// `formatQueryImpl` only enters the `CREATE DATABASE` branch when `database` is set and `table` is unset.
-    /// All other forms (`TABLE`, `VIEW`, `MATERIALIZED VIEW`, `WINDOW VIEW`, `DICTIONARY`, ...) require `table`;
+    /// All other forms (`TABLE`, `VIEW`, `MATERIALIZED VIEW`, `DICTIONARY`, ...) require `table`;
     /// otherwise we fall into a `chassert(table); table->format(...)` path that null-derefs in release builds.
     /// Without form-shape validation, JSON such as `{"database":"db","is_ordinary_view":true}` would silently
     /// format as `CREATE DATABASE db`, dropping the view-specific flags instead of being rejected.
@@ -695,15 +783,13 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateQuery` must specify at least one of 'database' or 'table' during AST JSON deserialization");
 
     const bool requires_table =
-        is_ordinary_view || is_materialized_view || is_window_view
+        is_ordinary_view || is_materialized_view
         || is_dictionary || is_time_series_table
         || is_populate || is_create_empty || is_clone_as
         || replace_view || replace_table || create_or_replace
         || has_attach_from_path || attach_as_replicated.has_value()
-        || allowed_lateness
-        || is_watermark_strictly_ascending || is_watermark_ascending || is_watermark_bounded
         || columns_list || aliases_list || select
-        || watermark_function || lateness_function || as_table_function
+        || as_table_function
         || targets || sql_security
         || dictionary_attributes_list || dictionary || refresh_strategy
         || !as_table.empty() || !attach_from_path.empty();
@@ -712,9 +798,8 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
             "`CreateQuery` is missing 'table' during AST JSON deserialization, but the surrounding flags indicate a non-database form");
 
     /// The parser attaches each of these clause families only to specific `CREATE` variants:
-    /// `refresh_strategy` only to materialized views; the watermark strategies and `ALLOWED LATENESS`
-    /// only to window views; `targets` (`ASTViewTargets`) to materialized views (`TO`/`TO INNER UUID`),
-    /// window views (`TO`/inner engine), `TimeSeries` tables (`DATA`/`TAGS`/`METRICS`) and plain tables
+    /// `refresh_strategy` only to materialized views; `targets` (`ASTViewTargets`) to materialized
+    /// views (`TO`/`TO INNER UUID`), `TimeSeries` tables (`DATA`/`TAGS`/`METRICS`) and plain tables
     /// with an explicit `TO INNER UUID` clause (`SharedSet`/`SharedJoin`). Malformed `clickhouse_json`
     /// could attach them to other variants; `formatQueryImpl` would then emit SQL the parser never
     /// accepts (e.g. `CREATE TABLE t REFRESH ...` or `CREATE TABLE t TO dst ...`) while execution
@@ -722,13 +807,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (refresh_strategy && !is_materialized_view)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` has 'refresh_strategy' set but is not a materialized view during AST JSON deserialization");
-    if ((is_watermark_strictly_ascending || is_watermark_ascending || is_watermark_bounded) && !is_window_view)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` has a watermark strategy set but is not a window view during AST JSON deserialization");
-    if (allowed_lateness && !is_window_view)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` has 'allowed_lateness' set but is not a window view during AST JSON deserialization");
-    if (targets && !is_materialized_view && !is_window_view && !is_time_series_table)
+    if (targets && !is_materialized_view && !is_time_series_table)
     {
         /// The only non-view / non-`TimeSeries` form that carries `targets` is a plain table with a
         /// `TO INNER UUID` clause. `ParserCreateQuery` builds it only for `SharedSet`/`SharedJoin` engines
@@ -741,7 +820,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         /// shape, and the matching engine.
         if (!has_inner_uuid_clause)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "`CreateQuery` has 'targets' set but is not a materialized view, window view, `TimeSeries` table, "
+                "`CreateQuery` has 'targets' set but is not a materialized view, `TimeSeries` table, "
                 "or a table with a 'TO INNER UUID' clause during AST JSON deserialization");
 
         const auto & view_targets = targets->as<const ASTViewTargets &>();
@@ -767,27 +846,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
                 "engines during AST JSON deserialization");
     }
 
-    /// `formatQueryImpl` unconditionally dereferences `lateness_function` when `allowed_lateness` is set,
-    /// and `watermark_function` when the bounded watermark strategy is selected. Without the child
-    /// expression present, formatting would null-deref. Reject such inconsistent JSON up front.
-    if (allowed_lateness && !lateness_function)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` has 'allowed_lateness' set but is missing 'lateness_function' during AST JSON deserialization");
-
-    /// `formatQueryImpl` treats the watermark strategy as a single choice using an if/else-if chain over
-    /// `is_watermark_strictly_ascending`, `is_watermark_ascending` and `is_watermark_bounded`. The SQL parser
-    /// can only ever set one of them. Malformed JSON could set several at once, which would silently drop the
-    /// lower-priority modes on format; reject it instead of rewriting it.
-    const size_t watermark_modes =
-        static_cast<size_t>(is_watermark_strictly_ascending)
-        + static_cast<size_t>(is_watermark_ascending)
-        + static_cast<size_t>(is_watermark_bounded);
-    if (watermark_modes > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` sets more than one watermark strategy at once during AST JSON deserialization, "
-            "but they are mutually exclusive");
-
-    /// `is_ordinary_view`, `is_materialized_view`, `is_window_view` and `is_dictionary` are mutually
+    /// `is_ordinary_view`, `is_materialized_view` and `is_dictionary` are mutually
     /// exclusive query kinds: the parser produces exactly one, and `formatQueryImpl` selects the form via
     /// an `if (!is_dictionary)` / `if`-`else if` chain over the view flags. Setting several at once would
     /// let formatting and execution disagree (e.g. both `is_ordinary_view` and `is_materialized_view`
@@ -795,23 +854,61 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     const size_t create_kinds =
         static_cast<size_t>(is_ordinary_view)
         + static_cast<size_t>(is_materialized_view)
-        + static_cast<size_t>(is_window_view)
         + static_cast<size_t>(is_dictionary);
     if (create_kinds > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` sets more than one of 'is_ordinary_view'/'is_materialized_view'/'is_window_view'/"
+            "`CreateQuery` sets more than one of 'is_ordinary_view'/'is_materialized_view'/"
             "'is_dictionary' during AST JSON deserialization, but they are mutually exclusive");
 
-    /// `watermark_function` is only meaningful for (and only formatted by) the bounded watermark strategy.
-    /// The parser attaches it exactly when the bounded mode is selected, so require it to be present iff
-    /// `is_watermark_bounded`. A missing function would null-deref in `formatQueryImpl`; a stray function
-    /// in a non-bounded mode would be silently ignored.
-    if (is_watermark_bounded && !watermark_function)
+    /// `POPULATE` / `EMPTY` are not free-floating flags: every SQL parser path constrains them, and
+    /// `InterpreterCreateQuery` still consults them (they decide whether the initial `INSERT SELECT`
+    /// runs), so malformed `clickhouse_json` must not be able to reach a combination the parser
+    /// rejects. `formatQueryImpl` prints ` POPULATE` / ` EMPTY` unconditionally, so such a payload
+    /// would also format into SQL that no longer parses back.
+    ///
+    /// The parser can set at most one of them (an `if`/`else if` over the two keywords).
+    if (is_populate && is_create_empty)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` has a bounded watermark strategy set but is missing 'watermark_function' during AST JSON deserialization");
-    if (!is_watermark_bounded && watermark_function)
+            "`CreateQuery` sets both 'is_populate' and 'is_create_empty' during AST JSON deserialization, "
+            "but they are mutually exclusive");
+
+    /// `POPULATE` is accepted only by `ParserCreateViewQuery` for a materialized view.
+    /// A plain table, an ordinary view and a dictionary never carry it.
+    if (is_populate && !is_materialized_view)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` has 'watermark_function' set without a bounded watermark strategy during AST JSON deserialization");
+            "`CreateQuery` has 'is_populate' set but is not a materialized view "
+            "during AST JSON deserialization");
+
+    /// The first refresh of a refreshable materialized view already fills it with data, so `POPULATE`
+    /// would load the initial data twice; the parser rejects the combination outright.
+    if (is_populate && refresh_strategy)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares 'is_populate' together with 'refresh_strategy' during AST JSON "
+            "deserialization, but a refreshable materialized view is filled by its first refresh");
+
+    /// `EMPTY` is accepted by `ParserCreateTableQuery` (`CREATE TABLE ... EMPTY AS ...`) and by
+    /// `ParserCreateViewQuery` for a materialized view.
+    /// An ordinary view and a dictionary never carry it.
+    if (is_create_empty && (is_ordinary_view || is_dictionary))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'is_create_empty' set on an ordinary view or a dictionary during AST JSON "
+            "deserialization, but the parser accepts `EMPTY` only for tables and materialized views");
+
+    /// For a materialized view with an external target the parser accepts `EMPTY` only together with a
+    /// refresh strategy, where it means "skip the initial refresh". Without one there is no initial load
+    /// to skip, so the flag would be silently ignored on one side and printed on the other.
+    if (is_create_empty && is_materialized_view_with_external_target() && !refresh_strategy)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares 'is_create_empty' for a materialized view with 'TO [db].[table]' but "
+            "without 'refresh_strategy' during AST JSON deserialization");
+
+    /// The parser reaches `POPULATE` / `EMPTY` only on paths that go on to require a source: `AS SELECT`
+    /// for the view forms, and `AS <table>` / `AS <table function>` / `AS SELECT` for `CREATE TABLE`.
+    /// Without one, formatting emits a trailing ` POPULATE` / ` EMPTY` that cannot be reparsed.
+    if ((is_populate || is_create_empty) && !select && !as_table_function && as_table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares 'is_populate' or 'is_create_empty' without a source to fill from "
+            "during AST JSON deserialization");
 
     readOutputOptionsJSON(r);
 }
@@ -866,8 +963,6 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
             what = "VIEW";
         else if (is_materialized_view)
             what = "MATERIALIZED VIEW";
-        else if (is_window_view)
-            what = "WINDOW VIEW";
 
         ostr << action;
         ostr << " ";
@@ -1048,7 +1143,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         for (const auto & target : targets->targets)
         {
-            /// `To` and `Inner` are formatted separately above (for materialized / window views).
+            /// `To` and `Inner` are formatted separately above (for materialized views).
             if ((target.kind != ViewTarget::To) && (target.kind != ViewTarget::Inner))
                 ASTViewTargets::formatTarget(target, ostr, settings, state, frame);
         }
@@ -1056,26 +1151,6 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (dictionary)
         dictionary->format(ostr, settings, state, frame);
-
-    if (is_watermark_strictly_ascending)
-    {
-        ostr << " WATERMARK STRICTLY_ASCENDING";
-    }
-    else if (is_watermark_ascending)
-    {
-        ostr << " WATERMARK ASCENDING";
-    }
-    else if (is_watermark_bounded)
-    {
-        ostr << " WATERMARK ";
-        watermark_function->format(ostr, settings, state, frame);
-    }
-
-    if (allowed_lateness)
-    {
-        ostr << " ALLOWED_LATENESS ";
-        lateness_function->format(ostr, settings, state, frame);
-    }
 
     if (is_populate)
         ostr << " POPULATE";
@@ -1206,6 +1281,6 @@ void ASTCreateQuery::setTargetInnerColumns(ViewTarget::Kind target_kind, ASTPtr 
 
 bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
 {
-    return select && !attach && !is_create_empty && !is_ordinary_view && (!(is_materialized_view || is_window_view) || is_populate);
+    return select && !attach && !is_create_empty && !is_ordinary_view && (!is_materialized_view || is_populate);
 }
 }

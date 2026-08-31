@@ -3555,15 +3555,11 @@ public:
                     auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
                     auto arithmetic_arg_type = getArithmeticType(arg_type);
 
-                    // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
-                    // width (`DecimalBinaryOperation` feeds both operands into
-                    // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
-                    // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
-                    // truncates at a boundary that depends on the decimal width and scale, not on the
-                    // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
-                    // Only a Decimal divisor takes this integral path; a Float divisor computes through
-                    // floating point and stays monotonic.
-                    if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
+                    // `intDiv`/`divide` computes in a Decimal operand's own native signed width: a Decimal
+                    // divisor wraps the dividend at a boundary set by its width and scale, a Decimal dividend
+                    // truncates the divisor into that width, and a Float operand stays in floating point.
+                    if ((name_view == "intDiv" || name_view == "divide")
+                        && (isDecimal(divisor_type) || decimalDivConstDivisorTruncates(arg_type, divisor_type, constant)))
                         return {false, true, false, false};
 
                     // `intDiv(unsigned, signed-integer-const)` reinterprets the dividend through a signed
@@ -3737,15 +3733,11 @@ public:
                 auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
                 auto arithmetic_arg_type = getArithmeticType(arg_type);
 
-                // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
-                // width (`DecimalBinaryOperation` feeds both operands into
-                // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
-                // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
-                // truncates at a boundary that depends on the decimal width and scale, not on the
-                // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
-                // Only a Decimal divisor takes this integral path; a Float divisor computes through
-                // floating point and stays monotonic.
-                if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
+                // `intDiv`/`divide` computes in a Decimal operand's own native signed width: a Decimal
+                // divisor wraps the dividend at a boundary set by its width and scale, a Decimal dividend
+                // truncates the divisor into that width, and a Float operand stays in floating point.
+                if ((name_view == "intDiv" || name_view == "divide")
+                    && (isDecimal(divisor_type) || decimalDivConstDivisorTruncates(arg_type, divisor_type, constant)))
                     return {false, true, false, false};
 
                 // `intDiv(unsigned, signed-integer-const)` is a step function (see
@@ -3971,6 +3963,30 @@ public:
         const size_t width_bytes = dividend_type->getSizeOfValueInMemory();
         const Field wrap_field(UInt256(1) << (8 * width_bytes - 1));
         return accurateLessOrEqual(wrap_field, constant);
+    }
+
+    /// A `Decimal` dividend makes the division compute in the *decimal's* own native signed width
+    /// (`DecimalBinaryOperation::NativeResultType`: `Int32` for every `Decimal32`, whatever the
+    /// divisor's type is), into which the divisor is materialised by `static_cast`. A constant
+    /// outside that width divides as another value: `intDiv(Decimal32, -9223372036854775807)` by `1`.
+    static bool decimalDivConstDivisorTruncates(
+        const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
+    {
+        if (!isDecimal(arg_type) || !isInteger(divisor_type))
+            return false;
+        auto exceeds = [&constant]<typename T>(std::type_identity<T>)
+        {
+            return accurateLess(constant, Field(std::numeric_limits<T>::min()))
+                || accurateLess(Field(std::numeric_limits<T>::max()), constant);
+        };
+        switch (arg_type->getSizeOfValueInMemory())
+        {
+            case sizeof(Int32): return exceeds(std::type_identity<Int32>{});
+            case sizeof(Int64): return exceeds(std::type_identity<Int64>{});
+            case sizeof(Int128): return exceeds(std::type_identity<Int128>{});
+            case sizeof(Int256): return exceeds(std::type_identity<Int256>{});
+            default: return true; /// unreachable for the four `Decimal` widths above; fails close if a new one appears
+        }
     }
 
 private:

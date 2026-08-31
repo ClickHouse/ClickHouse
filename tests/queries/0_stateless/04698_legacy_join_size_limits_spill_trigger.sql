@@ -2,7 +2,7 @@
 -- did before. `compatibility` turns it on.
 
 SELECT 'compatibility restores the legacy behavior';
-SELECT value FROM system.settings WHERE name = 'legacy_join_size_limits_trigger_spilling' SETTINGS compatibility = '26.7';
+SELECT value FROM system.settings WHERE name = 'legacy_join_size_limits_trigger_spilling' SETTINGS compatibility = '26.8';
 SELECT value FROM system.settings WHERE name = 'legacy_join_size_limits_trigger_spilling';
 
 SET legacy_join_size_limits_trigger_spilling = 1;

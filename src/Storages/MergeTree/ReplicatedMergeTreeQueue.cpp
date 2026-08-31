@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -16,6 +16,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/formatReadable.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
@@ -998,7 +999,14 @@ namespace
 /// We use this representation to understand which parts mutation actually have to mutate.
 struct QueueEntryRepresentation
 {
-    std::vector<MergeTreePartInfo> produced_parts;
+    /// The name is stored rather than derived on demand: that is impossible in the V0 name format.
+    struct NamedPartInfo
+    {
+        MergeTreePartInfo info;
+        String name;
+    };
+
+    std::vector<NamedPartInfo> produced_parts;
     std::vector<MergeTreePartInfo> dropped_parts;
 };
 
@@ -1022,7 +1030,8 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
             case LogEntryType::MERGE_PARTS:
             case LogEntryType::MUTATE_PART:
             {
-                representations_by_znode[znode_name].produced_parts.push_back(MergeTreePartInfo::fromPartName(entry->new_part_name, format_version));
+                representations_by_znode[znode_name].produced_parts.push_back(
+                    {MergeTreePartInfo::fromPartName(entry->new_part_name, format_version), entry->new_part_name});
                 break;
             }
             case LogEntryType::REPLACE_RANGE:
@@ -1034,7 +1043,7 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
                 produced_parts.reserve(produced_parts.size() + new_parts.size());
                 for (const auto & new_part : new_parts)
                 {
-                    produced_parts.push_back(MergeTreePartInfo::fromPartName(new_part, format_version));
+                    produced_parts.push_back({MergeTreePartInfo::fromPartName(new_part, format_version), new_part});
                 }
 
                 if (auto drop_range = entry->getDropRange(format_version))
@@ -1072,10 +1081,10 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
             representations_by_partition[partiton_id].dropped_parts.push_back(std::move(part_to_drop_info));
         }
 
-        for (auto & part_to_add_info : entry_representation.produced_parts)
+        for (auto & part_to_add : entry_representation.produced_parts)
         {
-            const auto partiton_id = part_to_add_info.getPartitionId();
-            representations_by_partition[partiton_id].produced_parts.push_back(std::move(part_to_add_info));
+            const auto partiton_id = part_to_add.info.getPartitionId();
+            representations_by_partition[partiton_id].produced_parts.push_back(std::move(part_to_add));
         }
     }
     return representations_by_partition;
@@ -1128,11 +1137,11 @@ ActiveDataPartSet getPartNamesToMutate(
         }
 
         /// After we have to add parts if entry adds them
-        for (const auto & part_to_add_info : queue_representation.at(partition_id).produced_parts)
+        for (const auto & part_to_add : queue_representation.at(partition_id).produced_parts)
         {
-            if (part_to_add_info.getDataVersion() < block_num)
+            if (part_to_add.info.getDataVersion() < block_num)
             {
-                result.add(part_to_add_info);
+                result.add(part_to_add.info, part_to_add.name);
             }
         }
     }
