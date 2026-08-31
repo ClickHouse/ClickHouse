@@ -146,5 +146,18 @@ select count() from (explain select X.*, Y.* from X inner join Y on X.id = Y.id)
 -- A single-table query is not affected by the setting on the legacy path either.
 select count() > 0 from (explain select * from X) where explain ilike '%ReadFromRemoteParallelReplicas%';
 
+-- On the legacy path the kill switch must run before `JoinedTables` is constructed: `JoinedTables` captures
+-- its own copy of the context, and the legacy subquery paths (`JoinedTables::makeLeftTableSubquery`,
+-- `JoinedTables::rewriteDistributedInAndJoins`) keep using it, so a switch applied afterwards would leave a
+-- subquery-backed `JOIN` planned with parallel replicas still enabled. The probe is the same `FINAL` refusal
+-- as above: with the setting enabled the query is refused (the control that the probe is not vacuous), with
+-- the setting disabled it must simply run without parallel replicas.
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id
+    settings enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id
+    settings enable_parallel_replicas = 2;
+
 -- drop table X sync;
 -- drop table Y sync;

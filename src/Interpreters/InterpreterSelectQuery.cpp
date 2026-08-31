@@ -647,6 +647,19 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
     }
 
+    /// The kill switch for parallel replicas for queries with multiple tables (the analyzer applies it in `buildJoinTreeQueryPlan`).
+    /// It has to run before `JoinedTables` is constructed: `JoinedTables` captures an independent copy of the context, which the
+    /// legacy subquery paths (`JoinedTables::makeLeftTableSubquery`, `JoinedTables::rewriteDistributedInAndJoins`) reuse later,
+    /// so flipping the setting afterwards would leave those subqueries planned with parallel replicas still enabled.
+    /// `getTableExpressions` counts exactly what `JoinedTables::tablesCount` counts: `ARRAY JOIN` elements carry no table
+    /// expression and are not counted.
+    if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables] && context->canUseTaskBasedParallelReplicas()
+        && getTableExpressions(getSelectQuery()).size() > 1)
+    {
+        LOG_DEBUG(log, "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
+        context->setSetting("enable_parallel_replicas", Field(0));
+    }
+
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
     bool got_storage_from_query = false;
@@ -702,14 +715,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         LOG_DEBUG(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
         context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-    }
-
-    /// The kill switch for parallel replicas for queries with multiple tables (the analyzer applies it in `buildJoinTreeQueryPlan`)
-    if (joined_tables.tablesCount() > 1 && !settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
-        && context->canUseTaskBasedParallelReplicas())
-    {
-        LOG_DEBUG(log, "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
-        context->setSetting("enable_parallel_replicas", Field(0));
     }
 
     /// Check support for FINAL for parallel replicas
