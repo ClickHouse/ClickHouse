@@ -1,6 +1,7 @@
 #include <Processors/Transforms/TTLCalcTransform.h>
 
 #include <Processors/Port.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
@@ -58,8 +59,19 @@ TTLCalcTransform::TTLCalcTransform(
     {
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
+            auto expressions = getExpressions(description, subqueries_for_sets, context);
+            /// A fully expired column is absent from the stream, so its rule cannot be evaluated;
+            /// the old info stays truthful for it and is put back in finalize().
+            const auto required = expressions.expression->getRequiredColumns();
+            bool inputs_present = std::all_of(required.begin(), required.end(),
+                [&](const String & input) { return header_->has(input); });
+            if (!inputs_present)
+            {
+                preserved_column_ttls.emplace_back(name, old_ttl_infos.columns_ttl[name]);
+                continue;
+            }
             algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-                getExpressions(description, subqueries_for_sets, context), description,
+                std::move(expressions), description,
                 TTLUpdateField::COLUMNS_TTL, name, old_ttl_infos.columns_ttl[name], current_time_, force_));
         }
     }
@@ -112,6 +124,12 @@ void TTLCalcTransform::finalize()
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
+    /// Rules skipped for absent inputs keep their pre-merge info, min/max included.
+    for (const auto & [name, info] : preserved_column_ttls)
+    {
+        data_part->ttl_infos.columns_ttl[name] = info;
+        data_part->ttl_infos.updatePartMinMaxTTL(info);
+    }
 }
 
 IProcessor::Status TTLCalcTransform::prepare()

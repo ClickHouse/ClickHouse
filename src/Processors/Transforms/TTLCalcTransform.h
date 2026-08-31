@@ -39,6 +39,8 @@ protected:
 
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
+    /// (column name, pre-merge info) for column rules whose inputs are absent from the stream.
+    std::vector<std::pair<String, MergeTreeDataPartTTLInfo>> preserved_column_ttls;
     PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading
