@@ -165,7 +165,7 @@ SETTINGS storage_policy='gcs_main'
 ```
 
 ```sql
-INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
 하드웨어에 따라 이 마지막 100만 행 삽입 작업은 완료하는 데 몇 분 정도 걸릴 수 있습니다. 진행 상황은 system.processes 테이블(table)에서 확인할 수 있습니다. 행 수는 최대 1000만까지 늘려 보고, 샘플 쿼리도 몇 가지 살펴보십시오.
@@ -643,7 +643,7 @@ INSERT INTO trips SELECT
     tip_amount,
     total_amount,
     payment_type
-FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames')
+FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 1000000
 ```
 

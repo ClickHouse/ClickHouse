@@ -2587,15 +2587,19 @@
 
         const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
 
+        const task0 = normalizeTaskName(nameParams[0]);
+        // S3 layout includes the normalized workflow name:
+        // <suffix>/<sha>/<normalized_workflow>/result_<job>.json
+        const workflowSegment = encodeURIComponent(task0);
+
         const fetchTasks = [];
         if (nameParams.length > 1) {
             const task1 = normalizeTaskName(nameParams[1]);
-            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
+            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/${workflowSegment}/result_${task1}.json`;
             fetchTasks.push(fetchJson(path1));
         }
 
-        const task0 = normalizeTaskName(nameParams[0]);
-        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
+        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/${workflowSegment}/result_${task0}.json`;
         fetchTasks.push(fetchJson(path0));
 
         // Run fetchJson calls in parallel
@@ -2652,7 +2656,7 @@
         let resultResult;
         try {
             resultResult = await fetchJson(
-                `${privateBaseUrl}/PRs/${encodeURIComponent(private_pr_number)}/${encodeURIComponent(private_sha)}/result_pr.json`
+                `${privateBaseUrl}/PRs/${encodeURIComponent(private_pr_number)}/${encodeURIComponent(private_sha)}/pr/result_pr.json`
             );
         } catch (e) {
             return { data: null, error: 'Downstream: proxy unreachable' };
@@ -2895,6 +2899,21 @@
     });
 
     function createFavicon() {
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+        }
+        // Prefer a project-provided favicon deployed next to this page in the
+        // report bucket; fall back to a generated one if it's absent.
+        const img = new Image();
+        img.onload = () => { link.href = "favicon.png"; };
+        img.onerror = () => { link.href = generateFaviconDataURL(); };
+        img.src = "favicon.png";
+    }
+
+    function generateFaviconDataURL() {
         const width = 32;
         const height = 32;
         const lineColor = "rgb(0, 0, 0)";
@@ -2926,16 +2945,7 @@
         }
 
         // Convert canvas to Data URL (PNG format)
-        const faviconURL = canvas.toDataURL("image/png");
-
-        // Set the favicon dynamically
-        let link = document.querySelector("link[rel='icon']");
-        if (!link) {
-            link = document.createElement("link");
-            link.rel = "icon";
-            document.head.appendChild(link);
-        }
-        link.href = faviconURL;
+        return canvas.toDataURL("image/png");
     }
     createFavicon();
     </script>

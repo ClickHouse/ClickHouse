@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/fr/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.mdx';
 
 Vous pouvez utiliser ClickPipes pour ingérer des données depuis votre base de données source Postgres vers ClickHouse Cloud. La base de données source Postgres peut être hébergée sur site ou dans le cloud, notamment sur Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase et d&#39;autres services.
 
@@ -149,18 +150,16 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 7. Vous pouvez sélectionner les tables que vous souhaitez répliquer depuis la base de données source Postgres. Lors de la sélection des tables, vous pouvez également choisir de renommer les tables dans la base de données ClickHouse de destination et d’exclure certaines colonnes.
 
 <Warning>
-  Si vous définissez dans ClickHouse une clé d’ordonnancement différente de la clé primaire de Postgres, n’oubliez pas de consulter toutes les [considérations](/fr/integrations/clickpipes/postgres/ordering-keys) à ce sujet
+  Si vous définissez dans ClickHouse une clé de tri différente de la clé primaire de Postgres, n’oubliez pas de consulter toutes les [considérations](/fr/integrations/clickpipes/postgres/ordering-keys) à ce sujet
 </Warning>
 
-8. En outre, vous pouvez fournir une expression `PARTITION BY <expr>` personnalisée pour contrôler le [partitionnement des tables ClickHouse](/fr/concepts/core-concepts/partitions) dans la destination.
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
+8. <SettingPartitionBy />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### Vérifier les autorisations et démarrer le ClickPipe
 </div>
 
-8. Sélectionnez le rôle « Accès complet » dans le menu déroulant des autorisations, puis cliquez sur « Terminer la configuration ».
+9. Sélectionnez le rôle « Accès complet » dans le menu déroulant des autorisations, puis cliquez sur « Terminer la configuration ».
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Vérifier les autorisations" size="lg" border />
 
