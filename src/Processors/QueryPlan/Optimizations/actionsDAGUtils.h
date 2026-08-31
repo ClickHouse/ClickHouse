@@ -8,6 +8,50 @@ namespace DB
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
 
+/// Describes how one `ActionsDAG` output can be traced to one input.
+/// `ValuePreserving` is deliberately restricted to operations explicitly known
+/// to retain the input value. `DistinctValuesBound` is weaker: it only proves
+/// that output NDV is bounded by input NDV (plus `ndv_delta`).
+enum class ActionsDAGLineageKind : UInt8
+{
+    Identity,
+    ValuePreserving,
+    DistinctValuesBound,
+};
+
+struct ActionsDAGLineageHop
+{
+    ActionsDAGLineageKind kind;
+    UInt64 ndv_delta;
+    /// Whether the input column's average value width remains applicable after this hop.
+    bool preserves_width;
+};
+
+struct ActionsDAGInputLineage
+{
+    size_t input_position;
+    ActionsDAGLineageKind kind;
+    UInt64 ndv_delta;
+    /// True only when every hop from the input preserves the average value width.
+    bool preserves_width;
+};
+
+struct ActionsDAGOutputLineage
+{
+    size_t output_position;
+    /// Absence means that this output cannot be traced to an input through supported hops.
+    std::optional<ActionsDAGInputLineage> input;
+};
+
+/// Classify a single node relative to its first child. This does not recursively
+/// establish that the child itself reaches an input. Absence means the hop is unsupported.
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node);
+
+/// Trace every output to at most one input using iterative, memoized traversal.
+/// The returned vector is ordered by output position and remains unambiguous even
+/// when input or output names are duplicated.
+std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions);
+
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
 /// * Input nodes are mapped by name.

@@ -120,8 +120,7 @@ std::unique_ptr<AggregatingStep> makeStep(bool only_merge, size_t max_bytes_befo
         SortDescription{},
         /*should_produce_results_in_order_of_bucket_number_=*/false,
         /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
-        /*explicit_sorting_required_for_aggregation_in_order_=*/false,
-        /*enable_sharding_aggregator_=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order_=*/false);
 }
 
 /// Serialize a step through the production path and return its byte stream.
@@ -174,7 +173,7 @@ void registerAll()
 
 }
 
-/// `only_merge` travels as flag bit 128 since query plan serialization version 10: without it a
+/// `only_merge` travels as flag bit 128 since query plan serialization version 11: without it a
 /// worker deserializing a distributed task fragment would rebuild the pushed-down merge step as a
 /// raw aggregation over state columns.
 
@@ -213,7 +212,7 @@ TEST(AggregatingStepOnlyMergeSerialization, Version9SerializationThrows)
     auto step = makeStep(/*only_merge=*/true);
     try
     {
-        serializeStep(*step, /*version=*/9);
+        serializeStep(*step, /*version=*/10);
         FAIL() << "expected SUPPORT_IS_DISABLED";
     }
     catch (const Exception & e)
@@ -233,7 +232,7 @@ TEST(AggregatingStepOnlyMergeSerialization, Bit128InVersion9StreamThrows)
 
     try
     {
-        deserializeStep(bytes, QueryPlanSerializationSettings{}, /*version=*/9);
+        deserializeStep(bytes, QueryPlanSerializationSettings{}, /*version=*/10);
         FAIL() << "expected INCORRECT_DATA";
     }
     catch (const Exception & e)
@@ -254,8 +253,8 @@ TEST(AggregatingStepOnlyMergeSerialization, OrdinaryStepRoundTripsUnchanged)
     EXPECT_FALSE(stepParams(restored).only_merge);
     EXPECT_EQ(first, serializeStep(*restored));
 
-    /// And an ordinary step stays serializable towards a version-9 peer.
-    EXPECT_NO_THROW(serializeStep(*step, /*version=*/9));
+    /// And an ordinary step stays serializable towards a version-10 peer.
+    EXPECT_NO_THROW(serializeStep(*step, /*version=*/10));
 }
 
 /// The merge-only step runs the full `Aggregator`, whose `mergeOnBlock` spill path is governed by

@@ -726,8 +726,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
         SortDescription{},
         agg_step.shouldProduceResultsInBucketOrder(),
         agg_step.usingMemoryBoundMerging(),
-        /*explicit_sorting_required_for_aggregation_in_order_=*/false,
-        /*enable_sharding_aggregator_=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order_=*/false);
     merge_step->setStepDescription(fmt::format("Merge: {}", agg_step.getStepDescription()), 200);
 
     if (!check_header(*merge_step->getOutputHeader()))

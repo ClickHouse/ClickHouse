@@ -28,6 +28,7 @@
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/URI.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h>
+#include <algorithm>
 #include <chrono>
 
 namespace DB
@@ -50,9 +51,20 @@ bool isValidAWSRegion(const String & region)
     return RE2::FullMatch(region, region_format_pattern);
 }
 
+std::chrono::seconds credentialsRemainingValidity(
+    std::chrono::system_clock::time_point expiration,
+    std::chrono::system_clock::time_point now)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(expiration - now);
+}
+
+std::chrono::seconds advertisedTokenLifetime(std::chrono::seconds remaining)
+{
+    return std::min(TOKEN_LIFETIME, remaining);
+}
+
 namespace
 {
-    constexpr std::chrono::seconds TOKEN_LIFETIME{300};
     constexpr std::chrono::seconds PRESIGNED_URL_EXPIRY{900};
 
     String generateAWSMSKToken(
@@ -219,10 +231,25 @@ void setupAuthentication(
 
                 auto now = std::chrono::system_clock::now();
 
+                /// The token is usable only while the credentials that signed it remain valid, so
+                /// the lifetime reported to librdkafka is capped by what those credentials have
+                /// left. With IRSA the credentials last an hour, so an uncapped `TOKEN_LIFETIME`
+                /// makes authentication fail hourly for as long as the process lives.
+                auto remaining = credentialsRemainingValidity(credentials.GetExpiration().UnderlyingTimestamp(), now);
+
+                if (remaining <= std::chrono::seconds::zero())
+                {
+                    LOG_ERROR(context->log, "AWS credentials expired {}s ago while generating the token", -remaining.count());
+                    rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "AWS credentials expired");
+                    return;
+                }
+
+                auto lifetime = advertisedTokenLifetime(remaining);
+
                 String token = generateAWSMSKToken(context->region, credentials);
 
                 auto expiry_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    (now + TOKEN_LIFETIME).time_since_epoch()).count();
+                    (now + lifetime).time_since_epoch()).count();
 
                 char errstr[512];
                 rd_kafka_resp_err_t err = rd_kafka_oauthbearer_set_token(
@@ -233,6 +260,12 @@ void setupAuthentication(
                 {
                     LOG_ERROR(context->log, "Failed to set OAuth token: {}", errstr);
                     rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), errstr);
+                }
+                else
+                {
+                    LOG_INFO(context->log,
+                        "AWS MSK IAM token refreshed successfully (region={}, expires in {}s, credentials expire in {}s)",
+                        context->region, lifetime.count(), remaining.count());
                 }
             }
             catch (const std::exception & e)
