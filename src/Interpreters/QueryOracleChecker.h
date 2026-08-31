@@ -191,6 +191,10 @@ public:
     /// equivalent LEFT JOIN / IN lookup against the dictionary's own source table.
     bool checkDictGetVsJoin(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Materialized/ALIAS column oracle (self-seeded): reading a MATERIALIZED or ALIAS column must
+    /// equal recomputing its defining expression.
+    bool checkMaterializedColumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
