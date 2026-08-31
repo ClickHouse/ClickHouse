@@ -42,8 +42,8 @@ public:
         if (function_node->getFunctionName() == "replaceRegexpAll" || Poco::toLower(function_node->getFunctionName()) == "regexp_replace")
             handleReplaceRegexpAll(*function_node);
 
-        /// If an extract function has a regexp with some subpatterns and the regexp starts with ^.* or ending with an
-        /// unescaped .*$, remove this prefix and/or suffix.
+        /// If an extract function has a regexp with some subpatterns and the regexp ends with an
+        /// unescaped .*$, remove this suffix.
         if (function_node->getFunctionName() == "extract")
             handleExtract(*function_node);
     }
@@ -114,11 +114,9 @@ private:
         String regexp = constant_node->getValue().safeGet<String>();
 
         /// A NUL (`\0`) byte is an ordinary literal byte in the pattern (re2 is binary-safe), and the
-        /// analyzer no longer stops at it, so captures placed after a NUL are now visible here. The
-        /// `^.*` prefix removal below changes which occurrence is captured when the part after the
-        /// prefix can match at more than one offset (greedy `^.*` selects the last occurrence, while
-        /// the stripped pattern selects the first). Be conservative and skip the rewrite for patterns
-        /// containing a NUL, so this fix does not change `extract` results for such patterns.
+        /// analyzer no longer stops at it, so captures placed after a NUL are now visible here. Be
+        /// conservative and skip the rewrite for patterns containing a NUL, so that fix does not
+        /// change `extract` results for such patterns.
         if (regexp.contains('\0'))
             return;
 
@@ -126,22 +124,19 @@ private:
         if (!result.has_capture)
             return;
 
-        /// For simplicity, this optimization ignores alternations and only considers anchoring at the start or end of the pattern.
-        bool starts_with_caret_dot_star = regexp.starts_with("^.*") && !regexp.starts_with("^.*?");
-        bool ends_with_unescaped_dot_star_dollar = false;
-
-        if (regexp.size() >= 3 && regexp.ends_with(".*$"))
+        /// Only a trailing `.*$` is removed. Leftmost-first matching fixes where the match starts
+        /// before the tail is considered, so dropping the tail cannot change what is captured.
+        ///
+        /// A leading greedy `^.*` must be left alone: it consumes as much as it can and then
+        /// backtracks, so the capture binds at the *last* offset where the rest of the pattern
+        /// matches, while the stripped pattern binds at the first one.
+        /// `extract('a1b2c3', '^.*(\d)')` is `3` - the idiomatic "last digit" pattern - while
+        /// `extract('a1b2c3', '(\d)')` is `1`.
+        ///
+        /// For simplicity, this optimization ignores alternations.
+        if (regexp.size() >= 3 && regexp.ends_with(".*$") && isUnescaped(regexp, regexp.size() - 3))
         {
-            size_t dot_pos = regexp.size() - 3;
-            ends_with_unescaped_dot_star_dollar = isUnescaped(regexp, dot_pos);
-        }
-
-        if (starts_with_caret_dot_star || ends_with_unescaped_dot_star_dollar)
-        {
-            if (starts_with_caret_dot_star)
-                regexp = regexp.substr(3);
-            if (ends_with_unescaped_dot_star_dollar && regexp.ends_with(".*$"))
-                regexp = regexp.substr(0, regexp.size() - 3);
+            regexp = regexp.substr(0, regexp.size() - 3);
             function_node_arguments_nodes[1] = std::make_shared<ConstantNode>(std::move(regexp));
         }
     }
