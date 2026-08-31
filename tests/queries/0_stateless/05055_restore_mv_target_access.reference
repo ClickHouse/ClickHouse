@@ -6,6 +6,11 @@ denied
 1
 -- the view was not created by the rejected restore
 0
+-- INSERT alone is not enough: the SELECT half of the requirement is pinned here
+denied
+1
+-- and with both halves granted the same restore succeeds
+allowed
 -- the direct CREATE path already requires the same grant
 denied
 -- restoring a view whose target is granted is still allowed
@@ -14,3 +19,8 @@ allowed
 -- a view with an inner table carries no target id, so it is still allowed
 allowed
 allowed
+-- a temporary TimeSeries table forges the same primitive through an external target
+forged
+denied
+-- and that denial names the forged target too
+1
