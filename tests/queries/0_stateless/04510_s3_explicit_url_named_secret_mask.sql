@@ -280,6 +280,17 @@ CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_S
 CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT_SAK',
                  extra_credentials(concat('extern', 'al_id') = 'SEKRIT_EXPR'))); -- { serverError BAD_ARGUMENTS }
 
+-- A locator that is not a function cannot be reconstructed, so the whole argument must be hidden
+-- rather than echoed, both in the logged query text and in the recorded exception message. The
+-- statement is logged and the exception is recorded before validation rejects the locator.
+CREATE DATABASE db_04510_quoted ENGINE = Backup('', 'S3(\'url_dbquoted\', \'ak\', \'SEKRIT_QUOTED\')'); -- { serverError BAD_ARGUMENTS }
+
+-- A non-tail argument that is neither a literal nor `key = value` cannot be reconstructed either. It
+-- is rejected by a different message than the quoted locator above, and that message used to echo the
+-- offending argument verbatim, so it needs its own tag.
+CREATE DATABASE db_04510_nonlit ENGINE = Backup('', S3(concat('SEKRIT_NONLIT', 'x'),
+                 'url_dbnonlit')); -- { serverError BAD_ARGUMENTS }
+
 -- The S3 database engine accepts no positional beyond secret_access_key; an extra positional must
 -- be masked in the logged query text.
 CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
@@ -338,7 +349,12 @@ ORDER BY event_time_microseconds;
 -- logs each DDL from the replay worker, which re-masks a rewritten AST independently, so assert
 -- the masking property over every row this test produced, replay rows included. count() > 0 keeps
 -- an empty row set from passing vacuously.
-SELECT count() > 0, countIf(query LIKE '%SEKRIT%')
+-- The third column covers the recorded exception messages of the two unreconstructible-locator
+-- statements above, whose rejections used to echo the locator verbatim - one tag per message, since
+-- they are thrown at different sites. It is scoped to those tags because widening it to every
+-- deliberately-failing statement here would report unrelated pre-existing echoes.
+SELECT count() > 0, countIf(query LIKE '%SEKRIT%'),
+       countIf(exception LIKE '%SEKRIT_QUOTED%' OR exception LIKE '%SEKRIT_NONLIT%')
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type != 'QueryStart'

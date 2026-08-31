@@ -464,8 +464,9 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
+    /// The locator must stay a nested function: a string literal is opaque to secret masking and does not parse back.
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
+        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,

@@ -1180,7 +1180,14 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
     ///   Backup('', S3('url', 'access_key_id', 'secret_access_key' [, ...]))
     ///   Backup('', S3(named_collection, ..., secret_access_key = '...', session_token = '...', ...))
     /// by reconstructing the nested `S3(...)` with the secret arguments replaced by `[HIDDEN]`.
-    if (!storage_function || storage_function->name() != "S3" || !storage_function->hasArguments())
+    if (!storage_function)
+    {
+        /// A locator must be a function, but the query is formatted for logging before validation rejects it.
+        markSecretArgument(1);
+        return;
+    }
+
+    if (storage_function->name() != "S3" || !storage_function->hasArguments())
         return;
 
     const auto & nested_args = *storage_function->arguments;
