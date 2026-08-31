@@ -179,7 +179,7 @@ SerializationInfoPtr DataTypeNullable::getSerializationInfo(const IColumn & colu
 
 bool DataTypeNullable::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
 {
-    return nested_data_type->hasSparseSerializationSubcolumns(settings);
+    return nested_data_type->hasDynamicSubcolumns() && nested_data_type->hasSparseSerializationSubcolumns(settings);
 }
 
 void DataTypeNullable::forEachChild(const ChildCallback & callback) const
