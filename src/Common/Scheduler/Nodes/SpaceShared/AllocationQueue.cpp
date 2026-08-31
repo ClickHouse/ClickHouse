@@ -181,7 +181,7 @@ void AllocationQueue::retrySuction(ResourceAllocation & allocation)
     /// fields are scheduler-thread state, matching `trySuspendIncrease`.
     if (is_not_usable || !allocation.increasing_hook.is_linked())
         return;
-    chassert(allocation.memory_growth_suction_priority);
+    chassert(allocation.memory_growth_recovery_pending || allocation.memory_growth_suction_priority);
     allocation.memory_growth_suspended = false;
     memory_growth_suspension_changed = true;
     scheduleActivation();
@@ -377,8 +377,6 @@ void AllocationQueue::approveIncrease()
     increase = nullptr;
 
     setIncrease();
-    if (!increase && suspended_growth && suspended_growth->memory_growth_recovery_pending)
-        scheduleActivation();
 }
 
 void AllocationQueue::approveDecrease()
@@ -619,7 +617,9 @@ void AllocationQueue::processActivation()
             auto ready_for_suction = std::find_if(
                 increasing_allocations.begin(), increasing_allocations.end(), [this, local_suction_exists](const ResourceAllocation & allocation)
                 {
-                    if (!allocation.memory_growth_recovery_pending || allocation.memory_growth_suction_priority)
+                    if (!allocation.memory_growth_recovery_pending
+                        || allocation.memory_growth_suction_priority
+                        || allocation.memory_growth_suspended)
                         return false;
                     return !local_suction_exists && canEnterSuction(allocation);
                 });
@@ -732,7 +732,7 @@ bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
     });
     auto eligible = std::find_if(increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
     {
-        return !allocation.memory_growth_suspended;
+        return !allocation.memory_growth_suspended && !allocation.memory_growth_recovery_pending;
     });
     auto pending = std::find_if(pending_allocations.begin(), pending_allocations.end(), [](const ResourceAllocation & allocation)
     {

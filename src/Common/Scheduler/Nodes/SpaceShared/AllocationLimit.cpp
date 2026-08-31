@@ -305,6 +305,18 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     if (!reapply_constraint && suspended_growth_retry_pending)
         suspended_growth_retry_pending = false;
 
+    /// Spill completion becomes suction only after this constrained scope has no normal request
+    /// left to present. The query owns completion; the limit that nominated it owns promotion.
+    if (!new_increase
+        && suspended_growth
+        && !suspended_growth_retry_pending
+        && suspended_growth->allocation.memory_growth_recovery_pending
+        && decrease == nullptr
+        && !allocation_to_kill)
+    {
+        suspended_growth->allocation.queue.retrySuction(suspended_growth->allocation);
+    }
+
     if (!new_increase && suction_growth && decrease == nullptr && !allocation_to_kill)
         processSuction();
 
