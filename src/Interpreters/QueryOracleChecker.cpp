@@ -87,6 +87,7 @@ extern const Event ASTFuzzerOracleRowPolicyChecks;
 extern const Event ASTFuzzerOracleFinalMergeChecks;
 extern const Event ASTFuzzerOracleWithFillChecks;
 extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
+extern const Event ASTFuzzerOracleDictGetChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3832,6 +3833,63 @@ bool QueryOracleChecker::checkPipeEquivalence(const ASTSelectQuery &, const Cont
             context, &fixture);
 
     LOG_TRACE(logger, "pipe equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkDictGetVsJoin(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_34): dictGet/dictHas against a hashed dictionary must equal the
+    /// equivalent lookup against the dictionary's own source table. If the dictionary cannot be
+    /// created or loaded in this environment the oracle skips (fail-close).
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("dict", context);
+    if (!fixture.valid())
+        return false;
+
+    const String src = fixture.allocName("src");
+    if (!fixture.execute("CREATE TABLE " + src + " (id UInt64, val Int64) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    /// Sparse key set (even ids only) so probe keys 0..99 include present and absent keys.
+    if (!fixture.execute("INSERT INTO " + src + " SELECT number * 2, toInt64(number) + 7 FROM numbers(50)"))
+        return false;
+
+    const String dict = "__oracle_dict_" + src.substr(src.rfind('_') + 1);
+    if (!fixture.createAuxiliary(
+            "CREATE DICTIONARY " + dict + " (id UInt64, val Int64 DEFAULT -1) PRIMARY KEY id "
+            "SOURCE(CLICKHOUSE(TABLE '" + src + "' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(0)",
+            "DROP DICTIONARY IF EXISTS " + dict))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "dictGet vs JOIN oracle: {} dict {}", src, dict);
+
+    /// dictGet(...,'val',key) with declared default -1 == ifNull of the source lookup, defaulting to -1.
+    auto dict_opt = OracleExec::executeRows(
+        "SELECT k, dictGet(" + dict + ", 'val', k), dictHas(" + dict + ", k) "
+        "FROM (SELECT number AS k FROM numbers(100))",
+        context, ResultShape::SortedBag);
+    /// join_use_nulls=1 makes unmatched LEFT JOIN rows yield NULL (not the type default), so ifNull
+    /// falls back to the declared dictionary default and IS NOT NULL reflects real presence.
+    auto join_opt = OracleExec::executeRows(
+        "SELECT k, ifNull(any(s.val), -1), toUInt8(any(s.id) IS NOT NULL) "
+        "FROM (SELECT number AS k FROM numbers(100)) AS n "
+        "LEFT JOIN " + src + " AS s ON n.k = s.id GROUP BY k",
+        context, ResultShape::SortedBag, {{"join_use_nulls", Field(UInt64(1))}});
+    if (!dict_opt || !join_opt)
+        return false;
+
+    if (!OracleCompare::equal(*dict_opt, *join_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "dictGet vs JOIN oracle mismatch!\n"
+                "dictGet/dictHas ({} rows) vs LEFT JOIN lookup ({} rows) on {} via {}\n{}",
+                dict_opt->size(), join_opt->size(), src, dict,
+                OracleCompare::diffSummary(*dict_opt, *join_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "dictGet vs JOIN oracle passed");
     return true;
 }
 
