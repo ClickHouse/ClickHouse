@@ -38,6 +38,8 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
 
@@ -207,6 +209,18 @@ bool isAllowedSystemTable(const String & database, const String & table)
 bool isViewExpandedInCacheablePlan(const StoragePtr & storage)
 {
     return typeid_cast<const StorageView *>(storage.get()) != nullptr;
+}
+
+/// True if the storage re-checks column-level `SELECT` access on *another* table while executing
+/// its own `read`, using the very column names the plan reads: `StorageMaterializedView::readImpl`
+/// checks them against the source table of its defining `SELECT` (and against an explicit `TO`
+/// target), `StorageBuffer::read` checks them against the destination table. Such a check is not
+/// replayable from the cached plan's dependencies, because the plan carries the column names that
+/// planning chose at store time.
+bool storageRechecksColumnAccessOnRead(const StoragePtr & storage)
+{
+    return typeid_cast<const StorageMaterializedView *>(storage.get()) != nullptr
+        || typeid_cast<const StorageBuffer *>(storage.get()) != nullptr;
 }
 
 /// Returns false if the storage's engine or view security makes the plan uncacheable. This is
@@ -618,7 +632,24 @@ bool collectPlanDependencies(
             /// make a hit require SELECT on that particular column, while a miss re-plans and
             /// succeeds with any granted column. Leave the columns empty (and known): the hit
             /// re-check then applies the same "SELECT on at least one column" rule as planning.
-            if (!read_from_table->readsOnlyInjectedColumn())
+            if (read_from_table->readsOnlyInjectedColumn())
+            {
+                /// The helper column is not part of the query's access contract, so the hit
+                /// recheck deliberately falls back to the "SELECT on at least one column" rule
+                /// used by planning (see below). A storage that re-checks the *plan's* column
+                /// names against another table while reading escapes that relaxation: the cached
+                /// plan replays the helper column chosen at store time, so a hit throws
+                /// `ACCESS_DENIED` once that particular column is revoked, while a miss re-plans
+                /// with another granted column and succeeds. Do not cache such reads.
+                if (storageRechecksColumnAccessOnRead(table_node->getStorage()))
+                {
+                    LOG_DEBUG(getLogger("QueryPlanCache"),
+                        "Not caching plan: zero-column read of {}.{} would replay the column chosen at planning time "
+                        "into the engine's own access check", dep.database, dep.table);
+                    return false;
+                }
+            }
+            else
             {
                 dep.columns = read_from_table->getOutputHeader()->getNames();
                 /// The access re-check must use the columns whose privileges planning verified,
