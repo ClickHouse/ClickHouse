@@ -162,7 +162,7 @@ SELECT firstNonDefault('', 'hello', 'world')
 ```
 
 ```response title=Response
-'hello'
+hello
 ```
 
 **valeurs nulles**
@@ -356,11 +356,11 @@ SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;
 ```
 
 ```response title=Response
-┌───isNullable(ordinary_col)──┬───isNullable(nullable_col)──┐
-│                           0 │                           1 │
-│                           0 │                           1 │
-│                           0 │                           1 │
-└─────────────────────────────┴─────────────────────────────┘
+┌─isNullable(ordinary_col)─┬─isNullable(nullable_col)─┐
+│                        0 │                        1 │
+│                        0 │                        1 │
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
 ```
 
 <div id="isZeroOrNull">
