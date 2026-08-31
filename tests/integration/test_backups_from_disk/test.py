@@ -210,8 +210,11 @@ def test_restore_validates_backup_entry_paths(started_cluster):
         assert expected_error in err
 
     def recreate_table():
-        """Helper to recreate the table between tests."""
-        node.query("CREATE TABLE IF NOT EXISTS tbl_backup_traversal (id UInt64, data String) ENGINE = MergeTree ORDER BY id")
+        """Recreates the table from scratch between tests. The drop is required: test 8 leaves a
+        restored table behind, and inserting into it would add a second part, so the part name
+        cached above would no longer be the only part a backup taken here contains."""
+        node.query("DROP TABLE IF EXISTS tbl_backup_traversal SYNC")
+        node.query("CREATE TABLE tbl_backup_traversal (id UInt64, data String) ENGINE = MergeTree ORDER BY id")
         node.query("INSERT INTO tbl_backup_traversal VALUES (1, 'hello')")
 
     # Test 1: relative path traversal in <name>.
