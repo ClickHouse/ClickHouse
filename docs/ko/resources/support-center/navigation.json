@@ -1,11 +1,11 @@
 {
   "groups": [
     {
-      "group": "지식 베이스",
+      "group": "Knowledgebase",
       "pages": [
         "ko/resources/support-center/home",
         {
-          "group": "성능 및 최적화",
+          "group": "Performance & optimization",
           "pages": [
             "ko/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "ko/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -40,7 +40,7 @@
           ]
         },
         {
-          "group": "데이터 가져오기 및 내보내기",
+          "group": "Data import & export",
           "pages": [
             "ko/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "ko/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -60,7 +60,7 @@
           ]
         },
         {
-          "group": "구성 및 설정",
+          "group": "Configuration & settings",
           "pages": [
             "ko/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "ko/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
@@ -71,7 +71,7 @@
           ]
         },
         {
-          "group": "통합 및 클라이언트 라이브러리",
+          "group": "Integrations & client libraries",
           "pages": [
             "ko/resources/support-center/knowledge-base/integrations/node-js-example",
             "ko/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "group": "문제 해결 및 오류",
+          "group": "Troubleshooting & errors",
           "pages": [
             "ko/resources/support-center/troubleshooting/index",
             "ko/resources/support-center/troubleshooting/troubleshooting",
@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "테이블 및 스키마",
+          "group": "Tables & schema",
           "pages": [
             "ko/resources/support-center/knowledge-base/tables-schema/add-column",
             "ko/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "쿼리 및 SQL",
+          "group": "Queries & SQL",
           "pages": [
             "ko/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "ko/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -126,7 +126,7 @@
           ]
         },
         {
-          "group": "구체화된 뷰 및 프로젝션",
+          "group": "Materialized views & projections",
           "pages": [
             "ko/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ko/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "group": "모니터링 및 디버깅",
+          "group": "Monitoring & debugging",
           "pages": [
             "ko/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "ko/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -150,7 +150,7 @@
           ]
         },
         {
-          "group": "보안 및 액세스 제어",
+          "group": "Security & access control",
           "pages": [
             "ko/resources/support-center/knowledge-base/security/check-users-roles",
             "ko/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -161,7 +161,7 @@
           ]
         },
         {
-          "group": "데이터 관리",
+          "group": "Data management",
           "pages": [
             "ko/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
             "ko/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
@@ -173,7 +173,7 @@
           ]
         },
         {
-          "group": "설정 및 설치",
+          "group": "Setup & installation",
           "pages": [
             "ko/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "ko/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
@@ -185,11 +185,11 @@
           ]
         },
         {
-          "group": "일반 및 FAQ",
+          "group": "General & FAQs",
           "pages": [
             "ko/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "일반",
+              "group": "General",
               "pages": [
                 "ko/resources/support-center/knowledge-base/general-faqs/index",
                 "ko/resources/support-center/knowledge-base/general-faqs/columnar-database",
@@ -211,7 +211,7 @@
               ]
             },
             {
-              "group": "사용 사례",
+              "group": "Use cases",
               "pages": [
                 "ko/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "ko/resources/support-center/knowledge-base/general-faqs/key-value",
@@ -221,7 +221,7 @@
               ]
             },
             {
-              "group": "통합",
+              "group": "Integration",
               "pages": [
                 "ko/resources/support-center/knowledge-base/integrations/index",
                 "ko/resources/support-center/knowledge-base/data-import-export/json-import",
@@ -229,7 +229,7 @@
               ]
             },
             {
-              "group": "운영",
+              "group": "Operations",
               "pages": [
                 "ko/resources/support-center/knowledge-base/general-faqs/operations-index",
                 "ko/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -241,7 +241,7 @@
           ]
         },
         {
-          "group": "팁과 요령",
+          "group": "Tips & tricks",
           "pages": [
             "ko/resources/support-center/tips-and-tricks/community-wisdom",
             "ko/resources/support-center/tips-and-tricks/cost-optimization",
@@ -256,5 +256,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "지원 센터"
+  "item": "Support center"
 }
