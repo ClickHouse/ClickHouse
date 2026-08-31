@@ -20,6 +20,7 @@
 #include <Databases/registerDatabases.h>
 #include <Databases/DatabaseURL.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
@@ -485,11 +486,35 @@ DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & d
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (!system_database)
     {
-        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
         system_database = std::make_shared<DatabaseMemory>(database_name, context);
         DatabaseCatalog::instance().attachDatabase(database_name, system_database);
     }
     return system_database;
+}
+
+void deferDatabaseTables(IDatabase & database, std::function<void(IDatabase &)> populate)
+{
+    dynamic_cast<DatabaseWithOwnTablesBase &>(database).setDeferredPopulation(std::move(populate));
+}
+
+void createMemoryDatabaseWithDeferredTables(ContextPtr context, const String & database_name, std::function<void(IDatabase &)> populate)
+{
+    deferDatabaseTables(*createMemoryDatabaseIfNotExists(context, database_name), std::move(populate));
+}
+
+void attachRemainingSystemTables(ContextPtr context, IDatabase & system_database)
+{
+    attachSystemTablesServerExceptOne(context, system_database, false, false);
+}
+
+void deferSystemDatabaseTables(ContextPtr context, IDatabase & system_database)
+{
+    validateSystemUserQueryLog(context, system_database);
+
+    deferDatabaseTables(system_database,
+        [context](IDatabase & database) { attachRemainingSystemTables(context, database); });
+
+    attachSystemTableOne(context, system_database);
 }
 
 DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
@@ -1725,8 +1750,10 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("path"))
     {
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
 
         /// Attaching "automatic" tables in the system database is done after attaching the system database.
         /// Consequently, it depends on whether we load it from the path.
@@ -1748,7 +1775,7 @@ void LocalServer::processConfig()
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false, false);
+                deferSystemDatabaseTables(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE));
                 attached_system_database = true;
             }
 
@@ -1763,16 +1790,18 @@ void LocalServer::processConfig()
         }
 
         if (!attached_system_database)
-            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
+            deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
 
         /// Create background tasks necessary for DDL operations like DROP VIEW SYNC,
         /// even in temporary mode (--path not set) without persistent storage
