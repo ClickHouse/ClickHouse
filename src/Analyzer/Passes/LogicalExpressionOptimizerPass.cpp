@@ -2086,7 +2086,6 @@ private:
             /// AND operator can have UInt8 or bool as its type.
             /// bool is used if a bool constant is at least one operand.
 
-            auto operand_type = and_operands[0]->getResultType();
             auto function_type = function_node.getResultType();
             chassert(!function_type->isNullable());
 
@@ -2114,37 +2113,20 @@ private:
                 }
             }
 
-            if (!function_type->equals(*operand_type))
+            /// An operand standing in for the whole `AND` must yield 0 or 1, because `AND` would have
+            /// evaluated it as a boolean. A boolean function already does; anything else keeps the
+            /// `AND` and gains its identity operand, which booleanizes without a truncating cast.
+            const auto * operand_function = and_operands[0]->as<FunctionNode>();
+            if (operand_function && isBooleanFunction(operand_function->getFunctionName()))
             {
-                if (WhichDataType(removeLowCardinality(operand_type)).isUInt8())
-                {
-                    /// Result of equality operator can be low cardinality, while AND always returns UInt8.
-                    /// In that case we replace `(lc = 1) AND (lc = 1)` with `(lc = 1) AS UInt8`.
-                    node = createCastFunction(std::move(and_operands[0]), function_type, getContext());
-                }
-                else
-                {
-                    /// The sole survivor can be an arbitrary numeric operand (e.g. `x` in
-                    /// `x AND i < 300` after the always-true comparison is pruned). `AND` evaluates
-                    /// operands as booleans, and a plain cast would truncate (`256::UInt32` -> 0),
-                    /// so rewrite to `operand != 0` instead.
-                    auto not_equals_node = std::make_shared<FunctionNode>("notEquals");
-                    not_equals_node->markAsOperator();
-                    not_equals_node->getArguments().getNodes().push_back(std::move(and_operands[0]));
-                    not_equals_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(0u));
-                    resolveOrdinaryFunctionNodeByName(*not_equals_node, "notEquals", getContext());
+                auto new_node = std::move(and_operands[0]);
+                if (!function_type->equals(*new_node->getResultType()))
+                    new_node = createCastFunction(std::move(new_node), function_type, getContext());
+                node = std::move(new_node);
+                return;
+            }
 
-                    QueryTreeNodePtr new_node = std::move(not_equals_node);
-                    if (!function_type->equals(*new_node->getResultType()))
-                        new_node = createCastFunction(std::move(new_node), function_type, getContext());
-                    node = std::move(new_node);
-                }
-            }
-            else
-            {
-                node = std::move(and_operands[0]);
-            }
-            return;
+            and_operands.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1), function_type));
         }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
