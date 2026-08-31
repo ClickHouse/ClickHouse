@@ -29,6 +29,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ParserCopyQuery.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -64,8 +65,14 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
+
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
@@ -234,6 +241,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     bool ssl_enabled_,
     bool secure_required_,
     Int32 connection_id_,
+    std::optional<String> default_session_user_,
     VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
@@ -247,6 +255,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     , ssl_enabled(ssl_enabled_)
     , secure_required(secure_required_)
     , connection_id(connection_id_)
+    , default_session_user(std::move(default_session_user_))
     , read_event(read_event_)
     , write_event(write_event_)
     , authentication_manager(auth_methods_)
@@ -311,6 +320,8 @@ PostgreSQLHandler::PostgreSQLHandler(
                 disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
             else if (token == "tlsv1_2")
                 disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
+            else if (token == "tlsv1_3")
+                disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_3;
         }
 
         extended_verification = config.getBool(prefix + Poco::Net::SSLManager::CFG_EXTENDED_VERIFICATION, false);
@@ -439,7 +450,28 @@ bool PostgreSQLHandler::startup()
     }
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> start_up_msg = receiveStartupMessage(payload_size);
+
+    /// An empty user name means the default session user: the `default_session_user`
+    /// server setting, possibly overridden for this listener in the `protocols` section.
+    /// If the resolved name is empty too (explicitly configured to prohibit connections
+    /// without a user name), authentication fails on the empty user name below.
+    if (start_up_msg->user.empty())
+        start_up_msg->user = default_session_user
+            ? *default_session_user
+            : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
+
     const auto & user_name = start_up_msg->user;
+    if (user_name.empty())
+    {
+        auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from PostgreSQL startup message");
+        session->onAuthenticationFailure(user_name, socket().peerAddress(), exception);
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
+            true);
+        return false;
+    }
+
     authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
 
     try

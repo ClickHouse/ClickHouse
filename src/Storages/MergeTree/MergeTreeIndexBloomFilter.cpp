@@ -548,6 +548,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
+/// True when converting the constant to the element type yields the exact bytes the index holds, so
+/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
+static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
+{
+    if (!value_type)
+        return false;
+
+    auto value = removeLowCardinalityAndNullable(value_type);
+    auto element = removeLowCardinalityAndNullable(nested_type);
+
+    if (isFloat(value) || isFloat(element))
+        return false;
+
+    return (isInteger(value) && isInteger(element)) || value->equals(*element);
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -572,12 +588,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (function_name == "notIn"  || function_name == "globalNotIn")
             out.function = RPNElement::FUNCTION_NOT_IN;
 
+        /// `nullIn` (transform_null_in=1) selects the same rows as `in` only for a NULL-free,
+        /// single-column, non-Array set whose type matches the index; otherwise no pruning.
+        if ((function_name == "nullIn" || function_name == "globalNullIn") && prepared_set
+            && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull()
+            && prepared_set->areTypesEqual(0, index_type)
+            && !typeid_cast<const DataTypeArray *>(index_type.get()))
+            out.function = RPNElement::FUNCTION_IN;
+
         return true;
     }
 
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
+    /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths"))
     {
         if (function_name != "in" && function_name != "globalIn")
@@ -679,6 +704,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return false;
         }
 
+        /// nullIn/globalNullIn are deliberately not wired here, as in the JSON branch above.
         if (function_name == "in" || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
 
@@ -688,7 +714,35 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return true;
     }
 
-    return false;
+    /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
+    /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
+    if (function_name != "in" && function_name != "globalIn")
+        return false;
+    if (!column)
+        return false;
+
+    auto array_join_argument = key_node.getArrayJoinArgument();
+    if (!array_join_argument)
+        return false;
+
+    auto array_column_name = array_join_argument->getColumnName();
+    if (!header.has(array_column_name))
+        return false;
+
+    size_t position = header.getPositionByName(array_column_name);
+    const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
+    if (!array_type)
+        return false;
+
+    const auto & array_nested_type = array_type->getNestedType();
+    if (!bloomFilterHashDomainMatches(type, array_nested_type))
+        return false;
+
+    const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+    out.predicate.emplace_back(
+        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
+    out.function = RPNElement::FUNCTION_HAS_ANY;
+    return true;
 }
 
 
@@ -891,6 +945,32 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 {
     auto key_column_name = key_node.getColumnName();
 
+    /// `arrayJoin(col) = const` needs an element equal to the constant, same as `has(col, const)`.
+    /// `notEquals` is not derivable: a granule holding the constant still yields differing rows.
+    if (function_name == "equals")
+    {
+        if (auto array_join_argument = key_node.getArrayJoinArgument())
+        {
+            auto array_column_name = array_join_argument->getColumnName();
+            if (header.has(array_column_name))
+            {
+                size_t position = header.getPositionByName(array_column_name);
+                const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
+                if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
+                {
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    if (converted_field.isNull())
+                        return false;
+
+                    out.function = RPNElement::FUNCTION_HAS;
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                    return true;
+                }
+            }
+        }
+    }
+
     if (header.has(key_column_name))
     {
         size_t position = header.getPositionByName(key_column_name);
@@ -953,6 +1033,27 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+
+            /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
+            /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
+            /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
+            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
+            {
+                /// A `Variant` or `Dynamic` constant carries the nested padded value under its
+                /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
+                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+                const bool constant_may_be_fixed_string
+                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+                const size_t constant_bytes = value_field.safeGet<String>().size();
+                const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+                if (constant_may_be_fixed_string && !fixed_index_type)
+                    return false;
+
+                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
+                    return false;
+            }
+
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
