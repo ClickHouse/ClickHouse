@@ -13,6 +13,7 @@ extern const Event ASTFuzzerOracleTLPHavingChecks;
 extern const Event ASTFuzzerOracleDQPChecks;
 extern const Event ASTFuzzerOracleIdentityWhereChecks;
 extern const Event ASTFuzzerOracleSubqueryWrapChecks;
+extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
 }
 
 namespace DB
@@ -68,6 +69,7 @@ OracleRegistry::OracleRegistry()
     add("DQP", ProfileEvents::ASTFuzzerOracleDQPChecks, &QueryOracleChecker::checkDQP);
     add("Identity WHERE", ProfileEvents::ASTFuzzerOracleIdentityWhereChecks, &QueryOracleChecker::checkIdentityWhere);
     add("Subquery wrap", ProfileEvents::ASTFuzzerOracleSubqueryWrapChecks, &QueryOracleChecker::checkSubqueryWrap);
+    add("GROUP BY key permutation", ProfileEvents::ASTFuzzerOracleGroupByKeyPermutationChecks, &QueryOracleChecker::checkGroupByKeyPermutation);
 }
 
 const OracleRegistry & OracleRegistry::instance()
