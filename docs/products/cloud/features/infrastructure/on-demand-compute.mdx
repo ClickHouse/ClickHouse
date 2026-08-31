@@ -117,6 +117,7 @@ sequenceDiagram
 After the query finishes, the three workers stay leased to your tenant but idle until the lease expires.
 
 ```mermaid
+%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%
 flowchart LR
     Free["Free<br/>In the shared pool"] -->|Query starts| Active["Leased and active"]
     Active -->|Query finishes| Idle["Leased and idle<br/>Lease remains"]
