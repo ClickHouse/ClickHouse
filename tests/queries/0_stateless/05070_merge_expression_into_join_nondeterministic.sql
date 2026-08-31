@@ -30,6 +30,16 @@ SELECT countIf(r != k) AS on_violations, count() AS total
 FROM (SELECT t_merge_expr_1.a AS a, t_merge_expr_1.a % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s
 JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k;
 
+-- The gate must decide by determinism rather than reject every expression, so assert both
+-- directions. Whether the merge happened shows up as the plan changing when the setting is toggled;
+-- comparing the two plans to each other keeps the assertion independent of how a plan is printed.
+SELECT 'merged';
+SELECT
+    (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, rand() % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
+ != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, rand() % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS nondeterministic_merged,
+    (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, t_merge_expr_1.a % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
+ != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, t_merge_expr_1.a % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS deterministic_merged;
+
 DROP TABLE t_merge_expr_1;
 DROP TABLE t_merge_expr_2;
 DROP TABLE t_merge_expr_3;

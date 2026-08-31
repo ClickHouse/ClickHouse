@@ -708,6 +708,9 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
 /// allows it and the expression cannot be applied twice by the name-based merge.
 static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
 {
+    if (!merge_expression_into_join)
+        return false;
+
     /// Merging puts the expression into the join graph, where reordering can leave it computed twice
     /// from the raw inputs - once for the join key that decides matching and once for the output
     /// column. A non-deterministic expression then draws independently in the two places, so the
@@ -716,7 +719,7 @@ static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_e
     if (dagContainsNonDeterministicFunction(dag))
         return false;
 
-    return merge_expression_into_join && !hasOutputShadowingInputName(dag);
+    return !hasOutputShadowingInputName(dag);
 }
 
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
