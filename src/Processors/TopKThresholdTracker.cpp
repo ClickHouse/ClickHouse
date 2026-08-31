@@ -59,18 +59,24 @@ void TopKThresholdTrackerNumeric<T>::testAndSet(const Field & value)
         {
         }
     }
+}
 
-    is_set.store(true, std::memory_order_release);
+template <typename T>
+bool TopKThresholdTrackerNumeric<T>::isSet() const
+{
+    /// The sentinel initial value can never be stored by `testAndSet` (a candidate equal to it
+    /// fails the strict comparison), so `threshold != sentinel` means a real value was published.
+    return threshold.load(std::memory_order_relaxed) != sentinel<T>(sort_desc.direction);
 }
 
 template <typename T>
 bool TopKThresholdTrackerNumeric<T>::isValueInsideThreshold(const Field & value) const
 {
-    if (!is_set.load(std::memory_order_acquire))
+    T current = threshold.load(std::memory_order_relaxed);
+    if (current == sentinel<T>(sort_desc.direction))
         return true;
 
     T candidate = value.safeGet<T>();
-    T current = threshold.load(std::memory_order_relaxed);
 
     if (sort_desc.direction == 1)
         return !CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction);

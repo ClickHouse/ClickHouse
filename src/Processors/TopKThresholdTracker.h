@@ -41,11 +41,10 @@ public:
 
     /// Returns the sentinel if no value was published yet; callers must check `isSet` first.
     Field getValue() const override { return threshold.load(std::memory_order_relaxed);}
-    bool isSet() const override { return is_set.load(std::memory_order_acquire);}
+    bool isSet() const override;
 
 private:
     std::atomic<T> threshold;
-    std::atomic<bool> is_set{false};
 };
 
 class TopKThresholdTrackerGeneric : public ITopKThresholdTracker
