@@ -31,8 +31,10 @@ public:
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
     bool trySuspendIncrease(ResourceAllocation & allocation) override;
     void notifyRecoveryProgress(ResourceAllocation & allocation) override;
+    void retrySuction(ResourceAllocation & allocation) override;
     void retrySuspendedIncreases() override;
     bool hasSuspendedIncrease() const override;
+    ResourceAllocation * getSuctionAllocation() const override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
@@ -55,6 +57,7 @@ private:
     bool setDecrease();
     void ensureUsable() const;
     void clearMemoryGrowthSuspension();
+    bool canEnterSuction(const ResourceAllocation & allocation) const;
 
     /// Protects all the following fields
     mutable std::mutex mutex;

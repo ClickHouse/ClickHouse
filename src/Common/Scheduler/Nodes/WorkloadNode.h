@@ -941,6 +941,11 @@ private:
         return child && child->hasSuspendedIncrease();
     }
 
+    ResourceAllocation * getSuctionAllocation() const override
+    {
+        return child ? child->getSuctionAllocation() : nullptr;
+    }
+
     void propagateUpdateSchedulingSettings() override
     {
         if (parent)

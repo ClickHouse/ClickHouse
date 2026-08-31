@@ -47,6 +47,10 @@ public:
     /// Implementations must only schedule a retry; they must not synchronously traverse parents.
     virtual void notifyRecoveryProgress(ResourceAllocation & allocation) = 0;
 
+    /// Make exactly one suctioned request visible after a local release. Other force-spilling
+    /// requests remain parked and cannot capture the release.
+    virtual void retrySuction(ResourceAllocation & allocation) = 0;
+
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.

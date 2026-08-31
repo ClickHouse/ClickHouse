@@ -71,6 +71,7 @@ public:
     /// Suspended increases remain queued but are temporarily invisible to every scheduling layer.
     /// The allocation itself keeps running and may still release resources.
     bool isIncreaseSuspended() const { return memory_growth_suspended; }
+    bool isSuctioned() const { return memory_growth_suction_priority; }
 
 private:
     friend class ISpaceSharedNode;
@@ -79,15 +80,12 @@ private:
 
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
-    UInt64 last_increase_approval_epoch = 0; /// Last approved progress event; scheduler-thread only.
-    UInt64 last_productivity_end_epoch = 0; /// Last approval whose productive membership has ended.
     /// A hard-limit constraint may temporarily park a running allocation's pending growth so another
     /// request can be considered. The allocation can still decrease or be removed while growth is parked.
     bool memory_growth_suspended = false; /// Scheduler-thread only.
     bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
     bool memory_growth_recovery_pending = false; /// Queue-mutex protected durable query-to-scheduler hand-off.
-    bool memory_growth_suction_priority = false; /// External controller has authorized the last-resort path.
-    UInt64 memory_growth_candidate_protection_epoch = 0; /// Temporary scheduler-thread victim-search context.
+    bool memory_growth_suction_priority = false; /// The allocation owns the one suction slot in its scope.
     bool kill_requested = false; /// Scheduler-thread marker preventing duplicate victim selection across stacked limits.
     IncreaseRequest increase;
     DecreaseRequest decrease;

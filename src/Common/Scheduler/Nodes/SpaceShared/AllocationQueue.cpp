@@ -122,30 +122,35 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
 {
     chassert(&allocation.queue == this);
 
+    /// Suction is terminal. Once selected, the request must run or drive eviction; it cannot
+    /// return to the spilling queue.
+    if (allocation.memory_growth_suction_priority)
+        return false;
+
     /// Every request gets one fit check per resource-state round. The first regular request parked
     /// in a queue is its growth owner; later regular, initial, and pending requests may also yield so
     /// policy nodes can continue searching the constrained subtree.
     if (allocation.memory_growth_suspension_attempted)
+    {
+        /// A regular request remains in the same eviction-queue entry while its one spill pass is
+        /// active or waiting to acquire suction. Re-hide it without opening another spill epoch.
+        if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
+        {
+            allocation.memory_growth_suspended = true;
+            memory_growth_suspension_changed = true;
+            scheduleActivation();
+            return true;
+        }
         return false;
+    }
 
     allocation.memory_growth_suspension_attempted = true;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
-        /// Once admitted work blocks on its own growth it is no longer a productive beneficiary.
-        /// Notify every stacked limit before recording the ending epoch here, mirroring the way
-        /// approval epochs are recorded only after all limits observe a new approval.
-        if (allocation.last_increase_approval_epoch > allocation.last_productivity_end_epoch)
-        {
-            endProductiveMembership(allocation);
-            allocation.last_productivity_end_epoch = allocation.last_increase_approval_epoch;
-        }
-
-        /// Protection is externally injected suction priority, not permission to bypass fitting
-        /// work. Remember it, then hide the blocked growth for one complete policy-scoped search.
-        /// AllocationLimit consumes the decision only after every currently visible alternative
-        /// has been considered.
+        /// Entering the eviction queue starts one exhaustive spill pass. A query without a spill
+        /// controller has already exhausted that pass and is immediately ready for suction.
         if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
-            allocation.memory_growth_suction_priority = true;
+            allocation.memory_growth_recovery_pending = true;
         if (!suspended_growth)
             suspended_growth = &allocation;
     }
@@ -170,6 +175,31 @@ void AllocationQueue::notifyRecoveryProgress(ResourceAllocation & allocation)
     scheduleActivation();
 }
 
+void AllocationQueue::retrySuction(ResourceAllocation & allocation)
+{
+    /// May be called while this queue is propagating a decrease with `mutex` held. All touched
+    /// fields are scheduler-thread state, matching `trySuspendIncrease`.
+    if (is_not_usable || !allocation.increasing_hook.is_linked())
+        return;
+    chassert(allocation.memory_growth_suction_priority);
+    allocation.memory_growth_suspended = false;
+    memory_growth_suspension_changed = true;
+    scheduleActivation();
+}
+
+bool AllocationQueue::canEnterSuction(const ResourceAllocation & allocation) const
+{
+    for (ISchedulerNode * node = parent; node; node = node->parent)
+    {
+        const auto * space_node = static_cast<const ISpaceSharedNode *>(node);
+        if (ResourceAllocation * suction = space_node->getLocalSuctionAllocation(); suction && suction != &allocation)
+            return false;
+        if (ResourceAllocation * spilling = space_node->getLocalSpillingAllocation(); spilling && spilling != &allocation)
+            return false;
+    }
+    return true;
+}
+
 void AllocationQueue::retrySuspendedIncreases()
 {
     /// The owning limit may be above policy nodes and sibling queues. Defer the O(n) reset to this
@@ -182,6 +212,15 @@ void AllocationQueue::retrySuspendedIncreases()
 bool AllocationQueue::hasSuspendedIncrease() const
 {
     return suspended_growth != nullptr;
+}
+
+ResourceAllocation * AllocationQueue::getSuctionAllocation() const
+{
+    auto suction = std::find_if(running_allocations.begin(), running_allocations.end(), [](const ResourceAllocation & allocation)
+    {
+        return allocation.memory_growth_suction_priority;
+    });
+    return suction == running_allocations.end() ? nullptr : const_cast<ResourceAllocation *>(&*suction);
 }
 
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
@@ -311,7 +350,6 @@ void AllocationQueue::approveIncrease()
     chassert(increase->approval_epoch > 0);
     apply(*increase);
     allocation.allocated += increase->size;
-    allocation.last_increase_approval_epoch = increase->approval_epoch;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
         allocation.memory_growth_suction_priority = false;
@@ -360,9 +398,6 @@ void AllocationQueue::approveDecrease()
     apply(*decrease);
     allocation.allocated -= decrease->size;
     allocation.fair_key -= decrease->size;
-    if (allocation.allocated == 0)
-        allocation.last_productivity_end_epoch = allocation.last_increase_approval_epoch;
-
     // Reinsert into the appropriate data structures unless this is a removal
     if (!decrease->removing_allocation)
     {
@@ -373,11 +408,19 @@ void AllocationQueue::approveDecrease()
 
     /// Any released memory is a progress event. Give parked growth another chance immediately, even while
     /// beneficiaries keep running. If it still does not fit, `trySuspendIncrease` parks it again.
-    bool retry_suspended_growth = suspended_growth != nullptr;
+    bool ancestor_has_suction = false;
+    for (ISchedulerNode * node = parent; node; node = node->parent)
+    {
+        if (static_cast<ISpaceSharedNode *>(node)->getLocalSuctionAllocation())
+        {
+            ancestor_has_suction = true;
+            break;
+        }
+    }
+    bool retry_suspended_growth = suspended_growth != nullptr && !ancestor_has_suction;
     if (retry_suspended_growth)
     {
         suspended_growth->memory_growth_suspended = false;
-        suspended_growth->memory_growth_suspension_attempted = false;
         /// Capacity changed, so every alternative rejected in the previous round deserves a fresh
         /// fit check as well. This preserves queue order without letting one oversized request hide
         /// a later fitting request permanently.
@@ -389,7 +432,6 @@ void AllocationQueue::approveDecrease()
         for (ResourceAllocation & increasing : increasing_allocations)
         {
             increasing.memory_growth_suspended = false;
-            increasing.memory_growth_suspension_attempted = false;
         }
         memory_growth_suspension_changed = true;
     }
@@ -423,12 +465,8 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
 
     ResourceAllocation * victim = nullptr;
     ResourceAllocation * self_fallback = nullptr;
-    bool productive_work_is_protected = false;
-    const UInt64 protection_epoch = killer.allocation.memory_growth_candidate_protection_epoch;
-
-    /// Search the whole queue. The parked owner is a last fallback, and work approved after the
-    /// suspension remains protected while productive. Already-killed candidates cannot pin a
-    /// later pressure decision forever.
+    /// Search the whole queue in reverse acquisition order. The suctioned requester is the final
+    /// fallback, so eviction frees competing allocations one at a time before killing the requester.
     for (auto it = running_allocations.rbegin(); it != running_allocations.rend(); ++it)
     {
         ResourceAllocation & candidate = *it;
@@ -439,18 +477,11 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
             self_fallback = &candidate;
             continue;
         }
-        if (protection_epoch != 0
-            && candidate.last_increase_approval_epoch > protection_epoch
-            && candidate.last_increase_approval_epoch > candidate.last_productivity_end_epoch)
-        {
-            productive_work_is_protected = true;
-            continue;
-        }
         victim = &candidate;
         break;
     }
 
-    if (!victim && !productive_work_is_protected)
+    if (!victim)
         victim = self_fallback;
     if (!victim)
         return nullptr;
@@ -474,13 +505,54 @@ void AllocationQueue::processActivation()
     if (!parent)
         return; // Detached queue - nothing to do
     Update update;
+    bool suction_changed = false;
     {
         std::lock_guard lock(mutex);
 
-        if (suspended_growth && suspended_growth->memory_growth_recovery_pending)
+        /// A completed spill remains in eviction order until every ancestor scope can give it the
+        /// single suction slot. This prevents sibling spillers from competing for the same release.
+        const bool local_suction_exists = std::any_of(
+            running_allocations.begin(), running_allocations.end(), [](const ResourceAllocation & allocation)
+            {
+                return allocation.memory_growth_suction_priority;
+            });
+        auto ready_for_suction = std::find_if(
+            increasing_allocations.begin(), increasing_allocations.end(), [this, local_suction_exists](const ResourceAllocation & allocation)
+            {
+                if (!allocation.memory_growth_recovery_pending || allocation.memory_growth_suction_priority)
+                    return false;
+                return !local_suction_exists && canEnterSuction(allocation);
+            });
+
+        if (ready_for_suction != increasing_allocations.end())
         {
-            suspended_growth->memory_growth_recovery_pending = false;
-            memory_growth_suspension_retry_requested = true;
+            ResourceAllocation & recovering = *ready_for_suction;
+            recovering.memory_growth_recovery_pending = false;
+            recovering.memory_growth_suction_priority = true;
+            suction_changed = true;
+            recovering.memory_growth_suspended = false;
+            if (suspended_growth == &recovering)
+                suspended_growth = nullptr; // Pop the eviction-queue head into suction.
+
+            const ResourceCost old_size = recovering.increase.size;
+            const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
+            if (reconciled_size != old_size)
+            {
+                increasing_allocations.erase(increasing_allocations.iterator_to(recovering));
+                running_allocations.erase(running_allocations.iterator_to(recovering));
+                recovering.increase.size = reconciled_size;
+                recovering.fair_key = recovering.allocated + reconciled_size;
+                running_allocations.insert(recovering);
+                if (reconciled_size > 0)
+                    increasing_allocations.insert(recovering);
+                else
+                {
+                    recovering.memory_growth_suction_priority = false;
+                    suction_changed = true;
+                    recovering.onGrowthPressureResolved();
+                    recovering.increaseCancelled();
+                }
+            }
             memory_growth_suspension_changed = true;
         }
 
@@ -522,7 +594,6 @@ void AllocationQueue::processActivation()
             for (ResourceAllocation & increasing : increasing_allocations)
             {
                 increasing.memory_growth_suspended = false;
-                increasing.memory_growth_suspension_attempted = false;
             }
             memory_growth_suspension_retry_requested = false;
         }
@@ -584,6 +655,8 @@ void AllocationQueue::processActivation()
         }
         if (setDecrease())
             update.setDecrease(decrease);
+        if (suction_changed)
+            update.setSuction(getSuctionAllocation());
     }
 
     // Propagate update to parent
@@ -643,6 +716,10 @@ void AllocationQueue::updateQueueLimit(Int64 value)
 bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
 {
     IncreaseRequest * old_increase = increase;
+    auto suction = std::find_if(increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
+    {
+        return allocation.memory_growth_suction_priority && !allocation.memory_growth_suspended;
+    });
     auto eligible = std::find_if(increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
     {
         return !allocation.memory_growth_suspended;
@@ -653,7 +730,9 @@ bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
     });
 
     /// Preserve the scheduler's original order until a growth request is actually suspended.
-    if (eligible != increasing_allocations.end())
+    if (suction != increasing_allocations.end())
+        increase = &suction->increase;
+    else if (eligible != increasing_allocations.end())
         increase = &eligible->increase;
     else if (pending != pending_allocations.end())
         increase = &pending->increase;
@@ -674,21 +753,6 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     }
     suspended_growth = nullptr;
     memory_growth_suspension_retry_requested = false;
-
-    /// Beneficiaries are always running allocations. Avoid allocating an auxiliary container here: this
-    /// path exists specifically for memory pressure, so an O(n) cleanup is preferable to extra allocation.
-    for (ResourceAllocation & allocation : running_allocations)
-    {
-        allocation.memory_growth_suspended = false;
-        allocation.memory_growth_suspension_attempted = false;
-        allocation.memory_growth_recovery_pending = false;
-    }
-    for (ResourceAllocation & allocation : pending_allocations)
-    {
-        allocation.memory_growth_suspended = false;
-        allocation.memory_growth_suspension_attempted = false;
-        allocation.memory_growth_recovery_pending = false;
-    }
 }
 
 bool AllocationQueue::setDecrease() // TSA_REQUIRES(mutex)

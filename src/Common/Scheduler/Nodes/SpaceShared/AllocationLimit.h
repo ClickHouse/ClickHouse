@@ -27,8 +27,10 @@ public:
     void approveIncrease() override;
     void approveDecrease() override;
     void retrySuspendedIncreases() override;
-    void endProductiveMembership(ResourceAllocation & allocation) override;
     bool hasSuspendedIncrease() const override;
+    ResourceAllocation * getLocalSpillingAllocation() const override;
+    ResourceAllocation * getLocalSuctionAllocation() const override;
+    ResourceAllocation * getSuctionAllocation() const override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
     void updateMinMaxAllocated(ResourceCost new_value) override;
 
@@ -38,6 +40,7 @@ private:
     void selectAndKill(IncreaseRequest & killer);
     void processSuction();
     void clearMemoryGrowthSuspension();
+    void clearSuction();
 
     ResourceCost max_allocated = default_max_allocated;
 
@@ -46,10 +49,9 @@ private:
 
     /// Regular growth whose first hard-limit conflict yielded to other work in this subtree.
     IncreaseRequest * suspended_growth = nullptr;
+    /// The one request at this level which has finished spilling and is at the final step before eviction.
+    IncreaseRequest * suction_growth = nullptr;
     bool suspended_growth_retry_pending = false;
-    UInt64 last_seen_approval_epoch = 0;
-    UInt64 memory_growth_suspension_start_epoch = 0;
-    size_t memory_growth_suspension_beneficiaries = 0;
 
     SpaceSharedNodePtr child;
 };

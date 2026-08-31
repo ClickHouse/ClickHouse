@@ -176,11 +176,17 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
                     && reported_recovery_epoch < observed_recovery_epoch)
                 {
                     reported_recovery_epoch = observed_recovery_epoch;
+                    growth_recovery_active = false;
+                    recovery_epoch = 0;
                     notify_recovery_progress = true;
+                    cv.notify_all();
                 }
             }
             if (notify_recovery_progress)
+            {
+                recovery_scheduler->finishMemoryPressure();
                 queue.notifyRecoveryProgress(*this);
+            }
         }
     }
 
@@ -219,11 +225,11 @@ ResourceAllocation::GrowthPressureAction MemoryReservation::onGrowthPressure()
     const auto spill_request = scheduler->requestForcedSpill();
     {
         std::unique_lock lock(mutex);
-        growth_recovery_active = !spill_request.inject_priority;
+        growth_recovery_active = true;
         recovery_epoch = spill_request.epoch;
         cv.notify_all();
     }
-    return spill_request.inject_priority ? GrowthPressureAction::Protect : GrowthPressureAction::Yield;
+    return GrowthPressureAction::Yield;
 }
 
 void MemoryReservation::onGrowthPressureResolved()

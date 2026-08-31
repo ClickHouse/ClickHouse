@@ -605,7 +605,8 @@ struct ManualAllocation : public ResourceAllocation
     void protectAfterPressureRounds(size_t rounds)
     {
         std::unique_lock lock(mutex);
-        protection_round = rounds;
+        UNUSED(rounds);
+        has_recovery_controller = true;
     }
 
     void waitPressureCount(size_t count)
@@ -628,6 +629,10 @@ struct ManualAllocation : public ResourceAllocation
 
     void recoveryCheckpoint()
     {
+        {
+            std::unique_lock lock(mutex);
+            recovery_active = false;
+        }
         queue.notifyRecoveryProgress(*this);
     }
 
@@ -647,14 +652,12 @@ private: // interaction with the scheduler thread
     GrowthPressureAction onGrowthPressure() override
     {
         std::function<void()> callback;
-        GrowthPressureAction action = GrowthPressureAction::Yield;
+        GrowthPressureAction action;
         {
             std::unique_lock lock(mutex);
-            ++current_pressure_round;
             ++total_pressure_events;
-            const bool protect = protection_round != 0 && current_pressure_round >= protection_round;
-            recovery_active = !protect;
-            action = protect ? GrowthPressureAction::Protect : GrowthPressureAction::Yield;
+            recovery_active = has_recovery_controller;
+            action = has_recovery_controller ? GrowthPressureAction::Yield : GrowthPressureAction::Protect;
             callback = std::move(next_pressure_callback);
             cv.notify_all();
         }
@@ -670,7 +673,6 @@ private: // interaction with the scheduler thread
     void onGrowthPressureResolved() override
     {
         std::unique_lock lock(mutex);
-        current_pressure_round = 0;
         recovery_active = false;
         cv.notify_all();
     }
@@ -736,8 +738,7 @@ private: // interaction with the scheduler thread
     bool removed = false;
     size_t kills = 0;
     ResourceCost allocated_size = 0;
-    size_t protection_round = 1;
-    size_t current_pressure_round = 0;
+    bool has_recovery_controller = false;
     size_t total_pressure_events = 0;
     bool recovery_active = false;
     std::function<void()> next_pressure_callback;
@@ -868,10 +869,9 @@ TEST(SchedulerSpaceShared, MemoryReleaseLetsSuspendedGrowthResume)
 }
 
 
-/// If the work admitted ahead of suspended growth later needs memory that cannot fit, suspension has not
-/// restored flow. The existing eviction policy may then kill the suspended heavy allocation so the winner
-/// can continue; killing remains a last resort reached by resource state, not by elapsed wait time.
-TEST(SchedulerSpaceShared, BeneficiaryBlockedOnGrowthCanEvictSuspendedAllocation)
+/// Suction is the final step before eviction. It reclaims one existing-policy victim at a time;
+/// each resulting local release is offered only to the suctioned request.
+TEST(SchedulerSpaceShared, SuctionEvictsOneVictimAtATime)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -894,10 +894,145 @@ TEST(SchedulerSpaceShared, BeneficiaryBlockedOnGrowthCanEvictSuspendedAllocation
     small->waitSynced();
     EXPECT_EQ(heavy.killCount(), 0u);
 
-    small->increaseAsync(2000); // 8000 + 1000 + 2000 > 10000: the winner itself can no longer progress.
-    heavy.recoveryCheckpoint(); // External reclaim controller reports that its protected pass made no room.
+    small->increaseAsync(2000);
+    heavy.recoveryCheckpoint();
+
+    ASSERT_TRUE(small->waitKillsFor(1, std::chrono::seconds(5)))
+        << "The suctioned request did not reclaim the first existing-policy victim";
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    /// Releasing the selected victim gives only Heavy the local opportunity. Its +5000 still
+    /// cannot fit, so the next and final victim is Heavy itself.
+    small.reset();
     heavy.waitKills(1);
     EXPECT_EQ(heavy.killCount(), 1u);
+}
+
+
+TEST(SchedulerSpaceShared, ForceSpillingRequestCannotCaptureSuctionRelease)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation suctioned(queue, "suctioned", 4000);
+    auto spilling = std::make_unique<ManualAllocation>(queue, "spilling", 3000);
+    auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 2000);
+    suctioned.protectAfterPressureRounds(2);
+    spilling->protectAfterPressureRounds(2);
+
+    suctioned.increaseAsync(3000);
+    suctioned.waitPressureCount(1);
+    spilling->increaseAsync(2000);
+    spilling->waitPressureCount(1);
+
+    suctioned.recoveryCheckpoint();
+    spilling->recoveryCheckpoint();
+
+    /// The release makes Suctioned fit exactly. Spilling has also completed recovery, but it is
+    /// still in the eviction queue and must not consume this level's local opportunity.
+    releaser->decreaseAsync(2000);
+    releaser->waitSynced();
+    ASSERT_TRUE(suctioned.waitSyncedFor(std::chrono::seconds(5)));
+    EXPECT_EQ(suctioned.size(), 7000);
+    EXPECT_EQ(spilling->size(), 3000);
+
+    spilling.reset();
+    releaser.reset();
+}
+
+
+TEST(SchedulerSpaceShared, ChildSuctionIsFollowedByParentLimit)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+
+    auto outer = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 7000);
+    auto inner = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 7000);
+    inner->basename = "inner";
+    auto queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    AllocationQueue * queue_ptr = queue.get();
+    AllocationLimit * outer_ptr = outer.get();
+    AllocationLimit * inner_ptr = inner.get();
+    inner->attachChild(queue);
+    outer->attachChild(inner);
+    r.root_node = outer;
+    queue.reset();
+    inner.reset();
+    outer.reset();
+    r.registerResource();
+
+    ManualAllocation allocation(queue_ptr, "allocation", 6000);
+    allocation.protectAfterPressureRounds(2);
+    allocation.increaseAsync(2000);
+    allocation.waitPressureCount(1);
+    allocation.recoveryCheckpoint();
+
+    std::promise<void> inspected;
+    t.scheduler.event_queue.enqueue([&]
+    {
+        EXPECT_EQ(inner_ptr->getSuctionAllocation(), &allocation);
+        EXPECT_EQ(outer_ptr->getSuctionAllocation(), &allocation);
+        inspected.set_value();
+    });
+    inspected.get_future().get();
+}
+
+
+TEST(SchedulerSpaceShared, ParentSpillingPreventsDescendantSuction)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+
+    auto outer = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+    auto policy = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    policy->basename = "policy";
+    outer->attachChild(policy);
+
+    auto parent_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    parent_queue->basename = "parent_queue";
+    AllocationQueue * parent_queue_ptr = parent_queue.get();
+    policy->attachChild(parent_queue);
+
+    auto child_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 5000);
+    child_limit->basename = "child_limit";
+    auto child_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    child_queue->basename = "child_queue";
+    AllocationQueue * child_queue_ptr = child_queue.get();
+    child_limit->attachChild(child_queue);
+    policy->attachChild(child_limit);
+
+    AllocationLimit * outer_ptr = outer.get();
+    r.root_node = outer;
+    child_queue.reset();
+    child_limit.reset();
+    parent_queue.reset();
+    policy.reset();
+    outer.reset();
+    r.registerResource();
+
+    ManualAllocation parent(parent_queue_ptr, "parent", 6000);
+    ManualAllocation child(child_queue_ptr, "child", 4000);
+    parent.protectAfterPressureRounds(2);
+    child.protectAfterPressureRounds(2);
+
+    parent.increaseAsync(2000);
+    parent.waitPressureCount(1);
+    child.increaseAsync(2000);
+    child.waitPressureCount(1);
+    child.recoveryCheckpoint();
+
+    std::promise<void> inspected;
+    t.scheduler.event_queue.enqueue([&]
+    {
+        EXPECT_EQ(outer_ptr->getLocalSpillingAllocation(), &parent);
+        EXPECT_FALSE(child.isSuctioned());
+        inspected.set_value();
+    });
+    inspected.get_future().get();
 }
 
 
@@ -1347,9 +1482,9 @@ TEST(SchedulerSpaceShared, BlockedGrowthWithoutBeneficiaryStillKills)
 
 
 
-/// A repeated no-progress event raises query-scoped priority outside the allocation hierarchy.
-/// The protected request then uses the existing in-scope victim policy; it does not bypass the limit.
-TEST(SchedulerSpaceShared, RepeatedSuspensionInjectsExternalPriority)
+/// Spill completion moves the eviction-queue head into the single suction slot. The suctioned
+/// request then drives the existing victim policy one victim at a time.
+TEST(SchedulerSpaceShared, SpillCompletionEntersSuction)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -1375,16 +1510,19 @@ TEST(SchedulerSpaceShared, RepeatedSuspensionInjectsExternalPriority)
     ASSERT_EQ(heavy.killCount(), 0u);
     ASSERT_EQ(victim->killCount(), 0u);
 
-    /// A real resource-state change retries the same parked growth. The external controller now
-    /// injects protection, so existing in-scope eviction chooses the larger competing allocation.
+    /// A release alone does not create suction or open another spill pass.
     victim->decreaseAsync(100);
     victim->waitSynced();
+    EXPECT_EQ(heavy.pressureCount(), 1u);
+    EXPECT_EQ(victim->killCount(), 0u);
+
+    heavy.recoveryCheckpoint();
     ASSERT_TRUE(victim->waitKillsFor(1, std::chrono::seconds(5)))
-        << "External suction priority did not reach the larger in-scope victim; pressure_events="
+        << "Completed spilling did not move the queue head into suction; pressure_events="
         << heavy.pressureCount() << ", heavy_kills=" << heavy.killCount()
         << ", victim_kills=" << victim->killCount();
 
-    EXPECT_EQ(heavy.pressureCount(), 2u);
+    EXPECT_EQ(heavy.pressureCount(), 1u);
     EXPECT_EQ(heavy.killCount(), 0u);
     EXPECT_EQ(victim->killCount(), 1u);
 
@@ -1417,7 +1555,7 @@ TEST(SchedulerSpaceShared, RecoveryLaneRunsBeforeSuctionBackstop)
     heavy.recoveryCheckpoint();
     heavy.waitKills(1);
 
-    EXPECT_EQ(heavy.pressureCount(), 2u);
+    EXPECT_EQ(heavy.pressureCount(), 1u);
     EXPECT_EQ(heavy.killCount(), 1u);
 }
 
@@ -1445,7 +1583,7 @@ TEST(SchedulerSpaceShared, EarlyRecoveryCompletionCannotBeLost)
         << "An immediate recovery completion was lost before the queue published its parked owner; "
         << "pressure_events=" << heavy.pressureCount() << ", kills=" << heavy.killCount();
 
-    EXPECT_EQ(heavy.pressureCount(), 2u);
+    EXPECT_EQ(heavy.pressureCount(), 1u);
     EXPECT_EQ(heavy.killCount(), 1u);
 }
 
@@ -1485,9 +1623,9 @@ private:
 };
 
 
-/// Worker wakeups and memory-sync calls cannot advance pressure. Suction becomes eligible only
-/// after the selected processor explicitly finishes the forced spill attempt.
-TEST(SchedulerSpaceShared, ExplicitSpillCompletionControlsSuctionPriority)
+/// Queue entry starts one spill epoch. Re-observation cannot open another epoch, and suction is
+/// selected by the allocation hierarchy only after this explicit completion.
+TEST(SchedulerSpaceShared, QueueEntryOwnsOneForcedSpillEpoch)
 {
     MemorySpillScheduler scheduler(/*enable_=*/ false);
     ManualSpillProcessor processor(4096, /*spill_succeeds_=*/ true);
@@ -1495,14 +1633,12 @@ TEST(SchedulerSpaceShared, ExplicitSpillCompletionControlsSuctionPriority)
 
     const auto first_request = scheduler.requestForcedSpill();
     ASSERT_GT(first_request.epoch, 0u);
-    EXPECT_FALSE(first_request.inject_priority);
     EXPECT_EQ(scheduler.getForcedSpillResult(first_request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
-    /// Re-observing the same blocked request before reclaim completion must not inject priority.
+    /// Re-observing the same queue entry must not start another spill pass.
     const auto repeated_request = scheduler.requestForcedSpill();
     EXPECT_EQ(repeated_request.epoch, first_request.epoch);
-    EXPECT_FALSE(repeated_request.inject_priority);
 
     scheduler.checkAndSpill(&processor);
     EXPECT_EQ(processor.spillCallCount(), 1u);
@@ -1510,9 +1646,12 @@ TEST(SchedulerSpaceShared, ExplicitSpillCompletionControlsSuctionPriority)
     EXPECT_EQ(scheduler.getForcedSpillResult(first_request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 
-    const auto suction_request = scheduler.requestForcedSpill();
-    EXPECT_EQ(suction_request.epoch, first_request.epoch);
-    EXPECT_TRUE(suction_request.inject_priority);
+    const auto same_entry = scheduler.requestForcedSpill();
+    EXPECT_EQ(same_entry.epoch, first_request.epoch);
+
+    scheduler.finishMemoryPressure();
+    const auto next_entry = scheduler.requestForcedSpill();
+    EXPECT_GT(next_entry.epoch, first_request.epoch);
 }
 
 
@@ -1529,17 +1668,17 @@ TEST(SchedulerSpaceShared, RunnableProcessorClaimsForcedSpillEpoch)
 
     const auto first = scheduler.requestForcedSpill();
     scheduler.checkAndSpill(&previously_selected);
-    ASSERT_NE(
-        scheduler.getForcedSpillResult(first.epoch).outcome,
+    scheduler.checkAndSpill(&runnable);
+    ASSERT_NE(scheduler.getForcedSpillResult(first.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
     scheduler.finishMemoryPressure();
 
     const auto second = scheduler.requestForcedSpill();
-    ASSERT_FALSE(second.inject_priority);
+    scheduler.checkAndSpill(&previously_selected);
     scheduler.checkAndSpill(&runnable);
 
-    EXPECT_EQ(runnable.spillCallCount(), 1u)
-        << "The runnable processor could not claim the query-level forced-spill epoch";
+    EXPECT_EQ(runnable.spillCallCount(), 2u)
+        << "The runnable processor did not participate in every queue-entry spill pass";
     EXPECT_NE(
         scheduler.getForcedSpillResult(second.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending)
@@ -1555,12 +1694,11 @@ TEST(SchedulerSpaceShared, NoSpillCandidateReachesSuctionBackstop)
     MemorySpillScheduler scheduler(/*enable_=*/ false);
 
     const auto spill_request = scheduler.requestForcedSpill();
-    EXPECT_FALSE(spill_request.inject_priority);
     EXPECT_EQ(scheduler.getForcedSpillResult(spill_request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
 
-    const auto suction_request = scheduler.requestForcedSpill();
-    EXPECT_TRUE(suction_request.inject_priority);
+    const auto same_entry = scheduler.requestForcedSpill();
+    EXPECT_EQ(same_entry.epoch, spill_request.epoch);
 }
 
 
@@ -1663,6 +1801,7 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
         };
 
         ManualAllocation heavy(queue, "heavy", 5000);
+        heavy.protectAfterPressureRounds(2);
         auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 3000);
 
         std::promise<void> entered;
@@ -2317,6 +2456,7 @@ TEST(SchedulerSpaceShared, DetachingLimitCancelsQueuedSuction)
                     t.scheduler.removeChild(r.root_node.get());
                     r.root_node.reset();
                 });
+                heavy->recoveryCheckpoint();
             });
 
             heavy->increaseAsync(5000);
@@ -2430,9 +2570,9 @@ TEST(SchedulerSpaceShared, DetachingSuspendedPrecedenceChildUnblocksLowerWork)
 }
 
 
-/// A productive beneficiary is protected, not a reason to stop victim search. Suction must search
-/// past it and choose another eligible allocation before considering the parked owner.
-TEST(SchedulerSpaceShared, SuctionSearchesPastProtectedBeneficiary)
+/// Suction uses the existing victim order. It reclaims the largest competing allocation before
+/// considering the suctioned requester as the final fallback.
+TEST(SchedulerSpaceShared, SuctionUsesExistingVictimOrder)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -2451,9 +2591,9 @@ TEST(SchedulerSpaceShared, SuctionSearchesPastProtectedBeneficiary)
     ASSERT_EQ(beneficiary->killCount(), 0u);
 
     heavy.recoveryCheckpoint();
-    ASSERT_TRUE(victim->waitKillsFor(1, std::chrono::seconds(5)))
-        << "Victim search stopped at the protected beneficiary";
-    EXPECT_EQ(beneficiary->killCount(), 0u);
+    ASSERT_TRUE(beneficiary->waitKillsFor(1, std::chrono::seconds(5)))
+        << "Suction did not use the existing largest-first victim order";
+    EXPECT_EQ(victim->killCount(), 0u);
     EXPECT_EQ(heavy.killCount(), 0u);
 }
 

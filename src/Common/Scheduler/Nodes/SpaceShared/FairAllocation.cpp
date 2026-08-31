@@ -141,6 +141,21 @@ bool FairAllocation::hasSuspendedIncrease() const
     });
 }
 
+ResourceAllocation * FairAllocation::getSuctionAllocation() const
+{
+    ResourceAllocation * result = nullptr;
+    for (const auto & [_, child] : children)
+    {
+        if (ResourceAllocation * candidate = child->getSuctionAllocation())
+        {
+            chassert(!result || result == candidate);
+            if (!result)
+                result = candidate;
+        }
+    }
+    return result;
+}
+
 void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
@@ -159,6 +174,8 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
         else
             update.resetDecrease();
     }
+    if (update.suction)
+        update.setSuction(getSuctionAllocation());
     if (parent && update)
         propagate(std::move(update));
 }
@@ -174,11 +191,18 @@ bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest 
     {
         return child.increase && !child.increase->allocation.isIncreaseSuspended();
     };
+    auto suction = std::find_if(increasing_children.begin(), increasing_children.end(), [](const ISpaceSharedNode & child)
+    {
+        return child.increase && child.increase->allocation.isSuctioned();
+    });
     auto increasing = std::find_if(increasing_children.begin(), increasing_children.end(), eligible);
     auto pending = std::find_if(pending_children.begin(), pending_children.end(), eligible);
-    increase_child = increasing != increasing_children.end()
-        ? &*increasing
-        : (pending != pending_children.end() ? &*pending : nullptr);
+    if (suction != increasing_children.end())
+        increase_child = &*suction;
+    else if (increasing != increasing_children.end())
+        increase_child = &*increasing;
+    else
+        increase_child = pending != pending_children.end() ? &*pending : nullptr;
     increase = increase_child ? increase_child->increase : nullptr;
     return old_increase != increase;
 }

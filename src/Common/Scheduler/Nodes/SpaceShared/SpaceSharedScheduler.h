@@ -136,6 +136,11 @@ public:
         return child && child->hasSuspendedIncrease();
     }
 
+    ResourceAllocation * getSuctionAllocation() const override
+    {
+        return child ? child->getSuctionAllocation() : nullptr;
+    }
+
     ResourceAllocation * selectAllocationToKill(IncreaseRequest &, ResourceCost, String &) override
     {
         chassert(false);

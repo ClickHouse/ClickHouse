@@ -151,6 +151,21 @@ bool PrecedenceAllocation::hasSuspendedIncrease() const
     });
 }
 
+ResourceAllocation * PrecedenceAllocation::getSuctionAllocation() const
+{
+    ResourceAllocation * result = nullptr;
+    for (const auto & [_, child] : children)
+    {
+        if (ResourceAllocation * candidate = child->getSuctionAllocation())
+        {
+            chassert(!result || result == candidate);
+            if (!result)
+                result = candidate;
+        }
+    }
+    return result;
+}
+
 void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
@@ -179,6 +194,8 @@ void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update
         else
             update.resetDecrease();
     }
+    if (update.suction)
+        update.setSuction(getSuctionAllocation());
     if (parent && update)
         propagate(std::move(update));
 }
@@ -196,11 +213,17 @@ bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRe
 
     // Update current increase request
     IncreaseRequest * old_increase = increase;
+    auto suction = std::find_if(increasing_children.begin(), increasing_children.end(), [](const ISpaceSharedNode & child)
+    {
+        return child.increase && child.increase->allocation.isSuctioned();
+    });
     auto eligible = std::find_if(increasing_children.begin(), increasing_children.end(), [](const ISpaceSharedNode & child)
     {
         return child.increase && !child.increase->allocation.isIncreaseSuspended();
     });
-    increase_child = eligible == increasing_children.end() ? nullptr : &*eligible;
+    increase_child = suction != increasing_children.end()
+        ? &*suction
+        : (eligible == increasing_children.end() ? nullptr : &*eligible);
 
     /// Suspension is an internal reclaim state, not permission to cross a workload-policy boundary.
     /// A parked branch therefore remains a barrier to strictly lower-precedence children.
