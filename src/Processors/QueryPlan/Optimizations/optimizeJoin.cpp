@@ -711,13 +711,10 @@ static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_e
     /// Merging puts the expression into the join graph, where reordering can leave it computed twice
     /// from the raw inputs - once for the join key that decides matching and once for the output
     /// column. A non-deterministic expression then draws independently in the two places, so the
-    /// returned rows can violate the query's own `JOIN ON` condition.
-    for (const auto & node : dag.getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
-            && !node.function_base->isDeterministicInScopeOfQuery())
-            return false;
-    }
+    /// returned rows can violate the query's own `JOIN ON` condition. This is the same notion of
+    /// non-determinism the plan-time join conversions guard against, so it uses the shared helper.
+    if (dagContainsNonDeterministicFunction(dag))
+        return false;
 
     return merge_expression_into_join && !hasOutputShadowingInputName(dag);
 }
