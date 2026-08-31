@@ -51,6 +51,7 @@ namespace ErrorCodes
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
     DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \
+    DECLARE(Bool, flat_namespaces, false, "The catalog supports only single-level namespaces, so only top-level namespaces are listed and sub-namespaces are not requested. Set this for Iceberg REST catalogs that reject the `parent` query parameter of the list-namespaces endpoint, such as Apache Polaris federated to AWS Glue, which answers `Glue dataCatalog does not support multipart namespace` with HTTP 400. Some catalogs instead ignore `parent` and echo top-level namespaces back for every parent; without this setting those are listed as fake nested namespaces. Not needed for catalog types that are always flat (`delta_sharing`, BigLake, S3 Tables).", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
