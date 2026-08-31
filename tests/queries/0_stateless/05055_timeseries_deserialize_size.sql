@@ -22,3 +22,10 @@ FROM (SELECT CAST(timeSeriesChangesToGridState(10, 120, 10, 70)(toUInt32(55), to
 -- the bucket count, the number of buckets and the bucket index) replaced with a huge value.
 SELECT length(finalizeAggregation(CAST(substring(state, 1, 26) || unhex('FFFFFFFFFFFFFFFF') || substring(state, 35) AS AggregateFunction(timeSeriesChangesToGrid(10, 120, 10, 70), UInt32, Float64))))
 FROM (SELECT CAST(timeSeriesChangesToGridState(10, 120, 10, 70)(toUInt32(55), toFloat64(1)) AS String) AS state); -- { serverError CANNOT_READ_ALL_DATA }
+
+-- The number of buckets of the outer state is only checked against the bucket count derived from the function
+-- parameters, and a huge window makes that count enormous, so the buckets must not be reserved before they are
+-- read. The memory limit keeps a state claiming all of them from silently allocating gigabytes.
+SELECT length(finalizeAggregation(CAST(substring(state, 1, 10) || substring(state, 3, 8) AS AggregateFunction(timeSeriesChangesToGrid(2147483648, 2147483649, 1, 2147483647), UInt32, Float64))))
+FROM (SELECT CAST(timeSeriesChangesToGridState(2147483648, 2147483649, 1, 2147483647)(toUInt32(2147483648), toFloat64(1)) AS String) AS state)
+SETTINGS max_memory_usage = 1073741824; -- { serverError CANNOT_READ_ALL_DATA }
