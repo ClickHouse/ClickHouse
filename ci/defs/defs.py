@@ -32,10 +32,9 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
-    MACOS_ARM_SMALL = ["self-hosted", "macos_m2"]
-    MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
-    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
-    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    MACOS_ARM_SMALL = ["self-hosted", "macos-m2"]
+    AMD_TINY = ["self-hosted", "amd-tiny"]
+    ARM_TINY = ["self-hosted", "arm-tiny"]
     RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
@@ -49,12 +48,25 @@ BASE_BRANCH = "master"
 azure_secret = Secret.Config(
     name="azure_connection_string",
     type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
 )
 
 SECRETS = [
     Secret.Config(
+        name="clickhouse-dockerhub-registry",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-connection",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    #TODO: remove
+    Secret.Config(
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
