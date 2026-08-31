@@ -240,5 +240,45 @@ WHERE hasAnyTokens(mapValues(c.m), ['alpha beta']) OR f.category = 'nonexistent'
 ORDER BY c.id;
 
 DROP TABLE t_115999_filled;
+
+-- A subquery can project the indexed expression itself, not only a column of it. Seen from outside, `x`
+-- still is `lower(s)`, so the index describes it.
+SELECT 'an expression index projected by a subquery';
+SELECT id FROM
+(
+    SELECT c.id AS id, c.x AS x, b.category AS category
+    FROM (SELECT id, group_id, lower(s) AS x FROM t_115999_carrier) AS c
+    INNER JOIN t_115999_side AS b ON c.group_id = b.group_id
+)
+WHERE hasAnyTokens(x, ['ell']) OR category = 'nonexistent'
+ORDER BY id;
+SELECT id FROM t_115999_carrier WHERE hasAnyTokens(lower(s), ['ell']) ORDER BY id;
+
+-- A `mapValues(m)` index also describes the `m['k']` the predicate reads it through.
+SELECT 'a Map element above the JOIN';
+SELECT c.id FROM t_115999_carrier AS c INNER JOIN t_115999_side AS b ON c.group_id = b.group_id
+WHERE hasAnyTokens(c.m['k'], ['alpha beta']) OR b.category = 'nonexistent' ORDER BY c.id;
+SELECT id FROM t_115999_carrier WHERE hasAnyTokens(m['k'], ['alpha beta']) ORDER BY id;
+
 DROP TABLE t_115999_carrier;
+
+-- A `JSONAllValues(j)` index describes the JSON subcolumns read out of it.
+SELECT 'a JSON subcolumn above the JOIN';
+CREATE TABLE t_115999_json
+(
+    id UInt64,
+    group_id UInt64,
+    j JSON,
+    INDEX idx_json JSONAllValues(j) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_json VALUES (1, 1, '{"k": "alpha beta"}'), (2, 2, '{"k": "gamma delta"}');
+
+SELECT t.id FROM t_115999_json AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.j.k::String, ['alpha beta']) OR b.category = 'nonexistent' ORDER BY t.id;
+SELECT id FROM t_115999_json WHERE hasAnyTokens(j.k::String, ['alpha beta']) ORDER BY id;
+
+DROP TABLE t_115999_json;
 DROP TABLE t_115999_side;

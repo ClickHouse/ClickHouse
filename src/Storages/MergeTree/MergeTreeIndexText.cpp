@@ -1946,6 +1946,8 @@ void normalizeColumnExpression(ASTPtr & ast)
     ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
 }
 
+}
+
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
 /// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
 /// expression after the same rewrite, or `std::nullopt` if it does not change.
@@ -1963,8 +1965,6 @@ std::optional<String> getNormalizedIndexColumnName(const IndexDescription & inde
         return {};
 
     return name;
-}
-
 }
 
 MergeTreeIndexText::MergeTreeIndexText(

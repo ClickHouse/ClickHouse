@@ -53,3 +53,12 @@ the indexed column renamed below the JOIN
 a computed column reusing the indexed column name
 a filled join between the scan and the predicate
 1
+an expression index projected by a subquery
+1
+1
+a Map element above the JOIN
+1
+1
+a JSON subcolumn above the JOIN
+1
+1
