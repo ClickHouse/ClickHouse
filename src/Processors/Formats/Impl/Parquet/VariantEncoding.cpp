@@ -249,6 +249,13 @@ DecodedValue decodePrimitive(std::string_view data, size_t pos, PrimitiveType ty
             return {std::make_shared<DataTypeString>(), Field(String(readSlice(data, pos + 4, length)))};
         }
     }
+
+    /// The id is 6 bits of a byte of the blob, so it can be any of 0..63, while the encoding spec
+    /// assigns only 0..20. Thrown after the switch rather than from a `default` label, so that
+    /// -Wswitch keeps flagging an enumerator that is added without a case.
+    throw Exception(
+        ErrorCodes::INCORRECT_DATA,
+        "Malformed Parquet variant: unknown primitive type id {}", UInt16(type_id));
 }
 
 DecodedValue decodeObject(std::string_view data, size_t pos, UInt8 value_header, const DecodeContext & context, size_t depth)
