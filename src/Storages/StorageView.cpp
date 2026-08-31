@@ -1,3 +1,5 @@
+#include <set>
+
 #include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
@@ -322,6 +324,16 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     return DatabaseCatalog::instance().tryGetTable(storage_id, context);
 }
 
+
+/// Settings that cannot affect the rows a view returns, so they must not take part in its modification
+/// hash. `RefreshTask::createRefreshContext` puts the attempt number into `log_comment`, so folding it
+/// in would make the hash of an unchanged view differ between a first attempt and a retry: a
+/// `REFRESH ... IF CHANGED APPEND` watermark written by a retry would then be ignored by the next
+/// attempt, which would append a duplicate copy of unchanged rows. The result limits and `extremes`
+/// are overwritten by `getViewContext` (they apply to the outer query, not to the view), and writing
+/// them marks them as changed, so they have to be left out here instead.
+const std::set<std::string_view> settings_not_affecting_view_result
+    = {"log_comment", "max_result_rows", "max_result_bytes", "extremes"};
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
@@ -661,14 +673,25 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
     if (!getStorageID().hasUUID())
         return {};
 
+    /// `system.tables.modification_hash` introspection requires only `SELECT` on the row's table, so it
+    /// must not observe, through this view's effective context, the churn of sources the caller cannot
+    /// read. The wrapper engines (`Merge`, the local shard of `Distributed`) reach this view from a row
+    /// whose own storage is not a view, so the fail-close lives here rather than in the caller.
+    if (isModificationHashIntrospection()
+        && storage_snapshot->metadata->sql_security_type
+        && *storage_snapshot->metadata->sql_security_type != SQLSecurityType::INVOKER)
+        return {};
+
     try
     {
         const auto & inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
         if (!inner_query)
             return {};
 
-        /// Hash dependencies under the same SQL-security context that executes the view query.
-        auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+        /// Hash dependencies under the same context that executes the view query: the SQL-security
+        /// overridden context, normalized exactly like the read path normalizes it (`getViewContext`).
+        /// Hashing the raw overridden context instead would fold in settings the view never runs with.
+        auto effective_context = getViewContext(query_context, storage_snapshot, this);
         auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context);
         if (!referenced_tables_hash)
             return {};
@@ -681,7 +704,15 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         hash.update(storage_snapshot->metadata->definer.value_or(""));
         /// The effective reader's settings can change the rows this view returns (for example,
         /// a definer's read limits), so a settings-profile update must invalidate consistency users.
-        hash.update(effective_context->getSettingsRef().toString());
+        /// `changedToMap` is ordered by name, so the hash does not depend on the order in which the
+        /// settings were applied, and settings left at their default value are equal everywhere.
+        for (const auto & [name, value] : effective_context->getSettingsRef().changedToMap())
+        {
+            if (settings_not_affecting_view_result.contains(name))
+                continue;
+            hash.update(name);
+            hash.update(value);
+        }
         IASTHash view_query_hash = inner_query->getTreeHash(/*ignore_aliases*/ false);
         hash.update(view_query_hash.low64);
         hash.update(view_query_hash.high64);
