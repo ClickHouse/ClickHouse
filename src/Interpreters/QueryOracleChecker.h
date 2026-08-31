@@ -91,6 +91,11 @@ public:
     /// difference is a real engine read/serialization bug.
     bool checkEngineEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Partition-equivalence oracle (self-seeded): PARTITION BY is transparent to results. The same
+    /// query over identical data in a partitioned vs non-partitioned MergeTree must return the
+    /// identical multiset; a difference is a real partition-pruning / cross-partition-merge bug.
+    bool checkPartitionEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
