@@ -23,6 +23,7 @@ workflow = Workflow.Config(
     name="MasterCI",
     event=Workflow.Event.PUSH,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
