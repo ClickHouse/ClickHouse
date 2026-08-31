@@ -284,7 +284,7 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
 **Ruta invertida**
@@ -294,7 +294,7 @@ SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **Separador personalizado**
@@ -304,7 +304,7 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
 **Caso especial con puntos**
@@ -314,7 +314,7 @@ SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **Un solo elemento**
@@ -324,7 +324,7 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
 **Separador vacío**
@@ -334,7 +334,7 @@ SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **Expresión regular vacía**
@@ -531,12 +531,12 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
-**Separador en blanco**
+**Separador vacío**
 
 ```sql title=Query
 SELECT splitByString('', 'abcde');
@@ -599,17 +599,18 @@ Tokenizadores disponibles:
 
 * `splitByNonAlpha` divide cadenas por caracteres ASCII no alfanuméricos (consulte también la función [splitByNonAlpha](/es/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` divide cadenas usando determinadas cadenas separadoras `S` definidas por el usuario (consulte también la función [splitByString](/es/reference/functions/regular-functions/splitting-merging-functions#splitByString)). Los separadores pueden especificarse mediante un parámetro opcional; por ejemplo, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Tenga en cuenta que cada cadena puede constar de varios caracteres (`', '` en el ejemplo). La lista de separadores predeterminada, si no se especifica explícitamente, es un único espacio en blanco `[' ']`.
+* `splitByRegexp(re)` divide cadenas usando un separador de expresión regular `re` definido por el usuario (consulte también la función [splitByRegexp](/es/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)). La expresión regular es obligatoria; por ejemplo, `tokens(value, 'splitByRegexp', '[^\p{L}\p{N}#+]+')`. A diferencia de `splitByString`, un separador de expresión regular puede conservar tokens que contienen caracteres especiales (como `C++` o `C#`).
 * `asciiCJK` divide cadenas en tokens usando reglas de límite de palabra de Unicode (similares a UAX #29). Los caracteres ASCII alfanuméricos y los guiones bajos forman tokens con conectores (`:` para letras, `.` y `'` para caracteres del mismo tipo). Los caracteres Unicode no ASCII pasan a ser tokens de un solo carácter.
 * `chinese` segmenta texto chino en palabras mediante un diccionario y un modelo oculto de Markov (el algoritmo sigue [jieba](https://github.com/fxsjy/jieba); los datos del diccionario y del modelo integrados se derivan de [cppjieba](https://github.com/yanyiwu/cppjieba)). A diferencia de `asciiCJK`, que trata cada carácter no ASCII como un token de un solo carácter, `chinese` agrupa caracteres chinos consecutivos en palabras, lo que genera tokens más significativos y una mayor calidad de búsqueda para texto chino. Un argumento opcional `granularity` puede ser `coarse_grained` (el valor predeterminado) o `fine_grained`; este último también enumera subpalabras superpuestas, lo que mejora la recuperación a costa de un índice más grande.
 * `icu(locale)` divide cadenas en tokens de palabras mediante la segmentación de palabras Unicode (UAX #29) de la biblioteca ICU. Para sistemas de escritura sin espacios entre palabras (por ejemplo, chino, japonés y tailandés), ICU aplica una segmentación basada en diccionarios, por lo que el texto se divide en palabras significativas. `locale` es la configuración regional de ICU que se pasa al segmentador (la segmentación se basa principalmente en el sistema de escritura y los diccionarios; la configuración regional selecciona la adaptación específica de ICU); es obligatoria y se pasa como argumento independiente; por ejemplo, `tokens(value, 'icu', 'ja')`.
 * `japanese` divide texto japonés en palabras mediante el analizador morfológico MeCab. Requiere un diccionario configurado en la configuración del servidor (consulte la documentación sobre el [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes)).
 * `ngrams(N)` divide cadenas en n-gramas de tamaño uniforme `N` (consulte también la función [ngrams](/es/reference/functions/regular-functions/splitting-merging-functions#ngrams)). La longitud del n-grama puede especificarse mediante un parámetro entero opcional entre 1 y 8; por ejemplo, `tokens(value, 'ngrams', 3)`. El tamaño predeterminado del n-grama, si no se especifica explícitamente, es 3.
 * `sparseGrams(min_length, max_length, min_cutoff_length)` divide cadenas en n-gramas de longitud variable de al menos `min_length` y como máximo `max_length` caracteres (inclusive) (consulte también la función [sparseGrams](/es/reference/functions/regular-functions/string-functions#sparseGrams)). A menos que se especifique explícitamente, `min_length` y `max_length` toman los valores predeterminados 3 y 100. Si se proporciona el parámetro `min_cutoff_length`, solo se devuelven n-gramas con una longitud mayor o igual que `min_cutoff_length`. En comparación con `ngrams(N)`, el tokenizador `sparseGrams` produce n-gramas de longitud variable, lo que permite una representación más flexible del texto original. Por ejemplo, `tokens(value, 'sparseGrams', 3, 5, 4)` genera internamente 3-, 4- y 5-gramas a partir de la cadena de entrada, pero solo se devuelven los 4- y 5-gramas.
-* `array` no realiza tokenización; es decir, cada valor de fila es un token (consulte también la función [array](/es/reference/functions/regular-functions/array-functions#array)).
+* `array` no realiza tokenización; es decir, cada valor de fila es un token (consulte también la función [array](/es/reference/functions/regular-functions/array-functions#array)). Por compatibilidad con otros sistemas, `keyword` está disponible como alias de `array`.
 
-En el caso del tokenizador `splitByString`, si los tokens no forman un [código prefijo](https://en.wikipedia.org/wiki/Prefix_code), probablemente le convenga que la coincidencia dé prioridad a los separadores más largos.
+En el caso del tokenizador `splitByString`, si los tokens no forman un [código de prefijo](https://en.wikipedia.org/wiki/Prefix_code), probablemente querrá que la coincidencia priorice los separadores más largos.
 Para ello, pase los separadores en orden descendente de longitud.
-Por ejemplo, con separators = `['%21', '%']`, la cadena `%21abc` se tokenizaría como `['abc']`, mientras que separators = `['%', '%21']` se tokenizaría como `['21ac']` (que probablemente no es lo que quería).
+Por ejemplo, con separators = `['%21', '%']`, la cadena `%21abc` se tokenizaría como `['abc']`, mientras que con separators = `['%', '%21']` se tokenizaría como `['21ac']` (lo que probablemente no era lo que quería).
 
 **Sintaxis**
 
@@ -617,6 +618,7 @@ Por ejemplo, con separators = `['%21', '%']`, la cadena `%21abc` se tokenizaría
 tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
+tokens(value, 'splitByRegexp', regexp)
 tokens(value, 'asciiCJK')
 tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
@@ -629,10 +631,11 @@ tokens(value, 'array')
 **Argumentos**
 
 * `value` — La cadena de entrada. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring)
-* `tokenizer` — El tokenizador que se va a usar. Los argumentos válidos son `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams` y `array`. Es opcional; si no se establece explícitamente, el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
+* `tokenizer` — El tokenizador que se va a usar. Los argumentos válidos son `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams` y `array`. Es opcional; si no se establece explícitamente, el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
 * `locale` — Solo es relevante si el argumento `tokenizer` es `icu`: la configuración regional obligatoria, por ejemplo, `'ja'`. [`const String`](/es/reference/data-types/string)
 * `n` — Solo es relevante si el argumento `tokenizer` es `ngrams`: un parámetro opcional que define la longitud de los ngrams. Si no se establece explícitamente, el valor predeterminado es `3`. [`const UInt8`](/es/reference/data-types/int-uint)
 * `separators` — Solo es relevante si el argumento `tokenizer` es `split`: un parámetro opcional que define las cadenas separadoras. Si no se establece explícitamente, el valor predeterminado es `[' ']`. [`const Array(String)`](/es/reference/data-types/array)
+* `regexp` — Solo es relevante si el argumento `tokenizer` es `splitByRegexp`: un parámetro obligatorio que define el separador de expresión regular. [`const String`](/es/reference/data-types/string)
 * `min_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud mínima de los gramas; el valor predeterminado es 3. [`const UInt8`](/es/reference/data-types/int-uint)
 * `max_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud máxima de los gramas; el valor predeterminado es 100. [`const UInt8`](/es/reference/data-types/int-uint)
 * `min_cutoff_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud mínima de corte. [`const UInt8`](/es/reference/data-types/int-uint)
@@ -704,6 +707,7 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `locale` — Solo es relevante si el argumento `tokenizer` es `icu`: la configuración regional obligatoria, por ejemplo, `'ja'`. [`const String`](/es/reference/data-types/string)
 * `n` — Solo es relevante si el argumento `tokenizer` es `ngrams`: un parámetro opcional que define la longitud de los ngrams. Si no se establece explícitamente, el valor predeterminado es `3`. [`const UInt8`](/es/reference/data-types/int-uint)
 * `separators` — Solo es relevante si el argumento `tokenizer` es `split`: un parámetro opcional que define las cadenas separadoras. Si no se establece explícitamente, el valor predeterminado es `[' ']`. [`const Array(String)`](/es/reference/data-types/array)
+* `regexp` — Solo es relevante si el argumento `tokenizer` es `splitByRegexp`: un parámetro obligatorio que define el separador de expresión regular. [`const String`](/es/reference/data-types/string)
 * `min_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud mínima del grama; el valor predeterminado es 3. [`const UInt8`](/es/reference/data-types/int-uint)
 * `max_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud máxima del grama; el valor predeterminado es 100. [`const UInt8`](/es/reference/data-types/int-uint)
 * `min_cutoff_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud mínima de corte. [`const UInt8`](/es/reference/data-types/int-uint)
