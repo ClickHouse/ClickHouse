@@ -50,6 +50,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -1299,6 +1300,15 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         auto & frame = nodes_to_process.back();
         if (frame.children.size() == frame.node->children.size())
         {
+            /// A `DelayedCreatingSetsStep` holding sets cannot be part of a cloned plan: its clone is
+            /// shallow, so both copies would claim the same one-shot `FutureSetFromSubquery::source`,
+            /// only the first claimant would get a builder, and the set the other copy reads would
+            /// stay unbuilt. A step whose sets were detached is inert and clones fine.
+            if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(frame.node->step.get());
+                delayed && !delayed->getSets().empty())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED, "Cannot clone a plan holding a {} step with sets", delayed->getName());
+
             frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
 
