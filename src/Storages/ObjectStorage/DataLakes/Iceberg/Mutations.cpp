@@ -54,6 +54,11 @@ extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 }
 
+namespace DB::Setting
+{
+extern const SettingsBool use_iceberg_metadata_files_cache;
+}
+
 namespace DB::FailPoints
 {
 extern const char iceberg_writes_cleanup[];
@@ -667,23 +672,26 @@ void mutate(
     {
         auto log = getLogger("IcebergMutations");
 
+        const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+            ? persistent_table_components.metadata_cache : nullptr;
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
-            persistent_table_components.metadata_cache,
+            effective_cache,
             context,
             log.get(),
             persistent_table_components.table_uuid,
+            persistent_table_components.table_identity,
             persistent_table_components.metadata_compression_method);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, effective_cache, context, log, compression_method, persistent_table_components.table_uuid, persistent_table_components.table_identity);
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
@@ -767,6 +775,9 @@ void mutate(
                     chunk_partitioner,
                     sample_block))
                 continue;
+            /// Invalidate so a concurrent reader within the staleness window can't reuse a
+            /// cached "latest metadata" entry pointing at the pre-mutation snapshot.
+            persistent_table_components.invalidateMetadataCache();
         }
         break;
     }
@@ -793,23 +804,26 @@ void alter(
     while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
+        const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+            ? persistent_table_components.metadata_cache : nullptr;
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
-            persistent_table_components.metadata_cache,
+            effective_cache,
             context,
             log.get(),
             persistent_table_components.table_uuid,
+            persistent_table_components.table_identity,
             persistent_table_components.metadata_compression_method);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, effective_cache, context, log, compression_method, persistent_table_components.table_uuid, persistent_table_components.table_identity);
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 

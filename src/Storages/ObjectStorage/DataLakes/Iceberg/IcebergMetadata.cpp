@@ -95,6 +95,9 @@ namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
+extern const Event IcebergMetadataFilesCacheSkipped;
+extern const Event IcebergMetadataFilesCacheHits;
+extern const Event IcebergMetadataFilesCacheMisses;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
@@ -183,28 +186,122 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ContextPtr context_,
     LoggerPtr log)
 {
+    const TableStorageIdentity table_identity{
+        .data_source_description = configuration->getDataSourceDescription(),
+        .table_namespace = deriveTableNamespaceForLocationCheck(configuration->getNamespace(), configuration->getRawURI()),
+        .backend_type = configuration->getTypeName(),
+    };
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, table_identity, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
-    auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
+
+    std::optional<String> table_uuid = std::nullopt;
+    String raw_metadata_json;
+    Poco::JSON::Object::Ptr metadata_object;
+    bool content_cache_hit = false;
+
+    /// Probe content cache with the catalog hint UUID (without insert-on-miss).
+    /// This is safe because:
+    /// - On miss: we read from storage and insert under the validated parsed UUID.
+    /// - On hit: we verify the cached JSON's `table-uuid` field matches the hint.
+    /// `IcebergMetadataFilesCacheHits` / `Misses` are recorded once below, after the
+    /// hit is validated, so an unvalidated cell (wrong UUID/location) counts as a miss.
+    if (const auto & hint = configuration->catalog_uuid_hint; !hint.empty())
+    {
+        if (cache_ptr)
+        {
+            String cached = cache_ptr->tryGetTableMetadata(
+                IcebergMetadataFilesCache::getKey(table_identity.data_source_description, normalizeUuid(hint), metadata_file_path));
+            if (!cached.empty())
+            {
+                Poco::JSON::Parser parser;
+                auto candidate = parser.parse(cached).extract<Poco::JSON::Object::Ptr>();
+                if (candidate->has(f_table_uuid))
+                {
+                    String cached_uuid = normalizeUuid(candidate->getValue<String>(f_table_uuid));
+                    if (cached_uuid == normalizeUuid(hint))
+                    {
+                        /// The cache key is `uuid + '\0' + metadata_file_path`, and
+                        /// `metadata_file_path` is relative, so two different tables can share
+                        /// the same key if a stale/wrong `catalog_uuid_hint` happens to equal
+                        /// another table's real UUID. Verify the cached JSON's `location` field
+                        /// encodes this table's own storage namespace (bucket/container) and root
+                        /// path so we don't load another table's schema/metadata under a colliding
+                        /// UUID -- an exact match is required, not a suffix match, so a same-named
+                        /// key living in a different bucket is correctly rejected.
+                        const String & table_root = configuration->getPathForRead().path;
+                        bool location_ok = candidate->has(f_location)
+                            && cachedLocationMatchesTableRoot(
+                                candidate->getValue<String>(f_location),
+                                table_identity.table_namespace,
+                                table_root,
+                                table_identity.backend_type);
+                        if (location_ok)
+                        {
+                            /// Hit from a prior validated init: cached JSON belongs to this table.
+                            content_cache_hit = true;
+                            raw_metadata_json = std::move(cached);
+                            metadata_object = candidate;
+                            table_uuid = cached_uuid;
+                        }
+                    }
+                }
+            }
+            ProfileEvents::increment(content_cache_hit
+                ? ProfileEvents::IcebergMetadataFilesCacheHits
+                : ProfileEvents::IcebergMetadataFilesCacheMisses);
+        }
+    }
+    else if (cache_ptr)
+    {
+        /// No catalog hint provided: non-REST tables or REST responses without
+        /// `table-uuid` perform an unconditional remote read.
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheSkipped);
+    }
+
+    /// Fetch and parse the metadata file if the cache probe did not succeed.
+    if (!metadata_object)
+    {
+        ObjectInfo object_info(metadata_file_path);
+        auto read_settings = context_->getReadSettings();
+        if (cache_ptr)
+            read_settings.enable_filesystem_cache = false;
+        auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, context_, log, read_settings);
+        std::unique_ptr<ReadBuffer> buf;
+        if (compression_method != CompressionMethod::None)
+            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method);
+        else
+            buf = std::move(source_buf);
+        readJSONObjectPossiblyInvalid(raw_metadata_json, *buf);
+
+        Poco::JSON::Parser parser;
+        metadata_object = parser.parse(raw_metadata_json).extract<Poco::JSON::Object::Ptr>();
+        if (metadata_object->has(f_table_uuid))
+        {
+            table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
+        }
+    }
+
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
-    std::optional<String> table_uuid = std::nullopt;
-    if (metadata_object->has(Iceberg::f_table_uuid))
+
+    /// Format v2 requires `table-uuid`, independent of cache availability.
+    if (!table_uuid && format_version >= 2)
     {
-        table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata file '{}' doesn't contain required field '{}'",
+            metadata_file_path,
+            Iceberg::f_table_uuid);
     }
-    else
+
+    /// Insert under validated parsed UUID. Use setTableMetadata to avoid the
+    /// return-value copy that getOrSetTableMetadata would incur when the key
+    /// was already cached (e.g. from a prior init where `table_uuid` matched).
+    if (table_uuid && cache_ptr && !content_cache_hit)
     {
-        if (format_version >= 2)
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg table metadata file '{}' doesn't contain required field '{}'",
-                metadata_file_path,
-                Iceberg::f_table_uuid);
-        }
+        auto cache_key = IcebergMetadataFilesCache::getKey(table_identity.data_source_description, *table_uuid, metadata_file_path);
+        cache_ptr->setTableMetadata(cache_key, std::move(raw_metadata_json));
     }
     auto table_path = configuration->getPathForRead().path;
     return PersistentTableComponents{
@@ -216,22 +313,26 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .table_path = table_path,
         .table_uuid = table_uuid,
         .path_resolver = IcebergPathResolver(table_location, table_path, configuration->getTypeName(), configuration->getNamespace()),
+        .table_identity = table_identity,
     };
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
+    const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_components.metadata_cache : nullptr;
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
-        persistent_components.metadata_cache,
+        effective_cache,
         context,
         log.get(),
         persistent_components.table_uuid,
+        persistent_components.table_identity,
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
-    return getState(context, metadata_file_path, metadata_version);
+    return getState(context, metadata_file_path, metadata_version, compression_method);
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -246,7 +347,14 @@ IcebergMetadata::IcebergMetadata(
     , write_format(configuration_->format)
 {
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
-    if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
+    /// Note: `use_iceberg_metadata_files_cache` is intentionally NOT checked here. This `IcebergMetadata`
+    /// instance is cached and reused by `DataLakeConfiguration` across many later queries with
+    /// potentially different settings, so a one-shot check at construction time would freeze the task's
+    /// on/off state to whatever the very first query happened to use. Instead the task is always armed
+    /// (when the cache exists at all) and re-checks the effective setting on every firing, see
+    /// `backgroundMetadataPrefetcherThread`.
+    if (persistent_components.metadata_cache
+        && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
         background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
             StorageID("", persistent_components.table_uuid ? *persistent_components.table_uuid : persistent_components.table_path),
@@ -292,6 +400,14 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
         /// as a part of the same method, we download metadata.json of the latest metadata version
         /// and after parsing it, we fetch manifest lists, parse and cache them
         auto ctx = Context::getGlobalContextInstance()->getBackgroundContext();
+        if (!ctx->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
+        {
+            /// Re-checked on every firing (rather than once in the constructor) so that flipping this
+            /// setting actually takes effect for `IcebergMetadata` instances that `DataLakeConfiguration`
+            /// keeps caching and reusing across queries.
+            LOG_TRACE(log, "backgroundMetadataPrefetcherThread: use_iceberg_metadata_files_cache is disabled - skipping");
+            return;
+        }
         auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(ctx, true);
         if (actual_data_snapshot)
         {
@@ -595,12 +711,14 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>
-IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const
+IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version, CompressionMethod compression_method) const
 {
+    const auto effective_cache = local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_components.metadata_cache : nullptr;
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        metadata_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.table_identity);
 
     insertRowToLogTable(
         local_context,
@@ -892,15 +1010,18 @@ void IcebergMetadata::createInitial(
 Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTableStateSnapshot(
     Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const
 {
+    const auto effective_cache = local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_components.metadata_cache : nullptr;
     IcebergDataSnapshotPtr data_snapshot;
     auto metadata_object = getMetadataJSONObject(
         table_state_snapshot.metadata_file_path,
         object_storage,
-        persistent_components.metadata_cache,
+        effective_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
-        persistent_components.table_uuid);
+        getCompressionMethodFromMetadataFile(table_state_snapshot.metadata_file_path),
+        persistent_components.table_uuid,
+        persistent_components.table_identity);
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
@@ -920,33 +1041,45 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto log = getLogger("IcebergMetadata");
 
-    IcebergMetadataFilesCachePtr cache_ptr = nullptr;
-
+    /// Fetch the cache pointer unconditionally so it is stored in `persistent_components` for
+    /// the lifetime of this `IcebergMetadata` object: subsequent queries gate its use on their
+    /// own `use_iceberg_metadata_files_cache` setting (see `getRelevantState`, `getState`, etc.),
+    /// so a disabled setting on this first call must not permanently null out the stored cache.
+    IcebergMetadataFilesCachePtr cache_ptr = local_context->getIcebergMetadataFilesCache();
+    IcebergMetadataFilesCachePtr cache_ptr_for_init = nullptr;
     if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
-        cache_ptr = local_context->getIcebergMetadataFilesCache();
+        cache_ptr_for_init = cache_ptr;
     else
         LOG_TRACE(
             log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
-    auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
+    auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr_for_init, local_context, log);
+    persistent_components.metadata_cache = cache_ptr;
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, std::move(persistent_components), local_context);
 }
 
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
+    const auto effective_cache = local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_components.metadata_cache : nullptr;
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
-        persistent_components.metadata_cache,
+        effective_cache,
         local_context,
         log.get(),
         persistent_components.table_uuid,
+        persistent_components.table_identity,
         persistent_components.metadata_compression_method);
 
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
+        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.table_identity);
+    /// Not asserting `persistent_components.format_version == metadata_object's format-version` here:
+    /// that field is captured once at `IcebergMetadata` construction, but this reused instance can
+    /// outlive an external writer's format-version upgrade (e.g. Spark bumping v1 -> v2 between
+    /// queries), which would trip the assertion in debug/ASan builds on a perfectly valid table.
+    /// `metadata_object`, freshly fetched above, is the source of truth for the current call.
 
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
@@ -1549,14 +1682,17 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
 
 KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
 {
+    const auto effective_cache = local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_components.metadata_cache : nullptr;
     auto metadata_object = getMetadataJSONObject(
         actual_table_state_snapshot.metadata_file_path,
         object_storage,
-        persistent_components.metadata_cache,
+        effective_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
-        persistent_components.table_uuid);
+        getCompressionMethodFromMetadataFile(actual_table_state_snapshot.metadata_file_path),
+        persistent_components.table_uuid,
+        persistent_components.table_identity);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
@@ -1579,9 +1715,13 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
     Int32 metadata_compression_method_val = 0;
     readVarInt(metadata_compression_method_val, in);
     auto metadata_compression_method = static_cast<CompressionMethod>(metadata_compression_method_val);
-    IcebergMetadataFilesCachePtr cache_ptr = nullptr;
+    /// See the comment in `IcebergMetadata::create`: fetch the cache pointer unconditionally so
+    /// it is stored for the lifetime of this object, and gate only this call's probe on the
+    /// current setting.
+    IcebergMetadataFilesCachePtr cache_ptr = local_context->getIcebergMetadataFilesCache();
+    IcebergMetadataFilesCachePtr cache_ptr_for_init = nullptr;
     if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
-        cache_ptr = local_context->getIcebergMetadataFilesCache();
+        cache_ptr_for_init = cache_ptr;
     else
         LOG_TRACE(
             log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
@@ -1589,11 +1729,11 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
     auto standard_persistent_components
-        = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
+        = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr_for_init, local_context, log);
     auto schema_processor = standard_persistent_components.schema_processor;
     auto deserialized_persistent_components = Iceberg::PersistentTableComponents{
         .schema_processor = schema_processor,
-        .metadata_cache = standard_persistent_components.metadata_cache,
+        .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
         .metadata_compression_method = metadata_compression_method,
@@ -1603,7 +1743,8 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
             table_location,
             standard_persistent_components.table_path,
             configuration_ptr->getTypeName(),
-            configuration_ptr->getNamespace())};
+            configuration_ptr->getNamespace()),
+        .table_identity = standard_persistent_components.table_identity};
     auto metadata = std::make_unique<IcebergMetadata>(object_storage, configuration.lock(), std::move(deserialized_persistent_components), local_context);
     return metadata;
 }

@@ -54,6 +54,7 @@ namespace Setting
 extern const SettingsInt64 iceberg_expire_default_min_snapshots_to_keep;
 extern const SettingsInt64 iceberg_expire_default_max_snapshot_age_ms;
 extern const SettingsInt64 iceberg_expire_default_max_ref_age_ms;
+extern const SettingsBool use_iceberg_metadata_files_cache;
 }
 
 namespace Iceberg
@@ -681,16 +682,19 @@ ExpireSnapshotsResult expireSnapshots(
     {
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergExpireSnapshots");
+        const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+            ? persistent_table_components.metadata_cache : nullptr;
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             table_name,
             persistent_table_components.table_path,
             data_lake_settings,
-            persistent_table_components.metadata_cache,
+            effective_cache,
             context,
             log.get(),
             persistent_table_components.table_uuid,
+            persistent_table_components.table_identity,
             persistent_table_components.metadata_compression_method);
 
         filename_generator.setVersion(last_version + 1);
@@ -699,11 +703,12 @@ ExpireSnapshotsResult expireSnapshots(
         auto metadata = getMetadataJSONObject(
             metadata_path,
             object_storage,
-            persistent_table_components.metadata_cache,
+            effective_cache,
             context,
             log,
             compression_method,
-            persistent_table_components.table_uuid);
+            persistent_table_components.table_uuid,
+            persistent_table_components.table_identity);
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
@@ -801,6 +806,10 @@ ExpireSnapshotsResult expireSnapshots(
                     "The table metadata may be in an inconsistent state");
             }
         }
+
+        // Invalidate metadata cache so the next reader within `iceberg_metadata_staleness_ms`
+        // does not reuse the pre-expiration metadata after the manifests/data files below are deleted.
+        persistent_table_components.invalidateMetadataCache();
 
         LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.all_paths.size(), partition.expired_snapshot_ids.size());
         deleteExpiredFiles(expired_files.all_paths, persistent_table_components.path_resolver, object_storage, log);

@@ -35,6 +35,7 @@ extern const int BAD_ARGUMENTS;
 namespace Setting
 {
 extern const SettingsUInt64 iceberg_orphan_files_older_than_seconds;
+extern const SettingsBool use_iceberg_metadata_files_cache;
 }
 
 namespace Iceberg
@@ -313,14 +314,17 @@ Pipe executeRemoveOrphanFiles(
     /// between queries. Read the latest metadata file to get the authoritative version
     /// for this command gate.
     auto log = getLogger("IcebergRemoveOrphanFiles");
+    const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_components.metadata_cache : nullptr;
     auto [_metadata_version, latest_metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
-        persistent_components.metadata_cache,
+        effective_cache,
         context,
         log.get(),
         persistent_components.table_uuid,
+        persistent_components.table_identity,
         persistent_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
@@ -328,11 +332,12 @@ Pipe executeRemoveOrphanFiles(
     auto latest_metadata = getMetadataJSONObject(
         latest_metadata_path,
         object_storage,
-        persistent_components.metadata_cache,
+        effective_cache,
         context,
         log,
         compression_method,
-        persistent_components.table_uuid);
+        persistent_components.table_uuid,
+        persistent_components.table_identity);
 
     Int32 current_format_version = latest_metadata->getValue<Int32>(f_format_version);
     if (current_format_version < 2)

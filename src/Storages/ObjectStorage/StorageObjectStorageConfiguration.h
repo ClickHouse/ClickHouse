@@ -333,6 +333,10 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
+    /// UUID supplied by a REST catalog inline response. Used to warm the
+    /// metadata cache on first access without triggering O(N) UUID-based
+    /// metadata-file scanning. Not a user-settable parameter.
+    String catalog_uuid_hint;
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
     /// Tracks whether `partition_strategy` was explicitly provided in the engine arguments or a named collection.
     bool partition_strategy_was_set = false;

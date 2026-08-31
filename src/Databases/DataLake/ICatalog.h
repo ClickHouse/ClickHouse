@@ -24,6 +24,11 @@ namespace DataLake
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
+/// Same as `parseStorageTypeFromString`, but returns `std::nullopt` instead of throwing for a
+/// scheme which does not name a known storage backend. Use it where an unknown scheme is an
+/// expected input rather than an error, e.g. when deciding whether two locations refer to the
+/// same backend family.
+std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type);
 
 /// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
 /// supports altering settings registers its own validator; catalog types without
@@ -45,7 +50,8 @@ private:
 
 struct DataLakeSpecificProperties
 {
-    std::string iceberg_metadata_file_location;
+    std::string iceberg_metadata_file_location{};
+    std::string iceberg_table_uuid{}; /// Populated from REST catalog inline metadata
 };
 
 /// A class representing table metadata,

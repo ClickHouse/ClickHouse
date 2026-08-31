@@ -125,7 +125,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
 
 String StorageS3Configuration::getDataSourceDescription() const
 {
-    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
+    /// A separator between host and port is required: without it, e.g. host "a1" port 23 and
+    /// host "a12" port 3 both normalize to "a123", aliasing two distinct endpoints.
+    return std::filesystem::path(url.uri.getHost() + ":" + std::to_string(url.uri.getPort())) / url.bucket;
 }
 
 std::string StorageS3Configuration::getPathInArchive() const

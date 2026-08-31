@@ -88,6 +88,7 @@ namespace Setting
     extern const SettingsBool write_full_path_in_iceberg_metadata;
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+    extern const SettingsBool use_iceberg_metadata_files_cache;
 }
 
 namespace DataLakeStorageSetting
@@ -1002,27 +1003,31 @@ IcebergStorageSink::IcebergStorageSink(
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
+    const auto effective_cache = context_->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_table_components.metadata_cache : nullptr;
     auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_id.getTableName(),
         persistent_table_components.table_path,
         data_lake_settings,
-        persistent_table_components.metadata_cache,
+        effective_cache,
         context_,
         log.get(),
         persistent_table_components.table_uuid,
+        persistent_table_components.table_identity,
         persistent_table_components.metadata_compression_method,
         /* ignore_explicit_metadata_file_path */ false);
 
     metadata = getMetadataJSONObject(
         metadata_path,
         object_storage,
-        persistent_table_components.metadata_cache,
+        effective_cache,
         context,
         log,
         compression_method,
-        persistent_table_components.table_uuid);
+        persistent_table_components.table_uuid,
+        persistent_table_components.table_identity);
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
@@ -1306,16 +1311,19 @@ bool IcebergStorageSink::initializeMetadata()
             /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
             /// loop must still discover the real latest version to advance past it.
             /// Otherwise the loop keeps regenerating the same target version and fails.
+            const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+                ? persistent_table_components.metadata_cache : nullptr;
             auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
                 object_storage,
                 catalog,
                 table_id.getTableName(),
                 persistent_table_components.table_path,
                 data_lake_settings,
-                persistent_table_components.metadata_cache,
+                effective_cache,
                 context,
                 getLogger("IcebergWrites").get(),
                 persistent_table_components.table_uuid,
+                persistent_table_components.table_identity,
                 persistent_table_components.metadata_compression_method,
                 /* ignore_explicit_metadata_file_path */ true);
 
@@ -1327,11 +1335,12 @@ bool IcebergStorageSink::initializeMetadata()
             metadata = getMetadataJSONObject(
                 metadata_path,
                 object_storage,
-                persistent_table_components.metadata_cache,
+                effective_cache,
                 context,
                 getLogger("IcebergWrites"),
                 compression_method,
-                persistent_table_components.table_uuid);
+                persistent_table_components.table_uuid,
+                persistent_table_components.table_identity);
             partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 

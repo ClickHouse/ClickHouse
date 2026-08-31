@@ -4,6 +4,8 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Poco/JSON/Object.h>
 
 #include <filesystem>
@@ -14,6 +16,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+
+namespace DB::Setting
+{
+extern const SettingsBool use_iceberg_metadata_files_cache;
+}
 
 namespace DB::Iceberg
 {
@@ -129,14 +136,17 @@ ReachableFilesResult collectReachableFiles(
     ContextPtr context,
     LoggerPtr log)
 {
+    const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_table_components.metadata_cache : nullptr;
     auto [version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
-        persistent_table_components.metadata_cache,
+        effective_cache,
         context,
         log.get(),
         persistent_table_components.table_uuid,
+        persistent_table_components.table_identity,
         persistent_table_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
@@ -144,11 +154,12 @@ ReachableFilesResult collectReachableFiles(
     auto metadata = getMetadataJSONObject(
         metadata_path,
         object_storage,
-        persistent_table_components.metadata_cache,
+        effective_cache,
         context,
         log,
         compression_method,
-        persistent_table_components.table_uuid);
+        persistent_table_components.table_uuid,
+        persistent_table_components.table_identity);
 
     std::unordered_set<String> reachable;
     const auto & resolver = persistent_table_components.path_resolver;

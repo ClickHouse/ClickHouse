@@ -50,7 +50,7 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     return parseStorageTypeFromString(location.substr(0, pos));
 }
 
-StorageType parseStorageTypeFromString(const std::string & type)
+std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type)
 {
     auto capitalize_first_letter = [] (const std::string & s)
     {
@@ -67,9 +67,10 @@ StorageType parseStorageTypeFromString(const std::string & type)
         // convert s3://, file://, etc. to s3, file etc.
         storage_type_str = storage_type_str.substr(0,pos);
     }
-    if (capitalize_first_letter(storage_type_str) == "File")
+    const std::string lowercase_type = Poco::toLower(storage_type_str);
+    if (lowercase_type == "file")
         storage_type_str = "Local";
-    else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
+    else if (lowercase_type == "s3a" || lowercase_type == "s3n" || lowercase_type == "oss" || lowercase_type == "gs")
     {
         fiu_do_on(DB::FailPoints::database_iceberg_gcs,
         {
@@ -77,16 +78,28 @@ StorageType parseStorageTypeFromString(const std::string & type)
         });
         storage_type_str = "S3";
     }
-    else if (storage_type_str == "abfss") /// Azure Blob File System Secure
+    /// `abfss` is Azure Blob File System Secure; `wasb`/`wasbs`/`abfs`/`adl` are the other schemes
+    /// written by Hadoop/Spark for the very same Azure backend.
+    else if (lowercase_type == "abfss" || lowercase_type == "abfs" || lowercase_type == "wasb" || lowercase_type == "wasbs"
+        || lowercase_type == "adl")
         storage_type_str = "Azure";
+    /// `HDFS` is spelled in upper case in `DatabaseDataLakeStorageType`, so the capitalize-first-letter
+    /// form below would not match it; `webhdfs`/`viewfs` address the same backend.
+    else if (lowercase_type == "hdfs" || lowercase_type == "webhdfs" || lowercase_type == "viewfs")
+        return StorageType::HDFS;
 
-    auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
+    return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
+}
+
+StorageType parseStorageTypeFromString(const std::string & type)
+{
+    auto storage_type = tryParseStorageTypeFromString(type);
 
     if (!storage_type)
     {
         throw DB::Exception(
             DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unsupported storage type: {}", storage_type_str);
+            "Unsupported storage type: {}", type);
     }
 
     return *storage_type;
