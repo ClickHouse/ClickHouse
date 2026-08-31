@@ -65,3 +65,24 @@ SELECT id FROM t_map_enum_bf_keys_values WHERE m['a'] = 10 ORDER BY id;
 SELECT id FROM t_map_enum_bf_keys_values WHERE m['b'] = 20 ORDER BY id;
 
 DROP TABLE t_map_enum_bf_keys_values;
+
+-- With only a `mapValues` index, the key type is not available from the index header, so it is taken
+-- from the type of the map column itself. A key that is not in the `Enum` must decline the whole
+-- predicate for the same reason as above.
+DROP TABLE IF EXISTS t_map_enum_bf_values;
+
+CREATE TABLE t_map_enum_bf_values
+(
+    id UInt64,
+    m Map(Enum8('a' = 1, 'b' = 2, 'c' = 3), Int64),
+    INDEX idx_values mapValues(m) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_map_enum_bf_values VALUES (1, map('a', 10, 'c', 30)), (2, map('b', 20));
+
+SELECT id FROM t_map_enum_bf_values WHERE m['nonexistent'] = 999 ORDER BY id; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id FROM t_map_enum_bf_values WHERE m['a'] = 10 ORDER BY id;
+SELECT id FROM t_map_enum_bf_values WHERE m['b'] = 20 ORDER BY id;
+
+DROP TABLE t_map_enum_bf_values;

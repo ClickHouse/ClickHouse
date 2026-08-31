@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -204,9 +205,11 @@ struct MapIndexInfo
 };
 
 /// Try to resolve a Map column against the bloom filter index header by the map column name
-/// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
-/// is present in the index.
-std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
+/// and the key as a Field. `map_key_type` is the key type of the map column, when it is known
+/// independently of the index header. Returns std::nullopt if neither `mapKeys(<col>)` nor
+/// `mapValues(<col>)` is present in the index, or if the key is not representable in the key type.
+std::optional<MapIndexInfo> tryResolveMapIndexInfo(
+    const String & map_column_name, const Field & key_field, const DataTypePtr & map_key_type, const Block & header)
 {
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
@@ -219,24 +222,34 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 
     MapIndexInfo info;
     info.key_field = key_field;
+
+    /// The key is hashed as a value of the key type of the map, while the constant in the query can have
+    /// a different type: e.g. a map with `Enum` keys is indexed by the name of the enum value, which is a
+    /// `String`. Convert the key to the key type; if it is not representable in that type, decline the
+    /// whole predicate: the key cannot be present in the map, but the index cannot be used to prove it
+    /// either, because `arrayElement` returns the default value for a missing key, and for an `Enum` key
+    /// it throws `UNKNOWN_ELEMENT_OF_ENUM` instead. Probing the `mapValues` index alone would be unsound
+    /// as well: it could prune the granules before `arrayElement` runs and silently replace that
+    /// exception by an empty result. This is why the check is not done only when `mapKeys` is indexed.
+    DataTypePtr key_type = map_key_type;
     if (keys_position)
     {
-        /// The key is hashed as a value of the key type of the map, while the constant in the query can have
-        /// a different type: e.g. a map with `Enum` keys is indexed by the name of the enum value, which is a
-        /// `String`. Convert the key to the key type of the index; if it is not representable in that type,
-        /// decline the whole predicate: the key cannot be present in the map, but the index cannot be used
-        /// to prove it either, because `arrayElement` returns the default value for a missing key, and for
-        /// an `Enum` key it throws `UNKNOWN_ELEMENT_OF_ENUM` instead. Probing the `mapValues` index alone
-        /// would be unsound: it could prune the granules before `arrayElement` runs and silently replace
-        /// that exception by an empty result.
         const auto & index_type = header.getByPosition(*keys_position).type;
-        const auto & key_type = assert_cast<const DataTypeArray &>(*index_type).getNestedType();
+        key_type = assert_cast<const DataTypeArray &>(*index_type).getNestedType();
+    }
+
+    if (key_type)
+    {
         Field converted_key_field = tryConvertFieldToType(key_field, *key_type, nullptr, {}, /* strict */ true);
 
         if (converted_key_field.isNull())
             return std::nullopt;
 
         info.key_field = converted_key_field;
+    }
+
+    if (keys_position)
+    {
         info.has_keys_index = true;
         info.keys_index_position = *keys_position;
     }
@@ -262,7 +275,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
 
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     if (!header.has(map_keys_index_column_name))
-        return tryResolveMapIndexInfo(map_column_name, {}, header);
+        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header);
 
     /// Deserialize the key from its text representation using the key type from the index header.
     size_t keys_position = header.getPositionByName(map_keys_index_column_name);
@@ -277,7 +290,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, header);
+    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
@@ -297,7 +310,14 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
             if (!second_argument.tryGetConstant(constant_value, constant_type))
                 return std::nullopt;
 
-            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, header);
+            /// The key type of the map is needed even when only `mapValues` is indexed, to tell a key that
+            /// cannot be represented in it, see `tryResolveMapIndexInfo`.
+            DataTypePtr map_key_type;
+            if (const auto * dag_node = first_argument.getDAGNode())
+                if (const auto * map_type = typeid_cast<const DataTypeMap *>(removeNullable(dag_node->result_type).get()))
+                    map_key_type = map_type->getKeyType();
+
+            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, map_key_type, header);
         }
     }
 
@@ -851,7 +871,8 @@ static ColumnPtr createColumnFromConstantArray(
         element_type = constant_element_type;
 
     /// A constant `Array(Enum)` searched over a `String`-like indexed column is compared by the name of the
-    /// enum value, because that is the common type of `Enum` and `String` (arrayIndex.h `executeConst`).
+    /// enum value, because that is the common type of `Enum` and `String` (arrayIndex.h `executeConst`,
+    /// hasAllAny.h `executeImpl`).
     /// The names are therefore what has to be hashed; hashing the numeric payload would prune granules that
     /// actually match.
     const IDataTypeEnum * enum_element_type = nullptr;
@@ -1052,9 +1073,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (!array_type)
                 return false;
 
+            /// `hasAny`/`hasAll` cast both arrays to their least supertype (hasAllAny.h), so a constant
+            /// `Array(Enum)` searched over a `String`-like indexed array is compared by the name of the
+            /// enum value, exactly like `has(<constant array>, <indexed scalar>)` above.
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
             ColumnPtr column = createColumnFromConstantArray(
-                value_field, value_type, actual_type, /*coerce_like_search_function=*/ true, /*coerce_enum_by_name=*/ false);
+                value_field, value_type, actual_type, /*coerce_like_search_function=*/ true, /*coerce_enum_by_name=*/ true);
 
             if (!column)
                 return false;
