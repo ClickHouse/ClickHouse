@@ -1119,7 +1119,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -1392,9 +1392,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        if (!settings.parallel_replicas_filter_pushdown)
-            return 0;
-
+        /// The local plan is the initiator's own share of the read, so this is an ordinary in-process
+        /// plan optimization and is not gated by `parallel_replicas_filter_pushdown`: that setting
+        /// governs the other half of the union, where the predicate has to be spliced into the query
+        /// AST shipped to the replicas. The sibling branch keeps its own `Filter`, so nothing ends up
+        /// filtered here only, and the replicas do not have to agree on which ranges the local plan
+        /// reads - each announces its own and the coordinator reconciles them. What they do have to
+        /// agree on is the coordination mode, see the local plan optimization in `optimizeTreeSecondPass`.
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
         parallel_replicas_local_plan->addFilter(std::move(info));
