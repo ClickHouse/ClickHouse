@@ -115,7 +115,8 @@ public:
         ContextPtr context,
         const KeyDescription & key_description,
         bool single_point_ = false,
-        bool skip_analysis_ = false);
+        bool skip_analysis_ = false,
+        const AlternativeKeyExpressionPtr & alternative_key = nullptr);
 
     struct BloomFilterData
     {

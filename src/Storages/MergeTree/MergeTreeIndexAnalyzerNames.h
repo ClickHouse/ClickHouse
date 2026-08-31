@@ -11,6 +11,7 @@ namespace DB
 {
 
 struct IndexDescription;
+struct KeyDescription;
 struct AlternativeKeyExpression;
 using AlternativeKeyExpressionPtr = std::shared_ptr<const AlternativeKeyExpression>;
 
@@ -36,6 +37,26 @@ class MergeTreeIndexMinMax;
   * columns in the rewritten form.
   */
 AlternativeKeyExpressionPtr getAlternativeIndexExpression(const IndexDescription & index, const ContextPtr & context);
+
+/** The same for a primary or partition key: index analysis matches the filter expression against the
+  * key expressions by name as well, so a key on expressions (e.g. `ORDER BY multiIf(v > 0, v, NULL)`
+  * or the same as `PARTITION BY`) loses pruning when the query's rewrite passes rename the filter
+  * side of the comparison. Returns nullptr when not applicable, see above.
+  */
+AlternativeKeyExpressionPtr getAlternativeKeyExpression(const KeyDescription & key, const ContextPtr & context);
+
+/** Computes the alternative form of a key at most once, for the query plan's condition factories,
+  * which create a `KeyCondition` many times for the same query (once per part, for constant folding).
+  */
+class LazyAlternativeKeyExpression
+{
+public:
+    AlternativeKeyExpressionPtr get(const KeyDescription & key, const ContextPtr & context) const;
+
+private:
+    mutable std::once_flag initialized;
+    mutable AlternativeKeyExpressionPtr alternative_key;
+};
 
 /** The single entry point for creating a skip index condition that is aware of the query's rewrites:
   * a `minmax` index on expressions is matched not only by the original names of its expressions, but

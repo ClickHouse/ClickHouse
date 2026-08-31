@@ -1576,8 +1576,11 @@ KeyCondition::KeyCondition(
     ContextPtr context,
     const KeyDescription & key_description,
     bool single_point_,
-    bool skip_analysis_)
-    : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
+    bool skip_analysis_,
+    const AlternativeKeyExpressionPtr & alternative_key)
+    : KeyCondition(
+        filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_,
+        /*require_ready_sets_=*/ false, alternative_key)
 {
     key_order = KeyOrder(key_description.reverse_flags);
 }

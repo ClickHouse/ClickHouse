@@ -2745,10 +2745,19 @@ void ReadFromMergeTree::buildIndexes(
     const auto & filter_dag = *filter_dag_ptr;
 
     {
-        auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        /// Match the primary key not only by the original names of its expressions but also by the
+        /// names the same expressions get after the query's rewrite passes, otherwise a rewritten
+        /// filter expression does not match an expression key (issue #103128). The alternative form
+        /// is computed once, because the factory is invoked per part for constant folding.
+        auto alternative_primary_key = std::make_shared<LazyAlternativeKeyExpression>();
+        auto key_condition_factory = [query_context, metadata_snapshot, alternative_primary_key](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
+            const bool skip_primary_key_analysis = !query_context->getSettingsRef()[Setting::use_primary_key];
+            const auto & key = metadata_snapshot->getPrimaryKey();
+            return KeyCondition{
+                wrapped, query_context, key, /* single_point_ = */ false, skip_primary_key_analysis,
+                skip_primary_key_analysis ? nullptr : alternative_primary_key->get(key, query_context)};
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));
