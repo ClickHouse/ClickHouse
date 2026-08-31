@@ -24,7 +24,7 @@ echo '{
 }' | dd of=/etc/docker/daemon.json
 
 # Split the job's `--memory` into three capped leaves (harness, daemon, nested containers), so an
-# overrun hits a leaf. The RESERVES partition the limit and are validated below; `/init` is then
+# overrun hits a leaf. The RESERVES partition the limit and are validated below; every leaf is then
 # capped at its ceiling instead, so the written caps can sum above it and the job cgroup can breach.
 # Requested-then-required: a caller that asks for containment gets a refusal, not a daemon.
 # BEGIN: cgroup containment
@@ -40,7 +40,7 @@ if [ "${CI_DIND_REQUIRE_CGROUP_CONTAINMENT:-0}" = 1 ]; then
 
     for var in CI_DIND_JOB_MEM CI_DIND_ROOT_RESERVE CI_DIND_INIT_RESERVE \
                CI_DIND_INIT_LIMIT CI_DIND_DAEMON_RESERVE CI_DIND_DAEMON_LIMIT \
-               CI_DIND_NESTED_BUDGET; do
+               CI_DIND_NESTED_BUDGET CI_DIND_NESTED_LIMIT; do
         case "${!var:-}" in
             "" | *[!0-9]*) refuse "\$$var is [${!var:-}], expected a byte count" ;;
         esac
@@ -90,7 +90,8 @@ CI_DIND_REQUIRE_CGROUP_CONTAINMENT to run uncontained"
     # Each reserve is bounded by the job limit before they are summed: the sum is signed 64-bit,
     # so a value near its top wraps negative and passes the total check below.
     for var in CI_DIND_ROOT_RESERVE CI_DIND_INIT_RESERVE CI_DIND_DAEMON_RESERVE \
-               CI_DIND_NESTED_BUDGET CI_DIND_INIT_LIMIT CI_DIND_DAEMON_LIMIT; do
+               CI_DIND_NESTED_BUDGET CI_DIND_INIT_LIMIT CI_DIND_DAEMON_LIMIT \
+               CI_DIND_NESTED_LIMIT; do
         [ "${!var}" -le "$CI_DIND_JOB_MEM" ] || \
             refuse "\$$var is [${!var}] bytes, above the job limit of $CI_DIND_JOB_MEM"
     done
@@ -119,6 +120,15 @@ totals $init_headroom, above the job limit of $CI_DIND_JOB_MEM"
         refuse "the daemon limit of $CI_DIND_DAEMON_LIMIT bytes plus the root and init reserves \
 totals $daemon_headroom, above the job limit of $CI_DIND_JOB_MEM"
 
+    # `/docker`'s cap is a ceiling for the same reason, so it is bounded the same way: at least the
+    # share the harness schedules workers against, and still leaving the leaves it does not overlap.
+    [ "$CI_DIND_NESTED_LIMIT" -ge "$CI_DIND_NESTED_BUDGET" ] || \
+        refuse "the nested limit is [$CI_DIND_NESTED_LIMIT] bytes, below the nested budget of [$CI_DIND_NESTED_BUDGET]"
+    nested_headroom=$(( CI_DIND_NESTED_LIMIT + CI_DIND_ROOT_RESERVE + CI_DIND_DAEMON_RESERVE ))
+    [ "$nested_headroom" -le "$CI_DIND_JOB_MEM" ] || \
+        refuse "the nested limit of $CI_DIND_NESTED_LIMIT bytes plus the root and daemon reserves \
+totals $nested_headroom, above the job limit of $CI_DIND_JOB_MEM"
+
     mkdir -p "$leaf_root/init" "$leaf_root/dockerd" "$leaf_root/docker"
 
     if [ "$cgroup_version" = 2 ]; then
@@ -144,7 +154,7 @@ totals $daemon_headroom, above the job limit of $CI_DIND_JOB_MEM"
     # limit is measured to survive that only in this order.
     echo "$CI_DIND_INIT_LIMIT"     > "$leaf_root/init/$limit_file"    || refuse "capping [$leaf_root/init] failed"
     echo "$CI_DIND_DAEMON_LIMIT"   > "$leaf_root/dockerd/$limit_file" || refuse "capping [$leaf_root/dockerd] failed"
-    echo "$CI_DIND_NESTED_BUDGET"  > "$leaf_root/docker/$limit_file"  || refuse "capping [$leaf_root/docker] failed"
+    echo "$CI_DIND_NESTED_LIMIT"   > "$leaf_root/docker/$limit_file"  || refuse "capping [$leaf_root/docker] failed"
 
     # A memory cap alone bounds resident pages, so a leaf can still exceed its advertised budget
     # by swapping. v1 spells this `memory.memsw.limit_in_bytes` and counts memory+swap against one
@@ -161,7 +171,7 @@ totals $daemon_headroom, above the job limit of $CI_DIND_JOB_MEM"
         case $leaf in
             init)    bytes=$CI_DIND_INIT_LIMIT ;;
             dockerd) bytes=$CI_DIND_DAEMON_LIMIT ;;
-            docker)  bytes=$CI_DIND_NESTED_BUDGET ;;
+            docker)  bytes=$CI_DIND_NESTED_LIMIT ;;
         esac
         if [ "$cgroup_version" = 1 ]; then
             swap_file=memory.memsw.limit_in_bytes
@@ -198,7 +208,7 @@ totals $daemon_headroom, above the job limit of $CI_DIND_JOB_MEM"
 
     echo "docker_in_docker.sh: cgroup containment active (cgroup v$cgroup_version):" \
          "init=$CI_DIND_INIT_LIMIT dockerd=$CI_DIND_DAEMON_LIMIT" \
-         "docker=$CI_DIND_NESTED_BUDGET within $CI_DIND_JOB_MEM"
+         "docker=$CI_DIND_NESTED_LIMIT (budget $CI_DIND_NESTED_BUDGET) within $CI_DIND_JOB_MEM"
 fi
 # END: cgroup containment
 

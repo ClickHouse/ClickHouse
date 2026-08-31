@@ -20,8 +20,9 @@ LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
 
 # Integration tests run a nested Docker daemon, so `docker_in_docker.sh` splits the job's
-# `--memory` into capped cgroup leaves. `/init`'s cap is a ceiling rather than a share, so the
-# caps can sum above the job limit.
+# `--memory` into capped cgroup leaves. Every leaf's cap is a ceiling rather than a share, so the
+# caps can sum above the job limit: the reserves below are what the leaves owe each other, and the
+# job's own `--memory` is what actually bounds their total.
 
 # Not a leaf: headroom for the pages faulted before delegation, which stay charged to the
 # cgroup root and can be neither migrated nor reclaimed (measured up to ~147 MiB).
@@ -45,6 +46,20 @@ INTEGRATION_NESTED_BUDGET = max(
     - INTEGRATION_DIND_INIT_RESERVE
     - INTEGRATION_DIND_DAEMON_RESERVE,
     0,
+)
+# `/docker`'s ceiling, not its share, for the same reason the other two leaves have one: the leaf
+# holds the nested servers' page cache as well as their anon memory, so its charge runs far above
+# the footprint the budget models. Capping it at its own share is what a run measures: with the cap
+# at the share, the leaf sat AT CAP in nearly every run of every shard and was OOM-killed in 17% to
+# 47% of the runs of three of them, while the job as a whole peaked ~12 GiB below its own limit.
+# The share stays what it was, because it is also the worker-concurrency budget; only the cap moves.
+# This makes the overlap with `/init` mutual, where before only `/init` could borrow: what protects
+# the harness now is that the memory `/docker` borrows is page cache, which reclaim takes back
+# before it touches anon, and a borrow that outgrows even that breaches the job's own cgroup - a
+# breach `job_cgroup_oom` reports rather than one that reads as a clean run.
+INTEGRATION_NESTED_LIMIT = max(
+    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
+    INTEGRATION_NESTED_BUDGET,
 )
 # `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out, and its
 # charge is anon, so reclaim cannot meet a cap the way it can for `/docker`'s page cache. It
@@ -70,6 +85,7 @@ integration_dind_env = (
     f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
     f"+--env=CI_DIND_DAEMON_LIMIT={INTEGRATION_DIND_DAEMON_LIMIT}"
     f"+--env=CI_DIND_NESTED_BUDGET={INTEGRATION_NESTED_BUDGET}"
+    f"+--env=CI_DIND_NESTED_LIMIT={INTEGRATION_NESTED_LIMIT}"
 )
 
 BINARY_DOCKER_COMMAND = (

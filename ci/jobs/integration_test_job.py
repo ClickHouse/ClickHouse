@@ -128,11 +128,13 @@ _SHELL_INT_MAX = 2**63 - 1
 def nested_budget_gb(env=None, physical_memory=None) -> int:
     """Memory the nested test containers may collectively use, in GiB.
 
-    `CI_DIND_NESTED_BUDGET` is the cap `docker_in_docker.sh` puts on the cgroup that parents
-    them, so deriving worker concurrency from it keeps scheduling and containment on the same
-    number. `Utils.physical_memory` reports HOST memory, which those containers do not get:
-    on the 61.78 GiB runner it budgets 3 x 20 = 60 GiB for a `--dist=each` run inside a
-    40 GiB cap. Runs without the variable (local, or a job that sets no memory limit) keep
+    `CI_DIND_NESTED_BUDGET` is the share of the job limit that the cgroup parenting them owes the
+    other leaves nothing for, so deriving worker concurrency from it keeps scheduling and
+    containment on the same number. Its `memory.max` is `CI_DIND_NESTED_LIMIT`, a ceiling that
+    overlaps the other leaves, so scheduling to the ceiling would size every job to memory only an
+    otherwise idle run has. `Utils.physical_memory` reports HOST memory, which those containers do
+    not get: on the 61.78 GiB runner it budgets 3 x 20 = 60 GiB for a `--dist=each` run inside a
+    40 GiB share. Runs without the variable (local, or a job that sets no memory limit) keep
     deriving it from host memory, which is what they do today.
     """
     env = os.environ if env is None else env
@@ -286,11 +288,11 @@ def print_leaf_peak_usage(env, cgroup_root=DIND_CGROUP_ROOT) -> Dict[str, int]:
         return {}
     peaks = leaf_peak_usage(cgroup_root=cgroup_root)
     caps = {
-        # The cap that was written, which for `/init` and `/dockerd` is not their share of the
-        # budget. Falling back to the reserve would understate the cap and print a false AT CAP.
+        # The cap that was written, which for no leaf is its share of the budget. Falling back to
+        # the reserve would understate the cap and print a false AT CAP.
         "init": env.get("CI_DIND_INIT_LIMIT") or env.get("CI_DIND_INIT_RESERVE"),
         "dockerd": env.get("CI_DIND_DAEMON_LIMIT") or env.get("CI_DIND_DAEMON_RESERVE"),
-        "docker": env.get("CI_DIND_NESTED_BUDGET"),
+        "docker": env.get("CI_DIND_NESTED_LIMIT") or env.get("CI_DIND_NESTED_BUDGET"),
     }
     for leaf, peak in sorted(peaks.items()):
         cap = caps.get(leaf)
