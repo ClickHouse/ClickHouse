@@ -15,6 +15,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -213,8 +214,11 @@ namespace
 
     /// The query built above groups by the node-local counter of timeSeriesIdToGroup(), which each shard of a
     /// Distributed table would restart on its own, silently merging unrelated series into one group.
-    ConstStoragePtr checkTargetIsNotDistributed(ConstStoragePtr storage)
+    /// The SELECT check comes first: the engine-specific refusal below must not tell a caller
+    /// without access what kind of table hides behind the name.
+    ConstStoragePtr checkTargetIsNotDistributed(ConstStoragePtr storage, const ContextPtr & context)
     {
+        context->checkAccess(AccessType::SELECT, storage->getStorageID());
         if (typeid_cast<const StorageDistributed *>(storage.get()))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -227,7 +231,7 @@ namespace
 
 PrometheusRemoteReadProtocol::PrometheusRemoteReadProtocol(ConstStoragePtr time_series_storage_, const ContextPtr & context_)
     : WithContext{context_}
-    , time_series_storage(storagePtrToTimeSeries(checkTargetIsNotDistributed(std::move(time_series_storage_))))
+    , time_series_storage(storagePtrToTimeSeries(checkTargetIsNotDistributed(std::move(time_series_storage_), context_)))
     , log(getLogger("PrometheusRemoteReadProtocol"))
 {
 }

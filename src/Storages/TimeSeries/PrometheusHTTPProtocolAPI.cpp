@@ -27,6 +27,7 @@
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -121,8 +122,11 @@ ASTPtr makeSelectFromSubquery(ASTs select_list, ASTPtr subquery, bool distinct, 
 
 /// The metadata endpoints read the Tags and Metrics target tables of a TimeSeries table directly,
 /// which a Distributed table doesn't have.
-void checkTargetIsNotDistributed(const IStorage & storage, std::string_view endpoint)
+void checkTargetIsNotDistributed(const IStorage & storage, std::string_view endpoint, const ContextPtr & context)
 {
+    /// The SELECT check comes first: the endpoint-specific refusal below must not tell a caller
+    /// without access what kind of table hides behind the name.
+    context->checkAccess(AccessType::SELECT, storage.getStorageID());
     if (resolvePrometheusQueryTarget(storage))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -137,7 +141,9 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
-    /// Check the engine of the target table early, before any endpoint is called.
+    /// Check the engine of the target table early, before any endpoint is called. The SELECT
+    /// check comes first so the engine error cannot fingerprint a table the caller cannot read.
+    context_->checkAccess(AccessType::SELECT, time_series_storage->getStorageID());
     resolvePrometheusQueryTarget(*time_series_storage);
 }
 
@@ -543,7 +549,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/series");
+    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/series", getContext());
 
     /// Prometheus requires at least one `match[]` selector here; without it the endpoint would scan the whole tags table.
     if (match_params.empty())
@@ -644,7 +650,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     Int64 limit_per_metric,
     QueryFinishCallback query_finish_callback)
 {
-    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/metadata");
+    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/metadata", getContext());
 
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
@@ -801,7 +807,7 @@ void PrometheusHTTPProtocolAPI::getLabels(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/labels");
+    checkTargetIsNotDistributed(*time_series_storage, "/api/v1/labels", getContext());
 
     /// Unlike /api/v1/series, the `match[]` selectors are optional here: without them the endpoint
     /// returns the label names of all the time series stored in the table.
