@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Access/ContextAccess.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
@@ -242,7 +243,19 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
     if (read_task_info.alter_conversions->hasMutations())
     {
-        auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
+        /// A direct read from a text index rewrites the search predicate into a virtual column that
+        /// the index reader produces (`__text_index_*`). It is not a table column, so it must not be
+        /// handed to the mutation interpreter below: `StorageSnapshot::getColumn` would throw
+        /// `NO_SUCH_COLUMN_IN_TABLE` and no query using the index could run while a mutation is
+        /// pending. The on-fly mutation steps read the real columns their own expressions need; the
+        /// index column is produced afterwards, on top of their output.
+        Names mutation_column_names;
+        mutation_column_names.reserve(column_names.size());
+        for (const auto & column_name : column_names)
+            if (!isTextIndexVirtualColumn(column_name))
+                mutation_column_names.push_back(column_name);
+
+        auto columns_list = storage_snapshot->getColumnsByNames(options, mutation_column_names);
         auto mutation_steps
             = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
         read_task_info.has_on_fly_mutation_steps = !mutation_steps.empty();
