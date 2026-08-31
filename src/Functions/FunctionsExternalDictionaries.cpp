@@ -1020,9 +1020,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, UUID2_value UUID2) PRIMARY KEY id S
 SELECT dictGetUUID2('all_types_dict', 'UUID2_value', 1)
 )",
 R"(
-┌─dictGetUUID2⋯_value', 1)─────────────┐
-│ 123e4567-e89b-12d3-a456-426614174000 │
-└──────────────────────────────────────┘
+┌─dictGetUUID2('all_types_dict', 'UUID2_value', 1)─┐
+│ 123e4567-e89b-12d3-a456-426614174000             │
+└──────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
@@ -1052,12 +1052,12 @@ SELECT dictGetUUID2('all_types_dict', 'UUID2_value', 1);
 SELECT dictGetUUID2OrDefault('all_types_dict', 'UUID2_value', 999, '00000000-0000-0000-0000-000000000000'::UUID2);
 )",
 R"(
-┌─dictGetUUID2('all_⋯ 'UUID2_value', 1)─┐
-│ 550e8400-e29b-41d4-a716-446655440000  │
-└───────────────────────────────────────┘
-┌─dictGetUUID2OrDefa⋯00000000000'::UUID2)─┐
-│ 00000000-0000-0000-0000-000000000000    │
-└─────────────────────────────────────────┘
+┌─dictGetUUID2('all_types_dict', 'UUID2_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000             │
+└──────────────────────────────────────────────────┘
+┌─dictGetUUID2OrDefault('all_types_dict', 'UUID2_value', 999, CAST('00000000-0000-0000-0000-000000000000', 'UUID2'))─┐
+│ 00000000-0000-0000-0000-000000000000                                                                               │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {26, 8};

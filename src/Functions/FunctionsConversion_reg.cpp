@@ -1462,7 +1462,7 @@ Converts a String value to a [UUID2](/reference/data-types/uuid2) value (the cor
 SELECT toUUID2('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
         )",
         R"(
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
         )"
