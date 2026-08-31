@@ -160,6 +160,10 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     if (!block_missing_values)
         return;
 
+    /// Also true when the mask holds no columns at all, where the lookups below would be out of range.
+    if (block_missing_values->empty())
+        return;
+
     const auto & header = getOutputPort().getHeader();
     size_t num_rows = chunk.getNumRows();
     auto res = header.cloneWithColumns(chunk.detachColumns());

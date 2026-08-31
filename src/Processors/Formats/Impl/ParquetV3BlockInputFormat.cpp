@@ -184,10 +184,6 @@ void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & bucke
 
 const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const
 {
-    /// An empty mask means the reader recorded nothing: it produced only a row count, or
-    /// `input_format_defaults_for_omitted_fields` is off.
-    if (previous_block_missing_values.getNumColumns() == 0)
-        return nullptr;
     return &previous_block_missing_values;
 }
 
