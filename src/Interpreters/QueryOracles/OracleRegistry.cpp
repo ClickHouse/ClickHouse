@@ -41,6 +41,7 @@ extern const Event ASTFuzzerOracleFinalMergeChecks;
 extern const Event ASTFuzzerOracleWithFillChecks;
 extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
 extern const Event ASTFuzzerOracleDictGetChecks;
+extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 }
 
 namespace DB
@@ -125,6 +126,7 @@ OracleRegistry::OracleRegistry()
     add("WITH FILL grid", ProfileEvents::ASTFuzzerOracleWithFillChecks, &QueryOracleChecker::checkWithFillGrid);
     add("pipe equivalence", ProfileEvents::ASTFuzzerOraclePipeEquivalenceChecks, &QueryOracleChecker::checkPipeEquivalence);
     add("dictGet vs JOIN", ProfileEvents::ASTFuzzerOracleDictGetChecks, &QueryOracleChecker::checkDictGetVsJoin);
+    add("materialized column", ProfileEvents::ASTFuzzerOracleMaterializedColumnChecks, &QueryOracleChecker::checkMaterializedColumn);
 }
 
 const OracleRegistry & OracleRegistry::instance()
