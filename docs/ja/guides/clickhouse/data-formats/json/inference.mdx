@@ -74,7 +74,7 @@ ClickHouseはJSONデータの構造を自動的に推定できます。これに
 [s3 関数](/ja/reference/functions/table-functions/s3) を `DESCRIBE` コマンドとともに使用すると、推論される型を確認できます。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -124,7 +124,7 @@ SELECT
  toYear(update_date) AS year,
  authors,
     count() AS c
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 GROUP BY
     year,
  authors
@@ -172,7 +172,7 @@ CREATE TABLE arxiv
 ENGINE = MergeTree
 ORDER BY update_date EMPTY
 AS SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS schema_inference_make_columns_nullable = 0
 ```
 
@@ -249,7 +249,7 @@ ORDER BY update_date
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 ```
 
 ```response
@@ -337,7 +337,7 @@ JSON が非常に動的で、一意なキーが多く、同じキーに複数の
 このデータのサンプルは、改行区切りの JSON フォーマットで一般公開されています。このファイルに対してスキーマ推論を試みると、応答が極めて冗長になるため、パフォーマンスがあまり良くないことがわかります。
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN)
 
 -- result omitted for brevity
 ```
@@ -353,7 +353,7 @@ DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi
 `JSONAsObject` は入力全体を 1 つの JSON オブジェクトとして扱い、[`JSON`](/ja/reference/data-types/newjson) 型の単一カラムに格納するため、動的に変化しやすい JSON ペイロードやネストされた JSON ペイロードにより適しています。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
 SETTINGS describe_compact_output = 1
 ```
 
@@ -375,7 +375,7 @@ SETTINGS describe_compact_output = 1
 この場合、ClickHouse は型の競合を吸収し、カラム `a` を `Nullable(String)` として扱えます。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -403,7 +403,7 @@ SETTINGS describe_compact_output = 1
 この場合、ここで型変換を行うことはできません。そのため、`DESCRIBE` コマンドは失敗します。
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN)
 ```
 
 ```response
@@ -419,7 +419,7 @@ Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a
 この場合、`JSONAsObject` は各行を単一の [`JSON`](/ja/reference/data-types/newjson) 型 (同じカラムに複数の型を持たせることをサポート) として扱います。これは不可欠です。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
 SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 

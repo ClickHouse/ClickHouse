@@ -735,7 +735,15 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 /// a whitespace-only difference is the same type and needs only a rename, not a cast.
                 if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
                 {
-                    if (old_json->getValue<String>(f_name) != name)
+                    /// Nullability is carried by the separate `required` key, so equal type strings
+                    /// can still resolve to different types. Only relaxing required to optional is
+                    /// legal evolution; the reverse keeps the plain passthrough.
+                    const bool old_required = old_json->getValue<bool>(f_required);
+                    if (old_required && !required && !old_node->result_type->equals(*type))
+                    {
+                        node = &dag->addCast(*old_node, type, name, nullptr);
+                    }
+                    else if (old_json->getValue<String>(f_name) != name)
                     {
                         node = &dag->addAlias(*old_node, name);
                     }

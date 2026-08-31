@@ -9,6 +9,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -20,7 +22,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
+#include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
@@ -376,6 +380,8 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
 }
 
 
+/// TODO: Return the row count of the inner "tags" table instead of the sum over all the inner tables:
+/// it matches `SELECT count()` without FINAL, allowing the trivial count optimization.
 std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) const
 {
     if (!hasInnerTables())
@@ -656,16 +662,27 @@ VirtualColumnsDescription StorageTimeSeries::createVirtuals()
 }
 
 void StorageTimeSeries::readImpl(
-    QueryPlan & /* query_plan */,
-    const Names & /* column_names */,
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SELECT is not supported by storage {} yet", getName());
+    /// Run the generated read query on a child context with a few settings pinned so its results
+    /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
+    auto read_context = Context::createCopy(local_context);
+    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(query_info.isFinal()));
+
+    NameSet requested_columns{column_names.begin(), column_names.end()};
+    auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, /* subquery_depth_ = */ 0, /* is_subquery_ = */ false,
+                                      query_info.settings_limit_offset_done);
+    InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
+    interpreter.addStorageLimits(*query_info.storage_limits);
+    query_plan = std::move(interpreter).extractQueryPlan();
 }
 
 
@@ -850,7 +867,7 @@ The _samples_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `Tuple(UInt64, UUID)` | any | Identifies a combination of a metric names and tags |
+| `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
 
@@ -867,7 +884,7 @@ The _tags_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `Tuple(UInt64, UUID)` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
+| `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
 | `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of all the tags, including the tag `__name__` containing the name of a metric and including the tags with names enumerated in the [tags_to_columns](#settings) setting. Tables created by older versions of ClickHouse stored in this column only the tags without dedicated columns and without the metric name; reading handles both cases |
@@ -946,14 +963,14 @@ CREATE TABLE my_table
 ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID),
+    `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -980,7 +997,7 @@ and each target table has its own set of columns:
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID),
+    `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
@@ -992,7 +1009,7 @@ SETTINGS index_granularity = 32768
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -1056,7 +1073,9 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 The `id` column can be of any comparable non-Nullable type. The `id` types declared in the samples and tags inner tables must match.
 
-If no `DEFAULT` expression is given for the `id` column and the `id_generator` setting is not set, ClickHouse will choose the `DEFAULT` expression automatically based on the `id` type, but only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, or a tuple of two of those types. For such a tuple the automatically chosen expression calculates a hash of the metric name in the first component and a hash of all the tags in the second component.
+If no `DEFAULT` expression is given for the `id` column and the `id_generator` setting is not set, ClickHouse will choose the `DEFAULT` expression automatically based on the `id` type, but only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, the same types wrapped in `LowCardinality`, or a tuple of two of those types. For such a tuple the automatically chosen expression calculates a hash of the metric name in the first component and a hash of all the tags in the second component.
+
+A `LowCardinality` identifier type, e.g. `Tuple(UInt64, LowCardinality(UUID))`, keeps the identifiers dictionary-encoded: the samples table stores small per-block dictionaries with dictionary indexes instead of repeating the full identifier in every row, which reduces the amount of data read by queries.
 
 The `id_generator` setting offers the same customization without using the `INNER COLUMNS` clause:
 

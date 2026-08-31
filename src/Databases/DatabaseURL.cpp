@@ -454,13 +454,25 @@ void registerDatabaseURL(DatabaseFactory & factory)
                        "corresponding write source grant (e.g. `GRANT WRITE ON S3`). "
                        "clickhouse-local uses it (inside the Overlay database, with the `file://` base URL) as the default "
                        "database, so a plain table name resolves to a file in the current directory, while queries like "
-                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL.",
+                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL. "
+                       "A base URL scopes the database to a location: after "
+                       "`CREATE DATABASE web ENGINE = URL('https://example.com/data/')`, the query "
+                       "``SELECT * FROM web.`daily.csv` `` reads `https://example.com/data/daily.csv`.",
         .syntax = "ENGINE = URL([base_url])",
         .examples = {{
-            "Usage",
-            "CREATE DATABASE web ENGINE = URL('https://example.com/data/');\n"
-            "SELECT * FROM web.`daily.csv`; -- reads https://example.com/data/daily.csv",
-            ""
+            "Reading files of the user_files directory through a database with a `file://` base URL",
+            R"(
+INSERT INTO FUNCTION file('web/daily.csv', 'CSVWithNames', 'day Date, visits UInt32') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('2024-01-01', 100), ('2024-01-02', 150);
+CREATE DATABASE web ENGINE = URL('file://web/');
+SELECT * FROM web.`daily.csv`;
+DROP DATABASE web;
+            )",
+            R"(
+┌────────day─┬─visits─┐
+│ 2024-01-01 │    100 │
+│ 2024-01-02 │    150 │
+└────────────┴────────┘
+            )"
         }},
         .introduced_in = {26, 8},
         .related = {"Filesystem", "S3", "HDFS"}});

@@ -50,7 +50,7 @@ ClickHouse 中的分区允许根据某个列或 SQL 表达式，在磁盘上对�
 
 要修改生存时间 (TTL)，可以采用以下任一方式：
 
-1. **修改表的 schema (推荐)&#x20;**。这需要连接到 ClickHouse 实例，例如使用 [clickhouse-client](/zh/concepts/features/interfaces/cli) 或 [Cloud SQL 控制台](/zh/products/cloud/features/sql-console-features/sql-console)。例如，可以使用以下 DDL 修改 `otel_logs` 表的生存时间 (TTL)：
+1. **修改表的 schema (推荐)&#x20;**。这需要连接到 ClickHouse 实例，例如使用 [ClickHouse 客户端](/zh/concepts/features/interfaces/client) 或 [Cloud SQL 控制台](/zh/products/cloud/features/sql-console-features/sql-console)。例如，可以使用以下 DDL 修改 `otel_logs` 表的生存时间 (TTL)：
 
 ```sql
 ALTER TABLE default.otel_logs

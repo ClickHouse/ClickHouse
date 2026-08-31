@@ -289,27 +289,20 @@ expensive and slow to execute.
 
 #### The Delete+Insert Strategy {#delete-insert-strategy}
 
-ClickHouse added "lightweight deletes" as an experimental feature in version 22.8. Lightweight deletes are significantly
-faster than ALTER TABLE ... DELETE
-operations, because they don't require rewriting ClickHouse data parts. The incremental strategy `delete+insert`
-utilizes lightweight deletes to implement
-incremental materializations that perform significantly better than the "legacy" strategy. However, there are important
-caveats to using this strategy:
+The `delete+insert` strategy uses [lightweight deletes](/concepts/features/operations/delete/lightweight-delete) to remove the affected rows and then inserts the new ones. Because it doesn't copy the whole table, it performs significantly better than the "legacy" strategy. Setting `use_lw_deletes: true` in your profile makes `delete+insert` the default incremental strategy.
 
-- Lightweight deletes must be enabled on your ClickHouse server using the setting
-  `allow_experimental_lightweight_delete=1` or you
-  must set `use_lw_deletes=true` in your profile (which will enable that setting for your dbt sessions)
-- Lightweight deletes are now production ready, but there may be performance and other problems on ClickHouse versions
-  earlier than 23.3.
-- This strategy operates directly on the affected table/relation (with creating any intermediate or temporary tables),
-  so if there is an issue during the operation, the
-  data in the incremental model is likely to be in an invalid state
-- When using lightweight deletes, dbt-clickhouse enabled the setting `allow_nondeterministic_mutations`. In some very
-  rare cases using non-deterministic incremental_predicates
-  this could result in a race condition for the updated/deleted items (and related log messages in the ClickHouse logs).
-  To ensure consistent results the
-  incremental predicates should only include sub-queries on data that will not be modified during the incremental
-  materialization.
+There are important caveats to using this strategy:
+
+- It operates directly on the affected table without creating any intermediate or temporary tables, so if there is an
+  issue during the operation, the data in the incremental model is likely to be in an invalid state.
+- It requires the ClickHouse setting `allow_nondeterministic_mutations`. The adapter enables it automatically for its
+  own sessions when possible. When it can't be enabled (for example, it's read-only for your dbt user), the behavior
+  depends on how the strategy was chosen: models relying on the default strategy silently fall back to the legacy
+  strategy, models that explicitly set `delete+insert` or `microbatch` fail at runtime, and `use_lw_deletes: true` in
+  the profile fails at connection time.
+- In some very rare cases, using non-deterministic `incremental_predicates` could result in a race condition for the
+  updated/deleted items. To ensure consistent results, the incremental predicates should only include sub-queries on
+  data that will not be modified during the incremental materialization.
 
 #### The Microbatch Strategy (Requires dbt-core >= 1.9) {#microbatch-strategy}
 
@@ -374,10 +367,67 @@ Due to its depth, this materialization has its own dedicated page. **[Go to the 
 
 ## Materialization: dictionary (experimental) {#materialization-dictionary}
 
-See the tests
-in https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py for
-examples of how to
-implement materializations for ClickHouse dictionaries
+A dbt model can be created as a ClickHouse [dictionary](/concepts/features/dictionaries/index). On every `dbt run` the dictionary is replaced with the current model definition using `CREATE OR REPLACE DICTIONARY`.
+
+### Configurations {#dictionary-configurations}
+
+| Option                 | Description                                                                                                                                                                                                       | Required             |
+|------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------|
+| `fields`               | The dictionary structure, as a list of `(name, type)` pairs.                                                                                                                                                     | Yes                  |
+| `primary_key`          | The dictionary primary key. Must match the key type expected by the chosen layout (for example, a complex key for `COMPLEX_KEY_*` layouts).                                                                      | Yes                  |
+| `layout`               | The [layout](/reference/statements/create/dictionary/layouts/overview) used to store the dictionary in memory, such as `HASHED()`, `COMPLEX_KEY_HASHED()` or `DIRECT()`.                                        | Yes                  |
+| `source_type`          | Where the dictionary reads its data from: `clickhouse` (default, uses the model's SQL or the `table` option) or `http`.                                                                                          |                      |
+| `lifetime`             | The [`LIFETIME`](/reference/statements/create/dictionary/lifetime) clause controlling how often the dictionary is refreshed, e.g. `MIN 0 MAX 300`. Optional since dbt-clickhouse 1.10.0 — omit it for layouts that don't use it, such as `DIRECT()`. |                      |
+| `table`                | `clickhouse` source only. Read from an existing table instead of the model's SQL.                                                                                                                                |                      |
+| `update_field`         | `clickhouse` source only. Refresh the dictionary incrementally by fetching only rows whose value in this column changed since the previous update. See [LIFETIME](/reference/statements/create/dictionary/lifetime). Available since dbt-clickhouse 1.10.0. |                      |
+| `update_lag`           | `clickhouse` source only. Number of seconds subtracted from the previous update time when using `update_field`, to account for late-arriving updates. Available since dbt-clickhouse 1.10.0.                     |                      |
+| `connection_overrides` | `clickhouse` source only. Overrides for the credentials used in the dictionary's `SOURCE` clause, e.g. `{'user': 'dictionary_reader'}`.                                                                          |                      |
+| `url`, `format`        | `http` source only. The URL of the source file and its input format.                                                                                                                                             | Yes for `http`       |
+| `range`                | The `RANGE` clause for `RANGE_HASHED()` layouts, e.g. `'min start max stop'`.                                                                                                                                    |                      |
+
+### Example with a ClickHouse source {#dictionary-clickhouse-source-example}
+
+The model's SQL becomes the dictionary source query:
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('id', 'UInt64'),
+           ('name', 'String'),
+       ],
+       primary_key='id',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 300'
+) }}
+
+select id, name from {{ source('raw', 'people') }}
+```
+
+### Example with an HTTP source {#dictionary-http-source-example}
+
+When using `source_type='http'` (or the `table` option), the model's SQL is not used as the source, but dbt still requires a body — use a `select 1` placeholder:
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('LocationID', 'UInt16 DEFAULT 0'),
+           ('Borough', 'String'),
+           ('Zone', 'String'),
+       ],
+       primary_key='LocationID',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 0',
+       source_type='http',
+       url='https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv',
+       format='CSVWithNames'
+) }}
+
+select 1
+```
+
+See the [dictionary tests](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py) for more examples, including range and direct dictionaries.
 
 ## Materialization: distributed_table (experimental) {#materialization-distributed-table}
 

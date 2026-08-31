@@ -6,8 +6,8 @@
 -- does not re-apply the cap globally, so independent per-shard enforcement could let more
 -- distinct groups through in total than the limit allows. The pushdown is therefore suppressed
 -- whenever the outer query has a GROUP BY and max_rows_to_group_by is non-zero, regardless of
--- overflow mode (matching AggregatingStep::canUseShardedAggregation and
--- useDataParallelAggregation, which disable independent aggregation for the same reason).
+-- overflow mode (matching `useDataParallelAggregation`, which disables independent
+-- aggregation for the same reason).
 --
 -- Tags: distributed
 

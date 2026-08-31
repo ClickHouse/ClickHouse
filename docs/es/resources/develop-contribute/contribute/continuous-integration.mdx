@@ -305,7 +305,7 @@ Descarga el binario desde la [página de comprobaciones de compilación de CI](/
 
 En las pull requests, la mayoría de los jobs de sanitizadores cuyo nombre termina en `selected tests` no ejecutan toda la suite de pruebas.
 Ejecutan solo las pruebas seleccionadas para el cambio: las pruebas que la pull request añade o modifica, las pruebas que ya fallaron en esta pull request y las pruebas que cubren las líneas modificadas según la base de datos de cobertura.
-Los jobs de MSan/WasmEdge siguen ejecutando la suite completa porque las pruebas UDF de Wasm existentes no son compatibles con MSan. La suite completa también se ejecuta en las configuraciones de binarios debug y sin instrumentación, las compilaciones con sanitizadores se prueban mediante la [prueba de estrés](#stress-test), y la rama master ejecuta la suite completa en todas las configuraciones.
+La suite completa se ejecuta en las configuraciones de binarios debug y sin instrumentación, las compilaciones con sanitizadores se prueban mediante la [prueba de estrés](#stress-test), y la rama master ejecuta la suite completa en todas las configuraciones.
 
 <div id="integration-tests">
   ## Pruebas de integración

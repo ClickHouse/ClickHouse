@@ -1,0 +1,294 @@
+---
+title: 'مرجع التهيئة'
+sidebarTitle: 'مرجع التهيئة'
+description: 'جميع مفاتيح تهيئة ClickHouse Connector: ملف config.yaml الخاص بالآلة الافتراضية وقيم مخطط Helm، مع القيم الافتراضية'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration', 'reference']
+doc_type: 'reference'
+---
+
+تسرد هذه الصفحة جميع مفاتيح التهيئة التي قد تحتاج إلى تعديلها، مع قيمها الافتراضية ومعانيها: بدءًا من ملف تهيئة الآلة الافتراضية، ثم قيم مخطط Helm. للحصول على إرشادات عملية، راجع [دليل التهيئة](/ar/products/bring-your-own-cloud/connector/configuration).
+
+<div id="vm-configuration-file">
+  ## ملف إعداد VM
+</div>
+
+على جهاز VM يعمل بنظام Linux، يقرأ الموصل الملف `/etc/clicklink/config.yaml` الذي ينشئه الأمر `clicklink clctl init` ويُحتفَظ به عند إعادة تشغيل الأمر ما لم يُمرَّر الخيار `--force`. تستخدم المفاتيح غير الموجودة في الملف الإعدادات الافتراضية المُصرَّفة أدناه. لا تُخزَّن بيانات الاعتماد مطلقًا في هذا الملف.
+
+<div id="vm-top-level">
+  ### المفاتيح العليا
+</div>
+
+| المفتاح          | القيمة الافتراضية | المعنى                                                                                                                    |
+| ---------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `pcm_infra_uuid` | يُنشئه `init`     | معرّف فريد لعملية نشر هذا الموصل، يُرسَل مع كل طلب إلى المصدر. يُحفَظ عند إعادة التشغيل، بما في ذلك `--force`. لا تعدّله. |
+| `cloud`          | يكتشفه `init`     | تسمية موفر Cloud لهذا المضيف. مطلوب؛ ترفض العمليات الخفية البدء إذا كان فارغًا.                                           |
+| `region`         | يكتشفه `init`     | تسمية المنطقة لهذا المضيف. مطلوب؛ ترفض العمليات الخفية البدء إذا كان فارغًا.                                              |
+| `api`            |                   | كتلة اتصال واجهة برمجة التطبيقات المصدر، راجع [api](#vm-api).                                                             |
+| `instances`      | `{}`              | خريطة لمثيلات ClickHouse حسب الاسم، راجع [instances](#vm-instances).                                                      |
+| `scraper`        |                   | كتلة العملية الخفية للكاشط، راجع [scraper](#vm-scraper).                                                                  |
+| `troubleshooter` |                   | كتلة العملية الخفية لأداة استكشاف الأخطاء وإصلاحها، راجع [troubleshooter](#vm-troubleshooter).                            |
+| `observability`  |                   | كتلة التسجيل والمنفذ المشتركة، راجع [observability](#vm-observability).                                                   |
+
+<div id="vm-api">
+  ### api
+</div>
+
+| المفتاح                   | القيمة الافتراضية                          | المعنى                                                                                       |
+| ------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `api.endpoint`            | من حزمة التسجيل                            | نقطة نهاية واجهة برمجة التطبيقات لموصّل مؤسستك، `https://<subdomain>.<connector domain>`.    |
+| `api.access_key_file`     | `/etc/clicklink/access-key` (يكتبه `init`) | ملف يحتوي على مفتاح وصول HMAC (بوضع 0600).                                                   |
+| `api.secret_key_file`     | `/etc/clicklink/secret-key` (يكتبه `init`) | ملف يحتوي على المفتاح السري لـ HMAC (بوضع 0600).                                             |
+| `api.tls.enabled`         | `true`                                     | يقدّم شهادة عميل mTLS في اتصالات واجهة برمجة التطبيقات.                                      |
+| `api.tls.cert_file`       | `/etc/clicklink/tls/client.crt`            | شهادة العميل الطرفية لـ mTLS؛ يُعاد إنشاؤها تلقائيًا عند التجديد.                            |
+| `api.tls.key_file`        | `/etc/clicklink/tls/client.key`            | المفتاح الخاص لعميل mTLS.                                                                    |
+| `api.tls.ca_file`         | `/etc/clicklink/tls/ca.crt`                | سلسلة CA إضافية تُضاف إلى جذور النظام للتحقق من الخادم؛ يثبّت `init` سلسلة حزمة التسجيل هنا. |
+| `api.retry.max_retries`   | `5`                                        | عدد محاولات إعادة المحاولة لكل طلب واجهة برمجة تطبيقات.                                      |
+| `api.retry.initial_delay` | `1s`                                       | تأخير التراجع قبل أول إعادة محاولة.                                                          |
+| `api.retry.max_delay`     | `30s`                                      | الحد الأقصى لتأخير التراجع.                                                                  |
+| `api.retry.jitter_factor` | `0.25`                                     | تذبذب عشوائي يُطبّق على تأخيرات التراجع.                                                     |
+
+<div id="vm-instances">
+  ### المثيلات
+</div>
+
+يصف كل إدخال ضمن `instances.<name>` هدفًا واحدًا لـ ClickHouse عبر البروتوكول الأصلي:
+
+| المفتاح          | القيمة الافتراضية | المعنى                                                                                                         |
+| ---------------- | ----------------- | -------------------------------------------------------------------------------------------------------------- |
+| `host`           |                   | اسم المضيف أو عنوان IP لمستمع ClickHouse الأصلي.                                                               |
+| `port`           |                   | منفذ البروتوكول الأصلي (عادةً `9440` مع TLS و`9000` كنص عادي).                                                 |
+| `database`       |                   | قاعدة البيانات الافتراضية لجلسات الموصل.                                                                       |
+| `secure`         | `false`           | استخدام TLS للاتصال الأصلي.                                                                                    |
+| `max_open_conns` | غير محدد          | الحد الأقصى للاتصالات المفتوحة بهذا المثيل.                                                                    |
+| `max_idle_conns` | غير محدد          | الحد الأقصى للاتصالات المجمّعة الخاملة بهذا المثيل.                                                            |
+| `namespace`      |                   | مساحة أسماء Kubernetes الخاصة بالمثيل، وتُستخدم لتحديد نطاق قراءات Kubernetes لمكوّن استكشاف الأخطاء وإصلاحها. |
+| `cluster`        | `default`         | اسم كتلة ClickHouse المستخدم للاستعلامات الموزعة.                                                              |
+
+<div id="vm-scraper">
+  ### scraper
+</div>
+
+| المفتاح                              | القيمة الافتراضية                   | المعنى                                                                                                                                                                                                                           |
+| ------------------------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scraper.enabled`                    | `false` (يكتب `init` القيمة `true`) | شغّل خدمة scraper.                                                                                                                                                                                                               |
+| `scraper.labels.platform`            |                                     | تسمية تُضاف إلى كل مقياس يتم إصداره. مطلوبة عند تمكين scraper.                                                                                                                                                                   |
+| `scraper.labels.env`                 |                                     | تسمية البيئة، مثل `production`. مطلوبة.                                                                                                                                                                                          |
+| `scraper.labels.region`              |                                     | تسمية المنطقة. مطلوبة.                                                                                                                                                                                                           |
+| `scraper.scrape.interval`            | `2m`                                | عدد مرات جمع المقاييس من كل مثيل.                                                                                                                                                                                                |
+| `scraper.scrape.timeout`             | `30s`                               | مهلة الاستعلام لكل عملية جمع.                                                                                                                                                                                                    |
+| `scraper.scrape.tables`              | انظر أدناه                          | جداول النظام التي تُجمع منها المقاييس لكل مثيل. تتضمن المجموعة الافتراضية `metric_log` و`asynchronous_metric_log` و`tables` و`warnings` و`server_settings`؛ ويُستثنى `query_log` عمدًا كي لا يغادر نص SQL الخام نطاقك افتراضيًا. |
+| `scraper.buffer.path`                | `/var/lib/clicklink/buffer`         | منطقة تخزين مؤقتة على القرص لتسليم البيانات مرة واحدة على الأقل عند تعذر الوصول إلى نقطة نهاية API.                                                                                                                              |
+| `scraper.buffer.retention`           | `168h`                              | الحد الأقصى لعمر البيانات المخزنة مؤقتًا.                                                                                                                                                                                        |
+| `scraper.buffer.max_size_mb`         | `1024`                              | الحد الأقصى لحجم التخزين المؤقت بالميغابايت.                                                                                                                                                                                     |
+| `scraper.sender.bandwidth_limit_mb`  | `1.0`                               | حد معدل الرفع بالميغابايت/ثانية.                                                                                                                                                                                                 |
+| `scraper.observability.health_port`  | `8082`                              | منفذ نقطة نهاية الحالة الصحية لـ scraper.                                                                                                                                                                                        |
+| `scraper.observability.metrics_port` | `9092`                              | منفذ مقاييس scraper.                                                                                                                                                                                                             |
+| `scraper.access_directory`           | `/etc/clicklink/access/scraper`     | الدليل الجذر لحزم الوصول الخاصة بكل مثيل لـ scraper.                                                                                                                                                                             |
+
+<div id="vm-troubleshooter">
+  ### troubleshooter
+</div>
+
+| المفتاح                                            | القيمة الافتراضية                                                    | المعنى                                                                                                                                  |
+| -------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `troubleshooter.enabled`                           | `false` (تضبط `init` القيمة على `true`)                              | تشغيل خدمة troubleshooter.                                                                                                              |
+| `troubleshooter.poll_interval`                     | `5s`                                                                 | الفاصل الزمني لاستقصاء حالة الجلسة.                                                                                                     |
+| `troubleshooter.command_timeout`                   | `60s`                                                                | مهلة تنفيذ كل أمر.                                                                                                                      |
+| `troubleshooter.session_timeout`                   | `4h`                                                                 | المدة الافتراضية لجلسة الدعم.                                                                                                           |
+| `troubleshooter.session_file_path`                 | `/var/lib/clicklink/session.json`                                    | ملف حالة الجلسة، مشترك مع أوامر `clicklink clctl troubleshoot session`.                                                                 |
+| `troubleshooter.access_directory`                  | `/etc/clicklink/access/troubleshooter`                               | الدليل الجذر لحزم الوصول الخاصة بكل مثيل من troubleshooter.                                                                             |
+| `troubleshooter.allowed_tables`                    | راجع [قائمة السماح الافتراضية للجداول](#default-table-allowlist)     | جداول النظام التي يمكن لـ troubleshooter تنفيذ `SELECT` عليها.                                                                          |
+| `troubleshooter.max_open_conns`                    | `5`                                                                  | الحد الأقصى لاتصالات ClickHouse المفتوحة.                                                                                               |
+| `troubleshooter.max_idle_conns`                    | `5`                                                                  | الحد الأقصى للاتصالات المجمّعة الخاملة.                                                                                                 |
+| `troubleshooter.redaction.workers`                 | `4`                                                                  | عمّال تنقيح يعملون بالتوازي.                                                                                                            |
+| `troubleshooter.redaction.patterns_file`           | `/etc/clicklink/redaction-patterns.yaml`                             | أنماط التنقيح التي يمكن للعميل تعديلها؛ ترفض الخدمة البدء إذا كان الملف موجودًا لكنه غير صالح.                                          |
+| `troubleshooter.redaction.metrics_per_pattern`     | `false`                                                              | إصدار مقياس لعدد المطابقات لكل نمط.                                                                                                     |
+| `troubleshooter.redaction.metrics_per_pattern_cap` | `50`                                                                 | الحد الأقصى لعدد أسماء الأنماط المميزة في المقياس الخاص بكل نمط.                                                                        |
+| `troubleshooter.audit_log.path`                    | `/var/log/clicklink/troubleshoot-audit.log`                          | سجل تدقيق NDJSON يُضاف إليه فقط، لكل أمر مقبول أو محظور.                                                                                |
+| `troubleshooter.audit_log.max_size_mb`             | `128`                                                                | تدوير ملف السجل النشط عند تجاوز هذا الحجم.                                                                                              |
+| `troubleshooter.audit_log.max_files`               | `5`                                                                  | عدد الملفات المُدوّرة التي يُحتفظ بها.                                                                                                  |
+| `troubleshooter.audit_log.max_age`                 | `168h`                                                               | تُحذف الملفات المُدوّرة الأقدم من هذه المدة.                                                                                            |
+| `troubleshooter.gateway.enabled`                   | `false`                                                              | تشغيل بوابة الجلسات (جلسات الدعم عبر OIDC).                                                                                             |
+| `troubleshooter.gateway.listen_addr`               | `":8443"` (تضبطها `init`)                                            | عنوان استماع البوابة.                                                                                                                   |
+| `troubleshooter.gateway.audience`                  | `clicklink-clctl` (تضبطها `init`)                                    | مطالبة الجمهور المطلوبة في رموز المشغّلين.                                                                                              |
+| `troubleshooter.gateway.required_hosted_domain`    | `""`                                                                 | قيد اختياري على مطالبة النطاق المستضاف؛ تُرفض الرموز الواردة من خارج النطاق قبل البحث في قائمة السماح.                                  |
+| `troubleshooter.gateway.allowed_operators_file`    | `/etc/clicklink/allowed-operators.txt` (تضبطها `init`)               | قائمة سماح بعناوين البريد الإلكتروني للمشغّلين، مفصولة بأسطر جديدة. القيمة الفارغة تعني عدم السماح لأيٍّ منهم.                          |
+| `troubleshooter.gateway.rate_limit_per_minute`     | `0` (معطّل)                                                          | حد معدل الطلبات لكل مشغّل.                                                                                                              |
+| `troubleshooter.gateway.handler_timeout`           | غير مضبوط                                                            | مهلة الطلب من جانب الخادم.                                                                                                              |
+| `troubleshooter.gateway.jwks_uri`                  | `""`                                                                 | نقطة نهاية JWKS لموفّر هوية غير Google؛ تستخدم القيمة الفارغة موفّر Google.                                                             |
+| `troubleshooter.gateway.issuer`                    | `""`                                                                 | مطالبة الجهة المُصدِرة التي تُثبّت عند ضبط `jwks_uri`.                                                                                  |
+| `troubleshooter.gateway.tls.enabled`               | `false` (تضبط `init` القيمة على `true` على VM عند تمكين جلسات الدعم) | تقديم البوابة عبر TLS باستخدام الشهادة الموقعة ذاتيًا التي تنشئها الخدمة عند عدم وجود شهادة؛ يثبّت المشغّلون بصمتها.                    |
+| `troubleshooter.gateway.tls.cert_file`             | `/var/lib/clicklink/gateway/tls/server.crt`                          | شهادة البوابة.                                                                                                                          |
+| `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`                          | مفتاح البوابة.                                                                                                                          |
+| `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (تملأ `init` اسم المضيف مسبقًا)                                 | أسماء SAN للشهادة الموقعة ذاتيًا التي تنشئها الخدمة عند عدم وجود شهادة؛ تتحول الإدخالات التي يمكن تحليلها كعناوين IP إلى عناوين IP SAN. |
+
+<div id="vm-observability">
+  ### قابلية الرصد
+</div>
+
+| المفتاح                      | القيمة الافتراضية | المعنى                                  |
+| ---------------------------- | ----------------- | --------------------------------------- |
+| `observability.enabled`      | `true`            | يوفّر نقاط نهاية للصحة والمقاييس.       |
+| `observability.log_level`    | `info`            | مستوى السجل.                            |
+| `observability.health_port`  | `8080`            | المنفذ الأساسي المشترك للتحقق من الصحة. |
+| `observability.metrics_port` | `9090`            | المنفذ الأساسي المشترك للمقاييس.        |
+
+تتجاوز كتل `observability` الخاصة بكل مكوّن هذه الإعدادات الأساسية: يستخدم scraper المنفذين `8082`/`9092`، ويستخدم troubleshooter المنفذين `8084`/`9094`، وتستمع البوابة على المنفذ `8443` عند تفعيلها.
+
+<div id="default-table-allowlist">
+  ### قائمة السماح الافتراضية بالجداول
+</div>
+
+مجموعة `allowed_tables` الافتراضية لمكوّن troubleshooter، وهي مطابقة للقيمة الافتراضية `troubleshooter.allowedTables` في مخطط Helm:
+
+```text
+system.build_options    system.clusters       system.columns
+system.databases        system.tables         system.parts
+system.parts_columns    system.parts_summary  system.detached_parts
+system.processes        system.merges         system.mutations
+system.replicas         system.replication_queue
+system.metrics          system.events         system.asynchronous_metrics
+system.disks            system.storage_policies
+system.settings         system.settings_profiles
+system.settings_profile_elements
+system.functions        system.formats        system.table_engines
+system.users            system.roles          system.grants
+```
+
+<div id="helm-chart-values">
+  ## قيم مخطط Helm
+</div>
+
+في Kubernetes، تتم تهيئة الموصل عبر قيم مخطط `clicklink-connector`. ينشئ `clicklink clctl init` تراكبًا باسم `clicklink-values.yaml` يتضمن جميع القيم التالية بعد تعبئتها، ويحتفظ به عند إعادة التشغيل ما لم يُمرَّر الخيار `--force`. تعرض الجداول القيم الافتراضية للمخطط؛ وتتوافر إعدادات أعباء العمل القياسية (`resources`، `nodeSelector`، `tolerations`، `affinity`، `serviceAccount.annotations`، `env`، `imagePullSecrets`) في كل مكوّن بقيم افتراضية فارغة، ولا تُكرَّر في كل جدول.
+
+<div id="helm-cluster">
+  ### المجموعة
+</div>
+
+| المفتاح                | القيمة الافتراضية   | المعنى                                                                                  |
+| ---------------------- | ------------------- | --------------------------------------------------------------------------------------- |
+| `cluster.pcmInfraUuid` | `""` (يملؤه `init`) | معرّف فريد لنشر هذا الموصل. مطلوب عند تمكين أي مكوّن، ويُحفَظ عبر عمليات إعادة التشغيل. |
+| `cluster.region`       | `""` (يملؤه `init`) | تسمية المنطقة. مطلوب.                                                                   |
+| `cluster.cloud`        | `""` (يملؤه `init`) | تسمية موفّر Cloud. مطلوب.                                                               |
+
+<div id="helm-image">
+  ### image
+</div>
+
+| المفتاح            | القيمة الافتراضية                                               | المعنى                                                                                                                                                                                                               |
+| ------------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image.repository` | محدد مسبقًا في المخطط المنشور                                   | مستودع صورة الموصل. يشير المخطط المنشور إلى صورة في السجل العام (متعددة المعماريات وموقعة باستخدام cosign)؛ لا تعيّنها إلا لتجاوزها، مثل استخدام مرآة داخل النطاق. افحص القيمة المنشورة باستخدام `helm show values`. |
+| `image.tag`        | `""` (يتتبع `appVersion` الخاص بالمخطط؛ يثبّت `init` إصدار CLI) | وسم الصورة.                                                                                                                                                                                                          |
+| `image.pullPolicy` | `IfNotPresent`                                                  | سياسة سحب الصور في Kubernetes.                                                                                                                                                                                       |
+
+<div id="vm-api">
+  ### api
+</div>
+
+| المفتاح           | القيمة الافتراضية   | المعنى                                                                                                                                                                                               |
+| ----------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.endpoint`    | `""` (يملؤه `init`) | نقطة نهاية واجهة برمجة التطبيقات لموصل مؤسستك، ويستخدمها كلا المكوّنين.                                                                                                                              |
+| `api.tls.enabled` | `true`              | قدّم شهادة عميل mTLS عند الاتصال بواجهة برمجة التطبيقات.                                                                                                                                             |
+| `api.tls.caFile`  | `""` (جذور النظام)  | تُضاف شهادة CA إلى جذور النظام للتحقق من الخادم. عيّنها إلى `/etc/clicklink/secrets/mtls/ca.crt` (أو أعد تشغيل `init` باستخدام `--api-private-ca`) عندما تستخدم نقطة النهاية شهادة صادرة عن CA خاصة. |
+
+<div id="helm-secrets">
+  ### الأسرار
+</div>
+
+يستخدم المخطط كائنات Secrets المُنشأة مسبقًا؛ وينشئها `init` قبل التثبيت.
+
+| المفتاح                  | القيمة الافتراضية | المعنى                                                                                                                                                                                                                                                                  |
+| ------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `secrets.mtlsSecretName` | `clicklink-mtls`  | كائن Secret من نوع `kubernetes.io/tls` يحتوي على المفتاح الخاص لعميل mTLS والشهادة وسلسلة CA.                                                                                                                                                                           |
+| `secrets.hmacSecretName` | `clicklink-hmac`  | كائن Secret معتم يحتوي على `access-key` و`secret-key` لتوقيع الطلبات.                                                                                                                                                                                                   |
+| `secrets.mtlsWriteback`  | `true`            | اسمح للعمليات الخفية بكتابة شهادة mTLS الطرفية المُجدَّدة تلقائيًا مجددًا في كائن Secret الخاص بـ mTLS. يمنح ServiceAccounts الخاصة بالمكوّن صلاحية `update` على كائن Secret واحد باسمه المطابق تمامًا؛ وبدون ذلك، لن تجد الشهادات المُجدَّدة مكانًا دائمًا لتُحفظ فيه. |
+
+<div id="vm-scraper">
+  ### scraper
+</div>
+
+| المفتاح                                                                  | القيمة الافتراضية                   | المعنى                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scraper.enabled`                                                        | `false` (تكتب `init` القيمة `true`) | نشر scraper.                                                                                                                                                                                                                 |
+| `scraper.replicaCount`                                                   | `1`                                 | عدد نُسخ scraper المتماثلة.                                                                                                                                                                                                  |
+| `scraper.logLevel`                                                       | `info`                              | مستوى السجل.                                                                                                                                                                                                                 |
+| `scraper.ports.health`                                                   | `8082`                              | منفذ نقطة النهاية الصحية.                                                                                                                                                                                                    |
+| `scraper.ports.metrics`                                                  | `9092`                              | منفذ المقاييس.                                                                                                                                                                                                               |
+| `scraper.instances`                                                      | `{}`                                | خريطة لمثيلات ClickHouse، بالبنية نفسها لحقول [instances](#vm-instances) الخاصة بـ VM.                                                                                                                                       |
+| `scraper.labels.platform`, `scraper.labels.env`, `scraper.labels.region` | `""`                                | تسميات تُضاف إلى كل مقياس يتم إصداره. يجب تحديد القيم الثلاث جميعها عند تمكين scraper؛ وإلا فسيظهر chart خطأ أثناء التصيير.                                                                                                  |
+| `scraper.config`                                                         | `{}`                                | تمرير مباشر لأي مفتاح إعدادات لـ `scraper` غير ممثّل أعلاه (فاصل الكشط، والمخزن المؤقت، والمرسل، وغير ذلك، وبالمخطط نفسه لكتلة [scraper](#vm-scraper) في VM).                                                                |
+| `scraper.bufferSizeLimit`                                                | `2Gi`                               | الحد الأقصى لحجم وحدة التخزين المؤقتة لـ scraper؛ ولا يحتفظ scraper بحالة دائمة على القرص.                                                                                                                                   |
+| `scraper.rbac.extraSecretNames`                                          | `[]`                                | أسماء Secret إضافية يمكن لـ ServiceAccount الخاص بـ scraper تنفيذ `get` عليها؛ وبأسماء مطابقة تمامًا فقط.                                                                                                                    |
+| `scraper.accessBundles`                                                  | `{}`                                | حزم وصول لكل مثيل، مفهرسة باسم المثيل، وتحتوي كل منها على `secretName` و`serviceAccountName`. تُربط في `/etc/clicklink/access/scraper/<instance>/`؛ ويُنشئها الأمر `clicklink clctl scraper access provision --target helm`. |
+
+<div id="helm-troubleshooter">
+  ### مستكشف الأعطال
+</div>
+
+| المفتاح                                         | القيمة الافتراضية                                           | المعنى                                                                                                                                                                                                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `troubleshooter.enabled`                        | `false` (تكتب `init` القيمة `true`)                         | انشر مستكشف الأعطال (StatefulSet بنسخة متماثلة واحدة).                                                                                                                                                                                                        |
+| `troubleshooter.logLevel`                       | `info`                                                      | مستوى السجل.                                                                                                                                                                                                                                                  |
+| `troubleshooter.ports.health`                   | `8084`                                                      | منفذ نقطة النهاية الصحية.                                                                                                                                                                                                                                     |
+| `troubleshooter.ports.metrics`                  | `9094`                                                      | منفذ المقاييس.                                                                                                                                                                                                                                                |
+| `troubleshooter.instances`                      | `{}`                                                        | خريطة لمثيلات ClickHouse، بالبنية نفسها لـ `scraper.instances`.                                                                                                                                                                                               |
+| `troubleshooter.sessionTimeout`                 | `4h`                                                        | المدة الافتراضية لجلسة الدعم.                                                                                                                                                                                                                                 |
+| `troubleshooter.allowedTables`                  | [قائمة السماح الافتراضية للجداول](#default-table-allowlist) | الجداول التي يُسمح لمستخدم ClickHouse الخاص بمستكشف الأعطال بتنفيذ `SELECT` عليها. هذه هي مساحة مراجعة الأمان التي ينبغي تعديلها في طبقة التراكب؛ وتُطبَّق قائمة حظر مضمّنة في الشيفرة (`query_log`، `text_log`) في مدقّق الأوامر، بغض النظر عما هو مدرج هنا. |
+| `troubleshooter.auditLog.path`                  | `/var/log/clicklink/troubleshoot-audit.log`                 | موقع سجل التدقيق على وحدة تخزين الحالة، لضمان بقاء السجل عند إعادة جدولة Pod.                                                                                                                                                                                 |
+| `troubleshooter.auditLog.maxSizeMb`             | `128`                                                       | دوّر السجل عند تجاوز هذا الحجم.                                                                                                                                                                                                                               |
+| `troubleshooter.auditLog.maxFiles`              | `5`                                                         | عدد الملفات المُدوّرة المحتفَظ بها.                                                                                                                                                                                                                           |
+| `troubleshooter.auditLog.maxAge`                | `168h`                                                      | تُزال الملفات المُدوّرة الأقدم من هذه المدة.                                                                                                                                                                                                                  |
+| `troubleshooter.redaction.workers`              | `4`                                                         | عمال تنقيح متوازيون.                                                                                                                                                                                                                                          |
+| `troubleshooter.redaction.patternsConfigMap`    | `""`                                                        | اسم ConfigMap يحتوي مفتاحه `redaction-patterns.yaml` على أنماط مخصصة؛ يربطه المخطط عند `/etc/clicklink/redaction-patterns.yaml`. عند تركه فارغًا، لا تُطبَّق إلا الأنماط المضمّنة.                                                                            |
+| `troubleshooter.redaction.metricsPerPattern`    | `false`                                                     | إصدار مقياس عدّاد للتطابقات لكل نمط.                                                                                                                                                                                                                          |
+| `troubleshooter.redaction.metricsPerPatternCap` | `50`                                                        | حد عدد أسماء الأنماط المميزة في المقياس الخاص بكل نمط.                                                                                                                                                                                                        |
+| `troubleshooter.config`                         | `{}`                                                        | تمرير أي مفتاح إعداد لـ `troubleshooter` غير مبيّن أعلاه (فاصل الاستقصاء، مهلة الأوامر، حدود الاتصال، وما إلى ذلك).                                                                                                                                           |
+| `troubleshooter.rbac.extraSecretNames`          | `[]`                                                        | أسماء Secret إضافية يُسمح لـ ServiceAccount الخاص بمستكشف الأعطال بتنفيذ `get` عليها، بأسماء مطابقة تمامًا فقط.                                                                                                                                               |
+| `troubleshooter.accessBundles`                  | `{}`                                                        | حزم وصول لكل مثيل، بالبنية نفسها لـ `scraper.accessBundles`، ومربوطة عند `/etc/clicklink/access/troubleshooter/<instance>/`.                                                                                                                                  |
+
+<div id="helm-persistence">
+  ### الاستمرارية
+</div>
+
+| المفتاح                    | القيمة الافتراضية                | المعنى                                                                                                                                           |
+| -------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `persistence.enabled`      | `true`                           | استخدم PersistentVolumeClaim لتخزين دليل الحالة الخاص بـ troubleshooter بشكل دائم، بحيث تبقى حالة الجلسة وسجل التدقيق محفوظين بعد إعادة التشغيل. |
+| `persistence.storageClass` | `""` (القيمة الافتراضية للعنقود) | StorageClass للمطالبة؛ يضبطه `init` استنادًا إلى `--storage-class` أو إلى القيمة الافتراضية المكتشفة.                                            |
+| `persistence.size`         | `5Gi`                            | حجم المطالبة.                                                                                                                                    |
+| `persistence.accessModes`  | `[ReadWriteOnce]`                | أوضاع الوصول للمطالبة.                                                                                                                           |
+
+<div id="helm-clctl-gateway">
+  ### clctl.gateway
+</div>
+
+بوابة الجلسات لـ[جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions).
+
+| المفتاح                                                          | القيمة الافتراضية      | المعنى                                                                                                                                                                        |
+| ---------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clctl.gateway.enabled`                                          | `false`                | تشغيل بوابة الجلسات داخل troubleshooter.                                                                                                                                      |
+| `clctl.gateway.listenAddr`                                       | `":8443"`              | عنوان الاستماع المحلي للـPod.                                                                                                                                                 |
+| `clctl.gateway.port`                                             | `8443`                 | منفذ الحاوية المكشوف عبر Service وIngress الخاصين بـtroubleshooter؛ يطابق منفذ `listenAddr`.                                                                                  |
+| `clctl.gateway.audience`                                         | `clicklink-clctl`      | مطالبة audience المطلوبة في رموز operator. يستخدم عميل الجلسة القيمة نفسها افتراضيًا، لذا لا يلزم تنسيق القيمتين إلا عند تغيير هذه القيمة.                                    |
+| `clctl.gateway.requiredHostedDomain`                             | `""`                   | مطالبة اختيارية بالنطاق المستضاف تشترطها البوابة، وترفض الرموز المميزة من خارج مساحة عملك قبل البحث في قائمة السماح.                                                          |
+| `clctl.gateway.allowedOperators`                                 | `[]` (مغلق)            | قائمة سماح بعناوين البريد الإلكتروني للمشغّلين، تُنشأ في ConfigMap؛ يتطلب التدوير تغييرًا في values بالإضافة إلى `helm upgrade`.                                              |
+| `clctl.gateway.jwksUri`                                          | `""`                   | تجاوز لنقطة نهاية JWKS لموفري الهوية غير التابعين لـGoogle؛ تستخدم القيمة الفارغة نقطة نهاية Google.                                                                          |
+| `clctl.gateway.issuer`                                           | `""`                   | مطالبة issuer لتثبيتها. مطلوبة لأي نشر فعلي يضبط `jwksUri`.                                                                                                                   |
+| `clctl.gateway.jwksEgressCIDRs`                                  | `[]`                   | نطاقات CIDR التي تحتاج البوابة إلى الوصول إليها للتحقق من JWKS بموجب NetworkPolicy ذات الرفض الافتراضي؛ تمنع القيمة الفارغة جميع عمليات التحقق من الرموز المميزة.             |
+| `clctl.gateway.ingressFromSelector`                              | `{}`                   | مصدر حركة Ingress في NetworkPolicy لمنفذ البوابة؛ تسمح القيمة الفارغة لأي Pod في مساحة الاسم الخاصة بـchart. اضبطه على تسمية مساحة اسم وحدة تحكم Ingress عند استخدام Ingress. |
+| `clctl.gateway.rateLimit.requestsPerMinute`                      | `30`                   | حد معدل الطلبات لكل operator.                                                                                                                                                 |
+| `clctl.gateway.ingress.enabled`                                  | `false`                | إنشاء Ingress للبوابة. عند تعطيله، يصل المشغّلون إلى البوابة باستخدام `kubectl port-forward`؛ ولا يلزم استخدام وحدة تحكم Ingress أو cert-manager.                             |
+| `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | حقول Ingress القياسية؛ يشير `tls` إلى Secrets من نوع `kubernetes.io/tls`.                                                                                                     |
+
+<div id="helm-networkpolicy">
+  ### networkPolicy
+</div>
+
+| المفتاح                               | القيمة الافتراضية | المعنى                                                                                                                                                                                                                  |
+| ------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `networkPolicy.enabled`               | `true`            | يُنشئ NetworkPolicy بسياسة رفض افتراضية وقائمة سماح لحركة المرور الصادرة. يتطلب تطبيقها استخدام CNI يفرض السياسات.                                                                                                      |
+| `networkPolicy.allowEgressCIDRs`      | `[]`              | نطاقات CIDR الواقعة خلف نقطة نهاية API للموصل. عند استخدام CNI يفرض السياسات، لا يُسمح للموصل بحركة مرور صادرة حتى تحديد هذه القيمة.                                                                                    |
+| `networkPolicy.allowEgressPorts`      | `[443]`           | المنافذ المسموح بالوصول إليها ضمن `allowEgressCIDRs`؛ تجاوزها إذا كانت نقطة النهاية تستمع على منفذ غير افتراضي.                                                                                                         |
+| `networkPolicy.clickhouseNamespaces`  | `[]`              | مساحات الأسماء لخدمات ClickHouse الخاصة بك، المطابَقة بواسطة التسمية `kubernetes.io/metadata.name`. لا تسمح القيمة الفارغة بأي وصول إلى ClickHouse داخل الكتلة.                                                         |
+| `networkPolicy.metricsScrapeSelector` | `{}`              | يقيّد دخول جلب المقاييس إلى مساحة أسماء محددة لـ Prometheus باستخدام تسمية؛ تسمح القيمة الفارغة بالجلب من أي pod في مساحة أسماء المخطط.                                                                                 |
+| `networkPolicy.kubeletProbeCIDRs`     | `[]`              | نطاقات CIDR التي تصدر منها مجسّات سلامة kubelet ‏(عناوين IP للعقد). تسمح القيمة الفارغة بدخول المجسّات من أي مصدر، بما يتوافق مع استثناء kubelet في معظم شبكات CNI؛ حدّدها صراحةً عند استخدام سياسة رفض افتراضية صارمة. |
+| `networkPolicy.apiserverCIDRs`        | `[]`              | نطاقات CIDR لخادم API في Kubernetes. لا تُنشئ القيمة الفارغة قاعدة حركة مرور صادرة لخادم API، وتفشل العمليات الخفية في طلب token الأول على Kubernetes المُدار إلى أن تُحدَّد.                                           |

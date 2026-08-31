@@ -16,6 +16,8 @@ Introduit dans : v25.6.0
 Fonction d’agrégation qui utilise des données de séries temporelles sous forme de paires d’horodatages et de valeurs, et calcule un [delta de type PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) à partir de ces données sur une grille temporelle régulière définie par l’horodatage de début, l’horodatage de fin et le pas.
 Pour chaque point de la grille, les échantillons utilisés pour calculer `delta` sont pris en compte dans la fenêtre temporelle spécifiée.
 
+Si plusieurs échantillons ont le même horodatage, un seul est utilisé : l’échantillon ayant la valeur la plus élevée. Une valeur NaN perd face à toute autre valeur, donc une valeur NaN n’est utilisée que si tous les échantillons à cet horodatage sont NaN.
+
 <Warning>
   Cette fonction est expérimentale, activez-la en définissant `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
@@ -69,7 +71,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,7 +92,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                   │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                    │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

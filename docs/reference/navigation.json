@@ -108,6 +108,7 @@
                 },
                 "reference/statements/create/masking-policy",
                 "reference/statements/create/function",
+                "reference/statements/create/handler",
                 "reference/statements/create/named-collection",
                 "reference/statements/create/quota",
                 "reference/statements/create/role",
@@ -185,8 +186,7 @@
             "reference/statements/truncate",
             "reference/statements/undrop",
             "reference/statements/update",
-            "reference/statements/use",
-            "reference/statements/watch"
+            "reference/statements/use"
           ]
         },
         {
@@ -1140,6 +1140,7 @@
         "reference/system-tables/settings_profile_elements",
         "reference/system-tables/settings_profiles",
         "reference/system-tables/stack_trace",
+        "reference/system-tables/statements",
         "reference/system-tables/stemmers",
         "reference/system-tables/storage_policies",
         "reference/system-tables/symbols",

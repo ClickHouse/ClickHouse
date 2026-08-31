@@ -111,7 +111,7 @@ HTTP API 요청의 경우 API 사용자 profile에서 `allow_experimental_time_s
   ### Prometheus API 구성
 </div>
 
-기본 ClickHouse HTTP 포트에 prefix 기반으로 라우팅되는 핸들러 하나를 구성합니다:
+기본 ClickHouse HTTP 포트에 접두사 기반으로 라우팅되는 핸들러 하나를 구성합니다:
 
 ```xml
 <http_handlers>
@@ -125,14 +125,16 @@ HTTP API 요청의 경우 API 사용자 profile에서 `allow_experimental_time_s
 </http_handlers>
 ```
 
-`<defaults/>`는 `/ping` 및 SQL 요청 같은 엔드포인트에 대한 기본 제공 핸들러를 유지합니다. 위의 prefix는 하나의 핸들러를 통해 이러한 엔드포인트를 노출합니다.
+`<defaults/>`는 `/ping` 및 SQL 요청 같은 엔드포인트에 대한 기본 제공 핸들러를 유지합니다. 위의 접두사는 하나의 핸들러를 통해 이러한 엔드포인트를 노출합니다.
 
-| 엔드포인트                            | 용도               |
-| -------------------------------- | ---------------- |
+| 엔드포인트                            | 용도                      |
+| -------------------------------- | ----------------------- |
 | `/prometheus/api/v1/write`       | Prometheus remote write |
-| `/prometheus/api/v1/read`        | Prometheus remote read |
-| `/prometheus/api/v1/query`       | 즉시 PromQL 쿼리     |
-| `/prometheus/api/v1/query_range` | 범위 PromQL 쿼리     |
+| `/prometheus/api/v1/read`        | Prometheus remote read  |
+| `/prometheus/api/v1/query`       | 즉시 PromQL 쿼리            |
+| `/prometheus/api/v1/query_range` | 범위 PromQL 쿼리            |
+| `/prometheus/api/v1/series`      | 시리즈 메타데이터               |
+| `/prometheus/api/v1/metadata`    | 메트릭 패밀리 메타데이터           |
 
 이 예시에서는 핸들러에서 `database`와 `table`을 생략합니다. 각 요청에는 `table` 쿼리 매개변수가 반드시 포함되어야 합니다. `database`를 지정하거나, `prometheus.metrics`와 같은 정규화된 테이블 이름을 사용하거나, 데이터베이스를 생략해 `default`를 사용할 수도 있습니다. 따라서 하나의 핸들러로 여러 `TimeSeries` 테이블을 처리할 수 있습니다.
 
@@ -171,6 +173,15 @@ remote_write:
 ```
 
 Prometheus는 샘플을 `prometheus.metrics` 테이블로 전송합니다.
+
+동시에 발생하는 여러 remote-write 요청의 데이터를 더 적은 수의 파트로 일괄 처리하려면 URL에 `async_insert` 설정을 추가하여 [비동기 삽입](/ko/reference/settings/session-settings/async-insert#async_insert)을 활성화하십시오(또는 사용자 프로필에서 활성화하십시오):
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
+```
+
+ClickHouse는 [`wait_for_async_insert`](/ko/reference/settings/session-settings/wait-for#wait_for_async_insert) 설정과 관계없이 데이터가 `TimeSeries` 테이블의 모든 내부 테이블에 플러시된 후에만 비동기 remote-write 요청을 승인합니다. remote-write 프로토콜은 승인된 쓰기를 영속성이 보장된 것으로 간주합니다. 플러시에 실패하면 요청에서 오류가 반환되고 Prometheus가 재시도합니다.
 
 <div id="promql-query-support">
   ### PromQL로 쿼리
@@ -226,7 +237,7 @@ datasources:
 Grafana는 이 기준 URL 뒤에 `/api/v1/query` 또는 `/api/v1/query_range`를 추가하고, 각 요청에 `customQueryParameters`를 추가합니다.
 
 <Note>
-  쿼리 엔드포인트인 `/api/v1/query` 및 `/api/v1/query_range`만 구현되어 있습니다. Grafana Prometheus 데이터 소스에서 레이블 탐색, 템플릿 변수, 쿼리 빌더 자동 완성에 사용하는 메타데이터 엔드포인트(`/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`)는 구현되어 있지 않으므로 오류를 반환합니다. 쿼리 빌더 대신 코드 모드에서 PromQL 표현식을 작성하십시오.
+  쿼리 엔드포인트인 `/api/v1/query` 및 `/api/v1/query_range`와 메타데이터 엔드포인트 `/api/v1/series`, `/api/v1/labels`, `/api/v1/metadata`만 구현되어 있습니다. `/api/v1/series`에는 최소 하나의 `match[]` 시리즈 셀렉터가 필요하며, 선택 사항인 `start`, `end`, `limit` 매개변수를 지원하고, 각 셀렉터와 일치하는 시리즈의 합집합을 반환합니다. `/api/v1/labels`는 동일한 매개변수를 허용하며, `match[]`는 선택 사항이고 일치하는 시리즈의 정렬된 레이블 이름을 반환합니다(셀렉터가 제공되지 않은 경우 모든 시리즈의 레이블 이름을 반환합니다). Grafana Prometheus 데이터 소스에서 레이블 탐색, 템플릿 변수, 쿼리 빌더 자동 완성에 사용하는 레이블 값 엔드포인트(`/api/v1/label/<name>/values`)는 구현되어 있지 않으므로 오류를 반환합니다. 쿼리 빌더 대신 코드 모드에서 PromQL 표현식을 작성하십시오.
 </Note>
 
 <div id="sql-entry-points">
@@ -254,6 +265,28 @@ FROM prometheusQuery(
     'rate(http_requests_total[5m])',
     now()
 );
+```
+
+<div id="metadata">
+  ### 메트릭 메타데이터 쿼리
+</div>
+
+`/prometheus/api/v1/metadata` 엔드포인트는 `TimeSeries` 테이블의 `Metrics` 대상 테이블에 저장된 메트릭 메타데이터(각 메트릭 패밀리의 유형, 도움말 텍스트, 단위)를 반환합니다. URL 쿼리 문자열에서 다음 Prometheus 매개변수를 지원합니다.
+
+| 매개변수               | 설명                                                               |
+| ------------------ | ---------------------------------------------------------------- |
+| `metric`           | 지정한 메트릭 패밀리의 메타데이터만 반환합니다.                                       |
+| `limit`            | 반환할 메트릭 패밀리 수를 제한합니다. 음수 값은 제한 없음을 의미하며, 0이면 메트릭 패밀리를 반환하지 않습니다. |
+| `limit_per_metric` | 각 메트릭 패밀리에서 반환할 메타데이터 객체 수를 제한합니다. 0 및 음수 값은 제한 없음을 의미합니다.       |
+
+기본 `Metrics` 대상 테이블은 메트릭 패밀리 이름을 기준으로 정렬된 `ReplacingMergeTree`입니다. 각 메트릭 패밀리에서 가장 최근에 기록된 메타데이터 항목을 유지합니다. 대상 테이블에 여러 항목이 저장되어 있는 동안에만 패밀리당 여러 항목이 반환됩니다. 즉, 파트가 머지되기 전이거나 테이블이 항목을 보존하는 엔진으로 정의된 경우입니다.
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
+  --data-urlencode "metric=http_requests_total" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
 ```
 
 <div id="remote-read">

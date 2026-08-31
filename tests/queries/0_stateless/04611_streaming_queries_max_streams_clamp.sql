@@ -23,7 +23,7 @@ DROP TABLE IF EXISTS t_stream_max_streams_clamp;
 CREATE TABLE t_stream_max_streams_clamp (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_stream_max_streams_clamp SELECT number FROM numbers(1000);
 
-SELECT countIf(explain LIKE '%MergeTreeCommitOrderSequentialSource%') > 0
+SELECT countIf(explain LIKE '%MergeTreeCommitOrderSource%') > 0
 FROM
 (
     EXPLAIN PIPELINE
@@ -43,7 +43,7 @@ FROM
 -- requested_num_streams can also be amplified via max_streams * max_streams_to_max_threads_ratio
 -- in the planner, independent of max_streams_for_merge_tree_reading (which defaults to 0). That
 -- path must be bounded too, otherwise the same pipes.reserve throws the same std::length_error.
-SELECT countIf(explain LIKE '%MergeTreeCommitOrderSequentialSource%') > 0
+SELECT countIf(explain LIKE '%MergeTreeCommitOrderSource%') > 0
 FROM
 (
     EXPLAIN PIPELINE

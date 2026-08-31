@@ -154,7 +154,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 或者，您也可以使用以下查询从已保存的副本导入数据：
 
 ```sql
-INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', CSVWithNames) SETTINGS max_insert_threads = 40;
+INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', NOSIGN, CSVWithNames) SETTINGS max_insert_threads = 40;
 ```
 
 该快照创建于 2022-05-29。
