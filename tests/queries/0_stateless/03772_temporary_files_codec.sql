@@ -46,6 +46,8 @@ SETTINGS log_comment='03772_temporary_files_codec/grace_join', temporary_files_c
 FORMAT Null;
 
 SET join_algorithm = 'partial_merge';
+-- Partial merge join spills on the size limits, not on the hash-join spill threshold.
+SET max_bytes_in_join = '1M';
 
 SELECT * FROM (SELECT number AS key, number as val FROM numbers(200_000)) t1
 JOIN (SELECT number AS key FROM numbers(200_000)) t2
