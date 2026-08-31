@@ -66,6 +66,7 @@ extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
 extern const Event ASTFuzzerOracleCodecRoundtripChecks;
 extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
 extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
+extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2806,6 +2807,65 @@ bool QueryOracleChecker::checkPartitionEquivalence(const ASTSelectQuery &, const
     }
 
     LOG_TRACE(logger, "partition-equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkLowCardinalityEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: LowCardinality(T) is a storage encoding of T with identical logical
+    /// values. The same query over identical data stored as LowCardinality(String) vs plain String
+    /// must read back and group identically; a difference is a real LowCardinality bug.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("lowcard", context);
+    if (!fixture.valid())
+        return false;
+
+    const String lc = fixture.allocName("lc");
+    const String plain = fixture.allocName("plain");
+    if (!fixture.execute("CREATE TABLE " + lc + " (k UInt64, s LowCardinality(String), n Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + plain + " (k UInt64, s String, n Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+
+    const String seed = " SELECT number, toString(number % 37), toInt64(number) * 5 - 300 FROM numbers(500)";
+    if (!fixture.execute("INSERT INTO " + lc + seed) || !fixture.execute("INSERT INTO " + plain + seed))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "LowCardinality-equivalence oracle: {} (LC) vs {}", lc, plain);
+
+    static const std::array<std::pair<std::string_view, std::string_view>, 3> query_shapes = {{
+        {"SELECT k, s, n FROM ", ""},
+        {"SELECT s, count(), sum(n) FROM ", " GROUP BY s"},
+        {"SELECT k, s FROM ", " WHERE s > '2'"},
+    }};
+
+    for (const auto & [prefix, suffix] : query_shapes)
+    {
+        const String qlc = String(prefix) + lc + String(suffix);
+        const String qpl = String(prefix) + plain + String(suffix);
+        auto lc_rows_opt = OracleExec::executeRows(qlc, context, ResultShape::SortedBag);
+        auto plain_rows_opt = OracleExec::executeRows(qpl, context, ResultShape::SortedBag);
+        if (!lc_rows_opt || !plain_rows_opt)
+            return false;
+
+        if (!OracleCompare::equal(*lc_rows_opt, *plain_rows_opt))
+        {
+            fixture.preserve();
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+                "LowCardinality-equivalence oracle mismatch!\n"
+                "LowCardinality ({} rows): {}\n"
+                "plain ({} rows): {}\n{}",
+                lc_rows_opt->size(), qlc,
+                plain_rows_opt->size(), qpl,
+                OracleCompare::diffSummary(*lc_rows_opt, *plain_rows_opt));
+        }
+    }
+
+    LOG_TRACE(logger, "LowCardinality-equivalence oracle passed");
     return true;
 }
 

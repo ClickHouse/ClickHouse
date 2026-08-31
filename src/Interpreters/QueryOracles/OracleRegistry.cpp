@@ -21,6 +21,7 @@ extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
 extern const Event ASTFuzzerOracleCodecRoundtripChecks;
 extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
 extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
+extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
 }
 
 namespace DB
@@ -85,6 +86,7 @@ OracleRegistry::OracleRegistry()
     add("codec round-trip", ProfileEvents::ASTFuzzerOracleCodecRoundtripChecks, &QueryOracleChecker::checkCodecRoundtrip);
     add("engine equivalence", ProfileEvents::ASTFuzzerOracleEngineEquivalenceChecks, &QueryOracleChecker::checkEngineEquivalence);
     add("partition equivalence", ProfileEvents::ASTFuzzerOraclePartitionEquivalenceChecks, &QueryOracleChecker::checkPartitionEquivalence);
+    add("LowCardinality equivalence", ProfileEvents::ASTFuzzerOracleLowCardinalityEquivalenceChecks, &QueryOracleChecker::checkLowCardinalityEquivalence);
 }
 
 const OracleRegistry & OracleRegistry::instance()
