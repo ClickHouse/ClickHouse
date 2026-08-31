@@ -1533,8 +1533,9 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
         /// grow into one arbitrarily large table.
         if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys)
         {
+            auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
             auto full = std::move(shared.early_drain_variants);
-            shared.early_drain_variants = createAdaptiveDrainTable(full->type);
+            shared.early_drain_variants = std::move(replacement);
             spillDetachedAdaptiveTable(shared, *full);
         }
 
@@ -1623,8 +1624,9 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys
                 && reservation.reserveOrWait(shared, shared.early_drain_variants->allocatedBytes()))
             {
+                auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
                 detached_shared = std::move(shared.early_drain_variants);
-                shared.early_drain_variants = createAdaptiveDrainTable(detached_shared->type);
+                shared.early_drain_variants = std::move(replacement);
             }
 
             sweep_lock.unlock();
@@ -1697,8 +1699,9 @@ std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregation
         if (!reservation.reserveOrWait(shared, shared.early_drain_variants->allocatedBytes()))
             return {};
 
+        auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
         detached = std::move(shared.early_drain_variants);
-        shared.early_drain_variants = createAdaptiveDrainTable(detached->type);
+        shared.early_drain_variants = std::move(replacement);
 
         /// Writing under the coordinator lock would stall every frozen producer's sweep for the
         /// length of a disk write; only reservations may wait under it.
