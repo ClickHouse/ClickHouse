@@ -9,6 +9,8 @@
 #include <Interpreters/QueryOracles/OracleCompare.h>
 #include <Interpreters/QueryOracles/OracleGate.h>
 #include <Interpreters/QueryOracles/OracleFixture.h>
+#include <Interpreters/QueryOracles/OracleRunner.h>
+#include <fmt/format.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -1269,7 +1271,6 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
         String message = fmt::format(
             "TLP WHERE oracle mismatch!\n"
@@ -1304,7 +1305,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
             }
         }
 
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH, "{}", message);
+        raiseOracleMismatch(fmt::format( "{}", message), context);
     }
 
     LOG_TRACE(logger, "TLP WHERE oracle passed ({} rows)", ref_rows.size());
@@ -1387,14 +1388,13 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
 
     if (opt_count != unopt_count)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "NoREC oracle mismatch!\n"
             "Optimized query (count={}): {}\n"
             "Unoptimized query (count={}): {}",
             opt_count, opt_sql,
-            unopt_count, unopt_sql);
+            unopt_count, unopt_sql), context);
     }
 
     LOG_TRACE(logger, "NoREC oracle passed (count={})", opt_count);
@@ -1474,13 +1474,12 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "TLP DISTINCT oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Partitioned query ({} rows): {}",
             ref_rows.size(), ref_sql,
-            part_rows.size(), union_sql);
+            part_rows.size(), union_sql), context);
     }
 
     LOG_TRACE(logger, "TLP DISTINCT oracle passed ({} rows)", ref_rows.size());
@@ -1556,13 +1555,12 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "TLP GROUP BY oracle mismatch!\n"
             "Reference query ({} unique rows): {}\n"
             "Partitioned query ({} unique rows): {}",
             ref_rows.size(), ref_sql,
-            part_rows.size(), union_sql);
+            part_rows.size(), union_sql), context);
     }
 
     LOG_TRACE(logger, "TLP GROUP BY oracle passed ({} unique rows)", ref_rows.size());
@@ -1624,13 +1622,12 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "TLP HAVING oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Partitioned query ({} rows): {}",
             ref_rows.size(), ref_sql,
-            part_rows.size(), union_sql);
+            part_rows.size(), union_sql), context);
     }
 
     LOG_TRACE(logger, "TLP HAVING oracle passed ({} unique rows)", ref_rows.size());
@@ -1707,14 +1704,13 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
 
         if (default_rows != variant_rows)
         {
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            raiseOracleMismatch(fmt::format(
                 "DQP oracle mismatch! Setting: {}\n"
                 "Default ({} rows): {}\n"
                 "With {}=off ({} rows): {}",
                 setting_name,
                 default_rows.size(), query_sql,
-                setting_name, variant_rows.size(), query_sql);
+                setting_name, variant_rows.size(), query_sql), context);
         }
     }
     catch (const Exception & e)
@@ -2018,14 +2014,13 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
 
     if (ref_rows != meta_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "TLP Aggregate oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Metamorphic query ({} rows): {}",
             ref_rows.size(), ref_sql,
-            meta_rows.size(), metamorphic_sql);
+            meta_rows.size(), metamorphic_sql), context);
     }
 
     LOG_TRACE(logger, "TLP Aggregate oracle passed ({} rows, {} aggregates)", ref_rows.size(), state_idx);
@@ -2158,12 +2153,11 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     {
         if (ref_rows != rows)
         {
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            raiseOracleMismatch(fmt::format(
                 "Identity WHERE ({}) oracle mismatch!\n"
                 "Reference query ({} rows): {}\n"
                 "Variant query ({} rows): {}",
-                name, ref_rows.size(), ref_sql, rows.size(), sql);
+                name, ref_rows.size(), ref_sql, rows.size(), sql), context);
         }
     };
 
@@ -2264,13 +2258,12 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
         if (!ref_rows_again_opt || *ref_rows_again_opt != ref_rows)
             return false;
 
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "Subquery wrap oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Wrapped query ({} rows): {}",
             ref_rows.size(), ref_sql,
-            wrapped_rows.size(), wrapped_sql);
+            wrapped_rows.size(), wrapped_sql), context);
     }
 
     LOG_TRACE(logger, "Subquery wrap oracle passed ({} rows)", ref_rows.size());
@@ -2285,19 +2278,6 @@ namespace
 /// earlier `SET`/`SETTINGS` mutations have drifted the session) is
 /// reproducible standalone — without this, many real-looking mismatches
 /// could not be reproduced because the active settings were unknown.
-String formatChangedSettings(const ContextPtr & context)
-{
-    WriteBufferFromOwnString buf;
-    bool first = true;
-    for (const auto & change : context->getSettingsRef().changes())
-    {
-        if (!first)
-            buf << ", ";
-        first = false;
-        buf << change.name << "=" << applyVisitor(FieldVisitorToString(), change.value);
-    }
-    return buf.str();
-}
 }
 
 bool QueryOracleChecker::checkGroupByKeyPermutation(const ASTSelectQuery & select, const ContextMutablePtr & context)
@@ -2356,14 +2336,13 @@ bool QueryOracleChecker::checkGroupByKeyPermutation(const ASTSelectQuery & selec
 
     if (!OracleCompare::equal(*ref_rows_opt, *perm_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "GROUP BY key permutation oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Permuted-keys query ({} rows): {}\n{}",
             ref_rows_opt->size(), ref_sql,
             perm_rows_opt->size(), perm_sql,
-            OracleCompare::diffSummary(*ref_rows_opt, *perm_rows_opt));
+            OracleCompare::diffSummary(*ref_rows_opt, *perm_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "GROUP BY key permutation oracle passed ({} rows)", ref_rows_opt->size());
@@ -2446,14 +2425,13 @@ bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, 
 
     if (!OracleCompare::equal(*ref_rows_opt, *gb_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "DISTINCT-via-GROUP-BY oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Grouped query ({} rows): {}\n{}",
             ref_rows_opt->size(), ref_sql,
             gb_rows_opt->size(), gb_sql,
-            OracleCompare::diffSummary(*ref_rows_opt, *gb_rows_opt));
+            OracleCompare::diffSummary(*ref_rows_opt, *gb_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle passed ({} rows)", ref_rows_opt->size());
@@ -2515,14 +2493,13 @@ bool QueryOracleChecker::checkPrewhereEquivalence(const ASTSelectQuery & select,
 
     if (!OracleCompare::equal(*ref_rows_opt, *pw_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "PREWHERE-equivalence oracle mismatch!\n"
             "Reference (WHERE) query ({} rows): {}\n"
             "PREWHERE query ({} rows): {}\n{}",
             ref_rows_opt->size(), ref_sql,
             pw_rows_opt->size(), pw_sql,
-            OracleCompare::diffSummary(*ref_rows_opt, *pw_rows_opt));
+            OracleCompare::diffSummary(*ref_rows_opt, *pw_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "PREWHERE-equivalence oracle passed ({} rows)", ref_rows_opt->size());
@@ -2570,12 +2547,11 @@ bool QueryOracleChecker::checkSkipIndexEquivalence(const ASTSelectQuery & select
 
     if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "skip-index-equivalence oracle mismatch!\n"
             "use_skip_indexes=0 ({} rows) vs use_skip_indexes=1 ({} rows): {}\n{}",
             off_rows_opt->size(), on_rows_opt->size(), sql,
-            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "skip-index-equivalence oracle passed ({} rows)", off_rows_opt->size());
@@ -2636,12 +2612,11 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
 
     if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "setting-flip-sweep oracle mismatch!\n"
             "{}=0 ({} rows) vs {}=1 ({} rows): {}\n{}",
             flip, off_rows_opt->size(), flip, on_rows_opt->size(), sql,
-            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "setting-flip-sweep oracle passed ({}, {} rows)", flip, off_rows_opt->size());
@@ -2686,13 +2661,11 @@ bool QueryOracleChecker::checkCodecRoundtrip(const ASTSelectQuery &, const Conte
 
     if (!OracleCompare::equal(*plain_rows_opt, *coded_rows_opt))
     {
-        fixture.preserve(); /// keep the two tables for triage
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "codec round-trip oracle mismatch!\n"
             "CODEC(NONE) table {} ({} rows) vs codec table {} ({} rows)\n{}",
             plain, plain_rows_opt->size(), coded, coded_rows_opt->size(),
-            OracleCompare::diffSummary(*plain_rows_opt, *coded_rows_opt));
+            OracleCompare::diffSummary(*plain_rows_opt, *coded_rows_opt)), context, &fixture);
     }
 
     LOG_TRACE(logger, "codec round-trip oracle passed ({} rows)", plain_rows_opt->size());
@@ -2742,13 +2715,11 @@ bool QueryOracleChecker::checkEngineEquivalence(const ASTSelectQuery &, const Co
 
     if (!OracleCompare::equal(*mt_rows_opt, *other_rows_opt))
     {
-        fixture.preserve();
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "engine-equivalence oracle mismatch!\n"
             "MergeTree table {} ({} rows) vs {} table {} ({} rows)\n{}",
             mt, mt_rows_opt->size(), other_engine, other, other_rows_opt->size(),
-            OracleCompare::diffSummary(*mt_rows_opt, *other_rows_opt));
+            OracleCompare::diffSummary(*mt_rows_opt, *other_rows_opt)), context, &fixture);
     }
 
     LOG_TRACE(logger, "engine-equivalence oracle passed ({} rows)", mt_rows_opt->size());
@@ -2802,15 +2773,13 @@ bool QueryOracleChecker::checkPartitionEquivalence(const ASTSelectQuery &, const
 
         if (!OracleCompare::equal(*part_rows_opt, *nopart_rows_opt))
         {
-            fixture.preserve();
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            raiseOracleMismatch(fmt::format(
                 "partition-equivalence oracle mismatch!\n"
                 "partitioned ({} rows): {}\n"
                 "non-partitioned ({} rows): {}\n{}",
                 part_rows_opt->size(), qp,
                 nopart_rows_opt->size(), qn,
-                OracleCompare::diffSummary(*part_rows_opt, *nopart_rows_opt));
+                OracleCompare::diffSummary(*part_rows_opt, *nopart_rows_opt)), context, &fixture);
         }
     }
 
@@ -2861,15 +2830,13 @@ bool QueryOracleChecker::checkLowCardinalityEquivalence(const ASTSelectQuery &, 
 
         if (!OracleCompare::equal(*lc_rows_opt, *plain_rows_opt))
         {
-            fixture.preserve();
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            raiseOracleMismatch(fmt::format(
                 "LowCardinality-equivalence oracle mismatch!\n"
                 "LowCardinality ({} rows): {}\n"
                 "plain ({} rows): {}\n{}",
                 lc_rows_opt->size(), qlc,
                 plain_rows_opt->size(), qpl,
-                OracleCompare::diffSummary(*lc_rows_opt, *plain_rows_opt));
+                OracleCompare::diffSummary(*lc_rows_opt, *plain_rows_opt)), context, &fixture);
         }
     }
 
@@ -2918,15 +2885,13 @@ bool QueryOracleChecker::checkSampleEquivalence(const ASTSelectQuery &, const Co
 
         if (!OracleCompare::equal(*full_rows_opt, *sample_rows_opt))
         {
-            fixture.preserve();
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            raiseOracleMismatch(fmt::format(
                 "SAMPLE-equivalence oracle mismatch!\n"
                 "no SAMPLE ({} rows): {}\n"
                 "SAMPLE 1.0 ({} rows): {}\n{}",
                 full_rows_opt->size(), q_full,
                 sample_rows_opt->size(), q_sample,
-                OracleCompare::diffSummary(*full_rows_opt, *sample_rows_opt));
+                OracleCompare::diffSummary(*full_rows_opt, *sample_rows_opt)), context, &fixture);
         }
     }
 
@@ -2978,13 +2943,11 @@ bool QueryOracleChecker::checkProjectionEquivalence(const ASTSelectQuery &, cons
 
         if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
         {
-            fixture.preserve();
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            raiseOracleMismatch(fmt::format(
                 "projection-equivalence oracle mismatch!\n"
                 "optimize_use_projections=0 ({} rows) vs =1 ({} rows): {}\n{}",
                 off_rows_opt->size(), on_rows_opt->size(), sql,
-                OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+                OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt)), context, &fixture);
         }
     }
 
@@ -3045,13 +3008,11 @@ bool QueryOracleChecker::checkAggregateIfIdentity(const ASTSelectQuery &, const 
 
     if (all_hold != 1)
     {
-        fixture.preserve();
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "aggregate-If identity oracle mismatch!\n"
             "One of countIf/sumIf/maxIf/minIf/uniqExactIf disagrees with its masking equivalent on table {}.\n"
             "Probe: {}",
-            tbl, probe);
+            tbl, probe), context, &fixture);
     }
 
     LOG_TRACE(logger, "aggregate-If identity oracle passed");
@@ -3112,13 +3073,11 @@ bool QueryOracleChecker::checkNullIdentity(const ASTSelectQuery &, const Context
 
     if (violations != 0)
     {
-        fixture.preserve();
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "NULL-identity oracle mismatch!\n"
             "{} rows violate a NULL-handling identity (ifNull/coalesce/nullIf/isNull) on table {}.\n"
             "Probe: {}",
-            violations, tbl, probe);
+            violations, tbl, probe), context, &fixture);
     }
 
     LOG_TRACE(logger, "NULL-identity oracle passed");
@@ -3172,13 +3131,11 @@ bool QueryOracleChecker::checkCastRoundtrip(const ASTSelectQuery &, const Contex
 
     if (violations != 0)
     {
-        fixture.preserve();
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "CAST round-trip oracle mismatch!\n"
             "{} rows fail an integer/Date String round-trip on table {}.\n"
             "Probe: {}",
-            violations, tbl, probe);
+            violations, tbl, probe), context, &fixture);
     }
 
     LOG_TRACE(logger, "CAST round-trip oracle passed");
@@ -3226,13 +3183,11 @@ bool QueryOracleChecker::checkAggregateStateColumn(const ASTSelectQuery &, const
 
     if (!OracleCompare::equal(*merge_rows_opt, *direct_rows_opt))
     {
-        fixture.preserve();
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "aggregate-state-column oracle mismatch!\n"
             "-Merge read of {} ({} rows) vs direct aggregate over {} ({} rows)\n{}",
             amt, merge_rows_opt->size(), raw, direct_rows_opt->size(),
-            OracleCompare::diffSummary(*merge_rows_opt, *direct_rows_opt));
+            OracleCompare::diffSummary(*merge_rows_opt, *direct_rows_opt)), context, &fixture);
     }
 
     LOG_TRACE(logger, "aggregate-state-column oracle passed");
@@ -3289,13 +3244,11 @@ bool QueryOracleChecker::checkTupleSumming(const ASTSelectQuery &, const Context
 
     if (!OracleCompare::equal(*smt_rows_opt, *raw_rows_opt))
     {
-        fixture.preserve();
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "tuple-summing oracle mismatch!\n"
             "SummingMergeTree {} FINAL ({} rows) vs recomputed sum over {} ({} rows)\n{}",
             smt, smt_rows_opt->size(), raw, raw_rows_opt->size(),
-            OracleCompare::diffSummary(*smt_rows_opt, *raw_rows_opt));
+            OracleCompare::diffSummary(*smt_rows_opt, *raw_rows_opt)), context, &fixture);
     }
 
     LOG_TRACE(logger, "tuple-summing oracle passed");
@@ -3363,13 +3316,11 @@ bool QueryOracleChecker::checkSchemaRoundtrip(const ASTSelectQuery &, const Cont
 
     if (norm1 != norm2)
     {
-        fixture.preserve();
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "schema round-trip oracle mismatch!\n"
             "original DDL (normalized): {}\n"
             "recreated DDL (normalized): {}",
-            norm1, norm2);
+            norm1, norm2), context, &fixture);
     }
 
     LOG_TRACE(logger, "schema round-trip oracle passed");
@@ -3523,43 +3474,29 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     bool any_check_performed = false;
 
-    /// Dispatch over the ordered registry instead of a hand-written try/catch ladder, so
-    /// adding an oracle is one registry line. Each oracle's own mismatch
-    /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the reproduction
-    /// settings by the outer handler below; any other execution error means the rewrite
-    /// was not comparable on this query (e.g. a function the rewrite cannot analyse), so
-    /// it is swallowed and the remaining oracles still run.
-    try
+    /// Dispatch over the ordered registry instead of a hand-written try/catch ladder, so adding an
+    /// oracle is one registry line. A real mismatch is reported via `raiseOracleMismatch` (which
+    /// annotates the active settings and preserves any fixture), so it propagates straight out; any
+    /// other execution error means the rewrite was not comparable on this query (e.g. a function the
+    /// rewrite cannot analyse) and is swallowed so the remaining oracles still run.
+    for (const auto & oracle : OracleRegistry::instance().oracles())
     {
-        for (const auto & oracle : OracleRegistry::instance().oracles())
+        const auto & name = oracle->traits().name;
+        try
         {
-            const auto & name = oracle->traits().name;
-            try
-            {
-                if (oracle->run(*this, *select, context))
-                    any_check_performed = true;
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                    throw;
-                LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
-            }
-            catch (...)
-            {
-                LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
-            }
+            if (oracle->run(*this, *select, context))
+                any_check_performed = true;
         }
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+        catch (const Exception & e)
         {
-            const String changed = formatChangedSettings(context);
-            if (!changed.empty())
-                e.addMessage("Active non-default settings (for reproduction): {}", changed);
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw;
+            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
         }
-        throw;
+        catch (...)
+        {
+            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
+        }
     }
 
     return any_check_performed;
