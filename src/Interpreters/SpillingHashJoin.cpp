@@ -22,7 +22,7 @@ SpillingHashJoin::SpillingHashJoin(
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
-    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
@@ -36,7 +36,7 @@ SpillingHashJoin::SpillingHashJoin(
 {
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
-        /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
+        /*use_two_level_maps_=*/false, stats_collecting_params_);
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -47,7 +47,7 @@ SpillingHashJoin::SpillingHashJoin(
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
     size_t concurrent_slots_,
-    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
@@ -275,24 +275,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
     chosen_join->onBuildPhaseFinish();
 }
 
-void SpillingHashJoin::onProbePhaseFinish(size_t matched_right_rows)
-{
-    chosen_join->onProbePhaseFinish(matched_right_rows);
-}
-
-bool SpillingHashJoin::hasPostBuildPhase() const
-{
-    /// `FillingRightJoinSideTransform` asks this right after `onBuildPhaseFinish`, so `chosen_join`
-    /// is already set. Stay defensive anyway: with no chosen join there is nothing to post-process.
-    return chosen_join && chosen_join->hasPostBuildPhase();
-}
-
-void SpillingHashJoin::runPostBuildPhase()
-{
-    if (chosen_join)
-        chosen_join->runPostBuildPhase();
-}
-
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 {
     if (hash_join)
@@ -312,9 +294,7 @@ void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 void SpillingHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
-    if (concurrent_join)
-        concurrent_join->initialize(sample_block);
-    else
+    if (!concurrent_join)
         hash_join->initialize(sample_block);
 }
 
@@ -375,20 +355,6 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
         return hash_join->alwaysReturnsEmptySet();
     }
     return chosen_join->alwaysReturnsEmptySet();
-}
-
-StepAnalysisReport SpillingHashJoin::getAnalysisReport() const
-{
-    /// This method always runs after the built phase, so in principal we could have
-    /// written it without this if statement. However, we keep it
-    /// for canonicity with the other accessors and safety in case the call order ever changes.
-    if (state.load(std::memory_order_acquire) == State::COLLECTING)
-    {
-        if (concurrent_join)
-            return concurrent_join->getAnalysisReport();
-        return hash_join->getAnalysisReport();
-    }
-    return chosen_join->getAnalysisReport();
 }
 
 bool SpillingHashJoin::supportParallelNonJoinedBlocksProcessing() const

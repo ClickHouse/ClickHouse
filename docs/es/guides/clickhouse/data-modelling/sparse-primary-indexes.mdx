@@ -311,7 +311,7 @@ Las filas insertadas se almacenan en disco en orden lexicográfico (ascendente) 
   ClickHouse permite insertar varias filas con valores idénticos en las columnas de la clave primaria. En este caso (véanse la fila 1 y la fila 2 en el diagrama de abajo), el orden final lo determina la clave de ordenación especificada y, por tanto, el valor de la columna `EventTime`.
 </Note>
 
-ClickHouse es un <a href="/es/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">sistema de gestión de bases de datos orientado a columnas</a>. Como se muestra en el diagrama de abajo
+ClickHouse es un <a href="/es/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">sistema de gestión de bases de datos orientado a columnas</a>. Como se muestra en el diagrama de abajo,
 
 * para la representación en disco, hay un único archivo de datos (*.bin) por columna de la tabla donde todos los valores de esa columna se almacenan en formato <a href="/es/get-started/about/distinctive-features#data-compression" target="_blank">comprimido</a>, y
 * las 8,87 millones de filas se almacenan en disco en orden lexicográfico ascendente según las columnas de la clave primaria (y las columnas adicionales de la clave de ordenación), es decir, en este caso
@@ -326,7 +326,7 @@ ClickHouse es un <a href="/es/get-started/about/distinctive-features#true-column
 <Note>
   * Como la clave primaria define el orden lexicográfico de las filas en disco, una tabla solo puede tener una clave primaria.
 
-  * Numeramos las filas empezando por 0 para mantener la coherencia con el esquema interno de numeración de filas de ClickHouse, que también se utiliza en los mensajes de registro.
+  * Numeramos las filas empezando por 0 para mantener la coherencia con el esquema interno de numeración de filas de ClickHouse, que también se utiliza en los mensajes de logging.
 </Note>
 
 <div id="data-is-organized-into-granules-for-parallel-data-processing">
@@ -355,7 +355,7 @@ Las primeras 8192 filas (según el orden físico en disco) (sus valores de las c
 
     Por lo tanto, todos los gránulos (excepto el último) de nuestra tabla de ejemplo tienen el mismo tamaño.
 
-  * En las tablas con granularidad adaptativa del índice (la granularidad del índice es adaptativa de forma [predeterminada](/es/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)), el tamaño de algunos gránulos puede ser inferior a 8192 filas, dependiendo del tamaño de los datos de las filas.
+  * En las tablas con granularidad adaptativa del índice (la granularidad del índice es adaptativa de forma [predeterminada](/es/reference/settings/merge-tree-settings#index_granularity_bytes)), el tamaño de algunos gránulos puede ser inferior a 8192 filas, dependiendo del tamaño de los datos de las filas.
 
   * Marcamos en naranja algunos valores de las columnas de nuestra clave primaria (`UserID`, `URL`).
     Estos valores de las columnas marcados en naranja son los valores de las columnas de clave primaria de la primera fila de cada gránulo.
@@ -372,7 +372,7 @@ El índice primario se crea a partir de los gránulos que se muestran en el diag
 
 El diagrama de abajo muestra que el índice almacena los valores de las columnas de la clave primaria (los valores marcados en naranja en el diagrama anterior) de la primera fila de cada gránulo.
 O, dicho de otro modo: el índice primario almacena los valores de las columnas de la clave primaria de cada fila 8192 de la tabla (según el orden físico de las filas definido por las columnas de la clave primaria).
-Por ejemplo
+Por ejemplo:
 
 * la primera entrada del índice (&#39;mark 0&#39; en el diagrama de abajo) almacena los valores de las columnas clave de la primera fila del gránulo 0 del diagrama anterior,
 * la segunda entrada del índice (&#39;mark 1&#39; en el diagrama de abajo) almacena los valores de las columnas clave de la primera fila del gránulo 1 del diagrama anterior, y así sucesivamente.
@@ -384,88 +384,73 @@ En total, el índice tiene 1083 entradas para nuestra tabla con 8,87 millones de
 <Image img="/images/guides/best-practices/sparse-primary-indexes-03b.webp" size="lg" alt="Índices primarios dispersos 03b" />
 
 <Note>
-  * En las tablas con [granularidad adaptativa del índice](/es/resources/changelogs/oss/2019#experimental-features-1), también se almacena en el índice primario una marca adicional &quot;final&quot; que registra los valores de las columnas de la clave primaria de la última fila de la tabla, pero como hemos desactivado la granularidad adaptativa del índice (para simplificar las explicaciones de esta guía y hacer reproducibles los diagramas y los resultados), el índice de nuestra tabla de ejemplo no incluye esa marca final.
+  * En las tablas con [granularidad adaptativa del índice](/es/resources/changelogs/oss/2019#experimental-features-1), también se almacena en el índice primario una marca adicional &quot;final&quot; que registra los valores de las columnas de la clave primaria de la última fila de la tabla. Pero, como hemos desactivado la granularidad adaptativa del índice (para simplificar las explicaciones de esta guía y hacer reproducibles los diagramas y los resultados), el índice de nuestra tabla de ejemplo no incluye esa marca final.
 
   * El archivo del índice primario se carga por completo en la memoria principal. Si el archivo es más grande que el espacio de memoria libre disponible, ClickHouse generará un error.
 </Note>
 
 <Accordion title="Inspección del contenido del índice primario">
-  En un clúster de ClickHouse autogestionado, podemos usar la [función de tabla file](/es/reference/functions/table-functions/file) para inspeccionar el contenido del índice primario de nuestra tabla de ejemplo.
+  <p>
+    En un clúster de ClickHouse autogestionado, podemos usar la <a href="/es/reference/functions/table-functions/file" target="_blank">función de tabla file</a> para inspeccionar el contenido del índice primario de nuestra tabla de ejemplo.
 
-  Para ello, primero tenemos que copiar el archivo del índice primario en el [user&#95;files&#95;path](/es/reference/settings/server-settings/settings/user#user_files_path) de un nodo del clúster en ejecución:
+    Para ello, primero debemos copiar el archivo del índice primario al <a href="/es/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a> de un nodo del clúster en ejecución:
 
-  **Paso 1: Obtener la ruta de la parte que contiene el archivo del índice primario**
+    <ul>
+      <li>Paso 1: Obtener la ruta de la parte que contiene el archivo del índice primario</li>
+      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
 
-  ```sql
-  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
-  ```
+      devuelve `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` en la máquina de prueba.
 
-  devuelve `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` en la máquina de prueba.
+      <li>Paso 2: Obtener user&#95;files&#95;path</li>
+      El <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">user&#95;files&#95;path predeterminado</a> en Linux es
+      `/var/lib/clickhouse/user_files/`
 
-  **Paso 2: Obtener user&#95;files&#95;path**
+      y en Linux puedes comprobar si se ha cambiado: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  El [user&#95;files&#95;path predeterminado](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) en Linux es `/var/lib/clickhouse/user_files/`
+      En la máquina de prueba, la ruta es `/Users/tomschreiber/Clickhouse/user_files/`
 
-  y en Linux puedes comprobar si se ha cambiado: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+      <li>Paso 3: Copiar el archivo del índice primario en user&#95;files&#95;path</li>
 
-  En la máquina de prueba, la ruta es `/Users/tomschreiber/ClickHouse/user_files/`
+      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
+    </ul>
 
-  **Paso 3: Copiar el archivo del índice primario en user&#95;files&#95;path**
+    <br />
 
-  ```bash
-  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
-  ```
+    Ahora podemos inspeccionar el contenido del índice primario mediante SQL:
 
-  Ahora podemos inspeccionar el contenido del índice primario mediante SQL:
+    <ul>
+      <li>Obtener el número de entradas</li>
+      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
+      devuelve `1083`
 
-  **Obtener la cantidad de entradas**
+      <li>Obtener las dos primeras marcas del índice</li>
+      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
 
-  ```sql
-  SELECT count()
-  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
-  ```
+      devuelve
 
-  devuelve `1083`
+      `240923, http://showtopics.html%3...<br/>
+                  4073710, http://mk.ru&pos=3_0`
 
-  **Obtener las dos primeras marcas del índice**
+      <li>Obtener la última marca del índice</li>
+      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
+      devuelve
+      `4292714039 │ http://sosyal-mansetleri...`
+    </ul>
 
-  ```sql
-  SELECT UserID, URL
-  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
-  LIMIT 0, 2;
-  ```
+    <br />
 
-  devuelve
-
-  ```response
-  240923, http://showtopics.html%3...
-  4073710, http://mk.ru&pos=3_0
-  ```
-
-  **Obtener la última marca del índice**
-
-  ```sql
-  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
-  LIMIT 1082, 1;
-  ```
-
-  devuelve
-
-  ```response
-  4292714039 │ http://sosyal-mansetleri...
-  ```
-
-  Esto coincide exactamente con nuestro diagrama del contenido del índice primario para nuestra tabla de ejemplo:
+    Esto coincide exactamente con nuestro diagrama del contenido del índice primario de nuestra tabla de ejemplo:
+  </p>
 </Accordion>
 
 Las entradas de la clave primaria se denominan marcas del índice porque cada entrada del índice marca el inicio de un rango de datos específico. En concreto, para la tabla de ejemplo:
 
 * Marcas del índice de UserID:
 
-  Los valores `UserID` almacenados en el índice primario están ordenados en orden ascendente.<br />
-  Por tanto, la &quot;marca 1&quot; del diagrama anterior indica que los valores `UserID` de todas las filas de la tabla del gránulo 1, y de todos los gránulos siguientes, son necesariamente mayores o iguales que 4.073.710.
+  Los valores `UserID` almacenados en el índice primario están ordenados de forma ascendente.<br />
+  Por lo tanto, la &quot;marca 1&quot; del diagrama anterior indica que los valores `UserID` de todas las filas de la tabla del gránulo 1, y de todos los gránulos siguientes, serán necesariamente mayores o iguales que 4.073.710.
 
-[Como veremos más adelante](#the-primary-index-is-used-for-selecting-granules), este orden global permite a ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">usar un algoritmo de búsqueda binaria</a> sobre las marcas del índice para la primera columna clave cuando una consulta filtra por la primera columna de la clave primaria.
+[Como veremos más adelante](#the-primary-index-is-used-for-selecting-granules), este orden global permite a ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">usar un algoritmo de búsqueda binaria</a> sobre las marcas del índice de la primera columna clave cuando una consulta filtra por la primera columna de la clave primaria.
 
 * Marcas del índice de URL:
 
@@ -515,7 +500,7 @@ Processed 8.19 thousand rows,
 
 La salida del cliente de ClickHouse ahora muestra que, en lugar de realizar un escaneo completo de la tabla, solo se transmitieron 8,19 mil filas a ClickHouse.
 
-Si el <a href="/es/reference/settings/server-settings/settings/other#logger" target="_blank">registro de trazas</a> está habilitado, el archivo de registro del servidor ClickHouse muestra que ClickHouse estaba realizando una <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">búsqueda binaria</a> sobre las 1083 marcas del índice UserID para identificar los gránulos que podían contener filas con un valor de `749927693` en la columna UserID. Esto requiere 19 pasos, con una complejidad temporal media de `O(log2 n)`:
+Si el <a href="/es/reference/settings/server-settings/settings#logger" target="_blank">registro de trazas</a> está habilitado, el archivo de registro del servidor ClickHouse muestra que ClickHouse estaba realizando una <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">búsqueda binaria</a> sobre las 1083 marcas del índice UserID para identificar los gránulos que podían contener filas con un valor de `749927693` en la columna UserID. Esto requiere 19 pasos, con una complejidad temporal media de `O(log2 n)`:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -527,10 +512,6 @@ Si el <a href="/es/reference/settings/server-settings/settings/other#logger" tar
               1/1083 marks by primary key, 1 marks to read from 1 ranges
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
-
-:::note
-En versiones recientes de ClickHouse, los mensajes `Running binary search on index range`, `Found (LEFT) boundary mark` y `Found (RIGHT) boundary mark` se registran en el nivel `test` (el de mayor verbosidad) en lugar de en `trace`. Para verlos, aumente la verbosidad del registro a `test` (por ejemplo, `SET send_logs_level = 'test'` en el cliente o `<logger><level>test</level></logger>` en la configuración del servidor). Las líneas restantes mostradas anteriormente siguen registrándose en `trace`. Esto se aplica a todos los ejemplos de registros de búsqueda binaria de esta guía.
-:::
 
 Podemos ver en el registro de trazas anterior que una marca de las 1083 marcas existentes cumplía las condiciones de la consulta.
 
@@ -621,9 +602,9 @@ El siguiente diagrama muestra los tres archivos de marcas `UserID.mrk`, `URL.mrk
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="Índices primarios dispersos 05" />
 
-Ya hemos explicado que el índice primario es un archivo de matriz plana sin comprimir (primary.idx) que contiene marcas de índice numeradas a partir de 0.
+Ya hemos explicado que el índice primario es un archivo Array plano sin comprimir (`primary.idx`) que contiene marcas de índice numeradas a partir de 0.
 
-Del mismo modo, un archivo de marcas también es un archivo de matriz plana sin comprimir (*.mrk) que contiene marcas numeradas a partir de 0.
+Del mismo modo, un archivo de marcas también es un archivo Array plano sin comprimir (`*.mrk`) que contiene marcas numeradas a partir de 0.
 
 Una vez que ClickHouse ha identificado y seleccionado la marca de índice de un gránulo que podría contener filas coincidentes para una consulta, se puede realizar una búsqueda posicional en Array en los archivos de marcas para obtener las ubicaciones físicas del gránulo.
 
@@ -636,13 +617,13 @@ Cada entrada del archivo de marcas para una columna específica almacena dos ubi
 Las 8192 filas que pertenecen al gránulo sin comprimir localizado se transmiten entonces a ClickHouse para su posterior procesamiento.
 
 <Note>
-  * Para las tablas con [wide format](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) y sin [granularidad adaptativa del índice](/es/resources/changelogs/oss/2019#experimental-features-1), ClickHouse usa archivos de marcas `.mrk`, como se muestra arriba, que contienen entradas con dos direcciones de 8 bytes por entrada. Estas entradas son las ubicaciones físicas de los gránulos, que tienen todos el mismo tamaño.
+  * Para tablas con [wide format](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) y sin [adaptive index granularity](/es/resources/changelogs/oss/2019#experimental-features-1), ClickHouse usa archivos de marcas `.mrk`, como se muestra arriba, que contienen entradas con dos direcciones de 8 bytes por entrada. Estas entradas son ubicaciones físicas de gránulos que tienen todos el mismo tamaño.
 
-  La granularidad del índice es adaptativa de forma [predeterminada](/es/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes), pero para nuestra tabla de ejemplo desactivamos la granularidad adaptativa del índice (para simplificar la explicación en esta guía, así como para que los diagramas y los resultados sean reproducibles). Nuestra tabla usa wide format porque el tamaño de los datos es mayor que [min&#95;bytes&#95;for&#95;wide&#95;part](/es/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) (que es de 10 MB de forma predeterminada para clústeres autogestionados).
+  La granularidad del índice es adaptativa de forma [predeterminada](/es/reference/settings/merge-tree-settings#index_granularity_bytes), pero para nuestra tabla de ejemplo desactivamos la granularidad adaptativa del índice (para simplificar las explicaciones de esta guía, así como para que los diagramas y los resultados sean reproducibles). Nuestra tabla usa wide format porque el tamaño de los datos es mayor que [min&#95;bytes&#95;for&#95;wide&#95;part](/es/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (que es de 10 MB de forma predeterminada para clusters autogestionados).
 
-  * Para las tablas con wide format y con granularidad adaptativa del índice, ClickHouse usa archivos de marcas `.mrk2`, que contienen entradas similares a las de los archivos de marcas `.mrk`, pero con un tercer valor adicional por entrada: el número de filas del gránulo al que está asociada la entrada actual.
+  * Para tablas con wide format y con granularidad adaptativa del índice, ClickHouse usa archivos de marcas `.mrk2`, que contienen entradas similares a las de los archivos de marcas `.mrk`, pero con un tercer valor adicional por entrada: el número de filas del gránulo al que está asociada la entrada actual.
 
-  * Para las tablas con [formato compacto](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), ClickHouse usa archivos de marcas `.mrk3`.
+  * Para tablas con [compact format](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), ClickHouse usa archivos de marcas `.mrk3`.
 </Note>
 
 <Info>
@@ -743,7 +724,7 @@ Processed 8.81 million rows,
 
 La salida del cliente indica que ClickHouse casi realizó un escaneo completo de la tabla, a pesar de que [la columna URL forma parte de la clave primaria compuesta](#a-table-with-a-primary-key). ClickHouse lee 8.81 millones de filas de los 8.87 millones de filas de la tabla.
 
-Si [trace&#95;logging](/es/reference/settings/server-settings/settings/other#logger) está habilitado, el archivo de registro del servidor de ClickHouse muestra que ClickHouse usó una <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">búsqueda por exclusión genérica</a> sobre las 1083 marcas del índice URL para identificar aquellos gránulos que podrían contener filas con un valor en la columna URL de &quot;http://public&#95;search&quot;:
+Si [trace&#95;logging](/es/reference/settings/server-settings/settings#logger) está habilitado, el archivo de registro del servidor de ClickHouse muestra que ClickHouse usó una <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">búsqueda por exclusión genérica</a> sobre las 1083 marcas del índice URL para identificar aquellos gránulos que podrían contener filas con un valor en la columna URL de &quot;http://public&#95;search&quot;:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
@@ -755,7 +736,7 @@ Si [trace&#95;logging](/es/reference/settings/server-settings/settings/other#log
 ...Executor): Reading approx. 8814592 rows with 10 streams
 ```
 
-Podemos ver en el registro de traza de ejemplo anterior que se seleccionaron 1076 de 1083 gránulos (a través de las marcas) por considerar que posiblemente contenían filas con un valor de URL coincidente.
+Podemos ver en el registro de trace de ejemplo anterior que se seleccionaron 1076 de 1083 gránulos (a través de las marcas) por considerar que posiblemente contenían filas con un valor de URL coincidente.
 
 Como resultado, 8,81 millones de filas se transmiten al motor de ClickHouse (en paralelo mediante 10 streams) para identificar las filas que realmente contienen el valor de URL &quot;http://public&#95;search&quot;.
 
@@ -898,7 +879,7 @@ A continuación, analizamos estas tres opciones para crear y usar varios índice
 
 <a name="secondary-table" />
 
-Vamos a crear una nueva tabla adicional en la que cambiaremos, con respecto a la tabla original, el orden de las columnas clave que componen la clave primaria:
+Vamos a crear una nueva tabla adicional en la que cambiaremos, con respecto a la tabla original, el orden de las columnas que componen la clave primaria:
 
 ```sql highlight={8}
 CREATE TABLE hits_URL_UserID
@@ -978,10 +959,10 @@ Processed 319.49 thousand rows,
 
 Ahora, en lugar de [hacer casi un escaneo completo de la tabla](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns), ClickHouse ejecutó esa consulta de forma mucho más eficiente.
 
-Con el índice primario de la [tabla original](#a-table-with-a-primary-key), donde UserID era la primera columna clave y URL la segunda columna clave, ClickHouse utilizó una [búsqueda por exclusión genérica](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) sobre las marcas de índice para ejecutar esa consulta, y eso no era muy eficaz debido a la cardinalidad alta y similar de UserID y URL.
+Con el índice primario de la [tabla original](#a-table-with-a-primary-key), donde UserID era la primera columna de la clave y URL la segunda, ClickHouse utilizó una [búsqueda de exclusión genérica](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) sobre las marcas de índice para ejecutar esa consulta, y eso no era muy eficaz debido a la cardinalidad alta y similar de UserID y URL.
 
 Con URL como primera columna del índice primario, ClickHouse ahora realiza una <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">búsqueda binaria</a> sobre las marcas de índice.
-El registro del servidor correspondiente lo confirma (en las versiones recientes, los mensajes de búsqueda binaria se registran en el nivel `test`; consulte la [nota anterior](#the-primary-index-is-used-for-selecting-granules)):
+La traza correspondiente en el archivo de registro del servidor de ClickHouse lo confirma:
 
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1073,7 +1054,7 @@ Ok.
 ```
 
 <Note>
-  * cambiamos el orden de las columnas clave (en comparación con nuestra [tabla original](#a-table-with-a-primary-key)) en la clave primaria de la vista
+  * cambiamos el orden de las columnas de la clave (en comparación con nuestra [tabla original](#a-table-with-a-primary-key)) en la clave primaria de la vista
   * la vista materializada está respaldada por una **tabla creada implícitamente** cuyo orden de filas y cuyo índice primario se basan en la definición de clave primaria proporcionada
   * la tabla creada implícitamente aparece en la consulta `SHOW TABLES` y tiene un nombre que comienza con `.inner`
   * también es posible crear primero explícitamente la tabla de respaldo de una vista materializada, y después la vista puede apuntar a esa tabla mediante la [cláusula](/es/reference/statements/create/view) `TO [db].[table]`
@@ -1122,7 +1103,7 @@ Processed 335.87 thousand rows,
 
 Dado que, en la práctica, la tabla creada implícitamente (y su índice primario) que sirve de base a la vista materializada es idéntica a la [tabla secundaria que creamos explícitamente](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), la consulta se ejecuta de forma idéntica a como lo hace con la tabla creada explícitamente.
 
-El registro del servidor correspondiente confirma que ClickHouse está realizando una búsqueda binaria en las marcas del índice (en versiones recientes, los mensajes de búsqueda binaria se registran en el nivel `test`; consulte la [nota anterior](#the-primary-index-is-used-for-selecting-granules)):
+La traza correspondiente en el archivo de registro del servidor ClickHouse confirma que ClickHouse está realizando una búsqueda binaria en las marcas del índice:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1206,7 +1187,7 @@ Processed 319.49 thousand rows, 1
 
 Puesto que, en la práctica, la tabla oculta (y su índice primario) creada por la proyección es idéntica a la [tabla secundaria que creamos explícitamente](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), la consulta se ejecuta de la misma forma que con la tabla creada explícitamente.
 
-El registro del servidor correspondiente confirma que ClickHouse está realizando una búsqueda binaria sobre las marcas del índice (en versiones recientes, los mensajes de búsqueda binaria se registran en el nivel `test`; consulte la [nota anterior](#the-primary-index-is-used-for-selecting-granules)):
+La traza correspondiente en el archivo de registro del servidor ClickHouse confirma que ClickHouse está realizando una búsqueda binaria sobre las marcas del índice:
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

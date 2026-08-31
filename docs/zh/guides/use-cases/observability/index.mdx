@@ -1,13 +1,10 @@
 ---
 slug: /use-cases/observability
 title: '可观测性'
-sidebarTitle: '概览'
 description: '可观测性用例指南的落地页'
 keywords: ['可观测性', '日志', '链路追踪', '指标', 'OpenTelemetry', 'Grafana', 'OTel']
 doc_type: 'guide'
 ---
-
-import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ClickHouse 为可观测性场景提供无与伦比的速度、扩展性和成本效益。本指南会根据你的需求提供两种路径：
 
@@ -45,11 +42,3 @@ ClickHouse Observability Stack 是我们为大多数用户**推荐的方案**。
 | [集成 OpenTelemetry](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | 使用 OpenTelemetry 配合 ClickHouse 收集和导出日志与链路追踪。                          |
 | [使用可视化工具](/zh/guides/use-cases/observability/build-your-own/grafana)                            | 了解如何使用适用于 ClickHouse 的可观测性可视化工具，包括 HyperDX 和 Grafana。                 |
 | [演示应用程序](/zh/guides/use-cases/observability/build-your-own/demo-application)                    | 了解已分叉并适配 ClickHouse、用于日志和链路追踪的 OpenTelemetry Demo Application。        |
-
-<div id="prometheus-metrics">
-  ## Prometheus 指标
-</div>
-
-<CloudNotSupportedBadge />
-
-ClickHouse 可将 Prometheus 指标存储在 [`TimeSeries`](/zh/reference/engines/table-engines/integrations/time-series) 表中，并执行 PromQL 查询。有关摄取、查询和可视化的配置，请参阅 [Prometheus 协议和 PromQL](/zh/concepts/features/interfaces/prometheus)。

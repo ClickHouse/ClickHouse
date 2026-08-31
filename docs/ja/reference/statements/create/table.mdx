@@ -1,23 +1,25 @@
 ---
 description: 'テーブルのドキュメント'
-keywords: ['スキーマ', 'DDL']
-sidebarTitle: 'CREATE TABLE'
+keywords: ['圧縮', 'codec', 'スキーマ', 'DDL']
+sidebarTitle: 'TABLE'
 slug: /sql-reference/statements/create/table
 title: 'CREATE TABLE'
 doc_type: 'reference'
 ---
 
-新しいテーブルを作成します。デフォルトでは、テーブルは現在のサーバー上にのみ作成されます。
-分散 DDL クエリは `ON CLUSTER` 句によって実現されており、これについては[別途説明しています](/ja/reference/statements/distributed-ddl)。
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+新しいテーブルを作成します。ユースケースに応じて、このクエリにはさまざまな構文形式があります。
+
+デフォルトでは、テーブルは現在のサーバー上にのみ作成されます。分散 DDL クエリは `ON CLUSTER` 句によって実現されており、これについては[別途説明しています](/ja/reference/statements/distributed-ddl)。
 
 <div id="syntax-forms">
-  ## 構文形式
+  ## 構文の形式
 </div>
 
-ユースケースに応じて、このクエリにはさまざまな構文形式があります。
-
 <div id="with-explicit-schema">
-  ### 明示的なスキーマを指定してテーブルを作成する
+  ### 明示的なスキーマを指定する場合
 </div>
 
 ```sql
@@ -35,8 +37,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 最も単純な場合、カラム定義は `name type` です。例: `RegionID UInt32`。
 
-型に続く修飾子である `COMMENT`、`compression_codec`、`STATISTICS`、`TTL`、`COLLATE`、`PRIMARY KEY`、およびカラムごとの `SETTINGS` は、任意の順序で記述でき、それぞれ最大 1 回だけ指定できます。たとえば、`RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` と `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` は同じです。`SHOW CREATE TABLE` はカラム宣言を正規化することに注意してください。残る修飾子は常に `COMMENT`、`CODEC`、`STATISTICS`、`TTL`、`COLLATE`、`SETTINGS` の正規順序で出力され、カラムごとの `PRIMARY KEY` はカラム宣言からテーブルレベルの `PRIMARY KEY` 句へ移動されます。
-
 デフォルト値用の式も定義できます (下記を参照) 。
 
 必要に応じて、1 つ以上のキー式を使って主キーを指定できます。
@@ -44,21 +44,21 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 カラムおよびテーブルにコメントを追加できます。
 
 <div id="with-a-schema-similar-to-other-table">
-  ### 既存テーブルのスキーマを使用してテーブルを作成する
+  ### 既存テーブルのスキーマを使う場合
 </div>
-
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
-```
 
 ClickHouse では、既存テーブルのスキーマとデータをコピーできます。
 
 既存テーブルのスキーマを複製するには:
 
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
+```
+
 これにより、別のテーブルと同じ構造を持つテーブルが作成されます。
 
 <div id="with-a-schema-and-data-cloned-from-another-table">
-  ### 既存テーブルのスキーマとデータを使用してテーブルを作成する
+  ### 既存テーブルのスキーマとデータを使用する場合
 </div>
 
 既存テーブルのスキーマとデータを複製するには:
@@ -77,7 +77,7 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 どちらの機能でも、テーブルには別のエンジンを指定できます。エンジンを指定しない場合は、元のテーブル (`db.table`) と同じエンジンが使用されます。
 
 <div id="from-a-table-function">
-  ### table function を使用してテーブルを作成する
+  ### Table Function から
 </div>
 
 ```sql
@@ -87,7 +87,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 指定した[table function](/ja/reference/functions/table-functions/index)と同じ結果を返すテーブルを作成します。作成されたテーブルも、指定した対応する table function と同じように動作します。
 
 <div id="from-select-query">
-  ### SELECT クエリでテーブルを作成する
+  ### SELECT クエリから
 </div>
 
 ```sql
@@ -113,8 +113,18 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
+<div id="null-or-not-null-modifiers">
+  ## NULL または NOT NULL 修飾子
+</div>
+
+カラム定義では、データ型の後ろに `NULL` および `NOT NULL` 修飾子を付けることで、その型を [Nullable](/ja/reference/data-types/nullable) にできるかどうかを指定できます。
+
+型が `Nullable` ではない場合、`NULL` を指定すると `Nullable` として扱われ、`NOT NULL` を指定した場合はそのまま `Nullable` にはなりません。たとえば、`INT NULL` は `Nullable(INT)` と同じです。型が `Nullable` であるにもかかわらず `NULL` または `NOT NULL` 修飾子を指定すると、例外がスローされます。
+
+関連項目: [data&#95;type&#95;default&#95;nullable](/ja/reference/settings/session-settings#data_type_default_nullable) 設定。
+
 <div id="default_values">
-  ## カラムのデフォルト値を指定する
+  ## デフォルト値
 </div>
 
 カラム定義では、`DEFAULT expr`、`MATERIALIZED expr`、または `ALIAS expr` の形式でデフォルト値の式を指定できます。例: `URLDomain String DEFAULT domain(URL)`。
@@ -272,56 +282,40 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-<div id="null-or-not-null-modifiers">
-  ## NULL または NOT NULL 修飾子
-</div>
-
-カラム定義では、データ型の後ろに `NULL` および `NOT NULL` 修飾子を付けることで、その型を [Nullable](/ja/reference/data-types/nullable) にできるかどうかを指定できます。
-
-型が `Nullable` ではない場合、`NULL` を指定すると `Nullable` として扱われ、`NOT NULL` を指定した場合はそのまま `Nullable` にはなりません。たとえば、`INT NULL` は `Nullable(INT)` と同じです。型が `Nullable` であるにもかかわらず `NULL` または `NOT NULL` 修飾子を指定すると、例外がスローされます。
-
-関連項目: [data&#95;type&#95;default&#95;nullable](/ja/reference/settings/session-settings/other#data_type_default_nullable) 設定。
-
 <div id="primary-key">
   ## 主キー
 </div>
 
 テーブルの作成時に[主キー](/ja/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)を定義できます。主キーは、次の2つの方法で指定できます。
 
-<Columns cols={2}>
-  <div>
-    **カラムリスト内**
+* カラムの一覧内
 
-    ```sql
-    CREATE TABLE [db.]table_name
-    (
-        name1 type1, name2 type2, ...,
-        PRIMARY KEY(expr1[, expr2,...])
-    )
-    ENGINE = engine;
-    ```
-  </div>
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...,
+    PRIMARY KEY(expr1[, expr2,...])
+)
+ENGINE = engine;
+```
 
-  <div>
-    **カラムリストの外**
+* カラムリストの外
 
-    ```sql
-    CREATE TABLE [db.]table_name
-    (
-        name1 type1, name2 type2, ...
-    )
-    ENGINE = engine
-    PRIMARY KEY(expr1[, expr2,...]);
-    ```
-  </div>
-</Columns>
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+PRIMARY KEY(expr1[, expr2,...]);
+```
 
 <Tip>
   1つのクエリで両方の方法を併用することはできません。
 </Tip>
 
 <div id="constraints">
-  ## テーブル制約を指定する
+  ## 制約
 </div>
 
 カラムの説明に加えて、制約も定義できます:
@@ -373,62 +367,20 @@ ORDER BY (name_len, name);
 `ASSUME CONSTRAINT` **は制約を強制するものではありません**。これは、その制約が成り立つことをオプティマイザに知らせるだけです。制約が実際には成り立っていない場合、クエリの結果が不正確になる可能性があります。したがって、`ASSUME CONSTRAINT` は、その制約が正しいと確信できる場合にのみ使用してください。
 
 <div id="ttl-expression">
-  ## TTL で保存期間を定義する
+  ## 有効期限 (TTL) 式
 </div>
 
 値の保存期間を定義します。指定できるのは MergeTree ファミリーのテーブルのみです。詳細は、[カラムとテーブルの TTL](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) を参照してください。
 
 <div id="column_compression_codec">
-  ## カラム圧縮コーデックを選択する
+  ## カラム圧縮コーデック
 </div>
 
-{/* /reference/statements/create/table/codec に移動したセクションへのリンク用アンカー */}
+デフォルトでは、ClickHouse はセルフマネージド版では `lz4` 圧縮を使用し、ClickHouse Cloud では `zstd` を使用します。
 
-<a id="general-purpose-codecs" />
+`MergeTree` エンジンファミリーでは、サーバー設定の [compression](/ja/reference/settings/server-settings/settings#compression) セクションでデフォルトの圧縮方式を変更できます。
 
-<a id="none" />
-
-<a id="lz4" />
-
-<a id="lz4hc" />
-
-<a id="zstd" />
-
-<a id="zxc" />
-
-<a id="zstd_qat" />
-
-<a id="deflate_qpl" />
-
-<a id="specialized-codecs" />
-
-<a id="delta" />
-
-<a id="doubledelta" />
-
-<a id="gcd" />
-
-<a id="gorilla" />
-
-<a id="alp" />
-
-<a id="fpc" />
-
-<a id="sz3" />
-
-<a id="t64" />
-
-<a id="quantized" />
-
-<a id="encryption-codecs" />
-
-<a id="aes_128_gcm_siv" />
-
-<a id="aes-256-gcm-siv" />
-
-<a id="adaptive-codec-selection" />
-
-デフォルトでは、セルフマネージド版のClickHouseには `lz4` 圧縮が、ClickHouse Cloudには `zstd` 圧縮が適用されます。`CREATE TABLE` クエリでは、カラムごとに圧縮方式を指定することもできます。
+また、`CREATE TABLE` クエリで、個々のカラムごとに圧縮方式を定義することもできます。
 
 ```sql
 CREATE TABLE codec_example
@@ -443,28 +395,397 @@ ENGINE = <Engine>
 ...
 ```
 
-利用可能な汎用、特殊用途、および暗号化 コーデック については、[カラム圧縮 コーデック](/ja/reference/statements/create/table/codec)を参照してください。
+`Default` コーデック は、実行時のさまざまな設定 (およびデータの特性) に応じて変わる可能性があるデフォルトの圧縮を参照するために指定できます。
+例: `value UInt64 CODEC(Default)` — コーデック を指定しないのと同じです。
+
+また、カラムから現在の CODEC を削除して、config.xml で設定されたデフォルトの圧縮を使用することもできます。
+
+```sql
+ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
+```
+
+コーデックはパイプラインで組み合わせることができます。たとえば、`CODEC(Delta, Default)` のように指定します。
+
+<Tip>
+  ClickHouse データベースのファイルは、`lz4` のような外部ユーティリティでは解凍できません。代わりに、専用の [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) ユーティリティを使用してください。
+</Tip>
+
+圧縮は、次のテーブルエンジンでサポートされています。
+
+* [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー。カラム圧縮コーデックと、[compression](/ja/reference/settings/server-settings/settings#compression) 設定によるデフォルトの圧縮方式の選択をサポートします。
+* [Log](/ja/reference/engines/table-engines/log-family/index) ファミリー。デフォルトで `lz4` 圧縮方式を使用し、カラム圧縮コーデックをサポートします。
+* [Set](/ja/reference/engines/table-engines/special/set)。デフォルトの圧縮のみをサポートします。
+* [Join](/ja/reference/engines/table-engines/special/join)。デフォルトの圧縮のみをサポートします。
+
+ClickHouse は、汎用コーデックと専用コーデックをサポートしています。
+
+<div id="general-purpose-codecs">
+  ### 汎用コーデック
+</div>
+
+<div id="none">
+  #### NONE
+</div>
+
+`NONE` — 圧縮なし。
+
+<div id="lz4">
+  #### LZ4
+</div>
+
+`LZ4` — デフォルトで使用される可逆な[データ圧縮アルゴリズム](https://github.com/lz4/lz4)です。LZ4の高速圧縮を適用します。
+
+<div id="lz4hc">
+  #### LZ4HC
+</div>
+
+`LZ4HC[(level)]` — レベルを設定可能な LZ4 HC (高圧縮) アルゴリズム。デフォルトレベルは 9 です。`level <= 0` を指定すると、デフォルトレベルが適用されます。指定可能なレベル: [1, 12]。推奨レベル範囲: [4, 9]。
+
+<div id="zstd">
+  #### ZSTD
+</div>
+
+`ZSTD[(level)]` — `level`を設定可能な[ZSTD圧縮アルゴリズム](https://en.wikipedia.org/wiki/Zstandard)です。指定可能なレベル: [1, 22]。デフォルトレベル: 1。
+
+高い圧縮レベルは、一度圧縮して何度も展開するような非対称なシナリオで有効です。レベルが高いほど圧縮率は向上しますが、その分CPU使用量も増加します。
+
+<div id="zstd_qat">
+  #### 廃止された: ZSTD_QAT
+</div>
+
+<CloudNotSupportedBadge />
+
+<div id="deflate_qpl">
+  #### 廃止された: DEFLATE_QPL
+</div>
+
+<CloudNotSupportedBadge />
+
+<div id="specialized-codecs">
+  ### 特殊なコーデック
+</div>
+
+これらのコーデックは、データの特定の特性を活用して、圧縮効率を高めるように設計されています。これらのコーデックの一部は、それ自体ではデータを圧縮せず、代わりにデータを前処理します。これにより、後段で汎用コーデックを使って圧縮した際に、より高い圧縮率を実現できます。
+
+<div id="delta">
+  #### Delta
+</div>
+
+`Delta(delta_bytes)` — 最初の値を除き、元の値を隣り合う 2 つの値の差に置き換える圧縮方式です。最初の値はそのまま保持されます。`delta_bytes` は元の値の最大サイズで、デフォルト値は `sizeof(type)` です。引数として `delta_bytes` を指定することは非推奨であり、今後のリリースでサポートは削除される予定です。Delta はデータ準備用のコーデックであり、単独では使用できません。
+
+<div id="doubledelta">
+  #### DoubleDelta
+</div>
+
+`DoubleDelta(bytes_size)` — 差分の差分を計算し、compact バイナリ形式で書き込みます。`bytes_size` は、[Delta](#delta) コーデック の `delta_bytes` と同様の意味を持ちます。引数として `bytes_size` を指定することは非推奨であり、今後のリリースでサポートが削除される予定です。最適な圧縮率は、時系列データのように一定の刻み幅を持つ単調なシーケンスで得られます。任意の数値型で使用できます。Gorilla TSDB で使われているアルゴリズムを実装しており、64 ビット型をサポートするように拡張しています。32 ビットの差分には追加で 1 ビットを使用します。つまり、4 ビットのプレフィックスではなく 5 ビットのプレフィックスを使用します。詳細については、[Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) の Compressing Time Stamps を参照してください。DoubleDelta はデータ準備用の コーデック であるため、単体では使用できません。
+
+<div id="gcd">
+  #### GCD
+</div>
+
+`GCD()` - - カラム内の値の最大公約数 (GCD) を計算し、各値をその GCD で割ります。整数、小数、日付/時刻のカラムで使用できます。この コーデック は、値が GCD の倍数単位で変化 (増加または減少) するカラム (例: 24, 28, 16, 24, 8, 24 (GCD = 4) ) に適しています。GCD はデータ準備用の コーデック であり、単独では使用できません。
+
+<div id="gorilla">
+  #### Gorilla
+</div>
+
+`Gorilla(bytes_size)` — 現在の浮動小数点値と直前の値との XOR を計算し、それをコンパクトなバイナリ形式で書き込みます。連続する値同士の差が小さいほど、つまり時系列の値の変化が緩やかなほど、圧縮率は高くなります。Gorilla TSDB で使用されているアルゴリズムを実装しており、64 ビット型をサポートするように拡張されています。`bytes_size` に指定できる値は 1、2、4、8 です。`sizeof(type)` が 1、2、4、8 のいずれかであれば、デフォルト値は `sizeof(type)` になります。それ以外の場合は 1 です。詳細については、[Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078) の 4.1 節を参照してください。
+
+<div id="alp">
+  #### ALP
+</div>
+
+<ExperimentalBadge />
+
+`ALP()` — 小数のスケーリングに基づく、浮動小数点データ向けの適応型可逆圧縮です。ALP は各値を 10 のべき乗による正確なスケーリング済み整数として表現し、得られた整数を Frame-of-Reference とビットパッキングで圧縮します。正確に表現できない値は、生の例外値として保存されます。小数に由来する数値 (例: 測定値、通貨) で特に効果を発揮します。`Float32` と `Float64` をサポートします。詳細は、[ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334) を参照してください。
+
+<Note>
+  この コーデック は Experimental であり、使用するには `SET allow_experimental_codecs = 1` の設定が必要です。
+</Note>
+
+<div id="fpc">
+  #### FPC
+</div>
+
+`FPC(level, float_size)` - 2 種類の予測器のうち、より適した方を使ってシーケンス内の次の浮動小数点値を繰り返し予測し、実際の値と予測値の XOR を取り、その結果に対して先頭のゼロを圧縮します。Gorilla と同様に、変化が緩やかな一連の浮動小数点値を格納する場合に効率的です。64 ビット値 (double) では FPC は Gorilla より高速ですが、32 ビット値では結果が異なる場合があります。指定可能な `level` の値は 1～28 で、デフォルト値は 12 です。指定可能な `float_size` の値は 4、8 で、type が Float の場合のデフォルト値は `sizeof(type)` です。それ以外のすべての場合は 4 です。アルゴリズムの詳細については、[High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf) を参照してください。
+
+<div id="t64">
+  #### T64
+</div>
+
+`T64` — 整数データ型 (`Enum`、`Date`、`DateTime` を含む) において、値の未使用の上位ビットを削る圧縮方式です。アルゴリズムの各ステップで、このコーデックは 64 個の値からなる block を取り、それらを 64x64 ビットの行列に配置して転置し、値の未使用ビットを削ったうえで、残りをシーケンスとして返します。未使用ビットとは、この圧縮の適用対象である data part 全体において、最大値と最小値の間で差が生じないビットのことです。
+
+`DoubleDelta` と `Gorilla` コーデックは、Gorilla TSDB の圧縮アルゴリズムの構成要素として使用されています。Gorilla の方式は、timestamp を伴う、緩やかに変化する値のシーケンスがある場合に効果的です。timestamp は `DoubleDelta` コーデックによって効率よく圧縮され、値は `Gorilla` コーデックによって効率よく圧縮されます。たとえば、効率よく格納できる table を得るには、次の構成で作成できます。
+
+```sql
+CREATE TABLE codec_example
+(
+    timestamp DateTime CODEC(DoubleDelta),
+    slow_values Float32 CODEC(Gorilla)
+)
+ENGINE = MergeTree()
+```
+
+<div id="encryption-codecs">
+  ### 暗号化コーデック
+</div>
+
+これらのコーデックは実際にはデータを圧縮せず、代わりにディスク上のデータを暗号化します。これらを使用できるのは、[encryption](/ja/reference/settings/server-settings/settings#encryption) 設定で暗号化キーが指定されている場合のみです。通常、暗号化されたデータを意味のある形で圧縮することはできないため、暗号化コーデックを使うのはコーデックパイプラインの最後に限られます。
+
+暗号化コーデック:
+
+<div id="aes_128_gcm_siv">
+  #### AES_128_GCM_SIV
+</div>
+
+`CODEC('AES-128-GCM-SIV')` — [RFC 8452](https://tools.ietf.org/html/rfc8452) の GCM-SIV モードを使用して、AES-128 でデータを暗号化します。
+
+<div id="aes-256-gcm-siv">
+  #### AES-256-GCM-SIV
+</div>
+
+`CODEC('AES-256-GCM-SIV')` — AES-256 を GCM-SIV モードで使用してデータを暗号化します。
+
+これらのコーデックは固定ノンスを使用するため、暗号化は決定論的です。このため、[ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) のような重複排除を行うエンジンと互換性がありますが、弱点もあります。同じデータブロックを 2 回暗号化すると、生成される暗号文はまったく同一になります。そのため、ディスクを読み取れる攻撃者は、その 2 つが同じであることを見分けられます (内容そのものは分からず、同一性だけが分かります) 。
+
+<Note>
+  &quot;*MergeTree&quot; ファミリーを含むほとんどのエンジンでは、コーデックを適用せずにディスク上へ索引ファイルが作成されます。つまり、暗号化されたカラムに索引がある場合、平文がディスク上に現れます。
+</Note>
+
+<Note>
+  暗号化されたカラム内の特定の値を指定する SELECT クエリを実行すると (WHERE 句など) 、その値が [system.query&#95;log](/ja/reference/system-tables/query_log) に記録される可能性があります。ログを無効にすることを検討してください。
+</Note>
+
+**例**
+
+```sql
+CREATE TABLE mytable
+(
+    x String CODEC(AES_128_GCM_SIV)
+)
+ENGINE = MergeTree ORDER BY x;
+```
+
+<Note>
+  圧縮が必要な場合は、明示的に指定する必要があります。指定しない場合、データには暗号化のみが適用されます。
+</Note>
+
+**例**
+
+```sql
+CREATE TABLE mytable
+(
+    x String CODEC(Delta, LZ4, AES_128_GCM_SIV)
+)
+ENGINE = MergeTree ORDER BY x;
+```
 
 <div id="temporary-tables">
-  ## 一時テーブルの作成
+  ## 一時テーブル
 </div>
 
-ClickHouse は一時テーブルをサポートしています。一時テーブルはセッションの終了時に削除されます。詳細については、[CREATE TEMPORARY TABLE](/ja/reference/statements/create/table/temporary-table) を参照してください。
+<Note>
+  一時テーブルはレプリケーションされない点に注意してください。そのため、一時テーブルに挿入されたデータが他のレプリカで利用可能である保証はありません。一時テーブルが主に役立つのは、単一のセッション中に小規模な外部データセットに対してクエリを実行したり、join したりする場合です。
+</Note>
+
+ClickHouse は、次の特性を持つ一時テーブルをサポートしています。
+
+* 一時テーブルは、接続が失われた場合を含め、セッションが終了すると削除されます。
+* 一時テーブルでは、エンジンが指定されていない場合は Memory テーブルエンジンが使用され、Replicated および `KeeperMap` エンジンを除く任意のテーブルエンジンを使用できます。
+* 一時テーブルには DB を指定できません。データベースの外部に作成されます。
+* 分散 DDL クエリを使って、クラスター内のすべてのサーバー上に一時テーブルを作成することはできません (`ON CLUSTER` を使用) 。このテーブルは現在のセッション内にのみ存在します。
+* 一時テーブルが別のテーブルと同じ名前を持ち、クエリで DB を指定せずにそのテーブル名を指定した場合は、一時テーブルが使用されます。
+* 分散クエリ処理では、クエリ内で使用される Memory エンジンの一時テーブルはリモートサーバーに渡されます。
+
+一時テーブルを作成するには、次の構文を使用します。
+
+```sql
+CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) [ENGINE = engine]
+```
+
+ほとんどの場合、一時テーブルを手動で作成することはありませんが、クエリで外部データを使用する場合や、分散 `(GLOBAL) IN` を使用する場合には作成されます。詳細については、該当するセクションを参照してください。
+
+一時テーブルの代わりに、[ENGINE = Memory](/ja/reference/engines/table-engines/special/memory) を使用するテーブルを使うこともできます。
 
 <div id="replace-table">
-  ## REPLACE TABLE でテーブルをアトミックに更新する
+  ## REPLACE TABLE
 </div>
 
-{/* /reference/statements/create/table/replace-table に移動したセクションへのリンク先アンカー */}
+`REPLACE` ステートメントを使用すると、テーブルを[アトミックに](/ja/concepts/core-concepts/glossary#atomicity)更新できます。
 
-<a id="syntax" />
+<Note>
+  このステートメントは、[`Atomic`](/ja/reference/engines/database-engines/atomic) および [`Replicated`](/ja/reference/engines/database-engines/replicated) データベースエンジンでサポートされています。
+  これらはそれぞれ、ClickHouse と ClickHouse Cloud のデフォルトのデータベースエンジンです。
+</Note>
 
-<a id="examples" />
+通常、テーブルから一部のデータを削除する必要がある場合は、
+新しいテーブルを作成し、不要なデータを取得しない `SELECT` ステートメントでデータを投入してから、
+古いテーブルを削除し、新しいテーブルをリネームします。
+この方法は、以下の例で示しています。
 
-`REPLACE` ステートメントを使用すると、テーブルを[アトミックに](/ja/concepts/core-concepts/glossary#atomicity)更新できます。詳細については、[REPLACE TABLE](/ja/reference/statements/create/table/replace-table)を参照してください。
+```sql
+CREATE TABLE myNewTable AS myOldTable;
+
+INSERT INTO myNewTable
+SELECT * FROM myOldTable 
+WHERE CounterID <12345;
+
+DROP TABLE myOldTable;
+
+RENAME TABLE myNewTable TO myOldTable;
+```
+
+上記の方法の代わりに、 (デフォルトのデータベースエンジンを使用している場合は) `REPLACE` を使って同じ結果を得ることもできます：
+
+```sql
+REPLACE TABLE myOldTable
+ENGINE = MergeTree()
+ORDER BY CounterID 
+AS
+SELECT * FROM myOldTable
+WHERE CounterID <12345;
+```
+
+<div id="syntax">
+  ### 構文
+</div>
+
+```sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
+
+<Note>
+  `CREATE` ステートメントのすべての構文形式は、このステートメントでも利用できます。存在しないテーブルに対して `REPLACE` を実行すると、エラーが発生します。
+</Note>
+
+<div id="examples">
+  ### 例:
+</div>
+
+<Tabs>
+  <Tab title="ローカル">
+    次のテーブルを考えます:
+
+    ```sql
+    CREATE DATABASE base 
+    ENGINE = Atomic;
+
+    CREATE OR REPLACE TABLE base.t1
+    (
+        n UInt64,
+        s String
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (1, 'test');
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┬─s────┐
+    │ 1 │ test │
+    └───┴──────┘
+    ```
+
+    `REPLACE` ステートメントを使用すると、すべてのデータを消去できます:
+
+    ```sql
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64,
+        s Nullable(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (2, null);
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┬─s──┐
+    │ 2 │ \N │
+    └───┴────┘
+    ```
+
+    また、`REPLACE` ステートメントを使用してテーブルの構造を変更することもできます:
+
+    ```sql
+    REPLACE TABLE base.t1 (n UInt64) 
+    ENGINE = MergeTree 
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (3);
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┐
+    │ 3 │
+    └───┘
+    ```
+  </Tab>
+
+  <Tab title="Cloud">
+    ClickHouse Cloud 上の次のテーブルを考えます:
+
+    ```sql
+    CREATE DATABASE base;
+
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64,
+        s String
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (1, 'test');
+
+    SELECT * FROM base.t1;
+
+    1    test
+    ```
+
+    `REPLACE` ステートメントを使用すると、すべてのデータを消去できます:
+
+    ```sql
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64, 
+        s Nullable(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (2, null);
+
+    SELECT * FROM base.t1;
+
+    2    
+    ```
+
+    また、`REPLACE` ステートメントを使用してテーブルの構造を変更することもできます:
+
+    ```sql
+    REPLACE TABLE base.t1 (n UInt64) 
+    ENGINE = MergeTree 
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (3);
+
+    SELECT * FROM base.t1;
+
+    3
+    ```
+  </Tab>
+</Tabs>
 
 <div id="comment-clause">
-  ## テーブルコメントを追加する
+  ## COMMENT 句
 </div>
 
 テーブルの作成時にコメントを追加できます。

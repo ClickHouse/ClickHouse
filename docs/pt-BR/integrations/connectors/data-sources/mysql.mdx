@@ -12,8 +12,8 @@ integration:
 keywords: ['mysql', 'integração de banco de dados', 'tabela externa', 'fonte de dados', 'banco de dados SQL']
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Esta página aborda o uso do motor de tabela MySQL para ler dados de uma tabela MySQL.
 
@@ -25,145 +25,149 @@ Esta página aborda o uso do motor de tabela MySQL para ler dados de uma tabela 
   ## Conectando o ClickHouse ao MySQL usando o motor de tabela MySQL
 </div>
 
-O motor de tabela `MySQL` permite conectar o ClickHouse ao MySQL. Instruções **SELECT** e **INSERT** podem ser executadas tanto no ClickHouse quanto na tabela do MySQL. Este artigo mostra os métodos básicos de uso do motor de tabela `MySQL`.
+O motor de tabela `MySQL` permite conectar o ClickHouse ao MySQL. As instruções **SELECT** e **INSERT** podem ser executadas no ClickHouse ou na tabela MySQL. Este artigo apresenta os métodos básicos de uso do motor de tabela `MySQL`.
 
-<Steps>
-  <Step title="Configure o MySQL" id="1-configure-mysql">
-    1. Crie um banco de dados no MySQL:
+<div id="1-configure-mysql">
+  ### 1. Configure o MySQL
+</div>
 
-    ```sql
-    CREATE DATABASE db1;
-    ```
+1. Crie um banco de dados no MySQL:
 
-    2. Crie uma tabela:
+```sql
+  CREATE DATABASE db1;
+```
 
-    ```sql
-    CREATE TABLE db1.table1 (
-      id INT,
-      column1 VARCHAR(255)
-    );
-    ```
+2. Crie uma tabela:
 
-    3. Insira linhas de exemplo:
+```sql
+  CREATE TABLE db1.table1 (
+    id INT,
+    column1 VARCHAR(255)
+  );
+```
 
-    ```sql
-    INSERT INTO db1.table1
-      (id, column1)
-    VALUES
-      (1, 'abc'),
-      (2, 'def'),
-      (3, 'ghi');
-    ```
+3. Insira linhas de exemplo:
 
-    4. Crie um usuário para se conectar a partir do ClickHouse:
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (1, 'abc'),
+    (2, 'def'),
+    (3, 'ghi');
+```
 
-    ```sql
-    CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
-    ```
+4. Crie um usuário para conexão a partir do ClickHouse:
 
-    5. Conceda os privilégios necessários. (Para fins de demonstração, o usuário `mysql_clickhouse` recebe privilégios de administrador.)
+```sql
+  CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
+```
 
-    ```sql
-    GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
-    ```
+5. Conceda os privilégios necessários. (Para fins de demonstração, são concedidos privilégios de administrador ao usuário `mysql_clickhouse`.)
 
-    <Note>
-      Se você estiver usando esse recurso no ClickHouse Cloud, talvez seja necessário permitir que os endereços IP do ClickHouse Cloud acessem sua instância MySQL.
-      Consulte a [Cloud Endpoints API](/pt-BR/products/cloud/guides/sql-console/query-endpoints) do ClickHouse para ver detalhes sobre o tráfego de egress.
-    </Note>
-  </Step>
+```sql
+  GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
+```
 
-  <Step title="Defina uma tabela no ClickHouse" id="2-define-a-table-in-clickhouse">
-    1. Agora, vamos criar uma tabela no ClickHouse que usa o motor de tabela `MySQL`:
+<Note>
+  Se você estiver usando esse recurso no ClickHouse Cloud, talvez seja necessário permitir que os endereços IP do ClickHouse Cloud acessem sua instância do MySQL.
+  Consulte a [API de Endpoints do Cloud do ClickHouse](/pt-BR/products/cloud/guides/sql-console/query-endpoints) para obter detalhes sobre o tráfego de saída.
+</Note>
 
-    ```sql
-    CREATE TABLE mysql_table1 (
-      id UInt64,
-      column1 String
-    )
-    ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
-    ```
+<div id="2-define-a-table-in-clickhouse">
+  ### 2. Defina uma tabela no ClickHouse
+</div>
 
-    Os parâmetros mínimos são:
+1. Agora, vamos criar uma tabela no ClickHouse que usa o motor de tabela `MySQL`:
 
-    | parâmetro | Descrição                                | exemplo               |
-    | --------- | ---------------------------------------- | --------------------- |
-    | host      | hostname ou IP                           | mysql-host.domain.com |
-    | database  | nome do banco de dados MySQL             | db1                   |
-    | table     | nome da tabela MySQL                     | table1                |
-    | user      | nome de usuário para conexão com o MySQL | mysql&#95;clickhouse  |
-    | password  | senha para conexão com o MySQL           | Password123!          |
+```sql
+  CREATE TABLE mysql_table1 (
+    id UInt64,
+    column1 String
+  )
+  ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
+```
 
-    <Note>
-      Consulte a página de documentação do [motor de tabela MySQL](/pt-BR/reference/engines/table-engines/integrations/mysql) para ver a lista completa de parâmetros.
-    </Note>
-  </Step>
+Os parâmetros mínimos são:
 
-  <Step title="Teste a integração" id="3-test-the-integration">
-    1. No MySQL, insira uma linha de teste:
+| parâmetro | Descrição                              | exemplo               |
+| --------- | -------------------------------------- | --------------------- |
+| host      | hostname ou endereço IP                | mysql-host.domain.com |
+| database  | nome do banco de dados do MySQL        | db1                   |
+| table     | nome da tabela do MySQL                | table1                |
+| user      | nome de usuário para conectar ao MySQL | mysql&#95;clickhouse  |
+| password  | senha para conectar ao MySQL           | Password123!          |
 
-    ```sql
-    INSERT INTO db1.table1
-      (id, column1)
-    VALUES
-      (4, 'jkl');
-    ```
+<Note>
+  Consulte a página de documentação do [motor de tabela MySQL](/pt-BR/reference/engines/table-engines/integrations/mysql) para ver a lista completa de parâmetros.
+</Note>
 
-    2. Observe que as linhas existentes da tabela do MySQL estão na tabela do ClickHouse, junto com a nova linha que você acabou de adicionar:
+<div id="3-test-the-integration">
+  ### 3. Teste a integração
+</div>
 
-    ```sql
-    SELECT
-        id,
-        column1
-    FROM mysql_table1
-    ```
+1. No MySQL, insira uma linha de teste:
 
-    Você verá 4 linhas:
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (4, 'jkl');
+```
 
-    ```response
-    Query id: 6d590083-841e-4e95-8715-ef37d3e95197
+2. Observe que as linhas existentes da tabela do MySQL estão na tabela do ClickHouse, junto com a nova linha que você acabou de adicionar:
 
-    ┌─id─┬─column1─┐
-    │  1 │ abc     │
-    │  2 │ def     │
-    │  3 │ ghi     │
-    │  4 │ jkl     │
-    └────┴─────────┘
+```sql
+  SELECT
+      id,
+      column1
+  FROM mysql_table1
+```
 
-    4 rows in set. Elapsed: 0.044 sec.
-    ```
+Você verá 4 linhas:
 
-    3. Vamos adicionar uma linha à tabela do ClickHouse:
+```response
+  Query id: 6d590083-841e-4e95-8715-ef37d3e95197
 
-    ```sql
-    INSERT INTO mysql_table1
-      (id, column1)
-    VALUES
-      (5,'mno')
-    ```
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  │  3 │ ghi     │
+  │  4 │ jkl     │
+  └────┴─────────┘
 
-    4. Observe que a nova linha aparece no MySQL:
+  4 rows in set. Elapsed: 0.044 sec.
+```
 
-    ```bash
-    mysql> select id,column1 from db1.table1;
-    ```
+3. Vamos adicionar uma linha à tabela do ClickHouse:
 
-    Você verá a nova linha:
+```sql
+  INSERT INTO mysql_table1
+    (id, column1)
+  VALUES
+    (5,'mno')
+```
 
-    ```response
-    +------+---------+
-    | id   | column1 |
-    +------+---------+
-    |    1 | abc     |
-    |    2 | def     |
-    |    3 | ghi     |
-    |    4 | jkl     |
-    |    5 | mno     |
-    +------+---------+
-    5 rows in set (0.01 sec)
-    ```
-  </Step>
-</Steps>
+4. Observe que a nova linha aparece no MySQL:
+
+```bash
+  mysql> select id,column1 from db1.table1;
+```
+
+Você verá a nova linha:
+
+```response
+  +------+---------+
+  | id   | column1 |
+  +------+---------+
+  |    1 | abc     |
+  |    2 | def     |
+  |    3 | ghi     |
+  |    4 | jkl     |
+  |    5 | mno     |
+  +------+---------+
+  5 rows in set (0.01 sec)
+```
 
 <div id="summary">
   ### Resumo

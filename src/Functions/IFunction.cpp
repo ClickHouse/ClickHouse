@@ -774,12 +774,8 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
         for (ColumnWithTypeAndName & arg : args_without_low_cardinality)
         {
-            /// A Set-typed argument always becomes a constant column in the plan (`ColumnSet` is
-            /// always wrapped in `ColumnConst`); during analysis the set from a subquery is not
-            /// built yet and has no column, so without this it would count as a full column and
-            /// the same expression would get a different type than with a literal set.
-            bool is_const = (arg.column && isColumnConst(*arg.column)) || WhichDataType(arg.type).isSet();
-            if (is_const && arg.column)
+            bool is_const = arg.column && isColumnConst(*arg.column);
+            if (is_const)
                 arg.column = arg.column->convertToFullColumnIfLowCardinality();
 
             if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
@@ -833,19 +829,12 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     {
         checkNumberOfArguments(arguments.size());
 
-        for (size_t i = 0; i != arguments.size(); ++i)
+        for (const auto & arg : arguments)
         {
-            const auto & type = arguments[i].type;
-            if (isVariant(type))
+            if (isVariant(arg.type))
             {
-                /// A custom-named `Variant` (e.g. `Geometry`) can be excluded separately, so a function
-                /// handles it directly and keeps the custom name, while ordinary `Variant` inputs still go
-                /// through the adaptor. Keep scanning: another argument may still need the adaptor.
-                if (type->hasCustomName() && !useDefaultImplementationForVariantWithCustomName(type))
-                    continue;
-
                 ColumnsWithTypeAndName args_copy = arguments;
-                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy), i);
+                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
                 break;
             }
         }

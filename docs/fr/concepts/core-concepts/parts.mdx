@@ -56,7 +56,7 @@ Les data parts sont autonomes et incluent toutes les métadonnées nécessaires 
   ## Fusions de parts
 </div>
 
-Pour gérer le nombre de parts par table, une tâche de [fusion en arrière-plan](/fr/concepts/core-concepts/merges) combine périodiquement les petites parts en parts plus volumineuses jusqu&#39;à atteindre une taille compressée [configurable](/fr/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) (généralement ~150 Go). Les parts fusionnées sont marquées comme inactives puis supprimées après un intervalle de temps [configurable](/fr/reference/settings/merge-tree-settings/other#old_parts_lifetime). Au fil du temps, ce processus crée une structure hiérarchique de parts fusionnées, d&#39;où le nom de table MergeTree :
+Pour gérer le nombre de parts par table, une tâche de [fusion en arrière-plan](/fr/concepts/core-concepts/merges) combine périodiquement les petites parts en parts plus volumineuses jusqu&#39;à atteindre une taille compressée [configurable](/fr/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) (généralement ~150 Go). Les parts fusionnées sont marquées comme inactives puis supprimées après un intervalle de temps [configurable](/fr/reference/settings/merge-tree-settings#old_parts_lifetime). Au fil du temps, ce processus crée une structure hiérarchique de parts fusionnées, d&#39;où le nom de table MergeTree :
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 

@@ -204,12 +204,12 @@ Por exemplo, para executar uma API HTTP alternativa na porta 8124 com seus próp
 
 </protocols>
 
-<!-- Default handlers used by plain_http (port 8123) -->
+<!-- Handlers padrão usados por plain_http (porta 8123) -->
 <http_handlers>
     <defaults/>
 </http_handlers>
 
-<!-- Alternative handlers used by alt_http (port 8124) -->
+<!-- Handlers alternativos usados por alt_http (porta 8124) -->
 <http_handlers_alt>
     <rule>
         <url>/custom</url>
@@ -227,7 +227,7 @@ enquanto as requisições para a porta 8124 usam as regras de `<http_handlers_al
 for omitido, o endpoint volta para o `<http_handlers>` padrão.
 
 A seção de handlers personalizados segue o mesmo formato de
-[`<http_handlers>`](/pt-BR/reference/settings/server-settings/settings/http#http_handlers).
+[`<http_handlers>`](/pt-BR/reference/settings/server-settings/settings#http_handlers).
 As alterações na seção de handlers personalizados são detectadas durante a recarga da configuração, e o
 endpoint correspondente é reiniciado automaticamente.
 

@@ -150,7 +150,7 @@ há a opção de usar a estrutura da tabela de inserção em vez de extraí-la d
 Isso pode melhorar o desempenho da inserção, porque a inferência de esquema pode levar algum tempo. Além disso, isso é útil quando a tabela tem um esquema otimizado, de modo que
 nenhuma conversão entre tipos será realizada.
 
-Há uma configuração especial [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/pt-BR/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions)
+Há uma configuração especial [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/pt-BR/reference/settings/session-settings#use_structure_from_insertion_table_in_table_functions)
 que controla esse comportamento. Ela tem 3 valores possíveis:
 
 * 0 - a função de tabela extrairá a estrutura dos dados.
@@ -196,7 +196,7 @@ CREATE TABLE hobbies2
 ORDER BY id;
 ```
 
-E insira dados a partir do arquivo `hobbies.jsonl`:
+E insira os dados do arquivo `hobbies.jsonl`:
 
 ```sql
 INSERT INTO hobbies2 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -220,7 +220,7 @@ CREATE TABLE hobbies3
 ORDER BY identifier;
 ```
 
-E insira os dados do arquivo `hobbies.jsonl`:
+E insira dados a partir do arquivo `hobbies.jsonl`:
 
 ```sql
 INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -243,7 +243,7 @@ CREATE TABLE hobbies4
 ORDER BY id;
 ```
 
-E insira os dados do arquivo `hobbies.jsonl`:
+E insira dados a partir do arquivo `hobbies.jsonl`:
 
 ```sql
 INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
@@ -1809,7 +1809,7 @@ DESC format(JSONEachRow, $$
   #### input_format_try_infer_datetimes_only_datetime64
 </div>
 
-Se estiver habilitado, o ClickHouse sempre inferirá `DateTime64(9)` quando `input_format_try_infer_datetimes` estiver habilitado, mesmo que os valores de DateTime não contenham parte fracionária.
+Se estiver habilitado, o ClickHouse sempre inferirá `DateTime64(9)` quando `input_format_try_infer_datetimes` estiver habilitado, mesmo que os valores de data e hora não contenham parte fracionária.
 
 Desabilitado por padrão.
 
@@ -1831,7 +1831,7 @@ DESC format(JSONEachRow, $$
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Observação: ao analisar valores de DateTime durante a inferência de esquema, a configuração [date&#95;time&#95;input&#95;format](/pt-BR/reference/settings/formats/date-time#date_time_input_format) é respeitada
+Observação: ao analisar valores de data e hora durante a inferência de esquema, a configuração [date&#95;time&#95;input&#95;format](/pt-BR/reference/settings/formats#date_time_input_format) é respeitada
 
 <div id="input-format-try-infer-dates">
   #### input_format_try_infer_dates
@@ -2025,7 +2025,7 @@ No formato Avro, o ClickHouse lê o esquema dos dados e o converte para o esquem
 | `string (uuid)` *                  | [UUID](/pt-BR/reference/data-types/uuid)                                    |
 | `binary (decimal)` *               | [Decimal(P, S)](/pt-BR/reference/data-types/decimal)                        |
 
-* [Tipos lógicos do Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
+* [Tipos lógicos do Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 Outros tipos do Avro não são compatíveis.
 
@@ -2095,7 +2095,7 @@ Outros tipos do Arrow não são compatíveis.
 
 No formato ORC, o ClickHouse lê o esquema dos dados e o converte para o esquema do ClickHouse usando as seguintes correspondências de tipos:
 
-| Tipo de dado ORC                     | Tipo de dado do ClickHouse                     |
+| Tipo de dado ORC                     | Tipo de dado ClickHouse                        |
 | ------------------------------------ | ---------------------------------------------- |
 | `Boolean`                            | [Bool](/pt-BR/reference/data-types/boolean)          |
 | `Tinyint`                            | [Int8](/pt-BR/reference/data-types/int-uint)         |
@@ -2111,7 +2111,6 @@ No formato ORC, o ClickHouse lê o esquema dos dados e o converte para o esquema
 | `List`                               | [Array](/pt-BR/reference/data-types/array)           |
 | `Struct`                             | [Tuple](/pt-BR/reference/data-types/tuple)           |
 | `Map`                                | [Map](/pt-BR/reference/data-types/map)               |
-| `Union`                              | [Variant](/pt-BR/reference/data-types/variant)       |
 
 Outros tipos de ORC não são compatíveis.
 

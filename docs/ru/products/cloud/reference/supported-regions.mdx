@@ -7,71 +7,70 @@ slug: /cloud/reference/supported-regions
 doc_type: 'reference'
 ---
 
-import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="supported-regions">
-  ## Поддерживаемые регионы
+<div id="aws-regions">
+  ## Регионы AWS
 </div>
 
-В следующих таблицах перечислены поддерживаемые регионы для каждого облачного провайдера. Значки указывают на доступность Частного региона, HIPAA и PCI. Регионы без значков пока не поддерживают ни одну из этих возможностей.
+* ap-northeast-1 (Токио)
+* ap-northeast-2 (Южная Корея, Сеул)
+* ap-south-1 (Мумбаи)
+* ap-southeast-1 (Сингапур)
+* ap-southeast-2 (Сидней)
+* eu-central-1 (Франкфурт)
+* eu-west-1 (Ирландия)
+* eu-west-2 (Лондон)
+* us-east-1 (Северная Вирджиния)
+* us-east-2 (Огайо)
+* us-west-2 (Орегон)
+* il-central-1 (Израиль, Тель-Авив)
 
-<Tabs>
-  <Tab title="AWS" id="aws-regions" icon="aws">
-    | Регион           | Доступность                                                                                              |
-    | ---------------- | -------------------------------------------------------------------------------------------------------- |
-    | `af-south-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `ap-east-1`      | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-east-2`      | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-northeast-1` | —                                                                                                        |
-    | `ap-northeast-2` | —                                                                                                        |
-    | `ap-south-1`     | —                                                                                                        |
-    | `ap-southeast-1` | —                                                                                                        |
-    | `ap-southeast-2` | —                                                                                                        |
-    | `ap-southeast-3` | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-southeast-5` | <Badge color="purple">Private</Badge>                                                                    |
-    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-north-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `il-central-1`   | —                                                                                                        |
-    | `mx-central-1`   | <Badge color="purple">Private</Badge> <Badge color="blue">PCI</Badge>                                    |
-    | `sa-east-1`      | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-  </Tab>
+**Частный регион:**
 
-  <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
-    | Регион                    | Доступность                                                        |
-    | ------------------------- | ------------------------------------------------------------------ |
-    | `asia-northeast1`         | —                                                                  |
-    | `asia-southeast1`         | —                                                                  |
-    | `australia-southeast1`    | <Badge color="purple">Private</Badge>                              |
-    | `europe-west2`            | —                                                                  |
-    | `europe-west3`            | <Badge color="purple">Private</Badge>                              |
-    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `europe-west6`            | <Badge color="purple">Private</Badge>                              |
-    | `northamerica-northeast1` | <Badge color="purple">Private</Badge>                              |
-    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-west1`                | <Badge color="purple">Private</Badge>                              |
-  </Tab>
+* ca-central-1 (Канада)
+* af-south-1 (Южная Африка)
+* eu-north-1 (Стокгольм)
+* sa-east-1 (Южная Америка)
+* ap-southeast-3 (Джакарта)
+* ap-east-1 (Гонконг)
+* mx-central-1 (Мексика)
 
-  <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
-    | Регион                 | Доступность                           |
-    | ---------------------- | ------------------------------------- |
-    | `Australia East`       | <Badge color="purple">Private</Badge> |
-    | `East US 2`            | —                                     |
-    | `Germany West Central` | —                                     |
-    | `Japan East`           | <Badge color="purple">Private</Badge> |
-    | `UAE North`            | <Badge color="purple">Private</Badge> |
-    | `West US 3`            | —                                     |
-  </Tab>
-</Tabs>
+<div id="google-cloud-regions">
+  ## Регионы Google Cloud
+</div>
+
+* asia-southeast1 (Сингапур)
+* asia-northeast1 (Токио)
+* europe-west2 (Лондон)
+* europe-west4 (Нидерланды)
+* us-central1 (Айова)
+* us-east1 (Южная Каролина)
+
+**Частный регион:**
+
+* australia-southeast1 (Сидней)
+* europe-west3 (Франкфурт)
+* europe-west6 (Цюрих)
+* northamerica-northeast1 (Монреаль)
+* us-west1 (Орегон)
+
+<div id="azure-regions">
+  ## Регионы Azure
+</div>
+
+* West US 3 (Аризона)
+* East US 2 (Виргиния)
+* Germany West Central (Франкфурт)
+
+**Частный регион:**
+
+* Japan East (Токио, Сайтама)
+* UAE North (Дубай)
+* Australia East (Новый Южный Уэльс)
 
 <Note>
-  Нужно развернуть сервис в регионе, которого пока нет в списке? [Отправьте запрос](https://clickhouse.com/pricing?modal=open).
+  Нужно развернуть в регионе, которого нет в текущем списке? [Отправьте запрос](https://clickhouse.com/pricing?modal=open).
 </Note>
 
 <div id="private-regions">
@@ -80,14 +79,15 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="Возможность частных регионов" />
 
-Мы предлагаем Частные регионы для сервисов уровня Enterprise. Чтобы запросить Частный регион, [свяжитесь с нами](https://clickhouse.com/company/contact).
+Мы предлагаем частные регионы для наших сервисов уровня Enterprise. По вопросам подключения частного региона [свяжитесь с нами](https://clickhouse.com/company/contact).
 
 Ключевые особенности частных регионов:
 
 * Сервисы не поддерживают автомасштабирование; однако поддерживается ручное вертикальное и горизонтальное масштабирование.
 * Сервисы нельзя перевести в неактивное состояние.
+* Страница статуса недоступна для частных регионов.
 
-Для соответствия требованиям HIPAA могут предъявляться дополнительные требования, включая подписание соглашения Business Associate Agreement (BAA). HIPAA в настоящее время доступна только для сервисов уровня Enterprise.
+Для соответствия требованиям HIPAA могут предъявляться дополнительные требования (включая подписание BAA). Обратите внимание, что HIPAA в настоящее время доступна только для сервисов уровня Enterprise
 
 <div id="hipaa-compliant-regions">
   ## Регионы, соответствующие требованиям HIPAA
@@ -95,7 +95,21 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
-Чтобы развернуть сервисы в регионах, отмеченных в таблице как соответствующие требованиям HIPAA, клиенты должны подписать BAA и запросить онбординг через отдел продаж или службу поддержки.
+Чтобы развернуть сервисы в регионах, соответствующих требованиям HIPAA, клиенты должны подписать соглашение Business Associate Agreement (BAA) и запросить онбординг через отдел продаж или службу поддержки. Следующие регионы поддерживают соответствие требованиям HIPAA:
+
+* AWS af-south-1 (Южная Африка) **Частный регион**
+* AWS ca-central-1 (Канада) **Частный регион**
+* AWS eu-central-1 (Франкфурт)
+* AWS eu-north-1 (Стокгольм) **Частный регион**
+* AWS eu-west-1 (Ирландия)
+* AWS eu-west-2 (Лондон)
+* AWS sa-east-1 (Южная Америка) **Частный регион**
+* AWS us-east-1 (Северная Виргиния)
+* AWS us-east-2 (Огайо)
+* AWS us-west-2 (Орегон)
+* GCP europe-west4 (Нидерланды)
+* GCP us-central1 (Айова)
+* GCP us-east1 (Южная Каролина)
 
 <div id="pci-compliant-regions">
   ## Регионы, соответствующие требованиям PCI
@@ -103,4 +117,19 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 
-Чтобы развернуть сервисы в отмеченных в таблице регионах, соответствующих требованиям PCI, клиентам необходимо запросить онбординг через отдел продаж или службу поддержки.
+Чтобы развернуть сервисы в регионах, соответствующих требованиям PCI, клиенты должны запросить онбординг через отдел продаж или службу поддержки. Следующие регионы поддерживают соответствие требованиям PCI:
+
+* AWS af-south-1 (Южная Африка) **Частный регион**
+* AWS ca-central-1 (Канада) **Частный регион**
+* AWS eu-central-1 (Франкфурт)
+* AWS eu-north-1 (Стокгольм) **Частный регион**
+* AWS eu-west-1 (Ирландия)
+* AWS eu-west-2 (Лондон)
+* AWS mx-central-1 (Мексика) **Частный регион**
+* AWS sa-east-1 (Южная Америка) **Частный регион**
+* AWS us-east-1 (Северная Виргиния)
+* AWS us-east-2 (Огайо)
+* AWS us-west-2 (Орегон)
+* GCP europe-west4 (Нидерланды)
+* GCP us-central1 (Айова)
+* GCP us-east1 (Южная Каролина)

@@ -16,13 +16,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ClickHouse が[高速](/ja/get-started/about/why-clickhouse-is-so-fast)なのは、クエリだけでなく insert でも同様です。これは、[LSM trees](https://en.wikipedia.org/wiki/Log-structured_merge-tree) に似た仕組みで動作する[ストレージ層](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf)によるものです。
 
-① [MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/index) ファミリーのテーブルへの insert では、ソート済みで不変の[データパーツ](/ja/concepts/core-concepts/parts)が作成されます。
+① [MergeTree engine](/ja/reference/engines/table-engines/mergetree-family/index) ファミリーのテーブルへの insert では、ソート済みで不変の[データパーツ](/ja/concepts/core-concepts/parts)が作成されます。
 
 ② すべてのデータ処理は、**バックグラウンドでのパーツマージ**にオフロードされます。
 
 その結果、データの書き込みは軽量で、[非常に効率的](/ja/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other)になります。
 
-テーブルごとのパーツ数を制御し、上記の ② を実現するために、ClickHouse はバックグラウンドで小さなパーツを大きなパーツへ継続的にマージし ([パーティションごと](/ja/concepts/core-concepts/partitions#per-partition-merges)) 、圧縮サイズがおよそ [~150 GB](/ja/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) に達するまでこれを続けます。
+テーブルごとのパーツ数を制御し、上記の ② を実現するために、ClickHouse はバックグラウンドで小さなパーツを大きなパーツへ継続的にマージし ([パーティションごと](/ja/concepts/core-concepts/partitions#per-partition-merges)) 、圧縮サイズがおよそ [~150 GB](/ja/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) に達するまでこれを続けます。
 
 次の図は、このバックグラウンドマージのプロセスを概略的に示したものです。
 
@@ -30,7 +30,7 @@ ClickHouse が[高速](/ja/get-started/about/why-clickhouse-is-so-fast)なのは
 
 <br />
 
-パーツの `merge level` は、マージのたびに 1 ずつ増加します。レベル `0` は、そのパーツが新規作成されたもので、まだマージされていないことを意味します。より大きなパーツにマージされたパーツは[inactive](/ja/reference/system-tables/parts)としてマークされ、最終的には[設定可能な](/ja/reference/settings/merge-tree-settings/other#old_parts_lifetime)時間の経過後に削除されます (デフォルトは 8 分) 。時間の経過とともに、これによりマージ済みパーツの**ツリー**が形成されます。これが [merge tree](/ja/reference/engines/table-engines/mergetree-family/index) テーブルという名前の由来です。
+パーツの `merge level` は、マージのたびに 1 ずつ増加します。レベル `0` は、そのパーツが新規作成されたもので、まだマージされていないことを意味します。より大きなパーツにマージされたパーツは[inactive](/ja/reference/system-tables/parts)としてマークされ、最終的には[設定可能な](/ja/reference/settings/merge-tree-settings#old_parts_lifetime)時間の経過後に削除されます (デフォルトは 8 分) 。時間の経過とともに、これによりマージ済みパーツの**ツリー**が形成されます。これが [merge tree](/ja/reference/engines/table-engines/mergetree-family/index) テーブルという名前の由来です。
 
 <div id="monitoring-merges">
   ## マージの監視
@@ -85,7 +85,7 @@ ClickHouse 24.10 では、新しい[マージダッシュボード](https://pres
   ## 並行マージ
 </div>
 
-1 台の ClickHouse サーバーは、複数のバックグラウンド[マージスレッド](/ja/reference/settings/server-settings/settings/background#background_pool_size)を使用して、パーツの同時マージを実行します。
+1 台の ClickHouse サーバーは、複数のバックグラウンド[マージスレッド](/ja/reference/settings/server-settings/settings#background_pool_size)を使用して、パーツの並行マージを実行します。
 
 <Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="パーツマージ" />
 
@@ -93,15 +93,15 @@ ClickHouse 24.10 では、新しい[マージダッシュボード](https://pres
 
 各マージスレッドは、次のループを実行します。
 
-① 次にマージするパーツを決定し、それらのパーツをメモリに読み込みます。
+① 次にマージするパーツを決定し、それらをメモリに読み込みます。
 
-② メモリ内でパーツをより大きなパーツにマージします。
+② メモリ内のパーツを、より大きなパーツへマージします。
 
-③ マージされたパーツをディスクに書き込みます。
+③ マージ後のパーツをディスクに書き込みます。
 
 ① に戻る
 
-CPU コア数と RAM 容量を増やすことで、バックグラウンドマージのスループットを向上させることができます。
+CPU コア数と RAM 容量を増やすことで、バックグラウンドマージのスループットを高められる点に注意してください。
 
 <div id="memory-optimized-merges">
   ## メモリ最適化されたマージ
@@ -127,11 +127,11 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 **③ 索引作成**：マージ後のカラムファイルに対して、新しい[スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)が生成されます。
 
-**④ 圧縮と保存**：新しいカラムファイルと索引は[圧縮](/ja/reference/statements/create/table/codec)され、マージ後のデータパーツを表す新しい[ディレクトリ](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)に保存されます。
+**④ 圧縮と保存**：新しいカラムファイルと索引は[圧縮](/ja/reference/statements/create/table#column_compression_codec)され、マージ後のデータパーツを表す新しい[ディレクトリ](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)に保存されます。
 
 また、セカンダリのデータスキッピングインデックス、カラム STATISTICS、チェックサム、min-max 索引 などの[data parts 内の追加メタデータ](/ja/concepts/core-concepts/parts)も、マージ後のカラムファイルに基づいて再作成されます。ここでは簡略化のため、これらの詳細は省略しています。
 
-ステップ②の仕組みは、使用する[MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/index)によって異なります。これは、エンジンごとにマージの処理方法が異なるためです。たとえば、古くなった行が集計されたり、置き換えられたりすることがあります。前述のとおり、このアプローチでは**すべてのデータ処理をバックグラウンドマージにオフロード**するため、書き込み処理を軽量かつ効率的に保ち、**超高速な insert**を実現できます。
+ステップ②の仕組みは、使用する[MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/index)によって異なります。これは、エンジンごとにマージの処理方法が異なるためです。たとえば、古くなった行が集計されたり、置き換えられたりすることがあります。前述のとおり、このアプローチでは**すべてのデータ処理をバックグラウンドマージにオフロード**するため、書き込み処理を軽量かつ効率的に保ち、**超高速な書き込み**を実現できます。
 
 次に、MergeTree family に属する各エンジンのマージの仕組みを簡単に見ていきます。
 
@@ -153,7 +153,7 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
   ### Replacing マージ
 </div>
 
-[ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルのパーツマージは、[標準的なマージ](/ja/concepts/core-concepts/merges#standard-merges) と同様に動作しますが、各行については最新バージョンのみが保持され、古いバージョンは破棄されます。
+[ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルのパートマージは、[標準的なマージ](/ja/concepts/core-concepts/merges#standard-merges) と同様に動作しますが、各行については最新バージョンのみが保持され、古いバージョンは破棄されます。
 
 <Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="パーツマージ" />
 
@@ -163,7 +163,7 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 ② のマージ処理は、標準的な `MergeTree` テーブルと同様に動作し、グローバルなソート順を維持しながら、解凍済みで事前にソートされたカラムを結合します。
 
-ただし、`ReplacingMergeTree` では同じソートキーを持つ重複行が削除され、その行を含むパーツの作成タイムスタンプに基づいて最新の行だけが保持されます。
+ただし、`ReplacingMergeTree` では同じソートキーを持つ重複行が削除され、その行を含むパートの作成タイムスタンプに基づいて最新の行だけが保持されます。
 
 <br />
 

@@ -32,7 +32,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## Azure Blob Storage 액세스 키 획득
 </div>
 
-ClickHouse에서 Azure Blob Storage에 액세스하려면 액세스 키가 포함된 연결 문자열이 필요합니다.
+ClickHouse가 Azure Blob Storage에 액세스할 수 있도록 하려면 액세스 키가 포함된 연결 문자열이 필요합니다.
 
 1. Azure Portal에서 **스토리지 계정**으로 이동합니다.
 
@@ -41,10 +41,10 @@ ClickHouse에서 Azure Blob Storage에 액세스하려면 액세스 키가 포�
    <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Azure 데이터 저장소 설정" border />
 
 3. **key1** 또는 **key2** 중 하나를 선택한 다음,
-   **Connection string** 필드 옆의 **Show** 버튼을 클릭합니다.
+   **연결 문자열** 필드 옆의 **Show** 버튼을 클릭합니다.
    <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Azure 데이터 저장소 액세스 키" border />
 
-4. 연결 문자열을 복사합니다. 이 값은 `azureBlobStorage` 테이블 함수의 매개변수로 사용합니다.
+4. 연결 문자열을 복사합니다. 이 값은 azureBlobStorage 테이블 함수의 매개변수로 사용합니다.
 
 <div id="querying-the-data-from-azure-blob-storage">
   ## Azure Blob Storage의 데이터 쿼리하기
@@ -161,10 +161,10 @@ SELECT * FROM azureBlobStorage(
   ## 추가 자료
 </div>
 
-이 문서는 azureBlobStorage 함수 사용에 대한 기본적인 소개일 뿐입니다. 더
-고급 옵션과 구성에 관한 자세한 내용은 공식
+이 문서는 azureBlobStorage 함수를 사용하는 방법을 간단히 소개합니다. 더
+고급 옵션과 구성 세부 정보는 공식
 문서를 참조하십시오:
 
 * [azureBlobStorage 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)
 * [입력 및 출력 데이터 포맷](/ko/reference/formats/index)
-* [입력 데이터의 자동 스키마 추론](/ko/concepts/features/interfaces/schema-inference)
+* [입력 데이터에서 자동 스키마 추론](/ko/concepts/features/interfaces/schema-inference)

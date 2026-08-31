@@ -16,7 +16,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step title="حدِّد المؤسسة" id="select-org">
+  <Step>
+    ## حدِّد المؤسسة
+
     في ClickHouse Cloud، انتقل إلى تفاصيل مؤسستك.
 
     <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="علامة تبويب Activity في ClickHouse Cloud" border />
@@ -24,7 +26,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <br />
   </Step>
 
-  <Step title="حدِّد Audit" id="select-audit">
+  <Step>
+    ## حدِّد Audit
+
     حدِّد علامة التبويب **Audit** من القائمة اليمنى لمعرفة التغييرات التي أُجريت على مؤسستك في ClickHouse Cloud، بما في ذلك من أجرى التغيير ووقت حدوثه.
 
     تعرض صفحة **Activity** جدولًا يتضمن قائمة بالأحداث المسجّلة المتعلقة بمؤسستك. وتكون هذه القائمة افتراضيًا مرتبة ترتيبًا زمنيًا عكسيًا (أحدث حدث في الأعلى). ويمكنك تغيير ترتيب الجدول بالنقر على رؤوس الأعمدة. ويحتوي كل صف في الجدول على الحقول التالية:
@@ -39,7 +43,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <br />
   </Step>
 
-  <Step title="استخدم شريط البحث" id="use-search-bar">
+  <Step>
+    ## استخدم شريط البحث
+
     يمكنك استخدام شريط البحث المتاح لتصفية الأحداث استنادًا إلى معايير معينة، مثل اسم الخدمة أو عنوان IP. كما يمكنك تصدير هذه المعلومات بتنسيق CSV لتوزيعها أو تحليلها باستخدام أداة خارجية.
   </Step>
 </Steps>
@@ -53,12 +59,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 يمكنك استخدام نقطة النهاية `activity` في واجهة برمجة تطبيقات ClickHouse Cloud للحصول على نسخة مُصدَّرة
-من أحداث التدقيق. ويمكنك العثور على مزيد من التفاصيل في [مرجع واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/organization/get-list-of-available-organizations).
+من أحداث التدقيق. ويمكنك العثور على مزيد من التفاصيل في [مرجع واجهة برمجة تطبيقات](/ar/api-reference/organization/get-list-of-available-organizations).
 
 <div id="log-integrations">
   ## تكاملات السجلات
 </div>
 
-يمكنك استخدام واجهة برمجة تطبيقات للتكامل مع منصة تسجيل من اختيارك. وفيما يلي الموصلات الجاهزة المدعومة:
+يمكنك استخدام واجهة برمجة التطبيقات للتكامل مع منصة تسجيل السجلات التي تختارها. وفيما يلي موصلات مدعومة وجاهزة للاستخدام:
 
-* [إضافة ClickHouse Cloud Audit لـ Splunk](/ar/integrations/connectors/data-integrations/integrations/splunk)
+* [الوظيفة الإضافية للتدقيق في ClickHouse Cloud لـ Splunk](/ar/integrations/connectors/data-integrations/integrations/splunk)

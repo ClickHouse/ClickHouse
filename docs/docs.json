@@ -21,24 +21,16 @@
       "view",
       "download-pdf",
       {
-        "description": "Setup instructions for the ClickHouse documentation MCP server",
-        "href": "/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+        "description": "Setup instructions for docs MCP server",
+        "href": "https://clickhouse.com/docs#claude-code",
         "icon": "/images/icons/icon-mcp.svg",
-        "title": "Set up the ClickHouse documentation MCP server"
+        "title": "Set up docs MCP server"
       }
     ]
   },
   "favicon": "/_site/favicon.svg",
   "fonts": {
     "family": "Inter"
-  },
-  "integrations": {
-    "clarity": {
-      "projectId": "xgummrwgj9"
-    },
-    "gtm": {
-      "tagId": "GTM-WTNTDT7W"
-    }
   },
   "interaction": {
     "drilldown": false
@@ -65,18 +57,10 @@
           },
           {
             "menu": [
-              {
-                "$ref": "./get-started/navigation.json"
-              },
-              {
-                "$ref": "./concepts/navigation.json"
-              },
-              {
-                "$ref": "./guides/navigation.json"
-              },
-              {
-                "$ref": "./reference/navigation.json"
-              }
+              { "$ref": "./get-started/navigation.json" },
+              { "$ref": "./concepts/navigation.json" },
+              { "$ref": "./guides/navigation.json" },
+              { "$ref": "./reference/navigation.json" }
             ],
             "tab": "Database"
           },
@@ -87,15 +71,9 @@
                 "icon": "/images/icons/section-header.svg",
                 "item": "ClickHouse Cloud"
               },
-              {
-                "$ref": "./products/cloud/navigation.json"
-              },
-              {
-                "$ref": "./products/managed-postgres/navigation.json"
-              },
-              {
-                "$ref": "./clickstack/navigation.json"
-              },
+              { "$ref": "./products/cloud/navigation.json" },
+              { "$ref": "./products/managed-postgres/navigation.json" },
+              { "$ref": "./clickstack/navigation.json" },
               {
                 "href": "https://langfuse.com/docs",
                 "icon": "/images/icons/logo-langfuse.svg",
@@ -106,15 +84,10 @@
                 "icon": "/images/icons/section-header.svg",
                 "item": "Open source"
               },
-              {
-                "$ref": "./products/agentic-data-stack/navigation.json"
-              },
-              {
-                "$ref": "./chdb/navigation.json"
-              },
-              {
-                "$ref": "./products/kubernetes-operator/navigation.json"
-              }
+              { "$ref": "./products/agentic-data-stack/navigation.json" },
+              { "$ref": "./chdb/navigation.json" },
+              { "$ref": "./products/kubernetes-operator/navigation.json" },
+              { "$ref": "./products/clickhouse-private/navigation.json" }
             ],
             "tab": "Solutions"
           },
@@ -123,36 +96,21 @@
               {
                 "item": "Ecosystem",
                 "pages": [
-                  "integrations/home",
-                  "integrations/data-catalogs"
+                  "integrations/home"
                 ]
               },
-              {
-                "$ref": "./integrations/clickpipes/navigation.json"
-              },
-              {
-                "$ref": "./integrations/language-clients/navigation.json"
-              },
-              {
-                "$ref": "./integrations/connectors/navigation.json"
-              }
+              { "$ref": "./integrations/clickpipes/navigation.json" },
+              { "$ref": "./integrations/language-clients/navigation.json" },
+              { "$ref": "./integrations/connectors/navigation.json" }
             ],
             "tab": "Integrations"
           },
           {
             "menu": [
-              {
-                "$ref": "./resources/support-center/navigation.json"
-              },
-              {
-                "$ref": "./resources/develop-contribute/navigation.json"
-              },
-              {
-                "$ref": "./resources/changelogs/navigation.json"
-              },
-              {
-                "$ref": "./resources/about/navigation.json"
-              }
+              { "$ref": "./resources/support-center/navigation.json" },
+              { "$ref": "./resources/develop-contribute/navigation.json" },
+              { "$ref": "./resources/changelogs/navigation.json" },
+              { "$ref": "./resources/about/navigation.json" }
             ],
             "tab": "Resources"
           }
@@ -192,13 +150,8 @@
       }
     ]
   },
-  "redirects": {
-    "$ref": "./_site/redirects.json"
-  },
+  "redirects": { "$ref": "./_site/redirects.json" },
   "scripts": [
-    {
-      "src": "/_site/customizations/settings-legacy-redirect.js"
-    },
     {
       "src": "/_site/customizations/galaxy.js"
     },
@@ -213,9 +166,6 @@
     },
     {
       "src": "/_site/customizations/tab-nav.js"
-    },
-    {
-      "src": "/_site/customizations/webterminal.js"
     },
     {
       "src": "/_site/customizations/nav-icon-preload.js"
@@ -241,6 +191,11 @@
   ],
   "styling": {
     "eyebrows": "breadcrumbs"
+  },
+  "integrations": {
+    "clarity": {
+      "projectId": "xgummrwgj9"
+    }
   },
   "theme": "maple"
 }

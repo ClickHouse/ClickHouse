@@ -6,7 +6,7 @@ title: '경량 업데이트 패치 적용'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
 ```
 
-이 명령은 [경량 업데이트](/ko/reference/statements/update) SQL 문으로 생성된 패치 파트를 물리적으로 머티리얼라이즈하도록 수동으로 트리거합니다. 영향을 받는 컬럼만 다시 작성하여 보류 중인 패치를 데이터 파트에 강제로 적용합니다.
+이 명령은 [lightweight `UPDATE`](/ko/reference/statements/update) SQL 문으로 생성된 패치 파트를 물리적으로 머티리얼라이즈하도록 수동으로 트리거합니다. 영향을 받는 컬럼만 다시 작성하여 보류 중인 패치를 데이터 파트에 강제로 적용합니다.
 
 <Note>
   * [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열의 테이블([복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블 포함)에서만 작동합니다.
@@ -29,7 +29,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partitio
   일반적으로 `APPLY PATCHES`는 사용할 필요가 없습니다
 </Tip>
 
-패치 파트는 보통 [`apply_patches_on_merge`](/ko/reference/settings/merge-tree-settings/other#apply_patches_on_merge) 설정이 활성화되어 있으면(기본값) 머지 중에 자동으로 적용됩니다. 하지만 다음과 같은 경우에는 패치 적용을 수동으로 트리거하는 것이 유용할 수 있습니다:
+패치 파트는 보통 [`apply_patches_on_merge`](/ko/reference/settings/merge-tree-settings#apply_patches_on_merge) 설정이 활성화되어 있으면(기본값) 머지 중에 자동으로 적용됩니다. 하지만 다음과 같은 경우에는 패치 적용을 수동으로 트리거하는 것이 유용할 수 있습니다:
 
 * `SELECT` 쿼리에서 패치를 적용할 때 발생하는 오버헤드를 줄이려는 경우
 * 여러 패치 파트가 쌓이기 전에 통합하려는 경우
@@ -74,4 +74,4 @@ WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
 </div>
 
 * [Lightweight `UPDATE`](/ko/reference/statements/update) - 경량 업데이트를 사용해 패치 파트 생성
-* [`apply_patches_on_merge` setting](/ko/reference/settings/merge-tree-settings/other#apply_patches_on_merge) - 머지 중 패치가 자동으로 적용되도록 제어
+* [`apply_patches_on_merge` setting](/ko/reference/settings/merge-tree-settings#apply_patches_on_merge) - 머지 중 패치가 자동으로 적용되도록 제어

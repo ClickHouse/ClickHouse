@@ -128,7 +128,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`              | disabled by default.                                                                                                                                                                                                              |
 | `expiration_window_seconds`    | default value is 120.                                                                                                                                                                                                             |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -208,7 +208,7 @@ azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, con
 | `compression`       | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).                                                                                                                                                                                                                                                                                                                                               |
 | `structure`         |  Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -258,7 +258,7 @@ hdfsCluster(cluster_name, URI, format, structure)
 | `format`       | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                |
 | `structure`    | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                    |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading data in the specified file.
 
@@ -313,7 +313,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionIcebergLocalCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on shared storage in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergLocalCluster(cluster, filename, format, [,compression])",
+            .examples{{IcebergLocalClusterDefinition::name, "SELECT * FROM icebergLocalCluster(cluster, filename, format, [,compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -374,7 +374,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergS3Cluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
+            .examples{{IcebergS3ClusterDefinition::name, "SELECT * FROM icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -385,7 +385,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergAzureCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .examples{{IcebergAzureClusterDefinition::name, "SELECT * FROM icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -396,7 +396,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergHDFSCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
+            .examples{{IcebergHDFSClusterDefinition::name, "SELECT * FROM icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -412,7 +412,7 @@ void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimonCluster>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -458,7 +458,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonS3Cluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
+            .examples{{PaimonS3ClusterDefinition::name, "SELECT * FROM paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -469,7 +469,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonAzureCluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .examples{{PaimonAzureClusterDefinition::name, "SELECT * FROM paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -480,7 +480,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonHDFSCluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
-            .syntax = "paimonHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
+            .examples{{PaimonHDFSClusterDefinition::name, "SELECT * FROM paimonHDFSCluster(cluster, uri, [format], [structure], [compression_method])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -522,7 +522,7 @@ deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 - Description of all other arguments coincides with description of arguments in equivalent [deltaLake](/reference/functions/table-functions/deltalake) table function.
 - An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading data from cluster in the specified Delta Lake table in S3.
 
@@ -544,7 +544,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionDeltaLakeS3Cluster>(
         {
             .description = R"(The table function can be used to read the DeltaLake table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "deltaLakeS3Cluster(cluster, url, access_key_id, secret_access_key)",
+            .examples{{DeltaLakeS3ClusterDefinition::name, "SELECT * FROM deltaLakeS3Cluster(cluster, url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -555,7 +555,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionDeltaLakeAzureCluster>(
         {
             .description = R"(The table function can be used to read the DeltaLake table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .examples{{DeltaLakeAzureClusterDefinition::name, "SELECT * FROM deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -592,7 +592,7 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 | `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.                                                                                                                                                                                                                   |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.                                                                                                                                                                                                                     |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading data from cluster in the specified Hudi table in S3.
 

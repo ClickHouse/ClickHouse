@@ -50,7 +50,7 @@ ClickHouse では長年にわたり、I/O を徹底的に削減するための�
 
 次のクエリ例では、日付、製品、評価、認証済みかどうかに関係なく、Amazon レビューのうち「参考になった」票の数が最も多いものを探し、上位 3 件についてタイトル、見出し、本文全文を返します。
 
-まず、遅延マテリアライゼーションを無効にした状態で、クエリを実行します (コールドなファイルシステムキャッシュを使用し、[`query_plan_optimize_lazy_materialization`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization) を使用) :
+まず、遅延マテリアライゼーションを無効にした状態で、クエリを実行します (コールドなファイルシステムキャッシュを使用し、[`query_plan_optimize_lazy_materialization`](/ja/reference/settings/session-settings#query_plan_optimize_lazy_materialization) を使用) :
 
 ```sql title="Query"
 SELECT

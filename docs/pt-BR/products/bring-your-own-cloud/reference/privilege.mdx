@@ -78,31 +78,3 @@ Além da conta de serviço `clickhouse-management`, criada via Terraform como pa
   * Identidade de destino para o stack de monitoramento em execução no seu cluster. Usada para ler/gravar o armazenamento de métricas de longo prazo em um bucket do GCS dedicado a esta implantação.
 * **Identidade de gerenciamento de runtime do ClickHouse**
   * Usada pelo controlador de gerenciamento do plano de dados em runtime do ClickHouse, que lida com operações pós-implantação, como gerenciamento de endpoints do Private Service Connect, ajustes no ciclo de vida de buckets e rotação de contas de serviço.
-
-<div id="azure-roles-and-identities">
-  ## Funções e identidades do Azure
-</div>
-
-<div id="onboarding-service-principal">
-  ### Principal de serviço de onboarding
-</div>
-
-O onboarding com o [módulo do Terraform para Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) provisiona um aplicativo multilocatário como um Aplicativo Empresarial (principal de serviço) no seu tenant, seguindo as orientações do Azure para autenticação entre tenants. Ao principal de serviço é atribuída uma função personalizada com privilégios mínimos, limitada à assinatura de destino, com permissões para:
-
-* **Rede**: Gerenciar a VNet, as sub-redes, os IPs públicos, os gateways NAT, os grupos de segurança de rede e as zonas DNS que hospedam sua infraestrutura BYOC.
-* **Cluster**: Gerenciar clusters AKS e node pools.
-* **Storage**: Gerenciar as contas de armazenamento e os contêineres de blob usados para dados do ClickHouse, backups e dados de monitoramento.
-* **Identidade**: Gerenciar identidades gerenciadas atribuídas pelo usuário e suas credenciais de identidade federada na assinatura.
-* **Autorização**: Gerenciar definições de função personalizadas e atribuições de função. Todas as permissões são limitadas à assinatura de destino — a função não pode acessar recursos em outras assinaturas ou tenants.
-
-<div id="additional-managed-identities-created-by-the-controller">
-  ### Identidades gerenciadas adicionais criadas pelo controlador
-</div>
-
-Ao provisionar serviços BYOC, o plano de controle do ClickHouse cria identidades gerenciadas atribuídas pelo usuário em sua assinatura. Cada uma é federada a uma conta de serviço específica do Kubernetes (Workload Identity) e tem um conjunto de permissões restrito a uma única finalidade:
-
-* **Identidade por serviço**
-  * Usada por cada serviço do ClickHouse para acessar sua própria conta de armazenamento, que contém dados de tabelas e backups, por meio de uma função personalizada de armazenamento de blobs com escopo nessa conta.
-  * Quando um serviço é restaurado de um backup, ele também recebe acesso somente leitura ao contêiner de backup do serviço de origem.
-* **Identidade de infraestrutura compartilhada**
-  * Usada pelo controlador de gerenciamento do plano de dados em runtime do ClickHouse para operações contínuas, como o gerenciamento de serviços Private Link.

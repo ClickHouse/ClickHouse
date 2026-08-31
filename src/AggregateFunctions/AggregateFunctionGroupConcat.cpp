@@ -304,9 +304,6 @@ groupConcat[(delimiter [, limit])](expression)
     {
         "Basic usage without a delimiter",
         R"(
-CREATE TABLE Employees (Name String) ENGINE = Memory;
-INSERT INTO Employees VALUES ('John'), ('Jane'), ('Bob');
-
 SELECT groupConcat(Name) FROM Employees;
         )",
         R"(

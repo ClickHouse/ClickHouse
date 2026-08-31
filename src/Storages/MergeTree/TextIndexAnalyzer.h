@@ -70,7 +70,7 @@ public:
 
     void addMissingToken(std::string_view token);
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
-    void addPostings(std::string_view token, const PostingList & postings);
+    void addPostings(std::string_view token, PostingListPtr postings);
 
     /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
     void setReadableRows(std::vector<RowsRange> readable_ranges);
@@ -92,12 +92,6 @@ private:
     /// then cleans up `queries_by_token` for any query that just failed.
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
-
-    /// Removes the query from `queries_by_token` for all affected tokens, so they stop passing `isTokenNeeded`.
-    void detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder);
-
-    /// Fails every query and detaches them from `queries_by_token`.
-    void markAllQueriesFailed();
 
     /// Estimates the cardinality of a query from already-read postings and `cardinality` hints for unread tokens.
     double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;

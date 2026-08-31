@@ -12,8 +12,8 @@ doc_type: 'reference'
 * 引用 `SELECT` 子句中列的数字列表，例如 `ORDER BY 2, 1`；或者
 * `ALL`，表示 `SELECT` 子句中的所有列，例如 `ORDER BY ALL`。
 
-要禁用按列号排序，请将设置 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 设为 0。
-要禁用按 `ALL` 排序，请将设置 [enable&#95;order&#95;by&#95;all](/zh/reference/settings/session-settings/enable#enable_order_by_all) 设为 0。
+要禁用按列号排序，请将设置 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings#enable_positional_arguments) 设为 0。
+要禁用按 `ALL` 排序，请将设置 [enable&#95;order&#95;by&#95;all](/zh/reference/settings/session-settings#enable_order_by_all) 设为 0。
 
 `ORDER BY` 子句可以带有 `DESC` (降序) 或 `ASC` (升序) 修饰符，用于指定排序方向。
 除非显式指定排序顺序，否则默认使用 `ASC`。
@@ -256,7 +256,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
   ## 数据读取优化
 </div>
 
-如果 `ORDER BY` 表达式的前缀与表的 sorting key 一致，可以通过使用 [optimize&#95;read&#95;in&#95;order](/zh/reference/settings/session-settings/optimize#optimize_read_in_order) 设置来优化查询。
+如果 `ORDER BY` 表达式的前缀与表的 sorting key 一致，可以通过使用 [optimize&#95;read&#95;in&#95;order](/zh/reference/settings/session-settings#optimize_read_in_order) 设置来优化查询。
 
 启用 `optimize_read_in_order` 设置后，ClickHouse server 会使用表索引，并按 `ORDER BY` 键的顺序读取数据。这样，在指定了 [LIMIT](/zh/reference/statements/select/limit) 的情况下，就可以避免读取全部数据。因此，对于 `LIMIT` 较小的大数据查询，处理速度会更快。
 

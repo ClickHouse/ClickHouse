@@ -200,12 +200,12 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 
 </protocols>
 
-<!-- Default handlers used by plain_http (port 8123) -->
+<!-- plain_http（端口 8123）使用的默认处理程序 -->
 <http_handlers>
     <defaults/>
 </http_handlers>
 
-<!-- Alternative handlers used by alt_http (port 8124) -->
+<!-- alt_http（端口 8124）使用的备用处理程序 -->
 <http_handlers_alt>
     <rule>
         <url>/custom</url>
@@ -223,7 +223,7 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 该端点会回退到默认的 `<http_handlers>`。
 
 自定义 handlers 部分的格式与
-[`<http_handlers>`](/zh/reference/settings/server-settings/settings/http#http_handlers)
+[`<http_handlers>`](/zh/reference/settings/server-settings/settings#http_handlers)
 相同。重新加载 config 时，会检测到自定义 handlers 部分的更改，并自动重启
 相应的端点。
 

@@ -2,17 +2,17 @@
 slug: /cloud/managed-postgres/settings
 sidebarTitle: 'Paramètres'
 title: 'Paramètres'
-description: 'Configurez les paramètres de PostgreSQL et de PgBouncer et gérez les paramètres d’instance de ClickHouse Managed Postgres'
+description: 'Configurez les paramètres de PostgreSQL et de PgBouncer et gérez les paramètres d’instance de Managed Postgres'
 keywords: ['configuration de Postgres', 'paramètres PostgreSQL', 'pgbouncer']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
 
-Vous pouvez modifier les paramètres de configuration et gérer les paramètres de votre instance ClickHouse Managed Postgres depuis l’onglet **Paramètres** dans la barre latérale.
+Vous pouvez modifier les paramètres de configuration et gérer les paramètres de votre instance Managed Postgres depuis l’onglet **Paramètres** dans la barre latérale.
 
 <div id="service-actions">
   ## Service actions et mise à l’échelle
@@ -20,7 +20,7 @@ Vous pouvez modifier les paramètres de configuration et gérer les paramètres 
 
 <Image img="/images/managed-postgres/service-actions.webp" alt="Service actions et mise à l’échelle" size="md" border />
 
-La barre d’outils **Service actions** permet de gérer votre instance ClickHouse Managed Postgres :
+La barre d’outils **Service actions** permet de gérer votre instance Managed Postgres :
 
 * **Reset password** : mettre à jour le mot de passe du superutilisateur (uniquement lorsque l’instance est `Running`)
 * **Restart** : redémarrer l’instance de base de données (uniquement lorsque l’instance est `Running`)

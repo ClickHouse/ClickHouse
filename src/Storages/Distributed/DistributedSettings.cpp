@@ -97,11 +97,6 @@ void DistributedSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-void DistributedSettings::applyChanges(const SettingsChanges & changes)
-{
-    impl->applyChanges(changes);
-}
-
 bool DistributedSettings::hasBuiltin(std::string_view name)
 {
     return DistributedSettingsImpl::hasBuiltin(name);

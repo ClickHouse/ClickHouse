@@ -6,14 +6,11 @@ title: 'Autenticação JWT'
 doc_type: 'reference'
 ---
 
-import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBadge.jsx";
-import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import CloudOnlyBadge from "/snippets/pt-BR/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge />
 
-O ClickHouse pode autenticar usuários usando JSON Web Tokens (JWTs). Diferentemente de outros autenticadores externos, como [LDAP](/pt-BR/concepts/features/security/external-authenticators/ldap) ou [Kerberos](/pt-BR/concepts/features/security/external-authenticators/kerberos), a autenticação por JWT não verifica a identidade de usuários já existentes. Em vez disso, ela cria dinamicamente **usuários efêmeros** a partir das claims contidas em cada token. Esses usuários existem apenas na memória, recebem direitos de acesso derivados das claims do token e são removidos automaticamente quando o token expira.
+O ClickHouse pode autenticar usuários usando JSON Web Tokens (JWTs). Diferentemente de outros autenticadores externos, como [LDAP](/pt-BR/concepts/features/security/external-authenticators/ldap) ou [Kerberos](/pt-BR/concepts/features/security/external-authenticators/kerberos), a autenticação por JWT não verifica a identidade de usuários já existentes. Em vez disso, ela cria dinamicamente **usuários efêmeros** a partir das claims contidas em cada token. Esses usuários existem apenas na memória, recebem permissões de acesso derivadas das claims do token e são removidos automaticamente quando o token expira.
 
 Isso torna a autenticação por JWT fundamentalmente diferente de métodos baseados em senha ou em certificado: não existe uma instrução `CREATE USER ... IDENTIFIED WITH jwt`, e tentar executá-la gera uma exceção. Os usuários JWT são totalmente gerenciados pelo ciclo de vida do token.
 
@@ -113,10 +110,8 @@ Cada usuário JWT recebe um UUID determinístico calculado a partir das claims `
 O nome de usuário, no entanto, é **volátil**. Ele é construído da seguinte forma:
 
 ```text
-JWT::<subject>::<claims_hash>
+JWT::<issuer>::<audience>::<subject>::<claims_hash>
 ```
-
-O `<claims_hash>` é um hash derivado das claims `iss`, `sub` e `aud`, em conjunto com as claims `clickhouse:roles` e `clickhouse:grants`. As claims `iss` e `aud` participam **apenas** por meio desse hash; elas não são mais incorporadas diretamente ao prefixo visível do nome de usuário. Isso mantém o nome compacto e legível quando `iss`/`aud` são URLs longas e opacas do IdP (por exemplo, Microsoft Entra ou Okta), ao mesmo tempo em que garante que tuplas distintas de `(iss, sub, aud)` e conjuntos distintos de `clickhouse:roles` / `clickhouse:grants` sejam mapeados para nomes distintos e estáveis. Claims que não entram no hash (por exemplo, `iat`, `exp`, `nbf` ou claims personalizadas não relacionadas) não alteram o nome de usuário.
 
 A parte `<claims_hash>` muda sempre que as claims `clickhouse:roles` ou `clickhouse:grants` são alteradas. Isso significa que tokens com diferentes conjuntos de roles ou grants geram nomes de usuário diferentes, mesmo quando a identidade é a mesma.
 
@@ -150,19 +145,19 @@ Entre as execuções do GC, usuários expirados ainda podem aparecer em `system.
   ### Atribuições persistentes de acesso
 </div>
 
-Como o UUID é estável, você pode atribuir perfis de configuração, cotas, políticas de linha e políticas de mascaramento de coluna a um usuário JWT usando instruções SQL. Essas atribuições permanecem no armazenamento de controle de acesso (em disco ou no ZooKeeper) e persistem após a expiração do token e uma nova autenticação.
+Como o UUID é estável, você pode atribuir perfis de configurações, cotas, políticas de linha e políticas de mascaramento de coluna a um usuário JWT usando instruções SQL. Essas atribuições permanecem no armazenamento de controle de acesso (em disco ou no ZooKeeper) e persistem após a expiração do token e uma nova autenticação.
 
 Faça referência ao usuário pelo nome de usuário atual:
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
 ```
 
 <Note>
   O nome de usuário e o UUID de uma determinada identidade podem ser encontrados nas colunas `name` e `id` de `system.users` enquanto o usuário estiver ativo.
 </Note>
 
-Observe que `ALTER USER` não funciona diretamente com usuários JWT, pois eles são somente leitura. Para atribuir perfis de configuração, cotas ou políticas, use as instruções `ALTER SETTINGS PROFILE`, `ALTER QUOTA` ou `ALTER ROW POLICY`, como mostrado acima.
+Observe que `ALTER USER` não funciona diretamente com usuários JWT, pois eles são somente leitura. Para atribuir perfis de configurações, quotas ou políticas, use as instruções `ALTER SETTINGS PROFILE`, `ALTER QUOTA` ou `ALTER ROW POLICY`, como mostrado acima.
 
 <div id="differences-from-regular-users">
   ## Diferenças em relação aos usuários regulares
@@ -254,29 +249,6 @@ Todo ClickHouse Cloud service vem com um autenticador JWT predefinido usado pelo
 O autenticador integrado tem um limite de permissões definido para a role `default_role` e para o usuário `default`. Isso significa que as permissões efetivas de qualquer usuário JWT ficam restritas à interseção com os grants dessas duas entidades, portanto um token nunca pode elevar privilégios além do que `default_role` e `default` têm permissão para fazer.
 
 Você não precisa configurar nada para usar esse autenticador. Ele é provisionado automaticamente quando o serviço é criado.
-
-<div id="enabling-jwt-authentication-for-your-service">
-  ## Habilitar a autenticação JWT para seu serviço
-</div>
-
-<BetaBadge />
-
-<VersionBadge minVersion="26.4" />
-
-<EnterprisePlanFeatureBadge feature="Autenticação JWT com um provedor de identidade personalizado" support="true" />
-
-Além do autenticador integrado, você pode configurar seu serviço ClickHouse Cloud para aceitar JWTs emitidos pelo seu próprio provedor de identidade (por exemplo, Microsoft Entra ou Okta). Este é um recurso beta, disponível no plano Enterprise para serviços que executam o ClickHouse versão 26.4 ou posterior. Para habilitá-lo, abra um [chamado de suporte](https://clickhouse.com/support/program) com os seguintes detalhes de configuração:
-
-| Parâmetro                | Descrição                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ID do serviço            | O UUID do serviço ClickHouse Cloud no qual a autenticação JWT será habilitada. Você pode encontrá-lo na URL do Cloud Console ao abrir o serviço.                                                                                                                                                                                                                                   |
-| Emissor                  | O valor do claim `iss` nos tokens emitidos pelo seu provedor de identidade, normalmente a URL do provedor (por exemplo, `https://your-tenant.okta.com`). O ClickHouse rejeita tokens cujo emissor não corresponde a esse valor.                                                                                                                                               |
-| Audiência                | O valor do claim `aud` que seu provedor de identidade inclui nos tokens destinados a este serviço. O ClickHouse rejeita tokens emitidos para uma audiência diferente.                                                                                                                                                                                                         |
-| URL do JWKS              | O endpoint HTTPS no qual seu provedor de identidade publica seu JSON Web Key Set (por exemplo, `https://idp.example.com/.well-known/jwks.json`). O ClickHouse obtém as chaves públicas desse endpoint para verificar as assinaturas dos tokens. A verificação de JWKS funciona apenas com chaves RSA (`RS256`), conforme descrito em [Claims obrigatórias](#required-claims). |
-| Claim de roles    | O nome do claim do token que contém as roles do ClickHouse para o usuário efêmero (o padrão é `clickhouse:roles`). O claim deve conter um array JSON de nomes de roles, por exemplo, `["analyst", "reader"]`.                                                                                                                                                        |
-| Claim de grants | O nome do claim do token que contém fragmentos SQL `GRANT` para o usuário efêmero (o padrão é `clickhouse:grants`). O claim deve conter um array JSON de fragmentos de grants, por exemplo, `["SELECT ON analytics.*", "INSERT ON analytics.events"]`.                                                                                                               |
-
-As roles especificadas no claim de roles já devem existir no serviço (crie-as com `CREATE ROLE`). O limite de permissões restringe os direitos de acesso efetivos provenientes dos claims de roles e de grants, conforme descrito em [Direitos de acesso](#access-rights).
 
 <div id="interserver-communication">
   ## Comunicação entre servidores

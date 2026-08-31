@@ -52,9 +52,8 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket);
 
 #if USE_SSL
 /// TLS-aware core of the check, exposed for testing. The socket underlying `ssl` MUST be in
-/// non-blocking mode - don't-wait mode for a fiber socket - (the caller guarantees this) so that
-/// `SSL_peek` cannot block.
-SocketState getSSLSocketState(ssl_st * ssl);
+/// non-blocking mode (the caller guarantees this) so that `SSL_peek` cannot block.
+SocketState getSslSocketState(ssl_st * ssl);
 #endif
 
 /// Non-blocking, non-destructive check of whether the remote peer has closed the connection:
@@ -67,8 +66,8 @@ bool isSocketPeerClosed(int fd);
 bool isSocketPeerClosed(const Poco::Net::StreamSocket & socket);
 
 #if USE_SSL
-/// Same as above for an OpenSSL connection (see `getSSLSocketState`).
-bool isSSLPeerClosed(ssl_st * ssl);
+/// Same as above for an OpenSSL connection (see `getSslSocketState`).
+bool isSslPeerClosed(ssl_st * ssl);
 #endif
 
 }

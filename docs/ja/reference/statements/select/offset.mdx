@@ -9,10 +9,10 @@ doc_type: 'reference'
 `OFFSET` と `FETCH` を使用すると、データを一定量ずつ取得できます。これらは、1 回のクエリで取得する行のブロックを指定します。
 
 ```sql
--- SQL Standard style:
+-- SQL標準スタイル:
 [OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 
--- MySQL/PostgreSQL style:
+-- MySQL/PostgreSQLスタイル:
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
@@ -52,7 +52,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 </Note>
 
 <Note>
-  実際のオフセットは、[offset](/ja/reference/settings/session-settings/other#offset) 設定によっても変わる場合があります。
+  実際のオフセットは、[offset](/ja/reference/settings/session-settings#offset) 設定によっても変わる場合があります。
 </Note>
 
 <div id="examples">

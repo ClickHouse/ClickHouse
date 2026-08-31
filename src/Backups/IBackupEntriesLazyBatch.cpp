@@ -18,10 +18,6 @@ public:
     BackupEntryFromBatch(const std::shared_ptr<IBackupEntriesLazyBatch> & batch_, size_t index_) : batch(batch_), index(index_) { }
 
     std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override { return getInternalBackupEntry()->getReadBuffer(read_settings); }
-    std::unique_ptr<SeekableReadBuffer> getReadBufferForEncryptionHeader(const ReadSettings & read_settings) const override
-    {
-        return getInternalBackupEntry()->getReadBufferForEncryptionHeader(read_settings);
-    }
     UInt64 getSize() const override { return getInternalBackupEntry()->getSize(); }
     UInt128 getChecksum(const ReadSettings & read_settings) const override { return getInternalBackupEntry()->getChecksum(read_settings); }
     std::optional<UInt128> getPartialChecksum(UInt64 limit, const ReadSettings & read_settings) const override { return getInternalBackupEntry()->getPartialChecksum(limit, read_settings); }
@@ -30,8 +26,6 @@ public:
     bool isFromFile() const override { return getInternalBackupEntry()->isFromFile(); }
     bool isFromImmutableFile() const override { return getInternalBackupEntry()->isFromImmutableFile(); }
     bool isFromRemoteFile() const override { return getInternalBackupEntry()->isFromRemoteFile(); }
-    bool isFromSnapshot() const override { return getInternalBackupEntry()->isFromSnapshot(); }
-    bool isNativeCopyAllowed() const override { return getInternalBackupEntry()->isNativeCopyAllowed(); }
     String getRemotePath() const override { return getInternalBackupEntry()->getRemotePath(); }
     String getEndpointURI() const override { return getInternalBackupEntry()->getEndpointURI(); }
     String getNamespace() const override { return getInternalBackupEntry()->getNamespace(); }

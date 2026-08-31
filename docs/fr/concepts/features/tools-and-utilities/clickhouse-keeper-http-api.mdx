@@ -56,19 +56,6 @@ Le tableau de bord comprend :
 * Explorateur de stockage
 * Interface d&#39;exécution des commandes
 
-<div id="dashboard-cluster-tab">
-  #### Onglet Cluster
-</div>
-
-L’onglet **Cluster** représente les membres Raft sous la forme d’un graphe de topologie et d’un tableau. Chaque membre est affiché avec une couleur indiquant son état de santé :
-
-* **Vert** — actif et synchronisé avec le leader
-* **Jaune** — actif, mais en retard de plus de `stale_log_gap` entrées de journal sur le leader
-* **Rouge** — inaccessible (aucune réponse Raft réussie pendant la fenêtre d’expiration du signal de présence)
-* **Gris** — inconnu (l’état de santé des pairs n’est visible que depuis le leader ; les followers voient leurs pairs comme inconnus)
-
-Le tableau indique également le rôle de chaque membre (leader, follower ou observateur), la priorité Raft, le dernier index de journal, le retard de réplication par rapport au leader et le temps écoulé depuis la dernière réponse Raft réussie. Lorsque le nœud actuel n’est pas le leader, l’onglet propose un lien direct ouvrant le tableau de bord du leader, où l’état de santé complet des pairs est disponible. L’onglet peut être ouvert directement avec `/dashboard?tab=cluster`.
-
 <div id="readiness-probe">
   ### Sonde de disponibilité
 </div>
