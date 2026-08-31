@@ -7,6 +7,8 @@ rs_disabled_by_planner	0
 rs_collect_runtime_stats	1
 rs_disabed_by_runtime_stats	0
 --- Match stats and a probe that emits no right column ---
+rs_exact_1_cold	0
+rs_exact_3_after_explain_probe	1
 rs_hash_1_warm	1
 rs_hash_2_no_emit_probe	0
 rs_hash_3_after_no_emit_probe	1
