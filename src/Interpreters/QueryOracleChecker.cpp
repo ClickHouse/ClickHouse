@@ -82,6 +82,7 @@ extern const Event ASTFuzzerOracleUpdateMutationChecks;
 extern const Event ASTFuzzerOracleMaterializeIndexChecks;
 extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
 extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
+extern const Event ASTFuzzerOracleGroupingSetsChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3579,6 +3580,55 @@ bool QueryOracleChecker::checkArrayJoinIdentity(const ASTSelectQuery &, const Co
             context, &fixture);
 
     LOG_TRACE(logger, "ARRAY JOIN identity oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkGroupingSetsEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_05): CUBE and ROLLUP are defined as GROUPING SETS expansions, so their
+    /// result multisets must be identical to the explicit expansion:
+    ///   GROUP BY CUBE(a,b)   == GROUP BY GROUPING SETS ((a,b),(a),(b),())
+    ///   GROUP BY ROLLUP(a,b) == GROUP BY GROUPING SETS ((a,b),(a),())
+    /// Exact integer aggregates only. A difference is a real grouping-modifier lowering bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("groupmod", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (a UInt8, b UInt8, v Int64) ENGINE = MergeTree ORDER BY (a, b)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 5, number % 3, toInt64(number) - 300 FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "grouping-set equivalence oracle: {}", tbl);
+
+    const String proj = "SELECT a, b, sum(v), count() FROM " + tbl + " GROUP BY ";
+    struct Pair { std::string_view modifier; std::string_view sets; };
+    static constexpr std::array<Pair, 2> pairs = {{
+        {"CUBE(a, b)", "GROUPING SETS ((a, b), (a), (b), ())"},
+        {"ROLLUP(a, b)", "GROUPING SETS ((a, b), (a), ())"},
+    }};
+    for (const auto & p : pairs)
+    {
+        auto mod_opt = OracleExec::executeRows(proj + String(p.modifier), context, ResultShape::SortedBag);
+        auto sets_opt = OracleExec::executeRows(proj + String(p.sets), context, ResultShape::SortedBag);
+        if (!mod_opt || !sets_opt)
+            return false;
+        if (!OracleCompare::equal(*mod_opt, *sets_opt))
+            raiseOracleMismatch(
+                fmt::format(
+                    "grouping-set equivalence oracle mismatch!\n"
+                    "GROUP BY {} ({} rows) vs GROUP BY {} ({} rows) on {}\n{}",
+                    p.modifier, mod_opt->size(), p.sets, sets_opt->size(), tbl,
+                    OracleCompare::diffSummary(*mod_opt, *sets_opt)),
+                context, &fixture);
+    }
+
+    LOG_TRACE(logger, "grouping-set equivalence oracle passed");
     return true;
 }
 
