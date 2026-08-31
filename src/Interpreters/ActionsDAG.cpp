@@ -1,5 +1,7 @@
 #include <Interpreters/ActionsDAG.h>
 
+#include <Analyzer/TableQualifiers.h>
+
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -265,7 +267,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, bool skip_input_names) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) const
 {
     hash_state.update(type);
 
@@ -275,12 +277,16 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, 
     /// `in(__table2.x, ...)` in the plan enclosing it, which makes two identical reads hash differently
     /// and costs Auto-PR the query. A caller asking for a build-independent key gets those names dropped.
     ///
-    /// An INPUT keeps its name. At a read step an input is a physical column, so its name is the same in
-    /// every build, and it is the only thing distinguishing one input from another: drop it and every
-    /// predicate over same-typed columns collapses onto a single key, which then serves one predicate's
-    /// row estimate to an unrelated one.
-    if (!result_name.empty() && (!build_independent || (type == ActionType::INPUT && !skip_input_names)))
-        hash_state.update(result_name);
+    /// An INPUT keeps its name, because the name is the only thing telling two same-typed inputs apart:
+    /// drop it and `HAVING sum(a) > 5` and `HAVING sum(b) > 5` share a key, which then serves one
+    /// predicate's row estimate to an unrelated one. The branch-local part of that name is exactly the
+    /// index of the analyzer-generated table qualifier (`__table1.x` here, `__table2.x` there), so it is
+    /// normalized away rather than dropped - see `normalizeGeneratedTableQualifiers`. There is no query
+    /// tree at hand to tell a genuine qualifier from user text that looks like one, and none is needed:
+    /// the type and (for a constant) the value are hashed too, so two nodes whose names normalize
+    /// together stay apart on everything else.
+    if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
+        hash_state.update(build_independent ? normalizeGeneratedTableQualifiers(result_name) : result_name);
 
     if (result_type)
         hash_state.update(result_type->getName());
@@ -305,22 +311,24 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, 
         /// statistics reuse.
         ///
         /// The one exception is the join runtime-filter id carrier: its value is a per-plan-build
-        /// rendezvous key (never a stable hash component), while its identity is its `result_name`,
-        /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
-        /// builds matching without dropping any other constant's value (it still serializes normally
-        /// for distributed propagation).
-        /// A `Const(Set)` column carries the prepared set built for this plan. Two builds of the same
-        /// query prepare separate `Set` objects, so their values hash differently while their identity -
-        /// the content-derived `__set_<hash>_<hash>` in `result_name`, hashed above - is the same. This
-        /// is the same situation as the runtime-filter id right above, so treat it the same way when
-        /// the caller asked for a build-independent hash.
-        const bool is_set = build_independent && result_type && WhichDataType(result_type).isSet();
-        if (is_set)
+        /// rendezvous key (never a stable hash component), while its identity is the structural
+        /// `_runtime_filter_<hash>` in `result_name` - hashed above in an exact hash, and dropped with
+        /// every other derived name in a build-independent one, which leaves two carriers told apart by
+        /// the DAG around them. Skipping only its value keeps the single-replica and parallel-replicas
+        /// plan builds matching without dropping any other constant's value (it still serializes
+        /// normally for distributed propagation).
+        if (!is_runtime_filter_id)
+            column->updateHashWithValue(0, hash_state);
+
+        /// A `Const(Set)` needs its identity added rather than its value skipped: `ColumnSet` is a dummy
+        /// column, so the call above hashes nothing for it, and in build-independent mode its
+        /// `__set_<hash>_<hash>` name is dropped along with every other derived name. Left at that, every
+        /// `IN` over the same type shares one key and `a IN (SELECT k FROM t1)` is served the row estimate
+        /// of `a IN (SELECT k FROM t2)`. `FutureSet::getHash` is the set's content-derived identity and is
+        /// equal across builds by construction (`FutureSetFromSubquery` is moved between plans keeping
+        /// it), so it discriminates two sets of the same type without depending on this build.
+        if (build_independent && result_type && WhichDataType(result_type).isSet())
         {
-            /// The `Set` object itself is built per plan, so its value differs between two builds of the
-            /// same query. `FutureSet::getHash` is the set's content-derived identity and is equal across
-            /// builds by construction (`FutureSetFromSubquery` is moved between plans keeping it), so it
-            /// discriminates two different sets of the same type without depending on this build.
             const IColumn * inner = column.get();
             if (const auto * column_const = typeid_cast<const ColumnConst *>(inner))
                 inner = &column_const->getDataColumn();
@@ -334,19 +342,17 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, 
                 }
             }
         }
-        else if (!is_runtime_filter_id)
-            column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state, build_independent, skip_input_names);
+        child->updateHash(hash_state, build_independent);
 }
 
 UInt64 ActionsDAG::getOutputIdentity(const std::string & name) const
 {
     SipHash hash;
     if (const auto * node = tryFindInOutputs(name))
-        node->updateHash(hash, /*build_independent=*/true, /*skip_input_names=*/true);
+        node->updateHash(hash, /*build_independent=*/true);
     return hash.get64();
 }
 
@@ -4490,9 +4496,10 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
     {
         const auto & node = *reordered_nodes[node_id];
         writeIntBinary(static_cast<UInt8>(node.type), out);
-        /// A cache key must not depend on branch-local column names - see `Node::updateHash`.
+        /// A cache key must not depend on branch-local column names, and must still tell two same-typed
+        /// inputs apart - see `Node::updateHash`, which this mirrors.
         if (registry.for_cache_key)
-            writeStringBinary(String{}, out);
+            writeStringBinary(node.type == ActionType::INPUT ? normalizeGeneratedTableQualifiers(node.result_name) : String{}, out);
         else
             writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);

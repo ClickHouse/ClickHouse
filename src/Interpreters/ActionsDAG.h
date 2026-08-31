@@ -120,10 +120,10 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        /// `skip_input_names` additionally drops INPUT names, for a caller whose DAG sits above a read
-        /// and therefore has branch-local inputs (`__table1.x`); at a read the inputs are physical
-        /// columns and their names must be kept. See `ActionsDAG::getOutputIdentity`.
-        void updateHash(SipHash & hash_state, bool build_independent = false, bool skip_input_names = false) const;
+        /// `build_independent` leaves out what differs between two builds of the same query: the composed
+        /// names of derived nodes and prepared-set values, and the index of the analyzer-generated table
+        /// qualifier in an INPUT name. See the comment on the definition.
+        void updateHash(SipHash & hash_state, bool build_independent = false) const;
     };
 
     /// NOTE: std::list is an implementation detail.
