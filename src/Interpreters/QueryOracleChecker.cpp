@@ -74,6 +74,7 @@ extern const Event ASTFuzzerOracleNullIdentityChecks;
 extern const Event ASTFuzzerOracleCastRoundtripChecks;
 extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
 extern const Event ASTFuzzerOracleTupleSummingChecks;
+extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3298,6 +3299,80 @@ bool QueryOracleChecker::checkTupleSumming(const ASTSelectQuery &, const Context
     }
 
     LOG_TRACE(logger, "tuple-summing oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkSchemaRoundtrip(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_45): a table's DDL must be an idempotent fixed point. Take SHOW
+    /// CREATE of a feature-rich table, recreate a copy from that exact statement, and SHOW CREATE the
+    /// copy: normalized (table name erased) the two DDL strings must be byte-identical. If
+    /// re-parsing ClickHouse's own emitted DDL and re-serializing yields a different string, the
+    /// metadata round-trip is lossy/non-deterministic — a real serialization bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("schemart", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t1 = fixture.allocName("a");
+    const String t2 = fixture.allocName("b");
+
+    if (!fixture.execute(
+            "CREATE TABLE " + t1 + " (k UInt64, a Int64 CODEC(Delta, LZ4), s String CODEC(ZSTD), d Date,"
+            " m Map(String, UInt32), INDEX ix a TYPE minmax GRANULARITY 3)"
+            " ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY (k, a)"))
+        return false;
+
+    /// Read the DDL without the UUID so the recreate cannot collide and the compare is name-only.
+    const std::vector<std::pair<String, Field>> no_uuid{
+        {"show_table_uuid_in_table_create_query_if_not_nil", Field(UInt64(0))}};
+
+    auto ddl1_opt = OracleExec::executeScalar("SHOW CREATE TABLE " + t1, context, no_uuid);
+    if (!ddl1_opt || ddl1_opt->isNull())
+        return false;
+    String ddl1;
+    try { ddl1 = ddl1_opt->safeGet<String>(); } catch (...) { return false; }
+
+    /// Recreate t2 from t1's own DDL (only the table name changes).
+    String create2 = ddl1;
+    for (size_t pos = 0; (pos = create2.find(t1, pos)) != String::npos; pos += t2.size())
+        create2.replace(pos, t1.size(), t2);
+    if (!fixture.execute(create2))
+        return false;
+
+    auto ddl2_opt = OracleExec::executeScalar("SHOW CREATE TABLE " + t2, context, no_uuid);
+    if (!ddl2_opt || ddl2_opt->isNull())
+        return false;
+    String ddl2;
+    try { ddl2 = ddl2_opt->safeGet<String>(); } catch (...) { return false; }
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "schema round-trip oracle: {} vs recreated {}", t1, t2);
+
+    /// Normalize away the table identity (replace each table's own name with a placeholder).
+    auto normalize = [](String s, const String & name)
+    {
+        for (size_t pos = 0; (pos = s.find(name, pos)) != String::npos; pos += 1)
+            s.replace(pos, name.size(), "T");
+        return s;
+    };
+    const String norm1 = normalize(ddl1, t1);
+    const String norm2 = normalize(ddl2, t2);
+
+    if (norm1 != norm2)
+    {
+        fixture.preserve();
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "schema round-trip oracle mismatch!\n"
+            "original DDL (normalized): {}\n"
+            "recreated DDL (normalized): {}",
+            norm1, norm2);
+    }
+
+    LOG_TRACE(logger, "schema round-trip oracle passed");
     return true;
 }
 

@@ -135,6 +135,11 @@ public:
     /// same rows flattened into a plain MergeTree. A difference is a real SummingSortedAlgorithm bug.
     bool checkTupleSumming(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Schema round-trip oracle (self-seeded): a table's DDL must be an idempotent fixed point —
+    /// recreating a table from its own SHOW CREATE and re-serializing must yield the identical DDL
+    /// (modulo the table name). A difference is a real metadata serialization bug.
+    bool checkSchemaRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
