@@ -51,8 +51,9 @@ SELECT parseISO8601Duration(x) AS s
 FROM (SELECT CAST(arrayJoin(['PT1S', 'PT2S']) AS LowCardinality(String)) AS x)
 ORDER BY s;
 
-SELECT sum(parseISO8601Duration(x))
-FROM (SELECT arrayJoin(CAST([NULL, 'PT1S'] AS Array(Nullable(String)))) AS x);
+SELECT parseISO8601Duration(x) AS s
+FROM (SELECT arrayJoin(CAST([NULL, 'PT1S'] AS Array(Nullable(String)))) AS x)
+ORDER BY s NULLS LAST;
 
 -- A null argument yields null instead of an attempt to parse whatever sits under the null map.
 SELECT parseISO8601Duration(NULL);
