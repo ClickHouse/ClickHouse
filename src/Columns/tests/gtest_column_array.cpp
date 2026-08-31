@@ -166,6 +166,24 @@ TEST(ColumnArray, InsertManyFromRepeatedSmallArrays)
     EXPECT_EQ(destination->getData().size(), 8);
 }
 
+TEST(ColumnArray, InsertManyFromSelfString)
+{
+    auto data = ColumnString::create();
+    const String value(1 << 20, 'x');
+    data->insert(value);
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->getData().push_back(data->getOffsets().back());
+    auto column = ColumnArray::create(std::move(data), std::move(offsets));
+
+    column->insertManyFrom(*column, 0, 2);
+
+    ASSERT_EQ(column->size(), 3);
+    ASSERT_EQ(column->getData().size(), 3);
+    for (size_t i = 0; i < column->size(); ++i)
+        EXPECT_EQ(column->getData().getDataAt(i), std::string_view(value));
+}
+
 TEST(ColumnArray, CutPreservesSharedLowCardinalityDictionary)
 {
     auto dictionary_keys = ColumnUInt64::create();
