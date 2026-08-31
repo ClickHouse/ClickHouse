@@ -11,7 +11,7 @@ doc_type: "reference"
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
-import { PrivatPreviewBadge } from "/snippets/components"
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge"
 
 ## Storage backed by object store {#storage-backed-by-object-store}
 
@@ -54,11 +54,13 @@ For GCP and Azure, services have object storage isolation (all services have the
 
 ## On-demand compute {#on-demand-compute}
 
-<PrivatePreview />
+<PrivatePreviewBadge />
 
 On-Demand Compute temporarily assigns **workers** from a ClickHouse-managed pool to supported workloads through your existing ClickHouse Cloud service. Your service authenticates and coordinates the query, while assigned workers perform the bulk of eligible scan, join, and aggregation work outside the service’s compute. The pool is shared across ClickHouse Cloud services, but each worker serves only one service at a time.
 
-During the private preview, On-Demand Compute supports eligible select queries only. Availability is best effort, performance varies, and ClickHouse Cloud SLOs and SLAs do not apply.
+<Note>
+  During the private preview, On-Demand Compute supports eligible SELECT queries only. Availability is best effort, performance varies, and ClickHouse Cloud SLOs and SLAs do not apply.
+</Note>
 
 ## Concurrency limits {#concurrency-limits}
 
