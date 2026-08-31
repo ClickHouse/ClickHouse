@@ -107,7 +107,13 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
         const auto & query_settings = context->getSettingsRef();
         const bool skip_diverges = !query_settings[Setting::skip_unavailable_shards].changed
             && declared[DistributedSetting::skip_unavailable_shards].value != query_settings[Setting::skip_unavailable_shards].value;
-        const bool mode_diverges = !query_settings[Setting::skip_unavailable_shards_mode].changed
+        /// The mode controls which exceptions shard skipping ignores, so with skipping effectively
+        /// off it cannot change behavior; compare it only under the normal path's effective flag.
+        const bool effective_skip = query_settings[Setting::skip_unavailable_shards].changed
+            ? query_settings[Setting::skip_unavailable_shards].value
+            : declared[DistributedSetting::skip_unavailable_shards].value;
+        const bool mode_diverges = effective_skip
+            && !query_settings[Setting::skip_unavailable_shards_mode].changed
             && declared[DistributedSetting::skip_unavailable_shards_mode].value != query_settings[Setting::skip_unavailable_shards_mode].value;
         if (skip_diverges || mode_diverges)
             throw Exception(

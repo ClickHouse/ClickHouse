@@ -101,6 +101,11 @@ SELECT * FROM prometheusQuery(ts_skip_on, 'm', 140); -- { serverError NOT_IMPLEM
 -- cluster() call too, so with it the reads match exactly: must pass.
 SELECT count() > 0 FROM prometheusQuery(ts_skip_on, 'm', 140) SETTINGS skip_unavailable_shards = 0;
 DROP TABLE ts_skip_on;
+-- A declared mode with shard skipping effectively off changes nothing - the mode only controls
+-- which exceptions skipping ignores: must pass.
+CREATE TABLE ts_mode_only AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards_mode = 'unavailable';
+SELECT count() > 0 FROM prometheusQuery(ts_mode_only, 'm', 140);
+DROP TABLE ts_mode_only;
 
 SELECT '--- the TimeSeries table functions still need a real TimeSeries table ---';
 SELECT count() FROM timeSeriesData(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
