@@ -4,7 +4,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <mutex>
 
 class MemoryTracker;
 
@@ -21,15 +20,27 @@ enum class MemoryPressureLevel : uint8_t
 
 inline constexpr int memoryPressureLevelCount() { return 4; }
 
+/// One level lower; `Normal` stays `Normal`.
+constexpr MemoryPressureLevel stepDown(MemoryPressureLevel level)
+{
+    return level == MemoryPressureLevel::Normal
+        ? MemoryPressureLevel::Normal
+        : static_cast<MemoryPressureLevel>(static_cast<uint8_t>(level) - 1);
+}
+
 /// The three thresholds as percent of a tracker's hard limit, with the generation that identifies this
 /// publication of them. The generation is assigned by the store, so a caller never supplies one, and it
 /// moves only when the values change - that is what lets a cooldown tell one ladder from another.
 struct MemoryPressureThresholds
 {
+    /// Width of a publication generation, shared by both packed words in this file. A wrap needs 65536
+    /// reloads between two samples of one monitor.
+    static constexpr int GENERATION_BITS = 16;
+
     UInt64 elevated_pct = 0;
     UInt64 high_pct = 0;
     UInt64 critical_pct = 0;
-    uint32_t generation = 0;
+    uint16_t generation = 0;
 
     /// The values alone, as one word. Two ladders are the same ladder when these are equal.
     constexpr uint32_t packValues() const
@@ -45,7 +56,7 @@ struct MemoryPressureThresholds
 
     static constexpr MemoryPressureThresholds unpack(uint64_t packed)
     {
-        return {(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu, packed & 0xFFu, static_cast<uint32_t>(packed >> 32)};
+        return {(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu, packed & 0xFFu, static_cast<uint16_t>(packed >> 32)};
     }
 
     /// Classify a pressure ratio against these thresholds. No cooldown, lock-free.
@@ -65,33 +76,72 @@ MemoryPressureThresholds getMemoryPressureThresholds();
 MemoryPressureLevel classifyMemoryPressure(double pressure);
 
 /// Sticky cooldown over an already-classified level: snap up immediately, step down one level per
-/// `cooldown_ns` of sustained lower pressure. One instance per monitor holds its own timestamp.
+/// `cooldown_ms` of sustained lower pressure. One instance per monitor.
+///
+/// Lock-free. The level, the timestamp its cooldown runs from, and the ladder generation it was
+/// classified against share one atomic word, because they must move as a unit: separate atomics pair a
+/// level with another level's timestamp and step down twice in one cooldown. A sample that changes
+/// nothing does not write, so an idle monitor's word stays read-only on every reader thread.
 class PressureCooldown
 {
 public:
     /// Server-total cooldown: freed RAM may be re-taken by any tenant, so de-escalate slowly.
-    static constexpr uint64_t COOLDOWN_NS = 60ULL * 1000ULL * 1000ULL * 1000ULL;
-    /// Query-scoped cooldown: no other tenant competes for the freed memory, so recover fast.
-    static constexpr uint64_t QUERY_COOLDOWN_NS = 10ULL * 1000ULL * 1000ULL * 1000ULL;
+    static constexpr uint64_t COOLDOWN_MS = 60 * 1000;       /// 1 minute
+    /// Scope cooldown (user, query): no other tenant competes for the freed memory, so recover fast.
+    static constexpr uint64_t SCOPE_COOLDOWN_MS = 10 * 1000; /// 10 seconds
 
-    explicit PressureCooldown(uint64_t cooldown_ns_ = COOLDOWN_NS) : cooldown_ns(cooldown_ns_) {}
+    explicit PressureCooldown(uint64_t cooldown_ms_ = COOLDOWN_MS) : cooldown_ms(cooldown_ms_) {}
 
-    /// `thresholds_generation` identifies the shared ladder `raw` was classified against. A generation
-    /// other than the one the sticky level was classified against means that level came from a ladder
-    /// that no longer exists, so it is replaced at once instead of decaying over a cooldown - a reload
-    /// takes effect immediately without a per-monitor flag.
-    MemoryPressureLevel apply(MemoryPressureLevel raw, uint64_t now_ns, uint32_t thresholds_generation);
+    /// `thresholds_generation` identifies the ladder `raw` was classified against. A generation other
+    /// than the held level's means that level came from a ladder that no longer exists, so it is
+    /// replaced at once rather than decaying over a cooldown, and a reload needs no per-monitor flag.
+    ///
+    /// Reads the clock only when there is state to update.
+    MemoryPressureLevel apply(MemoryPressureLevel raw, uint16_t thresholds_generation);
+    /// Time-injecting form, for tests.
+    MemoryPressureLevel apply(MemoryPressureLevel raw, uint64_t now_ms, uint16_t thresholds_generation);
 
-    /// Clear the sticky level and timestamp.
+    /// Clear the held level and its timestamp.
     void reset();
 
 private:
-    const uint64_t cooldown_ns;
-    mutable std::mutex mutex;
-    uint8_t level{0};
-    uint64_t last_at_or_above_ns{0};
-    /// The ladder generation `level` was classified against.
-    uint32_t last_generation{0};
+    /// The published word, `[ level: 2 | generation: 16 | cooldown_since_ms: 46 ]`. The fields tile it,
+    /// so `pack` and `unpack` are exact inverses - that is what lets `apply` spot a no-op by comparing
+    /// packed words. 46 bits of milliseconds is ~2200 years; `elapsedTo` masks the subtraction anyway.
+    struct State
+    {
+        static constexpr int MS_BITS = 46;
+        static constexpr uint64_t MS_MASK = (1ULL << MS_BITS) - 1;
+        static constexpr int LEVEL_SHIFT = MS_BITS + MemoryPressureThresholds::GENERATION_BITS;
+
+        MemoryPressureLevel level = MemoryPressureLevel::Normal;
+        uint16_t generation = 0;
+        /// When `level` was last set or refreshed.
+        uint64_t cooldown_since_ms = 0;
+
+        constexpr uint64_t pack() const
+        {
+            return (static_cast<uint64_t>(level) << LEVEL_SHIFT)
+                 | (static_cast<uint64_t>(generation) << MS_BITS)
+                 | (cooldown_since_ms & MS_MASK);
+        }
+
+        static constexpr State unpack(uint64_t packed)
+        {
+            return {
+                static_cast<MemoryPressureLevel>(packed >> LEVEL_SHIFT),
+                static_cast<uint16_t>(packed >> MS_BITS),
+                packed & MS_MASK};
+        }
+
+        /// Milliseconds the current cooldown has run for.
+        constexpr uint64_t elapsedTo(uint64_t now_ms) const { return (now_ms - cooldown_since_ms) & MS_MASK; }
+    };
+
+    static_assert(State::LEVEL_SHIFT + 2 == 64, "the packed state must fill exactly one word");
+
+    const uint64_t cooldown_ms;
+    std::atomic<uint64_t> state{0};
 };
 
 /// Watches one memory tracker and classifies its pressure with a sticky cooldown. Levels compose
@@ -105,7 +155,7 @@ class MemoryPressureMonitor
 public:
     /// Global (root) monitor: watches `total_memory_tracker`, server cooldown.
     MemoryPressureMonitor();
-    /// Scoped monitor: watches `scope`, query cooldown, escalated against `parent`.
+    /// Scoped monitor: watches `scope`, scope cooldown, escalated against `parent`.
     MemoryPressureMonitor(MemoryTracker & scope, MemoryPressureMonitor & parent);
 
     /// Advances the cooldown, so non-const.

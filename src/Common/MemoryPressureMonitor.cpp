@@ -1,7 +1,6 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
-#include <base/defines.h>
 
 #include <algorithm>
 #include <chrono>
@@ -25,9 +24,9 @@ std::atomic<uint64_t> & thresholdsState()
     return state;
 }
 
-uint64_t steadyNowNs()
+uint64_t steadyNowMs()
 {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::steady_clock::now().time_since_epoch())
         .count();
 }
@@ -63,44 +62,49 @@ void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt
             elevated_pct, high_pct, critical_pct);
 }
 
-MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw_level, uint64_t now_ns, uint32_t thresholds_generation)
+MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw, uint16_t thresholds_generation)
 {
-    const uint8_t raw = static_cast<uint8_t>(raw_level);
-    std::lock_guard lk(mutex);
+    if (raw == MemoryPressureLevel::Normal
+        && State::unpack(state.load(std::memory_order_relaxed)).level == MemoryPressureLevel::Normal)
+        return MemoryPressureLevel::Normal;
 
-    const bool ladder_changed = thresholds_generation != last_generation;
-    last_generation = thresholds_generation;
+    return apply(raw, steadyNowMs(), thresholds_generation);
+}
 
-    if (raw >= level)
+MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw, uint64_t now_ms, uint16_t thresholds_generation)
+{
+    uint64_t current = state.load(std::memory_order_relaxed);
+    while (true)
     {
-        /// Snap up immediately; refresh the "still elevated" timestamp.
-        level = raw;
-        last_at_or_above_ns = now_ns;
-    }
-    else if (ladder_changed)
-    {
-        /// The held level was classified against a ladder that no longer exists - accept the new
-        /// classification at once instead of holding the old one until the cooldown expires.
-        level = raw;
-        last_at_or_above_ns = now_ns;
-    }
-    else if (level > 0 && now_ns >= last_at_or_above_ns + cooldown_ns)
-    {
-        /// Step down one level per cooldown, so a `Critical` -> `Normal` recovery needs >= 3 cooldowns.
-        level -= 1;
-        last_at_or_above_ns = now_ns;
-    }
+        const State held = State::unpack(current);
+        State next = held;
 
-    chassert(level <= 3);
-    /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-    return static_cast<MemoryPressureLevel>(level);
+        if (raw >= held.level)                                  /// snap up, restart the cooldown
+            next = {raw, thresholds_generation, now_ms};
+        else if (thresholds_generation != held.generation)       /// stale ladder, take the new level now
+            next = {raw, thresholds_generation, now_ms};
+        else if (held.elapsedTo(now_ms) >= cooldown_ms)          /// one step per cooldown
+            next = {stepDown(held.level), thresholds_generation, now_ms};
+
+        /// A `Normal` level records nothing beside itself.
+        if (next.level == MemoryPressureLevel::Normal)
+        {
+            next.generation = held.generation;
+            next.cooldown_since_ms = held.cooldown_since_ms;
+        }
+
+        if (next.pack() == current)
+            return next.level;
+
+        /// A retry recomputes against the winner's word, so a step-down never happens twice per cooldown.
+        if (state.compare_exchange_weak(current, next.pack(), std::memory_order_relaxed))
+            return next.level;
+    }
 }
 
 void PressureCooldown::reset()
 {
-    std::lock_guard lk(mutex);
-    level = 0;
-    last_at_or_above_ns = 0;
+    state.store(0, std::memory_order_relaxed);
 }
 
 void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct)
@@ -123,7 +127,7 @@ void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 cr
 
         /// A real change, so the levels classified against the old values are stale. The new generation
         /// tells every cooldown to take its next classification at once instead of decaying to it.
-        next.generation = live.generation + 1;
+        next.generation = static_cast<uint16_t>(live.generation + 1);
         if (state.compare_exchange_weak(current, next.pack(), std::memory_order_relaxed))
             return;
     }
@@ -142,14 +146,14 @@ MemoryPressureLevel classifyMemoryPressure(double pressure)
 MemoryPressureMonitor::MemoryPressureMonitor()
     : scope(&total_memory_tracker)
     , parent(nullptr)
-    , cooldown(PressureCooldown::COOLDOWN_NS)
+    , cooldown(PressureCooldown::COOLDOWN_MS)
 {
 }
 
 MemoryPressureMonitor::MemoryPressureMonitor(MemoryTracker & scope_, MemoryPressureMonitor & parent_)
     : scope(&scope_)
     , parent(&parent_)
-    , cooldown(PressureCooldown::QUERY_COOLDOWN_NS)
+    , cooldown(PressureCooldown::SCOPE_COOLDOWN_MS)
 {
 }
 
@@ -174,7 +178,7 @@ MemoryPressureLevel MemoryPressureMonitor::currentLevel()
     /// and the cooldown's staleness check always refer to the same published ladder.
     const MemoryPressureThresholds thresholds = getMemoryPressureThresholds();
     const MemoryPressureLevel own
-        = cooldown.apply(thresholds.classify(samplePressure()), steadyNowNs(), thresholds.generation);
+        = cooldown.apply(thresholds.classify(samplePressure()), thresholds.generation);
 
     /// Escalate up the chain: a monitor never reads below any level above it.
     if (auto * p = parent.load(std::memory_order_relaxed))
