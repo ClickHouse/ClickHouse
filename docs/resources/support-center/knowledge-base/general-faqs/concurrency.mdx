@@ -20,7 +20,7 @@ Fast individual queries are the foundation of high QPS. The less work each query
 
 ## Controlling and limiting concurrency {#controlling-and-limiting-concurrency}
 
-By default, ClickHouse doesn't limit the number of concurrent queries. You can configure limits at several levels:
+By default, ClickHouse OSS doesn't limit the number of concurrent queries. ClickHouse Cloud sets `max_concurrent_queries_for_all_users` to `1000` by default. You can configure limits at several levels:
 
 - [`max_concurrent_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) limits the total number of concurrently executed queries on the server. [`max_concurrent_insert_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) and [`max_concurrent_select_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries) apply the same limit to `INSERT` and `SELECT` queries separately. All three default to `0` (unlimited).
 - [`max_concurrent_queries_for_user`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) and [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) limit concurrency per user or across all users.
