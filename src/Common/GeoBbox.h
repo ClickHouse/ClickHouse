@@ -588,6 +588,29 @@ inline bool isNonGeometryType(const IDataType & type)
     }
 }
 
+/// Whether a `Nullable` sits in `type`'s outer wrapper chain (possibly under `LowCardinality`).
+///
+/// This is what defeats the reasoning every fail-OPEN path in `extractSpatialPredicateNodeBbox`
+/// rests on: "the predicate raises from `callOnTwoGeometryDataTypes`/`getReturnTypeImpl`, which
+/// dispatch on argument TYPES and therefore raise even on the zero-row block pruning leaves
+/// behind, so pruning cannot hide the exception". With `useDefaultImplementationForNulls`,
+/// `IFunction::execute` returns an empty result for `input_rows_count == 0` BEFORE the nested
+/// function is built, so the type dispatch never runs at all and the exception the query must
+/// surface becomes a silent `0`.
+inline bool hasNullableWrapper(const IDataType & type)
+{
+    const IDataType * inner = &type;
+    while (true)
+    {
+        if (typeid_cast<const DataTypeNullable *>(inner))
+            return true;
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(inner))
+            inner = low_cardinality_type->getDictionaryType().get();
+        else
+            return false;
+    }
+}
+
 /// Whether `type` is a bare, unnamed two-`Float64` `Tuple` -- the shape `callOnGeometryDataType`
 /// resolves as `Point` by `IDataType::equals`, with no `Point` custom name to report it under.
 /// `geoKindNameOfType` and `constGeoKindName` both return an empty kind for it, so the kind checks
@@ -684,6 +707,25 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     for (const auto * child : node.children)
     {
         const size_t this_arg_index = arg_index++;
+
+        /// A `Nullable` argument the predicate would REJECT must fail closed, whatever the node
+        /// type: `hasNullableWrapper` explains why none of the fail-open `continue`s below is safe
+        /// for it. Only rejected kinds are vetoed -- an accepted geometry kind under a `Nullable`
+        /// never raises, so it keeps pruning.
+        if (child->result_type && GeoBboxDetail::hasNullableWrapper(*child->result_type))
+        {
+            const IDataType & unwrapped = GeoBboxDetail::unwrapGeoKindWrappers(*child->result_type);
+            auto nullable_kind_name = geoKindNameOfType(unwrapped);
+            if (nullable_kind_name.empty())
+                nullable_kind_name = GeoBboxDetail::structuralGeoKindName(unwrapped);
+
+            if (nullable_kind_name.empty()
+                || node.function_base->rejectsColumnGeometryKind(nullable_kind_name, this_arg_index))
+            {
+                any_kind_rejected = true;
+                continue;
+            }
+        }
 
         /// Checked for EVERY child, whatever its node type. A bare `Tuple(Float64, Float64)` --
         /// neither named `Point` nor wrapped in `Geometry`/`Variant`/`Dynamic` -- is invisible to

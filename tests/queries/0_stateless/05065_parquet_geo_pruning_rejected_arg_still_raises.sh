@@ -21,10 +21,14 @@ cp "$CUR_DIR/data_parquet/04512_geo_pruning_iceberg.parquet" "$DATA_FILE"
 FAR_POLYGON="[[(1000., 1000.), (1001., 1000.), (1001., 1001.), (1000., 1000.)]]"
 
 echo "=== every row group pruned ==="
-${CLICKHOUSE_CLIENT} --print-profile-events --query "
+# The count arrives on stdout and the profile event on stderr, so their interleaving in a merged
+# `2>&1` stream is not deterministic. Capture once, then print each line in a fixed order.
+PRUNED_OUTPUT=$(${CLICKHOUSE_CLIENT} --print-profile-events --query "
     SELECT count() FROM file('$(basename "$DATA_FILE")', Parquet)
     WHERE pointInPolygon(geometry, ${FAR_POLYGON})" 2>&1 \
-    | grep -E 'ParquetPrunedRowGroups|^[0-9]+$' | sed 's/^.*] //'
+    | sed 's/^.*] //')
+grep -E '^[0-9]+$' <<< "$PRUNED_OUTPUT"
+grep -E 'ParquetPrunedRowGroups' <<< "$PRUNED_OUTPUT"
 
 # A non-geometry constant, and a geometry kind this predicate refuses at that position. Both are
 # rejected on argument types, so both must raise even though nothing is left to read.
