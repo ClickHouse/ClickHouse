@@ -1352,14 +1352,13 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (metadata_snapshot)
                 {
-                    const IStorage & storage = *table;
                     has_asynchronous_metrics |= table_name == "asynchronous_metrics";
                     addRow(
                         res_columns,
                         EntityType::SystemTable,
                         table_name,
                         renderSystemTableDoc(table_name, metadata_snapshot->comment, metadata_snapshot->getColumns(), context),
-                        makeRepoRelative(getSystemTableSource(typeid(storage))));
+                        makeRepoRelative(getSystemTableDocumentationSource(table_name)));
                 }
             }
         }
@@ -1379,7 +1378,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 ASYNCHRONOUS_METRICS_DOCUMENTATION,
                 StorageSystemAsynchronousMetrics::getColumnsDescription(),
                 context),
-            makeRepoRelative(getSystemTableSource(typeid(StorageSystemAsynchronousMetrics))));
+            makeRepoRelative(ASYNCHRONOUS_METRICS_DOCUMENTATION_SOURCE));
 }
 
 }

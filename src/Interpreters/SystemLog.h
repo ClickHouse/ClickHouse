@@ -55,6 +55,8 @@
 namespace DB
 {
 
+inline constexpr const char * SYSTEM_LOG_DOCUMENTATION_SOURCE = __builtin_FILE();
+
 inline constexpr char SYSTEM_LOG_DOCUMENTATION_QUERY_LOG[] = R"DOCS_MD(
 .description
 Stores metadata and statistics about executed queries, such as start time, duration, error messages, resource usage, and other execution details. It does not store the results of queries.

@@ -60,6 +60,8 @@ WHERE metric = 'DiskTotal'
 - [system.metric_log](/reference/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
 )DOCS_MD";
 
+const char * const ASYNCHRONOUS_METRICS_DOCUMENTATION_SOURCE = __builtin_FILE();
+
 ColumnsDescription StorageSystemAsynchronousMetrics::getColumnsDescription()
 {
     auto description = ColumnsDescription

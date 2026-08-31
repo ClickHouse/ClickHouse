@@ -67,6 +67,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/SystemLogDefaultFlushPolicy.h>
 
 #if CLICKHOUSE_CLOUD
@@ -165,6 +166,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         log_settings.queue_settings.database = default_database_name;
     }
+
+    registerSystemTableDocumentationSource(log_settings.queue_settings.table, SYSTEM_LOG_DOCUMENTATION_SOURCE);
 
     if (config.has(config_prefix + ".engine"))
     {
@@ -361,6 +364,16 @@ String escapeStringForRegexp(const String & s)
 
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
+/// Register default names even for disabled logs whose old tables may still be attached.
+#define REGISTER_DOCUMENTATION_SOURCE(log_type, member, descr) \
+    registerSystemTableDocumentationSource(#member, SYSTEM_LOG_DOCUMENTATION_SOURCE); \
+
+    LIST_OF_ALL_SYSTEM_LOGS(REGISTER_DOCUMENTATION_SOURCE)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(REGISTER_DOCUMENTATION_SOURCE)
+    #endif
+#undef REGISTER_DOCUMENTATION_SOURCE
+
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CREATE_PUBLIC_MEMBERS(log_type, member, descr) \
     member = createSystemLog<log_type>(global_context, "system", #member, config, #member, descr); \

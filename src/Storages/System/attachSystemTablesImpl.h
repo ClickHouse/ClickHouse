@@ -3,6 +3,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/UUID.h>
 
 namespace DB
@@ -10,6 +11,10 @@ namespace DB
 
 template <int Length>
 using StringLiteral = const char(&)[Length];
+
+/// All documentation comments passed through these helpers are defined in `attachSystemTables.cpp`. Documentation
+/// constants defined elsewhere override this mapping after attachment.
+extern const char * const ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE;
 
 template<typename StorageT, bool with_description, typename... StorageArgs>
 void attachImpl(ContextPtr context, IDatabase & system_database, const String & table_name, std::string_view comment, StorageArgs && ... args)
@@ -45,6 +50,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
     storage->setInMemoryMetadataComment(String(comment));
 
     system_database.attachTable(context, table_name, storage, path);
+    registerSystemTableDocumentationSource(table_name, ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE);
 }
 
 

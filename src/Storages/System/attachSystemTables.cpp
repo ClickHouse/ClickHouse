@@ -169,6 +169,8 @@
 namespace DB
 {
 
+const char * const ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE = __builtin_FILE();
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -3891,6 +3893,7 @@ void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, As
 {
     attachNoDescription<StorageSystemAsynchronousMetrics>(
         context, system_database, "asynchronous_metrics", ASYNCHRONOUS_METRICS_DOCUMENTATION, async_metrics);
+    registerSystemTableDocumentationSource("asynchronous_metrics", ASYNCHRONOUS_METRICS_DOCUMENTATION_SOURCE);
 }
 
 }
