@@ -110,7 +110,7 @@ The samples can be passed in one of three forms:
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -118,9 +118,9 @@ timeSeriesGroupArray(timestamp, value)
 timeSeriesGroupArray(samples)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"timestamp", "Timestamp of the sample.", {"DateTime", "UInt32", "UInt64"}},
-        {"value", "Value of the time series corresponding to the timestamp.", {"(U)Int*", "Float*", "Decimal"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`.", {"Array(Tuple(T1, T2))"}},
+        {"timestamp", "Timestamp of the sample. Can be an individual value or an array.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be an individual value or an array.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above.", {"Array(Tuple(T1, T2))"}},
     };
     FunctionDocumentation::Parameters parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples `(timestamp, value)` sorted by timestamp in ascending order.", {"Array(Tuple(T1, T2))"}};
