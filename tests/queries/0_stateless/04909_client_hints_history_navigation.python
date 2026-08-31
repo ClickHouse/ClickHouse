@@ -258,6 +258,27 @@ def main():
         lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
     )
 
+    # 5b. Pasting the exact text that carried a visible hint on an earlier prompt: replxx caches
+    # the hints by the buffer text and the cache outlives the prompt, so without invalidating it
+    # the paste would redisplay the stale ghost without ever asking our hint callback. The first
+    # line is typed (so the hints for it are generated and cached) and committed - it is not a
+    # valid query, which is irrelevant here, only the cache state matters - and then the very same
+    # text is pasted on the next prompt, where no hint may appear. Only the output after the last
+    # prompt is examined: the first, typed line legitimately shows the ghost.
+    history = make_history_file("same_text_paste", [])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "same_text_paste_no_hints",
+        [
+            b"SELECT concatAssumeInject",
+            b"\r",
+            b"\x1b[200~SELECT concatAssumeInject\x1b[201~",
+        ],
+        lambda o: "concatAssumeInject" in o.rsplit(":)", 1)[-1]
+        and (HINT_COLOR + "ive") not in o.rsplit(":)", 1)[-1],
+    )
+
     # 6. An unchanged editor round-trip redisplays the line programmatically. It must invalidate
     # replxx's cached hints, so Down remains history navigation.
     editor = os.path.join(os.environ["CLICKHOUSE_TMP"], "client_hints_unchanged_editor.sh")

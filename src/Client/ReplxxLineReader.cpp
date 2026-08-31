@@ -558,6 +558,13 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         {
             suppress_hints_once = true;
             auto result = rx.invoke(Replxx::ACTION::BRACKETED_PASTE, code);
+            /// The paste action fills the buffer directly, without invalidating replxx's hint
+            /// cache, which is keyed by the buffer text and lives across prompts. Pasting the
+            /// exact text that carried a visible hint on an earlier prompt would therefore
+            /// redisplay the cached hints without ever asking our hint callback, and the
+            /// suppression below would have nothing to suppress. Re-setting the state is what
+            /// invalidates that cache (see openEditor).
+            rx.set_state(rx.get_state());
             suppressHintsForDisplayedLine();
             return result;
         });
