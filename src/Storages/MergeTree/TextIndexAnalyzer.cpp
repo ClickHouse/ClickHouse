@@ -475,9 +475,8 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(size_t total_rows)
         if (query_builder.tokens.empty())
             continue;
 
-        /// Every matched posting already read (embedded lists are folded during the dictionary
-        /// scan): the union is exact and in memory, so there is no read left to save and
-        /// bypassing would trade the finished answer for a scan of the column.
+        /// Every matched posting already read (embedded lists fold during the dictionary scan):
+        /// nothing left to save, and bypassing would trade a finished answer for a column scan.
         if (!query_builder.needReadPostings())
             continue;
 
