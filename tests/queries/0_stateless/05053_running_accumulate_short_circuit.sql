@@ -8,6 +8,8 @@ SET allow_deprecated_error_prone_window_functions = 1;
 
 DROP TABLE IF EXISTS states_05053;
 DROP TABLE IF EXISTS running_05053;
+DROP TABLE IF EXISTS grouped_05053;
+DROP TABLE IF EXISTS running_g_05053;
 
 -- The states are materialized instead of produced by `GROUP BY` in each query. `runningAccumulate`
 -- restarts on every new block, so an aggregation upstream of it would make the expected values a
@@ -61,18 +63,41 @@ SELECT 'sibling', groupArray(m) FROM
     (SELECT if(i % 2 = 0, rowNumberInAllBlocks(), 999) AS m FROM (SELECT * FROM states_05053 ORDER BY i))
 SETTINGS short_circuit_function_evaluation = 'enable';
 
+-- The two-argument overload behaves the same way, so the grouping argument does not reintroduce the
+-- filtering: the accumulation restarts on every new group and the value on a masked row is the one
+-- the unmasked run produced for that row. Before the fix this arm returned [1,0,2,0,1,0,2,0], the
+-- accumulation of the four surviving rows split across the two groups.
+CREATE TABLE grouped_05053 (i UInt32, g UInt8, st AggregateFunction(sum, UInt32)) ENGINE = Memory;
+INSERT INTO grouped_05053 SELECT number, number >= 4, initializeAggregation('sumState', toUInt32(1)) FROM numbers(8);
+
+CREATE TABLE running_g_05053 ENGINE = Memory AS
+    SELECT i, runningAccumulate(st, g) AS r FROM (SELECT * FROM grouped_05053 ORDER BY i);
+
+SELECT 'ground truth grouped', groupArray(if(i % 2 = 0, r, 0)) FROM (SELECT * FROM running_g_05053 ORDER BY i);
+
+SELECT 'grouping column', groupArray(m) FROM
+    (SELECT if(i % 2 = 0, runningAccumulate(st, g), 0) AS m FROM (SELECT * FROM grouped_05053 ORDER BY i))
+SETTINGS short_circuit_function_evaluation = 'enable';
+
 -- Still filtered on purpose: `force_enable` is documented as enabling lazy execution for all
 -- functions, so it overrides the opt-out rather than consulting it.
 SELECT 'force_enable, still filtered', groupArray(m) FROM
     (SELECT if(i % 2 = 0, runningAccumulate(st), 0) AS m FROM (SELECT * FROM states_05053 ORDER BY i))
 SETTINGS short_circuit_function_evaluation = 'force_enable';
 
--- Still filtered on purpose: a lazy-eligible argument marks its parent lazy through
--- `has_lazy_child`, which is decided before the opt-out is read.
+-- Still filtered, and not a property of the overload above: a node is marked lazy when any argument
+-- is itself lazy-eligible, which `has_lazy_child` decides before the opt-out is read. The arm after
+-- it is the same query with no lazy path, so the value below is recorded as the current answer, not
+-- claimed as the right one.
 SELECT 'computed argument, still filtered', groupArray(m) FROM
     (SELECT if(i % 2 = 0, runningAccumulate(st, toUInt8(toString(i % 1))), 0) AS m
      FROM (SELECT * FROM states_05053 ORDER BY i))
 SETTINGS short_circuit_function_evaluation = 'enable';
+
+SELECT 'computed argument, disable', groupArray(m) FROM
+    (SELECT if(i % 2 = 0, runningAccumulate(st, toUInt8(toString(i % 1))), 0) AS m
+     FROM (SELECT * FROM states_05053 ORDER BY i))
+SETTINGS short_circuit_function_evaluation = 'disable';
 
 -- The same declaration also feeds `canThrow`, which decides whether the rows a replicated argument
 -- does not reference are dropped before execution. Finalizing an arbitrary aggregate state can
@@ -104,5 +129,7 @@ SETTINGS short_circuit_function_evaluation = 'force_enable';
 
 DROP TABLE unused_05053;
 DROP TABLE states_ks_05053;
+DROP TABLE running_g_05053;
+DROP TABLE grouped_05053;
 DROP TABLE running_05053;
 DROP TABLE states_05053;

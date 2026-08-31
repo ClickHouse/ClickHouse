@@ -7,7 +7,10 @@ and	[0,0,1,0,1,0,1,0]
 or	[0,1,1,1,1,1,1,1]
 if disable	[1,0,3,0,5,0,7,0]
 sibling	[0,999,2,999,4,999,6,999]
+ground truth grouped	[1,0,3,0,1,0,3,0]
+grouping column	[1,0,3,0,1,0,3,0]
 force_enable, still filtered	[1,0,2,0,3,0,4,0]
 computed argument, still filtered	[1,0,2,0,3,0,4,0]
+computed argument, disable	[1,0,3,0,5,0,7,0]
 unreferenced replicated state	(1,1)
 unused branch, force_enable	42
