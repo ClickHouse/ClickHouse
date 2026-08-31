@@ -14,6 +14,11 @@ GENERATOR = REPO_ROOT / "utils" / "generate-system-tables-docs"
 SOURCE_ROOT = REPO_ROOT / "src"
 ATTACH_SOURCE = SOURCE_ROOT / "Storages" / "System" / "attachSystemTables.cpp"
 SYSTEM_LOG_HEADER = SOURCE_ROOT / "Interpreters" / "SystemLog.h"
+NON_LITERAL_ATTACH_DOCUMENTATION_SOURCES = {
+    "ASYNCHRONOUS_METRICS_DOCUMENTATION": (
+        SOURCE_ROOT / "Storages" / "System" / "StorageSystemAsynchronousMetrics.cpp"
+    )
+}
 
 EXPECTED_DOCUMENTATION_COUNT = 169
 EXPECTED_ATTACH_DOCUMENTATION_COUNT = 139
@@ -53,6 +58,28 @@ def main():
             re.DOTALL,
         )
     )
+    non_literal_attach_documents = dict(
+        re.findall(
+            r'attach(?:NoDescription)?<[^;\n]+>\(\s*context,\s*system_database,\s*"([^"]+)",'
+            r'\s*([A-Z][A-Z0-9_]*_DOCUMENTATION)\b',
+            attach_source,
+            re.DOTALL,
+        )
+    )
+    assert set(non_literal_attach_documents.values()) == set(
+        NON_LITERAL_ATTACH_DOCUMENTATION_SOURCES
+    )
+    for table_name, constant_name in non_literal_attach_documents.items():
+        source = NON_LITERAL_ATTACH_DOCUMENTATION_SOURCES[constant_name].read_text(
+            encoding="utf-8"
+        )
+        documentation = re.search(
+            rf'\b{re.escape(constant_name)}\s*=\s*R"DOCS_MD\((.*?)\)DOCS_MD";',
+            source,
+            re.DOTALL,
+        )
+        assert documentation is not None
+        attach_documents[table_name] = documentation.group(1)
     assert len(attach_documents) == EXPECTED_ATTACH_DOCUMENTATION_COUNT
 
     system_log_source = SYSTEM_LOG_HEADER.read_text(encoding="utf-8")

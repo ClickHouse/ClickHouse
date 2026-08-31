@@ -193,4 +193,15 @@ if __name__ == "__main__":
             )
         )
 
+    if selected("Check system-table documentation generation"):
+        results.append(
+            Result.from_commands_run(
+                name="Check system-table documentation generation",
+                command=(
+                    "python3 ci/jobs/scripts/docs/autogenerate/"
+                    "test_system_table_pages.py"
+                ),
+            )
+        )
+
     Result.create_from(results=results).complete_job()

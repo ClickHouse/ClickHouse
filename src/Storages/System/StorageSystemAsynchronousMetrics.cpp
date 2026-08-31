@@ -17,6 +17,8 @@ Contains metrics that are calculated periodically in the background. For example
 
 A metric is either scalar (a single number in the `value` column) or key-value: broken down per entity, such as per CPU core, block device, network interface, or disk. Key-value metrics are represented as a single row with a [Map](/reference/data-types/map) in the `key_values` column (for example, `CPUFrequencyMHz` maps every CPU core number to its frequency), and their `value` column is `NaN`.
 
+Before version 26.8 every key was a separate scalar metric with the key mangled into its name (`CPUFrequencyMHz_0`). The [`asynchronous_metrics_key_values_mode`](/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) server setting switches back to that form (`legacy_names`), or shows both forms at the same time (`both`) while the monitoring is being migrated.
+
 ## Metric descriptions {#metric-descriptions}
 
 The descriptions below are generated from the C++ source by `utils/generate-async-metrics-docs`. The single source of truth is the string literal next to each metric registration in `src/Common/AsynchronousMetrics.cpp`, `src/Interpreters/ServerAsynchronousMetrics.cpp`, and `src/Coordination/KeeperAsynchronousMetrics.cpp`. Metric names that include a variable part (currently only the HTTP connection pool group) are shown with a `*name*` placeholder; the running server reports them with the concrete name substituted in.
