@@ -219,22 +219,39 @@ Devuelve el valor predicho en función del modelo entrenado. [`Float64`](/es/ref
 **Ejemplo de uso**
 
 ```sql title=Query
+CREATE TABLE trips (pickup_datetime DateTime('UTC'), trip_distance Float64, total_amount Float64) ENGINE = Memory;
+
+-- A fare of 3, plus 2.5 for every unit of distance.
+INSERT INTO trips
+SELECT toDateTime('2020-01-01 00:00:00', 'UTC') + number * 60, number % 10 + 1, 2.5 * (number % 10 + 1) + 3
+FROM numbers(1000);
+
+-- One model per year of the data.
+CREATE TABLE models ENGINE = Memory AS
 SELECT
-evalMLMethod(model, trip_distance),
-total_amount
+    toYear(pickup_datetime) AS year,
+    stochasticLinearRegressionState(0.01, 0.0, 10, 'SGD')(total_amount, trip_distance) AS model
+FROM trips
+GROUP BY year;
+
+SELECT
+    trip_distance,
+    round(evalMLMethod(model, trip_distance), 2) AS predicted,
+    total_amount
 FROM trips
 LEFT JOIN models ON year = toYear(pickup_datetime)
+ORDER BY pickup_datetime
 LIMIT 5
 ```
 
 ```response title=Response
-┌─evalMLMethod(model, trip_distance)─┬─total_amount─┐
-│ 8.087692004204174                  │ 5.4          │
-│ 7.861181608305352                  │ 4.6          │
-│ 26.661544467907536                 │ 23.4         │
-│ 8.767223191900637                  │ 5.8          │
-│ 10.80581675499003                  │ 9            │
-└────────────────────────────────────┴──────────────┘
+┌─trip_distance─┬─predicted─┬─total_amount─┐
+│             1 │      4.05 │          5.5 │
+│             2 │      6.79 │            8 │
+│             3 │      9.53 │         10.5 │
+│             4 │     12.28 │           13 │
+│             5 │     15.02 │         15.5 │
+└───────────────┴───────────┴──────────────┘
 ```
 
 <div id="naivebayesclassifier">
@@ -246,7 +263,7 @@ Introducido en: v25.11.0
 Clasifica el texto de entrada mediante un diccionario [`NAIVE_BAYES`](/es/reference/statements/create/dictionary/layouts/naive-bayes). Devuelve el mismo valor de clase predicho que `dictGet(dictionary_name, class_attribute, input_text)`, donde class&#95;attribute es el nombre del atributo de etiqueta de clase configurado en el [layout](/es/reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters) del diccionario. A diferencia de `dictGet`, el tipo del resultado siempre es `UInt32` en lugar del tipo declarado del atributo de clase, y `input_text` debe ser un `String` (no se aplica ninguna conversión del tipo de clave).
 
 <Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+  Esta función es no determinista: puede devolver resultados diferentes para los mismos argumentos.
 </Note>
 
 **Sintaxis**
@@ -269,11 +286,23 @@ ID de la clase predicha. [`UInt32`](/es/reference/data-types/int-uint)
 **Clasificar texto**
 
 ```sql title=Query
-SELECT naiveBayesClassifier('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT naiveBayesClassifier('sentiment', 'a good and great film') AS class_id;
 ```
 
 ```response title=Response
-0
+┌─class_id─┐
+│        0 │
+└──────────┘
 ```
 
 <div id="naiveBayesClassifierWithAllProbs">
@@ -308,11 +337,23 @@ Array de tuplas (class&#95;id, probability), ordenadas de la más probable a la 
 **Todas las probabilidades de clase**
 
 ```sql title=Query
-SELECT naiveBayesClassifierWithAllProbs('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment', 'a good and great film')) AS predictions;
 ```
 
 ```response title=Response
-[(0,0.85),(1,0.15)]
+┌─predictions─────────────┐
+│ [(0,0.9677),(1,0.0323)] │
+└─────────────────────────┘
 ```
 
 <div id="naiveBayesClassifierWithProb">
@@ -336,7 +377,7 @@ naiveBayesClassifierWithProb(dictionary_name, input_text)
 **Argumentos**
 
 * `dictionary_name` — Nombre de un diccionario con el layout NAIVE&#95;BAYES. [`String`](/es/reference/data-types/string)
-* `input_text` — Texto para clasificar. [`String`](/es/reference/data-types/string)
+* `input_text` — Texto que se va a clasificar. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -347,11 +388,24 @@ Tuple de (class&#95;id, probability). [`Tuple(UInt32, Float64)`](/es/reference/d
 **Clasificación con probabilidad**
 
 ```sql title=Query
-SELECT naiveBayesClassifierWithProb('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+WITH naiveBayesClassifierWithProb('sentiment', 'a good and great film') AS p
+SELECT (p.1, round(p.2, 4)) AS prediction;
 ```
 
 ```response title=Response
-(0,0.85)
+┌─prediction─┐
+│ (0,0.9677) │
+└────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}
