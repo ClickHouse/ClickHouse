@@ -1270,6 +1270,154 @@ def test_move_after_processing_retry_recognizes_its_own_copy_versioned(started_c
     assert any(k.endswith("clickhouse_move_source_version_id") for k in metadata_keys)
 
 
+def test_move_after_processing_versioned_foreign_alias_detected(started_cluster):
+    """A foreign destination whose {path, etag, mtime} tuple aliases the source exactly - crafted,
+    since the natural same-second window cannot be scheduled - must be refused through the version
+    id: the one field a different upload cannot share on a versioned bucket. Without the version
+    comparison this forged copy reads as our own and the source would be deleted.
+    """
+    import io as _io
+    from minio.versioningconfig import VersioningConfig
+    from minio.commonconfig import ENABLED
+
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-alias-{token}"
+    client = started_cluster.minio_client
+    client.make_bucket(bucket)
+    client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+
+    table_name = f"move_alias_versioned_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = f"{token}_alias_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    file_data = b"1,2,3\n"
+
+    def move_collisions():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueMoveCollisions' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    collisions_before = move_collisions()
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", file_data, bucket=bucket)
+
+    # Forge the foreign archived copy at the exact move destination: same source path, same etag,
+    # same whole-second modification time, but a version id no upload of ours can carry.
+    stat = client.stat_object(bucket, f"{files_path}/{file_name}")
+    client.put_object(
+        bucket,
+        f"{processed_prefix}/{file_name}",
+        _io.BytesIO(file_data),
+        len(file_data),
+        metadata={
+            "clickhouse_move_source_path": f"{files_path}/{file_name}",
+            "clickhouse_move_source_etag": stat.etag,
+            "clickhouse_move_source_last_modified": str(int(stat.last_modified.timestamp())),
+            "clickhouse_move_source_version_id": "a-foreign-version-id",
+        },
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        bucket=bucket,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    for _ in range(1000):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(0.1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    # The tuple matches but the version does not: a collision, and the source stays.
+    for _ in range(100):
+        if move_collisions() > collisions_before:
+            break
+        time.sleep(0.1)
+    assert move_collisions() > collisions_before
+    assert count_minio_objects(started_cluster, bucket, files_path) == 1
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+
+
+def test_move_after_processing_retry_recognizes_its_own_copy_azure(started_cluster):
+    """The Azure leg of the interrupted-move retry: the 409/412 recovery and the provenance lookup
+    run through AzureObjectStorage::copyObject, so a backend bug there would strand the source as a
+    false collision while the S3 variant stays green.
+    """
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_retry_own_copy_azure_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = f"{token}_retry_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    container = started_cluster.azurite_container
+
+    def move_collisions():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueMoveCollisions' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    collisions_before = move_collisions()
+    put_azure_file_content(started_cluster, f"{files_path}/{file_name}", b"1,2,3\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="AzureQueue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+    try:
+        create_mv(node, table_name, dst_table_name)
+        for _ in range(1000):
+            if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+                break
+            time.sleep(0.1)
+        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+        for _ in range(100):
+            if (
+                count_azurite_blobs(started_cluster, container, processed_prefix) == 1
+                and count_azurite_blobs(started_cluster, container, files_path) == 0
+            ):
+                break
+            time.sleep(0.1)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+
+    assert count_azurite_blobs(started_cluster, container, processed_prefix) == 1
+    assert count_azurite_blobs(started_cluster, container, files_path) == 0
+    assert move_collisions() == collisions_before
+
+
 def test_move_after_processing_recognizes_own_copy_across_attempts(started_cluster):
     """The own-committed-copy proof must outlive a single attempt's memory: whatever died between
     committing the guarded copy and removing the source - server restart, task cancellation - left no
