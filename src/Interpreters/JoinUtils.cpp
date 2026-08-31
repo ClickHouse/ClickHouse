@@ -9,8 +9,10 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
+#include <DataTypes/getMostSubtype.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
@@ -178,6 +180,58 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
         typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column.column, 0, column.column->size());
         column.column = std::move(lc);
     }
+}
+
+/// Mirrors `validateNestedTypesForAccurateCastOrNull` in CastOverloadResolver.cpp: `accurateCastOrNull`
+/// reports an inexact conversion of a Tuple element by a NULL in place of that element, so every element
+/// of the outermost Tuple has to be able to hold it. `Tuple(Array(UInt64))` is an example of a type that cannot.
+static bool isSupportedByAccurateCastOrNull(const DataTypePtr & type, bool is_nested_tuple = false)
+{
+    /// `getMostSubtype` reports the absence of a common subtype for a Tuple element by `Nothing` in its place.
+    if (isNothing(type))
+        return false;
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        /// The join null-key map only extracts nullable elements of the outermost Tuple.
+        /// A NULL in a nested Tuple would otherwise remain a regular hash key and match another NULL.
+        if (is_nested_tuple)
+            return false;
+
+        const auto & elements = tuple_type->getElements();
+        return std::ranges::all_of(elements, [](const auto & element) { return isSupportedByAccurateCastOrNull(element, true); });
+    }
+    if (type->isNullable())
+        return isSupportedByAccurateCastOrNull(removeNullable(type), is_nested_tuple);
+    return type->canBeInsideNullable() || canContainNull(*type);
+}
+
+static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        return std::ranges::all_of(tuple_type->getElements(), hasOnlyIntegerLeaves);
+    }
+
+    return isInteger(removeNullable(type));
+}
+
+DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    DataTypes types{
+        removeNullable(recursiveRemoveLowCardinality(left_type)),
+        removeNullable(recursiveRemoveLowCardinality(right_type))};
+
+    /// Only integer keys need this fallback: a floating-point common subtype can change equality semantics.
+    if (!std::ranges::all_of(types, hasOnlyIntegerLeaves))
+        return nullptr;
+
+    auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false);
+    /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be
+    /// allowed inside Nullable, and the same holds for the elements of a Tuple, recursively.
+    if (isNothing(subtype) || !subtype->canBeInsideNullable() || !isSupportedByAccurateCastOrNull(subtype))
+        return nullptr;
+
+    return subtype;
 }
 
 bool canBecomeNullable(const DataTypePtr & type)
