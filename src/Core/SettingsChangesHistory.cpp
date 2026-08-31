@@ -64,6 +64,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
+            {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the left (probe) side of a JOIN by the runtime filter collected from the right side. Only join keys that are primary key columns or are covered by a `minmax`, `set` or `bloom_filter` skip index are pruned, and a filter that is not built yet is skipped, so the pass either prunes granules that cannot match or does nothing."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
