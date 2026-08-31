@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 SerializationRow::SerializationRow(Serializations field_serializations_, Strings field_names_)
@@ -108,6 +109,26 @@ namespace
             fields[i]->serializeBinary(tuple.getColumn(i), row_num, out, settings);
     }
 
+    /// The `row_size` prefix comes from a part on disk or from an untrusted binary stream,
+    /// so the payload has to be bounded before it is allocated, exactly like a length-prefixed
+    /// string is in `SerializationString`.
+    void readRowPayload(String & payload, ReadBuffer & in, const FormatSettings & settings)
+    {
+        UInt64 size = 0;
+        readVarUInt(size, in);
+
+        if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large Row payload size: {}. The maximum is: {}. To increase the maximum, use setting "
+                "format_binary_max_string_size",
+                size,
+                settings.binary.max_binary_string_size);
+
+        payload.resize(size);
+        in.readStrict(payload.data(), size);
+    }
+
     /// Appends exactly one row to every child column, or none at all: a field that throws
     /// mid-row would otherwise leave the children of `tuple` with different sizes.
     /// `in` must hold exactly one row payload; a payload the fields do not fully consume
@@ -155,10 +176,8 @@ void SerializationRow::serializeBinary(const Field & field, WriteBuffer & ostr, 
 
 void SerializationRow::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size = 0;
-    readVarUInt(size, istr);
-    String blob(size, '\0');
-    istr.readStrict(blob.data(), size);
+    String blob;
+    readRowPayload(blob, istr, settings);
     ReadBufferFromString rb(blob);
 
     Tuple t;
@@ -188,10 +207,8 @@ void SerializationRow::serializeBinary(const IColumn & column, size_t row_num, W
 
 void SerializationRow::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size = 0;
-    readVarUInt(size, istr);
-    String blob(size, '\0');
-    istr.readStrict(blob.data(), size);
+    String blob;
+    readRowPayload(blob, istr, settings);
     ReadBufferFromString rb(blob);
     readRowFields(assert_cast<ColumnTuple &>(column), field_serializations, settings, rb);
 }
@@ -331,10 +348,7 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
     String row_payload;
     for (size_t read = 0; (limit == 0 || read < limit) && !stream->eof(); ++read)
     {
-        UInt64 size = 0;
-        readVarUInt(size, *stream);
-        row_payload.resize(size);
-        stream->readStrict(row_payload.data(), size);
+        readRowPayload(row_payload, *stream, format_settings);
         ReadBufferFromString row_buf(row_payload);
         readRowFields(tuple, field_serializations, format_settings, row_buf);
     }
