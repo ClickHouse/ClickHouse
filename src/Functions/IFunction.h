@@ -203,6 +203,22 @@ public:
 
     virtual bool isStateful() const { return false; }
 
+    /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
+      * to a small fixed-size result, so that computing it early and carrying the result instead of the
+      * argument strictly reduces the volume of data flowing through the query plan.
+      * Examples: `length`, `lengthUTF8`, `empty`, `notEmpty`.
+      * Used by the `pushDownVolumeReducingFunction` query plan optimization.
+      */
+    virtual bool isVolumeReducing() const { return false; }
+
+    /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
+      * Specifically: if the bounding boxes of the geometry arguments are disjoint,
+      * the function is guaranteed to return 0/false for all such rows.
+      * Default: false. Spatial intersection/containment functions override this to return true.
+      * UDFs with spatial semantics can also override this to enable Parquet row group / page pruning.
+      */
+    virtual bool isSpatialPredicate() const { return false; }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -342,6 +358,12 @@ public:
         bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
+        /// Is true if the function is monotonic over the whole subset of the input range on which its
+        /// evaluation succeeds, but the evaluation may throw an exception for the rest of the range
+        /// (so it is weaker than is_always_monotonic, which requires the whole range to be mapped).
+        /// It is enough to push a comparison constant through a sorting key expression: stored key
+        /// values always belong to the subset on which the evaluation succeeds.
+        bool is_always_monotonic_where_defined = false;
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -396,6 +418,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
+    virtual bool isVolumeReducing() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     /// Returns true for higher-order functions that accept a lambda expression as an argument
     /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
@@ -408,6 +431,9 @@ public:
 
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
+
+    /// See IFunctionBase::isSpatialPredicate.
+    virtual bool isSpatialPredicate() const { return false; }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -512,6 +538,14 @@ protected:
       */
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
+    /** Controls the default `Variant` adaptor for a `Variant` argument that carries a custom type name
+      * (e.g. `Geometry`, which is a custom-named `Variant`). Defaults to
+      * `useDefaultImplementationForVariant`. A function returns false for the custom-named `Variant`
+      * types it handles itself, to keep the custom name, while every other `Variant` argument still
+      * goes through the default adaptor.
+      */
+    virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
+
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -597,6 +631,7 @@ public:
     }
 
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+    virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
 
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
@@ -612,10 +647,37 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    /// See `IFunctionBase::isVolumeReducing`.
+    virtual bool isVolumeReducing() const { return false; }
+    virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+
+    /** True if the function might throw an exception while it is executed, for these argument types.
+      * Examples: `intDiv` throws on division by zero, `repeat` throws when the result is too large,
+      * `equals` throws when a string that is compared to a date cannot be parsed as a date.
+      * Errors that depend only on the argument types are irrelevant here: they are reported for
+      * every input, so they are not affected by the decisions this property is used for.
+      * Logical errors are irrelevant as well, they are bugs and not a part of the contract.
+      *
+      * It is used to decide whether the rows that are not referenced have to be removed from
+      * `ColumnReplicated` arguments before the function is executed: telling that a function
+      * cannot throw while it can, surfaces as an exception thrown for rows that the query does
+      * not use at all.
+      *
+      * By default it falls back to `isSuitableForShortCircuitArgumentsExecution`, which answers a
+      * different question ("is it worth to evaluate this function lazily"), and is only a rough
+      * approximation of this one: a function that is expensive but cannot throw is reported as
+      * throwing (which is safe, it just loses an optimization), while a function that is cheap
+      * and can throw is reported as not throwing (which is not safe). Override this method
+      * whenever the two properties differ.
+      */
+    virtual bool canThrow(const DataTypesWithConstInfo & arguments) const
+    {
+        return isSuitableForShortCircuitArgumentsExecution(arguments);
+    }
 
     /// Higher-order functions accept at least one lambda expression as an argument.
     virtual bool isHigherOrderFunction() const { return false; }

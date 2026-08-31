@@ -42,7 +42,7 @@ doc_type: 'guide'
 
   Если ваши столбцы имеют фиксированные имена и типы и появления новых столбцов не ожидается, в продакшене всегда предпочитайте статически определённую схему.
 
-  JSON type предпочтителен для сильно динамичных данных, где имена и типы столбцов могут меняться. Этот тип также полезен на этапе прототипирования и исследования данных.
+  тип JSON предпочтителен для сильно динамичных данных, где имена и типы столбцов могут меняться. Этот тип также полезен на этапе прототипирования и исследования данных.
 </Info>
 
 Простая схема для этого показана ниже, где **ключи JSON соответствуют именам столбцов**:
@@ -72,7 +72,7 @@ ClickHouse может загружать данные JSON в нескольки
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -87,7 +87,7 @@ LIMIT 1
 Обратите внимание, что указывать формат файла не обязательно. Вместо этого мы используем glob-шаблон для чтения всех файлов `*.json.gz` из бакета. ClickHouse автоматически определяет формат `JSONEachRow` (ndjson) по расширению и содержимому файла. Если ClickHouse не может определить формат автоматически, его можно указать вручную через параметры функций.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 Для загрузки строк из этих файлов можно использовать [`INSERT INTO SELECT`](/ru/reference/statements/insert-into#inserting-the-results-of-select):
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -183,12 +183,12 @@ ORDER BY (project, date);
 Мы заполняем таблицу так же, как заполняли исходный набор данных:
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response

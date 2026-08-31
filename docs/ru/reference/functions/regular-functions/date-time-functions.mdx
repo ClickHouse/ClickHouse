@@ -113,9 +113,9 @@ SELECT YYYYMMDDToDate(20230911);
 ```
 
 ```response title=Response
-┌─toYYYYMMDD(20230911)─┐
-│           2023-09-11 │
-└──────────────────────┘
+┌─YYYYMMDDToDate(20230911)─┐
+│               2023-09-11 │
+└──────────────────────────┘
 ```
 
 <div id="YYYYMMDDToDate32">
@@ -186,13 +186,13 @@ YYYYMMDDhhmmssToDateTime(YYYYMMDDhhmmss[, timezone])
 **Пример**
 
 ```sql title=Query
-SELECT YYYYMMDDToDateTime(20230911131415);
+SELECT YYYYMMDDhhmmssToDateTime(20230911131415);
 ```
 
 ```response title=Response
-┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
-│                           2023-09-11 13:14:15 │
-└───────────────────────────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                      2023-09-11 13:14:15 │
+└──────────────────────────────────────────┘
 ```
 
 <div id="YYYYMMDDhhmmssToDateTime64">
@@ -230,9 +230,9 @@ SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
 ```
 
 ```response title=Response
-┌─YYYYMMDDhhmm⋯/Istanbul')─┐
-│  2023-09-11 13:14:15.000 │
-└──────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul')─┐
+│                                        2023-09-11 13:14:15.000 │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addDate">
@@ -268,9 +268,9 @@ SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
 ```
 
 ```response title=Response
-┌─addDate(toDa⋯valYear(3))─┐
-│               2021-01-01 │
-└──────────────────────────┘
+┌─addDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2021-01-01 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="addDays">
@@ -324,9 +324,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 day)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯valDay(10))─┐
-│               1998-06-26 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                          1998-06-26 │
+└─────────────────────────────────────────────────────┘
 ```
 
 <div id="addHours">
@@ -380,9 +380,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alHour(10))─┐
-│      1998-06-16 10:00:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                  1998-06-16 10:00:00 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="addInterval">
@@ -483,9 +483,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('19⋯osecond(10))─┐
-│ 1998-06-16 00:00:00.000010 │
-└────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                      1998-06-16 00:00:00.000010 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMilliseconds">
@@ -537,9 +537,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯second(10))─┐
-│  1998-06-16 00:00:00.010 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                         1998-06-16 00:00:00.010 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMinutes">
@@ -593,9 +593,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 minute)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯Minute(10))─┐
-│      1998-06-16 00:10:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMinute(10))─┐
+│                                    1998-06-16 00:10:00 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMonths">
@@ -649,9 +649,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 month)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯lMonth(10))─┐
-│               1999-04-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                            1999-04-16 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="addNanoseconds">
@@ -703,9 +703,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 1000 nanosecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('199⋯osecond(1000))─┐
-│ 1998-06-16 00:00:00.000001000 │
-└───────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(1000))─┐
+│                                    1998-06-16 00:00:00.000001000 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addQuarters">
@@ -759,9 +759,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯uarter(10))─┐
-│               2000-12-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                              2000-12-16 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="addSeconds">
@@ -815,9 +815,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 second)
 ```
 
 ```response title=Response
-┌─dateAdd('1998-06-16'::Date, INTERVAL 10 second)─┐
-│                             1998-06-16 00:00:10 │
-└─────────────────────────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                    1998-06-16 00:00:10 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="addTupleOfIntervals">
@@ -909,9 +909,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 week)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alWeek(10))─┐
-│               1998-08-25 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                           1998-08-25 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="addYears">
@@ -965,9 +965,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alYear(10))─┐
-│               2008-06-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                           2008-06-16 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="age">
@@ -1526,7 +1526,7 @@ formatDateTime(datetime, format[, timezone])
 **Аргументы**
 
 * `datetime` — Значение Date или DateTime для форматирования. [`Date`](/ru/reference/data-types/date) or [`Date32`](/ru/reference/data-types/date32) or [`DateTime`](/ru/reference/data-types/datetime) or [`DateTime64`](/ru/reference/data-types/datetime64)
-* `format` — Строка формата с полями подстановки. [`String`](/ru/reference/data-types/string)
+* `format` — Строка формата с полями замены. [`String`](/ru/reference/data-types/string)
 * `timezone` — Необязательно. Имя часового пояса для форматируемого времени. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
@@ -1555,7 +1555,7 @@ SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
 
 ```response title=Response
 ┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
-│ 1234560                                                             │
+│ 123456                                                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1779,7 +1779,7 @@ SELECT fromModifiedJulianDay(58849)
 
 Добавленный в: v21.1.0
 
-Аналогично [`fromModifiedJulianDay()`](#fromModifiedJulianDay), но вместо вызова исключения возвращает `NULL`.
+Аналогично [`fromModifiedJulianDay()`](#fromModifiedJulianDay), но вместо вызова Исключения возвращает `NULL`.
 
 **Синтаксис**
 
@@ -1801,16 +1801,16 @@ fromModifiedJulianDayOrNull(day)
 
 ```sql title=Query
 SELECT fromModifiedJulianDayOrNull(58849);
-SELECT fromModifiedJulianDayOrNull(60000000); -- некорректный аргумент, возвращает NULL
+SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
 ```
 
 ```response title=Response
-┌─fromModified⋯Null(58849)─┐
-│ 2020-01-01               │
-└──────────────────────────┘
-┌─fromModified⋯l(60000000)─┐
-│ ᴺᵁᴸᴸ                     │
-└──────────────────────────┘
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
+┌─fromModifiedJulianDayOrNull(60000000)─┐
+│ ᴺᵁᴸᴸ                                  │
+└───────────────────────────────────────┘
 ```
 
 <div id="fromUTCTimestamp">
@@ -1895,7 +1895,7 @@ SELECT fromUnixTimestamp(423543535)
 
 ```response title=Response
 ┌─fromUnixTimestamp(423543535)─┐
-│          1983-06-04 10:58:55 │
+│          1983-06-04 02:58:55 │
 └──────────────────────────────┘
 ```
 
@@ -1907,7 +1907,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 
 ```response title=Response
 ┌─DateTime────────────┐
-│ 2009-02-11 14:42:23 │
+│ 2009-02-11 06:42:23 │
 └─────────────────────┘
 ```
 
@@ -2248,7 +2248,7 @@ SELECT monthName(date_value)
 now([timezone])
 ```
 
-**Псевдонимы**: `current_timestamp`, `localtimestamp`
+**Псевдонимы**: `localtimestamp`, `current_timestamp`
 
 **Аргументы**
 
@@ -2444,7 +2444,7 @@ FORMAT PrettyCompactMonoBlock
 
 Добавленный в: v23.6.0
 
-Возвращает часовой пояс сервера, то есть значение настройки [`timezone`](/ru/reference/settings/server-settings/settings#timezone).
+Возвращает часовой пояс сервера, то есть значение настройки [`timezone`](/ru/reference/settings/server-settings/settings/other#timezone).
 Если функция выполняется в контексте distributed таблицы, она создаёт обычный столбец со значениями для каждого сегмента. В противном случае она возвращает константное значение.
 
 <Note>
@@ -2477,7 +2477,7 @@ SELECT serverTimeZone()
 
 ```response title=Response
 ┌─serverTimeZone()─┐
-│ UTC              │
+│ Etc/UTC          │
 └──────────────────┘
 ```
 
@@ -2570,9 +2570,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 day)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯valDay(10))─┐
-│               1998-06-06 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                           1998-06-06 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractHours">
@@ -2626,9 +2626,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 hour)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alHour(10))─┐
-│      1998-06-15 14:00:00 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                   1998-06-15 14:00:00 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractInterval">
@@ -2728,9 +2728,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯osecond(10))─┐
-│ 1998-06-15 23:59:59.999990 │
-└────────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                       1998-06-15 23:59:59.999990 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMilliseconds">
@@ -2782,9 +2782,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯second(10))─┐
-│  1998-06-15 23:59:59.990 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                          1998-06-15 23:59:59.990 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMinutes">
@@ -2838,9 +2838,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 minute)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯Minute(10))─┐
-│      1998-06-15 23:50:00 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalMinute(10))─┐
+│                                     1998-06-15 23:50:00 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMonths">
@@ -2894,9 +2894,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 month)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯lMonth(10))─┐
-│               1997-08-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                             1997-08-16 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractNanoseconds">
@@ -2948,9 +2948,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 nanosecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('19⋯anosecond(10))─┐
-│ 1998-06-15 23:59:59.999999990 │
-└───────────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(10))─┐
+│                                   1998-06-15 23:59:59.999999990 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractQuarters">
@@ -3060,9 +3060,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 second)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯Second(10))─┐
-│      1998-06-15 23:59:50 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                     1998-06-15 23:59:50 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractTupleOfIntervals">
@@ -3097,9 +3097,9 @@ WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVA
 ```
 
 ```response title=Response
-┌─subtractTupl⋯alYear(1)))─┐
-│               2016-12-31 │
-└──────────────────────────┘
+┌─subtractTupleOfIntervals(date, (toIntervalDay(1), toIntervalYear(1)))─┐
+│                                                            2016-12-31 │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractWeeks">
@@ -3153,9 +3153,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 week)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alWeek(10))─┐
-│               1998-04-07 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                            1998-04-07 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractYears">
@@ -3209,9 +3209,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 year)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alYear(10))─┐
-│               1988-06-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                            1988-06-16 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="timeDiff">
@@ -3472,7 +3472,7 @@ SELECT timezone()
 
 Добавленный в: v21.4.0
 
-Возвращает название часового пояса для значения [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64).
+Возвращает имя часового пояса для значения [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64).
 
 **Синтаксис**
 
@@ -3501,7 +3501,7 @@ SELECT timezoneOf(now());
 
 ```response title=Response
 ┌─timezoneOf(now())─┐
-│ Europe/Amsterdam  │
+│ Etc/UTC           │
 └───────────────────┘
 ```
 
@@ -3751,9 +3751,9 @@ SELECT toDaysSinceYearZero(toDate('2023-09-08'))
 ```
 
 ```response title=Response
-┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
-│                                     713569 │
-└────────────────────────────────────────────┘
+┌─toDaysSinceYearZero(toDate('2023-09-08'))─┐
+│                                    739136 │
+└───────────────────────────────────────────┘
 ```
 
 <div id="toHour">
@@ -3883,8 +3883,8 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 ```
 
 ```response title=Response
-┌─week1─┬─week2─┐
-│    40 │    40 │
+┌─year1─┬─year2─┐
+│  2024 │  2024 │
 └───────┴───────┘
 ```
 
@@ -3897,7 +3897,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 Округляет дату или дату и время до последнего дня месяца.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -3939,7 +3939,7 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 Округляет дату или дату и время до ближайшей субботы или воскресенья в большую сторону.
 
 <Note>
-  Возвращаемый тип можно настроить параметром [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить параметром [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -3974,10 +3974,10 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
-toLastDayOfWeek(toDate('2023-04-23')):                   2023-04-23
-toLastDayOfWeek(toDate('2023-04-23'), 1):                2023-04-23
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-22
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-23
+toLastDayOfWeek(toDate('2023-04-23')):                 2023-04-29
+toLastDayOfWeek(toDate('2023-04-23'), 1):              2023-04-23
 ```
 
 <div id="toMicrosecond">
@@ -4051,9 +4051,9 @@ SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3));
 ```
 
 ```response title=Response
-┌──toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
-│                                                        456 │
-└────────────────────────────────────────────────────────────┘
+┌─toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
+│                                                       456 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toMinute">
@@ -4158,16 +4158,16 @@ toModifiedJulianDayOrNull(date)
 
 ```sql title=Query
 SELECT toModifiedJulianDayOrNull('2020-01-01');
-SELECT toModifiedJulianDayOrNull('0000-00-00'); -- некорректная дата, возвращает NULL
+SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
 ```
 
 ```response title=Response
-┌─toModifiedJu⋯020-01-01')─┐
-│                    58849 │
-└──────────────────────────┘
-┌─toModifiedJu⋯000-00-00')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+┌─toModifiedJulianDayOrNull('0000-00-00')─┐
+│                                    ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┘
 ```
 
 <div id="toMonday">
@@ -4179,7 +4179,7 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- некорректная да
 Округляет дату или дату и время вниз до понедельника той же недели. Возвращает дату.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -4367,7 +4367,7 @@ SELECT toQuarter(toDateTime('2023-04-21 10:20:30'))
 Добавленный в: v1.1.0
 
 Преобразует дату или дату и время в количество дней, прошедших с некоторой фиксированной точки в прошлом.
-Точный момент времени является деталью реализации, поэтому эту функцию не предполагается использовать самостоятельно.
+Точный момент времени является деталью реализации, поэтому эту функцию не предполагается использовать автономно.
 Основное назначение функции — вычислять разницу в днях между двумя датами или датой и временем, например, `toRelativeDayNum(dt1) - toRelativeDayNum(dt2)`.
 
 **Синтаксис**
@@ -4393,9 +4393,9 @@ SELECT toRelativeDayNum(toDate('2023-04-01')) - toRelativeDayNum(toDate('2023-01
 ```
 
 ```response title=Response
-┌─minus(toRela⋯3-01-01')))─┐
-│                       90 │
-└──────────────────────────┘
+┌─minus(toRelativeDayNum(toDate('2023-04-01')), toRelativeDayNum(toDate('2023-01-01')))─┐
+│                                                                                    90 │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toRelativeHourNum">
@@ -4659,9 +4659,9 @@ SELECT toRelativeYearNum('2010-10-01'::DateTime) - toRelativeYearNum('2000-01-01
 ```
 
 ```response title=Response
-┌─minus(toRela⋯ateTime')))─┐
-│                       10 │
-└──────────────────────────┘
+┌─minus(toRelativeYearNum(CAST('2010-10-01', 'DateTime')), toRelativeYearNum(CAST('2000-01-01', 'DateTime')))─┐
+│                                                                                                          10 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toSecond">
@@ -4711,7 +4711,7 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 Округляет дату и время вниз до начала дня.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -4751,7 +4751,7 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 Округляет дату и время вниз до начала пятнадцатиминутного интервала.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -4797,7 +4797,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 Округляет дату и время вниз до начала ближайшего пятиминутного интервала.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -4845,7 +4845,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 Округляет дату и время вниз до начала часа.
 
 <Note>
-  Возвращаемый тип можно настроить параметром [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить параметром [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -4860,7 +4860,7 @@ toStartOfHour(datetime)
 
 **Возвращаемое значение**
 
-Возвращает дату и время, округлённые до начала часа. [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+Возвращает дату и время, округлённые вниз до начала часа. [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 
@@ -4872,9 +4872,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────────res─┬─toTypeName(res)─┐
-│ 2023-04-21 10:00:00 │ DateTime        │
-└─────────────────────┴─────────────────┘
+┌─toStartOfHour(toDateTime('2023-04-21 10:20:30'))─┐
+│                              2023-04-21 10:00:00 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="toStartOfISOYear">
@@ -4886,7 +4886,7 @@ SELECT
 Округляет дату или дату и время вниз до первого дня ISO-года, который может не совпадать с обычным календарным годом. См. [дату недели по ISO](https://en.wikipedia.org/wiki/ISO_week_date).
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -4934,21 +4934,21 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 Вычисление выполняется относительно определённых моментов времени:
 
-| Interval                                                                                                                    | Start                    |
-| --------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| YEAR                                                                                                                        | год 0                    |
-| QUARTER                                                                                                                     | 1900 Q1                  |
-| MONTH                                                                                                                       | январь 1900              |
-| WEEK                                                                                                                        | 1970, 1-я неделя (01-05) |
-| DAY                                                                                                                         | 1970-01-01               |
-| HOUR                                                                                                                        | (*)                      |
-| MINUTE                                                                                                                      | 1970-01-01 00:00:00      |
-| SECOND                                                                                                                      | 1970-01-01 00:00:00      |
-| MILLISECOND                                                                                                                 | 1970-01-01 00:00:00      |
-| MICROSECOND                                                                                                                 | 1970-01-01 00:00:00      |
-| NANOSECOND                                                                                                                  | 1970-01-01 00:00:00      |
-| (*) интервалы в часах — особый случай: вычисление всегда выполняется относительно 00:00:00 (полуночи) текущего дня. Поэтому |                          |
-| имеют смысл только значения часов от 1 до 23.                                                                               |                          |
+| Interval                                                                                                                                       | Start                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| YEAR                                                                                                                                           | год 0                    |
+| QUARTER                                                                                                                                        | 1900 Q1                  |
+| MONTH                                                                                                                                          | январь 1900              |
+| WEEK                                                                                                                                           | 1970, 1-я неделя (01-05) |
+| DAY                                                                                                                                            | 1970-01-01               |
+| HOUR                                                                                                                                           | (*)                      |
+| MINUTE                                                                                                                                         | 1970-01-01 00:00:00      |
+| SECOND                                                                                                                                         | 1970-01-01 00:00:00      |
+| MILLISECOND                                                                                                                                    | 1970-01-01 00:00:00      |
+| MICROSECOND                                                                                                                                    | 1970-01-01 00:00:00      |
+| NANOSECOND                                                                                                                                     | 1970-01-01 00:00:00      |
+| (*) интервалы в часах — особый случай: вычисление всегда выполняется относительно 00:00:00 (полуночи) текущего дня. Поэтому имеют смысл только |                          |
+| значения часов от 1 до 23.                                                                                                                     |                          |
 
 Если указан unit `WEEK`, `toStartOfInterval` считает, что недели начинаются с понедельника. Обратите внимание, что это поведение отличается от поведения функции `toStartOfWeek`, в которой недели по умолчанию начинаются с воскресенья.
 
@@ -4981,9 +4981,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 ```
 
 ```response title=Response
-┌─toStartOfInt⋯alMonth(1))─┐
-│               2023-01-01 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
+│                                                               2023-01-01 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Использование начальной точки**
@@ -4993,9 +4993,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 ```
 
 ```response title=Response
-┌─toStartOfInt⋯14:35:30'))─┐
-│      2023-01-01 14:44:30 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-01 14:45:00'), toIntervalMinute(1), toDateTime('2023-01-01 14:35:30'))─┐
+│                                                                                          2023-01-01 14:44:30 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toStartOfMicrosecond">
@@ -5019,7 +5019,7 @@ toStartOfMicrosecond(datetime[, timezone])
 
 **Возвращаемое значение**
 
-Исходное значение с субмикросекундами [`DateTime64`](/ru/reference/data-types/datetime64)
+Входное значение с субмикросекундами [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 
@@ -5045,7 +5045,7 @@ SELECT toStartOfMicrosecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999999000 │
+│               2020-01-01 13:20:30.999999000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -5096,7 +5096,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999000000 │
+│               2020-01-01 13:20:30.999000000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -5109,7 +5109,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 Округляет дату и время вниз до начала минуты.
 
 <Note>
-  Возвращаемый тип можно задать с помощью настройки [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно задать с помощью настройки [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -5153,7 +5153,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 Округляет дату или дату и время вниз до первого дня месяца.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -5205,7 +5205,7 @@ toStartOfNanosecond(datetime[, timezone])
 
 **Возвращаемое значение**
 
-Исходное значение с наносекундами. [`DateTime64`](/ru/reference/data-types/datetime64)
+Входное значение с наносекундами. [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 
@@ -5231,7 +5231,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
-│              2020-01-01 12:20:30.999999999 │
+│              2020-01-01 13:20:30.999999999 │
 └────────────────────────────────────────────┘
 ```
 
@@ -5244,7 +5244,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 Округляет дату или дату и время вниз до первого дня квартала. Первый день квартала — это 1 января, 1 апреля, 1 июля или 1 октября.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -5335,7 +5335,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 Округляет дату и время вниз до начала ближайшего интервала в десять минут.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -5381,7 +5381,7 @@ toStartOfTenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 Округляет дату или дату и время вниз до ближайшего воскресенья или понедельника.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -5415,11 +5415,11 @@ SELECT
 
 ```response title=Response
 Row 1:
-    ──────
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-17
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-17
-    toStartOfWeek(toDate('2023-04-24')):                   2023-04-24
-    toStartOfWeek(toDate('2023-04-24'), 1):                2023-04-24
+──────
+toStartOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-16
+toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-17
+toStartOfWeek(toDate('2023-04-24')):                 2023-04-23
+toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
 ```
 
 <div id="toStartOfYear">
@@ -5431,7 +5431,7 @@ Row 1:
 Округляет дату или дату и время вниз до первого дня года. Возвращает значение типа `Date`.
 
 <Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Синтаксис**
@@ -5466,29 +5466,37 @@ SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
   ## toTimeWithFixedDate
 </div>
 
-Добавленный в: v1.1.0
+Добавленный в: v25.5.0
 
-Извлекает компонент времени из значения даты или даты и времени.
-Возвращаемый результат представляет собой смещение относительно фиксированной точки во времени, сейчас это `1970-01-02`,
-но точная точка во времени является деталью реализации и в будущем может измениться.
+Извлекает компонент времени из значения даты и времени.
+Возвращаемый результат представляет собой смещение относительно фиксированного момента времени, в настоящее время `1970-01-02`,
+однако точный момент времени является деталью реализации и в будущем может измениться.
 
-Поэтому `toTime` не следует использовать автономно.
-Основное назначение функции — вычисление разницы во времени между двумя датами или значениями даты и времени, например: `toTime(dt1) - toTime(dt2)`.
+Поэтому `toTimeWithFixedDate` не следует использовать отдельно.
+Основное назначение функции — вычислять разность во времени между двумя значениями даты и времени, например `toTimeWithFixedDate(dt1) - toTimeWithFixedDate(dt2)`.
+
+Это устаревшая функция `toTime`, переименованная в v25.5, поскольку имя `toTime` теперь используется
+[`toTime`](/ru/reference/functions/regular-functions/type-conversion-functions#toTime), которая преобразует значения в
+тип данных [`Time`](/ru/reference/data-types/time).
+Она по-прежнему доступна под прежним именем `toTime`, если включена настройка
+[`use_legacy_to_time`](/ru/reference/settings/session-settings#use_legacy_to_time) (начиная с v26.7 по умолчанию установлено значение `0`, а с v25.6 по v26.6 по умолчанию было установлено значение `1`).
+
+Если аргумент `datetime` содержит компоненты с точностью менее секунды, они отбрасываются в возвращаемом значении `DateTime` с точностью до секунды.
 
 **Синтаксис**
 
 ```sql
-toTimeWithFixedDate(date[, timezone])
+toTimeWithFixedDate(datetime[, timezone])
 ```
 
 **Аргументы**
 
-* `date` — Дата для преобразования в значение времени. [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
-* `timezone` — Необязательно. Часовой пояс для возвращаемого значения. [`String`](/ru/reference/data-types/string)
+* `datetime` — Дата и время, из которых извлекается время. [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+* `timezone` — Необязательно. Часовой пояс возвращаемого значения. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
-Возвращает компонент времени даты или даты и времени в виде смещения относительно фиксированного момента времени (сейчас это 1970-01-02). [`DateTime`](/ru/reference/data-types/datetime)
+Возвращает компонент времени даты и времени в виде смещения относительно фиксированного момента времени (в настоящее время — 1970-01-02). [`DateTime`](/ru/reference/data-types/datetime)
 
 **Примеры**
 
@@ -5502,6 +5510,31 @@ SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDat
 ┌─result─┬─toTypeName(result)─┐
 │   3600 │ Int32              │
 └────────┴────────────────────┘
+```
+
+**Доли секунды отбрасываются**
+
+```sql title=Query
+SELECT toTimeWithFixedDate(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
+```
+
+**Та же функция, вызываемая под прежним именем legacy**
+
+```sql title=Query
+SET use_legacy_to_time = 1;
+SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
 ```
 
 <div id="toTimezone">
@@ -5687,7 +5720,7 @@ from_date32:     1509840000
 Не имеет значения, сколько дней нового года она содержит, даже если только один.
 То есть если последняя неделя декабря содержит 1 января следующего года, она будет неделей 1 следующего года.
 
-Первый аргумент также можно указать как [`String`](/ru/reference/data-types/string) в формате, поддерживаемом [`parseDateTime64BestEffort()`](/ru/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Поддержка строковых аргументов существует только из соображений совместимости с MySQL, которая требуется некоторым сторонним инструментам. Поскольку в будущем поддержка строковых аргументов может зависеть от новых настроек совместимости с MySQL, а разбор строк в целом работает медленно, рекомендуется её не использовать.
+Первый аргумент также можно указать как [`String`](/ru/reference/data-types/string) в формате, поддерживаемом [`parseDateTime64BestEffort`](/ru/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Поддержка строковых аргументов существует только из соображений совместимости с MySQL, которая требуется некоторым сторонним инструментам. Поскольку в будущем поддержка строковых аргументов может зависеть от новых настроек совместимости с MySQL, а разбор строк в целом работает медленно, рекомендуется её не использовать.
 
 **Синтаксис**
 
@@ -5756,7 +5789,7 @@ SELECT toYYYYMM(now(), 'US/Eastern')
 
 ```response title=Response
 ┌─toYYYYMM(now(), 'US/Eastern')─┐
-│                        202303 │
+│                        202608 │
 └───────────────────────────────┘
 ```
 
@@ -5785,16 +5818,16 @@ toYYYYMMDD(datetime[, timezone])
 
 **Примеры**
 
-**Преобразование текущей даты в формат YYYYMMDD**
+**Преобразование даты в формат YYYYMMDD в другом часовом поясе**
 
 ```sql title=Query
-SELECT toYYYYMMDD(now(), 'US/Eastern')
+SELECT toYYYYMMDD(toDateTime('2026-01-02 03:04:05', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMMDD(now(), 'US/Eastern')─┐
-│                        20230302 │
-└─────────────────────────────────┘
+┌─toYYYYMMDD(toDateTime('2026-01-02 03:04:05', 'UTC'), 'US/Eastern')─┐
+│                                                           20260101 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toYYYYMMDDhhmmss">
@@ -5823,16 +5856,16 @@ toYYYYMMDDhhmmss(datetime[, timezone])
 
 **Примеры**
 
-**Преобразование текущей даты и времени в формат YYYYMMDDhhmmss**
+**Преобразование даты и времени в формат YYYYMMDDhhmmss**
 
 ```sql title=Query
-SELECT toYYYYMMDDhhmmss(now(), 'US/Eastern')
+SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
-│                        20230302112209 │
-└───────────────────────────────────────┘
+┌─toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')─┐
+│                                                           20230302112209 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toYear">
@@ -5869,7 +5902,7 @@ SELECT toYear(toDateTime('2023-04-21 10:20:30'))
 
 ```response title=Response
 ┌─toYear(toDateTime('2023-04-21 10:20:30'))─┐
-│                                     2023  │
+│                                      2023 │
 └───────────────────────────────────────────┘
 ```
 
@@ -5919,7 +5952,7 @@ SELECT toYearNumSinceEpoch(toDate('2024-10-01'))
 
 Предупреждение: номер недели, возвращаемый `toYearWeek()`, может отличаться от значения, возвращаемого `toWeek()`. `toWeek()` всегда возвращает номер недели в контексте указанного года, и если `toWeek()` возвращает `0`, `toYearWeek()` возвращает значение, соответствующее последней неделе предыдущего года. См. `prev_yearWeek` в примере ниже.
 
-Первый аргумент также может быть указан как [`String`](/ru/reference/data-types/string) в формате, поддерживаемом [`parseDateTime64BestEffort()`](/ru/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Поддержка строковых аргументов существует только из соображений совместимости с MySQL, которая требуется некоторым сторонним инструментам. Поскольку в будущем поддержка строковых аргументов может зависеть от новых настроек совместимости с MySQL, а разбор строк сам по себе обычно медленный, рекомендуется их не использовать.
+Первый аргумент также может быть указан как [`String`](/ru/reference/data-types/string) в формате, поддерживаемом [`parseDateTime64BestEffort`](/ru/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Поддержка строковых аргументов существует только из соображений совместимости с MySQL, которая требуется некоторым сторонним инструментам. Поскольку в будущем поддержка строковых аргументов может зависеть от новых настроек совместимости с MySQL, а разбор строк сам по себе обычно медленный, рекомендуется их не использовать.
 
 **Синтаксис**
 
@@ -5992,7 +6025,7 @@ SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FO
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 ```
 
@@ -6003,10 +6036,8 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ```
 
 ```response title=Response
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
+┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 ```
 
@@ -6047,10 +6078,10 @@ SELECT today() - 1;
 
 ```response title=Response
 ┌─yesterday()─┐
-│  2025-06-09 │
+│  2026-08-01 │
 └─────────────┘
 ┌─minus(today(), 1)─┐
-│        2025-06-09 │
+│        2026-08-01 │
 └───────────────────┘
 ```
 

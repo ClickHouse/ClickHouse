@@ -38,7 +38,7 @@ SETTINGS
 
 * 列名应与原始 MySQL 表中的列名一致，但也可以只使用其中部分列，且顺序可以任意。
 * 列类型可以与原始 MySQL 表中的列类型不同。ClickHouse 会尝试将值 [cast](/zh/reference/engines/database-engines/mysql#data_types-support) 为 ClickHouse 数据类型。
-* [external&#95;table&#95;functions&#95;use&#95;nulls](/zh/reference/settings/session-settings#external_table_functions_use_nulls) 设置定义了如何处理 Nullable 列。默认值：1。如果为 0，表函数不会创建 Nullable 列，而是插入默认值来代替 null。这也适用于数组中的 NULL 值。
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/zh/reference/settings/session-settings/external-table#external_table_functions_use_nulls) 设置定义了如何处理 Nullable 列。默认值：1。如果为 0，表函数不会创建 Nullable 列，而是插入默认值来代替 null。这也适用于数组中的 NULL 值。
 
 **引擎参数**
 
@@ -58,6 +58,34 @@ SETTINGS
 
 其余条件以及 `LIMIT` 采样约束仅会在对 MySQL 的查询完成后由 ClickHouse 执行。
 
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+与 MySQL 的加密连接凭据以命名集合键 (或键值参数) 的形式传递：
+
+| 参数             | 说明                         |
+| -------------- | -------------------------- |
+| `ssl_ca_pem`   | 用于验证 MySQL 服务器证书的 CA 证书内容。 |
+| `ssl_cert_pem` | 用于基于证书的身份验证的客户端证书内容。       |
+| `ssl_key_pem`  | 与 `ssl_cert_pem` 对应的私钥内容。  |
+
+这些值为相应 PEM 文件的内容，可复制到命名集合或查询中。它们会像密码一样在日志和 `SHOW` 查询中被掩盖。
+
+也可以在 `ssl_ca`、`ssl_cert` 和 `ssl_key` 中通过服务器上的文件路径提供相同的凭据——但**仅限于服务器配置文件中定义的命名集合**，且此类值无法在查询中被覆盖。服务器会以自身的特权打开这些文件；因此，若允许通过 SQL 接受路径，任何能够定义 MySQL 数据源的用户都可以探查本地文件系统，并使用自己无权读取的证书和密钥进行身份验证。
+
+```xml
+<named_collections>
+    <mysql_creds>
+        <host>mysql-host</host>
+        <port>3306</port>
+        <user>mysql_user</user>
+        <password>****</password>
+        <ssl_ca>/etc/clickhouse-server/mysql-ca.crt</ssl_ca>
+    </mysql_creds>
+</named_collections>
+```
+
 <div id="passing-a-query">
   ## 传入查询而非表名
 </div>
@@ -74,7 +102,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 <Note>
   子查询形式 `(SELECT ...)` 会由 ClickHouse 解析，并在发送到服务器之前按 MySQL 方言 (使用反引号引用标识符) 重新序列化。因此，它必须是有效的 ClickHouse SQL。若要传递 ClickHouse 无法解析的 MySQL 特有语法，请使用 `query('...')` 形式，其文本会原样发送到 MySQL。
 
-  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中——而是会在拉取完整查询结果后由 ClickHouse 应用。要限制从 MySQL 读取的数据，请将过滤条件写在传入的查询内部。启用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings#external_table_strict_query) 时，无法下推的外层过滤条件会直接被拒绝并抛出异常，而不是在本地应用。
+  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中——而是会在拉取完整查询结果后由 ClickHouse 应用。要限制从 MySQL 读取的数据，请将过滤条件写在传入的查询内部。启用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推的外层过滤条件会直接被拒绝并抛出异常，而不是在本地应用。
 </Note>
 
 支持多个副本，必须用 `|` 列出。例如：

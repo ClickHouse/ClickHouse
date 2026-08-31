@@ -54,7 +54,7 @@ Run `Install Certificates.command` to link certifi into OpenSSL's default certif
 open "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-Alternatively, point your client at the certifi bundle directly. [ClickHouse Connect](/integrations/python) does not fall back to certifi on its own, so pass the bundle through the `ca_cert` parameter:
+Alternatively, point your client at the certifi bundle directly. [ClickHouse Connect](/integrations/language-clients/python/index) does not fall back to certifi on its own, so pass the bundle through the `ca_cert` parameter:
 
 ```python
 import certifi
@@ -71,4 +71,4 @@ client = clickhouse_connect.get_client(
 
 ## Additional resources {#additional-resources}
 
-See the [`clickhouse-client` configuration documentation](/interfaces/client#configuration_files).
+See the [`clickhouse-client` configuration documentation](/concepts/features/interfaces/client#configuration_files).

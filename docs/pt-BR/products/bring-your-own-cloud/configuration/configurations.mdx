@@ -32,7 +32,7 @@ As implantações BYOC usam **Network Load Balancers (NLBs)** para gerenciar e d
 * Normalmente é ativado por padrão ao usar uma VPC gerenciada pelo cliente.
 * Fica desativado por padrão ao usar uma VPC dedicada gerenciada pela ClickHouse.
 
-Você pode entrar em contato com o **ClickHouse Cloud Support** para ajustar quais endpoints ficam ativados com base nos seus requisitos.
+Você pode ativar o balanceador de carga privado para sua infraestrutura BYOC diretamente no ClickHouse Cloud console. Para outros ajustes de endpoint (por exemplo, remover o balanceador de carga público), entre em contato com o **ClickHouse Cloud Support**.
 
 <div id="private-load-balancer-security-group">
   ### Security Group do balanceador de carga privado para AWS
@@ -53,10 +53,10 @@ Para configurar o Security Group do seu balanceador de carga privado:
 </Note>
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink ou Private Service Connect
+  ## PrivateLink, Private Service Connect ou Private Link
 </div>
 
-Para máximo isolamento e segurança de rede, as implantações BYOC podem usar **AWS PrivateLink** ou **GCP Private Service Connect**. Essas opções permitem que seus aplicativos se conectem de forma privada aos serviços do ClickHouse Cloud sem exigir VPC peering nem expor endpoints à internet pública.
+Para máximo isolamento e segurança de rede, as implantações BYOC podem usar **AWS PrivateLink**, **GCP Private Service Connect** ou **Azure Private Link**. Essas opções permitem que seus aplicativos se conectem de forma privada aos serviços do ClickHouse Cloud sem exigir VPC/VNet peering nem expor endpoints à internet pública.
 
 Para ver instruções de configuração passo a passo, consulte o [guia de configuração de rede privada](/pt-BR/products/bring-your-own-cloud/onboarding/network).
 

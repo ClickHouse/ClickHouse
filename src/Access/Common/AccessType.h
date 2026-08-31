@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <base/types.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 
 #include <map>
 
@@ -44,6 +43,7 @@ enum class Source : uint8_t
     M(RABBITMQ, "RabbitMQ") \
     M(YTSAURUS, "YTsaurus") \
     M(ARROW_FLIGHT, "ArrowFlight") \
+    M(BIGQUERY, "BigQuery") \
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
 
@@ -99,12 +99,16 @@ private: \
         String str2{str}; \
         std::vector<String> type_aliases; \
         \
-        boost::split(type_aliases, str2, [](char c) { return c == ','; }); \
-        for (auto & alias : type_aliases) \
+        for (size_t begin = 0; begin <= str2.length();) \
         { \
-            boost::trim(alias); \
-            aliases[alias] = type; \
+            size_t end = str2.find(',', begin); \
+            if (end == String::npos) \
+                end = str2.length(); \
+            type_aliases.push_back(trim(str2.substr(begin, end - begin), isWhitespaceASCII)); \
+            begin = end + 1; \
         } \
+        for (auto & alias : type_aliases) \
+            aliases[alias] = type; \
         \
         aliases[String{toString(type)}] = type; \
     } \
@@ -199,6 +203,7 @@ enum class AccessType : uint8_t
     \
     M(ALTER_ADD_PROJECTION, "ADD PROJECTION", TABLE, ALTER_PROJECTION) \
     M(ALTER_DROP_PROJECTION, "DROP PROJECTION", TABLE, ALTER_PROJECTION) \
+    M(ALTER_MODIFY_PROJECTION, "MODIFY PROJECTION", TABLE, ALTER_PROJECTION) \
     M(ALTER_MATERIALIZE_PROJECTION, "MATERIALIZE PROJECTION", TABLE, ALTER_PROJECTION) \
     M(ALTER_CLEAR_PROJECTION, "CLEAR PROJECTION", TABLE, ALTER_PROJECTION) \
     M(ALTER_PROJECTION, "PROJECTION", GROUP, ALTER_TABLE) /* allows to execute ALTER ORDER BY or ALTER {ADD|DROP...} PROJECTION */\
@@ -221,6 +226,7 @@ enum class AccessType : uint8_t
     \
     M(ALTER_DATABASE_SETTINGS, "ALTER DATABASE SETTING, ALTER MODIFY DATABASE SETTING, MODIFY DATABASE SETTING", DATABASE, ALTER_DATABASE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute ALTER NAMED COLLECTION */\
+    M(ALTER_HANDLER, "", GLOBAL, ALTER) /* allows to execute ALTER HANDLER */\
     \
     M(ALTER_TABLE, "", GROUP, ALTER) \
     M(ALTER_DATABASE, "", GROUP, ALTER) \
@@ -248,6 +254,7 @@ enum class AccessType : uint8_t
     M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
+    M(CREATE_HANDLER, "", GLOBAL, CREATE) /* allows to execute CREATE HANDLER */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
@@ -259,6 +266,7 @@ enum class AccessType : uint8_t
     M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
     M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
+    M(DROP_HANDLER, "", GLOBAL, DROP) /* allows to execute DROP HANDLER */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(UNDROP_TABLE, "", TABLE, ALL) /* allows to execute {UNDROP} TABLE */\
@@ -307,6 +315,7 @@ enum class AccessType : uint8_t
     M(SHOW_NAMED_COLLECTIONS_SECRETS, "SHOW NAMED COLLECTIONS SECRETS", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
+    M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, ALL) /* allows to see SQL-defined HTTP handlers in system.handlers */\
     M(SET_DEFINER, "", DEFINER, ALL) \
     \
     M(TABLE_ENGINE, "TABLE ENGINE", TABLE_ENGINE, ALL) \
@@ -432,6 +441,7 @@ enum class AccessType : uint8_t
     M(RABBITMQ, "", GLOBAL, ALL) \
     M(YTSAURUS, "", GLOBAL, ALL) \
     M(ARROW_FLIGHT, "", GLOBAL, ALL) \
+    M(BIGQUERY, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \
     /* Consts */ \
