@@ -2417,6 +2417,9 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
             DataTypes retargeted_variants;
             retargeted_variants.reserve(variants.size());
             bool any_variant_retargeted = false;
+            /// Old name -> new name for every variant the loop renames, to keep the statistics keys
+            /// aligned: the serialization prefix asserts an entry per variant name.
+            UnorderedMapWithMemoryTracking<String, String> variant_rename;
             for (const auto & variant_type : variants)
             {
                 retargeted_variants.push_back(variant_type);
@@ -2437,7 +2440,11 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
                 /// The column is retargeted above, but the cached variant name still spells the retired
                 /// policy, and that name is what a regular-variant read reports and what the merge seeds
                 /// the destination set from.
-                any_variant_retargeted |= (retargeted_variant->getName() != variant_type->getName());
+                if (retargeted_variant->getName() != variant_type->getName())
+                {
+                    any_variant_retargeted = true;
+                    variant_rename[variant_type->getName()] = retargeted_variant->getName();
+                }
                 retargeted_variants.back() = retargeted_variant;
             }
 
@@ -2452,6 +2459,19 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
             if (const auto & statistics = column_dynamic->getStatistics())
             {
                 auto rewritten = std::make_shared<ColumnDynamic::Statistics>(*statistics);
+                /// The loop above renamed regular variants; part-level statistics attached from the
+                /// source part still carry the old keys, and the write-side prefix asserts one entry
+                /// per (new) variant name. Rename the keys with them.
+                if (!variant_rename.empty())
+                {
+                    rewritten->variants_statistics.clear();
+                    for (const auto & [variant_name, size] : statistics->variants_statistics)
+                    {
+                        auto rename_it = variant_rename.find(variant_name);
+                        /// Accumulated rather than assigned, like the shared keys below.
+                        rewritten->variants_statistics[rename_it == variant_rename.end() ? variant_name : rename_it->second] += size;
+                    }
+                }
                 rewritten->shared_variants_statistics.clear();
                 for (const auto & [variant_name, size] : statistics->shared_variants_statistics)
                 {
