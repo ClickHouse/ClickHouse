@@ -72,6 +72,15 @@ bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet 
     }
     else
     {
+        /// The extracted predicate is pushed below the join while the original filter stays on top,
+        /// so a non-deterministic function would be drawn twice per row, independently. A row that
+        /// satisfies the query's own filter can then be discarded by the pre-filter's own draw.
+        /// A nullary function such as `rand` has no inputs, so nothing else here rejects it. The main
+        /// filter pushdown refuses to move non-deterministic conjuncts for the same reason.
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+            && !node.function_base->isDeterministicInScopeOfQuery())
+            return false;
+
         for (const auto * child : node.children)
         {
             if (!onlyDependsOnAvailableColumns(*child, available_columns))
