@@ -112,7 +112,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     };
     auto is_changeable = [&](const std::string & setting_name) -> bool
     {
-        return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
+        return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode], storage.getType());
     };
 
     for (const auto & change : impl->all())

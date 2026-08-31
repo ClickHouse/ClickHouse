@@ -41,7 +41,7 @@ public:
 
     String getName() const override { return engine_name; }
 
-    ObjectStorageType getType() { return type; }
+    ObjectStorageType getType() const { return type; }
 
     void read(
         QueryPlan & query_plan,
@@ -105,7 +105,7 @@ public:
     void rebuildObjectStorageClient(ContextPtr rebuild_context);
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
-    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode, ObjectStorageType storage_type);
 
     /// Generate id for the S3(Azure/etc)Queue commit.
     /// Used for system.s3(azure/etc)_queue_log.

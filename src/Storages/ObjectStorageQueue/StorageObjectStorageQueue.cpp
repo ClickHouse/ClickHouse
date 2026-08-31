@@ -1390,9 +1390,13 @@ static void checkNormalizedSetting(const std::string & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
 }
 
-bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
+bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode, ObjectStorageType storage_type)
 {
     checkNormalizedSetting(name);
+
+    /// Engine-gated like its CREATE-time check, so `alterable` and ALTER agree on every engine.
+    if (storage_type != ObjectStorageType::S3 && name == "after_processing_move_preserve_tags")
+        return false;
 
     if (mode == ObjectStorageQueueMode::UNORDERED)
         return changeable_settings_unordered_mode.contains(name);
@@ -1474,7 +1478,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         {
             /// `new_settings` contains a full set of settings, changed and non-changed together.
             /// So we check whether setting is allowed to be changed only if it is actually changed.
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(setting.name, mode, type))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1604,7 +1608,7 @@ void StorageObjectStorageQueue::alter(
             if (!setting_changed)
                 continue;
 
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(setting.name, mode, type))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
