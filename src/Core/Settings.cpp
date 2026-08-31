@@ -3775,7 +3775,7 @@ Possible values:
 
  When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
- Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`. `parallel_hash` is an obsolete alias of this name.
+ Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`.
 
 - parallel_hash
 

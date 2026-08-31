@@ -4,7 +4,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <tuple>
 #include <thread>
 #include <vector>
 #include <Columns/ColumnIndex.h>
@@ -83,27 +82,19 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
-extern const int LOGICAL_ERROR;
-extern const int SET_SIZE_LIMIT_EXCEEDED;
-extern const int INVALID_JOIN_ON_EXPRESSION;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int TYPE_MISMATCH;
 extern const int NO_SUCH_COLUMN_IN_TABLE;
 extern const int INCOMPATIBLE_TYPE_OF_JOIN;
+extern const int LOGICAL_ERROR;
+extern const int SET_SIZE_LIMIT_EXCEEDED;
+extern const int TYPE_MISMATCH;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int INVALID_JOIN_ON_EXPRESSION;
 extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
 extern const char hash_join_throw_after_data_release[];
-}
-
-size_t slotCountForThreads(size_t max_threads)
-{
-    if (max_threads <= 1)
-        return 1;
-
-    return std::min<size_t>(std::bit_ceil(max_threads), NUM_HASH_TABLE_BUCKETS);
 }
 
 size_t getMinBytesForPrefetchInJoin()
@@ -116,6 +107,14 @@ size_t getMinBytesForPrefetchInJoin()
 
 namespace
 {
+
+size_t slotCountForThreads(size_t max_threads)
+{
+    if (max_threads <= 1)
+        return 1;
+
+    return std::min<size_t>(std::bit_ceil(max_threads), NUM_HASH_TABLE_BUCKETS);
+}
 
 void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable)
 {
@@ -219,13 +218,11 @@ BuildResult insertIntoSlots(
     HashJoin::RightTableData & table,
     const std::vector<const ScatteredBlock::Selector *> & per_slot,
     const std::vector<Columns> & slot_dense_keys,
-    BlockKeyGetter & block_key_getter,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     UInt32 stored_block_no,
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask,
-    size_t num_buckets,
     std::vector<char> & slot_space_reserved,
     size_t reserve_hint,
     size_t max_reserve_bytes)
@@ -234,6 +231,8 @@ BuildResult insertIntoSlots(
 
     ProfileEventTimeIncrement<Microseconds> insert_watch(ProfileEvents::HashJoinBuildInsertMicroseconds);
 
+    BlockKeyGetter block_key_getter;
+    const size_t num_buckets = map.getBucketCount(type);
     const size_t num_slots = locks.size();
     chassert(table.pools.size() == num_slots);
     chassert(per_slot.size() == num_slots);
@@ -400,23 +399,6 @@ static Block rightColumnsToAddWithSeveralDisjuncts(const TableJoin & table_join,
     return columns_to_add;
 }
 
-namespace
-{
-
-const char * joinTypeName(HashJoin::Type type)
-{
-    switch (type)
-    {
-#define M(NAME) \
-    case HashJoin::Type::NAME: return #NAME;
-        APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
-    }
-    return "";
-}
-
-}
-
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader right_sample_block_,
@@ -434,9 +416,8 @@ HashJoin::HashJoin(
     , instance_id(instance_id_)
     , max_threads(std::max<size_t>(1, max_threads_))
     , use_parallel_layout(use_parallel_layout_)
-    , num_slots(use_parallel_layout ? slotCountForThreads(max_threads) : 1)
     , asof_inequality(table_join->getAsofInequality())
-    , data(std::make_shared<RightTableData>(num_slots, max_threads))
+    , data(std::make_shared<RightTableData>(use_parallel_layout ? slotCountForThreads(max_threads) : 1, max_threads))
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
@@ -474,9 +455,6 @@ HashJoin::HashJoin(
     if (table_join->collectAnalyzeStats())
         matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, table_join->analyzeMode());
 
-    if (table_join->getClauses().empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin cannot execute JOIN without keys");
-
     if (table_join->oneDisjunct())
     {
         const auto & key_names_right = table_join->getOnlyClause().key_names_right;
@@ -494,7 +472,7 @@ HashJoin::HashJoin(
     }
 
     /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it
-    /// can use a dictionary-aware map. Restricted to a single disjunct for now.
+    /// can use a dictionary-aware map. Restricted to one disjunct, the serial layout and non-ASOF for now.
     std::optional<Type> low_cardinality_method;
     if (table_join->oneDisjunct() && !use_parallel_layout && strictness != JoinStrictness::Asof)
     {
@@ -505,7 +483,7 @@ HashJoin::HashJoin(
 
     materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
-    data->sample_block = prepareRightBlock(data->sample_block, data->sample_block);
+    data->sample_block = prepareRightBlock(data->sample_block);
 
     size_t disjuncts_num = table_join->getClauses().size();
     /// maps must exist so `initRowStore` can see the one-disjunct layout via `isRightTableRerangeEnabled`.
@@ -577,13 +555,13 @@ HashJoin::HashJoin(
 
     data->type = use_parallel_layout ? toTwoLevelType(*selected_join_method) : *selected_join_method;
 
-    LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, joinTypeName(data->type));
+    LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, data->type);
     LOG_TEST(
         log,
         "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id,
         TableJoin::formatClauses(table_join->getClauses(), true),
-        joinTypeName(data->type),
+        data->type,
         kind,
         strictness,
         right_sample_block.dumpStructure());
@@ -591,10 +569,10 @@ HashJoin::HashJoin(
     for (auto & maps : data->maps)
         dataMapInit(maps);
 
-    bucket_locks = std::vector<BucketLock>(num_slots);
+    bucket_locks = std::vector<BucketLock>(data->num_slots);
     map_size_hint = sizeHintForMaps();
     map_reserve_bytes_cap = table_join->maxBytesBeforeExternalJoin();
-    slot_space_reserved.assign(data->maps.size(), std::vector<char>(num_slots, 0));
+    slot_space_reserved.assign(data->maps.size(), std::vector<char>(data->num_slots, 0));
 
     /// `bucket_bytes` only accumulates insert deltas, so seed it with what `create` allocated.
     recomputeBucketBytes();
@@ -746,21 +724,6 @@ static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr 
         return Type::low_cardinality_key_fixed_string;
 
     return {};
-}
-
-template <typename KeyGetter, bool is_asof_join>
-static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
-{
-    if constexpr (is_asof_join)
-    {
-        auto key_column_copy = key_columns;
-        auto key_size_copy = key_sizes;
-        key_column_copy.pop_back();
-        key_size_copy.pop_back();
-        return KeyGetter(key_column_copy, key_size_copy, nullptr);
-    }
-    else
-        return KeyGetter(key_columns, key_sizes, nullptr);
 }
 
 size_t HashJoin::sizeHintForMaps() const
@@ -1076,7 +1039,7 @@ Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block
 
 Block HashJoin::prepareRightBlock(const Block & block) const
 {
-    return prepareRightBlock(block, data->sample_block);
+    return prepareRightBlock(block, savedBlockSample());
 }
 
 bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, size_t worker_id, bool check_limits)
@@ -1282,8 +1245,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     SlotScatter scattered;
                     std::vector<const ScatteredBlock::Selector *> per_slot(slots, nullptr);
 
-                    BlockKeyGetter block_key_getter;
-
                     if (slots == 1)
                     {
                         per_slot[0] = &stored_columns->selector;
@@ -1302,8 +1263,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                                 key_columns,
                                 key_sizes[onexpr_idx],
                                 stored_columns->selector,
-                                slots,
-                                strictness_ == JoinStrictness::Asof);
+                                slots);
                         }
                         for (size_t slot = 0; slot < slots; ++slot)
                             per_slot[slot] = &scattered.selectors[slot];
@@ -1317,13 +1277,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                         *data,
                         per_slot,
                         scattered.dense_keys,
-                        block_key_getter,
                         key_columns,
                         key_sizes[onexpr_idx],
                         stored_columns->block_no,
                         null_map,
                         join_mask_col,
-                        map.getBucketCount(data->type),
                         slot_space_reserved[onexpr_idx],
                         map_size_hint,
                         map_reserve_bytes_cap);
@@ -1392,27 +1350,10 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
     /// The CAS decides once for the whole join; each thread then rewrites only its own list.
     const auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
 
-    auto sample_memory = [&]()
-    {
-        const Int64 current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
-        const Int64 memory_usage_before = memory_usage_before_adding_blocks.load(std::memory_order_relaxed);
-        const Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before;
-        const Int64 max_total_bytes_for_query = memory_usage_before ? table_join->getMaxMemoryUsage() : 0;
-        return std::tuple{current_memory_usage, query_memory_usage_delta, max_total_bytes_for_query};
-    };
-
-    auto should_shrink = [&](Int64 query_memory_usage_delta, Int64 max_total_bytes_for_query)
-    {
-        /** If accounted data size is more than half of `max_bytes_in_join`
-         * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
-         * is bigger than half of all memory available for query,
-         * then shrink stored blocks to fit.
-         */
-        return (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2)
-            || (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
-    };
-
-    auto [current_memory_usage, query_memory_usage_delta, max_total_bytes_for_query] = sample_memory();
+    const Int64 current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
+    const Int64 memory_usage_before = memory_usage_before_adding_blocks.load(std::memory_order_relaxed);
+    const Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before;
+    const Int64 max_total_bytes_for_query = memory_usage_before ? table_join->getMaxMemoryUsage() : 0;
 
     if (!force_optimize)
     {
@@ -1424,7 +1365,14 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
             return;
         }
 
-        if (!should_shrink(query_memory_usage_delta, max_total_bytes_for_query))
+        /** If accounted data size is more than half of `max_bytes_in_join`
+        * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
+        * is bigger than half of all memory available for query,
+        * then shrink stored blocks to fit.
+        */
+        const bool should_shrink = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2)
+            || (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
+        if (!should_shrink)
             return;
 
         bool expected = false;
@@ -1537,14 +1485,6 @@ void HashJoin::shrinkWorkerStoredBlocks(WorkerStoredData & worker)
     worker.shrink_done = true;
 }
 
-void HashJoin::checkTypesOfKeys(const Block & block) const
-{
-    for (const auto & onexpr : table_join->getClauses())
-    {
-        JoinCommon::checkTypesOfKeys(block, onexpr.key_names_left, right_table_keys, onexpr.key_names_right);
-    }
-}
-
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
 {
     size_t num_keys = data_types.size();
@@ -1609,6 +1549,14 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
         *this, std::move(keys), block_with_columns_to_add, maps_vector, /* is_join_get = */ true)->next();
     chassert(res.is_last);
     return res.block.getByPosition(res.block.columns() - 1);
+}
+
+void HashJoin::checkTypesOfKeys(const Block & block) const
+{
+    for (const auto & onexpr : table_join->getClauses())
+    {
+        JoinCommon::checkTypesOfKeys(block, onexpr.key_names_left, right_table_keys, onexpr.key_names_right);
+    }
 }
 
 JoinResultPtr HashJoin::joinBlock(Block block)
@@ -1924,14 +1872,8 @@ private:
 
     std::any position;
 
-    /// The `*_started` flags are what distinguishes "not begun" from "exhausted", which both leave
-    /// the iterator empty; without them `fillColumns` restarts at worker 0 and emits forever.
-    bool used_blocks_started = false;
-    size_t used_worker = 0;
-    std::optional<HashJoin::StoredBlocksList::const_iterator> used_position;
-    bool nulls_started = false;
-    size_t nulls_worker = 0;
-    std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
+    HashJoin::RightTableData::StoredBlocksCursor used_blocks_cursor;
+    HashJoin::RightTableData::NullmapsCursor nulls_cursor;
 
     ColumnAccessIndexes output_access_indexes;
     NamesAndTypes type_name;
@@ -2000,22 +1942,15 @@ private:
 
         if (flag_per_row)
         {
-            if (!used_blocks_started)
-            {
-                used_blocks_started = true;
-                used_worker = 0;
-                while (used_worker < parent.data->workers.size() && parent.data->workers[used_worker].columns.empty())
-                    ++used_worker;
-                if (used_worker < parent.data->workers.size())
-                    used_position = parent.data->workers[used_worker].columns.begin();
-            }
+            const auto & workers = parent.data->workers;
+            if (!used_blocks_cursor.started)
+                used_blocks_cursor.seek(workers);
 
-            while (used_position.has_value() && collected() < max_block_size)
+            while (used_blocks_cursor.position.has_value() && collected() < max_block_size)
             {
-                auto & columns_list = parent.data->workers[used_worker].columns;
-                auto end = columns_list.end();
+                const auto end = used_blocks_cursor.currentList(workers).end();
 
-                for (auto & it = *used_position; it != end && collected() < max_block_size; ++it)
+                for (auto & it = used_blocks_cursor.current(); it != end && collected() < max_block_size; ++it)
                 {
                     const auto & mapped_block = *it;
                     if (!isBlockOwnedByStream(mapped_block.block_no))
@@ -2043,15 +1978,10 @@ private:
                     }
                 }
 
-                if (*used_position == end)
+                if (used_blocks_cursor.current() == end)
                 {
-                    ++used_worker;
-                    while (used_worker < parent.data->workers.size() && parent.data->workers[used_worker].columns.empty())
-                        ++used_worker;
-                    if (used_worker >= parent.data->workers.size())
-                        used_position.reset();
-                    else
-                        used_position = parent.data->workers[used_worker].columns.begin();
+                    ++used_blocks_cursor.worker;
+                    used_blocks_cursor.seek(workers);
                 }
             }
         }
@@ -2129,15 +2059,9 @@ private:
         if (stream_idx != 0)
             return;
 
-        if (!nulls_started)
-        {
-            nulls_started = true;
-            nulls_worker = 0;
-            while (nulls_worker < parent.data->workers.size() && parent.data->workers[nulls_worker].nullmaps.empty())
-                ++nulls_worker;
-            if (nulls_worker < parent.data->workers.size())
-                nulls_position = parent.data->workers[nulls_worker].nullmaps.begin();
-        }
+        const auto & workers = parent.data->workers;
+        if (!nulls_cursor.started)
+            nulls_cursor.seek(workers);
 
         ColumnsWithRowNumbers columns_with_row_numbers;
         [[maybe_unused]] auto & many_columns = columns_with_row_numbers.columns;
@@ -2161,12 +2085,11 @@ private:
                 return row_store_ptrs.ptrs.size();
         };
 
-        while (nulls_position.has_value() && rows_added + collected() < max_block_size)
+        while (nulls_cursor.position.has_value() && rows_added + collected() < max_block_size)
         {
-            auto & nullmaps = parent.data->workers[nulls_worker].nullmaps;
-            auto end = nullmaps.end();
+            const auto end = nulls_cursor.currentList(workers).end();
 
-            for (auto & it = *nulls_position; it != end && rows_added + collected() < max_block_size; ++it)
+            for (auto & it = nulls_cursor.current(); it != end && rows_added + collected() < max_block_size; ++it)
             {
                 const auto * columns = it->columns;
                 ConstNullMapPtr nullmap = nullptr;
@@ -2194,15 +2117,10 @@ private:
                 }
             }
 
-            if (*nulls_position == end)
+            if (nulls_cursor.current() == end)
             {
-                ++nulls_worker;
-                while (nulls_worker < parent.data->workers.size() && parent.data->workers[nulls_worker].nullmaps.empty())
-                    ++nulls_worker;
-                if (nulls_worker >= parent.data->workers.size())
-                    nulls_position.reset();
-                else
-                    nulls_position = parent.data->workers[nulls_worker].nullmaps.begin();
+                ++nulls_cursor.worker;
+                nulls_cursor.seek(workers);
             }
         }
 
@@ -2234,9 +2152,8 @@ bool anyClauseHasRightKeys(const TableJoin & table_join)
 
 bool HashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
-    /// `use_parallel_layout` can still be true with `max_threads = 1` (`num_slots == 1`).
-    /// There is then no bucket split, so unmatched rows stay on the serial JoiningTransform
-    /// path. `supportParallelJoin()` is `use_parallel_layout && max_threads > 1`.
+    /// `use_parallel_layout` can still be true with `max_threads = 1`, and there is then no bucket
+    /// split, so unmatched rows have to stay on the serial `JoiningTransform` path.
     return supportParallelJoin() && table_join->allowParallelNonJoinedRowsProcessing()
         && JoinCommon::hasNonJoinedBlocks(*table_join) && anyClauseHasRightKeys(*table_join);
 }
@@ -2351,11 +2268,11 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
         getTotalByteCountUnchecked(),
         getTotalRowCount());
 
+    if (!data)
+        return {};
+
     if (restructure)
     {
-        if (!data)
-            return {};
-
         data->maps.clear();
         for (auto & worker : data->workers)
             worker.nullmaps.clear();
@@ -2392,9 +2309,6 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
         return restored_blocks;
     }
 
-    if (!data)
-        return {};
-
     Block sample_block = std::move(data->sample_block);
     const auto column_access_indexes = data->column_access_indexes;
     StoredBlocksList right_columns;
@@ -2428,14 +2342,6 @@ BlocksList HashJoin::releaseJoinedBlocksChunk(size_t chunk_idx)
 
     const auto column_access_indexes = data->column_access_indexes;
 
-    auto extract_source_blocks = [&](StoredBlocksList && columns_list, const Block & sample_block)
-    {
-        BlocksList result;
-        for (auto & columns : columns_list)
-            result.emplace_back(sample_block.cloneWithColumns(materializeStoredBlock(columns, column_access_indexes)));
-        return result;
-    };
-
     auto & worker = data->workers[chunk_idx];
     StoredBlocksList right_columns = std::move(worker.columns);
     worker.nullmaps.clear();
@@ -2443,7 +2349,10 @@ BlocksList HashJoin::releaseJoinedBlocksChunk(size_t chunk_idx)
 
     /// `data` outlives the last chunk on purpose: other threads may still be draining chunks, and
     /// the sample block is shared. The caller releases it once they are all done.
-    return extract_source_blocks(std::move(right_columns), data->sample_block);
+    BlocksList result;
+    for (auto & columns : right_columns)
+        result.emplace_back(data->sample_block.cloneWithColumns(materializeStoredBlock(columns, column_access_indexes)));
+    return result;
 }
 
 void HashJoin::releaseJoinMaps()
@@ -2673,7 +2582,7 @@ bool HashJoin::rightTableCanBeReranged() const
         && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
 }
 
-size_t HashJoin::getAndSetRightTableKeys() const
+size_t HashJoin::getRightTableKeys() const
 {
     return getTotalRowCount();
 }
@@ -2753,7 +2662,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & sou
 
     size_t range = static_cast<size_t>(max_key - min_key) + 1;
 
-    using Mapped = std::decay_t<decltype(source_map)>::mapped_type;
+    using Mapped = typename std::decay_t<decltype(source_map)>::mapped_type;
     auto convert_to_fixed_hash_map = [&]<size_t size_bits>(auto & dst_map, Type type)
     {
         using RangeMap = JoinFixedHashMap<Key, Mapped, size_bits>;
@@ -2825,7 +2734,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & sou
             instance_log_id,
             range,
             key_count,
-            joinTypeName(data->type));
+            data->type);
 }
 
 bool HashJoin::canConvertToFixedHashMap() const
@@ -2969,7 +2878,7 @@ ColumnPtr probeFixedHashMap(
         col,
         [&](const auto & typed_col) -> bool
         {
-            using T = std::decay_t<decltype(typed_col)>::ValueType;
+            using T = typename std::decay_t<decltype(typed_col)>::ValueType;
             if constexpr (canLosslesslyHold<BuildKey, T>())
             {
                 probeFixedHashMapLoop<BuildKey, HashMapT, T>(
@@ -3078,27 +2987,27 @@ void HashJoin::publishSharedRuntimeFilters()
                     {
                         case Type::key8:
                             if (build_signed)
-                                dispatch.template operator()<Int8>(map.key8, static_cast<UInt8>(0), 1ULL << 8);
+                                dispatch.template operator()<Int8>(map.key8, UInt8(0), 1ULL << 8);
                             else
-                                dispatch.template operator()<UInt8>(map.key8, static_cast<UInt8>(0), 1ULL << 8);
+                                dispatch.template operator()<UInt8>(map.key8, UInt8(0), 1ULL << 8);
                             break;
                         case Type::two_level_key8:
                             if (build_signed)
-                                dispatch.template operator()<Int8>(map.two_level_key8, static_cast<UInt8>(0), 1ULL << 8);
+                                dispatch.template operator()<Int8>(map.two_level_key8, UInt8(0), 1ULL << 8);
                             else
-                                dispatch.template operator()<UInt8>(map.two_level_key8, static_cast<UInt8>(0), 1ULL << 8);
+                                dispatch.template operator()<UInt8>(map.two_level_key8, UInt8(0), 1ULL << 8);
                             break;
                         case Type::key16:
                             if (build_signed)
-                                dispatch.template operator()<Int16>(map.key16, static_cast<UInt16>(0), 1ULL << 16);
+                                dispatch.template operator()<Int16>(map.key16, UInt16(0), 1ULL << 16);
                             else
-                                dispatch.template operator()<UInt16>(map.key16, static_cast<UInt16>(0), 1ULL << 16);
+                                dispatch.template operator()<UInt16>(map.key16, UInt16(0), 1ULL << 16);
                             break;
                         case Type::two_level_key16:
                             if (build_signed)
-                                dispatch.template operator()<Int16>(map.two_level_key16, static_cast<UInt16>(0), 1ULL << 16);
+                                dispatch.template operator()<Int16>(map.two_level_key16, UInt16(0), 1ULL << 16);
                             else
-                                dispatch.template operator()<UInt16>(map.two_level_key16, static_cast<UInt16>(0), 1ULL << 16);
+                                dispatch.template operator()<UInt16>(map.two_level_key16, UInt16(0), 1ULL << 16);
                             break;
                         case Type::range8_key32:
                             if (build_signed)

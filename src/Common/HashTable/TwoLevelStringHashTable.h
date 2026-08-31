@@ -1,9 +1,8 @@
 #pragma once
 
-#include <base/types.h>
 #include <Common/HashTable/StringHashTable.h>
 
-template <typename SubMaps, typename ImplTable = StringHashTable<SubMaps>, Int32 bits_for_bucket = 8>
+template <typename SubMaps, typename ImplTable = StringHashTable<SubMaps>, size_t BITS_FOR_BUCKET = 8>
 class TwoLevelStringHashTable : private boost::noncopyable
 {
 protected:
@@ -14,10 +13,8 @@ public:
     using Key = std::string_view;
     using Impl = ImplTable;
 
-    static constexpr UInt32 NUM_BUCKETS = 1ULL << bits_for_bucket;
+    static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
     static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
-
-    static constexpr UInt32 numBuckets() { return NUM_BUCKETS; }
 
     /// The hash does not depend on the bucket, so any submap's hash function serves.
     size_t hash(const Key & x) const { return impls[0].hash(x); }
@@ -25,7 +22,7 @@ public:
     size_t operator()(const Key & x) const { return hash(x); }
 
     /// NOTE Bad for hash tables with more than 2^32 cells.
-    static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - bits_for_bucket)) & MAX_BUCKET; }
+    static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
 
     using key_type = typename Impl::key_type;
     using mapped_type = typename Impl::mapped_type;

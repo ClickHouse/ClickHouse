@@ -20,8 +20,7 @@ namespace DB
 ///
 /// The hash phase uses the same `parallel_hash_join_threshold` layout as a bare `HashJoin`.
 /// Concurrent fill takes a shared lock; draining onto `MergeJoin` takes an exclusive lock
-/// because `MergeJoin::addBlockToJoin` is not concurrent. After a switch, probe is serialized
-/// for the same reason: `supportParallelJoin` is fixed at plan time.
+/// because `MergeJoin::addBlockToJoin` is not concurrent.
 ///
 /// Unmatched RIGHT/FULL rows: `supportParallelNonJoinedBlocksProcessing` is captured from
 /// the inner `HashJoin` so the pipeline wires `NonJoinedBlocksTransform`. After a drain

@@ -6,7 +6,7 @@
 #include <Common/HashTable/HashTable.h>
 
 /** Two-level hash table.
-  * Represents 256 (or 1ULL << BITS_FOR_BUCKET) small hash tables (buckets of the first level).
+  * Represents 256 (or 1 << bits_for_bucket) small hash tables (buckets of the first level).
   * To determine which one to use, one of the bytes of the hash function is taken.
   *
   * Usually works a little slower than a simple hash table.
@@ -32,8 +32,9 @@ struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initia
 
 constexpr int DEFAULT_BITS_FOR_BUCKET = 8;
 
+/// A table that directly addresses a fixed range of keys, so all buckets can share one instance of it.
 template <typename Impl>
-struct IsDirectAddressedTable : std::false_type
+struct IsFixedRangeTable : std::false_type
 {
 };
 
@@ -58,47 +59,22 @@ protected:
 public:
     using Impl = ImplTable;
 
-    static constexpr bool isFixedRangeStorage() { return IsDirectAddressedTable<ImplTable>::value; }
+    static constexpr bool isFixedRangeStorage() { return IsFixedRangeTable<ImplTable>::value; }
 
-    static constexpr UInt32 numBuckets() { return static_cast<UInt32>(1) << static_cast<UInt32>(bits_for_bucket); }
-    static constexpr UInt32 maxBucket() { return numBuckets() - 1; }
+    static constexpr UInt32 NUM_BUCKETS = 1ULL << bits_for_bucket;
+    static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
     static constexpr UInt32 bucketShift() { return 32 - bits_for_bucket; }
-    static size_t ALWAYS_INLINE getBucketFromHash(size_t hash_value) { return (hash_value >> bucketShift()) & maxBucket(); }
+
+    /// NOTE Bad for hash tables with more than 2^32 cells.
+    static size_t ALWAYS_INLINE getBucketFromHash(size_t hash_value) { return (hash_value >> bucketShift()) & MAX_BUCKET; }
 
 private:
-    class BucketPrefixSums
+    class PerBucketStorage
     {
     public:
-        template <typename BucketAt>
-        void compute(UInt32 bucket_count, BucketAt && bucket_at)
-        {
-            prefix.assign(bucket_count, 0);
-            size_t run = 0;
-            for (UInt32 i = 0; i < bucket_count; ++i)
-            {
-                prefix[i] = run;
-                run += bucket_at(i).getBufferSizeInCells();
-            }
-            computed = true;
-        }
+        PerBucketStorage() = default;
 
-        size_t offsetUnsafe(size_t buck, size_t cell_offset) const
-        {
-            chassert(computed);
-            return prefix[buck] + cell_offset;
-        }
-
-    private:
-        std::vector<size_t> prefix;
-        bool computed = false;
-    };
-
-    class FixedStorage
-    {
-    public:
-        FixedStorage() = default;
-
-        explicit FixedStorage(size_t size_hint) { reserve(size_hint); }
+        explicit PerBucketStorage(size_t size_hint) { reserve(size_hint); }
 
         Impl & operator[](size_t bucket) { return buckets[bucket]; }
         const Impl & operator[](size_t bucket) const { return buckets[bucket]; }
@@ -106,38 +82,38 @@ private:
         void reserve(size_t num_elements)
         {
             for (auto & bucket : buckets)
-                bucket.reserve(num_elements / numBuckets());
+                bucket.reserve(num_elements / NUM_BUCKETS);
         }
 
         void computeBucketPrefix() const
         {
-            prefix_sums.compute(numBuckets(), [this](UInt32 i) -> const Impl & { return buckets[i]; });
+            bucket_cells_prefix.assign(NUM_BUCKETS, 0);
+            size_t run = 0;
+            for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+            {
+                bucket_cells_prefix[i] = run;
+                run += buckets[i].getBufferSizeInCells();
+            }
         }
 
-        /// Requires `computeBucketPrefix` to have run; `HashJoin` freezes the maps before any
-        /// probe, and `offsetUnsafe` chasserts it.
         size_t offsetInternal(typename Impl::ConstLookupResult ptr, size_t buck) const
-        {
-            return offsetInternalUnsafe(ptr, buck);
-        }
-
-        size_t offsetInternalUnsafe(typename Impl::ConstLookupResult ptr, size_t buck) const
         {
             if (ptr->isZero(buckets[buck]))
                 return 0;
-            if constexpr (numBuckets() == 1)
+            if constexpr (NUM_BUCKETS == 1)
                 return static_cast<size_t>(ptr - buckets[0].buf) + 1;
-            return prefix_sums.offsetUnsafe(buck, static_cast<size_t>(ptr - buckets[buck].buf) + 1);
+            chassert(!bucket_cells_prefix.empty(), "computeBucketPrefix must run before an offset is read");
+            return bucket_cells_prefix[buck] + static_cast<size_t>(ptr - buckets[buck].buf) + 1;
         }
 
-        static constexpr UInt32 iterationBuckets() { return numBuckets(); }
-        static constexpr UInt32 lastIterationBucket() { return maxBucket(); }
+        static constexpr UInt32 iterationBuckets() { return NUM_BUCKETS; }
+        static constexpr UInt32 lastIterationBucket() { return MAX_BUCKET; }
 
         template <typename Get>
         size_t ALWAYS_INLINE sumOverBuckets(Get && get) const
         {
             size_t res = 0;
-            for (UInt32 i = 0; i < numBuckets(); ++i)
+            for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
                 res += get(buckets[i]);
             return res;
         }
@@ -146,7 +122,7 @@ private:
 
         bool empty() const
         {
-            for (UInt32 i = 0; i < numBuckets(); ++i)
+            for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
                 if (!buckets[i].empty())
                     return false;
             return true;
@@ -162,13 +138,14 @@ private:
         template <typename Func>
         void ALWAYS_INLINE forEachMapped(Func && func)
         {
-            for (UInt32 i = 0; i < numBuckets(); ++i)
+            for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
                 buckets[i].forEachMapped(func);
         }
 
     private:
-        Impl buckets[numBuckets()];
-        mutable BucketPrefixSums prefix_sums;
+        Impl buckets[NUM_BUCKETS];
+        /// Cells of every lower-numbered bucket, so `offsetInternal` can number cells table-wide.
+        mutable std::vector<size_t> bucket_cells_prefix;
     };
 
     class FixedRangeStorage
@@ -178,7 +155,7 @@ private:
         /// min/max bounds are the one thing inserts under different locks would race on.
         FixedRangeStorage()
         {
-            if constexpr (numBuckets() > 1)
+            if constexpr (NUM_BUCKETS > 1)
                 flat.disableMinMaxOptimization();
         }
 
@@ -210,13 +187,12 @@ private:
         bool canUseMinMaxOptimization() const { return flat.canUseMinMaxOptimization(); }
 
         size_t offsetInternal(typename Impl::ConstLookupResult ptr, size_t) const { return flat.offsetInternal(ptr); }
-        size_t offsetInternalUnsafe(typename Impl::ConstLookupResult ptr, size_t) const { return flat.offsetInternal(ptr); }
 
     private:
         Impl flat;
     };
 
-    using Storage = std::conditional_t<isFixedRangeStorage(), FixedRangeStorage, FixedStorage>;
+    using Storage = std::conditional_t<isFixedRangeStorage(), FixedRangeStorage, PerBucketStorage>;
 
 public:
     using key_type = typename Impl::key_type;
@@ -236,6 +212,7 @@ public:
     {
     }
 
+    /// Copy the data from another (normal) hash table. It should have the same hash function.
     template <typename Source>
     requires(!std::is_arithmetic_v<Source>)
     explicit TwoLevelHashTable(const Source & src)
@@ -258,8 +235,8 @@ public:
         }
     }
 
-    /// Static so that the join's build-side scatter can route without a table to ask. The instance
-    /// is only there because some hashers, `TrivialHash` among them, are not static.
+    /// Static so that the join's build-side scatter can route without a table to ask. `Hash{}`
+    /// bypasses the empty-base `Hash` subobject, so `Hash` must be stateless.
     static size_t hash(const Key & x) { return Hash{}(x); }
 
     void reserve(size_t num_elements) { impls.reserve(num_elements); }
@@ -273,12 +250,12 @@ public:
             return BucketHash{}(key);
     }
 
-    /// Direct-addressed storage shares one buffer between its buckets and a single bucket needs no
+    /// Fixed-range storage shares one buffer between its buckets and a single bucket needs no
     /// routing at all, so both fold to zero without the routing hash ever being computed.
     template <typename K>
     static size_t ALWAYS_INLINE bucketFor(const K & key, size_t hash_value)
     {
-        if constexpr (isFixedRangeStorage() || numBuckets() == 1)
+        if constexpr (isFixedRangeStorage() || NUM_BUCKETS == 1)
             return 0;
         else
             return getBucketFromHash(bucketRoutingHash(key, hash_value));
@@ -287,7 +264,7 @@ public:
     template <typename K>
     static size_t ALWAYS_INLINE bucketFor(const K & key)
     {
-        if constexpr (isFixedRangeStorage() || numBuckets() == 1)
+        if constexpr (isFixedRangeStorage() || NUM_BUCKETS == 1)
             return 0;
         else
             return getBucketFromHash(bucketRoutingHash(key, hash(key)));
@@ -295,18 +272,18 @@ public:
 
     size_t ALWAYS_INLINE bucketOf(ConstLookupResult ptr) const
     {
-        if constexpr (isFixedRangeStorage() || numBuckets() == 1)
+        if constexpr (isFixedRangeStorage() || NUM_BUCKETS == 1)
             return 0;
         else
             return getBucketFromHash(bucketRoutingHash(ptr->getKey(), ptr->getHash(*this)));
     }
 
 private:
-    /// Direct-addressed cells store no key (`VoidKey`); the impl iterator's `getHash()` is the cell index / key.
+    /// Fixed-range cells store no key (`VoidKey`); the impl iterator's `getHash()` is the cell index / key.
     template <typename ImplIt>
     static size_t ALWAYS_INLINE routedBucketFromIteration(const ImplIt & current_it, size_t physical_bucket)
     {
-        if constexpr (numBuckets() == 1)
+        if constexpr (NUM_BUCKETS == 1)
             return 0;
         else if constexpr (isFixedRangeStorage())
             return getBucketFromHash(bucketRoutingHash(static_cast<key_type>(current_it.getHash()), current_it.getHash()));
@@ -455,6 +432,7 @@ public:
         return { this, bucket, impl_it };
     }
 
+    /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
         const auto & key = Cell::getKey(x);
@@ -517,7 +495,8 @@ public:
       * since when destroying a hash table, the destructor will be invoked for it!
       *
       * Only the target bucket is touched, so concurrent callers may insert into distinct buckets
-      * unsynchronized, provided the table already existed and `computeBucketPrefix` runs after.
+      * unsynchronized; offsets are valid again only once `computeBucketPrefix` has run after the
+      * last insert.
       */
     template <typename KeyHolder>
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
@@ -555,8 +534,8 @@ public:
     bool ALWAYS_INLINE erase(Key x) { return erase(x, hash(x)); }
 
 
-    /// One part for direct-addressed storage: its buckets share a buffer.
-    static constexpr UInt32 serializedPartitionCount() { return isFixedRangeStorage() ? 1 : numBuckets(); }
+    /// One part for fixed-range storage: its buckets share a buffer.
+    static constexpr UInt32 serializedPartitionCount() { return isFixedRangeStorage() ? 1 : NUM_BUCKETS; }
 
     void write(DB::WriteBuffer & wb) const
     {
@@ -611,14 +590,13 @@ public:
     void restoreMinMaxOptimization() { impls.restoreMinMaxOptimization(); }
     bool canUseMinMaxOptimization() const { return impls.canUseMinMaxOptimization(); }
 
+    /// `computeBucketPrefix` must have run since the last capacity change; `HashJoin` freezes the
+    /// maps before any probe.
     size_t offsetInternal(ConstLookupResult ptr) const { return impls.offsetInternal(ptr, bucketOf(ptr)); }
 
-    /// For an iterating caller that already knows the bucket. Needs current prefix sums.
+    /// Same, for an iterating caller that already knows the bucket.
     size_t ALWAYS_INLINE offsetInternalAtBucket(ConstLookupResult ptr, size_t iteration_bucket) const
     {
-        return impls.offsetInternalUnsafe(ptr, iteration_bucket);
+        return impls.offsetInternal(ptr, iteration_bucket);
     }
-
-    /// Skips the lazy `compute`: `computeBucketPrefix` must have run since the last capacity change.
-    size_t offsetInternalUnsafe(ConstLookupResult ptr) const { return impls.offsetInternalUnsafe(ptr, bucketOf(ptr)); }
 };

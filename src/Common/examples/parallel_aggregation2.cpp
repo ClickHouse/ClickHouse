@@ -185,7 +185,7 @@ struct MergeParallelForTwoLevelTable
                         Merger && merger,
                         SimpleThreadPool & pool)
     {
-        for (size_t bucket = 0; bucket < Map::numBuckets(); ++bucket)
+        for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
             pool.scheduleOrThrowOnError([&, bucket, num_maps]
             {
                 std::vector<typename Map::Impl *> section(num_maps);

@@ -115,6 +115,8 @@ private:
 
     void switchToGraceHashJoin(size_t worker_id);
     void tryConvertChunks(size_t worker_id);
+    HashJoin & collectingJoin();
+    const HashJoin & collectingJoin() const;
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -127,11 +129,8 @@ private:
     size_t max_bytes_before_external_join;
     size_t max_threads = 1;
 
-    HashJoin & collectingJoin();
-    const HashJoin & collectingJoin() const;
-
     SharedMutex switch_mutex;
-    std::atomic<size_t> next_slot_to_convert{0};
+    std::atomic<size_t> next_chunk_to_convert{0};
     mutable std::mutex totals_mutex;
     bool supports_parallel_non_joined_blocks_processing{false};
 

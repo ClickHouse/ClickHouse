@@ -102,7 +102,6 @@ struct LowCardinalityKeyGetterForJoin
 
         const size_t row = getIndexAt(row_);
         /// The saved hash is of the key value, which is what the map places by.
-        /// Dictionary positions outside the snapshot have no saved hash and are hashed from the key.
         if (row < saved_hash.size())
             return saved_hash[row];
 
@@ -159,7 +158,7 @@ struct LowCardinalityKeyGetterForJoin
         /// before any probe.
         size_t offset = 0;
         if constexpr (use_offset)
-            offset = found ? data.offsetInternalUnsafe(it) : 0;
+            offset = found ? data.offsetInternal(it) : 0;
 
         visit_cache[row] = found ? 1 : 2;
         mapped_cache[row] = mapped;
@@ -271,4 +270,33 @@ struct KeyGetterForType
     using Mapped = std::conditional_t<std::is_const_v<Data>, const Mapped_t, Mapped_t>;
     using Type = KeyGetterForTypeImpl<type, Value, Mapped, use_offset>::Type;
 };
+
+/// Builds one clause's key getter. For ASOF the last key column is the inequality one, which the
+/// getter must not see. Only the range getters read `key_range`; callers that run before the build
+/// settles it pass the default, i.e. no shift.
+template <typename KeyGetter, bool is_asof_join>
+KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {})
+{
+    KeyGetter getter = [&]
+    {
+        if constexpr (is_asof_join)
+        {
+            auto key_column_copy = key_columns;
+            auto key_size_copy = key_sizes;
+            key_column_copy.pop_back();
+            key_size_copy.pop_back();
+            return KeyGetter(key_column_copy, key_size_copy, nullptr);
+        }
+        else
+            return KeyGetter(key_columns, key_sizes, nullptr);
+    }();
+
+    if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
+    {
+        getter.min_key = static_cast<decltype(getter.min_key)>(key_range.min_key);
+        getter.range_size = static_cast<decltype(getter.range_size)>(key_range.size);
+    }
+
+    return getter;
+}
 }

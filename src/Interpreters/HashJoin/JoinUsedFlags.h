@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <utility>
 #include <vector>
@@ -99,10 +100,7 @@ public:
     /// Call once no build worker can still be appending.
     void finalizePerRowFlags(size_t num_blocks)
     {
-        bool any_pending = false;
-        for (const auto & pending : pending_per_worker)
-            any_pending |= !pending.empty();
-        if (!any_pending)
+        if (std::ranges::all_of(pending_per_worker, [](const auto & pending) { return pending.empty(); }))
             return;
 
         need_flags = true;

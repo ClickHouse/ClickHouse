@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <deque>
 #include <memory>
@@ -53,9 +54,7 @@ constexpr Int32 BITS_FOR_BUCKET_TWO_LEVEL = DEFAULT_BITS_FOR_BUCKET;
 
 constexpr size_t NUM_HASH_TABLE_BUCKETS = 1ull << BITS_FOR_BUCKET_TWO_LEVEL;
 
-/// Power of two, so `slotForBucket` can mask; never more slots than there are buckets.
-size_t slotCountForThreads(size_t max_threads);
-
+/// The slot count is a power of two and never exceeds the bucket count, so masking is enough.
 inline size_t slotForBucket(size_t bucket, size_t num_slots)
 {
     return bucket & (num_slots - 1);
@@ -119,10 +118,10 @@ static_assert(BucketPartitionedMap<JoinFixedHashMap<UInt64, RowRefList, 18>>);
 static_assert(BucketPartitionedMap<TwoLevelJoinFixedHashMap<UInt8, RowRefList>>);
 static_assert(BucketPartitionedMap<TwoLevelJoinFixedHashMap<UInt64, RowRefList, 18>>);
 
-static_assert(JoinHashMap<UInt64, RowRefList>::numBuckets() == 1);
-static_assert(TwoLevelJoinHashMap<UInt64, RowRefList>::numBuckets() == NUM_HASH_TABLE_BUCKETS);
-static_assert(JoinFixedHashMap<UInt8, RowRefList>::numBuckets() == 1);
-static_assert(TwoLevelJoinFixedHashMap<UInt8, RowRefList>::numBuckets() == NUM_HASH_TABLE_BUCKETS);
+static_assert(JoinHashMap<UInt64, RowRefList>::NUM_BUCKETS == 1);
+static_assert(TwoLevelJoinHashMap<UInt64, RowRefList>::NUM_BUCKETS == NUM_HASH_TABLE_BUCKETS);
+static_assert(JoinFixedHashMap<UInt8, RowRefList>::NUM_BUCKETS == 1);
+static_assert(TwoLevelJoinFixedHashMap<UInt8, RowRefList>::NUM_BUCKETS == NUM_HASH_TABLE_BUCKETS);
 
 /** Data structure for implementation of hash JOIN.
   * It is a hash table: keys -> rows of joined ("right") table.
@@ -390,6 +389,8 @@ public:
 /// they are read back the same way (the output key column is the parent LowCardinality type).
 /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
 /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
+/// Only the serial types are listed: a `JoinSource` reads a `StorageJoin` map, and `StorageJoin`
+/// always builds with the serial layout.
 #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
     M(key8) \
     M(key16) \
@@ -402,17 +403,7 @@ public:
     M(keys128) \
     M(keys256) \
     M(low_cardinality_key_string) \
-    M(low_cardinality_key_fixed_string) \
-    M(two_level_key32) \
-    M(two_level_key64) \
-    M(two_level_key_string) \
-    M(two_level_key_fixed_string) \
-    M(two_level_keys32) \
-    M(two_level_keys64) \
-    M(two_level_keys128) \
-    M(two_level_keys256) \
-    M(two_level_low_cardinality_key_string) \
-    M(two_level_low_cardinality_key_fixed_string)
+    M(low_cardinality_key_fixed_string)
 
     enum class Type : uint8_t
     {
@@ -431,19 +422,6 @@ public:
             case Type::low_cardinality_key_fixed_string:
             case Type::two_level_low_cardinality_key_string:
             case Type::two_level_low_cardinality_key_fixed_string: return true;
-            default:
-                return false;
-        }
-    }
-
-    static bool isTwoLevelType(Type type)
-    {
-        switch (type)
-        {
-#define M(NAME) \
-    case Type::NAME: return true;
-            APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
-#undef M
             default:
                 return false;
         }
@@ -555,8 +533,8 @@ public:
         else \
         { \
             const size_t clamped = clampReserve<Table>(reserve, max_reserve_bytes); \
-            for (size_t bucket = slot; bucket < Table::numBuckets(); bucket += slots) \
-                NAME->impls[bucket].reserve(clamped / Table::numBuckets()); \
+            for (size_t bucket = slot; bucket < Table::NUM_BUCKETS; bucket += slots) \
+                NAME->impls[bucket].reserve(clamped / Table::NUM_BUCKETS); \
             return clamped / slots; \
         } \
     }
@@ -604,7 +582,7 @@ public:
             switch (which)
             {
 #define M(NAME) \
-    case Type::NAME: return decltype(NAME)::element_type::numBuckets();
+    case Type::NAME: return decltype(NAME)::element_type::NUM_BUCKETS;
                 APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
             }
@@ -704,7 +682,7 @@ public:
     {
         explicit RightTableData(size_t slots, size_t num_workers)
             : num_slots(slots)
-            , workers(std::max<size_t>(1, num_workers))
+            , workers(num_workers)
         {
             pools.reserve(slots);
             for (size_t i = 0; i < slots; ++i)
@@ -727,6 +705,39 @@ public:
         ColumnAccessIndexes column_access_indexes;
 
         std::vector<WorkerStoredData> workers;
+
+        /// A resumable worker-major walk over one of `WorkerStoredData`'s lists: workers in index
+        /// order, each list in insertion order. `started` is what tells "not begun" from
+        /// "exhausted" - both leave `position` empty, and an emitter that confuses them restarts at
+        /// worker 0 and emits forever.
+        template <typename List, List WorkerStoredData::* Member>
+        struct WorkerListCursor
+        {
+            size_t worker = 0;
+            bool started = false;
+            std::optional<typename List::const_iterator> position;
+
+            /// Parks the cursor at the start of the first non-empty list from `worker` onwards.
+            void seek(const std::vector<WorkerStoredData> & all_workers)
+            {
+                started = true;
+                while (worker < all_workers.size() && (all_workers[worker].*Member).empty())
+                    ++worker;
+                if (worker < all_workers.size())
+                    position = (all_workers[worker].*Member).begin();
+                else
+                    position.reset();
+            }
+
+            /// By reference: the emitters advance the saved iterator in place, which is what lets a
+            /// partially filled block resume where the previous one stopped.
+            typename List::const_iterator & current() { return *position; }
+
+            const List & currentList(const std::vector<WorkerStoredData> & all_workers) const { return all_workers[worker].*Member; }
+        };
+
+        using StoredBlocksCursor = WorkerListCursor<StoredBlocksList, &WorkerStoredData::columns>;
+        using NullmapsCursor = WorkerListCursor<NullmapList, &WorkerStoredData::nullmaps>;
 
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
@@ -807,12 +818,7 @@ public:
 
         bool hasStoredColumns() const
         {
-            for (const auto & worker : workers)
-            {
-                if (!worker.columns.empty())
-                    return true;
-            }
-            return false;
+            return std::ranges::any_of(workers, [](const WorkerStoredData & worker) { return !worker.columns.empty(); });
         }
     };
 
@@ -861,7 +867,7 @@ public:
     /// Creates a row store based on the already initialized layout and fills from block columns.
     RowDataStorePtr createRowStoreForBlock(const Block & block) const;
 
-    size_t getAndSetRightTableKeys() const;
+    size_t getRightTableKeys() const;
 
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
@@ -912,7 +918,6 @@ private:
 
     const size_t max_threads;
     const bool use_parallel_layout;
-    const size_t num_slots;
 
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;

@@ -587,8 +587,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 }
 
 
-bool optimizeJoinLegacy(
-    QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -603,8 +602,8 @@ bool optimizeJoinLegacy(
     const auto & table_join = join->getTableJoin();
 
     /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
-    bool allow_outer_join = typeid_cast<const HashJoin *>(join.get());
-    if (table_join.kind() != JoinKind::Inner && !allow_outer_join)
+    const auto * hash_join = typeid_cast<const HashJoin *>(join.get());
+    if (table_join.kind() != JoinKind::Inner && !hash_join)
         return true;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
@@ -648,7 +647,7 @@ bool optimizeJoinLegacy(
     const bool use_parallel_layout
         = preferParallelHashLayout(updated_table_join->kind(), lhs_estimation, updated_table_join->parallelHashJoinThreshold());
     JoinPtr updated_join;
-    if (const auto * hash_join = typeid_cast<const HashJoin *>(join.get()))
+    if (hash_join)
         updated_join = hash_join->cloneWithParallelLayout(
             updated_table_join, right_stream_input_header, left_stream_input_header, use_parallel_layout);
     else

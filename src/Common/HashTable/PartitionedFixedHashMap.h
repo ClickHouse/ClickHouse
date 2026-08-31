@@ -22,7 +22,7 @@ struct FixedRangeBucketHash
 };
 
 template <typename Key, typename Mapped, typename Cell, typename Size, typename Allocator, size_t size_bits>
-struct IsDirectAddressedTable<FixedHashMap<Key, Mapped, Cell, Size, Allocator, size_bits>> : std::true_type
+struct IsFixedRangeTable<FixedHashMap<Key, Mapped, Cell, Size, Allocator, size_bits>> : std::true_type
 {
 };
 

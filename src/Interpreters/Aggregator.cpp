@@ -2906,7 +2906,7 @@ void Aggregator::writeToTemporaryFileImpl(
         return block;
     };
 
-    for (UInt32 bucket = 0; bucket < Method::Data::numBuckets(); ++bucket)
+    for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*topk_full_key_bytes=*/nullptr);
         auto block = to_block(std::move(agg_chunk));
@@ -3997,7 +3997,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
         {
             UInt32 bucket = next_bucket_to_merge.fetch_add(1);
 
-            if (bucket >= Method::Data::numBuckets())
+            if (bucket >= Method::Data::NUM_BUCKETS)
                 break;
 
             if (method.data.impls[bucket].empty())
@@ -4541,7 +4541,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (Method::Data::numBuckets() * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
@@ -5461,7 +5461,7 @@ std::vector<Aggregator::AggregatedChunk> Aggregator::convertBlockToTwoLevel(cons
 
 #define M(NAME) \
     else if (data.type == AggregatedDataVariants::Type::NAME) \
-        num_buckets = data.NAME->data.numBuckets();
+        num_buckets = data.NAME->data.NUM_BUCKETS;
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)

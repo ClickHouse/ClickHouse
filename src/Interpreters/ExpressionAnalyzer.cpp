@@ -1010,7 +1010,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     SharedHeader right_sample_block,
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context,
-    std::optional<UInt64> rhs_size_estimation)
+    bool use_parallel_layout)
 {
     if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
         && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
@@ -1056,10 +1056,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::DEFAULT)
     {
         const auto & settings = context->getSettingsRef();
-        const bool use_parallel_layout = preferParallelHashLayout(
-            analyzed_join->kind(),
-            rhs_size_estimation,
-            settings[Setting::parallel_hash_join_threshold]);
 
         if (analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk()
             && GraceHashJoin::isSupported(analyzed_join))
@@ -1125,10 +1121,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (algorithm == JoinAlgorithm::AUTO)
     {
         const auto & settings = context->getSettingsRef();
-        const bool use_parallel_layout = preferParallelHashLayout(
-            analyzed_join->kind(),
-            rhs_size_estimation,
-            settings[Setting::parallel_hash_join_threshold]);
 
         if (analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk()
             && GraceHashJoin::isSupported(analyzed_join))
@@ -1175,14 +1167,14 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
     auto right_sample_block = joined_plan->getCurrentHeader();
-    const auto rhs_size_estimation = joined_plan->getRootNode()
-        ? QueryPlanOptimizations::estimateReadRowsCount(*joined_plan->getRootNode()).estimated_rows
-        : std::optional<UInt64>{};
+    const bool use_parallel_layout = preferParallelHashLayout(
+        analyzed_join->kind(),
+        QueryPlanOptimizations::estimateReadRowsCount(*joined_plan->getRootNode()).estimated_rows,
+        context->getSettingsRef()[Setting::parallel_hash_join_threshold]);
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
-        auto join = tryCreateJoin(
-            alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context, rhs_size_estimation);
+        auto join = tryCreateJoin(alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context, use_parallel_layout);
         if (join)
             return join;
     }

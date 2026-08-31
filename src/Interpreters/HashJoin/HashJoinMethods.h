@@ -124,16 +124,10 @@ private:
 };
 
 template <typename KeyGetter>
-constexpr bool shareKeyGetterAcrossBuckets()
-{
-    if constexpr (requires { KeyGetter::reads_whole_block_at_construction; })
-        return KeyGetter::reads_whole_block_at_construction;
-    else
-        return false;
-}
+constexpr bool share_key_getter_across_buckets = requires { requires KeyGetter::reads_whole_block_at_construction; };
 
 /// MapsTemplate is one of MapsOne, MapsAll and MapsAsof
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
     static constexpr bool needs_offset = JoinFeatures<KIND, STRICTNESS, MapsTemplate>::need_flags;
@@ -171,13 +165,6 @@ public:
         bool is_join_get = false);
 
 private:
-    template <typename KeyGetter, bool is_asof_join>
-    static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {});
-
-    template <typename KeyGetter, bool is_asof_join>
-    static KeyGetter & blockKeyGetter(
-        BlockKeyGetter & block_key_getter, std::optional<KeyGetter> & own, const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
-
     template <typename KeyGetter, typename HashMap, typename Selector>
     static void insertFromBlockImplTypeCase(
         HashJoin & join,

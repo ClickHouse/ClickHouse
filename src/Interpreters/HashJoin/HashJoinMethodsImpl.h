@@ -54,7 +54,7 @@ ALWAYS_INLINE bool shouldUseJoinPrefetch(bool enable_prefetch, const Map * map)
         return false;
     /// Two-level maps share buckets across build threads. Summing every bucket's grower
     /// races with a resize under another slot's lock.
-    if constexpr (requires { Map::numBuckets(); } && Map::numBuckets() > 1)
+    if constexpr (Map::NUM_BUCKETS > 1)
         return true;
     return map->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
 }
@@ -272,46 +272,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, bool is_asof_join>
-KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range)
-{
-    KeyGetter getter = [&]()
-    {
-        if constexpr (is_asof_join)
-        {
-            auto key_column_copy = key_columns;
-            auto key_size_copy = key_sizes;
-            key_column_copy.pop_back();
-            key_size_copy.pop_back();
-            return KeyGetter(key_column_copy, key_size_copy, nullptr);
-        }
-        else
-            return KeyGetter(key_columns, key_sizes, nullptr);
-    }();
-
-    if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
-    {
-        getter.min_key = static_cast<decltype(getter.min_key)>(key_range.min_key);
-        getter.range_size = static_cast<decltype(getter.range_size)>(key_range.size);
-    }
-
-    return getter;
-}
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
-template <typename KeyGetter, bool is_asof_join>
-KeyGetter & HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::blockKeyGetter(
-    BlockKeyGetter & block_key_getter, std::optional<KeyGetter> & own, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
-{
-    const auto create = [&] { return createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes); };
-
-    if constexpr (shareKeyGetterAcrossBuckets<KeyGetter>())
-        return block_key_getter.getOrBuild<KeyGetter>(create);
-    else
-        return own.emplace(create());
-}
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
 template <typename KeyGetter, typename HashMap, typename Selector>
 void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
     HashJoin & join,
@@ -356,9 +316,14 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
             dense_key_ptrs.push_back(column.get());
         key_getter_ptr = &own_key_getter.emplace(createKeyGetter<KeyGetter, is_asof_join>(dense_key_ptrs, key_sizes));
     }
+    else if constexpr (share_key_getter_across_buckets<KeyGetter>)
+    {
+        key_getter_ptr
+            = &block_key_getter.getOrBuild<KeyGetter>([&] { return createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes); });
+    }
     else
     {
-        key_getter_ptr = &blockKeyGetter<KeyGetter, is_asof_join>(block_key_getter, own_key_getter, key_columns, key_sizes);
+        key_getter_ptr = &own_key_getter.emplace(createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes));
     }
     auto & key_getter = *key_getter_ptr;
 

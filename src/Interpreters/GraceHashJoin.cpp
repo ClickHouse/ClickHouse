@@ -923,7 +923,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
         {
             hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
             block_added = true;
-            size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
+            size_t hash_join_total_keys = hash_join->getRightTableKeys();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
             if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
                 return;

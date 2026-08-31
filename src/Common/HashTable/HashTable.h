@@ -425,7 +425,7 @@ protected:
     template <typename, typename, typename, typename, typename, typename, Int32, typename>
     friend class TwoLevelHashTable;
 
-    template <typename, typename, Int32>
+    template <typename, typename, size_t>
     friend class TwoLevelStringHashTable;
 
     template <typename SubMaps>

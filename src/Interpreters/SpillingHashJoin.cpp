@@ -72,12 +72,12 @@ void SpillingHashJoin::tryConvertChunks(size_t worker_id)
 
     const size_t total_chunks = in_memory_hash_join->getNumReleaseChunks();
 
-    if (next_slot_to_convert.load(std::memory_order_acquire) >= total_chunks)
+    if (next_chunk_to_convert.load(std::memory_order_acquire) >= total_chunks)
         return;
 
     while (true)
     {
-        size_t chunk = next_slot_to_convert.fetch_add(1);
+        size_t chunk = next_chunk_to_convert.fetch_add(1);
         if (chunk >= total_chunks)
             break;
 
@@ -106,8 +106,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, size
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
         /// Lend a hand with the conversion instead of waiting for it.
-        if (in_memory_hash_join)
-            tryConvertChunks(worker_id);
+        tryConvertChunks(worker_id);
         return chosen_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
     }
 
@@ -223,8 +222,7 @@ void SpillingHashJoin::runPostBuildPhase()
 
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 {
-    if (in_memory_hash_join)
-        in_memory_hash_join->setEnableLazyColumnsIndexing(value);
+    in_memory_hash_join->setEnableLazyColumnsIndexing(value);
 }
 
 void SpillingHashJoin::checkTypesOfKeys(const Block & block) const

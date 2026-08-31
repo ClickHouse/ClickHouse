@@ -525,7 +525,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
         size_t fill_streams = max_streams;
         if (const size_t cap = join->getMaxBuildThreads())
-            fill_streams = cap < max_streams ? cap : max_streams;
+            fill_streams = std::min(cap, max_streams);
 
         auto filling_finish_counter = std::make_shared<FinishCounter>(fill_streams);
 

@@ -30,7 +30,7 @@ concept BucketPartitionedTable = requires(
     { const_map.hash(key) } -> std::convertible_to<size_t>;
     { const_map.bucketRoutingHash(key, hash_value) } -> std::convertible_to<size_t>;
     { const_map.getBucketFromHash(hash_value) } -> std::convertible_to<size_t>;
-    { const_map.numBuckets() } -> std::convertible_to<UInt32>;
+    { Map::NUM_BUCKETS } -> std::convertible_to<UInt32>;
 
     map.emplace(key, lookup, inserted);
     map.emplace(key, lookup, inserted, hash_value);
@@ -39,7 +39,6 @@ concept BucketPartitionedTable = requires(
     { const_map.has(key) } -> std::same_as<bool>;
 
     { const_map.offsetInternal(const_lookup) } -> std::convertible_to<size_t>;
-
     { const_map.offsetInternalAtBucket(const_lookup, size_t{}) } -> std::convertible_to<size_t>;
 
     { const_map.size() } -> std::convertible_to<size_t>;
