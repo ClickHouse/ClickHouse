@@ -37,7 +37,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 COPY requirements.txt /
-RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
+RUN python3.13 -m pip install --ignore-installed --no-cache-dir -r requirements.txt
 
 
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb

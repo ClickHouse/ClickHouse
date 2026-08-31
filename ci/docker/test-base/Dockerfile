@@ -21,6 +21,10 @@ ARG LLVM_APT_VERSION="1:23.1.0~"
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=23
 
+# ubuntu:24.04 ships a default "ubuntu" user with uid/gid 1000; remove it so
+# derived images can create their own users with these ids (e.g. "clickhouse")
+RUN userdel --remove ubuntu
+
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
     && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
