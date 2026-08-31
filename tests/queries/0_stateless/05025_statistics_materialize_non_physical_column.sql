@@ -1,6 +1,8 @@
 -- Tests `MATERIALIZE STATISTICS` on a column that is not physically stored.
 
 SET allow_statistics = 1;
+-- The last check inspects statistics written by `INSERT`, so pin the setting that CI randomizes.
+SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS tab;
 
