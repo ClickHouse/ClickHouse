@@ -12,6 +12,8 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -46,7 +48,25 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace
+{
+/// The selector reads the inner tables directly, so a policy on the TimeSeries table would be
+/// silently skipped; refuse it the way the Distributed wrapper guard does.
+void checkTimeSeriesRowPolicyAbsent(const StorageID & storage_id, const ContextPtr & context)
+{
+    auto row_policy_filter = context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "A row policy on {} is not supported for reads through timeSeriesSelector: "
+            "the read goes to its inner tables and the policy would not be applied",
+            storage_id.getNameForLogs());
+}
 }
 
 namespace
@@ -132,9 +152,10 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    auto storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
-    /// Grant first: the cast's engine error must not fingerprint a table the caller cannot read.
+    /// Grant before existence and before the cast's engine error.
     context->checkAccess(AccessType::SELECT, time_series_storage_id);
+    auto storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
+    checkTimeSeriesRowPolicyAbsent(time_series_storage_id, context);
     auto time_series_storage = storagePtrToTimeSeries(storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
@@ -814,9 +835,10 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto storage = DatabaseCatalog::instance().getTable(config.time_series_storage_id, context);
-    /// Grant before the engine cast, same as getConfiguration; this entry is reachable on its own.
+    /// Same gate order as getConfiguration; this entry is reachable on its own.
     context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
+    auto storage = DatabaseCatalog::instance().getTable(config.time_series_storage_id, context);
+    checkTimeSeriesRowPolicyAbsent(config.time_series_storage_id, context);
     auto time_series_storage = storagePtrToTimeSeries(storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 

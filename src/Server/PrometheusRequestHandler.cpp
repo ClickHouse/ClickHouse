@@ -25,6 +25,7 @@
 #include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
@@ -320,7 +321,10 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        auto table_id = getTimeSeriesTableID();
+        /// Grant before existence: a probe without the right must not learn whether the name exists.
+        context->checkAccess(AccessType::INSERT, table_id);
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
         PrometheusRemoteWriteProtocol protocol{table, context};
 
         prometheus::WriteRequest write_request;
@@ -362,7 +366,10 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        auto table_id = getTimeSeriesTableID();
+        /// Grant before existence, as on the write path.
+        context->checkAccess(AccessType::SELECT, table_id);
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
         PrometheusRemoteReadProtocol protocol{table, context};
 
         prometheus::ReadRequest read_request;
@@ -476,7 +483,10 @@ public:
 
         try
         {
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            auto table_id = getTimeSeriesTableID();
+            /// Grant before existence, as on the protocol paths.
+            context->checkAccess(AccessType::SELECT, table_id);
+            auto table = DatabaseCatalog::instance().getTable(table_id, context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             auto query_finish_callback = [&]()

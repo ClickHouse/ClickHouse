@@ -106,10 +106,10 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
-    /// Checked on every path: the evaluation reads this table through generated queries the
-    /// planner does not attribute to its name, and the HTTP API enforces the same in its ctor.
+    /// Grant before existence: a caller without SELECT must not tell a hidden table from a
+    /// missing one, and the evaluation reads it through queries not attributed to this name.
     context->checkAccess(AccessType::SELECT, time_series_storage_id);
+    auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
     auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
     if (distributed_target)
         checkPrometheusQueryDistributedRead(*time_series_storage, context);
