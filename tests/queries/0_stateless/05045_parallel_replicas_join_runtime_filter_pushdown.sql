@@ -18,6 +18,9 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_min_number_of_rows_per_replica = 0;
 SET enable_join_runtime_filters = 1;
+-- The runtime filter has to be built whatever the probe side is estimated to be: under parallel
+-- replicas that estimate is unknown, and the join order randomizer replaces it with a random one.
+SET join_runtime_filter_min_probe_rows = 0;
 SET parallel_replicas_filter_pushdown = 1;
 -- Keep the small table on the build side so the plan shape below is stable.
 SET query_plan_join_swap_table = false;
