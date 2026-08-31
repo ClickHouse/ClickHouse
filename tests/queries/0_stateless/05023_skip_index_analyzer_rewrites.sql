@@ -13,6 +13,8 @@ SET use_statistics_for_part_pruning = 0;
 -- The name of the plan step for the `WHERE` clause depends on the PREWHERE optimization
 -- (`Expression` vs `Filter`), which CI randomizes, and it is irrelevant here, so the queries
 -- below filter the plan step lines out of the `EXPLAIN` output and keep only the index analysis.
+-- The remaining lines are also stripped of their leading indentation and plan-tree prefix, because
+-- the nesting depth of `ReadFromMergeTree` depends on the same randomized settings.
 
 DROP TABLE IF EXISTS test_skip_idx_rewrites;
 
@@ -36,23 +38,23 @@ SELECT number, ['a'], map('a', 'v'), number % 100 FROM numbers(100);
 -- Test 1: the issue's case: a filter on an ALIAS column whose expression is
 -- rewritten by the analyzer (multiIf -> if, map element -> subcolumn).
 SELECT 'alias_column';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT t, a FROM test_skip_idx_rewrites WHERE a > 97
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT t, a FROM test_skip_idx_rewrites WHERE a > 97
 ) WHERE explain NOT LIKE '%Expression (%' AND explain NOT LIKE '%Filter (%';
 
 -- Test 2: the same expression written out verbatim.
 SELECT 'verbatim_expression';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites
 WHERE if(has(attrs, 'a'), multiIf((m['a']) = 'v', v, NULL), NULL) > 97
 ) WHERE explain NOT LIKE '%Expression (%' AND explain NOT LIKE '%Filter (%';
 
 -- Test 3: multiIf rewritten to if by optimize_multiif_to_if.
 SELECT 'multiif_to_if';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites WHERE multiIf(v > 0, v, NULL) > 97
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites WHERE multiIf(v > 0, v, NULL) > 97
 ) WHERE explain NOT LIKE '%Expression (%' AND explain NOT LIKE '%Filter (%';
 
 -- Test 4: the rewrites disabled: the index is matched by the original names.
 SELECT 'rewrites_disabled';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites WHERE multiIf(v > 0, v, NULL) > 97
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites WHERE multiIf(v > 0, v, NULL) > 97
 SETTINGS optimize_multiif_to_if = 0
 ) WHERE explain NOT LIKE '%Expression (%' AND explain NOT LIKE '%Filter (%';
 

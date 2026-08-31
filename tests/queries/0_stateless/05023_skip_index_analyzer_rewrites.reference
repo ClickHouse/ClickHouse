@@ -1,59 +1,59 @@
 alias_column
-    ReadFromMergeTree (default.test_skip_idx_rewrites)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 25/25
-      Skip
-        Name: idx_a
-        Description: minmax GRANULARITY 1
-        Condition: (if(has(attrs, \'a\'), multiIf(equals(arrayElement(m, \'a\'), \'v\'), v, NULL), NULL) in [98, +Inf))
-        Parts: 1/1
-        Granules: 1/25
-      Ranges: 1
+ReadFromMergeTree (default.test_skip_idx_rewrites)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_a
+Description: minmax GRANULARITY 1
+Condition: (if(has(attrs, \'a\'), multiIf(equals(arrayElement(m, \'a\'), \'v\'), v, NULL), NULL) in [98, +Inf))
+Parts: 1/1
+Granules: 1/25
+Ranges: 1
 verbatim_expression
-    ReadFromMergeTree (default.test_skip_idx_rewrites)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 25/25
-      Skip
-        Name: idx_a
-        Description: minmax GRANULARITY 1
-        Condition: (if(has(attrs, \'a\'), multiIf(equals(arrayElement(m, \'a\'), \'v\'), v, NULL), NULL) in [98, +Inf))
-        Parts: 1/1
-        Granules: 1/25
-      Ranges: 1
+ReadFromMergeTree (default.test_skip_idx_rewrites)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_a
+Description: minmax GRANULARITY 1
+Condition: (if(has(attrs, \'a\'), multiIf(equals(arrayElement(m, \'a\'), \'v\'), v, NULL), NULL) in [98, +Inf))
+Parts: 1/1
+Granules: 1/25
+Ranges: 1
 multiif_to_if
-    ReadFromMergeTree (default.test_skip_idx_rewrites)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 25/25
-      Skip
-        Name: idx_multiif
-        Description: minmax GRANULARITY 1
-        Condition: (multiIf(greater(v, 0), v, NULL) in [98, +Inf))
-        Parts: 1/1
-        Granules: 2/25
-      Ranges: 2
+ReadFromMergeTree (default.test_skip_idx_rewrites)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_multiif
+Description: minmax GRANULARITY 1
+Condition: (multiIf(greater(v, 0), v, NULL) in [98, +Inf))
+Parts: 1/1
+Granules: 2/25
+Ranges: 2
 rewrites_disabled
-    ReadFromMergeTree (default.test_skip_idx_rewrites)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 25/25
-      Skip
-        Name: idx_multiif
-        Description: minmax GRANULARITY 1
-        Condition: (multiIf(greater(v, 0), v, NULL) in [98, +Inf))
-        Parts: 1/1
-        Granules: 2/25
-      Ranges: 2
+ReadFromMergeTree (default.test_skip_idx_rewrites)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_multiif
+Description: minmax GRANULARITY 1
+Condition: (multiIf(greater(v, 0), v, NULL) in [98, +Inf))
+Parts: 1/1
+Granules: 2/25
+Ranges: 2
 results
 2
 2

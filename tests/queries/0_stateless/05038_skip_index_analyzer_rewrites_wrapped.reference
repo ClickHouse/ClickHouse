@@ -1,31 +1,31 @@
 monotonic_wrapper
-    ReadFromMergeTree (default.test_skip_idx_rewrites_wrapped)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 25/25
-      Skip
-        Name: idx_monotonic
-        Description: minmax GRANULARITY 1
-        Condition: (toInt64(multiIf(greater(v, 0), v, NULL)) in [97, +Inf))
-        Parts: 1/1
-        Granules: 2/25
-      Ranges: 2
+ReadFromMergeTree (default.test_skip_idx_rewrites_wrapped)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_monotonic
+Description: minmax GRANULARITY 1
+Condition: (toInt64(multiIf(greater(v, 0), v, NULL)) in [97, +Inf))
+Parts: 1/1
+Granules: 2/25
+Ranges: 2
 deterministic_wrapper
-    ReadFromMergeTree (default.test_skip_idx_rewrites_wrapped)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 25/25
-      Skip
-        Name: idx_deterministic
-        Description: minmax GRANULARITY 1
-        Condition: (cityHash64(multiIf(greater(v, 0), v, 0)) in [9325005769085682321, 9325005769085682321])
-        Parts: 1/1
-        Granules: 23/25
-      Ranges: 3
+ReadFromMergeTree (default.test_skip_idx_rewrites_wrapped)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_deterministic
+Description: minmax GRANULARITY 1
+Condition: (cityHash64(multiIf(greater(v, 0), v, 0)) in [9325005769085682321, 9325005769085682321])
+Parts: 1/1
+Granules: 23/25
+Ranges: 3
 results
 2
 2

@@ -14,6 +14,8 @@ SET use_statistics_for_part_pruning = 0;
 -- The name of the plan step for the `WHERE` clause depends on the PREWHERE optimization
 -- (`Expression` vs `Filter`), which CI randomizes, and it is irrelevant here, so the queries
 -- below filter the plan step lines out of the `EXPLAIN` output and keep only the index analysis.
+-- The remaining lines are also stripped of their leading indentation and plan-tree prefix, because
+-- the nesting depth of `ReadFromMergeTree` depends on the same randomized settings.
 
 DROP TABLE IF EXISTS test_skip_idx_rewrites_wrapped;
 
@@ -34,13 +36,13 @@ SELECT number, number % 100 FROM numbers(100);
 -- The index expression is a monotonic function (`toInt64`) of the rewritten expression:
 -- the constant is pushed through it (the key-subexpression matching path).
 SELECT 'monotonic_wrapper';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites_wrapped WHERE multiIf(v > 0, v, NULL) > 97
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites_wrapped WHERE multiIf(v > 0, v, NULL) > 97
 ) WHERE explain NOT LIKE '%Expression (%' AND explain NOT LIKE '%Filter (%';
 
 -- The index expression is a deterministic non-monotonic function (`cityHash64`) of the
 -- rewritten expression: an equality constant is transformed into key space.
 SELECT 'deterministic_wrapper';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites_wrapped WHERE multiIf(v > 0, v, 0) = 98
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites_wrapped WHERE multiIf(v > 0, v, 0) = 98
 ) WHERE explain NOT LIKE '%Expression (%' AND explain NOT LIKE '%Filter (%';
 
 -- The indexes must not change the results.

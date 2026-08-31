@@ -14,6 +14,8 @@ SET use_statistics_for_part_pruning = 0;
 -- The name of the plan step for the `WHERE` clause depends on the PREWHERE optimization
 -- (`Expression` vs `Filter`), which CI randomizes, and it is irrelevant here, so the queries
 -- below filter the plan step lines out of the `EXPLAIN` output and keep only the index analysis.
+-- The remaining lines are also stripped of their leading indentation and plan-tree prefix, because
+-- the nesting depth of `ReadFromMergeTree` depends on the same randomized settings.
 
 DROP TABLE IF EXISTS test_skip_idx_rewrites_legacy;
 
@@ -34,13 +36,13 @@ INSERT INTO test_skip_idx_rewrites_legacy SELECT number, number % 100 FROM numbe
 -- subquery is not applied to the analysis of the `EXPLAIN`ed query.
 SET optimize_multiif_to_if = 1;
 SELECT 'multiif_to_if';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites_legacy WHERE multiIf(v > 0, v, NULL) > 97
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites_legacy WHERE multiIf(v > 0, v, NULL) > 97
 ) WHERE explain NOT LIKE '%Expression (%' AND explain NOT LIKE '%Filter (%';
 
 -- The rewrite disabled: the index is matched by the original names.
 SET optimize_multiif_to_if = 0;
 SELECT 'rewrites_disabled';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites_legacy WHERE multiIf(v > 0, v, NULL) > 97
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT t FROM test_skip_idx_rewrites_legacy WHERE multiIf(v > 0, v, NULL) > 97
 ) WHERE explain NOT LIKE '%Expression (%' AND explain NOT LIKE '%Filter (%';
 SET optimize_multiif_to_if = 1;
 
