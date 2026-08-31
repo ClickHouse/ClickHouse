@@ -116,7 +116,7 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
 }
 
 template <bool with_defaults>
-bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
+bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/, size_t /*column_index*/)
 {
     return readFieldImpl(column, serialization);
 }

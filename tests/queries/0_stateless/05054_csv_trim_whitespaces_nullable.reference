@@ -1,0 +1,8 @@
+--- trim=0 Nullable(String)
+" padded ",\N," \N ","unpadded"
+--- trim=0 Nullable(FixedString(24))
+" padded ",\N," \N ","unpadded"
+--- trim=1 Nullable(String)
+"padded",\N,"\N","unpadded"
+--- trim=1 Nullable(FixedString(24))
+"padded",\N,"\N","unpadded"
