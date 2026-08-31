@@ -599,6 +599,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::next()
             fully_initialized.store(true);
             return nullptr;
         }
+        /// The data manifest decode tasks pass the queue's finished state here, so a cancelled
+        /// query stops decoding mid-manifest. Checked between rows rather than by the caller,
+        /// because a long stretch of pruned rows yields nothing the caller could check on.
         if (stop_condition && row_index % stop_check_period == 0 && stop_condition())
             return nullptr;
         auto entry = processRow(row_index);

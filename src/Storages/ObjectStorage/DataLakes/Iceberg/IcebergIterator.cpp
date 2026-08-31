@@ -284,6 +284,19 @@ std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManif
     return batch;
 }
 
+void IcebergIterator::streamManifest(const ManifestFileCacheKey & manifest_list_entry)
+{
+    if (blocking_queue.isFinished())
+        return;
+
+    auto manifest_file_iterator = createManifestIterator(manifest_list_entry, [this] { return blocking_queue.isFinished(); });
+    while (auto entry = manifest_file_iterator->next())
+    {
+        if (!blocking_queue.push(std::move(entry)))
+            return;
+    }
+}
+
 void IcebergIterator::decodeDeleteManifests()
 {
     std::vector<ManifestFileCacheKey> delete_manifests;
@@ -358,28 +371,9 @@ void IcebergIterator::decodeDataManifests()
     /// Cap concurrency: each in-flight manifest holds its decoded contents.
     const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_data_manifest_decode_concurrency];
 
-    if (max_in_flight == 1)
-    {
-        /// Serial mode: decode on this thread and push each entry as it is produced, so the queue's
-        /// backpressure applies within a manifest and no batch of entries is materialized.
-        for (const auto & manifest_list_entry : data_manifests)
-        {
-            if (blocking_queue.isFinished())
-                return;
-            auto manifest_file_iterator = createManifestIterator(manifest_list_entry, [this] { return blocking_queue.isFinished(); });
-            while (auto entry = manifest_file_iterator->next())
-            {
-                if (!blocking_queue.push(std::move(entry)))
-                    return;
-            }
-        }
-        return;
-    }
+    auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
 
-    auto decode_runner
-        = threadPoolCallbackRunnerUnsafe<ManifestEntryBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
-
-    std::deque<std::future<ManifestEntryBatch>> in_flight;
+    std::deque<std::future<void>> in_flight;
     /// The tasks capture `this`, so none of them may still be running when this function is left.
     SCOPE_EXIT({
         for (auto & future : in_flight)
@@ -394,23 +388,12 @@ void IcebergIterator::decodeDataManifests()
     {
         while (in_flight.size() < max_in_flight && next_to_decode < data_manifests.size())
         {
-            auto decode = [this, manifest_list_entry = data_manifests[next_to_decode++]]()
-            { return decodeManifest(manifest_list_entry, [this] { return blocking_queue.isFinished(); }); };
-            in_flight.push_back(decode_runner(std::move(decode), Priority{}));
+            auto stream = [this, manifest_list_entry = data_manifests[next_to_decode++]]() { streamManifest(manifest_list_entry); };
+            in_flight.push_back(stream_runner(std::move(stream), Priority{}));
         }
 
-        auto pending = std::move(in_flight.front());
+        in_flight.front().get();
         in_flight.pop_front();
-        /// Consumed in manifest list order, so entries reach the queue in the order the serial
-        /// walk produced them, and the failure reported is the first one in that order.
-        for (auto & entry : pending.get())
-        {
-            /// A blocked push is what bounds the decode: no new manifests are scheduled while the
-            /// query is not consuming entries. push only returns false when the queue is finished
-            /// (the iterator is being destroyed, or delete decoding failed).
-            if (!blocking_queue.push(std::move(entry)))
-                return;
-        }
     }
 }
 
