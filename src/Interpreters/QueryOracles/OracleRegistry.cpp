@@ -44,6 +44,7 @@ extern const Event ASTFuzzerOracleDictGetChecks;
 extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 extern const Event ASTFuzzerOracleAlterModifyChecks;
 extern const Event ASTFuzzerOracleLightweightUpdateChecks;
+extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
 }
 
 namespace DB
@@ -131,6 +132,7 @@ OracleRegistry::OracleRegistry()
     add("materialized column", ProfileEvents::ASTFuzzerOracleMaterializedColumnChecks, &QueryOracleChecker::checkMaterializedColumn);
     add("ALTER MODIFY widen", ProfileEvents::ASTFuzzerOracleAlterModifyChecks, &QueryOracleChecker::checkAlterModifyWiden);
     add("lightweight update", ProfileEvents::ASTFuzzerOracleLightweightUpdateChecks, &QueryOracleChecker::checkLightweightUpdate);
+    add("window equivalence", ProfileEvents::ASTFuzzerOracleWindowEquivalenceChecks, &QueryOracleChecker::checkWindowEquivalence);
 }
 
 const OracleRegistry & OracleRegistry::instance()

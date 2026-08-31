@@ -204,6 +204,11 @@ public:
     /// patch coherently, and OPTIMIZE FINAL materialization must be a no-op on the applied result.
     bool checkLightweightUpdate(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Window-frame equivalence oracle (self-seeded): the implicit default frame equals the explicit
+    /// RANGE UNBOUNDED PRECEDING..CURRENT ROW, and a whole-partition frame is identical across the
+    /// ROWS/RANGE/GROUPS modes.
+    bool checkWindowEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
