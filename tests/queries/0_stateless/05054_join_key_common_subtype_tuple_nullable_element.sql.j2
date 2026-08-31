@@ -45,11 +45,26 @@ INNER JOIN
 USING (t)
 ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';
 
--- A LowCardinality element is stripped before the common subtype is computed.
+-- A LowCardinality(Nullable) element is rejected: converting it to a non-Nullable element cannot report
+-- the NULL at the top level.
 SELECT * FROM
-(SELECT CAST(tuple(CAST(1, 'Nullable(UInt64)')), 'Tuple(LowCardinality(Nullable(UInt64)))') AS t) AS a
+(SELECT CAST(tuple(CAST(NULL, 'Nullable(UInt64)')), 'Tuple(LowCardinality(Nullable(UInt64)))') AS t) AS a
 INNER JOIN
-(SELECT CAST(tuple(CAST(1, 'Nullable(Int64)')), 'Tuple(LowCardinality(Nullable(Int64)))') AS t) AS b
+(SELECT CAST(tuple(CAST(NULL, 'Nullable(Int64)')), 'Tuple(LowCardinality(Nullable(Int64)))') AS t) AS b
+ON a.t = b.t
+SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError NO_COMMON_TYPE }
+SELECT * FROM
+(SELECT CAST(tuple(CAST(NULL, 'Nullable(UInt64)')), 'Tuple(LowCardinality(Nullable(UInt64)))') AS t) AS a
+INNER JOIN
+(SELECT CAST(tuple(CAST(NULL, 'Nullable(Int64)')), 'Tuple(LowCardinality(Nullable(Int64)))') AS t) AS b
+USING (t)
+SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError NO_COMMON_TYPE }
+
+-- A plain LowCardinality element is stripped before the common subtype is computed.
+SELECT * FROM
+(SELECT CAST(tuple(CAST(1, 'UInt64')), 'Tuple(LowCardinality(UInt64))') AS t) AS a
+INNER JOIN
+(SELECT CAST(tuple(CAST(1, 'Int64')), 'Tuple(LowCardinality(Int64))') AS t) AS b
 ON a.t = b.t
 ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge', allow_suspicious_low_cardinality_types = 1;
 
