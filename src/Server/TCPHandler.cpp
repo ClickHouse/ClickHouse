@@ -86,6 +86,7 @@
 
 
 #include <Common/FailPoint.h>
+#include <base/sleep.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -138,6 +139,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
 }
@@ -828,8 +830,25 @@ void TCPHandler::runImpl()
                         Stopwatch watch;
                         CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
 
+                        /// Stands in for a follower that is still planning while the initiator gives up on it.
+                        fiu_do_on(FailPoints::parallel_replicas_delay_announcement, { sleepForMilliseconds(3000); });
+
                         std::lock_guard lock(*callback_mutex);
 
+                        /// A `Cancel` during the announcement exchange must stop this replica, not turn into
+                        /// "return what you have": there is no partial result to return before the ranges have
+                        /// even been handed out, and `processCancel` would otherwise return without setting
+                        /// `stop_query`, letting the announcement go out to an initiator that has already
+                        /// disconnected (`Broken pipe`). Secondary queries inherit
+                        /// `partial_result_on_first_cancel` from the initiator, so this has to be turned off
+                        /// explicitly, the same way `readTemporaryTables` does it.
+                        auto off_setting_guard = TurnOffBoolSettingTemporary(query_state->allow_partial_result_on_first_cancel);
+
+                        /// The initiator may have given up on this replica while it was planning, and it
+                        /// stops waiting for this announcement when it does. Look for the `Cancel` packet
+                        /// now rather than at the next interactive-delay tick, so the announcement is not
+                        /// written into a socket nobody reads.
+                        receivePacketsExpectCancel(*query_state, /* force= */ true);
                         checkIfQueryCanceled(*query_state);
 
                         try
@@ -3111,9 +3130,9 @@ void TCPHandler::processCancel(QueryState & state)
     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
-void TCPHandler::receivePacketsExpectCancel(QueryState & state)
+void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
 {
-    if (after_check_cancelled.elapsed() / 1000 < interactive_delay)
+    if (!force && after_check_cancelled.elapsed() / 1000 < interactive_delay)
         return;
 
     after_check_cancelled.restart();
