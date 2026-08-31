@@ -190,11 +190,12 @@ not to multipart-capable blob publication.
   (local object storage) and "`cas s3 storage`" run the whole
   stateless suite with `MergeTree` defaulting to a CAS disk. Tests that
   legitimately cannot run there carry the `no-cas-storage` tag.
-- **Stress**: `Stress test (amd_asan_ubsan, cas s3 storage)` runs the
-  same `clickhouse-test --stress-tests` loop as the other stress jobs
-  (stateless tests picked at random, several clients in parallel, no
+- **Stress**: `Stress test (amd_{debug,asan_ubsan,tsan,msan}, cas s3 storage)`
+  run the same `clickhouse-test --stress-tests` loop as the other stress
+  jobs (stateless tests picked at random, several clients in parallel, no
   result validation) with `cas_s3` as the default `MergeTree` policy
-  and RustFS backing the pool.
+  and RustFS backing the pool. One job per AMD sanitizer build plus
+  debug (the non-sanitizer stress package).
 - **Soak / chaos**: `utils/ca-soak/` — multi-replica docker-compose
   harnesses (fault proxies, GC sharding variants, AWS S3/GCS backends) and
   adversarial scenarios.

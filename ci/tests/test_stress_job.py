@@ -246,9 +246,18 @@ def test_dpkg_progress_in_info_does_not_split_row(tmp_path):
     assert malformed == []
 
 
-def test_cas_s3_env_is_exclusive_of_plain_s3(monkeypatch):
+@pytest.mark.parametrize(
+    "check_name",
+    [
+        "Stress test (amd_debug, cas s3 storage)",
+        "Stress test (amd_asan_ubsan, cas s3 storage)",
+        "Stress test (amd_tsan, cas s3 storage)",
+        "Stress test (amd_msan, cas s3 storage)",
+    ],
+)
+def test_cas_s3_env_is_exclusive_of_plain_s3(monkeypatch, check_name):
     monkeypatch.setattr("ci.jobs.ci_utils.is_extended_run", lambda: False)
-    envs = get_additional_envs(None, "Stress test (amd_asan_ubsan, cas s3 storage)")
+    envs = get_additional_envs(None, check_name)
     assert "USE_CAS_S3_STORAGE_FOR_MERGE_TREE=1" in envs
     assert "USE_S3_STORAGE_FOR_MERGE_TREE=1" not in envs
 
