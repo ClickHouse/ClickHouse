@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # The FLATTENED Dynamic serialization of the Native format lists its variant types by name, and the
 # name of a DateTime that declares no time zone carries none, so such a type has to be built again
-# for every read. Each pair below runs in one client invocation, so its second read runs where the
-# first one has already built that type.
+# for every read. Native can also encode those types as binary codes instead of names, so the
+# settings choosing between the two are pinned inside the queries, which the test runner cannot
+# override. Each pair below runs in one client invocation, so its second read runs where the first
+# one has already built that type.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,16 +13,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 mkdir -p "${USER_FILES_PATH}"
 payload=${CLICKHOUSE_TEST_UNIQUE_NAME}.native
 
-$CLICKHOUSE_CLIENT --output_format_native_use_flattened_dynamic_and_json_serialization 1 \
-    --query "SELECT toDateTime(0)::Dynamic AS d,
+$CLICKHOUSE_CLIENT --query "SELECT toDateTime(0)::Dynamic AS d,
                     toDateTime(0) AS plain,
                     toDateTime(0, 'Europe/Berlin')::Dynamic AS berlin
-             FROM numbers(100) FORMAT Native" > "${USER_FILES_PATH}/${payload}"
+             FROM numbers(100)
+             SETTINGS output_format_native_use_flattened_dynamic_and_json_serialization = 1,
+                      output_format_native_encode_types_in_binary_format = 0
+             FORMAT Native" > "${USER_FILES_PATH}/${payload}"
 
 # Which thread serves a read is not fixed, so the pairs run several times over. Every read of a
 # time zone has to give that zone's rendering, and any other rendering shows up as an extra line.
 for _ in {1..8}; do
     $CLICKHOUSE_CLIENT --query "
+SET input_format_native_decode_types_in_binary_format = 0;
+
 SELECT 'dynamic tokyo', any(toString(d)) FROM file('${payload}', Native)
     SETTINGS session_timezone = 'Asia/Tokyo', max_threads = 1, schema_inference_use_cache_for_file = 0;
 SELECT 'dynamic utc', any(toString(d)) FROM file('${payload}', Native)
