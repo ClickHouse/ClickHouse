@@ -1,18 +1,23 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
-#include <Common/Exception.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType.h>
-#include <base/types.h>
-#include <Common/RadixSort.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/RowDataStore.h>
+#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/RadixSort.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <mutex>
 
@@ -308,6 +313,131 @@ void StoredColumnsIndex::invalidateEmitTable()
     ++blocks_generation;
 }
 
+namespace
+{
+
+/// Resolve block `b`'s plane pointers of `node` from `column`, recursively. The first live block
+/// (recognized by a not-yet-set `column_type`) also decides the node's shape: kind, stride, children,
+/// plane vector sizes. Every later block must be of the same concrete column type at every level, so
+/// the one `typeid_cast` chain both classifies the first column and re-dispatches the others. Returns
+/// false when the column cannot take the gather, and the caller then leaves the whole output column
+/// on the generic path.
+bool resolveGatherNode(DirectGatherNode & node, const IColumn & column, size_t b, size_t num_blocks)
+{
+    using enum DirectGatherNode::Kind;
+
+    const bool first = !node.column_type;
+    if (first)
+        node.column_type = &typeid(column);
+    else if (typeid(column) != *node.column_type)
+        return false;
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        if (first)
+        {
+            node.kind = Nullable;
+            node.data_by_block.resize(num_blocks);
+            node.children.resize(1);
+        }
+        node.data_by_block[b] = nullable->getNullMapData().data();
+        return resolveGatherNode(node.children[0], nullable->getNestedColumn(), b, num_blocks);
+    }
+
+    if (const auto * string = typeid_cast<const ColumnString *>(&column))
+    {
+        if (first)
+        {
+            node.kind = String;
+            node.data_by_block.resize(num_blocks);
+            node.aux_by_block.resize(num_blocks);
+        }
+        node.data_by_block[b] = string->getOffsets().data();
+        node.aux_by_block[b] = string->getChars().data();
+        return true;
+    }
+
+    if (const auto * array = typeid_cast<const ColumnArray *>(&column))
+    {
+        if (first)
+        {
+            node.kind = Array;
+            node.data_by_block.resize(num_blocks);
+            node.children.resize(1);
+        }
+        node.data_by_block[b] = array->getOffsets().data();
+        return resolveGatherNode(node.children[0], array->getData(), b, num_blocks);
+    }
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        if (first)
+        {
+            /// An element-less tuple keeps an explicit row count instead of columns; nothing to gather.
+            if (tuple->tupleSize() == 0)
+                return false;
+            node.kind = Tuple;
+            node.children.resize(tuple->tupleSize());
+        }
+        else if (tuple->tupleSize() != node.children.size())
+            return false;
+        for (size_t i = 0; i < node.children.size(); ++i)
+            if (!resolveGatherNode(node.children[i], tuple->getColumn(i), b, num_blocks))
+                return false;
+        return true;
+    }
+
+    if (const auto * variant = typeid_cast<const ColumnVariant *>(&column))
+    {
+        const size_t num_variants = variant->getNumVariants();
+        if (first)
+        {
+            if (num_variants == 0 || num_variants >= ColumnVariant::NULL_DISCRIMINATOR)
+                return false;
+            node.kind = Variant;
+            node.data_by_block.resize(num_blocks);
+            node.aux_by_block.resize(num_blocks);
+            node.children.resize(num_variants);
+            node.local_to_global_by_block.resize(num_blocks * num_variants);
+        }
+        else if (num_variants != node.children.size())
+            return false;
+        node.data_by_block[b] = variant->getLocalDiscriminators().data();
+        node.aux_by_block[b] = variant->getOffsets().data();
+        for (size_t local = 0; local < num_variants; ++local)
+            node.local_to_global_by_block[b * num_variants + local]
+                = variant->globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
+        for (size_t g = 0; g < num_variants; ++g)
+            if (!resolveGatherNode(node.children[g], variant->getVariantByGlobalDiscriminator(g), b, num_blocks))
+                return false;
+        return true;
+    }
+
+    /// The fixed-width leaf. `isFixedAndContiguous` is what keeps `getRawData` from throwing, and a
+    /// `ColumnConst` must not pass even though it forwards that test to its one-element data column:
+    /// it hands back a one-element buffer, whose base would be read out of bounds above row zero.
+    /// Sparse, LowCardinality, Map, Object, Dynamic, QBit, ... keep the generic path here too.
+    if (first)
+    {
+        if (isColumnConst(column) || !column.isFixedAndContiguous())
+            return false;
+        node.kind = Fixed;
+        node.stride = column.sizeOfValueIfFixed();
+        node.data_by_block.resize(num_blocks);
+    }
+    if (column.sizeOfValueIfFixed() != node.stride)
+        return false;
+    const std::string_view raw_data = column.getRawData();
+    /// Any column that delegates `getRawData` hands back a buffer that does not hold its own rows,
+    /// so require the size to account for exactly this column's rows.
+    if (raw_data.size() != column.size() * node.stride)
+        return false;
+    node.data_by_block[b] = raw_data.data();
+    return true;
+}
+
+}
+
 void StoredColumnsIndex::resolveEmitColumns(
     size_t saved_columns_count,
     const std::vector<size_t> & positions,
@@ -343,54 +473,58 @@ void StoredColumnsIndex::resolveEmitColumns(
             auto emit_column = std::make_unique<EmitColumn>();
             emit_column->by_block.resize(num_blocks);
             emit_column->repl_by_block.resize(num_blocks);
-            emit_column->data_by_block.resize(num_blocks);
-            const IColumn * gather_sample = nullptr;
             bool gather_refused = false;
+            bool any_replicated = false;
+            std::vector<DirectGatherRowRemap> remap(num_blocks);
             for (size_t b = 0; b < num_blocks; ++b)
             {
                 const StoredBlock * block = blocks[b];
                 /// A cleared/popped slot keeps a null entry: no live ref points to it (mirrors `at()`).
                 emit_column->by_block[b] = block ? block->columns[pos].get() : nullptr;
                 emit_column->repl_by_block[b] = block ? block->replicated_columns[pos] : nullptr;
-                emit_column->data_by_block[b] = nullptr;
                 if (!block || gather_refused)
                     continue;
 
-                const IColumn & column = *emit_column->by_block[b];
-                /// `isFixedAndContiguous` is what keeps `getRawData` from throwing, and it is not enough on
-                /// its own: a `ColumnConst` forwards that test to its one-element data column and then hands
-                /// back a one-element buffer, whose base would be read out of bounds above row zero.
-                if (emit_column->repl_by_block[b] || isColumnConst(column) || !column.isFixedAndContiguous())
+                const IColumn * column = emit_column->by_block[b];
+                /// A replicated stored column gathers through its indexes: `row' = indexes[row]`
+                /// addresses the nested column, so the planes come from the nested column and the
+                /// remap entry carries the indexes plane (see `DirectGatherRowRemap`).
+                if (const ColumnReplicated * replicated = emit_column->repl_by_block[b])
                 {
-                    gather_refused = true;
-                    continue;
+                    const IColumn & indexes = *replicated->getIndexes().getIndexes();
+                    const size_t index_width = indexes.isFixedAndContiguous() ? indexes.sizeOfValueIfFixed() : 0;
+                    if (index_width != 1 && index_width != 2 && index_width != 4 && index_width != 8)
+                    {
+                        gather_refused = true;
+                        continue;
+                    }
+                    const std::string_view indexes_raw = indexes.getRawData();
+                    /// A column that delegates `getRawData` hands back a buffer that is not its own rows.
+                    if (indexes_raw.size() != indexes.size() * index_width)
+                    {
+                        gather_refused = true;
+                        continue;
+                    }
+                    remap[b] = {.indexes_data = indexes_raw.data(), .index_width = static_cast<UInt8>(index_width)};
+                    any_replicated = true;
+                    column = replicated->getNestedColumn().get();
                 }
-                const size_t stride = column.sizeOfValueIfFixed();
-                if (gather_sample && (stride != emit_column->stride || typeid(column) != typeid(*gather_sample)))
-                {
-                    gather_refused = true;
-                    continue;
-                }
-                const std::string_view raw_data = column.getRawData();
-                /// Any column that delegates `getRawData` hands back a buffer that does not hold its
-                /// own rows, so require the size to account for exactly this column's rows.
-                if (raw_data.size() != column.size() * stride)
-                {
-                    gather_refused = true;
-                    continue;
-                }
-                gather_sample = &column;
-                emit_column->stride = stride;
-                emit_column->data_by_block[b] = raw_data.data();
+
+                gather_refused = !resolveGatherNode(emit_column->gather_root, *column, b, num_blocks);
             }
-            emit_column->direct_gather_ok = gather_sample && !gather_refused;
+            /// A set `column_type` means at least one live block resolved and decided the shape.
+            emit_column->direct_gather_ok = emit_column->gather_root.column_type && !gather_refused;
+            if (emit_column->direct_gather_ok && any_replicated)
+                emit_column->gather_remap_by_block = std::move(remap);
             emit_columns[pos] = std::move(emit_column);
         }
         const EmitColumn & emit_column = *emit_columns[pos];
         out_columns[pos] = emit_column.by_block.data();
         out_replicated[pos] = emit_column.repl_by_block.data();
         if (out_direct_gather && emit_column.direct_gather_ok)
-            (*out_direct_gather)[pos] = {.data_by_block = emit_column.data_by_block.data(), .stride = emit_column.stride};
+            (*out_direct_gather)[pos]
+                = {.node = &emit_column.gather_root,
+                   .remap_by_block = emit_column.gather_remap_by_block.empty() ? nullptr : emit_column.gather_remap_by_block.data()};
     }
 }
 

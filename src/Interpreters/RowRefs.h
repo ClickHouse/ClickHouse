@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <typeinfo>
 #include <vector>
 
 #include <Columns/IColumn_fwd.h>
@@ -406,12 +407,53 @@ ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
         return mapped.encode();
 }
 
-/// The raw fixed-width source of one output column, as handed to the emit path. `data_by_block` is
-/// null when the column cannot be read this way and has to go through its `IColumn`.
+/// One level of a direct-gather source descriptor: the raw per-block base pointers of a stored
+/// column, mirroring the column's own nesting. Every `*_by_block` vector below is indexed by
+/// `block_no`; entries of cleared blocks stay null and are never dereferenced (no live ref points
+/// at such a block). The pointers are valid only while the emit-table generation does not change,
+/// exactly like the raw bases the flat fixed-width gather used before.
+struct DirectGatherNode
+{
+    enum class Kind : UInt8
+    {
+        Fixed, /// contiguous fixed-width leaf: `data_by_block` is the value base, `stride` the value width
+        Nullable, /// `data_by_block` is the null map base (1 byte per row); `children[0]` is the nested column
+        String, /// `data_by_block` is the offsets base (UInt64 per row); `aux_by_block` is the chars base
+        Array, /// `data_by_block` is the offsets base (UInt64 per row); `children[0]` is the nested column
+        Tuple, /// no planes of its own; `children` are the elements, all sharing the row numbers
+        Variant, /// `data_by_block` is the local discriminators base (1 byte per row); `aux_by_block` is the
+        /// offsets base (UInt64 per row); `children[g]` is the variant with GLOBAL discriminator `g`;
+        /// block `b`'s local discriminator `d` maps to global `local_to_global_by_block[b * children.size() + d]`
+    };
+
+    Kind kind = Kind::Fixed;
+    size_t stride = 0;
+    std::vector<const void *> data_by_block;
+    std::vector<const void *> aux_by_block;
+    std::vector<DirectGatherNode> children;
+    std::vector<UInt8> local_to_global_by_block;
+    /// The concrete column type of the first resolved block (null until one decides the shape); later
+    /// blocks must match exactly. All stored blocks share the saved-block structure, so the match is a
+    /// defensive check, not a dispatch.
+    const std::type_info * column_type = nullptr;
+};
+
+/// Per-block row indirection of a `ColumnReplicated` stored column: the gather reads
+/// `row' = indexes[row]` at `index_width` bytes and addresses the nested column with `row'`.
+/// A null `indexes_data` means the block stores the column plainly and rows pass through unchanged.
+struct DirectGatherRowRemap
+{
+    const void * indexes_data = nullptr;
+    UInt8 index_width = 0; /// bytes per index: 1, 2, 4 or 8
+};
+
+/// The source of one output column, as handed to the emit path. `node` is null when the column
+/// cannot be read this way and has to go through its `IColumn`.
 struct DirectGatherColumn
 {
-    const void * const * data_by_block = nullptr;
-    size_t stride = 0;
+    const DirectGatherNode * node = nullptr;
+    /// Indexed by block_no; null when no block stores this column as `ColumnReplicated`.
+    const DirectGatherRowRemap * remap_by_block = nullptr;
 };
 
 /// Maps `block_no` (the high half of RowRef) to the stored block.
@@ -446,12 +488,13 @@ public:
         PODArray<const IColumn *> by_block;
         /// `repl_by_block[b]` is that column as `ColumnReplicated *` if it is one, otherwise nullptr.
         PODArray<const ColumnReplicated *> repl_by_block;
-        /// `data_by_block[b]` is that column's raw fixed-width base (nullptr for a cleared block), valid
-        /// only when `direct_gather_ok`. Unlike the `const IColumn *` above it stays valid only until the
-        /// generation changes, so a stored column's buffer must not be mutated in place without bumping it.
-        PODArray<const void *> data_by_block;
-        /// Bytes per element, uniform across blocks.
-        size_t stride = 0;
+        /// The direct-gather source descriptor, valid only when `direct_gather_ok`. Unlike the
+        /// `const IColumn *` above its raw bases stay valid only until the generation changes, so a
+        /// stored column's buffer must not be mutated in place without bumping it.
+        DirectGatherNode gather_root;
+        /// Indexed by block_no; filled only when at least one block stores the column as `ColumnReplicated`
+        /// (identity entries for the blocks that do not).
+        std::vector<DirectGatherRowRemap> gather_remap_by_block;
         bool direct_gather_ok = false;
     };
 

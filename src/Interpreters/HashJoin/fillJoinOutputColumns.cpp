@@ -49,7 +49,7 @@ void fillFromBlocksAndRowNumbers(
         const auto & access_index = output_access_indexes[dst_idx];
         if (access_index.type != ColumnAccessIndex::Type::Columns)
             continue;
-        if (gathered && (*gathered)[dst_idx].data_by_block)
+        if (gathered && (*gathered)[dst_idx].node)
             continue;
 
         columns[dst_idx]->fillFromBlocksAndRowNumbers(type_name[dst_idx].type, access_index.index, columns_with_row_numbers);

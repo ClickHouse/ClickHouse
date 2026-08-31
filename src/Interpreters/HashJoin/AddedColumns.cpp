@@ -321,7 +321,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     {
         /// Every selected word is inline or zero by construction, which is the `from_row_list = false` shape.
         for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
-            if (emit_direct_gather[dst_idx].data_by_block)
+            if (emit_direct_gather[dst_idx].node)
                 gatherColumnDirect<false>(
                     *columns[dst_idx], emit_direct_gather[dst_idx], selected_words.data(),
                     selected_words.data() + selected_words.size(), selected_words.size());
@@ -346,7 +346,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
             const size_t rows_to_add = countDirectGatherRows<from_row_list>(row_refs_begin, row_refs_end);
             chassert(rows_to_add <= size_to_reserve);
             for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
-                if (emit_direct_gather[dst_idx].data_by_block)
+                if (emit_direct_gather[dst_idx].node)
                     gatherColumnDirect<from_row_list>(
                         *columns[dst_idx], emit_direct_gather[dst_idx], row_refs_begin, row_refs_end, rows_to_add);
 

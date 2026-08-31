@@ -7,10 +7,15 @@
 namespace DB
 {
 
-/// Fixed-width types whose `insertDefaultInto` writes bitwise zero, which is what the gather writes for
-/// an unmatched row. `Date32` qualifies (0, not `getDefault`'s 1900-01-01); `Enum8`/`Enum16` would get
-/// their first value instead, so this must be keyed on `getTypeId` - `getColumnType` maps them to `Int8`.
-bool directGatherAdmits(TypeIndex type_id);
+class IDataType;
+
+/// Whether `destination` (with its output `type`) can be filled by the direct gather from `source`.
+/// Walks the two trees together: kinds and strides must match at every level, and every `Fixed` leaf
+/// must be of a type whose `insertDefaultInto` writes bitwise zero, which is what the gather writes
+/// for an unmatched row. `Date32` qualifies (0, not `getDefault`'s 1900-01-01); `Enum8`/`Enum16`
+/// would get their first value instead, so the leaf test is keyed on `getTypeId` - `getColumnType`
+/// maps them to `Int8`.
+bool directGatherAdmits(const IDataType & type, const IColumn & destination, const DirectGatherNode & source);
 
 /// Appends `rows_to_add` values of one output column straight from the per-block raw data bases that
 /// `StoredColumnsIndex::resolveEmitColumns` resolved, reading the encoded ref words as they are

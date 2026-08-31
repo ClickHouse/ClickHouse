@@ -8,14 +8,39 @@ arm2 unmatched nulls	600	11429185386676192915	100	100	100
 arm3 row list	1000	749412854217235210
 arm3 row ref lists control	1000	749412854217235210
 arm5 limit and offset	1000	749412854217235210
-arm5b mixed limit and offset	1000	2378068924484194462
-arm5c mixed by blocks	1000	2378068924484194462
+arm5b mixed limit and offset	1000	3899345476512073849
+arm5c mixed by blocks	1000	3899345476512073849
 arm4 semi	1000	18410106349405487764
-arm6 nullable control	1000	13333029911863384528	200	143
+arm6 nullable	1000	13333029911863384528	200	143
+arm6 nullable full_sorting_merge control	1000	13333029911863384528	200	143
 arm7 replicated	45	17286560919409969464
 arm8 row store mixed	1000	11985247065059505534
 arm9 reranged control	1000	749412854217235210
+arm10 extended types	1000	1513750694252401361
+arm10 extended full_sorting_merge control	1000	1513750694252401361
+arm10c extended defaults	2100	17018946187975451772	100	500	386	600	100
+arm10c defaults full_sorting_merge control	2100	17018946187975451772	100	500	386	600	100
+arm11 variant	2100	5797950847167328277	600	500	500	500
+arm11 variant full_sorting_merge control	2100	5797950847167328277	600	500	500	500
+arm12 replicated extended	45	780770571477425318
+arm12 replicated ref lists control	45	780770571477425318
+arm13 enum in tuple	1000	14889079145796839673
+arm14 extended row list	1000	11508480970011722034
+arm14 extended ref lists control	1000	11508480970011722034
+arm14c extended limit and offset	1000	11508480970011722034
 arm_asof	80	4946980136470568209	30	30
+arm10_extended	6000
+arm10b_extended_fsm	0
+arm10c_extended_defaults	12600
+arm10d_defaults_fsm	0
+arm11_variant	4200
+arm11b_variant_fsm	0
+arm12_replicated_extended	225
+arm12b_replicated_ref_lists	0
+arm13_tuple_enum	1000
+arm14_ext_by_blocks	3000
+arm14b_ext_ref_lists	0
+arm14c_ext_limit_offset	3000
 arm1_fsm	0
 arm1_hash	1
 arm1_parallel_hash	1
@@ -29,8 +54,9 @@ arm4_semi	1
 arm5_limit_offset	1
 arm5b_mixed_limit_offset	0
 arm5c_mixed_by_blocks	1
-arm6_nullable	0
-arm7_replicated	45
+arm6_nullable	1
+arm6b_nullable_fsm	0
+arm7_replicated	180
 arm8_row_store	1000
 arm9_reranged	0
 arm_asof	0

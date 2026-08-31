@@ -306,8 +306,7 @@ public:
 
                     const DirectGatherColumn & source = direct_gather_by_position[access_index.index];
                     const IColumn & destination = *columns[dst_idx];
-                    if (!source.data_by_block || !directGatherAdmits(lazy_output.type_name[dst_idx].type->getTypeId())
-                        || !destination.isFixedAndContiguous() || destination.sizeOfValueIfFixed() != source.stride)
+                    if (!source.node || !directGatherAdmits(*lazy_output.type_name[dst_idx].type, destination, *source.node))
                         continue;
 
                     lazy_output.emit_direct_gather[dst_idx] = source;

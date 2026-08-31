@@ -21,6 +21,11 @@ DROP TABLE IF EXISTS dg_rowstore_probe;
 DROP TABLE IF EXISTS dg_interval;
 DROP TABLE IF EXISTS dg_asof;
 DROP TABLE IF EXISTS dg_asof_probe;
+DROP TABLE IF EXISTS dg_ext;
+DROP TABLE IF EXISTS dg_ext_probe;
+DROP TABLE IF EXISTS dg_variant;
+DROP TABLE IF EXISTS dg_tuple_enum;
+DROP TABLE IF EXISTS dg_list_ext;
 
 -- One payload column per admitted type except `Interval`, which arm 1e carries on its own fixture so
 -- that its column does not move the reference values of every arm that reads this table.
@@ -151,11 +156,12 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 
 -- Arms 5b and 5c pin which builder ran, and with it the rule that the limit and offset builder is all
 -- or nothing: its gather input is the subset of ref words the walk selects, so one column left on the
--- generic path forces every column onto it. The two arms differ only in that switch. The `String`
--- column is what keeps the output mixed: neither the gather nor the row store can take it, and with
--- only one row-store-useful column left the row store cannot initialize at all.
-CREATE TABLE dg_list_mixed (k UInt64, a UInt64, s String) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003, toString(number) FROM numbers(2000);
+-- generic path forces every column onto it. The two arms differ only in that switch. The
+-- `LowCardinality(String)` column is what keeps the output mixed: neither the gather nor the row
+-- store can take it, and with only one row-store-useful column left the row store cannot initialize
+-- at all.
+CREATE TABLE dg_list_mixed (k UInt64, a UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003, toString(number % 50) FROM numbers(2000);
 
 SELECT 'arm5b mixed limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
@@ -173,20 +179,28 @@ SELECT 'arm4 semi', count(), sum(cityHash64(*)) FROM dg_probe SEMI LEFT JOIN dg_
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     log_comment = 'dg_arm4_semi', ast_fuzzer_runs = 0;
 
--- Arm 6: a `Nullable` stored column is not fixed and contiguous, so it falls back.
+-- Arm 6: a `Nullable` stored column gathers its null map and its nested plane; an unmatched row
+-- writes a set null byte over a zeroed nested value, which is what `insertDefaultInto` inserts.
+-- The `full_sorting_merge` twin pins the same values through an algorithm sharing no code.
 CREATE TABLE dg_nullable (k UInt64, a Nullable(UInt64), b Nullable(FixedString(7))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_nullable SELECT number, if(number % 5 = 0, NULL, number * 1000003),
     if(number % 7 = 0, NULL, toFixedString(leftPad(toString(number), 7, 'x'), 7)) FROM numbers(2000);
 
-SELECT 'arm6 nullable control', count(), sum(cityHash64(*)), countIf(a IS NULL), countIf(b IS NULL)
+SELECT 'arm6 nullable', count(), sum(cityHash64(*)), countIf(a IS NULL), countIf(b IS NULL)
 FROM dg_probe LEFT JOIN dg_nullable USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
     log_comment = 'dg_arm6_nullable', ast_fuzzer_runs = 0;
 
+SELECT 'arm6 nullable full_sorting_merge control', count(), sum(cityHash64(*)), countIf(a IS NULL), countIf(b IS NULL)
+FROM dg_probe LEFT JOIN dg_nullable USING (k)
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    log_comment = 'dg_arm6b_nullable_fsm', ast_fuzzer_runs = 0;
+
 -- Arm 7: lazy replication under an upstream `arrayJoin` wraps the right columns wider than 8 bytes
--- (`u`, `w`, `d`) in `ColumnReplicated`, which `isFixedAndContiguous` refuses, leaving `i` as the only
--- gathered column; `isColumnConst` is needed beside it because a const column passes that same test.
--- The two key ranges overlap, so all 45 rows reach the probe emit path: 1 gathered column by 45 rows.
+-- (`u`, `w`, `d`) in `ColumnReplicated`, which the gather reads through the per-block indexes:
+-- `row' = indexes[row]` addresses the nested column. The two key ranges overlap, so all 45 rows
+-- reach the probe emit path: 4 gathered columns by 45 rows.
 SELECT 'arm7 replicated', count(), sum(cityHash64(*)) FROM
 (
     SELECT number AS k FROM numbers(1, 9)
@@ -226,6 +240,156 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     join_to_sort_maximum_table_rows = 10000,
     log_comment = 'dg_arm9_reranged', ast_fuzzer_runs = 0;
 
+-- Arm 10: the extended-type gathers - `String`, `Nullable`, `Array` (nested and doubly nested),
+-- `Tuple` - all in one table. The row store pin leaves all 6 payload columns on the columnar path
+-- for all 1000 matched probe rows: 6000 gathered values exactly. The `full_sorting_merge` twin
+-- pins the same values through an algorithm sharing no code.
+CREATE TABLE dg_ext
+(
+    k UInt64,
+    s String,
+    ns Nullable(String),
+    nu Nullable(UInt64),
+    a Array(UInt64),
+    aa Array(Array(String)),
+    t Tuple(u UInt64, s String, na Nullable(FixedString(7)))
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_ext SELECT
+    number,
+    repeat(concat('s', toString(number)), 1 + number % 3),
+    if(number % 5 = 0, NULL, toString(number * 7)),
+    if(number % 7 = 0, NULL, number * 1000003),
+    range(number % 4),
+    arrayMap(x -> arrayMap(y -> concat('v', toString(x + y)), range(1 + (x % 3))), range(number % 3)),
+    CAST((number, toString(number), if(number % 3 = 0, NULL, toFixedString(leftPad(toString(number), 7, 'x'), 7))), 'Tuple(u UInt64, s String, na Nullable(FixedString(7)))')
+FROM numbers(2000);
+
+SELECT 'arm10 extended types', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_ext USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm10_extended', ast_fuzzer_runs = 0;
+
+SELECT 'arm10 extended full_sorting_merge control', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_ext USING (k)
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    log_comment = 'dg_arm10b_extended_fsm', ast_fuzzer_runs = 0;
+
+-- Arm 10c: 100 unmatched probe keys. Every extended type's unmatched value must equal what
+-- `insertDefaultInto` writes: an empty string, NULL, an empty array, a tuple of those.
+CREATE TABLE dg_ext_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_ext_probe SELECT number FROM numbers(2100);
+
+SELECT 'arm10c extended defaults', count(), sum(cityHash64(*)),
+    countIf(s = ''), countIf(ns IS NULL), countIf(nu IS NULL), countIf(a = []), countIf(tupleElement(t, 's') = '')
+FROM dg_ext_probe LEFT JOIN dg_ext USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm10c_extended_defaults', ast_fuzzer_runs = 0;
+
+SELECT 'arm10c defaults full_sorting_merge control', count(), sum(cityHash64(*)),
+    countIf(s = ''), countIf(ns IS NULL), countIf(nu IS NULL), countIf(a = []), countIf(tupleElement(t, 's') = '')
+FROM dg_ext_probe LEFT JOIN dg_ext USING (k)
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    log_comment = 'dg_arm10d_defaults_fsm', ast_fuzzer_runs = 0;
+
+-- Arm 11: `Variant` gathers its local discriminators, offsets, and every admitted nested variant
+-- column, remapping each stored block's local discriminator order onto the destination's. An
+-- unmatched row is NULL, like `insertDefault`.
+CREATE TABLE dg_variant (k UInt64, v Variant(Array(UInt64), String, UInt64), w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_variant SELECT
+    number,
+    multiIf(
+        number % 4 = 0, CAST(NULL, 'Variant(Array(UInt64), String, UInt64)'),
+        number % 4 = 1, CAST(number * 1000003, 'Variant(Array(UInt64), String, UInt64)'),
+        number % 4 = 2, CAST(concat('s', toString(number)), 'Variant(Array(UInt64), String, UInt64)'),
+        CAST(CAST(range(number % 5), 'Array(UInt64)'), 'Variant(Array(UInt64), String, UInt64)')),
+    toFixedString(leftPad(toString(number), 40, 'v'), 40)
+FROM numbers(2000);
+
+SELECT 'arm11 variant', count(), sum(cityHash64(k, toString(v), w)), countIf(v IS NULL),
+    countIf(variantType(v) = 'UInt64'), countIf(variantType(v) = 'String'), countIf(variantType(v) = 'Array(UInt64)')
+FROM dg_ext_probe LEFT JOIN dg_variant USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm11_variant', ast_fuzzer_runs = 0;
+
+SELECT 'arm11 variant full_sorting_merge control', count(), sum(cityHash64(k, toString(v), w)), countIf(v IS NULL),
+    countIf(variantType(v) = 'UInt64'), countIf(variantType(v) = 'String'), countIf(variantType(v) = 'Array(UInt64)')
+FROM dg_ext_probe LEFT JOIN dg_variant USING (k)
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    log_comment = 'dg_arm11b_variant_fsm', ast_fuzzer_runs = 0;
+
+-- Arm 12: the extended types under lazy replication (arm 7's fixture with `String`, `Array`,
+-- `Nullable` and `Tuple` payloads): every replicated column gathers through the per-block indexes.
+SELECT 'arm12 replicated extended', count(), sum(cityHash64(*)) FROM
+(
+    SELECT number AS k FROM numbers(1, 9)
+) AS l
+RIGHT JOIN
+(
+    SELECT number AS k, concat('str', toString(number)) AS s, range(number % 4) AS a,
+        if(number % 3 = 0, NULL, number * 7) AS n,
+        CAST((number, toString(number)), 'Tuple(UInt64, String)') AS t, arrayJoin(range(number)) AS i
+    FROM numbers(10)
+) AS r USING (k)
+SETTINGS enable_lazy_columns_replication = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0,
+    join_use_nulls = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
+    joined_block_split_single_row = 0, enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm12_replicated_extended', ast_fuzzer_runs = 0;
+
+SELECT 'arm12 replicated ref lists control', count(), sum(cityHash64(*)) FROM
+(
+    SELECT number AS k FROM numbers(1, 9)
+) AS l
+RIGHT JOIN
+(
+    SELECT number AS k, concat('str', toString(number)) AS s, range(number % 4) AS a,
+        if(number % 3 = 0, NULL, number * 7) AS n,
+        CAST((number, toString(number)), 'Tuple(UInt64, String)') AS t, arrayJoin(range(number)) AS i
+    FROM numbers(10)
+) AS r USING (k)
+SETTINGS enable_lazy_columns_replication = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0,
+    join_use_nulls = 0, join_output_by_rowlist_perkey_rows_threshold = 0,
+    joined_block_split_single_row = 0,
+    log_comment = 'dg_arm12b_replicated_ref_lists', ast_fuzzer_runs = 0;
+
+-- Arm 13: an `Enum` leaf refuses the gather anywhere in the tree (its default is the first enum
+-- value, not zero), so `te` stays generic while `w` still gathers: exactly 1000 values.
+CREATE TABLE dg_tuple_enum (k UInt64, te Tuple(u UInt64, e Enum8('a' = 1, 'b' = 2)), w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_tuple_enum SELECT number,
+    CAST((number, CAST(1 + number % 2, 'Enum8(\'a\' = 1, \'b\' = 2)')), 'Tuple(u UInt64, e Enum8(\'a\' = 1, \'b\' = 2))'),
+    toFixedString(leftPad(toString(number), 40, 'e'), 40)
+FROM numbers(2000);
+
+SELECT 'arm13 enum in tuple', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_tuple_enum USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm13_tuple_enum', ast_fuzzer_runs = 0;
+
+-- Arm 14: the extended types through the two remaining gathering builders: the row-list one (ten
+-- build rows per key, `refsOf` expansion plus adjacent-run merging under `Array`) and the
+-- limit-and-offset one (the all-or-nothing walk).
+CREATE TABLE dg_list_ext (k UInt64, s String, a Array(UInt64), nu Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_list_ext SELECT number % 200, concat('s', toString(number)), range(number % 4),
+    if(number % 6 = 0, NULL, number * 31) FROM numbers(2000);
+
+SELECT 'arm14 extended row list', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
+    enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm14_ext_by_blocks', ast_fuzzer_runs = 0;
+
+SELECT 'arm14 extended ref lists control', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
+    log_comment = 'dg_arm14b_ext_ref_lists', ast_fuzzer_runs = 0;
+
+SELECT 'arm14c extended limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm14c_ext_limit_offset', ast_fuzzer_runs = 0;
+
 -- Arm asof: `ASOF` is outside the gather's scope, so it never resolves the admission table and both
 -- of its counters stay zero. Zero gathered out of zero admitted is not "everything was gathered", so
 -- the columnar collection still has to be built; skipping it returns empty right-side columns. Ten
@@ -246,7 +410,10 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     replaceOne(log_comment, 'dg_', '') AS arm,
-    if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval', 'dg_arm7_replicated', 'dg_arm8_row_store'),
+    if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval', 'dg_arm7_replicated', 'dg_arm8_row_store',
+                       'dg_arm10_extended', 'dg_arm10c_extended_defaults', 'dg_arm11_variant',
+                       'dg_arm12_replicated_extended', 'dg_arm13_tuple_enum', 'dg_arm14_ext_by_blocks',
+                       'dg_arm14c_ext_limit_offset'),
        toString(max(ProfileEvents['HashJoinDirectGatheredValues'])),
        toString(max(ProfileEvents['HashJoinDirectGatheredValues']) > 0)) AS gathered
 FROM system.query_log
@@ -267,3 +434,8 @@ DROP TABLE dg_rowstore_probe;
 DROP TABLE dg_interval;
 DROP TABLE dg_asof;
 DROP TABLE dg_asof_probe;
+DROP TABLE dg_ext;
+DROP TABLE dg_ext_probe;
+DROP TABLE dg_variant;
+DROP TABLE dg_tuple_enum;
+DROP TABLE dg_list_ext;
