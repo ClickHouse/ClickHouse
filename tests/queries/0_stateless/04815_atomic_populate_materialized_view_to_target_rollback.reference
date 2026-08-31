@@ -1,7 +1,0 @@
-view exists after failed CREATE:	0
-source has dependents after failed CREATE:	0
-target exists after failed CREATE:	1
-pre-existing target rows after failed CREATE:	2
-distinct backfilled rows after retry:	10
-distinct rows after retry and insert:	15
-pre-existing target rows after retry:	2

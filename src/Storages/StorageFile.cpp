@@ -22,7 +22,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <IO/CompressionMethod.h>
 #include <IO/MMapReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -44,9 +43,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <Storages/MergeTree/MarkRange.h>
-#include <Common/Exception.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -72,7 +68,6 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Core/SettingsQuirks.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -82,12 +77,10 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
-#include <unordered_set>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
 
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace ProfileEvents
@@ -119,7 +112,6 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_file;
-    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
@@ -150,8 +142,6 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
     extern const int TOO_DEEP_RECURSION;
-    extern const int TOO_MANY_ROWS;
-    extern const int FILE_CHANGED_DURING_READ;
 }
 
 using String = std::string;
@@ -169,7 +159,6 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    std::unordered_set<std::string> & matched_paths,
     bool recursive,
     size_t depth)
 {
@@ -183,19 +172,6 @@ void listFilesWithRegexpMatchingImpl(
     if (depth % 16 == 0)
         checkStackSize();
 
-    /// Appends a matched path to the result and counts its bytes, deduplicating by its
-    /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
-    /// entry through both the zero-level branch and the recursive descent, so without this
-    /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
-    auto add_matched_path = [&](const std::string & path, size_t bytes)
-    {
-        if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
-        {
-            total_bytes_to_read += bytes;
-            result.push_back(path);
-        }
-    };
-
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
@@ -208,14 +184,7 @@ void listFilesWithRegexpMatchingImpl(
             (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
-            /// This exact-match branch is reached for suffixes without globs, including the
-            /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
-            /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
-            /// for progress reporting. `fs::file_size` errors for non-regular targets (e.g. a
-            /// directory); in that case keep the byte count at zero but still return the path.
-            std::error_code size_ec;
-            const size_t file_size = fs::file_size(absolute_path, size_ec);
-            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
+            result.push_back(absolute_path.string());
         }
         catch (const std::exception &) // NOLINT
         {
@@ -250,15 +219,6 @@ void listFilesWithRegexpMatchingImpl(
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
-    /// `**/` matches zero or more directory components, so it must also match the current
-    /// directory (zero levels). Apply the remaining suffix to `prefix_without_globs` itself,
-    /// in addition to the recursive descent into subdirectories performed by the loop below.
-    /// The descent below covers one or more directory levels, so this call must not recurse
-    /// (`recursive` is `false`) to avoid producing the same results twice.
-    if (current_glob == "/**" && looking_for_directory)
-        listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                        total_bytes_to_read, result, matched_paths, false, depth + 1);
-
     const fs::directory_iterator end;
     std::error_code ec;
     for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
@@ -277,40 +237,27 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                const size_t file_size = it->file_size(ec);
+                total_bytes_to_read += it->file_size(ec);
                 if (ec)
                 {
                     ec.clear();
                     continue;
                 }
 
-                add_matched_path(it->path().string(), file_size);
+                result.push_back(it->path().string());
             }
         }
         else if (it->is_directory())
         {
             if (recursive)
             {
-                /// When the current segment is the globstar `**` followed by a suffix (e.g.
-                /// `**/file.txt`), descend into subdirectories keeping the whole `**/...` pattern,
-                /// so the globstar keeps matching at every deeper level (any number of
-                /// directories). The zero-level branch above applies the post-`**` suffix at the
-                /// current level, so the combination matches zero, one, or more directory
-                /// components. Without this, a literal suffix (e.g. `pick.tsv`) would short-circuit
-                /// the recursion at the no-glob exact-match branch after a single level, and only a
-                /// glob suffix (e.g. `*.tsv`) would keep descending. For a trailing `**` (no
-                /// suffix), keep re-applying `current_glob` (`/**`) to list all files recursively,
-                /// as before.
-                const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
-                    ? suffix_with_globs
-                    : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
-                                                descent_pattern,
-                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1);
+                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
+                                                total_bytes_to_read, result, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, matched_paths, false, depth + 1);
+                                                total_bytes_to_read, result, false, depth + 1);
         }
     }
 }
@@ -324,15 +271,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-    {
-        /// Tracks the normalized form of every matched path so that adjacent globstars such as
-        /// `**/**/*.tsv` do not emit the same filesystem entry more than once. The set is scoped
-        /// to a single expanded pattern on purpose: independent brace-expanded alternatives
-        /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
-        /// same concrete file once per alternative, rather than being silently collapsed.
-        std::unordered_set<std::string> matched_paths;
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0);
-    }
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0);
 
     return result;
 }
@@ -486,12 +425,6 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
 
-    /// `doSettingsSanityCheckClamp` bounds the setting at apply time for the server and clickhouse-local,
-    /// but it does not run for `ApplicationType::CLIENT`, and this code is reachable in clickhouse-client
-    /// via `INSERT ... FROM INFILE`. Clamp here as well so that an out-of-range value is not passed
-    /// to the allocator.
-    size_t read_buffer_size = std::min<UInt64>(context->getSettingsRef()[Setting::max_read_buffer_size], MAX_SANE_READ_BUFFER_SIZE);
-
     /** Using mmap on server-side is unsafe for the following reasons:
       * - concurrent modifications of a file will result in SIGBUS;
       * - IO error from the device will result in SIGBUS;
@@ -531,9 +464,9 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
+            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, context->getSettingsRef()[Setting::max_read_buffer_size]);
         else
-            res = std::make_unique<ReadBufferFromFilePRead>(current_path, read_buffer_size);
+            res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     }
@@ -542,7 +475,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 #if USE_LIBURING
         auto & reader = getIOUringReaderOrThrow(context);
         res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-            reader, Priority{}, current_path, read_buffer_size);
+            reader, Priority{}, current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
 #else
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
 #endif
@@ -550,9 +483,9 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd, read_buffer_size);
+            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd, context->getSettingsRef()[Setting::max_read_buffer_size]);
         else
-            res = std::make_unique<ReadBufferFromFile>(current_path, read_buffer_size);
+            res = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     }
@@ -578,36 +511,6 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     return file_stat;
 }
 
-/// Sub-second-precision version token for a file, folding in the inode and size so that an
-/// in-place rewrite which lands in the same timestamp tick as the previous write (see the
-/// settle-window comment at its call site) is still distinguishable from a rewrite that isn't.
-String computeFileCacheVersionToken(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-    return fmt::format(
-        "{}.{:09}_{}_{}",
-        static_cast<Int64>(mtim_sec),
-        static_cast<Int64>(mtim_nsec),
-        static_cast<Int64>(file_stat.st_ino),
-        file_stat.st_size);
-}
-
-/// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
-/// local-file read (once right after opening, once right before trusting the read for the Query
-/// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
-/// and either checkpoint is caught instead of silently pinning a mismatched generation.
-bool fileCacheVersionTokenStillHolds(const String & path, const String & expected_token)
-{
-    struct stat current_stat{};
-    return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
-}
-
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     const struct stat & file_stat,
@@ -624,9 +527,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
-    const auto & file_settings = context->getSettingsRef();
-    int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max, file_settings[Setting::snappy_mode]);
+    int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
 }
@@ -1275,12 +1177,6 @@ bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
     return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
 }
 
-size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
-{
-    const size_t files_to_read = archive_info ? archive_info->paths_to_archives.size() : paths.size();
-    return std::min(num_streams, std::max(1uz, files_to_read));
-}
-
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
@@ -1488,8 +1384,7 @@ StorageFileSource::StorageFileSource(
     std::unique_ptr<ReadBuffer> read_buf_,
     bool need_only_count_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
-    FormatFilterInfoPtr format_filter_info_,
-    LazyFileRegistryPtr lazy_row_index_registry_)
+    FormatFilterInfoPtr format_filter_info_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -1505,7 +1400,6 @@ StorageFileSource::StorageFileSource(
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
     if (!storage->use_table_fd)
     {
@@ -1729,27 +1623,19 @@ Chunk StorageFileSource::generate()
                 /// Build a sub-second-precision version token for the format metadata cache key.
                 /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
                 /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-                current_file_cache_version = computeFileCacheVersionToken(file_stat);
-
-                /// The version token above proves a rewrite only after the file has settled.
-                /// Filesystem timestamps are coarser than the wall clock (one clock tick of
-                /// ~1-10 ms on most Linux filesystems, a full second on ext3, two seconds on
-                /// FAT), so a rewrite that keeps the inode and the byte size and lands in the
-                /// same timestamp tick as the previous write produces an identical token. Once
-                /// the last modification is comfortably in the past, its tick is over and any
-                /// further write is guaranteed to change the token. The query condition cache
-                /// skips whole row groups based on this token, so for files modified more
-                /// recently - or with an mtime in the future, e.g. due to clock skew on a
-                /// network mount - it fails close and stays bypassed (see the gates below)
-                /// rather than risking stale results.
 #if defined(OS_DARWIN)
                 const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
 #else
                 const auto mtim_sec = file_stat.st_mtim.tv_sec;
+                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
 #endif
-                static constexpr Int64 file_version_settle_seconds = 3;
-                current_file_version_settled
-                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+                current_file_cache_version = fmt::format(
+                    "{}.{:09}_{}_{}",
+                    static_cast<Int64>(mtim_sec),
+                    static_cast<Int64>(mtim_nsec),
+                    static_cast<Int64>(file_stat.st_ino),
+                    file_stat.st_size);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
@@ -1763,20 +1649,7 @@ Chunk StorageFileSource::generate()
                     read_buf = std::make_unique<EmptyReadBuffer>();
                 }
                 else
-                {
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
-
-                    /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
-                    /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
-                    /// the same path, which is guarded by its own independent `rwlock` and so isn't excluded
-                    /// by ours - could truncate and rewrite the file in that window. Re-stat right after
-                    /// opening: if the token no longer matches what we just opened, it cannot be trusted to
-                    /// pin this read's generation, so fail close (the gates below skip both the Query
-                    /// Condition Cache lookup and, per the bracketing check further down, its population).
-                    if (!storage->use_table_fd && current_file_version_settled
-                        && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
-                        current_file_version_settled = false;
-                }
             }
 
             size_t file_num = 0;
@@ -1789,12 +1662,11 @@ Chunk StorageFileSource::generate()
 
             /// For real local files, build a synthetic RelativePathWithMetadata so the
             /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
-            /// "etag" is just any version identifier the cache compares for equality — for
-            /// local files we use the precomputed `current_file_cache_version` (sub-second
-            /// mtime + inode + size) so an in-place rewrite invalidates the cache even when
-            /// the new file has the same length and is written within the same wall-clock
-            /// second. Unlike the query condition cache below, the format metadata cache
-            /// must remain available immediately after a write.
+            /// "etag" is just any version identifier the cache compares for equality —
+            /// for local files we use the precomputed `current_file_cache_version`
+            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
+            /// the cache even when the new file has the same length and is written
+            /// within the same wall-clock second.
             std::optional<RelativePathWithMetadata> object_with_metadata;
             if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
                 && current_file_size.has_value() && current_file_last_modified.has_value()
@@ -1805,61 +1677,6 @@ Chunk StorageFileSource::generate()
                 md.last_modified = *current_file_last_modified;
                 md.etag = *current_file_cache_version;
                 object_with_metadata.emplace(current_path, std::move(md));
-            }
-
-            /// Consult the Query Condition Cache. If a previous query with the same predicate already
-            /// determined that some row groups in this exact file version contain no matching rows,
-            /// restrict the reader to the surviving row groups (or skip the whole file). This mirrors
-            /// the object-storage read path (`StorageObjectStorageSource`). The file version token
-            /// (`current_file_cache_version`, part of `object_with_metadata`) is folded into the cache
-            /// key so an in-place rewrite yields a cache miss rather than stale results; the cache is
-            /// bypassed entirely while the token has not settled and cannot prove a rewrite. Only
-            /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
-            /// formats miss.
-            FileBucketInfoPtr buckets_to_read;
-            QueryConditionCachePtr query_condition_cache;
-            if (object_with_metadata.has_value() && current_file_version_settled
-                && format_filter_info && format_filter_info->condition_hash)
-                query_condition_cache = getContext()->getQueryConditionCache();
-
-            if (query_condition_cache)
-            {
-                const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                auto matching_marks = query_condition_cache->read(
-                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
-                if (matching_marks.has_value())
-                {
-                    const auto & marks = *matching_marks;
-                    std::vector<size_t> matching_row_groups;
-                    for (size_t i = 0; i < marks.size(); ++i)
-                        if (marks[i])
-                            matching_row_groups.push_back(i);
-
-                    LOG_DEBUG(
-                        getLogger("StorageFile"),
-                        "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
-                        marks.size() - matching_row_groups.size(),
-                        marks.size(),
-                        format_filter_info->filter_actions_dag->dumpNames(),
-                        current_path);
-
-                    if (matching_row_groups.empty())
-                    {
-                        /// The whole file is known not to match the condition — skip it entirely.
-                        read_buf.reset();
-                        continue;
-                    }
-
-                    if (auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(storage->format_name))
-                    {
-                        buckets_to_read = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
-                        if (!buckets_to_read)
-                        {
-                            read_buf.reset();
-                            continue;
-                        }
-                    }
-                }
             }
 
             if (object_with_metadata.has_value())
@@ -1898,7 +1715,6 @@ Chunk StorageFileSource::generate()
                     need_only_count);
             }
 
-            input_format->setBucketsToRead(buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
 
             if (need_only_count)
@@ -1961,69 +1777,6 @@ Chunk StorageFileSource::generate()
                     .last_modified = current_file_last_modified,
                 }, getContext(), storage->format_settings);
 
-            if (lazy_row_index_registry)
-            {
-                /// Lazy materialization: append the `__global_row_index` column, which combines the
-                /// index of the file within the query with the physical row number within the file.
-                if (!current_file_index)
-                {
-                    /// `canUseLazyMaterialization` admits only plain local files, so the generation
-                    /// token was computed right before this read opened the file.
-                    if (!current_file_cache_version.has_value())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Lazy materialization: no version token was captured for file {}", current_path);
-
-                    /// The token was computed by a `stat` strictly before `createReadBuffer` opened the
-                    /// file by path. If the file changed in that window (or during the read so far), the
-                    /// token cannot pin the generation this read sees, and the lazy pass comparing
-                    /// against it would prove nothing - fail close instead.
-                    if (!fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
-                        throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
-                            "Lazy materialization: file {} was modified while being read. "
-                            "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_file setting",
-                            current_path);
-
-                    current_file_index = lazy_row_index_registry->registerFile(
-                        current_path,
-                        *current_file_cache_version);
-                }
-
-                auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
-                if (!row_numbers_info)
-                    /// Unreachable as long as `canUseLazyMaterialization` only admits the Parquet
-                    /// format, whose reader always provides physical row numbers.
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                        "Lazy materialization requires physical row numbers from the format reader, "
-                        "but file {} (format {}) does not provide them. "
-                        "Disable the query_plan_optimize_lazy_materialization_for_file setting to read such data.",
-                        current_path, storage->format_name);
-
-                const auto & applied_filter = row_numbers_info->applied_filter;
-                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
-                if (row_numbers_info->row_num_offset + num_indices > LazyFileRegistry::MAX_ROWS_PER_FILE)
-                    throw Exception(ErrorCodes::TOO_MANY_ROWS,
-                        "File {} has too many rows for lazy materialization. "
-                        "Disable the query_plan_optimize_lazy_materialization_for_file setting",
-                        current_path);
-
-                const UInt64 file_part = *current_file_index << LazyFileRegistry::ROW_INDEX_BITS;
-                auto row_index_column = ColumnUInt64::create();
-                auto & row_index_data = row_index_column->getData();
-                row_index_data.reserve(num_rows);
-                for (size_t i = 0; i < num_indices; ++i)
-                {
-                    if (!applied_filter.has_value() || (*applied_filter)[i])
-                        row_index_data.push_back(file_part | (row_numbers_info->row_num_offset + i));
-                }
-
-                if (row_index_column->size() != num_rows)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Row numbers of a chunk are inconsistent with the number of rows: {} != {} (file {})",
-                        row_index_column->size(), num_rows, current_path);
-
-                chunk.addColumn(std::move(row_index_column));
-            }
-
             return chunk;
         }
 
@@ -2037,69 +1790,10 @@ Chunk StorageFileSource::generate()
 
         total_rows_in_file = 0;
 
-        /// Populate the Query Condition Cache with the row groups that produced no matching rows,
-        /// so subsequent queries with the same predicate can skip them. Mirrors the write path in
-        /// `StorageObjectStorageSource`. Gated on a real local file with a settled version token
-        /// (an unsettled token cannot prove a later rewrite, so caching would risk stale results)
-        /// and a deterministic single-output predicate (`condition_hash`). Only Parquet reports
-        /// matched buckets; other formats return `nullopt` here and are silently skipped. The
-        /// re-stat bracket closes the window opened right after `createReadBuffer`: a rewrite that
-        /// happens while this file was being read would otherwise let a version token, still valid
-        /// at open time, get written together with row groups derived from bytes it no longer
-        /// describes.
-        if (input_format && current_file_cache_version.has_value() && current_file_version_settled
-            && format_filter_info && format_filter_info->condition_hash
-            && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
-        {
-            try
-            {
-                auto buckets_opt = input_format->getMatchedBuckets();
-                if (buckets_opt.has_value())
-                {
-                    const auto & matched_groups = buckets_opt->first;
-                    size_t total_groups = buckets_opt->second;
-
-                    std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
-                    MarkRanges unmatched_ranges;
-                    for (size_t i = 0; i < total_groups; ++i)
-                    {
-                        if (!matched_set.contains(i))
-                        {
-                            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                                unmatched_ranges.back().end++;
-                            else
-                                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
-                        }
-                    }
-
-                    if (!unmatched_ranges.empty())
-                    {
-                        if (auto query_condition_cache = getContext()->getQueryConditionCache())
-                        {
-                            const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                            query_condition_cache->write(
-                                storage->getStorageID().uuid,
-                                cache_file_key,
-                                *format_filter_info->condition_hash,
-                                format_filter_info->filter_actions_dag->dumpNames(),
-                                unmatched_ranges,
-                                total_groups,
-                                /*has_final_mark=*/false);
-                        }
-                    }
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(getLogger("StorageFile"), "Failed to write to query condition cache");
-            }
-        }
-
         /// Close file prematurely if stream was ended.
         reader.reset();
         pipeline = nullptr;
         input_format.reset();
-        current_file_index.reset();
 
         if (files_iterator->isReadFromArchive() && !files_iterator->isSingleFileReadFromArchive())
         {
@@ -2140,6 +1834,47 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
     return schema_cache.tryGetNumRows(key, get_last_mod_time);
 }
 
+class ReadFromFile : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromFile"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
+
+    ReadFromFile(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        std::shared_ptr<StorageFile> storage_,
+        ReadFromFormatInfo info_,
+        const bool need_only_count_,
+        size_t max_block_size_,
+        size_t num_streams_)
+        : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), column_names_, query_info_, storage_snapshot_, context_)
+        , storage(std::move(storage_))
+        , info(std::move(info_))
+        , need_only_count(need_only_count_)
+        , max_block_size(max_block_size_)
+        , max_num_streams(num_streams_)
+    {
+    }
+
+private:
+    std::shared_ptr<StorageFile> storage;
+    ReadFromFormatInfo info;
+    const bool need_only_count;
+
+    size_t max_block_size;
+    const size_t max_num_streams;
+
+    std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
+
+    void createIterator(const ActionsDAG::Node * predicate);
+};
+
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
@@ -2162,93 +1897,6 @@ void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_valu
     info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
-}
-
-bool ReadFromFile::canUseLazyMaterialization() const
-{
-    if (need_only_count)
-        return false;
-
-    /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
-    /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet reader supports both.
-    if (!boost::iequals(storage->format_name, "Parquet"))
-        return false;
-
-    /// A file descriptor (e.g. stdin) is consumed by the main read and cannot be reopened.
-    if (storage->use_table_fd)
-        return false;
-
-    /// An archive entry has no generation token of its own (the `stat`-based token describes the
-    /// archive, not the entry) and is read through a decompressing stream without random access.
-    if (storage->archive_info.has_value())
-        return false;
-
-    /// With distributed processing the file paths arrive from the initiator at run time and the
-    /// plan of this worker must stay serializable and single-pass.
-    if (storage->distributed_processing)
-        return false;
-
-    /// Files are renamed after the main pass finishes reading them (--rename_files_after_processing),
-    /// so the lazy pass would not find them at the recorded paths.
-    if (!storage->file_renamer.isEmpty())
-        return false;
-
-    /// The lazy pass reopens every path and uses the physical row positions from the main pass.
-    /// Pipes and pseudo-files are single-pass streams, so their `stat` tokens cannot establish
-    /// that the second read sees the same data.
-    for (const auto & path : storage->paths)
-    {
-        struct stat file_stat{};
-        if (0 != stat(path.c_str(), &file_stat))
-            throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat file {}", path);
-
-        if (!S_ISREG(file_stat.st_mode))
-            return false;
-    }
-
-    /// The lazy pass rereads the surviving rows by their physical positions, which needs random
-    /// access to the raw file; a compression wrapper reads only sequentially.
-    for (const auto & path : storage->paths)
-        if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
-            return false;
-
-    return true;
-}
-
-std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
-{
-    /// A bare row policy (no PREWHERE) is not propagated into `info` — `updateFormatPrewhereInfo`
-    /// would prune its input columns from the format header and break `DEFAULT` expressions that
-    /// the source computes from them — but the source still evaluates it in the main pass via
-    /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
-    NameSet names_to_keep = required_names;
-    if (!info.row_level_filter && query_info.row_level_filter)
-        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
-            names_to_keep.insert(column.name);
-
-    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, names_to_keep);
-    if (!lazy_info)
-        return {};
-
-    output_header = std::make_shared<const Block>(info.source_header);
-
-    NameSet lazy_names;
-    for (const auto & column : lazy_info->source_header)
-        lazy_names.insert(column.name);
-    std::erase_if(required_source_columns, [&](const String & name) { return lazy_names.contains(name); });
-
-    lazy_row_index_registry = std::make_shared<LazyFileRegistry>();
-
-    auto lazy_source_header = std::make_shared<const Block>(lazy_info->source_header);
-    auto lazy_step = std::make_unique<LazilyReadFromFile>(
-        std::move(lazy_source_header),
-        storage,
-        std::move(*lazy_info),
-        getContext(),
-        max_block_size);
-
-    return lazy_step;
 }
 
 void StorageFile::read(
@@ -2304,7 +1952,6 @@ void StorageFile::read(
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
         && context->getSettingsRef()[Setting::optimize_count_from_files]
-        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto reading = std::make_unique<ReadFromFile>(
@@ -2384,8 +2031,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             std::move(read_buffer),
             need_only_count,
             parser_shared_resources,
-            format_filter_info,
-            lazy_row_index_registry);
+            format_filter_info);
 
         pipes.emplace_back(std::move(source));
     }
@@ -2403,201 +2049,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
-}
-
-/// Reads only the specified rows of the specified files, for the lazy branch of lazy
-/// materialization (see LazilyReadFromFile). Single stream: files in the given (registration)
-/// order, rows within a file in ascending order (guaranteed by `parquet.preserve_order`).
-class StorageFileLazyRowsSource final : public ISource, WithContext
-{
-public:
-    StorageFileLazyRowsSource(
-        SharedHeader header,
-        std::shared_ptr<StorageFile> storage_,
-        ReadFromFormatInfo info_,
-        const ContextPtr & context_,
-        size_t max_block_size_,
-        std::vector<FileLazyMaterializingRows::FileRows> files_)
-        : ISource(std::move(header), false)
-        , WithContext(context_)
-        , storage(std::move(storage_))
-        , info(std::move(info_))
-        , max_block_size(max_block_size_)
-        , files(std::move(files_))
-    {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
-        if (!shared_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-        parser_shared_resources = std::make_shared<FormatParserSharedResources>(getContext()->getSettingsRef(), /*num_streams_=*/ 1);
-    }
-
-    String getName() const override { return "StorageFileLazyRows"; }
-
-    Chunk generate() override
-    {
-        while (true)
-        {
-            if (!reader)
-            {
-                if (next_file_index >= files.size())
-                    return {};
-
-                const auto & file = files[next_file_index];
-                ++next_file_index;
-                const auto & path = file.file.path;
-
-                /// The row numbers to read were produced by the main pass of the query from a
-                /// concrete generation of the file. Reading the deferred columns from a different
-                /// generation (the file was rewritten between the two passes) would silently
-                /// combine rows of two versions of the file, so fail close instead.
-                /// A rewrite that replaces the file (a rename, the common atomic-update pattern)
-                /// changes the inode; an in-place rewrite changes the sub-second mtime unless it
-                /// lands within the same filesystem timestamp tick as the write the main pass saw
-                /// and keeps the byte size - the same residual window every single-pass read of a
-                /// concurrently rewritten local file has. (getFileStat throws if the file is gone.)
-                auto file_stat = getFileStat(path, /*use_table_fd=*/ false, -1, storage->getName());
-                if (computeFileCacheVersionToken(file_stat) != file.file.version_token)
-                    throwFileChanged(path);
-
-                read_buf = createReadBuffer(path, file_stat, /*use_table_fd=*/ false, -1, storage->compression_method, getContext());
-
-                /// `createReadBuffer` opens the file by path, strictly after the `stat` above;
-                /// re-stat to close that window the same way the main pass does.
-                if (!fileCacheVersionTokenStillHolds(path, file.file.version_token))
-                    throwFileChanged(path);
-
-                /// Exactly the synthetic metadata the main pass builds - unconditionally, under the
-                /// same rules - so both passes read this file under one and the same format metadata
-                /// cache contract (e.g. the Parquet footer cache, keyed by path and this token).
-                /// Symmetry is what matters here: whatever footer the main pass interpreted the file
-                /// with when it picked the row numbers, this pass gets the very same one, so the two
-                /// passes cannot end up on different interpretations of the file. How strong the token
-                /// itself is (sub-second mtime + inode + size) is a property of every local `Parquet`
-                /// read, single-pass ones included, not something lazy materialization changes.
-                std::optional<RelativePathWithMetadata> object_with_metadata;
-                {
-                    ObjectMetadata md;
-                    md.size_bytes = file_stat.st_size;
-                    md.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
-                    md.etag = file.file.version_token;
-                    object_with_metadata.emplace(path, std::move(md));
-                }
-
-                /// The rows of a file must be returned in ascending order, otherwise
-                /// LazyMaterializingTransform would restore the original row order incorrectly.
-                FormatSettings format_settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
-                format_settings.parquet.preserve_order = true;
-
-                /// There is no filter and no prewhere here: the surviving rows are known exactly,
-                /// so the deferred columns are read without any filtering expressions.
-                auto format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, getContext(), nullptr, nullptr, nullptr);
-                format_filter_info->rows_to_read = file.rows;
-
-                if (object_with_metadata)
-                {
-                    input_format = FormatFactory::instance().getInputWithMetadata(
-                        storage->format_name,
-                        *read_buf,
-                        info.format_header,
-                        getContext(),
-                        max_block_size,
-                        object_with_metadata,
-                        format_settings,
-                        parser_shared_resources,
-                        format_filter_info,
-                        /*is_remote_fs=*/ false,
-                        CompressionMethod::None,
-                        /*need_only_count=*/ false);
-                }
-                else
-                {
-                    input_format = FormatFactory::instance().getInput(
-                        storage->format_name,
-                        *read_buf,
-                        info.format_header,
-                        getContext(),
-                        max_block_size,
-                        format_settings,
-                        parser_shared_resources,
-                        format_filter_info,
-                        /*is_remote_fs=*/ false,
-                        CompressionMethod::None,
-                        /*need_only_count=*/ false);
-                }
-                input_format->setSerializationHints(info.serialization_hints);
-
-                QueryPipelineBuilder builder;
-                builder.init(Pipe(input_format));
-
-                if (info.columns_description.hasDefaults())
-                {
-                    builder.addSimpleTransform([&](const SharedHeader & block_header)
-                    {
-                        return std::make_shared<AddingDefaultsTransform>(block_header, info.columns_description, *input_format, getContext());
-                    });
-                }
-
-                builder.addSimpleTransform([&](const SharedHeader & block_header)
-                {
-                    return std::make_shared<ExtractColumnsTransform>(block_header, info.requested_columns);
-                });
-
-                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-                reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
-
-                ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
-            }
-
-            Chunk chunk;
-            if (reader->pull(chunk))
-            {
-                size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                progress(chunk.getNumRows(), chunk_size ? chunk_size : chunk.bytes());
-                return chunk;
-            }
-
-            reader.reset();
-            pipeline = nullptr;
-            input_format.reset();
-            read_buf.reset();
-        }
-    }
-
-    void onFinish() override { parser_shared_resources->finishStream(); }
-
-private:
-    [[noreturn]] static void throwFileChanged(const String & path)
-    {
-        throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
-            "Lazy materialization: file {} was modified between the main reading pass and the lazy reading pass. "
-            "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_file setting",
-            path);
-    }
-
-    std::shared_ptr<StorageFile> storage;
-    ReadFromFormatInfo info;
-    size_t max_block_size;
-    std::vector<FileLazyMaterializingRows::FileRows> files;
-    size_t next_file_index = 0;
-
-    FormatParserSharedResourcesPtr parser_shared_resources;
-    std::unique_ptr<ReadBuffer> read_buf;
-    InputFormatPtr input_format;
-    std::unique_ptr<QueryPipeline> pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
-
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
-};
-
-std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
-    std::shared_ptr<StorageFile> storage,
-    const ReadFromFormatInfo & info,
-    const ContextPtr & context,
-    size_t max_block_size,
-    std::vector<FileLazyMaterializingRows::FileRows> files)
-{
-    return std::make_shared<StorageFileLazyRowsSource>(
-        std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files));
 }
 
 
@@ -2697,8 +2148,7 @@ public:
             std::move(naked_buffer),
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
-            static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
-            settings[Setting::snappy_mode]);
+            static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
                                                                              *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings);
@@ -3121,7 +2571,7 @@ void registerStorageFile(StorageFactory & factory)
         storage_features,
         Documentation{
             .description = R"DOCS_MD(
-The File table engine keeps the data in a file in one of the supported [file formats](/reference/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
+The File table engine keeps the data in a file in one of the supported [file formats](/interfaces/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
 
 Usage scenarios:
 
@@ -3130,7 +2580,7 @@ Usage scenarios:
 - Updating data in ClickHouse via editing a file on a disk.
 
 :::note
-This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/reference/functions/table-functions/s3).
+This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/sql-reference/table-functions/s3.md).
 :::
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
@@ -3142,13 +2592,13 @@ File(Format)
 The `Format` parameter specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/reference/formats#formats-overview) section.
+[Formats](/interfaces/formats#formats-overview) section.
 
-ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](/reference/settings/server-settings/settings/other#path) setting in server configuration.
+ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
 
 When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it's put into `data.Format` file in that subdirectory.
 
-You may manually create this subfolder and file in server filesystem and then [ATTACH](/reference/statements/attach) it to table information with matching name, so you can query data from that file.
+You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/attach.md) it to table information with matching name, so you can query data from that file.
 
 :::note
 Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
@@ -3187,7 +2637,7 @@ SELECT * FROM file_engine_table
 
 ## Usage in ClickHouse-local {#usage-in-clickhouse-local}
 
-In [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension (`gz`, `br` or `xz`).
+In [clickhouse-local](../../../operations/utilities/clickhouse-local.md) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension (`gz`, `br` or `xz`).
 
 **Example:**
 
@@ -3210,7 +2660,7 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 `PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
 ## Virtual columns {#virtual-columns}
 
@@ -3221,11 +2671,11 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 ## Settings {#settings}
 
-- [engine_file_empty_if_not_exists](/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
-- [engine_file_truncate_on_insert](/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [engine_file_allow_create_multiple_files](/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [engine_file_skip_empty_files](/reference/settings/session-settings/engine-file#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [storage_file_read_method](/reference/settings/session-settings/storage#storage_file_read_method) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+- [engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
+- [engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [engine_file_allow_create_multiple_files](/operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [engine_file_skip_empty_files](/operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [storage_file_read_method](/operations/settings/settings#engine_file_empty_if_not_exists) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
 )DOCS_MD",
             .syntax = "ENGINE = File(format[, path | fd])",
             .related = {"URL"}});

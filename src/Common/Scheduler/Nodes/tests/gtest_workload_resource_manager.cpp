@@ -2,7 +2,6 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <gtest/gtest.h>
@@ -1545,7 +1544,7 @@ struct EventCounter
 private:
     size_t getValue() const
     {
-        return ProfileEvents::global_counters[event];
+        return ProfileEvents::global_counters[event].load(std::memory_order_relaxed);
     }
 };
 
@@ -3550,62 +3549,6 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
         changes.emplace_back("max_memory_ratio", Field(Float64(1e100)), "");
         ws.initFromChanges(changes);
         EXPECT_EQ(ws.max_memory, WorkloadSettings::unlimited);
-    }
-}
-
-TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
-{
-    const Int64 cores = static_cast<Int64>(getNumberOfCPUCoresToUse());
-    ASSERT_GT(cores, 0) << "Test host must report a non-zero core count";
-
-    // In-range ratio — resolves to `ratio * cores`, unaffected by the clamp.
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(2.5)), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, static_cast<Int64>(2.5 * static_cast<Float64>(cores)));
-    }
-
-    // Ratios whose product with the core count exceeds `Int64` range must clamp to `unlimited`
-    // instead of narrowing a float outside the destination range, which is undefined behaviour and
-    // could yield a negative or garbage limit.
-    for (Float64 ratio : {9223372036854775807.0, 1e19, 1e100, std::numeric_limits<Float64>::max()})
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(ratio), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited) << "ratio = " << ratio;
-    }
-
-    // The reported input arrived as an integer literal, which takes the `UInt64` branch of
-    // `getFloat64` and so bypasses its finiteness check entirely.
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(UInt64(9223372036854775807ULL)), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
-    }
-
-    // A smaller exact limit still wins over the saturated ratio limit.
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads", Field(Int64(4)), "");
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(1e100)), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, 4);
-    }
-
-    // Zero ratio does not constrain.
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(0)), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
     }
 }
 

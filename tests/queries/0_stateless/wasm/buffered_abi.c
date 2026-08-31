@@ -243,14 +243,3 @@ Span * malformed_buffers_wrong_size(Span * input, uint32_t n) {
     write_le64(res->data + 24, 42);
     return res;
 }
-
-/* Returns a valid, non-null buffer of zero length. Under a row-based
-   serialization_format such as RowBinary this deserializes to zero rows and
-   produces no chunks, which used to make the host dereference an out-of-range
-   element of an empty result column vector. */
-Span * returns_empty_buffer(Span * input, uint32_t n) {
-    (void)input;
-    (void)n;
-
-    return clickhouse_create_buffer(0);
-}

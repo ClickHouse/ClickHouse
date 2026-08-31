@@ -24,12 +24,6 @@ private:
     /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
     static constexpr size_t max_elements = 1048576;
 
-    /// Sanity threshold for the total size of the state. Nested Resample combinators multiply
-    /// the sizes, and a product that avoids the overflow check can still be absurdly large:
-    /// the allocator treats sizes of 2^63 and more as a logical error, and anything close
-    /// to this threshold could never be allocated anyway.
-    static constexpr size_t max_state_size = 1ULL << 40;
-
     AggregateFunctionPtr nested_function;
 
     size_t last_col;
@@ -146,13 +140,7 @@ public:
 
     size_t sizeOfData() const override
     {
-        /// Nested Resample combinators multiply the sizes, and every layer is only checked against
-        /// `max_elements` on its own, so the product can wrap around or exceed any sane allocation.
-        size_t result = 0;
-        if (common::mulOverflow(total, size_of_data, result) || result > max_state_size)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Overflow in internal computations in function {}. The state is too large", getName());
-        return result;
+        return total * size_of_data;
     }
 
     size_t alignOfData() const override
@@ -206,7 +194,7 @@ public:
         nested_function->add(place + pos * size_of_data, columns, row_num, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);

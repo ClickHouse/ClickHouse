@@ -61,14 +61,12 @@ node10 = cluster.add_instance("node10", main_configs=["configs/enable_keeper10_l
 node11 = cluster.add_instance("node11", main_configs=["configs/enable_keeper11_large_chunk_s3.xml"], user_configs=[_small_buf_cfg], stay_alive=True, with_minio=True, with_remote_database_disk=False)
 node12 = cluster.add_instance("node12", main_configs=["configs/enable_keeper12_large_chunk_s3.xml", "configs/text_log.xml"], user_configs=[_small_buf_cfg], stay_alive=True, with_minio=True, with_remote_database_disk=False)
 
-# compat: old-version leader (no chunking support), new-version follower.
-# The old leaders get quorum_reads because their pinned images predate the read-vs-session-close
-# fix and can drop a local read without a response. Followers under test keep the default.
-compat1 = cluster.add_instance("compat1", main_configs=["configs/enable_keeper_compat1.xml", "configs/quorum_reads.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag=CLICKHOUSE_CI_MIN_TESTED_VERSION, with_installed_binary=True, with_remote_database_disk=False)
+# compat: old-version leader (no chunking support), new-version follower
+compat1 = cluster.add_instance("compat1", main_configs=["configs/enable_keeper_compat1.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag=CLICKHOUSE_CI_MIN_TESTED_VERSION, with_installed_binary=True, with_remote_database_disk=False)
 compat2 = cluster.add_instance("compat2", main_configs=["configs/enable_keeper_compat2.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag=CLICKHOUSE_CI_MIN_TESTED_VERSION, with_installed_binary=True, with_remote_database_disk=False)
 compat3 = cluster.add_instance("compat3", main_configs=["configs/enable_keeper_compat3.xml", "configs/text_log.xml"], stay_alive=True, with_remote_database_disk=False)
 
-compat_s3_1 = cluster.add_instance("compat_s3_1", main_configs=["configs/enable_keeper_compat_s3_1.xml", "configs/quorum_reads.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag="25.12", with_installed_binary=True, with_remote_database_disk=False)
+compat_s3_1 = cluster.add_instance("compat_s3_1", main_configs=["configs/enable_keeper_compat_s3_1.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag="25.12", with_installed_binary=True, with_remote_database_disk=False)
 compat_s3_2 = cluster.add_instance("compat_s3_2", main_configs=["configs/enable_keeper_compat_s3_2.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag="25.12", with_installed_binary=True, with_remote_database_disk=False)
 compat_s3_3 = cluster.add_instance("compat_s3_3", main_configs=["configs/enable_keeper_compat_s3_3.xml", "configs/text_log.xml"], user_configs=[_small_buf_cfg], stay_alive=True, with_minio=True, with_remote_database_disk=False)
 
@@ -104,16 +102,6 @@ COMPAT_PARAMS = [
     pytest.param({"old_leader": compat1, "lagging": compat3, "disk_type": "local"}, id="local_disk"),
     pytest.param({"old_leader": compat_s3_1, "lagging": compat_s3_3, "disk_type": "remote"}, id="remote_disk"),
 ]
-
-
-def get_coordination_setting(node, name):
-    """Read an effective coordination setting from a running server via the 'conf' 4LW command."""
-    data = keeper_utils.send_4lw_cmd(cluster, node, cmd="conf")
-    settings = dict(
-        line.split("=", 1) for line in data.split("\n") if "=" in line
-    )
-    assert name in settings, f"'{name}' absent from 'conf' output of {node.name}: {data}"
-    return settings[name]
 
 
 @pytest.mark.parametrize("nodes", CHUNKED_TRANSFER_PARAMS)
@@ -369,16 +357,6 @@ def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     node_old_leader = nodes["old_leader"]
     node_lagging = nodes["lagging"]
     prefix = "/test_compat_snapshot_transfer"
-
-    # cleanup_test_tree below is already a read on the old leader, so the setting that makes
-    # its reads terminate has to be asserted before it, not after. wait_complete_readiness is
-    # off because its readiness probe is itself such a read.
-    keeper_utils.wait_until_connected(cluster, node_old_leader, wait_complete_readiness=False)
-    keeper_utils.wait_until_connected(cluster, node_lagging, wait_complete_readiness=False)
-    assert get_coordination_setting(node_old_leader, "quorum_reads") == "true", \
-        f"{node_old_leader.name} runs a pinned image and must serve reads through Raft"
-    assert get_coordination_setting(node_lagging, "quorum_reads") == "false", \
-        f"{node_lagging.name} is the node under test and must keep local reads"
 
     cleanup_test_tree(cluster, node_old_leader, prefix)
 

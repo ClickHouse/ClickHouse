@@ -255,8 +255,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
     return [this]()
     {
         CSN expected_value = Tx::CommittingCSN;
-        if (csn.compare_exchange_strong(expected_value, Tx::UnknownCSN))
-            csn.notify_all();
+        csn.compare_exchange_strong(expected_value, Tx::UnknownCSN);
     };
 }
 
@@ -311,9 +310,6 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     /// Flip the atomic last so that `waitStateChange` only wakes up after all metadata is durable.
     [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
     chassert(prev_value == Tx::CommittingCSN);
-    /// `std::atomic::wait` requires a matching `notify`; a bare store does not wake a waiter
-    /// (works on the Linux libc++ global-table fallback by luck, but hangs on the native wait used for 8-byte atomics on macOS).
-    csn.notify_all();
 }
 
 bool MergeTreeTransaction::rollback() noexcept
@@ -326,9 +322,6 @@ bool MergeTreeTransaction::rollback() noexcept
     /// Check that it was not rolled back concurrently
     if (!need_rollback)
         return false;
-
-    /// Wake up any `waitStateChange` waiter (see note in `afterCommit`).
-    csn.notify_all();
 
     /// It's not a problem if server crash at this point
     /// because on startup we will see that TID is not committed and will simply discard these changes.

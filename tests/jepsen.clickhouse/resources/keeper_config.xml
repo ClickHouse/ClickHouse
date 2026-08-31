@@ -27,10 +27,6 @@
                 <type>local</type>
                 <path>/home/robot-clickhouse/db/coordination/latest_snapshot/</path>
             </latest_snapshot_local>
-            <data_local>
-                <type>local</type>
-                <path>/home/robot-clickhouse/db/coordination/data/</path>
-            </data_local>
         </disks>
     </storage_configuration>
 

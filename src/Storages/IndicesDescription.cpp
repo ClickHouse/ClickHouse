@@ -25,30 +25,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-/// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
-void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
-{
-    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-    for (const auto & child : arguments->children)
-    {
-        const auto * func = child->as<ASTFunction>();
-        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
-            continue;
-
-        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
-        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
-        {
-            ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
-            ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
-        }
-    }
-}
-
-}
-
 IndexDescription::IndexDescription(const IndexDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
@@ -118,11 +94,6 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (index_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index must have name in definition.");
 
-    /// Without escaping the name becomes a part of the index file name as is, see `getIndexFileName`.
-    if (!escape_filenames && index_definition->name.contains('/'))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Skip index name ({}) cannot contain '/' with `escape_index_filenames` disabled", index_definition->name);
-
     auto index_type = index_definition->getType();
     if (!index_type)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");
@@ -157,12 +128,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
-    {
         result.arguments = index_type->arguments->clone();
-
-        if (result.type == TEXT_INDEX_NAME)
-            expandTextIndexTransformAliases(result.arguments, columns);
-    }
 
     return result;
 }
@@ -182,7 +148,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     if (expr_list == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
 
-    ReplaceAliasToExprVisitor::Data data{columns, {}};
+    ReplaceAliasToExprVisitor::Data data{columns};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
 
     expression_list_ast = expr_list->clone();
@@ -307,9 +273,9 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
-VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const
+Names IndicesDescription::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> result;
+    Names result;
     for (const auto & index : *this)
     {
         result.emplace_back(index.name);

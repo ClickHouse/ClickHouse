@@ -268,6 +268,15 @@ MatchedTrees::Matches matchTrees(
                                 monotonicity.child_match = &child_match;
                                 monotonicity.child_node = monotonic_child;
 
+                                /// `materialize` does not change values, so it is effectively
+                                /// strictly monotonic. Without this override the `ORDER BY`
+                                /// prefix that can be served from the sorting key gets truncated
+                                /// when filter push-down injects a `materialize(...)` wrapper
+                                /// (e.g. for queries through `ReadFromMerge` after
+                                /// `convertAndFilterSourceStream`).
+                                if (frame.node->function_base->getName() == "materialize")
+                                    monotonicity.strict = true;
+
                                 if (child_match.monotonicity)
                                 {
                                     monotonicity.direction *= child_match.monotonicity->direction;
@@ -585,10 +594,7 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            /// The result of an ARRAY JOIN is not a per-row function of its child, so it cannot be
-            /// reduced any further (see `buildArrayJoinDAG` for how such nodes enter key expressions).
-            irreducible.insert(node);
-            break;
+            UNREACHABLE();
         case ActionsDAG::ActionType::COLUMN:
             irreducible.insert(node);
             break;

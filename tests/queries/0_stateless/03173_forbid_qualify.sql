@@ -6,6 +6,7 @@ insert into test_qualify SELECT * FROM numbers(100);
 
 select count() from test_qualify; -- 100
 select * from test_qualify qualify row_number() over (order by number) = 50 SETTINGS enable_analyzer = 1; -- 49
+select * from test_qualify qualify row_number() over (order by number) = 50 SETTINGS enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }
 
 delete from test_qualify where number in (select number from test_qualify qualify row_number() over (order by number) = 50) SETTINGS mutations_sync = 2;
 select count() from test_qualify; -- 99
