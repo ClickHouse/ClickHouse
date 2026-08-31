@@ -3744,7 +3744,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- This value means "force an external hash join": the join is external from the first block on, instead of starting in memory and converting once it outgrows the spill threshold the way `hash` and `parallel_hash` do. It requires a non-zero [`max_bytes_before_external_join`](#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join), and throws otherwise.
+ `grace_hash` is external from the first block: the right table is partitioned straight away, where `hash` and `parallel_hash` collect it in memory first and partition it only once it crosses the spill threshold. Pick it when you already know the right side will not fit in memory and want to skip the in-memory phase. The spill threshold itself is the same one every hash algorithm uses, [`max_bytes_before_external_join`](#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join), and one of the two has to be non-zero.
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the spill threshold, the number of buckets is increased along with the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
@@ -6816,12 +6816,11 @@ Used by the aggregate projection matcher (and any future projection matcher that
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
 )", 0) \
     DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, R"(
-Restores the pre-unification meaning of `max_rows_in_join` and `max_bytes_in_join` for hash joins that spill to disk: they
-trigger spilling instead of acting as hard caps, and the effective spill point is whichever of the limit and
-`max_bytes_before_external_join` is reached first. `join_algorithm = 'grace_hash'` also stops requiring a spill threshold.
+Makes `max_rows_in_join` and `max_bytes_in_join` trigger spilling instead of capping the right side, the way they worked
+before the spill threshold became the single trigger. The join then spills at whichever of the two is reached first, and
+`join_algorithm = 'grace_hash'` accepts a zero spill threshold.
 
-Enable it only to keep queries that were written against the old behavior working; it is set automatically by the
-`compatibility` setting.
+For queries written against the earlier meaning of these two settings; `compatibility` enables it automatically.
 )", 0) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing

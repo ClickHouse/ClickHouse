@@ -324,10 +324,11 @@ GraceHashJoin::GraceHashJoin(
     if (external_join_threshold == 0 && !table_join->legacyJoinSizeLimitsTriggerSpilling())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "join_algorithm = 'grace_hash' spills to disk and needs a spill threshold, but none resolved to a non-zero "
-            "value. Set max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has "
-            "memory limits configured (the ratio is ignored without them). Use join_algorithm = 'hash' for a purely "
-            "in-memory join");
+            "join_algorithm = 'grace_hash' is external from the first block and needs a spill threshold, but neither "
+            "max_bytes_before_external_join nor max_bytes_ratio_before_external_join resolved to a non-zero value. Set "
+            "max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has memory limits "
+            "configured (the ratio is ignored without them). To keep the join in memory instead, use join_algorithm = 'hash' "
+            "with both of them at 0");
 
     /// A hard cap at or below the spill threshold fails the query before it can spill. Only the explicit
     /// setting takes part: a ratio-derived threshold would make the warning machine-dependent.
