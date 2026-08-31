@@ -71,6 +71,7 @@ extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
 extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
 extern const Event ASTFuzzerOracleAggregateIfIdentityChecks;
 extern const Event ASTFuzzerOracleNullIdentityChecks;
+extern const Event ASTFuzzerOracleCastRoundtripChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3118,6 +3119,66 @@ bool QueryOracleChecker::checkNullIdentity(const ASTSelectQuery &, const Context
     }
 
     LOG_TRACE(logger, "NULL-identity oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkCastRoundtrip(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: integers and Dates have an exact textual representation, so a round-trip
+    /// through String must return the original value: CAST(CAST(x AS String) AS T) == x. A violation
+    /// is a real CAST / number-or-date parsing bug. (Floats are deliberately excluded — text
+    /// round-trips are not guaranteed bit-exact.) The probe counts violating rows (expected 0).
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("cast", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, i Int64, u UInt64, d Date) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, toInt64(number) * 7 - 500, toUInt64(number) * 3,"
+            " toDate('2000-01-01') + (number % 9000) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "CAST round-trip oracle: {}", tbl);
+
+    const String probe =
+        "SELECT countIf(CAST(CAST(i AS String) AS Int64) != i)"
+        " + countIf(CAST(CAST(u AS String) AS UInt64) != u)"
+        " + countIf(CAST(CAST(d AS String) AS Date) != d)"
+        " + countIf(CAST(i AS Int64) != i)"
+        " FROM " + tbl;
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false;
+
+    UInt64 violations = 0;
+    try
+    {
+        violations = value->safeGet<UInt64>();
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    if (violations != 0)
+    {
+        fixture.preserve();
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "CAST round-trip oracle mismatch!\n"
+            "{} rows fail an integer/Date String round-trip on table {}.\n"
+            "Probe: {}",
+            violations, tbl, probe);
+    }
+
+    LOG_TRACE(logger, "CAST round-trip oracle passed");
     return true;
 }
 
