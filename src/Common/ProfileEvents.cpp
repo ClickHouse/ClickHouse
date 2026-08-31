@@ -172,6 +172,8 @@
     M(QueryCacheReadBytes, "The number of (uncompressed) bytes read from the query cache.", ValueType::Bytes) \
     M(QueryCacheWrittenRows, "The number of rows saved into the query cache.", ValueType::Number) \
     M(QueryCacheWrittenBytes, "The number of (uncompressed) bytes saved into the query cache", ValueType::Bytes) \
+    M(EffectiveAccessRightsCalculations, "Number of times the effective access rights of a user (from the user and their enabled roles, including implicit grants) were calculated from scratch.", ValueType::Number) \
+    M(EffectiveAccessRightsCacheHits, "Number of times previously calculated effective access rights were reused for another session of the same user with the same enabled roles.", ValueType::Number) \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.", ValueType::Number) \
