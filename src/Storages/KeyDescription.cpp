@@ -175,7 +175,11 @@ KeyDescription KeyDescription::getKeyFromAST(
     {
         auto expr = result.expression_list_ast->clone();
         auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
-        auto syntax_result = TreeRewriter(context).analyze(expr, all_columns);
+        /// A virtual column is not accepted in a key expression, so it must not be suggested for a typo.
+        Names hint_columns = columns.getAllPhysical().getNames();
+        for (const auto & column : additional_columns)
+            hint_columns.push_back(column.name);
+        auto syntax_result = TreeRewriter(context).setHintColumns(std::move(hint_columns)).analyze(expr, all_columns);
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns

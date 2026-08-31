@@ -1327,11 +1327,24 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
               * columns, which for a MergeTree table starts with a dozen virtual columns (`_block_number`,
               * `_part_index`, ...) and is cut off by the message length limit before reaching the real
               * ones - while `SELECT` for the same typo answers `Maybe you meant: ['id']`.
+              *
+              * Those callers analyze the expression over the source columns extended with the virtual
+              * columns, and a virtual column is rejected in such an expression right after the analysis,
+              * so they narrow the candidates down to the columns of the table with `hint_columns`.
               */
             VectorWithMemoryTracking<String> prompting_strings;
-            prompting_strings.reserve(source_column_names.size());
-            for (const auto & name : source_column_names)
-                prompting_strings.push_back(name);
+            if (hint_columns.empty())
+            {
+                prompting_strings.reserve(source_column_names.size());
+                for (const auto & name : source_column_names)
+                    prompting_strings.push_back(name);
+            }
+            else
+            {
+                prompting_strings.reserve(hint_columns.size());
+                for (const auto & name : hint_columns)
+                    prompting_strings.push_back(name);
+            }
 
             std::vector<String> hints;
             for (const auto & name : unknown_required_source_columns)
@@ -1348,10 +1361,10 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 ss << ", maybe you meant: ";
                 ss << toStringWithFinalSeparator(hints, " or ");
             }
-            else if (!source_column_names.empty())
+            else if (!prompting_strings.empty())
             {
                 ss << ", available columns:";
-                for (const auto & name : source_column_names)
+                for (const auto & name : prompting_strings)
                     ss << " '" << name << "'";
             }
             else
@@ -1638,6 +1651,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     const auto & settings = getContext()->getSettingsRef();
 
     TreeRewriterResult result(source_columns, storage, storage_snapshot, false);
+    result.hint_columns = hint_columns;
 
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext(), is_create_parameterized_view);
 

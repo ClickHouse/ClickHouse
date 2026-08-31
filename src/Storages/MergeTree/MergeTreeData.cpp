@@ -1118,7 +1118,10 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
+        /// A virtual column is rejected right below, so it must not be suggested for a typo.
+        auto syntax = TreeRewriter(getContext())
+                          .setHintColumns(new_metadata.columns.getAllPhysical().getNames())
+                          .analyze(added_key_column_expr_list, new_columns_for_analysis);
         Names used_columns = syntax->requiredSourceColumns();
 
         NamesAndTypesList deleted_columns;

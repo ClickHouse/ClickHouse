@@ -30,6 +30,13 @@ echo '=== a name that is nothing like a column still gets the list of available 
 run "ALTER TABLE t MODIFY TTL zzzzzzzzzzzz + INTERVAL 1 DAY"
 
 echo
+echo '=== a virtual column is not accepted in a sorting key expression, so it is never suggested'
+# The sorting key is analyzed over the columns extended with the virtual ones, but an expression added to
+# the sorting key may use only the columns added by the same ALTER, so a virtual column is rejected anyway.
+run "ALTER TABLE t MODIFY ORDER BY (id, _part_indez)"
+run "ALTER TABLE t MODIFY ORDER BY (id, zzzzzzzzzzzz)"
+
+echo
 echo '=== the same expressions, spelled correctly'
 # The sorting key can only be extended with a column added by the same ALTER.
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t ADD COLUMN n UInt32, MODIFY ORDER BY (id, n)"

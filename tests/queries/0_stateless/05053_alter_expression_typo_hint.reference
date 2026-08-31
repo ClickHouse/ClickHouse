@@ -10,5 +10,11 @@ Code: 47. Missing columns: 'ix' while processing: 'ix + toIntervalDay(1)', requi
 --- ALTER TABLE t MODIFY TTL zzzzzzzzzzzz + INTERVAL 1 DAY
 Code: 47. Missing columns: 'zzzzzzzzzzzz' while processing: 'zzzzzzzzzzzz + toIntervalDay(1)', required columns: 'zzzzzzzzzzzz', available columns: 's' 'd' 'x' 'id'. (UNKNOWN_IDENTIFIER)
 
+=== a virtual column is not accepted in a sorting key expression, so it is never suggested
+--- ALTER TABLE t MODIFY ORDER BY (id, _part_indez)
+Code: 47. Missing columns: '_part_indez' while processing: 'id, _part_indez', required columns: 'id' '_part_indez', available columns: 'id' 'x' 's' 'd'. (UNKNOWN_IDENTIFIER)
+--- ALTER TABLE t MODIFY ORDER BY (id, zzzzzzzzzzzz)
+Code: 47. Missing columns: 'zzzzzzzzzzzz' while processing: 'id, zzzzzzzzzzzz', required columns: 'id' 'zzzzzzzzzzzz', available columns: 'id' 'x' 's' 'd'. (UNKNOWN_IDENTIFIER)
+
 === the same expressions, spelled correctly
 5
