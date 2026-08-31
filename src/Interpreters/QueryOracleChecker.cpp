@@ -85,6 +85,7 @@ extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
 extern const Event ASTFuzzerOracleGroupingSetsChecks;
 extern const Event ASTFuzzerOracleRowPolicyChecks;
 extern const Event ASTFuzzerOracleFinalMergeChecks;
+extern const Event ASTFuzzerOracleWithFillChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3745,6 +3746,50 @@ bool QueryOracleChecker::checkFinalMergeReplacing(const ASTSelectQuery &, const 
             context, &fixture);
 
     LOG_TRACE(logger, "FINAL-merge dedup oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkWithFillGrid(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_02): with every real value lying on the fill grid and strictly inside
+    /// [FROM, TO), ORDER BY x WITH FILL FROM f TO t STEP s must emit exactly the grid points
+    /// {f, f+s, ..., t-s} in ascending order (real rows coincide with grid points; gaps are
+    /// synthesised). Compared positionally (order-aware), unlike the sorted-multiset oracles.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("withfill", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (x Int64) ENGINE = MergeTree ORDER BY x"))
+        return false;
+    /// Real values 0, 6, 12, ..., 54 — all multiples of the step (3) and inside [0, 60).
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number * 6 FROM numbers(10)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "WITH FILL grid oracle: {}", tbl);
+
+    /// Grid {0, 3, ..., 57} = 20 points; TO (60) is exclusive.
+    auto actual_opt = OracleExec::executeRows(
+        "SELECT x FROM " + tbl + " ORDER BY x WITH FILL FROM 0 TO 60 STEP 3", context, ResultShape::Ordered);
+    auto grid_opt = OracleExec::executeRows(
+        "SELECT toInt64(number) * 3 FROM numbers(20) ORDER BY number", context, ResultShape::Ordered);
+    if (!actual_opt || !grid_opt)
+        return false;
+
+    if (!OracleCompare::equal(*actual_opt, *grid_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "WITH FILL grid oracle mismatch!\n"
+                "ORDER BY x WITH FILL FROM 0 TO 60 STEP 3 ({} rows) vs expected grid {{0,3,..,57}} ({} rows) on {}\n{}",
+                actual_opt->size(), grid_opt->size(), tbl,
+                OracleCompare::diffSummary(*actual_opt, *grid_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "WITH FILL grid oracle passed");
     return true;
 }
 
