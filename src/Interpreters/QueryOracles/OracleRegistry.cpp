@@ -32,6 +32,7 @@ extern const Event ASTFuzzerOracleTupleSummingChecks;
 extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
 extern const Event ASTFuzzerOracleDeleteMutationChecks;
 extern const Event ASTFuzzerOracleUpdateMutationChecks;
+extern const Event ASTFuzzerOracleMaterializeIndexChecks;
 }
 
 namespace DB
@@ -107,6 +108,7 @@ OracleRegistry::OracleRegistry()
     add("schema round-trip", ProfileEvents::ASTFuzzerOracleSchemaRoundtripChecks, &QueryOracleChecker::checkSchemaRoundtrip);
     add("DELETE mutation", ProfileEvents::ASTFuzzerOracleDeleteMutationChecks, &QueryOracleChecker::checkDeleteMutation);
     add("UPDATE mutation", ProfileEvents::ASTFuzzerOracleUpdateMutationChecks, &QueryOracleChecker::checkUpdateMutation);
+    add("MATERIALIZE INDEX invariance", ProfileEvents::ASTFuzzerOracleMaterializeIndexChecks, &QueryOracleChecker::checkMaterializeIndexInvariance);
 }
 
 const OracleRegistry & OracleRegistry::instance()

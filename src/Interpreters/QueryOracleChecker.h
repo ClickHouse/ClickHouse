@@ -151,6 +151,11 @@ public:
     /// a real mutation bug.
     bool checkUpdateMutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// MATERIALIZE-INDEX invariance oracle (self-seeded): adding and materializing a skip index
+    /// must not change the data. The table after ADD INDEX + MATERIALIZE INDEX must equal a
+    /// never-mutated snapshot; a difference is a real index-materialization bug.
+    bool checkMaterializeIndexInvariance(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
