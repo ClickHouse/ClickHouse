@@ -79,9 +79,13 @@ trap cleanup EXIT
 # metadata, linker scripts); those are non-fatal as long as one member is read.
 # T/D/B/C/W/V are the defined globals and i is an IFUNC (glibc resolves ceil,
 # rint, trunc, ... this way); undefined (U) and local (lowercase) are excluded.
+# Under ThinLTO the reference archives contain LLVM bitcode members, for which
+# llvm-nm prints dashes instead of a hex address; accept both, otherwise the
+# reference set comes out empty and nothing is localized (this is how the Rust
+# cbrt shadowed the llvm-libc one in release builds, which set ENABLE_THINLTO).
 defined_globals() {
     { "$NM" "$1" 2>/dev/null; "$NM" -D "$1" 2>/dev/null; } \
-        | grep -E '^[0-9a-f]+ [TDBCWVi] ' \
+        | grep -E '^([0-9a-f]+|-+) [TDBCWVi] ' \
         | awk '{print $3}' \
         | sed 's/@.*//'
 }
