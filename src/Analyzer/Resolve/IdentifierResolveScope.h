@@ -195,7 +195,8 @@ struct IdentifierResolveScope
       * recomputed. So for each key the map also contains the key with every maximal proper sub-key
       * converted to Nullable (with ancestor types recomputed), and the key converted to Nullable itself.
       * A key that is an `if`/`multiIf` with a constant condition is later collapsed to the branch it
-      * always takes, so the map also contains that branch, which is what the aggregation groups by.
+      * always takes, which is then what the aggregation groups by, so the map also contains that
+      * branch, unless it is a constant.
       * This way the lookup uses exact comparison, including types.
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
