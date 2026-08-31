@@ -10,24 +10,24 @@
 namespace DB
 {
 
-/// Sits between in-order MergeTree sources (which announce their position with virtual rows)
-/// and a MergingSortedTransform, owning both the per-lane buffering and the read-ahead policy
-/// for sources deferred behind virtual rows.
+/// Sits between the in-order MergeTree sources and the merge. Each source starts by sending
+/// a virtual row: a single row with the sort key of its future output, built from the primary
+/// key index without reading any data. The merge keeps such a source parked until the merge
+/// actually reaches that key, so a source it never reaches is never read. On its own, though,
+/// the merge wakes the parked sources strictly one at a time, so a scan over many parts runs
+/// sequentially. This transform owns one buffered lane per source and wakes lanes ahead of
+/// the merge:
 ///
-/// A virtual row — the first chunk of a source and, with `read_in_order_use_virtual_row_per_block`,
-/// a chunk after every block — carries the sort key of the source's next output. The merge uses it
-/// as a cursor and does not demand real data from the source until the merge reaches that key, so
-/// sources the merge never reaches are never read. Left alone, that demand pattern serializes reads:
-/// every source waits for the merge to come back to it. This transform restores parallelism while
-/// keeping the read savings:
+/// - a lane starts reading when the merge asks for it and its buffer is empty;
+/// - a lane that feeds the merge keeps reading ahead, so its next read overlaps with merging;
+/// - once the merge has moved to a second lane (so the limit is clearly not answered by the
+///   first lane alone), up to `read_ahead_window` parked lanes nearest to the merge in key
+///   order read ahead in parallel.
 ///
-/// - A lane is read only on downstream demand ("miss": the merge asks, the buffer is empty), so a
-///   `LIMIT` answered by the front source alone reads nothing else.
-/// - A demanded lane is kept one group ahead (a group = chunks up to and including the next virtual
-///   row), overlapping its next read with the merge of the current block.
-/// - Once demand has moved across lanes at least once (or there is no limit), up to
-///   `read_ahead_window` parked lanes closest to the merge in key order read one group ahead in
-///   parallel, so a scan over many sources is not read one source at a time.
+/// With `read_in_order_use_virtual_row_per_block` a source sends a virtual row after every
+/// block. A "group" here means what a source produces between two virtual rows: one block
+/// and the announcement after it (without the per-block mode, everything after the initial
+/// virtual row is a single group).
 class VirtualRowReadAheadTransform final : public IProcessor
 {
 public:
@@ -43,10 +43,8 @@ public:
 
     String getName() const override { return "VirtualRowReadAhead"; }
     Status prepare() override;
-    /// The hot path: with N lanes and a chunk (or a virtual row) per wake, a full pass per
-    /// event would put O(N) port inspections on the single-threaded critical path. Process
-    /// only the lanes whose ports changed; fall back to the full pass for the first call and
-    /// whenever a port finished (rare, and the full pass owns the termination bookkeeping).
+    /// Processes only the lanes whose ports changed; the overload above is the full pass
+    /// over all lanes, kept for the first call and the (rare) terminal events.
     Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
 
 private:
@@ -67,30 +65,24 @@ private:
         /// at all (plain source); such lanes are read on demand without deferral bookkeeping.
         Columns boundary;
 
-        /// Granted read-ahead groups; a group is consumed by the next virtual row. Kept at
-        /// most 1 deliberately, but note what that bounds: the window bounds how many lanes
-        /// read at once, and the buffer caps bound how much *real data* a lane holds ahead of
-        /// the merge. A lane whose groups are entirely filtered out keeps re-earning credit
-        /// (via `topUpReadAhead` while it stays among the nearest boundaries, or the free-run
-        /// below) and scans on: crossing those groups is work the merge would demand anyway,
-        /// and vr0/vr1 read them just as eagerly; obsolete boundary announcements are
-        /// collapsed in the buffer, so this costs one buffered virtual row, not an unbounded
-        /// queue. A demand-paced lane re-earns its credit at every delivery, so a busy lane
-        /// is not throttled. A lane that never produces virtual rows keeps its credit and
-        /// streams like a plain bounded buffer.
+        /// Permission to read one group ahead; consumed by the next virtual row, granted
+        /// again when the merge asks for the lane, when the lane just fed the merge, and by
+        /// `topUpReadAhead`. So the window limits how many lanes read at once, and the buffer
+        /// caps limit how much real data a lane accumulates ahead of the merge. A lane that
+        /// never produces virtual rows keeps its credit and streams like a plain buffer.
         size_t credit = 0;
 
-        /// Real rows seen since the last virtual row, and how many consecutive groups ended
-        /// with none. While a filter discards entire groups, parking the lane at every group
-        /// boundary buys nothing (the merge consumes the boundaries and comes right back) and
-        /// only stalls the scan behind per-group wake-ups; after `free_run_dataless_groups`
-        /// such groups the virtual rows stop consuming the credit and the lane free-runs like
-        /// a single-shot one until real data appears.
+        /// Real rows since the last virtual row, and how many groups in a row ended with
+        /// none. While whole groups are filtered out there is nothing to wait for between
+        /// them — the merge consumes the announcement and comes right back — so after
+        /// `free_run_dataless_groups` such groups the virtual rows stop consuming the credit
+        /// and the lane reads on until real data appears.
         size_t rows_in_current_group = 0;
         size_t dataless_groups = 0;
     };
 
-    /// See Lane::dataless_groups. The initial virtual row counts as the first one.
+    /// See Lane::dataless_groups. The initial virtual row arrives before any data was read
+    /// and counts as the first data-less group, so 2 means: one actually empty group.
     static constexpr size_t free_run_dataless_groups = 2;
 
     /// Returns true if any port state changed (more progress may be possible).
@@ -104,7 +96,7 @@ private:
     void grantCredit(size_t lane_num);
     void touchLane(size_t lane_num);
     void topUpReadAhead();
-    bool speculationAllowed() const { return read_ahead_window > 0 && !has_collation; }
+    bool speculationAllowed() const { return read_ahead_window > 0; }
     bool boundaryLess(const Lane & lhs, const Lane & rhs) const;
     Columns extractBoundary(const Chunk & chunk) const;
 
@@ -114,13 +106,6 @@ private:
     const size_t max_rows_to_buffer;
     const size_t max_bytes_to_buffer;
     const size_t read_ahead_window;
-    /// With a collated sort description the boundary comparison in `boundaryLess` would need
-    /// collator-aware comparison, so speculation is disabled and lanes are read strictly on
-    /// demand — same as the read-ahead window the merge used to have (it was also guarded by
-    /// `!has_collation`). In practice this path is not reachable: virtual rows come from
-    /// reading in the binary order of the primary key, which a collated ORDER BY does not
-    /// follow, so read-in-order does not apply there; the guard is defensive.
-    bool has_collation = false;
 
     std::vector<Lane> lanes;
 

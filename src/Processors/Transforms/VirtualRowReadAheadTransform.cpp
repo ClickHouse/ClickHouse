@@ -32,9 +32,10 @@ VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
     , max_bytes_to_buffer(max_bytes_to_buffer_)
     , read_ahead_window(read_ahead_window_)
 {
+    /// Boundary comparison in `boundaryLess` is collation-unaware; the sorting step does not
+    /// insert this transform for collated sort descriptions.
     for (const auto & desc : description)
-        if (desc.collator)
-            has_collation = true;
+        chassert(!desc.collator);
 
     lanes.resize(num_lanes);
     lane_touch_epoch.resize(num_lanes, 0);
@@ -329,6 +330,9 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare(const UpdatedInputPorts
         touch(port);
     }
 
+    /// A finished port changes the termination state, which only the full pass tracks; an
+    /// unattributable wake-up (nothing touched) is answered with a full look for the same
+    /// reason. Both are rare.
     if (port_finished || touched_lanes.empty())
         return prepare();
 
