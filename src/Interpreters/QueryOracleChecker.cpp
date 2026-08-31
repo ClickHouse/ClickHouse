@@ -91,6 +91,7 @@ extern const Event ASTFuzzerOracleDictGetChecks;
 extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 extern const Event ASTFuzzerOracleAlterModifyChecks;
 extern const Event ASTFuzzerOracleLightweightUpdateChecks;
+extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -4084,6 +4085,84 @@ bool QueryOracleChecker::checkLightweightUpdate(const ASTSelectQuery &, const Co
             context, &fixture);
 
     LOG_TRACE(logger, "lightweight update oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkWindowEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_03): two provably-equivalent window-frame spellings must return the
+    /// identical per-row result.
+    ///   A. default-frame explicitness — with ORDER BY over a unique key, the implicit default frame
+    ///      equals the explicit RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
+    ///   B. whole-partition frame-mode equivalence — a BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED
+    ///      FOLLOWING frame covers the entire partition regardless of the ROWS/RANGE/GROUPS mode, so an
+    ///      order-insensitive aggregate (sum/count) is identical across all three.
+    /// A divergence is a real window-frame bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("window", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (id UInt32, k UInt8, x Int64) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number, number % 5, toInt64(number % 13) - 6 FROM numbers(500)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "window equivalence oracle: {}", tbl);
+
+    /// Relation A: default frame == explicit RANGE UNBOUNDED PRECEDING .. CURRENT ROW (id is unique).
+    auto def_opt = OracleExec::executeRows(
+        "SELECT id, sum(x) OVER (PARTITION BY k ORDER BY id) FROM " + tbl, context, ResultShape::SortedBag);
+    auto exp_opt = OracleExec::executeRows(
+        "SELECT id, sum(x) OVER (PARTITION BY k ORDER BY id RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM " + tbl,
+        context, ResultShape::SortedBag);
+    if (!def_opt || !exp_opt)
+        return false;
+    if (!OracleCompare::equal(*def_opt, *exp_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "window equivalence oracle mismatch (default vs explicit default frame)!\n"
+                "implicit default ({} rows) vs RANGE UNBOUNDED PRECEDING..CURRENT ROW ({} rows) on {}\n{}",
+                def_opt->size(), exp_opt->size(), tbl,
+                OracleCompare::diffSummary(*def_opt, *exp_opt)),
+            context, &fixture);
+
+    /// Relation B: whole-partition frame is identical across ROWS / RANGE / GROUPS modes.
+    const String whole = " OVER (PARTITION BY k ORDER BY id %MODE% BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM " + tbl;
+    auto make = [&](std::string_view mode)
+    {
+        String q = "SELECT id, sum(x)" + whole;
+        const std::string tok = "%MODE%";
+        q.replace(q.find(tok), tok.size(), mode);
+        return OracleExec::executeRows(q, context, ResultShape::SortedBag);
+    };
+    auto rows_opt = make("ROWS");
+    auto range_opt = make("RANGE");
+    auto groups_opt = make("GROUPS");
+    if (!rows_opt || !range_opt || !groups_opt)
+        return false;
+    if (!OracleCompare::equal(*rows_opt, *range_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "window equivalence oracle mismatch (whole-partition ROWS vs RANGE)!\n"
+                "ROWS ({} rows) vs RANGE ({} rows) on {}\n{}",
+                rows_opt->size(), range_opt->size(), tbl,
+                OracleCompare::diffSummary(*rows_opt, *range_opt)),
+            context, &fixture);
+    if (!OracleCompare::equal(*rows_opt, *groups_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "window equivalence oracle mismatch (whole-partition ROWS vs GROUPS)!\n"
+                "ROWS ({} rows) vs GROUPS ({} rows) on {}\n{}",
+                rows_opt->size(), groups_opt->size(), tbl,
+                OracleCompare::diffSummary(*rows_opt, *groups_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "window equivalence oracle passed");
     return true;
 }
 
