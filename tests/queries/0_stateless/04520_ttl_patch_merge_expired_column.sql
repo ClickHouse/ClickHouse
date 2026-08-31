@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS t_ttl_patch_expired SYNC;
 
 CREATE TABLE t_ttl_patch_expired (d DateTime, x Int32 TTL d + INTERVAL 1 SECOND, y Int32)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
 
 INSERT INTO t_ttl_patch_expired VALUES (now() - INTERVAL 1 HOUR, 1, 1);
 
