@@ -513,8 +513,6 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         /// Copy literals.
 
-        copy_end = op + length;
-
         /// input: Hello, world
         ///        ^-ip
         /// output: xyz
@@ -526,8 +524,14 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
-        if (unlikely(copy_end > output_end))
+        /// The literal has to fit in what is left of the output. `length` is attacker-controlled and
+        /// bounded only by `255 * source_size`, so the check is a distance rather than
+        /// `op + length > output_end`: the latter would form `copy_end` megabytes outside of the
+        /// destination before rejecting it, which is out-of-range pointer arithmetic.
+        if (unlikely(length > static_cast<size_t>(output_end - op)))
             return false;
+
+        copy_end = op + length;
 
         /// The literal has to be entirely inside the compressed payload.
         ///
@@ -588,10 +592,11 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
 
-        copy_end = op + length;
-
-        if (unlikely(copy_end > output_end))
+        /// A distance check, for the same reason as for the literal above.
+        if (unlikely(length > static_cast<size_t>(output_end - op)))
             return false;
+
+        copy_end = op + length;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
           * The worst case when offset = 1 and length = 4
