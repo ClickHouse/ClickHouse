@@ -818,9 +818,11 @@ def test_remote_host_filter_reload_for_persistent_table(started_cluster):
     )
     instance.query(
         f"CREATE TABLE remote_host_filter_reload (x UInt8) "
-        f"ENGINE = S3('{url}', 'minio', '{minio_secret_key}', 'CSV')"
+        f"ENGINE = S3('{url}', 'minio', '{minio_secret_key}', 'CSV', "
+        "headers('X-Object-Storage-Test' = '1'))"
     )
     try:
+        instance.query("SYSTEM RELOAD CONFIG")
         assert instance.query("SELECT * FROM remote_host_filter_reload") == "1\n"
         blocked_config = """
 <clickhouse>
