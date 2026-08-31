@@ -132,10 +132,10 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    /// The selector reads the table's inner data through storage handles the planner never sees
-    /// under this name, so the read grant is enforced here.
+    auto storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
+    /// Grant first: the cast's engine error must not fingerprint a table the caller cannot read.
     context->checkAccess(AccessType::SELECT, time_series_storage_id);
+    auto time_series_storage = storagePtrToTimeSeries(storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -814,9 +814,10 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
-    /// Same contract as getConfiguration: this entry is reachable on its own.
+    auto storage = DatabaseCatalog::instance().getTable(config.time_series_storage_id, context);
+    /// Grant before the engine cast, same as getConfiguration; this entry is reachable on its own.
     context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
+    auto time_series_storage = storagePtrToTimeSeries(storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
