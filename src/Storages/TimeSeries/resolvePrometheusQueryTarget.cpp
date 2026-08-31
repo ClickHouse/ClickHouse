@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
-#include <Storages/Distributed/DistributedSettings.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageTimeSeries.h>
@@ -13,12 +13,6 @@
 
 namespace DB
 {
-
-namespace DistributedSetting
-{
-    extern const DistributedSettingsBool skip_unavailable_shards;
-    extern const DistributedSettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
-}
 
 namespace ErrorCodes
 {
@@ -63,16 +57,18 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
     /// The generated cluster() call cannot carry the wrapper's DistributedSettings, so a wrapper
     /// declaring non-default shard-skipping would silently behave differently through a prometheus
     /// query than through a plain SELECT. Refuse rather than diverge; the query-level
-    /// `skip_unavailable_shards` setting still applies to the generated call.
-    const auto & distributed_settings = distributed->getDistributedSettingsRef();
-    if (distributed_settings[DistributedSetting::skip_unavailable_shards]
-        || distributed_settings[DistributedSetting::skip_unavailable_shards_mode].changed)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "This operation is not supported over table {} because it sets skip_unavailable_shards or "
-            "skip_unavailable_shards_mode: a prometheus query reads through a generated cluster() call, "
-            "which does not carry the table's Distributed settings",
-            storage.getStorageID().getNameForLogs());
+    /// `skip_unavailable_shards` setting still applies to the generated call. Read from the
+    /// metadata's declared changes: the concern is what the table declares, and the effective
+    /// settings are private to StorageDistributed.
+    if (const auto & settings_changes = distributed->getInMemoryMetadataPtr()->settings_changes)
+        for (const auto & change : settings_changes->as<const ASTSetQuery &>().changes)
+            if (change.name == "skip_unavailable_shards" || change.name == "skip_unavailable_shards_mode")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "This operation is not supported over table {} because it sets {}: a prometheus query "
+                    "reads through a generated cluster() call, which does not carry the table's "
+                    "Distributed settings",
+                    storage.getStorageID().getNameForLogs(), change.name);
 
     target.remote_time_series_storage_id.database_name = distributed->getRemoteDatabaseName();
     target.remote_time_series_storage_id.table_name = std::move(remote_table_name);
