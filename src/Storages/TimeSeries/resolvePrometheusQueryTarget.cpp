@@ -2,10 +2,12 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageTimeSeries.h>
@@ -13,6 +15,12 @@
 
 namespace DB
 {
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool skip_unavailable_shards;
+    extern const DistributedSettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
+}
 
 namespace ErrorCodes
 {
@@ -66,7 +74,8 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     /// at all.
     auto storage_id = storage.getStorageID();
     context->checkAccess(AccessType::SELECT, storage_id);
-    if (context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER))
+    auto row_policy_filter = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "A row policy on {} is not supported for prometheus queries over a Distributed table: "
@@ -81,14 +90,21 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     /// settings are private to StorageDistributed.
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     if (const auto & settings_changes = metadata->settings_changes)
-        for (const auto & change : settings_changes->as<const ASTSetQuery &>().changes)
-            if (change.name == "skip_unavailable_shards" || change.name == "skip_unavailable_shards_mode")
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "This operation is not supported over table {} because it sets {}: a prometheus query "
-                    "reads through a generated cluster() call, which does not carry the table's "
-                    "Distributed settings",
-                    storage_id.getNameForLogs(), change.name);
+    {
+        /// Compared by value, not presence: declaring the default explicitly changes nothing about
+        /// the read and must not refuse it.
+        DistributedSettings declared;
+        declared.applyChanges(settings_changes->as<const ASTSetQuery &>().changes);
+        const DistributedSettings defaults;
+        if (declared[DistributedSetting::skip_unavailable_shards].value != defaults[DistributedSetting::skip_unavailable_shards].value
+            || declared[DistributedSetting::skip_unavailable_shards_mode].value != defaults[DistributedSetting::skip_unavailable_shards_mode].value)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "This operation is not supported over table {} because it sets skip_unavailable_shards or "
+                "skip_unavailable_shards_mode to a non-default value: a prometheus query reads through a "
+                "generated cluster() call, which does not carry the table's Distributed settings",
+                storage_id.getNameForLogs());
+    }
 }
 
 }

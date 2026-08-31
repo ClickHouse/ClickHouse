@@ -81,6 +81,24 @@ SELECT * FROM prometheusQuery(ts_remote_tf, 'm', 140); -- { serverError UNEXPECT
 CREATE TABLE ts_nested AS ts_all ENGINE = Distributed(test_shard_localhost, currentDatabase(), ts_dist);
 SELECT * FROM prometheusQuery(ts_nested, 'm', 140); -- { serverError UNEXPECTED_TABLE_ENGINE }
 
+SELECT '--- wrapper-level guards: row policies and declared Distributed settings ---';
+-- An always-true policy restricts nothing, so the rewrite preserves behavior exactly: must pass.
+CREATE ROW POLICY p_05055_true ON ts_dist USING 1 TO ALL;
+SELECT count() > 0 FROM prometheusQuery(ts_dist, 'm', 140);
+DROP ROW POLICY p_05055_true ON ts_dist;
+-- A real filter cannot be applied faithfully by the rewritten per-shard query: fail closed.
+CREATE ROW POLICY p_05055_real ON ts_dist USING metric_name = 'm' TO ALL;
+SELECT * FROM prometheusQuery(ts_dist, 'm', 140); -- { serverError NOT_IMPLEMENTED }
+DROP ROW POLICY p_05055_real ON ts_dist;
+-- Declaring the default explicitly changes nothing about the read: must pass.
+CREATE TABLE ts_skip_default AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 0;
+SELECT count() > 0 FROM prometheusQuery(ts_skip_default, 'm', 140);
+DROP TABLE ts_skip_default;
+-- A non-default value would be silently dropped by the generated cluster() call: fail closed.
+CREATE TABLE ts_skip_on AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 1;
+SELECT * FROM prometheusQuery(ts_skip_on, 'm', 140); -- { serverError NOT_IMPLEMENTED }
+DROP TABLE ts_skip_on;
+
 SELECT '--- the TimeSeries table functions still need a real TimeSeries table ---';
 SELECT count() FROM timeSeriesData(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
 SELECT count() FROM timeSeriesSamples(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
