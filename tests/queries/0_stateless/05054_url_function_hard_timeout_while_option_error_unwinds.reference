@@ -1,0 +1,4 @@
+the error of the only option was caught before it was handled
+the execution time limit was exceeded while the error was held
+the timed out query is reported as timed out
+1

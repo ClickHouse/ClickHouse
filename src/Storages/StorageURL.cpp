@@ -921,6 +921,22 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             /// catch, so ask the query status once more before the error is reported.
             CurrentThread::checkIfNotCancelled();
 
+            /// `checkIfNotCancelled` only observes a query which has already been killed, and the
+            /// asynchronous CancellationChecker kills a query whose `max_execution_time` has run out
+            /// with the `throw` overflow mode only on its own schedule. Ask the query status about the
+            /// time limit directly as well, the same way as stop_if_cancelled above: it throws the
+            /// timeout error for the `throw` overflow mode, so that a hard timeout expiring while the
+            /// error of the request unwinds is reported as itself instead of as the stale HTTP error.
+            /// With the `break` overflow mode it returns false instead of throwing, and the timeout is
+            /// latched in the flag - for the readers which have one - as a soft cancellation, whose
+            /// interrupted read the source discards, see generate.
+            if (auto query_status = context_->getProcessListElementSafe();
+                query_status && !query_status->checkTimeLimit() && cancellation)
+            {
+                cancellation->cancel(true);
+                throw ReadInterruptedException(std::current_exception());
+            }
+
             if (options == 1)
                 throw;
 
