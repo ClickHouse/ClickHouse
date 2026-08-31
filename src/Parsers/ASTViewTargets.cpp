@@ -374,6 +374,17 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         target.kind = *kind_opt;
         if (!seen_kinds.insert(target.kind).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization; each kind may appear at most once", kind_str, i);
+        /// `ViewTarget::Inner` is kept only so that the UUID mappings of old DDL log entries still parse
+        /// (`CreateQueryUUIDs`); no `CREATE` syntax produces an `Inner` target any more, because `WINDOW VIEW`
+        /// - the only form with an `INNER ENGINE` / separately-specified inner table - was removed. Formatting
+        /// such a target back to SQL is lossy in both directions: `ASTCreateQuery::formatQueryImpl` emits an
+        /// `INNER ENGINE ...` clause the SQL parser no longer accepts, and drops everything else the target
+        /// carries. Reject it here instead of round-tripping it.
+        if (target.kind == ViewTarget::Inner)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTViewTargets JSON must not carry an 'Inner' target (at index {} in 'targets' array) during "
+                "AST JSON deserialization: `WINDOW VIEW` was removed and no `CREATE` query has an inner target",
+                i);
         if (target_obj->has("table_name"))
         {
             /// Restore the `StorageID` parts separately (see `writeJSON`); the database may be empty

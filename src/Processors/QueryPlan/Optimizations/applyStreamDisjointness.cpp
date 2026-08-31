@@ -167,7 +167,6 @@ static StreamDisjointnessProperty applyStreamDisjointness(
             aggregating->skipMerging();
         }
 
-        /// TODO (nihalzp): For Sharded Aggregation, we can consider this a source and propagate here.
         return {};
     }
 
