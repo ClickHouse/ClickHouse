@@ -3,7 +3,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -77,35 +81,46 @@ TEST(ColumnAggregateFunction, EnsureOwnershipExceptionLeavesCorruptedState)
 /// `insert` accepts a field whose state type is spelled differently but describes the same state,
 /// which is what lets a `LowCardinality` argument survive the round trip through `getDefault`.
 /// It must not accept a state of a different serialization version: version 0 is not printed in a
-/// type name, so a legacy state is spelled exactly like an unversioned one, and resolving that
-/// absent version to the function's default would let a version 0 payload be read as version 1.
+/// type name, so a legacy state is spelled exactly like an unversioned one, and the two sides have
+/// to resolve an absent version the way `deserialize` will.
 TEST(ColumnAggregateFunction, InsertRejectsStateOfAnotherVersion)
 {
     tryRegisterAggregateFunctions();
 
     using namespace DB;
 
-    /// `groupBitmap` is versioned: its default version is 1.
+    /// `sumMap` is one of the two genuinely versioned families in the tree: version 0 serializes each
+    /// value with its own type and version 1 with the promoted one, so with `UInt8` values the same
+    /// state is one byte per value at version 0 and eight at version 1. Most aggregate functions
+    /// ignore the version entirely - `groupBitmap` among them, despite sitting in the same file as
+    /// the versioned `groupBitmapAnd` - and with such a function this test would assert nothing.
     AggregateFunctionFactory & factory = AggregateFunctionFactory::instance();
-    DataTypes argument_types = {std::make_shared<DataTypeUInt32>()};
+    const auto array_of_uint8 = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
+    DataTypes argument_types = {array_of_uint8, array_of_uint8};
     Array params;
     AggregateFunctionProperties properties;
-    auto aggregate_function = factory.get("groupBitmap", NullsAction::EMPTY, argument_types, params, properties);
+    auto aggregate_function = factory.get("sumMap", NullsAction::EMPTY, argument_types, params, properties);
 
-    auto values = ColumnUInt32::create();
-    values->insert(Field(UInt64(42)));
-    const IColumn * value_columns[1] = {values.get()};
+    /// The premise of everything below, asserted rather than assumed.
+    ASSERT_TRUE(aggregate_function->isVersioned());
+    ASSERT_EQ(aggregate_function->getDefaultVersion(), 1u);
+
+    auto keys = ColumnArray::create(ColumnUInt8::create());
+    auto values = ColumnArray::create(ColumnUInt8::create());
+    keys->insert(Field(Array{Field(UInt64(1))}));
+    values->insert(Field(Array{Field(UInt64(5))}));
+    const IColumn * argument_columns[2] = {keys.get(), values.get()};
 
     Arena arena;
 
-    /// Build a real, non-empty state for a given version. `operator[]` then spells the field the way
+    /// Build a real, non-empty state at a given version. `operator[]` then spells the field the way
     /// that version prints it and carries a payload serialized at that version, so the only thing that
     /// can reject it on the other column is the version check itself - not a failure to read the bytes.
-    auto make_column = [&](size_t version)
+    auto make_column = [&](std::optional<size_t> version)
     {
         auto column = ColumnAggregateFunction::create(aggregate_function, version);
         column->insertDefault();
-        aggregate_function->add(column->getData()[0], value_columns, 0, &arena);
+        aggregate_function->add(column->getData()[0], argument_columns, 0, &arena);
         return column;
     };
 
@@ -115,8 +130,14 @@ TEST(ColumnAggregateFunction, InsertRejectsStateOfAnotherVersion)
     const Field field_v0 = (*column_v0)[0];
     const Field field_v1 = (*column_v1)[0];
 
-    ASSERT_FALSE(field_v0.safeGet<AggregateFunctionStateData>().data.empty());
-    ASSERT_FALSE(field_v1.safeGet<AggregateFunctionStateData>().data.empty());
+    const auto & data_v0 = field_v0.safeGet<AggregateFunctionStateData>().data;
+    const auto & data_v1 = field_v1.safeGet<AggregateFunctionStateData>().data;
+
+    ASSERT_FALSE(data_v0.empty());
+    ASSERT_FALSE(data_v1.empty());
+    /// The two versions differ in the bytes and not only in the type name, so accepting one for the
+    /// other would really misread the payload.
+    ASSERT_NE(data_v0, data_v1);
 
     auto expect_rejected = [](ColumnAggregateFunction & column, const Field & field)
     {
@@ -138,24 +159,33 @@ TEST(ColumnAggregateFunction, InsertRejectsStateOfAnotherVersion)
     EXPECT_FALSE(column_v1->tryInsert(field_v0));
     EXPECT_FALSE(column_v0->tryInsert(field_v1));
 
-    /// A state of the column's own version is still accepted, so the guard rejects the version
-    /// rather than everything that reaches the slow path.
+    /// A state of the column's own version is still accepted, so the guard rejects the version rather
+    /// than everything that reaches the slow path.
     EXPECT_NO_THROW(column_v1->insert(field_v1));
     EXPECT_NO_THROW(column_v0->insert(field_v0));
 
-    /// A column built without an explicit version prints its state unversioned, but `insert` passes
-    /// that absent version straight to `deserialize`, which reads it as the function's default. The
-    /// comparison has to use the same resolution, or a state explicitly spelled as version 0 would be
-    /// accepted here and then read at the default version.
+    /// A column built without an explicit version hands that absent version straight to `deserialize`,
+    /// which reads it as the function's default. The comparison has to use the same resolution: a state
+    /// explicitly spelled as version 0 is rejected, and one spelled as the default version accepted,
+    /// even though the column itself prints no version at all.
     auto column_default = ColumnAggregateFunction::create(aggregate_function);
 
     AggregateFunctionStateData explicit_v0;
-    explicit_v0.name = "AggregateFunction(0, groupBitmap, UInt32)";
-    explicit_v0.data = field_v0.safeGet<AggregateFunctionStateData>().data;
+    explicit_v0.name = "AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8))";
+    explicit_v0.data = data_v0;
+
+    /// Neither `getTypeString` nor `DataTypeAggregateFunction::getName` ever prints a zero version, so
+    /// this spelling only reaches us from metadata written by an older server. Pin it down: if the name
+    /// ever stopped parsing, the slow path would bail out early and the rejection below would pass for
+    /// the wrong reason.
+    const auto explicit_v0_type = DataTypeFactory::instance().tryGet(explicit_v0.name);
+    ASSERT_TRUE(explicit_v0_type != nullptr);
+    ASSERT_EQ(
+        typeid_cast<const DataTypeAggregateFunction &>(*explicit_v0_type).getVersionIfExplicit(),
+        std::optional<size_t>(0));
 
     expect_rejected(*column_default, Field(explicit_v0));
     EXPECT_FALSE(column_default->tryInsert(Field(explicit_v0)));
 
-    /// The default version for `groupBitmap` is 1, so a version 1 state is what it does accept.
     EXPECT_NO_THROW(column_default->insert(field_v1));
 }
