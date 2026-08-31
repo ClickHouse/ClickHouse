@@ -56,6 +56,8 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${POC}"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${POC}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE, SELECT, INSERT ON ${POC}.* TO ${USER}"
+# The test config sets table_engines_require_grant, so naming the engine is a precondition every arm needs.
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON EmbeddedRocksDB TO ${USER}"
 
 # The victim is an admin table in another database, holding a row ${USER} has no grant to read.
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${VICTIM} (k String, v String) ENGINE = EmbeddedRocksDB(0, '${SECRET_DIR}', 0) PRIMARY KEY k SETTINGS optimize_for_bulk_insert = 0"
