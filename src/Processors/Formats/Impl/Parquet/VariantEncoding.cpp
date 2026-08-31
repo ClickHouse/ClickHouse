@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <base/unaligned.h>
 
 #include <algorithm>
@@ -26,6 +27,7 @@
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace DB::Parquet
@@ -67,14 +69,37 @@ enum class BasicType : UInt8
     Array = 3
 };
 
+void checkRange(std::string_view data, size_t pos, size_t size)
+{
+    if (pos > data.size() || size > data.size() - pos)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed Parquet variant: {} bytes are needed at offset {}, but the blob is {} bytes",
+            size, pos, data.size());
+}
+
 template <typename T>
 T readFixed(std::string_view data, size_t pos)
 {
+    checkRange(data, pos, sizeof(T));
     return unalignedLoadLittleEndian<T>(data.data() + pos);
+}
+
+UInt8 readByte(std::string_view data, size_t pos)
+{
+    checkRange(data, pos, 1);
+    return UInt8(data[pos]);
+}
+
+std::string_view readSlice(std::string_view data, size_t pos, size_t size)
+{
+    checkRange(data, pos, size);
+    return data.substr(pos, size);
 }
 
 UInt32 readUnsigned(std::string_view data, size_t pos, UInt8 size)
 {
+    checkRange(data, pos, size);
     UInt32 res = 0;
     for (UInt8 i = 0; i < size; ++i)
         res |= static_cast<UInt32>(data[pos + i]) << (8 * i);
@@ -91,18 +116,25 @@ struct Metadata
 
     std::string_view getName(UInt32 id) const
     {
+        if (id >= count)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Malformed Parquet variant: object field refers to dictionary entry {}, but the metadata "
+                "dictionary has {} entries", id, count);
         const UInt32 begin = readUnsigned(blob, offsets_pos + size_t(id) * offset_size, offset_size);
         const UInt32 end = readUnsigned(blob, offsets_pos + (size_t(id) + 1) * offset_size, offset_size);
-        return blob.substr(names_pos + begin, end - begin);
+        if (end < begin)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Malformed Parquet variant: metadata dictionary entry {} ends at {}, before its start {}",
+                id, end, begin);
+        return readSlice(blob, names_pos + begin, end - begin);
     }
 };
 
 Metadata parseMetadata(std::string_view blob)
 {
-    if (blob.empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Empty Parquet variant metadata");
-
-    const UInt8 header = UInt8(blob[0]);
+    const UInt8 header = readByte(blob, 0);
     const UInt8 version = header & 0x0F;
     if (version != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported Parquet variant metadata version {}", UInt16(version));
@@ -113,6 +145,7 @@ Metadata parseMetadata(std::string_view blob)
     res.count = readUnsigned(blob, 1, res.offset_size);
     res.offsets_pos = 1 + res.offset_size;
     res.names_pos = res.offsets_pos + (size_t(res.count) + 1) * res.offset_size;
+    checkRange(blob, res.offsets_pos, res.names_pos - res.offsets_pos);
     return res;
 }
 
@@ -122,7 +155,13 @@ struct DecodedValue
     Field field;
 };
 
-DecodedValue decodeValue(std::string_view data, size_t pos, const Metadata & metadata, size_t depth);
+struct DecodeContext
+{
+    const Metadata & metadata;
+    size_t max_depth;
+};
+
+DecodedValue decodeValue(std::string_view data, size_t pos, const DecodeContext & context, size_t depth);
 
 DecodedValue decodePrimitive(std::string_view data, size_t pos, PrimitiveType type_id)
 {
@@ -207,12 +246,12 @@ DecodedValue decodePrimitive(std::string_view data, size_t pos, PrimitiveType ty
         case PrimitiveType::String:
         {
             const UInt32 length = readFixed<UInt32>(data, pos);
-            return {std::make_shared<DataTypeString>(), Field(String(data.substr(pos + 4, length)))};
+            return {std::make_shared<DataTypeString>(), Field(String(readSlice(data, pos + 4, length)))};
         }
     }
 }
 
-DecodedValue decodeObject(std::string_view data, size_t pos, UInt8 value_header, const Metadata & metadata, size_t depth)
+DecodedValue decodeObject(std::string_view data, size_t pos, UInt8 value_header, const DecodeContext & context, size_t depth)
 {
     const bool is_large = (value_header >> 4) & 0x01;
     const UInt8 id_size = ((value_header >> 2) & 0x03) + 1;
@@ -222,6 +261,7 @@ DecodedValue decodeObject(std::string_view data, size_t pos, UInt8 value_header,
     const size_t ids_pos = pos + (is_large ? 4 : 1);
     const size_t offsets_pos = ids_pos + size_t(num_elements) * id_size;
     const size_t values_pos = offsets_pos + (size_t(num_elements) + 1) * offset_size;
+    checkRange(data, ids_pos, values_pos - ids_pos);
 
     Map map;
     map.reserve(num_elements);
@@ -229,8 +269,8 @@ DecodedValue decodeObject(std::string_view data, size_t pos, UInt8 value_header,
     {
         const UInt32 field_id = readUnsigned(data, ids_pos + size_t(i) * id_size, id_size);
         const UInt32 offset = readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
-        DecodedValue element = decodeValue(data, values_pos + offset, metadata, depth + 1);
-        map.push_back(Tuple{Field(String(metadata.getName(field_id))), std::move(element.field)});
+        DecodedValue element = decodeValue(data, values_pos + offset, context, depth + 1);
+        map.push_back(Tuple{Field(String(context.metadata.getName(field_id))), std::move(element.field)});
     }
 
     return {
@@ -240,7 +280,7 @@ DecodedValue decodeObject(std::string_view data, size_t pos, UInt8 value_header,
     };
 }
 
-DecodedValue decodeArray(std::string_view data, size_t pos, UInt8 value_header, const Metadata & metadata, size_t depth)
+DecodedValue decodeArray(std::string_view data, size_t pos, UInt8 value_header, const DecodeContext & context, size_t depth)
 {
     const bool is_large = (value_header >> 2) & 0x01;
     const UInt8 offset_size = (value_header & 0x03) + 1;
@@ -248,13 +288,14 @@ DecodedValue decodeArray(std::string_view data, size_t pos, UInt8 value_header, 
     const UInt32 num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
     const size_t offsets_pos = pos + (is_large ? 4 : 1);
     const size_t values_pos = offsets_pos + (size_t(num_elements) + 1) * offset_size;
+    checkRange(data, offsets_pos, values_pos - offsets_pos);
 
     Array array;
     array.reserve(num_elements);
     for (UInt32 i = 0; i < num_elements; ++i)
     {
         const UInt32 offset = readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
-        array.push_back(decodeValue(data, values_pos + offset, metadata, depth + 1).field);
+        array.push_back(decodeValue(data, values_pos + offset, context, depth + 1).field);
     }
 
     return {
@@ -263,9 +304,17 @@ DecodedValue decodeArray(std::string_view data, size_t pos, UInt8 value_header, 
     };
 }
 
-DecodedValue decodeValue(std::string_view data, size_t pos, const Metadata & metadata, size_t depth)
+DecodedValue decodeValue(std::string_view data, size_t pos, const DecodeContext & context, size_t depth)
 {
-    const UInt8 header = UInt8(data[pos]);
+    checkStackSize();
+    if (context.max_depth != 0 && depth > context.max_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet variant value is nested deeper than the limit ({}). It can be raised with the "
+            "setting 'max_parser_depth', but a very deeply nested value is rarely intentional",
+            context.max_depth);
+
+    const UInt8 header = readByte(data, pos);
     const BasicType basic_type = BasicType(header & 0x03);
     const UInt8 value_header = header >> 2;
 
@@ -274,11 +323,11 @@ DecodedValue decodeValue(std::string_view data, size_t pos, const Metadata & met
         case BasicType::Primitive:
             return decodePrimitive(data, pos + 1, PrimitiveType(value_header));
         case BasicType::ShortString:
-            return {std::make_shared<DataTypeString>(), Field(String(data.substr(pos + 1, value_header)))};
+            return {std::make_shared<DataTypeString>(), Field(String(readSlice(data, pos + 1, value_header)))};
         case BasicType::Object:
-            return decodeObject(data, pos + 1, value_header, metadata, depth);
+            return decodeObject(data, pos + 1, value_header, context, depth);
         default:
-            return decodeArray(data, pos + 1, value_header, metadata, depth);
+            return decodeArray(data, pos + 1, value_header, context, depth);
     }
 }
 
@@ -289,7 +338,9 @@ void insertDynamicValue(ColumnDynamic & column, const DataTypePtr & type, const 
     if (!column.getVariantInfo().variant_name_to_discriminator.contains(type_name)
         && !column.addNewVariant(type, type_name))
     {
-        column.insert(value);
+        auto single_value_column = type->createColumn();
+        single_value_column->insert(value);
+        column.insertValueIntoSharedVariant(*single_value_column, type, type_name, 0);
         return;
     }
 
@@ -313,7 +364,7 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
 
 }
 
-void decodeVariantColumn(const IColumn & metadata, const IColumn & value, ColumnDynamic & output, size_t num_rows)
+void decodeVariantColumn(const IColumn & metadata, const IColumn & value, ColumnDynamic & output, size_t num_rows, size_t max_parser_depth)
 {
     const NullMap * metadata_nulls = nullptr;
     const NullMap * value_nulls = nullptr;
@@ -329,8 +380,16 @@ void decodeVariantColumn(const IColumn & metadata, const IColumn & value, Column
         }
 
         const std::string_view blob = metadata_strings.getDataAt(row);
+        const std::string_view value_blob = value_strings.getDataAt(row);
+        if (blob.empty() || value_blob.empty())
+        {
+            output.insertDefault();
+            continue;
+        }
+
         auto metadata_parsed = parseMetadata(blob);
-        const DecodedValue decoded = decodeValue(value_strings.getDataAt(row), 0, metadata_parsed, 0);
+        const DecodeContext context{.metadata = metadata_parsed, .max_depth = max_parser_depth};
+        const DecodedValue decoded = decodeValue(value_blob, 0, context, 0);
 
         if (decoded.type)
             insertDynamicValue(output, decoded.type, decoded.field);

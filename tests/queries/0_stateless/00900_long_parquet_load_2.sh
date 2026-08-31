@@ -61,6 +61,14 @@ EXCLUDE=(
     04065_optional_struct_nullable_leaf_under_list.parquet
     # Hand-crafted file with an inconsistent bloom filter size for the 04654 out-of-bounds test.
     04654_bloom_filter_bitset_out_of_bounds.parquet
+    # Variant fixtures for the 04928-04933 tests. This test hashes a file through GROUP BY, which
+    # rejects the Dynamic columns they are read as, so there is nothing for it to check here.
+    04928_variant_spark.parquet
+    04929_variant_all_types.parquet
+    04930_variant_shredded.parquet
+    04931_variant_max_dynamic_types.parquet
+    04932_variant_null.parquet
+    04933_variant_binary_and_string.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

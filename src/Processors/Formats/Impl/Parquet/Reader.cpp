@@ -3289,7 +3289,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
         res = output_info.input_type->createColumn();
         res->reserve(num_rows);
-        decodeVariantColumn(*metadata, *value, assert_cast<ColumnDynamic &>(*res), num_rows);
+        decodeVariantColumn(*metadata, *value, assert_cast<ColumnDynamic &>(*res), num_rows, options.format.max_parser_depth);
     }
     else
     {
