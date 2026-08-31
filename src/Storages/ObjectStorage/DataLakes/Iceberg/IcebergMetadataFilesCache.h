@@ -81,6 +81,7 @@ struct ManifestFileCacheKey
     Iceberg::ManifestFileContentType content_type;
     /// Partition spec the manifest was written with, needed to rewrite each manifest under its own spec during compaction after partition evolution.
     Int32 partition_spec_id;
+    std::optional<UInt64> first_row_id;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
@@ -95,7 +96,7 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache [file_path --> ManifestFileCacheKeys]
     /// - manifest file [file_path --> Iceberg::ManifestFileCacheableInfo]
     std::variant<String, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo> cached_element;
-    Int64 memory_bytes;
+    size_t memory_bytes;
 
     explicit IcebergMetadataFilesCacheCell(String && metadata_json_str)
         : cached_element(std::move(metadata_json_str))

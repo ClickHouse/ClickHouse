@@ -2,6 +2,7 @@
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
@@ -40,15 +41,10 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsString ai_function_text_default_credentials;
     extern const SettingsBool ai_function_allow_insecure_endpoint;
 }
@@ -56,7 +52,8 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
+    extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
 }
 
 namespace
@@ -148,13 +145,6 @@ Field readAIParamFromCollection(AIParamKind kind, const NamedCollectionPtr & col
     std::unreachable();
 }
 
-}
-
-FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
-{
-    if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
 bool FunctionBaseAI::isStringToStringMap(const IDataType & type)
@@ -376,7 +366,7 @@ AIParamSpecs FunctionBaseAI::embeddingParams()
     };
 }
 
-FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
+void FunctionBaseAI::embedTexts(
     IAIProvider & provider,
     const String & model,
     UInt64 dimensions,
@@ -387,10 +377,19 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
     UInt64 retry_delay_ms,
     bool throw_on_error,
     AIQuotaTracker & quota,
-    const ConnectionTimeouts & timeouts)
+    const ConnectionTimeouts & timeouts,
+    EmbeddingResult & result)
 {
-    EmbeddingResult result;
     result.embeddings.resize(inputs.size());
+
+    UInt64 api_calls = 0;
+    UInt64 input_tokens = 0;
+
+    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, input_tokens);
+    });
 
     for (size_t batch_start = 0; batch_start < inputs.size(); batch_start += max_batch_size)
     {
@@ -414,19 +413,20 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
         bool batch_ok = false;
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request.
-            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-            if (quota.checkQuotas())
+            /// Reserve an API-call slot before each request; this also performs a quota check.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
+            if (!quota.recordApiCall())
                 break;
 
             try
             {
-                /// Update api_calls/quotas before call so failed calls are still added to total.
-                ++result.api_calls;
-                quota.recordAttempt();
-                ai_embedding_response = provider.embed(ai_embedding_request, timeouts);
-                result.input_tokens += ai_embedding_response.input_tokens;
-                quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                /// Count the call before issuing it, so a failed request is still counted.
+                ++api_calls;
+                SCOPE_EXIT({
+                    input_tokens += ai_embedding_response.input_tokens;
+                    quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                });
+                provider.embed(ai_embedding_request, timeouts, ai_embedding_response);
                 batch_ok = true;
                 break;
             }
@@ -460,8 +460,6 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
             ++result.texts_embedded;
         }
     }
-
-    return result;
 }
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -499,11 +497,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
 
-    AIQuotaTracker quota(
-        settings[Setting::ai_function_max_input_tokens_per_query].value,
-        settings[Setting::ai_function_max_output_tokens_per_query].value,
-        settings[Setting::ai_function_max_api_calls_per_query].value,
-        settings[Setting::ai_function_throw_on_quota_exceeded].value);
+    /// Shared across every AI function call in the query
+    auto quota_tracker = getContext()->getAIQuotaTracker();
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -517,6 +512,15 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 rows_processed = 0;
     UInt64 rows_skipped = 0;
 
+    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
+        ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
+        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
+        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
+    });
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         if (prompt_nullable && prompt_nullable->getNullMapData()[i])
@@ -526,7 +530,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        if (quota.checkQuotas())
+        if (quota_tracker->checkQuotas())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -539,9 +543,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request.
-            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-            if (quota.checkQuotas())
+            /// Reserve an API-call slot before each request; this also performs a quota check.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
+            if (!quota_tracker->recordApiCall())
                 break;
 
             try
@@ -555,15 +559,50 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.max_tokens = max_tokens;
                 ai_request.function_name = getName();
 
-                /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;
-                quota.recordAttempt();
 
-                auto ai_response = provider->call(ai_request, timeouts);
+                AIResponse ai_response;
+                SCOPE_EXIT({
+                    quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                    total_input_tokens += ai_response.input_tokens;
+                    total_output_tokens += ai_response.output_tokens;
+                });
+                provider->call(ai_request, timeouts, ai_response);
 
-                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
-                total_input_tokens += ai_response.input_tokens;
-                total_output_tokens += ai_response.output_tokens;
+                /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
+                /// interpolating it into an exception message that reaches the logs and `system.query_log`.
+                const String safe_finish_reason = sanitizeForLog(ai_response.raw_finish_reason);
+
+                /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
+                switch (ai_response.finish_reason)
+                {
+                    case FinishReason::Complete:
+                    case FinishReason::Unknown: /// Don't throw on Unknown, could be new valid reason in new API version
+                        break;
+                    case FinishReason::Truncated:
+                        /// Differentiate between model hitting our output cap and exhausting its context window
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_TRUNCATED,
+                            "AI provider returned a truncated response (finish_reason='{}'): {}",
+                            safe_finish_reason,
+                            ai_response.raw_finish_reason == "model_context_window_exceeded"
+                                ? "the model ran out of context window before completing its answer. "
+                                  "Reduce the input or use a model with a larger context window."
+                                : "the model hit the output token limit before completing its answer. "
+                                  "Increase max_tokens or reduce the input.");
+                    case FinishReason::ContentFilter:
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
+                            "AI provider withheld or filtered the response (finish_reason='{}'): the returned answer "
+                            "is incomplete.",
+                            safe_finish_reason);
+                    case FinishReason::RequiresAction:
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
+                            "AI provider stopped expecting further caller action (finish_reason='{}') instead of "
+                            "returning a completed answer.",
+                            safe_finish_reason);
+                }
 
                 result = postProcessResponse(ai_response.result);
                 success = true;
@@ -595,12 +634,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             ++rows_skipped;
         }
     }
-
-    ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
-    ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
-    ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
-    ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
-    ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
     if (result_type->isNullable())
     {

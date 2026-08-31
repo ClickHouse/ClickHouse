@@ -870,22 +870,43 @@ void IcebergMetadata::createInitial(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
 
-    std::vector<String> metadata_files;
-    try
+    const bool catalog_manages_location = catalog && catalog->managesTableLocation();
+
+    String namespace_name;
+    String table_name;
+    if (catalog)
+        std::tie(namespace_name, table_name) = DataLake::parseTableName(table_id_.getTableName());
+
+    if (catalog_manages_location)
     {
-        metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
-    }
-    catch (const Exception & ex)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
-    }
-    if (!metadata_files.empty())
-    {
-        if (if_not_exists)
-            return;
-        else
+        DataLake::TableMetadata existing_table;
+        if (catalog->tryGetTableMetadata(namespace_name, table_name, existing_table))
+        {
+            if (if_not_exists)
+                return;
             throw Exception(
-                ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+                ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog", namespace_name, table_name);
+        }
+    }
+    else
+    {
+        std::vector<String> metadata_files;
+        try
+        {
+            metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        }
+        catch (const Exception & ex)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
+        }
+        if (!metadata_files.empty())
+        {
+            if (if_not_exists)
+                return;
+            else
+                throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+        }
     }
 
     String location_path = configuration_ptr->getRawPath().path;
@@ -913,37 +934,36 @@ void IcebergMetadata::createInitial(
         /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
         /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
         /// a namespace over the plain directory those files would leave behind.
-        catalog->createNamespaceIfNotExists(DataLake::parseTableName(table_id_.getTableName()).first, location_path);
+        catalog->createNamespaceIfNotExists(namespace_name, location_path);
     }
 
-    try
+    if (!catalog_manages_location)
     {
-        writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
-    }
-    catch (const Exception & e)
-    {
-        /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
-        /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
-        /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
-        const bool precondition_failed
-            = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-            || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-        if (if_not_exists && precondition_failed)
-            return;
-        throw;
-    }
+        try
+        {
+            writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
+        }
+        catch (const Exception & e)
+        {
+            const bool precondition_failed
+                = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
+                || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
+            if (if_not_exists && precondition_failed)
+                return;
+            throw;
+        }
 
-    if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
-    {
-        auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+        if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        {
+            auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+            writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+        }
     }
 
     if (catalog)
     {
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
             + configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix);
-        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
 }
@@ -1150,6 +1170,7 @@ IcebergFileRecord buildIcebergFileRecord(
     record.schema_id = processed->resolved_schema_id;
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
+    record.first_row_id = processed->first_row_id;
 
     for (const auto & [column_id, info] : parsed.columns_infos)
     {

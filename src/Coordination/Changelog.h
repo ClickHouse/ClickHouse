@@ -722,7 +722,8 @@ private:
     void backgroundChangelogOperationsThread();
 
     void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
-    void removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
+    /// Queues asynchronous removal; returns the operation so callers can wait for completion.
+    ChangelogFileOperationPtr removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
     void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;

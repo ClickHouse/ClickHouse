@@ -84,6 +84,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -140,7 +142,7 @@ ALTER TABLE table
 
 ```
 
-إذا أضفت فهرسًا إلى جدول موجود، فنوصي بإنشاء الفهرس فعليًا لأجزاء الجدول الحالية (وإلا فسيعتمد البحث في الأجزاء التي لا تحتوي على فهرس على عمليات مسح شاملة بطيئة).
+إذا أضفت فهرسًا إلى جدول موجود، فنوصي بإنشاء الفهرس فعليًا لأجزاء الجدول الحالية (وإلا فسيعتمد البحث في الأجزاء التي لا تحتوي على فهرس على عمليات مسح بالقوة الغاشمة بطيئة).
 
 ```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
@@ -160,6 +162,8 @@ ALTER TABLE table DROP INDEX text_idx;
   لاحظ أن كل سلسلة يمكن أن تتكون من عدة محارف (`', '` في المثال).
   قائمة الفواصل الافتراضية، إذا لم تُحدَّد صراحةً (على سبيل المثال: `tokenizer = splitByString`)، هي مسافة بيضاء واحدة `[' ']`.
 * `asciiCJK` يقسم السلاسل النصية إلى رموز وفقًا لقواعد حدود الكلمات في Unicode (على غرار [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). وتُشكِّل محارف ASCII الأبجدية الرقمية والشرطات السفلية رموزًا مع الموصلات (ASCII `:` للحروف، و`.` و`'` للمحارف من النوع نفسه). أما محارف Unicode غير التابعة لـ ASCII، بما في ذلك محارف [CJK](https://en.wikipedia.org/wiki/CJK_characters)، فتصبح رموزًا من محرف واحد.
+* `chinese[(granularity)]` يقسم النص الصيني إلى كلمات باستخدام قاموس ونموذج ماركوف مخفي (تتبع الخوارزمية [jieba](https://github.com/fxsjy/jieba)؛ وتُشتق بيانات القاموس والنموذج المضمّنة من [cppjieba](https://github.com/yanyiwu/cppjieba)). وبخلاف `asciiCJK`، الذي يعامل كل محرف غير ASCII كرمز من محرف واحد، يجمع `chinese` المحارف الصينية المتتالية في كلمات (على سبيل المثال، تصبح `北京大学` رمزًا واحدًا `北京大学` بدلًا من أربعة رموز من محرف واحد). ينتج عن ذلك رموز أكثر معنى للنص الصيني وجودة بحث أعلى. للنص العام/المختلط، يُرجى استخدام `asciiCJK`، وللنص الصيني فقط، يُرجى استخدام `chinese`. تكون معلمة `granularity` الاختيارية إما `'coarse_grained'` (القيمة الافتراضية إذا لم تُحدَّد) أو `'fine_grained'`. ويُعدِّد الأخير أيضًا الكلمات الفرعية المتداخلة؛ فعلى سبيل المثال، تُنتج `北京邮电大学` أيضًا `北京` و`邮电` و`大学`. يحسّن تقسيم الرموز الدقيق الاسترجاع على حساب فهرس أكبر.
+  ابحث في فهرس نصي `chinese` باستخدام [hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens) (اللذين يقسمان needle إلى رموز باستخدام مُقسِّم الرموز `chinese`)، وليس `hasToken` (الذي يقسم باستخدام فواصل ASCII فقط).
 * `icu(locale)` يقسم السلاسل النصية إلى رموز كلمات باستخدام تقسيم الكلمات في Unicode ‏(UAX #29) الخاص بمكتبة [ICU](https://icu.unicode.org/). بالنسبة إلى أنظمة الكتابة التي لا تستخدم مسافات بيضاء بين الكلمات (مثل الصينية واليابانية والتايلاندية)، تطبق ICU تقسيمًا قائمًا على القواميس، لذلك — بخلاف `asciiCJK` — يُقسَّم هذا النص إلى كلمات مفيدة متعددة المحارف بدلًا من محارف مفردة. ويعني &quot;القاموس&quot; هنا قوائم الكلمات المضمّنة في ICU لتلك أنظمة الكتابة (راجع [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries))؛ إذ تختار ICU التقسيم الأكثر احتمالًا لهذه الكلمات.
   `locale` هي اللغة المحلية لـ ICU التي تُمرَّر إلى المُقسِّم؛ ويعتمد التقسيم أساسًا على نظام الكتابة والقاموس، وتحدد اللغة المحلية تخصيص ICU الخاص بها. وهي معلمة إلزامية، على سبيل المثال: `tokenizer = icu('ja')` أو `tokenizer = icu('zh')`.
   يمكن إدراج اللغات المحلية المتاحة باستخدام `SELECT * FROM system.collations`.
@@ -263,11 +267,12 @@ SELECT tokens('abc def', 'ngrams', 3);
 
 *العمل مع مدخلات غير ASCII.*
 يمكن إنشاء فهارس نصية لبيانات نصية بأي لغة ومجموعة محارف.
-بالنسبة إلى النصوص غير ASCII، يُوصى باستخدام محلل الرموز `asciiCJK` لأنه يتعامل بصورة صحيحة مع حدود الكلمات في Unicode، بما في ذلك محارف CJK.
-بالنسبة إلى اللغات التي لا تفصل الكلمات بمسافات بيضاء (مثل الصينية أو اليابانية أو التايلاندية)، ينتج محلل الرموز `icu(locale)` رموزًا لكلمات متعددة المحارف ذات معنى عبر تجزئة الكلمات المعتمدة على قاموس ICU.
-وبالنسبة إلى اليابانية تحديدًا، يقسم محلل الرموز `japanese` ‏(MeCab) النص إلى كلمات بدلًا من محارف مفردة، ويعطي عمومًا نتائج بحث أفضل.
+بالنسبة إلى النصوص غير ASCII، يُوصى باستخدام مُقسِّم الرموز `asciiCJK` لأنه يتعامل بصورة صحيحة مع حدود الكلمات في Unicode، بما في ذلك محارف CJK.
+بالنسبة إلى اللغات التي لا تفصل الكلمات بمسافات بيضاء (مثل الصينية أو اليابانية أو التايلاندية)، ينتج مُقسِّم الرموز `icu(locale)` رموزًا لكلمات متعددة المحارف ذات معنى عبر تجزئة الكلمات المعتمدة على قاموس ICU.
+وبالنسبة إلى اليابانية تحديدًا، يقسم مُقسِّم الرموز `japanese` ‏(MeCab) النص إلى كلمات بدلًا من محارف مفردة، ويعطي عمومًا نتائج بحث أفضل.
+وبالنسبة إلى الصينية تحديدًا، يقسم مُقسِّم الرموز `chinese` ‏(jieba) النص إلى كلمات بدلًا من محارف مفردة، ويعطي عمومًا نتائج بحث أفضل.
 
-<a id="preprocessor-argument-optional" />**وسيطة المعالج المسبق (اختيارية)**. يشير المعالج المسبق إلى تعبير يُطبَّق على سلسلة الإدخال قبل تقسيمها إلى رموز.
+<a id="preprocessor-argument-optional" />**وسيطة المعالج المسبق (اختيارية)**. يشير المعالج المسبق إلى تعبير يُطبَّق على سلسلة الإدخال قبل التقسيم إلى رموز.
 
 تشمل حالات الاستخدام الشائعة لوسيطة المعالج المسبق ما يلي:
 
@@ -1462,6 +1467,40 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ar/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 لا يدعم هذا التحسين إلا الدالتين `like` و `ilike`.
+
+<div id="count-queries-perf">
+  ### استعلامات العد البسيطة
+</div>
+
+استعلام يقتصر على عدّ الصفوف المطابقة لشرط بحث نصي
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+تُجاب من فهرس نصي دون قراءة الصفوف المطابقة.
+يستمد ClickHouse العدد من عددية قوائم الإسناد في الفهرس، متجاوزًا العمود الافتراضي الذي يعلّم الصفوف المطابقة واحتساب التجميع عليه. يحتاج الرمز الواحد إلى عددية قاموسه فقط، لذا لا تُقرأ أي قائمة إسناد؛ أما المسندات متعددة الرموز فتقرأ قوائم الإسناد فقط لإجراء الاتحاد (`hasAnyTokens`) أو التقاطع (`hasAllTokens`) بينها. وبما أن فهرس نصي يغطي الجزء بأكمله، يكون العدد دقيقًا ويظل سريعًا حتى مع الأجزاء الكبيرة جدًا.
+
+ينطبق هذا التحسين على `count()` وحدها عند تصفيتها بمسند واحد من `hasToken` أو `hasAnyTokens` أو `hasAllTokens` (أو ما يكافئها في `Array`/`Map`). أما المسندات المدمجة باستخدام `AND`/`OR`/`NOT`، أو عامل تصفية إضافي (مثل `... AND id > 10`)، أو مسند في وضع التلميح مثل `m['key'] = 'value'`، أو اختيار أي شيء غير العدد، أو البحث عن عبارة أو باستخدام `LIKE`/نمط، فتجعل الاستعلام يقرأ الصفوف بدلًا من ذلك. وتظل الأجزاء التي لا تحتوي على فهرس مُجسَّد تُحتسب بشكل صحيح عبر قراءة صفوفها.
+
+للتأكد من تفعيل التحسين، تحقق من وجود `ReadFromTextIndexCount` في خطة الاستعلام:
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+يُتحكَّم في هذا التحسين عبر [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (وهو مفعّل افتراضيًا). ويستند إلى [القراءة المباشرة](#direct-read)، لذا يجب أيضًا تفعيل [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) و[use&#95;skip&#95;indexes](/ar/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) و[optimize&#95;trivial&#95;count&#95;query](/ar/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) (وجميعها مفعّلة افتراضيًا).
 
 <div id="caching">
   ### التخزين المؤقت
