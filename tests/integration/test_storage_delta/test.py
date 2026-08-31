@@ -3638,6 +3638,46 @@ def test_writes(started_cluster, storage_type):
     check_data(20)
 
 
+def test_writes_azure_blob_path_with_leading_slash(started_cluster):
+    """A `blob_path` with a leading slash (which `fromDisk` always produces as
+    `"/" + path_suffix`, and connection-string URL parsing keeps as well) is
+    normalized to the table location `az://container/path` for delta-kernel,
+    so the committed `add.path` entries are relative to `path/`. The written
+    data files must land there too, not under a literal `/path/` blob name,
+    which Azure preserves as a distinct key (unlike S3, which strips it).
+    """
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_writes_leading_slash")
+    path = f"{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    create_empty_delta_table(started_cluster, "azure", path, schema)
+
+    table_function_slash = delta_table_function(started_cluster, "azure", f"/{path}")
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION {table_function_slash} SELECT toInt32(number) AS id, toString(number) AS name FROM numbers(10)"
+    )
+
+    # An external reader resolves `add.path` against the committed table root
+    # `az://container/{path}/`, so the data file must exist under `{path}/`.
+    data_files = list_delta_data_files(started_cluster, "azure", path)
+    stray_files = [
+        blob.name
+        for blob in started_cluster.container_client.list_blobs(
+            name_starts_with=f"/{path}"
+        )
+    ]
+    assert (
+        len(data_files) == 1
+    ), f"Data files under '{path}/': {data_files}, stray '/{path}/' blobs: {stray_files}"
+    assert not stray_files, f"Blobs written under a literal leading slash: {stray_files}"
+
+    # The table reads back consistently through both spellings of the path.
+    table_function = delta_table_function(started_cluster, "azure", path)
+    assert 10 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert 10 == int(instance.query(f"SELECT count() FROM {table_function_slash}"))
+
+
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_partitioned_writes(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
