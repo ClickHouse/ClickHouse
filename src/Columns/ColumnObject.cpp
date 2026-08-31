@@ -1184,11 +1184,18 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
+    /// Typed paths are always in the same order for all instances of the same Object type,
+    /// so there is no need to hash the paths themselves.
     for (const auto & path : sorted_typed_paths)
         typed_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
 
+    /// Dynamic paths may differ, so we hash the paths together with values.
     for (const auto & path : sorted_dynamic_paths)
+    {
+        hash.update(path.size());
+        hash.update(path);
         dynamic_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+    }
 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
@@ -1453,28 +1460,31 @@ void ColumnObject::protect()
 
 void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
-    for (auto & [_, column] : typed_paths)
-        callback(column);
-    for (auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_typed_paths)
+        callback(typed_paths.find(path)->second);
+    for (const auto & path : sorted_dynamic_paths)
     {
-        callback(column);
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+        auto it = dynamic_paths.find(path);
+        callback(it->second);
+        dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
     callback(shared_data);
 }
 
 void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
 {
-    for (auto & [_, column] : typed_paths)
+    for (const auto & path : sorted_typed_paths)
     {
+        auto & column = typed_paths.find(path)->second;
         callback(*column);
         column->forEachMutableSubcolumnRecursively(callback);
     }
-    for (auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_dynamic_paths)
     {
-        callback(*column);
-        column->forEachMutableSubcolumnRecursively(callback);
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+        auto it = dynamic_paths.find(path);
+        callback(*it->second);
+        it->second->forEachMutableSubcolumnRecursively(callback);
+        dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
     callback(*shared_data);
     shared_data->forEachMutableSubcolumnRecursively(callback);
@@ -1482,23 +1492,25 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
 
 void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
 {
-    for (const auto & [_, column] : typed_paths)
-        callback(column);
-    for (const auto & [path, column] : dynamic_paths)
-        callback(column);
+    for (const auto & path : sorted_typed_paths)
+        callback(typed_paths.find(path)->second);
+    for (const auto & path : sorted_dynamic_paths)
+        callback(dynamic_paths.find(path)->second);
 
     callback(shared_data);
 }
 
 void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
 {
-    for (const auto & [_, column] : typed_paths)
+    for (const auto & path : sorted_typed_paths)
     {
+        const auto & column = typed_paths.find(path)->second;
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
-    for (const auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_dynamic_paths)
     {
+        const auto & column = dynamic_paths.find(path)->second;
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }

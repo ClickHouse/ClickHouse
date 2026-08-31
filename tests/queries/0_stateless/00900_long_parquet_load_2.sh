@@ -41,6 +41,8 @@ EXCLUDE=(
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
     04045_delta_sample_93093.parquet
+    # Hand-crafted file with an inconsistent bloom filter size for the 04654 out-of-bounds test.
+    04654_bloom_filter_bitset_out_of_bounds.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

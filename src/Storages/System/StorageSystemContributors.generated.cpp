@@ -1761,6 +1761,7 @@ const char * auto_contributors[] {
     "chenxing-xc",
     "chenxing.xc",
     "chertus",
+    "chethan-64",
     "chhetripradeep",
     "chloro",
     "chou.fan",
