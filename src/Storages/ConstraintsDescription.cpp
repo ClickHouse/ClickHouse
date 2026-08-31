@@ -138,28 +138,37 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
 }
 
-void ConstraintsDescription::assertPreserveRowCount(const ContextPtr context, const NamesAndTypesList & source_columns) const
+void ConstraintsDescription::assertPreserveRowCount() const
 {
     /// `arrayJoin` is the one action that changes the number of rows in a block, while
     /// `CheckConstraintsTransform` indexes the result column positionally against the rows of the block
     /// being inserted: a longer result reads past the end of the block's columns, and a shorter one
     /// blames a violation on the wrong row. `arrayJoin` is rejected for skip indexes, keys, mutations,
     /// `PREWHERE` and row policies for the same reason.
-    auto check_expressions = getExpressions(context, source_columns);
+    ///
+    /// Checked on the AST, not on a built expression: a constraint expression is deliberately not built
+    /// at DDL time, because it may name a function or a table that does not resolve yet - a constraint
+    /// referencing a table created later, or a function missing from the current build, has to remain
+    /// creatable. `CheckConstraintsTransform` refuses a result whose size does not match the block, so
+    /// an `arrayJoin` that only becomes visible after resolution still fails comprehensibly.
+    auto contains_array_join = [](const ASTPtr & ast, const auto & self) -> bool
+    {
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "arrayJoin")
+            return true;
 
-    size_t expression_index = 0;
+        return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
+    };
+
     for (const auto & constraint : constraints)
     {
         const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         if (constraint_ptr->type != ASTConstraintDeclaration::Type::CHECK)
             continue;
 
-        if (check_expressions.at(expression_index)->hasArrayJoin())
+        if (contains_array_join(constraint_ptr->expr, contains_array_join))
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
                 backQuote(constraint_ptr->name));
-
-        ++expression_index;
     }
 }
 

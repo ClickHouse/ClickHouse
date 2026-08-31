@@ -60,7 +60,7 @@ public:
 
     /// Rejects a `CHECK` constraint whose expression changes the number of rows. Only for fresh DDL:
     /// rejecting while loading stored metadata would fail the whole load rather than the one table.
-    void assertPreserveRowCount(ContextPtr context, const NamesAndTypesList & source_columns) const;
+    void assertPreserveRowCount() const;
 
     struct AtomId
     {
