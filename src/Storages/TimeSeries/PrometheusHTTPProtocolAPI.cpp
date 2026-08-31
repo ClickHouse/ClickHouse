@@ -127,6 +127,9 @@ void checkTargetIsNotDistributed(const IStorage & storage, std::string_view endp
     /// The SELECT check comes first: the endpoint-specific refusal below must not tell a caller
     /// without access what kind of table hides behind the name.
     context->checkAccess(AccessType::SELECT, storage.getStorageID());
+    /// These endpoints derive metadata from the inner tables, skipping the wrapper's policy and
+    /// filters even on a local target.
+    checkTimeSeriesWrapperReadContract(storage.getStorageID(), context);
     if (resolvePrometheusQueryTarget(storage))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

@@ -75,35 +75,41 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
     return target;
 }
 
+void checkTimeSeriesWrapperReadContract(const StorageID & storage_id, const ContextPtr & context)
+{
+    auto row_policy_filter = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "A row policy on {} is not supported here: the read is rewritten to inner or shard "
+            "TimeSeries tables and the policy would not be applied",
+            storage_id.getNameForLogs());
+
+    /// Matched exactly the way the planner matches filter keys (PlannerJoinTree): the short name
+    /// only from the same current database, the full unquoted name from anywhere.
+    for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+    {
+        const auto & name_and_filter = filter_entry.safeGet<Tuple>();
+        const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
+        bool matches = (filtered_table == storage_id.getTableName()
+                        && context->getCurrentDatabase() == storage_id.getDatabaseName())
+            || filtered_table == storage_id.getFullNameNotQuoted();
+        if (matches && !name_and_filter.at(1).safeGet<String>().empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "An additional_table_filters entry for {} is not supported here: the read is rewritten "
+                "to inner or shard TimeSeries tables and the filter would not be applied",
+                storage_id.getNameForLogs());
+    }
+}
+
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context)
 {
     /// The rewrite drops the wrapper before the planner ever sees it, so its access
     /// is enforced here or not at all.
     auto storage_id = storage.getStorageID();
     context->checkAccess(AccessType::SELECT, storage_id);
-    auto row_policy_filter = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "A row policy on {} is not supported for prometheus queries over a Distributed table: "
-            "the read is rewritten to the shards' TimeSeries tables and the policy would not be applied",
-            storage_id.getNameForLogs());
-
-    /// A normal Distributed read remaps this filter onto the source table (ClusterProxy);
-    /// the generated cluster() read would silently drop it, so fail closed instead.
-    for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
-    {
-        const auto & name_and_filter = filter_entry.safeGet<Tuple>();
-        const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
-        if ((filtered_table == storage_id.getTableName() || filtered_table == storage_id.getFullTableName())
-            && !name_and_filter.at(1).safeGet<String>().empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "An additional_table_filters entry for {} is not supported for prometheus queries over a "
-                "Distributed table: the read is rewritten to the shards' TimeSeries tables and the filter "
-                "would not be applied",
-                storage_id.getNameForLogs());
-    }
+    checkTimeSeriesWrapperReadContract(storage_id, context);
 
     /// The generated cluster() call cannot carry the wrapper's declared Distributed settings,
     /// so a read that would diverge from a plain SELECT is refused rather than silently changed.
