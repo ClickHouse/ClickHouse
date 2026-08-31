@@ -103,8 +103,10 @@ protected:
     std::vector<std::pair<Field, Field>> effectiveRangeCover() const;
 
     /// How many disjoint intervals the cover may keep. Every extra interval is another OR branch for
-    /// `KeyCondition` and another range check per granule, so the budget stays well below
-    /// `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT` (32), which bounds the reader's disjunction bookkeeping.
+    /// `KeyCondition` and another mark-range trim per part. Eight leaves headroom under
+    /// `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT` (32), which bounds the RPN on the reader path that
+    /// does track disjunctions, and is already more than the number of clusters real build sides
+    /// tend to have: `dropUselessSplits` usually gives back 2 or 3.
     static constexpr size_t max_key_range_intervals = 8;
 
     size_t filters_to_merge;
@@ -121,12 +123,6 @@ protected:
     /// low percentage of filtered rows
     mutable std::atomic<Int64> rows_to_skip = 0;
     std::atomic<bool> is_fully_disabled = false;
-
-    /// Splits the sorted keys at their widest gaps. Used only for key types the histogram cannot
-    /// bucket; `column` must still hold every key inserted so far.
-    void seedRangeCoverFromValues(const IColumn & column);
-    /// Allocates the histogram, so that every key from here on is recorded as a bit.
-    void startRangeHistogram();
 
     /// Key-range cover tracking (see updateRange/getRecordedKeyRanges).
     bool index_analysis_enabled = false;

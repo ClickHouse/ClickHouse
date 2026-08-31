@@ -63,174 +63,143 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
         || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
 }
 
-/// Whether the key's `Field`s are Int64 rather than UInt64, which decides how the histogram maps
-/// coordinates back to values.
-bool isColumnedAsSignedKey(const DataTypePtr & type)
-{
-    return WhichDataType(removeNullable(recursiveRemoveLowCardinality(type))).isInt();
-}
 
 using KeyInterval = std::pair<Field, Field>;
 using KeyCover = std::vector<KeyInterval>;
 
-/// Approximate numeric value of a key bound. Used only to compare gap and interval sizes when
-/// deciding which intervals to coalesce; the emitted bounds are always the exact `Field`s, so a
-/// rounding error can make the cover slightly less tight but never wrong.
-Float64 fieldToFloat64(const Field & field)
+/// Only ever used to compare interval and gap sizes; the emitted bounds stay the exact `Field`s.
+Float64 toNumber(const Field & field)
 {
     return applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
 }
 
-/// How much of the key domain two neighbouring intervals actually exclude. Every supported key type
-/// is integral (see `typeSupportsMinMaxRange`), so neighbouring values leave nothing between them and
-/// splitting a run of consecutive keys buys nothing at all.
-Float64 deadSpaceBetween(const Field & left_end, const Field & right_begin)
+/// How many keys the gap between two neighbouring intervals actually excludes. Every supported key
+/// type is integral, so neighbours one apart exclude nothing and splitting a run of them is pointless.
+Float64 excludedBetween(const KeyInterval & left, const KeyInterval & right)
 {
-    return std::max(0.0, fieldToFloat64(right_begin) - fieldToFloat64(left_end) - 1);
+    return std::max(0.0, toNumber(right.first) - toNumber(left.second) - 1);
 }
 
-/// Add one closed interval to a sorted cover, absorbing every interval it overlaps.
-void insertInterval(KeyCover & cover, Field left, Field right)
+/// Sort by left bound and fuse intervals that overlap or touch.
+void normalize(KeyCover & cover)
 {
-    /// Intervals ending before `left` are untouched.
-    size_t first = 0;
-    while (first < cover.size() && accurateLess(cover[first].second, left))
-        ++first;
+    if (cover.size() < 2)
+        return;
 
-    /// Everything starting at or before `right` overlaps and is absorbed.
-    size_t last = first;
-    while (last < cover.size() && !accurateLess(right, cover[last].first))
+    ::sort(cover.begin(), cover.end(), [](const auto & lhs, const auto & rhs) { return accurateLess(lhs.first, rhs.first); });
+
+    size_t kept = 0;
+    for (size_t i = 1; i < cover.size(); ++i)
     {
-        if (accurateLess(cover[last].first, left))
-            left = cover[last].first;
-        if (accurateLess(right, cover[last].second))
-            right = cover[last].second;
-        ++last;
+        if (excludedBetween(cover[kept], cover[i]) > 0)
+            cover[++kept] = std::move(cover[i]);
+        else if (accurateLess(cover[kept].second, cover[i].second))
+            cover[kept].second = std::move(cover[i].second);
     }
-
-    cover.erase(cover.begin() + first, cover.begin() + last);
-    cover.insert(cover.begin() + first, KeyInterval{std::move(left), std::move(right)});
+    cover.resize(kept + 1);
 }
 
-/// Shrink the cover to at most `budget` intervals by repeatedly merging the neighbouring pair with
-/// the smallest gap. Equivalently: keep the `budget - 1` largest gaps, which is the interval cover
-/// that gives up the least dead space for that budget.
+/// Fuse the neighbouring pair that excludes the fewest keys until the cover fits the budget, which
+/// is the same as keeping the `budget - 1` widest gaps: the tightest cover available for that budget.
 void coalesceToBudget(KeyCover & cover, size_t budget)
 {
     while (cover.size() > budget)
     {
         size_t narrowest = 0;
-        Float64 narrowest_gap = std::numeric_limits<Float64>::infinity();
-        for (size_t i = 0; i + 1 < cover.size(); ++i)
-        {
-            const Float64 gap = fieldToFloat64(cover[i + 1].first) - fieldToFloat64(cover[i].second);
-            if (gap < narrowest_gap)
-            {
-                narrowest_gap = gap;
+        for (size_t i = 1; i + 1 < cover.size(); ++i)
+            if (excludedBetween(cover[i], cover[i + 1]) < excludedBetween(cover[narrowest], cover[narrowest + 1]))
                 narrowest = i;
-            }
-        }
 
         cover[narrowest].second = std::move(cover[narrowest + 1].second);
         cover.erase(cover.begin() + narrowest + 1);
     }
 }
 
-/// Emitting several intervals instead of the plain envelope only pays off when the gaps between
-/// them remove a real part of the span: on a dense key set, or one scattered evenly over the
-/// domain, the extra OR branches cost more than they prune.
-constexpr Float64 min_dead_space_ratio_to_split = 0.2;
+/// A split only earns its extra OR branch if it excludes a real part of the span.
+constexpr Float64 min_excluded_ratio_to_split = 0.01;
 
-/// An individual split only earns its extra OR branch if the gap it opens is a real part of the
-/// span. Without this the budget is always spent in full, fragmenting a cluster into pieces that
-/// together cover the same keys.
-constexpr Float64 min_gap_ratio_to_split = 0.01;
-
-bool coverIsWorthSplitting(const KeyCover & cover)
+/// Undo the splits that are not worth making. When no gap qualifies this leaves a single interval,
+/// i.e. the plain [min, max] envelope, which is what a dense or evenly scattered key set deserves.
+void dropUselessSplits(KeyCover & cover)
 {
     if (cover.size() < 2)
-        return false;
+        return;
 
-    const Float64 span = fieldToFloat64(cover.back().second) - fieldToFloat64(cover.front().first);
-    if (!(span > 0))
-        return false;
+    const Float64 threshold = min_excluded_ratio_to_split * (toNumber(cover.back().second) - toNumber(cover.front().first));
 
-    Float64 dead_space = 0;
+    size_t kept = 0;
     for (size_t i = 1; i < cover.size(); ++i)
-        dead_space += deadSpaceBetween(cover[i - 1].second, cover[i].first);
-
-    return dead_space / span >= min_dead_space_ratio_to_split;
+    {
+        if (excludedBetween(cover[kept], cover[i]) < threshold)
+            cover[kept].second = std::move(cover[i].second);
+        else
+            cover[++kept] = std::move(cover[i]);
+    }
+    cover.resize(kept + 1);
 }
 }
 
-/// A bitmap over a bucketed key domain. Keys map to an order-preserving UInt64 coordinate, so
-/// bucketing is a subtract and a shift, and recording a key is a single bit set - commutative, hence
-/// independent of the order and the blocking of the build side. The window rescales itself: when a
-/// key falls outside it, buckets are widened (and the base moved down) until the key fits, which
-/// costs one pass over the bitmap and happens O(log domain) times.
+/// Bitmap over a bucketed key domain, filled once the exact value set has overflowed. A key maps to
+/// an order-preserving UInt64 coordinate, so bucketing is a subtract and a shift, and recording one
+/// is a single bit set - commutative, so the clusters found do not depend on the order the build
+/// side arrives in or on how it is split into blocks.
 struct KeyRangeHistogram
 {
+    /// Sized against the workload this exists for. On the Stack Overflow dataset `posts.Id` is an
+    /// IDENTITY column, so it ascends with `CreationDate` (measured correlation 0.9995). Joining
+    /// 239M `votes` (ORDER BY PostId) to the posts of January 2011 and January 2020 gives a build
+    /// side of 588k ids in two clusters, 4.57M-5.37M and 59.5M-60.1M, with 97% of the span between
+    /// them empty: the envelope spans 55.5M ids (72% of the table), the two intervals cover 2.8%.
+    /// 4096 buckets is 512 bytes, and resolves that span to ~13k ids - far finer than the ~800k-wide
+    /// clusters that have to be told apart, while the exact extremes below keep the outer bounds
+    /// tight. Fewer buckets would start fusing clusters; more would only sharpen edges that
+    /// `dropUselessSplits` rounds off anyway.
     static constexpr size_t buckets = 4096;
     static constexpr size_t words = buckets / 64;
+    /// Flipping the sign bit maps a signed key to a UInt64 of the same ordering.
+    static constexpr UInt64 sign_bias = UInt64(1) << 63;
 
-    bool initialized = false;
-    bool is_signed = false;
+    UInt64 bits[words] = {};
     UInt64 base = 0;        /// coordinate where bucket 0 starts
     unsigned shift = 0;     /// bucket width is 1 << shift
     UInt64 min_coordinate = 0;
     UInt64 max_coordinate = 0;
-    UInt64 bits[words] = {};
-
-    static constexpr UInt64 sign_bias = UInt64(1) << 63;
-
-    template <typename T>
-    static UInt64 toCoordinate(T value)
-    {
-        if constexpr (is_signed_v<T>)
-            return static_cast<UInt64>(static_cast<Int64>(value)) ^ sign_bias;
-        else
-            return static_cast<UInt64>(value);
-    }
-
-    Field fromCoordinate(UInt64 coordinate) const
-    {
-        if (is_signed)
-            return Field(static_cast<Int64>(coordinate ^ sign_bias));
-        return Field(coordinate);
-    }
+    bool is_signed = false;
+    bool initialized = false;
 
     bool isSet(size_t bucket) const { return (bits[bucket >> 6] >> (bucket & 63)) & 1; }
-    void set(size_t bucket) { bits[bucket >> 6] |= UInt64(1) << (bucket & 63); }
-
-    size_t highestPossibleBucket() const { return static_cast<size_t>((max_coordinate - base) >> shift); }
-
-    void rescaleFor(UInt64 coordinate)
+    size_t lastBucket() const { return std::min<size_t>((max_coordinate - base) >> shift, buckets - 1); }
+    Field toField(UInt64 coordinate) const
     {
-        const UInt64 want_low = std::min(coordinate, min_coordinate);
-        const UInt64 want_high = std::max(coordinate, max_coordinate);
+        return is_signed ? Field(static_cast<Int64>(coordinate ^ sign_bias)) : Field(coordinate);
+    }
+
+    /// Widen the buckets, and move the base down, until `coordinate` fits; then remap what we have.
+    void rescale(UInt64 coordinate)
+    {
+        const UInt64 low = std::min(coordinate, min_coordinate);
+        const UInt64 high = std::max(coordinate, max_coordinate);
 
         unsigned new_shift = shift;
-        while (new_shift < 63 && ((want_high - want_low) >> new_shift) >= buckets)
+        while (new_shift < 63 && ((high - low) >> new_shift) >= buckets)
             ++new_shift;
 
-        UInt64 folded[words] = {};
-        const size_t last = std::min(highestPossibleBucket(), buckets - 1);
-        for (size_t bucket = 0; bucket <= last; ++bucket)
+        UInt64 remapped[words] = {};
+        for (size_t bucket = 0, last = lastBucket(); bucket <= last; ++bucket)
         {
             if (!isSet(bucket))
                 continue;
-            /// A wider bucket can straddle two of the new ones, so set both: the cover must stay a
-            /// superset of the keys, never a subset.
-            const UInt64 old_low = base + (static_cast<UInt64>(bucket) << shift);
-            const UInt64 old_high = old_low + ((UInt64(1) << shift) - 1);
-            const size_t new_low = static_cast<size_t>((old_low - want_low) >> new_shift);
-            const size_t new_high = std::min<size_t>((old_high - want_low) >> new_shift, buckets - 1);
-            for (size_t nb = new_low; nb <= new_high; ++nb)
-                folded[nb >> 6] |= UInt64(1) << (nb & 63);
+
+            /// A widened bucket can straddle two new ones; set both, the cover must stay a superset.
+            const UInt64 bucket_low = base + (static_cast<UInt64>(bucket) << shift);
+            const size_t from = static_cast<size_t>((bucket_low - low) >> new_shift);
+            const size_t to = std::min<size_t>((bucket_low + ((UInt64(1) << shift) - 1) - low) >> new_shift, buckets - 1);
+            for (size_t i = from; i <= to; ++i)
+                remapped[i >> 6] |= UInt64(1) << (i & 63);
         }
 
-        memcpy(bits, folded, sizeof(bits));
-        base = want_low;
+        memcpy(bits, remapped, sizeof(bits));
+        base = low;
         shift = new_shift;
     }
 
@@ -239,43 +208,43 @@ struct KeyRangeHistogram
         if (!initialized)
         {
             initialized = true;
-            base = coordinate;
-            min_coordinate = coordinate;
-            max_coordinate = coordinate;
-            set(0);
-            return;
+            base = min_coordinate = max_coordinate = coordinate;
         }
 
-        if (coordinate < min_coordinate)
-            min_coordinate = coordinate;
-        if (coordinate > max_coordinate)
-            max_coordinate = coordinate;
+        min_coordinate = std::min(min_coordinate, coordinate);
+        max_coordinate = std::max(max_coordinate, coordinate);
 
         if (coordinate < base || ((coordinate - base) >> shift) >= buckets)
-            rescaleFor(coordinate);
+            rescale(coordinate);
 
-        set(static_cast<size_t>((coordinate - base) >> shift));
+        const size_t bucket = static_cast<size_t>((coordinate - base) >> shift);
+        bits[bucket >> 6] |= UInt64(1) << (bucket & 63);
     }
 
     template <typename T>
-    bool addVector(const IColumn & column, const NullMap * null_map)
+    bool addTypedColumn(const IColumn & column, const NullMap * null_map)
     {
         const auto * typed = typeid_cast<const ColumnVector<T> *>(&column);
         if (!typed)
             return false;
 
+        is_signed = is_signed_v<T>;
         const auto & data = typed->getData();
         for (size_t i = 0, size = data.size(); i < size; ++i)
         {
             if (null_map && (*null_map)[i])
                 continue;
-            addCoordinate(toCoordinate(data[i]));
+
+            if constexpr (is_signed_v<T>)
+                addCoordinate(static_cast<UInt64>(static_cast<Int64>(data[i])) ^ sign_bias);
+            else
+                addCoordinate(static_cast<UInt64>(data[i]));
         }
         return true;
     }
 
-    /// False when the column is of a type the histogram cannot bucket, so the caller keeps using the
-    /// per-block extremes for it.
+    /// False for a key type it cannot bucket (`DateTime64`, `LowCardinality`), so that the caller
+    /// keeps using the per-block extremes for it.
     bool add(const IColumn & column)
     {
         const IColumn * values = &column;
@@ -286,19 +255,19 @@ struct KeyRangeHistogram
             values = &nullable->getNestedColumn();
         }
 
-        return addVector<UInt8>(*values, null_map) || addVector<UInt16>(*values, null_map)
-            || addVector<UInt32>(*values, null_map) || addVector<UInt64>(*values, null_map)
-            || addVector<Int8>(*values, null_map) || addVector<Int16>(*values, null_map)
-            || addVector<Int32>(*values, null_map) || addVector<Int64>(*values, null_map);
+        return addTypedColumn<UInt8>(*values, null_map) || addTypedColumn<UInt16>(*values, null_map)
+            || addTypedColumn<UInt32>(*values, null_map) || addTypedColumn<UInt64>(*values, null_map)
+            || addTypedColumn<Int8>(*values, null_map) || addTypedColumn<Int16>(*values, null_map)
+            || addTypedColumn<Int32>(*values, null_map) || addTypedColumn<Int64>(*values, null_map);
     }
 
-    void toIntervals(std::vector<std::pair<Field, Field>> & out) const
+    /// Every run of set buckets becomes one interval, clamped to the exact extremes at the edges.
+    void appendIntervals(KeyCover & cover) const
     {
         if (!initialized)
             return;
 
-        const size_t last = std::min(highestPossibleBucket(), buckets - 1);
-        for (size_t bucket = 0; bucket <= last;)
+        for (size_t bucket = 0, last = lastBucket(); bucket <= last;)
         {
             if (!isSet(bucket))
             {
@@ -306,16 +275,13 @@ struct KeyRangeHistogram
                 continue;
             }
 
-            const size_t run_begin = bucket;
+            const size_t from = bucket;
             while (bucket <= last && isSet(bucket))
                 ++bucket;
 
-            UInt64 low = base + (static_cast<UInt64>(run_begin) << shift);
-            UInt64 high = base + (static_cast<UInt64>(bucket - 1) << shift) + ((UInt64(1) << shift) - 1);
-            /// The bucket edges are only as tight as the grid, but the exact extremes are known.
-            low = std::max(low, min_coordinate);
-            high = std::min(high, max_coordinate);
-            out.emplace_back(fromCoordinate(low), fromCoordinate(high));
+            const UInt64 low = std::max(min_coordinate, base + (static_cast<UInt64>(from) << shift));
+            const UInt64 high = std::min(max_coordinate, base + (static_cast<UInt64>(bucket) << shift) - 1);
+            cover.emplace_back(toField(low), toField(high));
         }
     }
 };
@@ -341,150 +307,71 @@ std::vector<Range> IRuntimeFilter::getRecordedKeyRanges() const
     if (!range_supported || !range_positive || !inserts_are_finished.load())
         return {};
 
-    const auto cover = effectiveRangeCover();
-    if (cover.empty())
-        return {};
-
-    for (const auto & interval : cover)
-        if (interval.first.isNull() || interval.second.isNull())
-            return {};
+    auto cover = effectiveRangeCover();
+    dropUselessSplits(cover);
 
     std::vector<Range> ranges;
-
-    /// Collapse back to the plain envelope when the gaps are not worth the extra OR branches.
-    if (!coverIsWorthSplitting(cover))
-    {
-        ranges.emplace_back(cover.front().first, /*left_included=*/true, cover.back().second, /*right_included=*/true);
-        return ranges;
-    }
-
-    const Float64 min_gap
-        = min_gap_ratio_to_split * (fieldToFloat64(cover.back().second) - fieldToFloat64(cover.front().first));
-
     ranges.reserve(cover.size());
-    for (const auto & interval : cover)
+    for (const auto & [low, high] : cover)
     {
-        /// Give back the intervals that are not far enough apart to be worth telling apart.
-        if (!ranges.empty() && deadSpaceBetween(ranges.back().right, interval.first) < min_gap)
-        {
-            ranges.back().right = interval.second;
-            continue;
-        }
-        ranges.emplace_back(interval.first, /*left_included=*/true, interval.second, /*right_included=*/true);
+        if (low.isNull() || high.isNull())
+            return {};
+        ranges.emplace_back(low, /*left_included=*/true, high, /*right_included=*/true);
     }
     return ranges;
 }
 
+/// Everything recorded so far as intervals: what the histogram holds, plus the per-block extremes
+/// kept before it existed and for key types it cannot bucket.
+KeyCover IRuntimeFilter::effectiveRangeCover() const
+{
+    KeyCover cover = range_cover;
+    if (range_histogram)
+        range_histogram->appendIntervals(cover);
+
+    normalize(cover);
+    coalesceToBudget(cover, max_key_range_intervals);
+    return cover;
+}
+
 void IRuntimeFilter::updateRange(const IColumn & column)
 {
-    if (!index_analysis_enabled || !range_supported || !range_positive)
+    if (!index_analysis_enabled || !range_supported || !range_positive || column.size() == 0)
         return;
 
-    const size_t rows = column.size();
-    if (rows == 0)
-        return;
-
-    /// Once the set has overflowed every key goes into the histogram, which sees the keys
-    /// themselves. Before that, and for key types it cannot bucket, fall back to one interval per
-    /// block: cheap, but only informative when a block's rows all sit in the same cluster.
+    /// Once the histogram exists it sees the keys themselves. Until then, and for key types it
+    /// cannot bucket, record one interval per block instead: cheap, but blind to structure inside a
+    /// block, so it only finds clusters when all of a block's rows sit in the same one.
     if (range_histogram && range_histogram->add(column))
         return;
 
-    Field cmin;
-    Field cmax;
-    column.getExtremes(cmin, cmax, 0, rows);
-    if (cmin.isNull() || cmax.isNull())
+    Field low;
+    Field high;
+    column.getExtremes(low, high, 0, column.size());
+    if (low.isNull() || high.isNull())
         return;
 
-    insertInterval(range_cover, std::move(cmin), std::move(cmax));
+    range_cover.emplace_back(std::move(low), std::move(high));
+    normalize(range_cover);
     coalesceToBudget(range_cover, max_key_range_intervals);
 }
 
-void IRuntimeFilter::seedRangeCoverFromValues(const IColumn & column)
-{
-    if (!index_analysis_enabled || !range_supported || !range_positive)
-        return;
-
-    const size_t rows = column.size();
-    if (rows == 0)
-        return;
-
-    IColumn::Permutation permutation;
-    column.getPermutation(
-        IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Unstable,
-        /*limit=*/0, /*nan_direction_hint=*/1, permutation);
-
-    std::vector<Field> sorted_keys;
-    sorted_keys.reserve(rows);
-    for (size_t i = 0; i < rows; ++i)
-    {
-        Field value = column[permutation[i]];
-        if (!value.isNull())
-            sorted_keys.push_back(std::move(value));
-    }
-
-    if (sorted_keys.empty())
-        return;
-
-    /// Splitting the sorted keys at their widest gaps is the tightest cover for the budget. Keep the
-    /// widest `max_key_range_intervals - 1` of them in a small array rather than sorting every gap.
-    std::vector<std::pair<Float64, size_t>> widest_gaps;
-    widest_gaps.reserve(max_key_range_intervals);
-    for (size_t i = 1; i < sorted_keys.size(); ++i)
-    {
-        const Float64 gap = fieldToFloat64(sorted_keys[i]) - fieldToFloat64(sorted_keys[i - 1]);
-        if (widest_gaps.size() < max_key_range_intervals - 1)
-            widest_gaps.emplace_back(gap, i);
-        else
-        {
-            auto narrowest = std::min_element(widest_gaps.begin(), widest_gaps.end());
-            if (narrowest->first < gap)
-                *narrowest = {gap, i};
-        }
-    }
-
-    ::sort(widest_gaps.begin(), widest_gaps.end(), [](const auto & lhs, const auto & rhs) { return lhs.second < rhs.second; });
-
-    /// The keys the set kept are all the keys seen so far, so replacing the coarse cover is sound.
-    range_cover.clear();
-    size_t interval_begin = 0;
-    for (const auto & [gap, split_at] : widest_gaps)
-    {
-        range_cover.emplace_back(sorted_keys[interval_begin], sorted_keys[split_at - 1]);
-        interval_begin = split_at;
-    }
-    range_cover.emplace_back(sorted_keys[interval_begin], sorted_keys.back());
-}
-
 void IRuntimeFilter::recordOverflowedKeys(const IColumn & column)
-{
-    if (!index_analysis_enabled || !range_supported || !range_positive)
-        return;
-
-    startRangeHistogram();
-
-    /// The histogram takes the keys in one pass and no allocation. Sorting them is only worth it for
-    /// key types it cannot bucket, where a value-resolution cover is the only alternative to the
-    /// per-block extremes.
-    if (range_histogram && range_histogram->add(column))
-    {
-        /// Every key recorded so far is now in the histogram, so the per-block intervals collected on
-        /// the way here are redundant and strictly looser. Dropping them matters: a block that spans
-        /// several clusters left an interval that would swallow everything the histogram found.
-        range_cover.clear();
-        return;
-    }
-
-    seedRangeCoverFromValues(column);
-}
-
-void IRuntimeFilter::startRangeHistogram()
 {
     if (!index_analysis_enabled || !range_supported || !range_positive || range_histogram)
         return;
 
     range_histogram = std::make_unique<KeyRangeHistogram>();
-    range_histogram->is_signed = isColumnedAsSignedKey(filter_column_target_type);
+    if (!range_histogram->add(column))
+    {
+        range_histogram.reset();    /// Key type it cannot bucket; stay on the per-block extremes.
+        return;
+    }
+
+    /// The histogram now holds every key the set had, so the coarse per-block intervals collected on
+    /// the way here are redundant and strictly looser. Dropping them matters: a block that spanned
+    /// several clusters left an interval that would swallow everything the histogram found.
+    range_cover.clear();
 }
 
 void IRuntimeFilter::mergeRange(const IRuntimeFilter & source)
@@ -492,26 +379,13 @@ void IRuntimeFilter::mergeRange(const IRuntimeFilter & source)
     if (!index_analysis_enabled || !range_supported || !range_positive)
         return;
 
-    /// The two histograms have their own bucket grids, so they are merged as intervals rather than
-    /// as bitmaps. That costs the source at most one bucket of width per interval edge.
-    for (const auto & interval : source.effectiveRangeCover())
-        insertInterval(range_cover, interval.first, interval.second);
+    /// The two histograms have their own bucket grids, so they merge as intervals, not as bitmaps.
+    const auto source_cover = source.effectiveRangeCover();
+    range_cover.insert(range_cover.end(), source_cover.begin(), source_cover.end());
+    normalize(range_cover);
     coalesceToBudget(range_cover, max_key_range_intervals);
 }
 
-std::vector<std::pair<Field, Field>> IRuntimeFilter::effectiveRangeCover() const
-{
-    std::vector<std::pair<Field, Field>> cover = range_cover;
-    if (range_histogram)
-    {
-        std::vector<std::pair<Field, Field>> from_histogram;
-        range_histogram->toIntervals(from_histogram);
-        for (const auto & interval : from_histogram)
-            insertInterval(cover, interval.first, interval.second);
-        coalesceToBudget(cover, max_key_range_intervals);
-    }
-    return cover;
-}
 
 void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 {
