@@ -19,24 +19,27 @@ CREATE TABLE t_variant_ttl_group_by
     u Variant(String)
 )
 ENGINE = MergeTree
-ORDER BY k
+ORDER BY (k, d)
 TTL d + INTERVAL 1 SECOND GROUP BY k SET v = any(v)
 SETTINGS merge_with_ttl_timeout = 100000;
 
 SET aggregate_functions_skip_variant_nulls = 1;
 
--- Two parts, so that OPTIMIZE has something to merge. The NULL row comes from the older part, so `any` picks it
--- up first unless the NULL-skipping is in effect. `u` is aggregated by the implicit uncovered-column `any`.
-INSERT INTO t_variant_ttl_group_by VALUES (1, now() - 100, NULL, NULL);
-INSERT INTO t_variant_ttl_group_by VALUES (1, now() - 100, 'x', 'y');
+-- Two parts, so that OPTIMIZE has something to merge. `d` is part of the sorting key and the NULL row has the
+-- smaller value, so the merged stream always presents it first and `any` picks it up unless the NULL-skipping is
+-- in effect. (Sharing a single sorting key value between the two rows would leave the order of the merge up to
+-- the tie-breaking of the merging algorithm, which is not stable.) `u` is aggregated by the implicit
+-- uncovered-column `any`.
+INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:00', NULL, NULL);
+INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:01', 'x', 'y');
 
 -- The session setting (skip = 1) applies to the OPTIMIZE query, overriding the CREATE-time value.
 OPTIMIZE TABLE t_variant_ttl_group_by FINAL;
 SELECT 'skip nulls', v, u FROM t_variant_ttl_group_by;
 
 TRUNCATE TABLE t_variant_ttl_group_by;
-INSERT INTO t_variant_ttl_group_by VALUES (1, now() - 100, NULL, NULL);
-INSERT INTO t_variant_ttl_group_by VALUES (1, now() - 100, 'x', 'y');
+INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:00', NULL, NULL);
+INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:01', 'x', 'y');
 
 -- And the explicit per-query value takes precedence over the session one.
 OPTIMIZE TABLE t_variant_ttl_group_by FINAL SETTINGS aggregate_functions_skip_variant_nulls = 0;

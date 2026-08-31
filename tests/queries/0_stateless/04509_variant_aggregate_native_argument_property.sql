@@ -58,6 +58,17 @@ FROM (SELECT groupFormatState('JSONCompactEachRowWithNamesAndTypes')(CAST(1 AS V
 SELECT 'estimateCompressionRatio keeps Variant', toTypeName(estimateCompressionRatioState(v)) FROM t_variant_native_prop;
 SELECT 'estimateCompressionRatio no-supertype Variant', estimateCompressionRatio(CAST(number AS Variant(String, UInt64))) > 0 FROM numbers(1000);
 
+-- The NULL rows of a `Variant` must stay visible to it: the wire layout it measures includes the discriminators
+-- of those rows, so they are part of the size it reports. If the function were ever rerouted through
+-- AggregateFunctionVariantNull (which skips the NULL rows of a Variant argument, as count/uniq do above), an
+-- all-NULL Variant column would produce no bytes at all and the ratio would collapse to 0 instead of the ratio
+-- of the highly compressible all-NULL discriminator stream.
+DROP TABLE IF EXISTS t_variant_all_null;
+CREATE TABLE t_variant_all_null (v Variant(String, UInt64)) ENGINE = Memory;
+INSERT INTO t_variant_all_null SELECT CAST(NULL AS Variant(String, UInt64)) FROM numbers(1000);
+SELECT 'estimateCompressionRatio sees Variant NULLs', estimateCompressionRatio(v) > 0 FROM t_variant_all_null;
+DROP TABLE t_variant_all_null;
+
 -- singleValueOrNull is excluded from the adapter (is_distinctness_sensitive): its contract is "the value if
 -- there is exactly one distinct non-NULL value, otherwise NULL", and the cast to Nullable(supertype) collapses
 -- Variant values that are distinct because their alternative types differ (1::UInt8 vs 1::UInt64), which would

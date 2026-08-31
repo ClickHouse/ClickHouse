@@ -597,7 +597,8 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 
 Aggregate functions accept `Variant` arguments as well.
 
-Some of them handle a `Variant` argument natively, keeping the original alternative type of every value: `count`, `any`, `argMin`, `argMax`, `groupArray`, `groupConcat`, the `uniq` family, and others.
+Some of them handle a `Variant` argument natively, keeping the original alternative type of every value: `count`, `any`, `groupArray`, `groupConcat`, the `uniq` family, and others.
+For `argMin` and `argMax` this applies to the returned argument only: the `arg` position keeps its `Variant` type, while a `Variant` comparison key follows the rules of `min` / `max` described below — it is aggregated over the least common supertype, or rejected with `ILLEGAL_TYPE_OF_ARGUMENT` when the alternatives have none.
 The rest — the arithmetic and order-based aggregates such as `sum`, `avg`, `min`, `max`, `quantile` and `stddevPop` — aggregate over the least common supertype of the alternatives, wrapped in `Nullable`:
 
 ```text
