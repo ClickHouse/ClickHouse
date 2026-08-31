@@ -84,6 +84,7 @@ extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
 extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
 extern const Event ASTFuzzerOracleGroupingSetsChecks;
 extern const Event ASTFuzzerOracleRowPolicyChecks;
+extern const Event ASTFuzzerOracleFinalMergeChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3698,6 +3699,52 @@ bool QueryOracleChecker::checkRowPolicyEquivalence(const ASTSelectQuery &, const
             context, &fixture);
 
     LOG_TRACE(logger, "row-policy equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkFinalMergeReplacing(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_01): a ReplacingMergeTree(ver) table read with FINAL keeps exactly the
+    /// maximum-version row per sorting-key tuple, which equals the hand-written dedup
+    /// argMax(v, ver) GROUP BY k. Versions are unique per row here, so argMax is deterministic and the
+    /// relation is exact. A difference is a real FINAL dedup-correctness bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("finalmerge", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt32, v Int64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k"))
+        return false;
+    /// Three separate parts with overlapping keys and disjoint, unique version ranges (0..199,
+    /// 10000..10199, 500..619) so the max version per key is unambiguous.
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 50, toInt64(number), number FROM numbers(200)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 50, toInt64(number) + 1000, number + 10000 FROM numbers(200)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 30, toInt64(number) + 5, number + 500 FROM numbers(120)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "FINAL-merge dedup oracle: {}", tbl);
+
+    auto final_opt = OracleExec::executeRows("SELECT k, v FROM " + tbl + " FINAL", context, ResultShape::SortedBag);
+    auto ref_opt = OracleExec::executeRows("SELECT k, argMax(v, ver) FROM " + tbl + " GROUP BY k", context, ResultShape::SortedBag);
+    if (!final_opt || !ref_opt)
+        return false;
+
+    if (!OracleCompare::equal(*final_opt, *ref_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "FINAL-merge dedup oracle mismatch!\n"
+                "SELECT k, v FROM {} FINAL ({} rows) vs argMax(v, ver) GROUP BY k ({} rows)\n{}",
+                tbl, final_opt->size(), ref_opt->size(),
+                OracleCompare::diffSummary(*final_opt, *ref_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "FINAL-merge dedup oracle passed");
     return true;
 }
 
