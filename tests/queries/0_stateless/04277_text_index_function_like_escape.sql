@@ -105,6 +105,20 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 3, 4;
 
+SELECT 'The ESCAPE form is handed to the index at data-read time too, like the 2-argument form';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM tab WHERE like(message, '%World%', '|')
+    SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1
+) WHERE explain LIKE '%__text_index%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM tab WHERE message LIKE '%World%'
+    SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1
+) WHERE explain LIKE '%__text_index%';
+
 DROP TABLE tab;
 
 SELECT 'Text index with array tokenizer also uses the index with LIKE ESCAPE';

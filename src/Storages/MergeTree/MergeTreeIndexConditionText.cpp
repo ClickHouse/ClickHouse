@@ -355,11 +355,16 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() != 3)
         return true;
 
+    const auto function_name = node.function_base->getName();
+    /// The third argument of `like` and `ilike` is an ESCAPE character, not a tokenizer.
+    if (function_name == "like" || function_name == "ilike")
+        return true;
+
     RPNBuilderTreeContext rpn_tree_context(getContext());
     RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
     const auto function_node = rpn_node.toFunctionNode();
 
-    return tokenizerArgumentMatchesIndex(node.function_base->getName(), function_node.getArgumentAt(2));
+    return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
 }
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)

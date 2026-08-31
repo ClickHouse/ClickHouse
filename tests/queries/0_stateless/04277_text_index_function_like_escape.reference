@@ -49,6 +49,9 @@ Name: idx
 Description: text GRANULARITY 100000000
 Parts: 1/6
 Granules: 8/48
+The ESCAPE form is handed to the index at data-read time too, like the 2-argument form
+1
+1
 Text index with array tokenizer also uses the index with LIKE ESCAPE
 1024
 1024
