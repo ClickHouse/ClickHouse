@@ -4313,11 +4313,18 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// `readonly = 1` prevents all per-query setting changes. The server's read-only
         /// restriction alone does not enforce the advertised execution-time and memory
         /// limits, so do not run an unconfirmed query when the sandbox cannot be installed.
+        /// Checked before the table resolution below, which costs a round trip the query
+        /// would not get to use anyway.
         if (!can_change_settings)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The read-only tool cannot enforce its execution-time and memory limits because `readonly = 1` "
                 "does not allow changing settings. Use the run_query tool for this query");
+
+        /// The static validation judges what is written in the query; the tables it only collects,
+        /// because a name says nothing about what reading it does. Resolve them and check their
+        /// engines - this is a round trip, so it is skipped when the query names no tables.
+        checkNamedTablesForAIReadOnlyTool(collectNamedTablesForAIAgent(*ast));
 
         /// The format-schema settings are interpreted after this validation: with
         /// `format_schema_source = 'query'` the schema is another query, executed through a FORMAT
@@ -4608,6 +4615,157 @@ String ClientBase::aiSessionRestrictions()
     if (readonly == 0)
         return {};
     return readonly == 1 ? AIPrompts::SESSION_READONLY_NOTE : AIPrompts::SESSION_READ_ONLY_QUERIES_NOTE;
+}
+
+void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables)
+{
+    if (tables.empty())
+        return;
+
+    /// Ask the server what these names are. `system.tables` only narrows its enumeration by
+    /// `database = ...` and `name = ...`, so each table is looked up by a branch of its own
+    /// rather than by an `IN` list over all of them: an `IN` would make the server walk every
+    /// table of the databases involved, which on a server with many tables is the whole cost of
+    /// this check.
+    ///
+    /// An unqualified name needs two branches. The current database is resolved by the server -
+    /// only it knows what a `USE` left behind - and the empty database is how `system.tables`
+    /// reports the temporary tables of the session, which an unqualified name resolves to first.
+    Strings branches;
+    Strings database_expressions;
+    NameSet seen_databases;
+    NameSet seen_lookups;
+
+    auto add_lookup = [&](const String & database_expression, const String & name_literal)
+    {
+        String branch = fmt::format(
+            "SELECT 'table' AS kind, database AS db, name AS tbl, engine AS eng "
+            "FROM system.tables WHERE database = {} AND name = {}",
+            database_expression,
+            name_literal);
+        if (seen_lookups.emplace(branch).second)
+            branches.push_back(std::move(branch));
+    };
+
+    for (const auto & table : tables)
+    {
+        const String name_literal = quoteString(table.table);
+        const String database_expression = table.database.empty() ? "currentDatabase()" : quoteString(table.database);
+
+        add_lookup(database_expression, name_literal);
+        if (table.database.empty())
+            add_lookup("''", name_literal);
+
+        if (seen_databases.emplace(table.database).second)
+            database_expressions.push_back(database_expression);
+    }
+
+    branches.push_back(fmt::format(
+        "SELECT 'database', name, '', engine FROM system.databases WHERE name IN ({})",
+        fmt::join(database_expressions, ", ")));
+    branches.emplace_back("SELECT 'current', currentDatabase(), '', ''");
+
+    const String query = fmt::to_string(fmt::join(branches, " UNION ALL "));
+
+    const Block result = materializeBlock(fetchInternalQueryResult(query, {}, /*from_ai_agent=*/ true));
+    if (result.columns() < 4)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of the table resolution query of the AI agent");
+
+    const auto & kind_column = *result.getByPosition(0).column;
+    const auto & database_column = *result.getByPosition(1).column;
+    const auto & table_column = *result.getByPosition(2).column;
+    const auto & engine_column = *result.getByPosition(3).column;
+
+    String current_database;
+    std::map<std::pair<String, String>, String> table_engines;
+    std::map<String, String> database_engines;
+    for (size_t row = 0; row < result.rows(); ++row)
+    {
+        const std::string_view kind = kind_column.getDataAt(row);
+        String database = String(database_column.getDataAt(row));
+        if (kind == "current")
+            current_database = std::move(database);
+        else if (kind == "database")
+            database_engines.emplace(std::move(database), String(engine_column.getDataAt(row)));
+        else
+            table_engines.emplace(
+                std::pair{std::move(database), String(table_column.getDataAt(row))},
+                String(engine_column.getDataAt(row)));
+    }
+
+    for (const auto & reference : tables)
+    {
+        String database = reference.database;
+        if (database.empty())
+        {
+            /// A temporary table shadows a table of the current database, and has no database
+            /// of its own to check.
+            if (auto it = table_engines.find({"", reference.table}); it != table_engines.end())
+            {
+                if (!isAllowedTableEngineForAIAgent(it->second))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The temporary table `{}` has the `{}` engine, which does not just hold data of this "
+                        "server, so it is not allowed for the read-only tool. Use the run_query tool for this query",
+                        reference.table,
+                        it->second);
+                continue;
+            }
+            database = current_database;
+        }
+
+        /// The databases owned by the server hold no user definitions; their tables are judged
+        /// by name, because their engines are one per table (`SystemTables`, `SystemNumbers`, ...).
+        if (isServerOwnedDatabaseForAIAgent(database))
+        {
+            if (!isAllowedServerOwnedTableForAIAgent(database, reference.table))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The table `{}.{}` reads state outside of this server (Keeper or object storage), so it is "
+                    "not allowed for the read-only tool. Use the run_query tool for this query",
+                    database,
+                    reference.table);
+            continue;
+        }
+
+        const auto database_it = database_engines.find(database);
+        if (database_it == database_engines.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The database `{}` of the table `{}` was not found in `system.databases`, so it could not be "
+                "checked. Use the run_query tool for this query",
+                database,
+                reference.table);
+
+        if (!isAllowedDatabaseEngineForAIAgent(database_it->second))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The database `{}` has the `{}` engine, so its tables are backed by an external catalog rather "
+                "than by this server. It is not allowed for the read-only tool; use the run_query tool for this "
+                "query",
+                database,
+                database_it->second);
+
+        const auto table_it = table_engines.find({database, reference.table});
+        if (table_it == table_engines.end())
+        {
+            /// Not a table of this database: a CTE of the query, a column on the right-hand side
+            /// of an `IN`, or a name that does not exist - in which case the server says so. The
+            /// database engine was checked above, so a database that lists all of its tables is
+            /// what makes this a safe conclusion rather than a guess.
+            continue;
+        }
+
+        if (!isAllowedTableEngineForAIAgent(table_it->second))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The table `{}.{}` has the `{}` engine, which does not just hold data of this server: reading it "
+                "can execute a stored definition or reach another server or an external system. It is not allowed "
+                "for the read-only tool; use the run_query tool for this query",
+                database,
+                reference.table,
+                table_it->second);
+    }
 }
 
 void ClientBase::recordErrorForAIContext(std::string_view query_or_input)

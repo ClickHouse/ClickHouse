@@ -68,15 +68,14 @@ bool changesSettings(const String & query)
 TEST(AIQueryValidation, AllowsReadOnlyStatements)
 {
     EXPECT_TRUE(isAllowed("SELECT count() FROM system.tables"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM default.events"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM v"));
+    /// A regular-looking table name is allowed, whatever it turns out to be on the server.
+    EXPECT_TRUE(isAllowed("SELECT * FROM default.events"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM v"));
     EXPECT_TRUE(isAllowed("WITH 1 AS x SELECT x"));
     EXPECT_TRUE(isAllowed("SELECT 1 UNION ALL SELECT 2"));
     EXPECT_TRUE(isAllowed("SHOW TABLES FROM system"));
     EXPECT_TRUE(isAllowed("SHOW DATABASES"));
     EXPECT_TRUE(isAllowed("SHOW CREATE TABLE system.tables"));
-    /// `SHOW CREATE` and `EXISTS` only read metadata and never execute the definition of a view,
-    /// so they are not held to the named-table boundary even for a non-`system` table.
     EXPECT_TRUE(isAllowed("SHOW CREATE TABLE default.events"));
     EXPECT_TRUE(isAllowed("EXISTS TABLE default.events"));
     EXPECT_TRUE(isAllowed("SHOW PROCESSLIST"));
@@ -96,39 +95,160 @@ TEST(AIQueryValidation, DisablingSchemaAccessBlocksAutonomousSchemaExploration)
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT name FROM system.tables"));
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT name FROM system.columns"));
 
-    /// `SHOW CREATE` and `EXISTS` only read metadata of the current server: they never execute the
-    /// definition of a view, so the named-table boundary of the external-access check does not
-    /// apply to them and `allow_schema_access` is what gates them.
+    /// The schema-exploration statements are gated by `allow_schema_access` alone.
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW CREATE TABLE t"));
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("EXISTS TABLE t"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("DESCRIBE t"));
     EXPECT_TRUE(isAllowed("SHOW CREATE TABLE t"));
     EXPECT_TRUE(isAllowed("EXISTS TABLE t"));
-    /// `DESCRIBE` infers the structure, which opens the resource, so it stays bounded by the
-    /// named-table boundary even with schema access enabled.
-    EXPECT_FALSE(isAllowed("DESCRIBE t"));
+    EXPECT_TRUE(isAllowed("DESCRIBE t"));
+
+    /// Reading a user table is not schema access, so it stays allowed with schema access off.
+    EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT count() FROM default.events"));
 }
 
-TEST(AIQueryValidation, RejectsExternalSystemTables)
+TEST(AIQueryValidation, RejectsExternalServerOwnedTables)
 {
     /// Most `system` tables read metadata local to the server, but some reach shared external
     /// state when read: Keeper (znodes, the `mntr` command, the DDL and object-storage queues,
     /// the replication state) or the object storage (the Iceberg table metadata). Those must go
-    /// through the confirmed `run_query` tool.
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.zookeeper WHERE path = '/'"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.zookeeper_connection"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.zookeeper_info"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.zookeeper_watches"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.distributed_ddl_queue"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.s3_queue_metadata"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.azure_queue_metadata"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.replicas"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.database_replicas"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.iceberg_history"));
-    EXPECT_FALSE(isAllowed("SELECT * FROM system.iceberg_files"));
+    /// through the confirmed `run_query` tool. They are judged by name, not by engine: every
+    /// `system` table has an engine of its own (`SystemZooKeeper`, `SystemTables`, ...).
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper_connection"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper_info"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper_watches"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "distributed_ddl_queue"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "s3_queue_metadata"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "azure_queue_metadata"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "replicas"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "database_replicas"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "iceberg_history"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "iceberg_files"));
 
     /// The log tables named alike stay local reads.
-    EXPECT_TRUE(isAllowed("SELECT * FROM system.zookeeper_log"));
-    EXPECT_TRUE(isAllowed("SELECT * FROM system.zookeeper_connection_log"));
+    EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper_log"));
+    EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper_connection_log"));
+    EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "tables"));
+
+    /// The list applies to `system` only: a user table that happens to be named `replicas` is
+    /// judged by its engine like any other.
+    EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("default", "replicas"));
+
+    /// `information_schema` is server-owned as well - its tables are views over `system` by
+    /// design, so an engine check would reject every one of them.
+    EXPECT_TRUE(isServerOwnedDatabaseForAIAgent("system"));
+    EXPECT_TRUE(isServerOwnedDatabaseForAIAgent("information_schema"));
+    EXPECT_TRUE(isServerOwnedDatabaseForAIAgent("INFORMATION_SCHEMA"));
+    EXPECT_FALSE(isServerOwnedDatabaseForAIAgent("default"));
+    EXPECT_FALSE(isServerOwnedDatabaseForAIAgent(""));
+}
+
+TEST(AIQueryValidation, AllowsOnlyLocalTableEngines)
+{
+    /// The whole MergeTree family, however it is prefixed.
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("MergeTree"));
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("ReplacingMergeTree"));
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("ReplicatedSummingMergeTree"));
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("SharedReplacingMergeTree"));
+    /// The Log family and the simple engines.
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("Log"));
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("TinyLog"));
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("StripeLog"));
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("Memory"));
+    EXPECT_TRUE(isAllowedTableEngineForAIAgent("Null"));
+
+    /// Engines that execute a stored definition, or redirect to a table whose engine is not the
+    /// one being checked.
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("View"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("MaterializedView"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("LiveView"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("Dictionary"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("Merge"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("Buffer"));
+    /// Engines that read another server or an external system.
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("Distributed"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("URL"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("S3"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("File"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("MySQL"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("PostgreSQL"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("Kafka"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("IcebergS3"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent("KeeperMap"));
+    EXPECT_FALSE(isAllowedTableEngineForAIAgent(""));
+}
+
+TEST(AIQueryValidation, AllowsOnlyLocalDatabaseEngines)
+{
+    /// A database that lists all of its tables in `system.tables` is what makes "this name is not
+    /// a table" a safe conclusion rather than a guess.
+    EXPECT_TRUE(isAllowedDatabaseEngineForAIAgent("Atomic"));
+    EXPECT_TRUE(isAllowedDatabaseEngineForAIAgent("Ordinary"));
+    EXPECT_TRUE(isAllowedDatabaseEngineForAIAgent("Replicated"));
+    EXPECT_TRUE(isAllowedDatabaseEngineForAIAgent("Shared"));
+    EXPECT_TRUE(isAllowedDatabaseEngineForAIAgent("Memory"));
+    EXPECT_TRUE(isAllowedDatabaseEngineForAIAgent("Overlay"));
+
+    EXPECT_FALSE(isAllowedDatabaseEngineForAIAgent("MySQL"));
+    EXPECT_FALSE(isAllowedDatabaseEngineForAIAgent("PostgreSQL"));
+    EXPECT_FALSE(isAllowedDatabaseEngineForAIAgent("S3"));
+    EXPECT_FALSE(isAllowedDatabaseEngineForAIAgent("Iceberg"));
+    EXPECT_FALSE(isAllowedDatabaseEngineForAIAgent("DataLakeCatalog"));
+    EXPECT_FALSE(isAllowedDatabaseEngineForAIAgent("Filesystem"));
+    EXPECT_FALSE(isAllowedDatabaseEngineForAIAgent(""));
+}
+
+TEST(AIQueryValidation, CollectsNamedTables)
+{
+    auto collect = [](const String & query)
+    {
+        std::vector<String> names;
+        for (const auto & reference : collectNamedTablesForAIAgent(*parse(query)))
+            names.push_back(reference.database.empty() ? reference.table : reference.database + "." + reference.table);
+        return names;
+    };
+
+    EXPECT_EQ(collect("SELECT 1"), std::vector<String>{});
+    EXPECT_EQ(collect("SELECT * FROM numbers(10)"), std::vector<String>{});
+    EXPECT_EQ(collect("SELECT count() FROM db.t"), std::vector<String>{"db.t"});
+    /// An unqualified name keeps its database empty: only the server can resolve it.
+    EXPECT_EQ(collect("SELECT count() FROM t"), std::vector<String>{"t"});
+    EXPECT_EQ(collect("SELECT * FROM a JOIN db.b ON a.x = db.b.x"), (std::vector<String>{"a", "db.b"}));
+    EXPECT_EQ(collect("SELECT * FROM (SELECT * FROM db.t) LIMIT 1"), std::vector<String>{"db.t"});
+    EXPECT_EQ(collect("SELECT * FROM db.t UNION ALL SELECT * FROM db.u"), (std::vector<String>{"db.t", "db.u"}));
+    /// Repeated names are collected once.
+    EXPECT_EQ(collect("SELECT * FROM db.t WHERE x IN (SELECT x FROM db.t)"), std::vector<String>{"db.t"});
+    /// A CTE name is indistinguishable from a table name here, so it is collected too; it simply
+    /// does not resolve to a table when the caller looks it up.
+    EXPECT_EQ(collect("WITH c AS (SELECT 1) SELECT * FROM c"), std::vector<String>{"c"});
+    /// The right-hand side of IN: ambiguous between a column and a table, collected either way.
+    EXPECT_EQ(collect("SELECT 1 WHERE 1 IN v"), std::vector<String>{"v"});
+    EXPECT_EQ(collect("SELECT 1 WHERE 1 IN db.v"), std::vector<String>{"db.v"});
+    /// Values, subqueries and table functions in that position name no table.
+    EXPECT_EQ(collect("SELECT 1 WHERE 1 IN (1, 2, 3)"), std::vector<String>{});
+    EXPECT_EQ(collect("SELECT 1 WHERE 1 IN numbers(3)"), std::vector<String>{});
+}
+
+TEST(AIQueryValidation, AllowsReadingRegularLookingTables)
+{
+    /// A name in a FROM can be a view whose definition reaches an external resource, and the
+    /// static validation cannot see that definition - it does not judge names at all. What the
+    /// name resolves to is checked by the caller against `system.tables`; here only the external
+    /// access written in the query text is rejected.
+    EXPECT_TRUE(isAllowed("SELECT count() FROM db.t"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM t WHERE x = 1 ORDER BY y LIMIT 10"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM db.t FINAL"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM a JOIN b ON a.x = b.x"));
+    EXPECT_TRUE(isAllowed("WITH c AS (SELECT * FROM db.t) SELECT * FROM c"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM (SELECT * FROM db.t) LIMIT 1"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM db.t UNION ALL SELECT * FROM db.u"));
+    EXPECT_TRUE(isAllowed("EXPLAIN SELECT * FROM db.t"));
+
+    /// Explicit external access stays rejected, also when combined with a regular table.
+    EXPECT_FALSE(isAllowed("SELECT * FROM db.t WHERE x IN (SELECT * FROM url('http://x', 'CSV', 'x String'))"));
+    EXPECT_FALSE(isAllowed("SELECT dictGet('d', 'v', toUInt64(x)) FROM db.t"));
+    EXPECT_FALSE(isAllowed("SELECT aiGenerate(x) FROM db.t"));
 }
 
 TEST(AIQueryValidation, RejectsWritesAndDDL)
@@ -219,21 +339,24 @@ TEST(AIQueryValidation, RejectsExternalAccess)
     EXPECT_TRUE(isAllowed("SELECT number IN numbers(3) FROM numbers(5)"));
 }
 
-TEST(AIQueryValidation, RejectsTableNamesOnTheRightHandSideOfIn)
+TEST(AIQueryValidation, ChecksTableNamesOnTheRightHandSideOfIn)
 {
-    /// `1 IN v` reads `v` without an `ASTTableExpression` in the AST, so it has to be held to the
-    /// same boundary as `FROM v`: the view may be defined over `url` or `file`.
-    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN v"));
-    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN (v)"));
-    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN db.v"));
-    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 GLOBAL IN v"));
-    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 NOT IN v"));
+    /// `1 IN v` reads `v` without an `ASTTableExpression` in the AST, so it is held to the same
+    /// rules as `FROM v` - which now admit a regular-looking name.
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN v"));
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN (v)"));
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN db.v"));
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 GLOBAL IN v"));
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 NOT IN v"));
     /// Nested in a subquery of an allowed statement.
-    EXPECT_FALSE(isAllowed("SELECT (SELECT 1 WHERE 1 IN v)"));
+    EXPECT_TRUE(isAllowed("SELECT (SELECT 1 WHERE 1 IN v)"));
 
-    /// The `system` tables stay allowed, `system.zookeeper` does not.
+    /// A table function reaching outside of the server is still rejected in this position.
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN url('http://x', 'CSV', 'x String')"));
+
+    /// A name is collected for the engine check instead of being judged here.
     EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN system.numbers"));
-    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN system.zookeeper"));
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN system.zookeeper"));
 
     /// Literals, tuples of literals, subqueries and the allowed table functions are unaffected.
     EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN (1, 2, 3)"));
@@ -247,12 +370,14 @@ TEST(AIQueryValidation, RejectsTableNamesOnTheRightHandSideOfIn)
     EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN (toUInt8(1), toUInt8(2))"));
     EXPECT_TRUE(isAllowed("SELECT number FROM numbers(3) WHERE number IN (number, number + 1)"));
 
-    /// A name is ambiguous between a column and a table, and the client cannot resolve it, so
-    /// `IN` over an array column is conservatively sent through run_query as well.
-    EXPECT_FALSE(isAllowed("SELECT 1 IN arr FROM (SELECT [1, 2] AS arr)"));
+    /// A name here is ambiguous between a column and a table; both readings are now allowed.
+    EXPECT_TRUE(isAllowed("SELECT 1 IN arr FROM (SELECT [1, 2] AS arr)"));
 
-    /// The same position must not bypass the schema-access restriction either.
+    /// The same position must not bypass the schema-access restriction either. An unqualified
+    /// name is rejected there too: the session database can make it a `system` table.
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT 1 WHERE 1 IN system.tables"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT 1 WHERE 1 IN tables"));
+    EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT 1 WHERE 1 IN db.v"));
     EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT 1 WHERE 1 IN (1, 2, 3)"));
 }
 

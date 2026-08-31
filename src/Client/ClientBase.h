@@ -17,6 +17,7 @@
 
 #if USE_CLIENT_AI
 #include <Client/AI/AIAgent.h>
+#include <Client/AI/AIQueryValidation.h>
 #include <Client/AI/QueryContextBuffer.h>
 #endif
 
@@ -250,6 +251,14 @@ protected:
     /// The description of the restrictions of the session for the model (empty when there are
     /// none), so it does not attempt what the session rejects.
     String aiSessionRestrictions();
+
+    /// Resolve the tables named in a query of the unconfirmed read-only tool against
+    /// `system.tables` and refuse the query unless every one of them is a plain table of this
+    /// server - see `isAllowedTableEngineForAIAgent`. A name is only a name; what reading it does
+    /// is decided by the engine it resolves to, and that takes a query to the server, which the
+    /// static validation cannot make. Throws Exception(BAD_ARGUMENTS) with a message for the
+    /// model when a table does not qualify.
+    void checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables);
 
     /// Record an error of the current or just-failed query into the AI context buffer.
     void recordErrorForAIContext(std::string_view query_or_input);

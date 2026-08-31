@@ -32,6 +32,7 @@
 
 #include <Poco/String.h>
 
+#include <algorithm>
 #include <string_view>
 #include <unordered_set>
 
@@ -181,43 +182,6 @@ bool isDeniedScalarFunction(const String & name)
         || lowercase_name == "dictisin";
 }
 
-/// A named table can be a view. Its definition is expanded only on the server, after this
-/// validation, and can hide external table functions or AI functions. The client cannot inspect
-/// the definition without adding another authorization boundary, so unconfirmed queries only
-/// admit the server-owned `system` tables. User tables, views, and CTE names require the
-/// confirmed tool. This is deliberately stricter than `readonly = 1`: it preserves the promise
-/// that the unconfirmed tool cannot reach resources beyond the local server.
-bool isAllowedNamedTable(const String & database, const String & table)
-{
-    /// The `system` tables whose read reaches beyond the local server. Most of them talk to
-    /// Keeper: `zookeeper` reads znodes, `zookeeper_info` opens sockets to every configured
-    /// Keeper host for the `mntr`/`isro` commands, `distributed_ddl_queue` and the queue-metadata
-    /// tables read the queue state stored in Keeper, `replicas` and `database_replicas` request
-    /// the replication state there, and even the connection/watch views can establish the
-    /// server's Keeper session lazily. The Iceberg tables read the table metadata from the
-    /// object storage.
-    static const std::unordered_set<std::string_view> external_system_tables
-    {
-        "zookeeper",
-        "zookeeper_connection",
-        "zookeeper_info",
-        "zookeeper_watches",
-        "distributed_ddl_queue",
-        "s3_queue_metadata",
-        "azure_queue_metadata",
-        "replicas",
-        "database_replicas",
-        "iceberg_history",
-        "iceberg_files",
-    };
-    return database == "system" && !external_system_tables.contains(table);
-}
-
-bool isAllowedNamedTable(const ASTTableIdentifier & table)
-{
-    return isAllowedNamedTable(table.getDatabaseName(), table.shortName());
-}
-
 /// The right-hand side of an IN operator names a table or a table function without an
 /// `ASTTableExpression` around it: `x IN some_view`, `x IN remote(...)`. The generic traversal
 /// never sees a table there, so this position is checked separately.
@@ -229,31 +193,22 @@ bool isAllowedNamedTable(const ASTTableIdentifier & table)
 ///
 /// A name in this position is ambiguous: the server resolves it as a column of the enclosing
 /// query first and only then as a table, and the client cannot tell the two apart before
-/// execution. It is therefore held to the same named-table boundary as an explicit `FROM`, at
-/// the cost of sending `x IN some_array_column` through run_query as well - the same fallback as
-/// for any other construct that cannot be verified in advance.
+/// execution. It is collected as a table reference either way, and judged once resolved.
 void checkNoTableAccessInSetExpression(const IAST & ast, bool allow_system_tables)
 {
     if (const auto * identifier = ast.as<ASTIdentifier>())
     {
-        /// A name of any other number of parts cannot be a table, so it leaves both names empty
-        /// and is rejected below like any other name that is not a `system` table.
+        /// A name of any other number of parts cannot be a table, so it leaves the database empty.
         const auto & parts = identifier->name_parts;
         const String database = parts.size() == 2 ? parts.front() : "";
-        const String table = parts.size() == 1 || parts.size() == 2 ? parts.back() : "";
 
-        if (!allow_system_tables)
+        /// The schema restriction hides the `system` database. Because of the ambiguity above, an
+        /// unqualified name is rejected as well - it is usually a column, but the session database
+        /// can make it a `system` table, and nothing here can tell.
+        if (!allow_system_tables && (database == "system" || database.empty()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
-
-        if (!isAllowedNamedTable(database, table))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The name `{}` on the right-hand side of IN may be a table or a view whose definition reaches "
-                "resources outside of the tables of the current server, so it is not allowed for the read-only "
-                "tool. Use the run_query tool for this query",
-                identifier->name());
     }
     else if (const auto * function = ast.as<ASTFunction>())
     {
@@ -301,13 +256,12 @@ bool isKnownBuiltinFunction(const String & name)
         || AggregateFunctionFactory::instance().isAggregateFunctionName(name);
 }
 
-/// `EXISTS` and `SHOW CREATE` keep their target on the query itself instead of in an
-/// `ASTTableExpression`, so the named-table boundary below does not see it. They need none: they
-/// only read metadata of the current server and never execute the definition of a view, so they
-/// cannot reach an external resource through one. `DESCRIBE` is the exception - it infers the
-/// structure, which does open the resource - but it carries an `ASTTableExpression` and is
-/// covered. Autonomous access to metadata is gated by `allow_schema_access` instead, which
-/// rejects these statements by their type in `isSchemaExplorationStatement`.
+/// Rejects the external access that is written in the query text: the table functions and the
+/// scalar functions that reach outside of the current server. A plain table name is not judged
+/// here - see `collectNamedTablesForAIAgent`.
+///
+/// Autonomous access to metadata is a separate concern, gated by `allow_schema_access`, which
+/// rejects the schema-exploration statements by their type in `isSchemaExplorationStatement`.
 void checkNoExternalAccess(const IAST & ast)
 {
     if (const auto * table_expression = ast.as<ASTTableExpression>())
@@ -322,16 +276,9 @@ void checkNoExternalAccess(const IAST & ast)
                     "so it is not allowed for the read-only tool. Use the run_query tool for this query",
                     function.name);
         }
-        else if (table_expression->database_and_table_name)
-        {
-            const auto & table = table_expression->database_and_table_name->as<ASTTableIdentifier &>();
-            if (!isAllowedNamedTable(table))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The table `{}` may be a view whose definition reaches resources outside of the tables of the current "
-                    "server, so it is not allowed for the read-only tool. Use the run_query tool for this query",
-                    table.name());
-        }
+        /// A plain table name is not judged here: what reading it does depends on what it
+        /// resolves to on the server. `collectNamedTablesForAIAgent` gathers those names and the
+        /// caller checks the engine of each one.
     }
     else if (const auto * function = ast.as<ASTFunction>())
     {
@@ -378,9 +325,8 @@ void checkNoSchemaAccess(const IAST & ast)
     }
     else if (const auto * function = ast.as<ASTFunction>())
     {
-        /// `x IN system.tables` reads a table without an `ASTTableExpression`. The external-access
-        /// check has already rejected every name there that is not a `system` table, so any name
-        /// left in this position is one this restriction is meant to hide.
+        /// `x IN system.tables` reads a table without an `ASTTableExpression`, so this position
+        /// needs the schema restriction applied separately.
         if (const auto * set_expression = getSetExpressionOfInOperator(*function))
             checkNoTableAccessInSetExpression(*set_expression, /*allow_system_tables=*/ false);
     }
@@ -485,6 +431,126 @@ bool isReadOnlyStatementForAIAgent(const IAST & ast)
         ASTShowCreateAccessEntityQuery,
         ASTShowGrantsQuery,
         ASTShowPrivilegesQuery>(ast);
+}
+
+namespace
+{
+
+/// Gathers the table names of one node into `result`, keeping the order of first appearance.
+void collectNamedTables(const IAST & ast, std::vector<AIQueryTableReference> & result)
+{
+    auto add = [&](String database, String table)
+    {
+        AIQueryTableReference reference{std::move(database), std::move(table)};
+        if (std::ranges::find(result, reference) == result.end())
+            result.push_back(std::move(reference));
+    };
+
+    if (const auto * table_expression = ast.as<ASTTableExpression>())
+    {
+        if (table_expression->database_and_table_name)
+        {
+            const auto & table = table_expression->database_and_table_name->as<ASTTableIdentifier &>();
+            add(table.getDatabaseName(), table.shortName());
+        }
+    }
+    else if (const auto * function = ast.as<ASTFunction>())
+    {
+        /// `x IN some_view` reads a table without an `ASTTableExpression` around it.
+        if (const auto * set_expression = getSetExpressionOfInOperator(*function))
+        {
+            if (const auto * identifier = set_expression->as<ASTIdentifier>())
+            {
+                const auto & parts = identifier->name_parts;
+                if (parts.size() == 1)
+                    add("", parts.front());
+                else if (parts.size() == 2)
+                    add(parts.front(), parts.back());
+            }
+        }
+    }
+
+    for (const auto & child : ast.children)
+        collectNamedTables(*child, result);
+}
+
+}
+
+std::vector<AIQueryTableReference> collectNamedTablesForAIAgent(const IAST & ast)
+{
+    std::vector<AIQueryTableReference> result;
+    collectNamedTables(ast, result);
+    return result;
+}
+
+bool isServerOwnedDatabaseForAIAgent(const String & database)
+{
+    /// `information_schema` exists in both spellings, and its tables are views over `system`.
+    return database == "system" || database == "information_schema" || database == "INFORMATION_SCHEMA";
+}
+
+bool isAllowedServerOwnedTableForAIAgent(const String & database, const String & table)
+{
+    /// The `system` tables whose read reaches beyond the local server. Most of them talk to
+    /// Keeper: `zookeeper` reads znodes, `zookeeper_info` opens sockets to every configured
+    /// Keeper host for the `mntr`/`isro` commands, `distributed_ddl_queue` and the queue-metadata
+    /// tables read the queue state stored in Keeper, `replicas` and `database_replicas` request
+    /// the replication state there, and even the connection/watch views can establish the
+    /// server's Keeper session lazily. The Iceberg tables read the table metadata from the
+    /// object storage.
+    static const std::unordered_set<std::string_view> external_system_tables
+    {
+        "zookeeper",
+        "zookeeper_connection",
+        "zookeeper_info",
+        "zookeeper_watches",
+        "distributed_ddl_queue",
+        "s3_queue_metadata",
+        "azure_queue_metadata",
+        "replicas",
+        "database_replicas",
+        "iceberg_history",
+        "iceberg_files",
+    };
+    return database != "system" || !external_system_tables.contains(table);
+}
+
+bool isAllowedTableEngineForAIAgent(const String & engine)
+{
+    /// The whole MergeTree family, however it is prefixed: `Replicated`, `Shared`, `Replacing`,
+    /// `Summing`, `Aggregating`, `Collapsing`, `Graphite`, and the combinations of those.
+    if (engine.ends_with("MergeTree"))
+        return true;
+
+    static const std::unordered_set<std::string_view> allowed
+    {
+        /// The Log family and the simple engines: local data, no stored definition to execute.
+        "Log",
+        "TinyLog",
+        "StripeLog",
+        "Memory",
+        "Null",
+        "Set",
+        "Join",
+        "EmbeddedRocksDB",
+    };
+    return allowed.contains(engine);
+}
+
+bool isAllowedDatabaseEngineForAIAgent(const String & engine)
+{
+    static const std::unordered_set<std::string_view> allowed
+    {
+        "Atomic",
+        "Ordinary",
+        "Memory",
+        "Lazy",
+        "Replicated",
+        "Shared",
+        /// The default database of `clickhouse-local`.
+        "Overlay",
+    };
+    return allowed.contains(engine);
 }
 
 void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
