@@ -2,7 +2,7 @@
 title: 'Onboarding'
 sidebarTitle: 'Onboarding'
 description: 'Install the ClickHouse Connector and enroll it on Kubernetes or a Linux VM'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
+keywords: ['connector', 'clicklink', 'ClickHouse Connector', 'onboarding']
 doc_type: 'guide'
 ---
 
@@ -204,4 +204,4 @@ Re-run the same command. `init` is idempotent: re-runs converge on the same stat
 
 If enrollment is refused, the token was either already redeemed (re-run with `--handoff handoff.yaml`, which exists until the final cleanup step) or is invalid or expired (contact your ClickHouse account team for a fresh token). If enrollment fails with a transport error, the token was not spent; re-run the same command.
 
-`--force` is the explicit reset, not a routine retry: it overwrites the kept config or values overlay, regenerates the client key, and supersedes an unexpired client certificate (a `409` from the signing endpoint means one already exists). The connector's cluster UUID is preserved even across `--force`, so a re-initialized connector keeps its identity. Reach for it when rotating credentials or superseding a certificate, and see [operations](/products/bring-your-own-cloud/connector/operations) for the full re-run and recovery model.
+`--force` is the explicit reset, not a routine retry: it overwrites the kept config or values overlay, regenerates the client key, and supersedes an unexpired client certificate (a `409` from the signing endpoint means one already exists). The connector's cluster UUID is preserved even across `--force`, so a re-initialized connector keeps its identity. Reach for it when rotating credentials or superseding a certificate, and see [operations](/products/clickhouse-connector/operations) for the full re-run and recovery model.

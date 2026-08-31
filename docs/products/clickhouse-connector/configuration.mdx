@@ -2,11 +2,11 @@
 title: 'Configuration'
 sidebarTitle: 'Configuration'
 description: 'Configure the ClickHouse Connector: ClickHouse instances, operator allowlists, network policy, redaction, private mirrors, and storage'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration']
+keywords: ['connector', 'clicklink', 'ClickHouse Connector', 'configuration']
 doc_type: 'guide'
 ---
 
-This page covers the configuration changes you are most likely to make after installing the ClickHouse Connector. For every key with its default and meaning, see the [configuration reference](/products/bring-your-own-cloud/connector/reference/configuration); for command flags, see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli).
+This page covers the configuration changes you are most likely to make after installing the ClickHouse Connector. For every key with its default and meaning, see the [configuration reference](/products/clickhouse-connector/reference/configuration); for command flags, see the [CLI reference](/products/clickhouse-connector/reference/cli).
 
 ## Configuration surfaces {#configuration-surfaces}
 
@@ -17,7 +17,7 @@ The connector has one configuration surface per install target.
 `clicklink clctl init` stages a values overlay named `clicklink-values.yaml` in the working directory and deploys the `clicklink-connector` chart with it. The overlay is the durable record of your deployment: re-running `init` keeps it unless you pass `--force`, so your edits survive re-runs and recovery.
 
 <Note>
-Day-2 commands on this page and in [operations](/products/bring-your-own-cloud/connector/operations) use the `helm` CLI. Only `init` carries a built-in Helm client.
+Day-2 commands on this page and in [operations](/products/clickhouse-connector/operations) use the `helm` CLI. Only `init` carries a built-in Helm client.
 </Note>
 
 Edit the overlay, then apply it:
@@ -32,7 +32,7 @@ helm upgrade clicklink-connector clicklink-connector \
   -f clicklink-values.yaml
 ```
 
-The block reapplies your edited values at the chart version already installed, so a configuration change never doubles as an unplanned upgrade; moving to a new version is a deliberate step covered in [operations](/products/bring-your-own-cloud/connector/operations). On a mirrored install that uses a chart repository, swap `--repo` for your mirror.
+The block reapplies your edited values at the chart version already installed, so a configuration change never doubles as an unplanned upgrade; moving to a new version is a deliberate step covered in [operations](/products/clickhouse-connector/operations). On a mirrored install that uses a chart repository, swap `--repo` for your mirror.
 
 An install from a direct chart reference (`oci://`, a URL, or a local archive or directory, see [private mirrors](#private-mirrors)) has no repository to resolve against. Rerun the upgrade with the reference you installed from:
 
@@ -103,7 +103,7 @@ clicklink clctl troubleshoot access provision --target helm \
   --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
 ```
 
-For an operator-managed instance with no SQL-capable admin, swap `--apply-ch-grants` for `--ch-user-via cr` (the pod-selection flags stay); see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli). Then wire the Secret and ServiceAccount pair each command creates into the matching `accessBundles` map and run the `helm upgrade` shown above:
+For an operator-managed instance with no SQL-capable admin, swap `--apply-ch-grants` for `--ch-user-via cr` (the pod-selection flags stay); see the [CLI reference](/products/clickhouse-connector/reference/cli). Then wire the Secret and ServiceAccount pair each command creates into the matching `accessBundles` map and run the `helm upgrade` shown above:
 
 ```yaml
 scraper:
@@ -144,12 +144,12 @@ sudo clicklink clctl troubleshoot access provision --provider local \
 </Tabs>
 
 <Tip>
-The same `access provision` commands with `--force` rotate an instance's ClickHouse credentials. See [operations](/products/bring-your-own-cloud/connector/operations).
+The same `access provision` commands with `--force` rotate an instance's ClickHouse credentials. See [operations](/products/clickhouse-connector/operations).
 </Tip>
 
 ## Operator allowlist {#operator-allowlist}
 
-Gateway-managed sessions are gated by an allowlist of operator email addresses: every request to the session gateway must carry a short-lived OIDC ID token whose attested email is on the list. An empty allowlist closes the gateway, so nobody can open a session through it. On a VM, root on the host can additionally manage sessions directly through the local session file; the allowlist governs the gateway path only. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions) for the full trust model.
+Gateway-managed sessions are gated by an allowlist of operator email addresses: every request to the session gateway must carry a short-lived OIDC ID token whose attested email is on the list. An empty allowlist closes the gateway, so nobody can open a session through it. On a VM, root on the host can additionally manage sessions directly through the local session file; the allowlist governs the gateway path only. See [support sessions](/products/clickhouse-connector/support-sessions) for the full trust model.
 
 <Tabs>
 <Tab title="Kubernetes">
@@ -214,7 +214,7 @@ clctl:
 
 The example is the `private.googleapis.com` range, which covers a Google identity provider reached over Private Google Access; for any other identity provider, supply that provider's range (or the CIDR of the egress proxy that fronts it).
 
-Two further ingress knobs: `metricsScrapeSelector` restricts metrics-scrape ingress to a specific Prometheus namespace by label, and `kubeletProbeCIDRs` admits kubelet health probes explicitly in environments with strict default-deny. See the [configuration reference](/products/bring-your-own-cloud/connector/reference/configuration) for the full key list.
+Two further ingress knobs: `metricsScrapeSelector` restricts metrics-scrape ingress to a specific Prometheus namespace by label, and `kubeletProbeCIDRs` admits kubelet health probes explicitly in environments with strict default-deny. See the [configuration reference](/products/clickhouse-connector/reference/configuration) for the full key list.
 
 ## Redaction patterns {#redaction-patterns}
 
@@ -266,7 +266,7 @@ clicklink clctl init --handoff handoff.yaml --target helm \
   --chart oci://registry.example.com/charts/clicklink-connector
 ```
 
-When your connector API endpoint sits behind a private CA inside your boundary, pass `--api-private-ca` to `init`: it stages `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, so the endpoint is verified against the CA chain from your enrollment bundle instead of the system roots. On a VM the equivalent is `api.tls.ca_file` in `/etc/clicklink/config.yaml`; `init` installs the bundle chain at `/etc/clicklink/tls/ca.crt`, and it is added to the system roots for verification. For fully air-gapped enrollment and certificate signing, see [onboarding](/products/bring-your-own-cloud/connector/onboarding).
+When your connector API endpoint sits behind a private CA inside your boundary, pass `--api-private-ca` to `init`: it stages `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, so the endpoint is verified against the CA chain from your enrollment bundle instead of the system roots. On a VM the equivalent is `api.tls.ca_file` in `/etc/clicklink/config.yaml`; `init` installs the bundle chain at `/etc/clicklink/tls/ca.crt`, and it is added to the system roots for verification. For fully air-gapped enrollment and certificate signing, see [onboarding](/products/clickhouse-connector/onboarding).
 
 ## Storage {#storage}
 

@@ -2,7 +2,7 @@
 title: 'Architecture'
 sidebarTitle: 'Architecture'
 description: 'ClickHouse Connector components, connections, certificate lifecycle, and data flow'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+keywords: ['connector', 'clicklink', 'ClickHouse Connector']
 doc_type: 'guide'
 ---
 
@@ -13,7 +13,7 @@ import { Image } from "/snippets/components/Image.jsx";
 The ClickHouse Connector runs two daemons, both built into the `clicklink` binary:
 
 - **The scraper** reads an allowlist of ClickHouse system tables on a fixed interval, buffers the results locally, and ships them to your connector endpoint together with infrastructure metadata and health status.
-- **The troubleshooter** holds an outbound command channel to your connector endpoint and executes read-only diagnostics during an active [support session](/products/bring-your-own-cloud/connector/support-sessions). Outside a session it executes nothing.
+- **The troubleshooter** holds an outbound command channel to your connector endpoint and executes read-only diagnostics during an active [support session](/products/clickhouse-connector/support-sessions). Outside a session it executes nothing.
 
 On Kubernetes, both run as workloads deployed by the `clicklink-connector` Helm chart in a namespace you choose (default `clicklink`). On a Linux VM, they run as the `clicklink-scraper` and `clicklink-troubleshooter` systemd units under an unprivileged `clicklink` system user.
 
@@ -34,7 +34,7 @@ Every connection the connector makes is outbound. The complete list:
 
 Every API request carries an `Authorization` header with an HMAC-SHA256 signature computed over the method, path, timestamp, and a hash of the body, so requests cannot be replayed or altered in transit even inside the TLS channel.
 
-Inbound, the connector exposes only local health and metrics ports, plus the opt-in session gateway described on the [support sessions](/products/bring-your-own-cloud/connector/support-sessions) page. ClickHouse's control plane never connects to any of them.
+Inbound, the connector exposes only local health and metrics ports, plus the opt-in session gateway described on the [support sessions](/products/clickhouse-connector/support-sessions) page. ClickHouse's control plane never connects to any of them.
 
 ## Certificate lifecycle {#certificate-lifecycle}
 
@@ -59,17 +59,17 @@ The connector verifies your endpoint's server certificate against the system tru
 
 ### What never leaves by default {#what-never-leaves}
 
-- **Raw query text, on the scrape path.** `system.query_log` is deliberately excluded from the default scrape set because its query columns can carry literal values, and with them PII or secrets; re-adding it is a per-deployment override you make knowingly. During a support session the default table allowlist does include `system.processes`, which shows the text of live queries; see [support sessions](/products/bring-your-own-cloud/connector/support-sessions) for trimming it.
+- **Raw query text, on the scrape path.** `system.query_log` is deliberately excluded from the default scrape set because its query columns can carry literal values, and with them PII or secrets; re-adding it is a per-deployment override you make knowingly. During a support session the default table allowlist does include `system.processes`, which shows the text of live queries; see [support sessions](/products/clickhouse-connector/support-sessions) for trimming it.
 - **Credentials.** Configuration files hold no credentials, ClickHouse stores only bcrypt hashes of the connector users' passwords, and secrets stay in Kubernetes Secrets or root-readable files on the host. Nothing in the scrape or sync paths transmits them.
-- **Unredacted troubleshooter output.** Everything the troubleshooter returns passes through redaction patterns (built-in plus your own) before it leaves. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
+- **Unredacted troubleshooter output.** Everything the troubleshooter returns passes through redaction patterns (built-in plus your own) before it leaves. See [support sessions](/products/clickhouse-connector/support-sessions).
 
 ## Trust boundaries {#trust-boundaries}
 
 - **Your environment is the boundary.** ClickHouse Cloud receives only what the scraper ships and what an active support session returns. It never initiates a connection inward.
 - **The session gateway is yours.** It is reachable only inside your environment (over `kubectl port-forward` on Kubernetes, or locally on a VM) unless you opt into exposing it through an Ingress. ClickHouse's control plane never connects to it.
-- **ClickHouse access is read-only.** The `pcm_scraper` and `pcm_troubleshooter` users hold per-table `SELECT` grants, plus one scraper-only system grant that flushes log tables to disk and nothing else; no `INSERT`, DDL, or user-management grants exist. The exact listing is in the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
+- **ClickHouse access is read-only.** The `pcm_scraper` and `pcm_troubleshooter` users hold per-table `SELECT` grants, plus one scraper-only system grant that flushes log tables to disk and nothing else; no `INSERT`, DDL, or user-management grants exist. The exact listing is in the [privilege model](/products/clickhouse-connector/reference/privilege-model).
 - **Kubernetes access is namespace-scoped.** All RBAC is granted through Roles in the connector and instance namespaces, with read-only verbs on workload resources and exact-name access to the connector's own Secrets. There is no `exec`, `delete`, or `patch` permission.
-- **Network policy.** On Kubernetes the chart can render a NetworkPolicy that denies all connector egress except the CIDRs you list. Enforcement depends on your cluster running an enforcing CNI; without one the policy is inert. See [configuration](/products/bring-your-own-cloud/connector/configuration).
+- **Network policy.** On Kubernetes the chart can render a NetworkPolicy that denies all connector egress except the CIDRs you list. Enforcement depends on your cluster running an enforcing CNI; without one the policy is inert. See [configuration](/products/clickhouse-connector/configuration).
 - **Host hardening on VMs.** The units run as a non-login system user with `ProtectSystem=strict`, `NoNewPrivileges`, read-only configuration paths, and FIPS mode enabled.
 
-For the connector's exact grants and RBAC rules, see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model) reference. If ClickHouse operates the clusters for you instead, the trust model is different; see the [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) and [BYOC privilege](/products/bring-your-own-cloud/reference/privilege) pages.
+For the connector's exact grants and RBAC rules, see the [privilege model](/products/clickhouse-connector/reference/privilege-model) reference. If ClickHouse operates the clusters for you instead, the trust model is different; see the [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) and [BYOC privilege](/products/bring-your-own-cloud/reference/privilege) pages.

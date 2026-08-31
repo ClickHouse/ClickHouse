@@ -32,6 +32,46 @@
     "source": "/products/bring-your-own-cloud/overview/overview"
   },
   {
+    "destination": "/products/clickhouse-connector/overview",
+    "source": "/products/bring-your-own-cloud/connector/overview"
+  },
+  {
+    "destination": "/products/clickhouse-connector/onboarding",
+    "source": "/products/bring-your-own-cloud/connector/onboarding"
+  },
+  {
+    "destination": "/products/clickhouse-connector/architecture",
+    "source": "/products/bring-your-own-cloud/connector/architecture"
+  },
+  {
+    "destination": "/products/clickhouse-connector/support-sessions",
+    "source": "/products/bring-your-own-cloud/connector/support-sessions"
+  },
+  {
+    "destination": "/products/clickhouse-connector/configuration",
+    "source": "/products/bring-your-own-cloud/connector/configuration"
+  },
+  {
+    "destination": "/products/clickhouse-connector/operations",
+    "source": "/products/bring-your-own-cloud/connector/operations"
+  },
+  {
+    "destination": "/products/clickhouse-connector/reference/cli",
+    "source": "/products/bring-your-own-cloud/connector/reference/cli"
+  },
+  {
+    "destination": "/products/clickhouse-connector/reference/configuration",
+    "source": "/products/bring-your-own-cloud/connector/reference/configuration"
+  },
+  {
+    "destination": "/products/clickhouse-connector/reference/faq",
+    "source": "/products/bring-your-own-cloud/connector/reference/faq"
+  },
+  {
+    "destination": "/products/clickhouse-connector/reference/privilege-model",
+    "source": "/products/bring-your-own-cloud/connector/reference/privilege-model"
+  },
+  {
     "destination": "/products/managed-postgres/migrations/clickpipes",
     "source": "/products/managed-postgres/migrations/clickhouse-cloud"
   },
