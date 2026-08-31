@@ -93,8 +93,8 @@ Default: `1` (enabled).
 
 Toggles the optimizer rule that routes column reads through a `Row(...)`
 wrapper. The rule only fires when the wrapper would cover **at least two**
-of the requested columns (or all of them — full hit, no waste), to avoid
-reading an oversize blob for a single field. Set to `0` to compare baseline
+of the requested columns, to avoid trading a plain column read for the
+per-row unpacking overhead of the wrapper. Set to `0` to compare baseline
 vs. wrapper performance.
 
 ## Profile events {#profile-events}
