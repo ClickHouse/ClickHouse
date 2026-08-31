@@ -65,7 +65,7 @@ and time, `VALID FOR` takes an [interval](/reference/data-types/special-data-typ
 the current time when the query is executed.
 
 Without either clause the token lives for
-[`create_token_default_ttl_seconds`](/reference/settings/session-settings/create#create_token_default_ttl_seconds), which is
+[`create_token_default_ttl_seconds`](/reference/settings/session-settings/create), which is
 30 minutes by default, so a token that is not asked to live longer is short-lived. Set that setting to `0`, or
 write `VALID UNTIL 'infinity'`, to create a token that never expires.
 
