@@ -870,8 +870,24 @@ void KeeperClient::connectToKeeper()
                 /// Drop the cached context and the handler subscriptions so the next
                 /// defaultClientContext() re-runs initDefaultContext(false). Sockets that are
                 /// already open keep their own refcounted Context and are unaffected.
+                ///
+                /// shutdown() clears the default context pointer and the events, but it does NOT
+                /// clear _ptrClientPassphraseHandler / _ptrClientCertificateHandler.  On the
+                /// following defaultClientContext() call, initPassphraseHandler(false) and
+                /// initCertificateHandler(false) short-circuit (because those pointers are still
+                /// non-null) and never re-subscribe to the freshly-cleared events.  The rebuilt
+                /// Context would then fire PrivateKeyPassphraseRequired / ClientVerificationError
+                /// with no listeners — encrypted keys fail to load and non-default cert handling
+                /// (e.g. AcceptCertificateHandler) is silently bypassed.
+                ///
+                /// initializeClient(nullptr, nullptr, nullptr) zeroes all three client-side
+                /// pointers, so initDefaultContext(false) re-creates the handlers from the
+                /// current config and re-wires them to the events.
                 if (ssl_material_fingerprint)
+                {
                     Poco::Net::SSLManager::instance().shutdown();
+                    Poco::Net::SSLManager::instance().initializeClient(nullptr, nullptr, nullptr);
+                }
 
                 Poco::Net::SSLManager::instance().defaultClientContext();
                 ssl_material_fingerprint = fingerprint;
