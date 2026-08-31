@@ -174,6 +174,8 @@ BlockIO InterpreterShowColumnsQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
     String database = getContext()->resolveDatabase(query.database);
+    /// `system.columns` does not report the key columns of a table that is not loaded yet.
+    loadTableIfLazy(StorageID{database, query.table}, getContext());
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

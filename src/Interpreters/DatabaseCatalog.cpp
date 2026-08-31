@@ -2518,4 +2518,18 @@ bool TableNameHints::isHintNameVisible(const String & name) const
     return false;
 }
 
+
+void loadTableIfLazy(const StorageID & table_id, ContextPtr context)
+{
+    /// Only a local database defers loading, and looking a table up in a remote one costs a round trip.
+    if (DatabaseCatalog::instance().isRemoteDatabase(table_id.database_name))
+        return;
+
+    if (!context->getAccess()->isGranted(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name))
+        return;
+
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, context))
+        resolveStorageProxyLoading(table);
+}
+
 }

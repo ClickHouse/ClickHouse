@@ -336,6 +336,26 @@ def test_system_tables_report_nothing_until_loaded(engine):
     assert int(node.query(f"SELECT count() FROM system.mutations WHERE database = '{DB}'")) >= 1
 
 
+def test_schema_introspection_loads_the_table(engine):
+    """`SHOW COLUMNS` and `SHOW INDEXES` name a single table, so they load it instead of reporting the
+    empty keys and indices that the passive system tables have for a deferred one."""
+    node.query(
+        f"""
+        CREATE TABLE {DB}.t (d Date, id UInt64, v String, INDEX idx_v v TYPE bloom_filter GRANULARITY 1)
+        ENGINE = {engine} PARTITION BY toYYYYMM(d) ORDER BY id;
+        {RELOAD}
+        """
+    )
+
+    assert "PRI SOR" in node.query(f"SHOW COLUMNS FROM t FROM {DB}")
+    assert loaded("t") == "1"
+
+    node.query(RELOAD)
+    indexes = node.query(f"SHOW INDEXES FROM t FROM {DB}")
+    assert "\tPRIMARY\t1\tid\t" in indexes and "idx_v" in indexes
+    assert loaded("t") == "1"
+
+
 def test_system_commands_on_deferred_table(engine):
     """The SYSTEM commands that name a table reach it through a MergeTreeData cast."""
     node.query(
