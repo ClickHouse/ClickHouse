@@ -93,6 +93,7 @@ extern const Event ASTFuzzerOracleAlterModifyChecks;
 extern const Event ASTFuzzerOracleLightweightUpdateChecks;
 extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
 extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
+extern const Event ASTFuzzerOracleSequenceFunnelChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -4223,6 +4224,70 @@ bool QueryOracleChecker::checkJoinOrderSweep(const ASTSelectQuery &, const Conte
             context, &fixture);
 
     LOG_TRACE(logger, "join-order sweep oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkSequenceFunnel(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_37): three data-independent invariants of the sequence aggregates over
+    /// a per-entity timestamped event list:
+    ///   (1) windowFunnel is monotonic non-decreasing in its window w — a wider window can only match a
+    ///       same-or-longer prefix (note: the empirically-correct direction; the SQLancer brief has it
+    ///       inverted).
+    ///   (2) windowFunnel's result lies in [0, k] for a k-condition chain.
+    ///   (3) sequenceMatch(p) == (sequenceCount(p) >= 1).
+    /// A violation of any is a real sequence-aggregate bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("seqfunnel", context);
+    if (!fixture.valid())
+        return false;
+
+    const String ev = fixture.allocName();
+    if (!fixture.execute(
+            "CREATE TABLE " + ev + " (uid UInt32, ts DateTime, c1 UInt8, c2 UInt8, c3 UInt8) "
+            "ENGINE = MergeTree ORDER BY (uid, ts)"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + ev + " SELECT number % 50, toDateTime('2020-01-01 00:00:00') + (number % 20), "
+            "toUInt8(number % 2), toUInt8(number % 3 = 0), toUInt8(number % 5 = 0) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "sequence funnel oracle: {}", ev);
+
+    /// Each probe returns a single scalar row: the number of per-entity violations, which must be 0.
+    struct Probe { const char * name; std::string sql; };
+    const std::vector<Probe> probes = {
+        {"windowFunnel window-monotonicity",
+         "SELECT countIf(big < small) FROM (SELECT uid, "
+         "windowFunnel(3)(ts, c1 = 1, c2 = 1, c3 = 1) AS small, "
+         "windowFunnel(100000)(ts, c1 = 1, c2 = 1, c3 = 1) AS big FROM " + ev + " GROUP BY uid)"},
+        {"windowFunnel range [0,k]",
+         "SELECT countIf(f < 0 OR f > 3) FROM (SELECT uid, "
+         "windowFunnel(100)(ts, c1 = 1, c2 = 1, c3 = 1) AS f FROM " + ev + " GROUP BY uid)"},
+        {"sequenceMatch == (sequenceCount >= 1)",
+         "SELECT countIf(m != (c >= 1)) FROM (SELECT uid, "
+         "sequenceMatch('(?1)(?2)')(ts, c1 = 1, c2 = 1) AS m, "
+         "sequenceCount('(?1)(?2)')(ts, c1 = 1, c2 = 1) AS c FROM " + ev + " GROUP BY uid)"},
+    };
+
+    for (const auto & probe : probes)
+    {
+        auto viol_opt = OracleExec::executeRows(probe.sql, context, ResultShape::SortedBag);
+        if (!viol_opt)
+            return false;
+        if (viol_opt->size() != 1 || (*viol_opt)[0] != "0")
+            raiseOracleMismatch(
+                fmt::format(
+                    "sequence funnel oracle mismatch ({})!\n"
+                    "{} per-entity violations on {}\nprobe: {}",
+                    probe.name, viol_opt->empty() ? "?" : (*viol_opt)[0], ev, probe.sql),
+                context, &fixture);
+    }
+
+    LOG_TRACE(logger, "sequence funnel oracle passed");
     return true;
 }
 

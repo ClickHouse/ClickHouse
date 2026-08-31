@@ -87,6 +87,7 @@
     M(ASTFuzzerOracleLightweightUpdateChecks, "Number of lightweight-update-vs-ALTER-UPDATE oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleWindowEquivalenceChecks, "Number of window-frame equivalence oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleJoinOrderSweepChecks, "Number of join-order/algorithm sweep oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleSequenceFunnelChecks, "Number of sequence/funnel monotonicity oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleMismatches, "Number of oracle mismatches detected by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
