@@ -55,9 +55,8 @@ namespace
             make_intrusive<ASTLiteral>(context.cluster_name),
             makeASTFunction("view", shard_builder.getSelectQuery()));
 
-        /// With no explicit database the selector must resolve in each shard's own default database,
-        /// which only shipping the query TEXT provides: a serialized plan is built on the initiator,
-        /// where the unqualified name would bind to the initiator's current database instead.
+        /// With no explicit database the name must resolve per shard, which only shipping the
+        /// query text provides; a serialized plan would bind it on the initiator instead.
         if (!context.remote_time_series_storage_id.hasDatabase())
             cluster_builder.settings_changes.emplace_back("serialize_query_plan", false);
 

@@ -21,10 +21,8 @@ struct PrometheusQueryDistributedTarget
 /// or a Distributed table over per-shard TimeSeries tables. Returns std::nullopt for a TimeSeries table.
 std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(const IStorage & storage);
 
-/// Enforces on the Distributed wrapper what its rewrite skips: the reader's SELECT grant, the
-/// absence of a row policy the rewritten query could not apply, and the absence of declared
-/// Distributed settings the generated cluster() call could not carry. Call before reading through
-/// a resolved distributed target.
+/// Enforces on the Distributed wrapper what its rewrite skips (SELECT grant, row policies,
+/// unmappable settings and filters). Call before reading through a resolved distributed target.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
 }

@@ -77,9 +77,8 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
 
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context)
 {
-    /// The read is rewritten to cluster(view(timeSeriesSelector(...))) over the shards' TimeSeries
-    /// tables and the planner never sees the wrapper again, so its access is enforced here or not
-    /// at all.
+    /// The rewrite drops the wrapper before the planner ever sees it, so its access
+    /// is enforced here or not at all.
     auto storage_id = storage.getStorageID();
     context->checkAccess(AccessType::SELECT, storage_id);
     auto row_policy_filter = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
@@ -90,10 +89,8 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
             "the read is rewritten to the shards' TimeSeries tables and the policy would not be applied",
             storage_id.getNameForLogs());
 
-    /// A normal Distributed read remaps the wrapper's additional_table_filters entry onto the
-    /// source table (ClusterProxy::executeQuery), but the generated cluster() call reads through a
-    /// view the planner does not attribute to the wrapper, so a filter aimed at it would silently
-    /// vanish and return rows a plain SELECT would hide. Refused until it is remapped the same way.
+    /// A normal Distributed read remaps this filter onto the source table (ClusterProxy);
+    /// the generated cluster() read would silently drop it, so fail closed instead.
     for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
     {
         const auto & name_and_filter = filter_entry.safeGet<Tuple>();
@@ -108,19 +105,13 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
                 storage_id.getNameForLogs());
     }
 
-    /// The generated cluster() call cannot carry the wrapper's DistributedSettings, so a wrapper
-    /// declaring non-default shard-skipping would silently behave differently through a prometheus
-    /// query than through a plain SELECT. Refuse rather than diverge; the query-level
-    /// `skip_unavailable_shards` setting still applies to the generated call. Read from the
-    /// metadata's declared changes: the concern is what the table declares, and the effective
-    /// settings are private to StorageDistributed.
+    /// The generated cluster() call cannot carry the wrapper's declared Distributed settings,
+    /// so a read that would diverge from a plain SELECT is refused rather than silently changed.
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     if (const auto & settings_changes = metadata->settings_changes)
     {
-        /// Mirrors ClusterProxy::executeQuery: the table's declarations are only defaults, applied
-        /// when the query has not set the setting itself. The generated cluster() call sees the
-        /// query settings either way, so the read diverges exactly when the query leaves a setting
-        /// unset and the table declares something other than the query's current value.
+        /// Mirrors ClusterProxy::executeQuery: declarations are defaults the query overrides,
+        /// so the reads diverge only when the query leaves a setting unset and the declaration differs.
         DistributedSettings declared;
         declared.applyChanges(settings_changes->as<const ASTSetQuery &>().changes);
         const auto & query_settings = context->getSettingsRef();
