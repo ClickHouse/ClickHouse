@@ -2,8 +2,10 @@
 
 #include "config.h"
 
+#include <algorithm>
 #include <set>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
@@ -867,6 +869,11 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     if (end - start < min_pattern_length)
         return {};
 
+    /// ILIKE folds non-ASCII code points onto ASCII characters (U+212A matches 'k'), but the dictionary keeps
+    /// only ASCII bytes, so the scan would prune a granule holding a matching row.
+    if (case_insensitive && std::any_of(data + start, data + end, UTF8::isASCIIReachableByCaseFolding))
+        return {};
+
     /// Trailing '%' must follow immediately after the content.
     if (pos >= length || data[pos] != '%')
         return {};
@@ -1356,7 +1363,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
-        if (has_preprocessor && !preprocessor->isLowerOrUpper())
+        if (has_preprocessor && !preprocessor->isASCIILowerOrUpper())
             return false;
         if (has_postprocessor)
             return false;

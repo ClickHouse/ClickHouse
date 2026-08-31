@@ -546,7 +546,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 
 ² `ILIKE` is only supported via direct read (without hint) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
 There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
-The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
+The preprocessor, if present, must be `lower` or `upper`; the UTF-8 variants `lowerUTF8` and `upperUTF8` are not supported, and neither are postprocessors.
+The needle must not contain a character that a non-ASCII code point case-folds onto (currently only `k`), because such an occurrence is invisible to the index dictionary.
 
 ³ `hasPhrase` on a `splitByRegexp` text index does **not** support a postprocessor: the combination is rejected with an exception, because the postprocessor row-level rewrite assumes whitespace-splitting `splitByNonAlpha`-style tokens. Without a postprocessor, `splitByRegexp` is fully supported by `hasPhrase`.
 
@@ -1405,6 +1406,12 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 This optimization supports only functions `like` and `ilike`.
+
+`ilike` folds case across the whole of Unicode, while a `splitByNonAlpha` dictionary holds ASCII tokens only.
+Two cases are therefore not eligible for the optimization and fall back to a full-table scan:
+
+- The needle contains a character that some non-ASCII code point case-folds onto — currently only `k`, reachable from `U+212A KELVIN SIGN`. The dictionary cannot see such an occurrence.
+- The index has a `lowerUTF8` or `upperUTF8` preprocessor. Their ICU full case mapping folds non-ASCII code points onto ASCII letters (`ß` to `SS`, `ſ` to `S`) while `ilike` does not.
 
 ### Trivial count queries {#count-queries-perf}
 
