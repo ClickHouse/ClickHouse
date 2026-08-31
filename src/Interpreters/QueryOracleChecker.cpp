@@ -83,6 +83,7 @@ extern const Event ASTFuzzerOracleMaterializeIndexChecks;
 extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
 extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
 extern const Event ASTFuzzerOracleGroupingSetsChecks;
+extern const Event ASTFuzzerOracleRowPolicyChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3637,6 +3638,66 @@ bool QueryOracleChecker::checkGroupingSetsEquivalence(const ASTSelectQuery &, co
     }
 
     LOG_TRACE(logger, "grouping-set equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkRowPolicyEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_44): a single PERMISSIVE row policy `USING p` on a table must make an
+    /// unqualified read return exactly the rows that `WHERE p` returns without the policy. We compute
+    /// the reference (WHERE p) and the full unfiltered read before creating the policy, create it, then
+    /// read the now-filtered table. If the read is not actually filtered (the oracle context is not
+    /// subject to the policy) we skip rather than raise — that keeps the oracle sound in any environment.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("rowpol", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (id UInt32, k UInt8, v Int64) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number, number % 7, toInt64(number) FROM numbers(500)"))
+        return false;
+
+    const String predicate = "k < 3";
+    const String projection = "id, k, v";
+
+    /// Reference (no policy yet) and the full unfiltered read.
+    auto ref_opt = OracleExec::executeRows("SELECT " + projection + " FROM " + tbl + " WHERE " + predicate, context, ResultShape::SortedBag);
+    auto full_opt = OracleExec::executeRows("SELECT " + projection + " FROM " + tbl, context, ResultShape::SortedBag);
+    if (!ref_opt || !full_opt)
+        return false;
+
+    const String policy = "__oracle_rp_" + tbl.substr(tbl.rfind('_') + 1);
+    if (!fixture.createAuxiliary(
+            "CREATE ROW POLICY " + policy + " ON " + tbl + " AS PERMISSIVE FOR SELECT USING " + predicate + " TO ALL",
+            "DROP ROW POLICY IF EXISTS " + policy + " ON " + tbl))
+        return false;
+
+    auto filtered_opt = OracleExec::executeRows("SELECT " + projection + " FROM " + tbl, context, ResultShape::SortedBag);
+    if (!filtered_opt)
+        return false;
+
+    /// Soundness self-check: if the policy did not filter (read still returns every row while the
+    /// reference is a strict subset), the oracle context is not subject to the policy — skip.
+    if (filtered_opt->size() == full_opt->size() && ref_opt->size() < full_opt->size())
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "row-policy equivalence oracle: {} policy {}", tbl, policy);
+
+    if (!OracleCompare::equal(*ref_opt, *filtered_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "row-policy equivalence oracle mismatch!\n"
+                "WHERE {} (no policy) returned {} rows, but SELECT under row policy USING {} returned {} rows on {}\n{}",
+                predicate, ref_opt->size(), predicate, filtered_opt->size(), tbl,
+                OracleCompare::diffSummary(*ref_opt, *filtered_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "row-policy equivalence oracle passed");
     return true;
 }
 

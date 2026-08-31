@@ -170,6 +170,11 @@ public:
     /// grouping-modifier bug.
     bool checkGroupingSetsEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Row-policy equivalence oracle (self-seeded): a single permissive row policy USING p must make
+    /// SELECT * FROM t return exactly the rows that WHERE p returns without the policy. Self-checks
+    /// that the policy actually applies in the oracle context and skips otherwise (keeps it sound).
+    bool checkRowPolicyEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
