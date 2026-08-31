@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Analyzer/Utils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
@@ -11,6 +10,7 @@
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -290,9 +290,50 @@ void collectTextIndexInjectInfos(const ReadFromMergeTree * read_from_merge_tree_
     }
 }
 
+ASTPtr convertSetColumnToAST(const IColumn & column)
+{
+    const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(&column);
+    if (!column_set)
+        column_set = checkAndGetColumn<const ColumnSet>(&column);
+    if (!column_set)
+        return nullptr;
+
+    auto future_set = column_set->getData();
+    const auto * set_from_tuple = dynamic_cast<const FutureSetFromTuple *>(future_set.get());
+    if (!set_from_tuple)
+        return nullptr;
+
+    const Columns key_columns = set_from_tuple->getKeyColumns();
+    if (key_columns.empty() || key_columns.front()->empty())
+        return nullptr;
+
+    const size_t num_elements = key_columns.front()->size();
+    auto elements = makeASTFunction("tuple");
+    elements->arguments->children.reserve(num_elements);
+
+    for (size_t i = 0; i < num_elements; ++i)
+    {
+        if (key_columns.size() == 1)
+        {
+            elements->arguments->children.push_back(make_intrusive<ASTLiteral>((*key_columns.front())[i]));
+            continue;
+        }
+
+        /// A set over a tuple left-hand side, e.g. `(a, b) IN ((1, 2), (3, 4))`.
+        Tuple key;
+        key.reserve(key_columns.size());
+        for (const auto & key_column : key_columns)
+            key.push_back((*key_column)[i]);
+        elements->arguments->children.push_back(make_intrusive<ASTLiteral>(Field(std::move(key))));
+    }
+
+    return elements;
+}
+
 /// Converts an ActionsDAG node to an AST node.
 /// It is not correct in the general case, but is
 /// sufficient for expressions that can be used with a text index.
+/// Returns `nullptr` if any part has no AST representation: a partial conversion would change the meaning.
 /// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
 /// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
 /// instead of being emitted as bare, unresolvable identifiers.
@@ -341,20 +382,16 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             return make_intrusive<ASTIdentifier>(node.result_name);
 
         case ActionsDAG::ActionType::COLUMN:
+        {
             if (!node.column)
                 return nullptr;
-            if (const auto * column_set = typeid_cast<const ColumnSet *>(&node.column->getDataColumn()))
-            {
-                auto future_set = column_set->getData();
-                if (typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
-                    return nullptr;
-                auto source_ast = future_set ? future_set->getSourceAST() : nullptr;
-                return source_ast ? source_ast->clone() : nullptr;
-            }
-            return makeASTFunction(
-                "_CAST",
-                columnConstantToExactLiteralAST(node.column, 0, node.result_type),
-                make_intrusive<ASTLiteral>(node.result_type->getName()));
+
+            /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
+            if (WhichDataType(node.result_type).isSet())
+                return convertSetColumnToAST(*node.column);
+
+            return make_intrusive<ASTLiteral>((*node.column)[0]);
+        }
 
         case ActionsDAG::ActionType::ALIAS:
             return node.children.empty() ? nullptr : convertNodeToAST(*node.children[0], captured);
@@ -942,12 +979,27 @@ private:
         if (preserve_result_type && isNullableOrLowCardinalityNullable(function_node.result_type))
             return;
 
-        ASTPtr exact_predicate_ast;
+        /// Convert up front: without an AST the optimization must be skipped, not registered with a different meaning.
+        ASTPtr exact_default_expression;
         if (has_exact_search)
         {
-            exact_predicate_ast = convertNodeToAST(function_node);
+            auto exact_predicate_ast = convertNodeToAST(function_node);
             if (!exact_predicate_ast)
+            {
+                LOG_TRACE(
+                    getLogger("optimizeDirectReadFromTextIndex"),
+                    "Cannot use direct reading from text index. Predicate '{}' has no AST representation",
+                    function_node.result_name);
                 return;
+            }
+
+            exact_default_expression = makeASTFunction(
+                "CAST",
+                makeASTFunction(
+                    "ifNull",
+                    std::move(exact_predicate_ast),
+                    make_intrusive<ASTLiteral>(Field(UInt8(0)))),
+                make_intrusive<ASTLiteral>(String("UInt8")));
         }
 
         auto add_condition_to_input = [&](const SelectedCondition & condition)
@@ -960,16 +1012,9 @@ private:
                 /// It will be executed by merge tree reader when index is not materialized in the data part.
                 ASTPtr default_expression;
 
+                /// Shared, not cloned: a stored default expression is immutable, `addDefaultRequiredExpressionsRecursively` clones it before use.
                 if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
-                {
-                    default_expression = makeASTFunction(
-                        "CAST",
-                        makeASTFunction(
-                            "ifNull",
-                            exact_predicate_ast->clone(),
-                            make_intrusive<ASTLiteral>(Field(UInt8(0)))),
-                        make_intrusive<ASTLiteral>(String("UInt8")));
-                }
+                    default_expression = exact_default_expression;
                 /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
                 else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
