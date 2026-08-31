@@ -190,26 +190,33 @@ but uses a different error code and formats the error message differently.
         {"group", "Group of tags.", {"UInt64"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `0`.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {{
-        "Example",
+    FunctionDocumentation::Examples examples = {
+    {
+        "One series per group",
         R"(
 CREATE TABLE test(tags Array(Tuple(String, String))) engine=Memory;
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- OK
-
+GROUP BY timeSeriesTagsToGroup(tags);
+        )",
+        "0",
+    },
+    {
+        "Two series with the same tags",
+        R"(
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
+GROUP BY timeSeriesTagsToGroup(tags);
         )",
-        "",
+        R"(
+Received exception:
+Code: 768. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (DUPLICATE_TIME_SERIES)
+        )",
     }};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;

@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int PROTOBUF_BAD_CAST;
+}
+
 ProtobufListInputFormat::ProtobufListInputFormat(
     ReadBuffer & in_,
     SharedHeader header_,
@@ -106,7 +111,11 @@ size_t ProtobufListInputFormat::countRows(size_t max_block_size)
     while (!reader->eof() && num_rows < max_block_size)
     {
         int tag = 0;
-        reader->readFieldNumber(tag);
+        /// readFieldNumber returns false without consuming input once the envelope message is
+        /// exhausted, whereas reader->eof() reports only the underlying buffer, so on a truncated
+        /// message the two disagree and this is the authoritative end of data.
+        if (!reader->readFieldNumber(tag))
+            throw Exception(ErrorCodes::PROTOBUF_BAD_CAST, "Unexpected end of ProtobufList message");
         reader->startNestedMessage();
         reader->endNestedMessage();
         ++num_rows;
