@@ -455,4 +455,27 @@ std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr
     return storage->getModificationHash(snapshot, context);
 }
 
+namespace
+{
+
+thread_local bool modification_hash_introspection = false;
+
+}
+
+ModificationHashIntrospectionScope::ModificationHashIntrospectionScope()
+    : previous(modification_hash_introspection)
+{
+    modification_hash_introspection = true;
+}
+
+ModificationHashIntrospectionScope::~ModificationHashIntrospectionScope()
+{
+    modification_hash_introspection = previous;
+}
+
+bool isModificationHashIntrospection()
+{
+    return modification_hash_introspection;
+}
+
 }

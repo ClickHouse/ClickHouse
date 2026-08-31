@@ -1195,6 +1195,11 @@ protected:
                         }
                         if (can_read)
                         {
+                            /// Fail closed for every non-`INVOKER` view this row's hash reaches, including
+                            /// through a wrapper engine (`Merge`, the local shard of `Distributed`), whose
+                            /// own storage is not a view - see `ModificationHashIntrospectionScope`.
+                            ModificationHashIntrospectionScope introspection_scope;
+
                             /// A `SQL SECURITY DEFINER` / `NONE` view reads its stored SELECT under an
                             /// effective context rather than the caller's. Its modification hash consequently
                             /// tracks source tables the caller may not be allowed to read, which would expose

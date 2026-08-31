@@ -912,4 +912,31 @@ private:
 /// Returns nullopt when the metadata update fails or the storage cannot tell whether it changed.
 std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr & storage, const ContextPtr & context);
 
+/// Marks the current scope as `system.tables.modification_hash` introspection.
+///
+/// That column requires only `SELECT` on the row's own table, while the hash of a `SQL SECURITY
+/// DEFINER` / `NONE` view is computed under the view's effective context and therefore tracks source
+/// tables the caller may not be allowed to read - polling it would expose the churn of those sources.
+/// The fail-close cannot be a check of the row's own storage: the wrapper engines (`Merge`, the local
+/// shard of `Distributed`) recurse into such a view from a row whose storage is not a view. So the
+/// introspection path marks the scope instead, and `StorageView::getModificationHash` returns nullopt
+/// whenever it is reached inside it. The consistency consumers (the query result cache and
+/// `REFRESH ... IF CHANGED`) do not set the flag: they must describe the rows the view actually
+/// returns, and they gate access separately.
+class ModificationHashIntrospectionScope
+{
+public:
+    ModificationHashIntrospectionScope();
+    ~ModificationHashIntrospectionScope();
+
+    ModificationHashIntrospectionScope(const ModificationHashIntrospectionScope &) = delete;
+    ModificationHashIntrospectionScope & operator=(const ModificationHashIntrospectionScope &) = delete;
+
+private:
+    bool previous;
+};
+
+/// Whether the current thread is inside a `ModificationHashIntrospectionScope`.
+bool isModificationHashIntrospection();
+
 }
