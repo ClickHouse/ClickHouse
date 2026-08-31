@@ -19,6 +19,7 @@ extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
 extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
 extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
 extern const Event ASTFuzzerOracleCodecRoundtripChecks;
+extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
 }
 
 namespace DB
@@ -81,6 +82,7 @@ OracleRegistry::OracleRegistry()
     add("setting-flip sweep", ProfileEvents::ASTFuzzerOracleSettingFlipSweepChecks, &QueryOracleChecker::checkSettingFlipSweep);
     /// Self-seeded (fixture-based) oracles run last.
     add("codec round-trip", ProfileEvents::ASTFuzzerOracleCodecRoundtripChecks, &QueryOracleChecker::checkCodecRoundtrip);
+    add("engine equivalence", ProfileEvents::ASTFuzzerOracleEngineEquivalenceChecks, &QueryOracleChecker::checkEngineEquivalence);
 }
 
 const OracleRegistry & OracleRegistry::instance()
