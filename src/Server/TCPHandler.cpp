@@ -528,7 +528,6 @@ void TCPHandler::runImpl()
         {
             /// We try to send error information to the client.
             sendException(e, send_exception_with_stack_trace);
-            out->sync();
         }
         catch (...)
         {
@@ -1048,7 +1047,6 @@ void TCPHandler::runImpl()
                 query_state->io.onException();
             exception = std::make_unique<DB::Exception>(Exception::CreateFromSTDTag{}, e);
             sendException(*exception, send_exception_with_stack_trace);
-            out->sync();
             std::abort();
         }
 #endif
@@ -1117,7 +1115,6 @@ void TCPHandler::runImpl()
                 {
                     std::lock_guard lock(*callback_mutex);
                     sendException(*exception, send_exception_with_stack_trace);
-                    out->sync();
                 }
                 catch (...) // NOLINT(bugprone-empty-catch)
                 {
@@ -1168,10 +1165,12 @@ void TCPHandler::runImpl()
                 std::lock_guard lock(*callback_mutex);
 
                 if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                {
                     sendEndOfStream(*query_state);
+                    out->sync();
+                }
                 else
                     sendException(*exception, send_exception_with_stack_trace);
-                out->sync();
             }
             catch (...)
             {
@@ -3324,6 +3323,7 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
     writeException(e, *out, with_stack_trace);
 
     out->finishChunk();
+    out->sync();
 }
 
 
