@@ -80,8 +80,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsNonZeroUInt64 iceberg_data_manifest_decode_concurrency;
-extern const SettingsNonZeroUInt64 iceberg_delete_manifest_decode_concurrency;
+extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 };
 
 
@@ -310,7 +309,7 @@ void IcebergIterator::decodeDeleteManifests()
     }
 
     /// Cap concurrency: each in-flight manifest holds its decoded contents.
-    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_delete_manifest_decode_concurrency];
+    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency];
 
     auto decode_runner
         = threadPoolCallbackRunnerUnsafe<ManifestEntryBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
@@ -369,7 +368,7 @@ void IcebergIterator::decodeDataManifests()
     }
 
     /// Cap concurrency: each in-flight manifest holds its decoded contents.
-    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_data_manifest_decode_concurrency];
+    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency];
 
     auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
 

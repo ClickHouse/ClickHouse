@@ -6007,24 +6007,15 @@ Possible values:
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0) \
-    DECLARE(NonZeroUInt64, iceberg_delete_manifest_decode_concurrency, 4, R"(
-Maximum number of Iceberg delete manifest files decoded concurrently during query execution before any data file is read.
+    DECLARE_WITH_ALIAS(NonZeroUInt64, iceberg_manifest_decode_concurrency, 4, R"(
+Maximum number of Iceberg manifest files decoded concurrently while reading a table.
 
-All delete manifests must be decoded before any data file is read, so this work sits on the critical path before the first row is returned. Decoding several at a time overlaps both the object storage round-trips and the per-row pruning work.
+Delete manifests are all decoded before any data file is read; data manifests are decoded while the list of data files for the query is produced, and new ones are decoded only as the query consumes already decoded entries. Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work.
 
-Higher values raise peak memory during query initialization when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
-
-Must be greater than zero; `1` decodes the manifests one at a time.
-)", 0) \
-    DECLARE(NonZeroUInt64, iceberg_data_manifest_decode_concurrency, 4, R"(
-Maximum number of Iceberg data manifest files decoded concurrently while the list of data files to read is produced for a query.
-
-Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work; new manifests are decoded only as the query consumes already decoded entries.
-
-Higher values raise peak memory during query execution when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+Higher values raise peak memory when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
 
 Must be greater than zero; `1` decodes the manifests one at a time.
-)", 0) \
+)", 0, iceberg_delete_manifest_decode_concurrency) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
