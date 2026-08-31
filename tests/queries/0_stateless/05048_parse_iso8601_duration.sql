@@ -54,6 +54,11 @@ ORDER BY s;
 SELECT sum(parseISO8601Duration(x))
 FROM (SELECT arrayJoin(CAST([NULL, 'PT1S'] AS Array(Nullable(String)))) AS x);
 
+-- A null argument yields null instead of an attempt to parse whatever sits under the null map.
+SELECT parseISO8601Duration(NULL);
+SELECT parseISO8601Duration(CAST(NULL AS Nullable(String)));
+SELECT toTypeName(parseISO8601Duration(CAST('PT1S' AS Nullable(String))));
+
 -- ISO 8601 also allows a comma as the decimal separator, and RFC 3339 / XSD add signed durations.
 -- Neither is accepted: ClickHouse rejects comma decimals elsewhere, and a sign is not part of the
 -- core grammar.

@@ -1,4 +1,6 @@
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -46,13 +48,24 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
+            /// A literal `NULL` carries no argument type to validate, and the result is `NULL` anyway.
+            if (!arguments.empty() && arguments[0].type->onlyNull())
+                return makeNullable(std::make_shared<DataTypeFloat64>());
+
+            ColumnsWithTypeAndName arguments_without_nullable = arguments;
+            for (auto & argument : arguments_without_nullable)
+                argument.type = removeNullable(argument.type);
+
             FunctionArgumentDescriptors mandatory_args{
                 {"duration", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
             };
 
-            validateFunctionArguments(*this, arguments, mandatory_args);
+            validateFunctionArguments(*this, arguments_without_nullable, mandatory_args);
 
-            return std::make_shared<DataTypeFloat64>();
+            DataTypePtr result_type = std::make_shared<DataTypeFloat64>();
+            if (arguments[0].type->isNullable())
+                result_type = makeNullable(result_type);
+            return result_type;
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -62,11 +75,40 @@ namespace
 
         bool useDefaultImplementationForConstants() const override { return true; }
 
+        /// The default implementation applies the function to the whole dictionary, which always holds
+        /// the default empty string whether or not any row references it, and an empty string is not a
+        /// duration.
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
+
+        /// The default implementation would apply the function to the values sitting under the null
+        /// map. Those are the nested column's defaults, and parsing them would throw on rows whose
+        /// result is discarded anyway.
+        bool useDefaultImplementationForNulls() const override { return false; }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto col_to = ColumnFloat64::create();
             auto & res_data = col_to->getData();
             res_data.resize(input_rows_count);
+
+            if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(arguments[0].column.get()))
+            {
+                const auto & nested_column = col_nullable->getNestedColumn();
+                const auto & null_map = col_nullable->getNullMapData();
+
+                auto res_null_map = ColumnUInt8::create(input_rows_count);
+                auto & res_null_map_data = res_null_map->getData();
+
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    res_null_map_data[i] = null_map[i];
+                    /// Whatever the nested column holds under a null is not an argument the caller
+                    /// passed, so it must not be parsed and must not decide whether the query fails.
+                    res_data[i] = null_map[i] ? 0 : parseDuration(std::string_view{nested_column.getDataAt(i)});
+                }
+
+                return ColumnNullable::create(std::move(col_to), std::move(res_null_map));
+            }
 
             for (size_t i = 0; i < input_rows_count; ++i)
                 res_data[i] = parseDuration(std::string_view{arguments[0].column->getDataAt(i)});
