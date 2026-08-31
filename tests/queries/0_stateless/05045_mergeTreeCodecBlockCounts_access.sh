@@ -56,8 +56,10 @@ ${CLICKHOUSE_CLIENT} --user="${username}" --query \
 ${CLICKHOUSE_CLIENT} --user="${username}" --query \
     "DESCRIBE mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access) FORMAT TSV" | cut -f 1
 
-# The engine of the source table is not something a user without `SELECT` on it is allowed to learn, so the
-# access check has to run before the check that rejects a table of another engine with `BAD_ARGUMENTS`.
+# The engine of the source table is disclosed by `SHOW CREATE TABLE`, which requires `SHOW COLUMNS` on it, so
+# it is not something the user below is allowed to learn: at this point it holds neither that privilege nor
+# `SELECT` on the table. The access check therefore has to run before the check that rejects a table of another
+# engine with `BAD_ARGUMENTS`.
 
 echo "Non-MergeTree source table, without SELECT on it"
 ${CLICKHOUSE_CLIENT} --user="${username}" --query \
