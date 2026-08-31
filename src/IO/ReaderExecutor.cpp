@@ -306,7 +306,7 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
     return readIntoBlock(*buffer, dst, want);
 }
 
-ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, WindowSizes sizes)
+ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, BlockAndWindowSizes sizes)
 {
     ChainedBuffers chain;
     size_t got_total = 0;
@@ -376,7 +376,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, WindowSizes sizes)
+ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, BlockAndWindowSizes sizes)
 {
     ChainedBuffers chain;
     size_t file_pos = file_offset;
@@ -394,7 +394,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, Windo
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve, WindowSizes sizes)
+ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve, BlockAndWindowSizes sizes)
 {
     chassert(!cache_chain.empty());
     /// Resolve the whole window across tiers (front = fastest) and act on the run covering the head:
@@ -513,15 +513,16 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     return fetched.slice(ByteRange{window_offset, serve_len(fetched_end)});
 }
 
-ReaderExecutor::WindowSizes ReaderExecutor::sampleWindowSizes() const
+ReaderExecutor::BlockAndWindowSizes ReaderExecutor::sampleWindowSizes() const
 {
     const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
     const size_t window = sizeAtPressure(pressure, window_size, WINDOW_REDUCTION);
     /// A block never exceeds the window it is read within.
-    return {window, std::min(sizeAtPressure(pressure, block_size, BLOCK_REDUCTION), window)};
+    const size_t block = std::min(sizeAtPressure(pressure, block_size, BLOCK_REDUCTION), window);
+    return {.window_bytes = window, .block_bytes = block};
 }
 
-void ReaderExecutor::dropLongConnection(WindowSizes sizes)
+void ReaderExecutor::dropLongConnection(BlockAndWindowSizes sizes)
 {
     if (!long_conn)
         return;
@@ -661,7 +662,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     const size_t position_physical = toPhysical(position);
 
     /// Sample the pressure level once per window; `Normal` keeps the base sizes.
-    const WindowSizes sizes = sampleWindowSizes();
+    const BlockAndWindowSizes sizes = sampleWindowSizes();
 
     /// The most this window may serve: the pressure-adjusted window, clamped to the file end (when the
     /// size is known) and to the `read_until` bound. The cache path serves at most one block of it; the
