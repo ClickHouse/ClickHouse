@@ -118,6 +118,12 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// Returns true for storages that do not store data themselves but read it from other tables,
+    /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
+    /// of the rows read from such a storage carry the name of the table that actually produced
+    /// each row, which is not necessarily the name of this storage.
+    virtual bool readsFromOtherTables() const { return false; }
+
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
 
@@ -396,14 +402,6 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
-    virtual Pipe watch(
-        const Names & /*column_names*/,
-        const SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum & /*processed_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/);
-
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
