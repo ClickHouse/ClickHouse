@@ -4045,7 +4045,7 @@ bool convertNestedGroupByKeysToNullable(
   *   the nodes above recomputed, for keys that contain other keys as subexpressions;
   * - the form converted to Nullable itself, for already converted expressions resolved again
   *   (for example, reused through an alias).
-  * All shapes are mapped to the original key node.
+  * Each shape is mapped to the key node it is a shape of.
   */
 void registerNullableGroupByKeys(const QueryTreeNodes & original_group_by_keys, IdentifierResolveScope & scope)
 {

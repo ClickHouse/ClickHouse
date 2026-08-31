@@ -110,9 +110,9 @@ GROUP BY GROUPING SETS ((if(1, c0, false)), ()) ORDER BY k NULLS LAST SETTINGS g
 SELECT 'projection, setting off', if(1, c0, false) AS k, count() FROM (SELECT 1::Bool) t0(c0)
 GROUP BY if(1, c0, false) WITH ROLLUP ORDER BY k NULLS LAST SETTINGS group_by_use_nulls = 0;
 
--- A constant-condition `if` whose taken branch is a constant is itself folded to that constant during
--- resolution; `multiIf` is not. Either way the constant is not a registered key, so a literal of the
--- same value in the projection keeps the type it has when the key is not collapsed at all.
+-- A constant-condition `if` folds to its taken constant branch during resolution, so that constant is the
+-- written key and is registered as one, and a same-valued projection literal turns Nullable with it.
+-- `multiIf` does not fold, so its collapsed constant is left unregistered and such a literal keeps its type.
 SELECT 'constant if key', if(1, 'a', 'b') AS k, 'a' AS lit, toTypeName('a') AS lit_type
 FROM (SELECT 1::Bool) t0(c0)
 GROUP BY if(1, 'a', 'b') WITH ROLLUP ORDER BY k NULLS LAST
