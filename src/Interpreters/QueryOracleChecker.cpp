@@ -90,6 +90,7 @@ extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
 extern const Event ASTFuzzerOracleDictGetChecks;
 extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 extern const Event ASTFuzzerOracleAlterModifyChecks;
+extern const Event ASTFuzzerOracleLightweightUpdateChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3988,6 +3989,101 @@ bool QueryOracleChecker::checkAlterModifyWiden(const ASTSelectQuery &, const Con
             context, &fixture);
 
     LOG_TRACE(logger, "ALTER MODIFY widen oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkLightweightUpdate(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_42): the lightweight (patch-part) UPDATE path must be semantically
+    /// identical to the long-standing heavy ALTER UPDATE mutation. Three sound relations on twin
+    /// tables seeded with identical data:
+    ///   (1) lightweight(apply_patch_parts=1) == heavy ALTER UPDATE
+    ///   (2) lightweight(apply_patch_parts=0) == the original pre-update seed
+    ///   (3) OPTIMIZE FINAL materialization is a no-op on the applied (apply=1) result
+    /// A divergence in any arm is a real patch-part correctness bug.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("lwupdate", context);
+    if (!fixture.valid())
+        return false;
+
+    const String a = fixture.allocName("a");
+    const String b = fixture.allocName("b");
+    /// Lightweight updates require the materialized _block_number / _block_offset columns.
+    if (!fixture.execute("CREATE TABLE " + a + " (id UInt32, v Int64) ENGINE = MergeTree ORDER BY id "
+                         "SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + b + " (id UInt32, v Int64) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + a + " SELECT number, toInt64(number) FROM numbers(500)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + b + " SELECT number, toInt64(number) FROM numbers(500)"))
+        return false;
+
+    /// Snapshot the original seed before any update.
+    auto seed_opt = OracleExec::executeRows("SELECT id, v FROM " + a, context, ResultShape::SortedBag);
+    if (!seed_opt)
+        return false;
+
+    const String predicate = "id % 3 = 0";
+    const String assignment = "v = v * 10";
+    if (!fixture.execute("UPDATE " + a + " SET " + assignment + " WHERE " + predicate,
+                         {{"enable_lightweight_update", Field(UInt64(1))}}))
+        return false;
+    if (!fixture.execute("ALTER TABLE " + b + " UPDATE " + assignment + " WHERE " + predicate,
+                         {{"mutations_sync", Field(UInt64(2))}}))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "lightweight update oracle: {} vs {}", a, b);
+
+    const std::vector<std::pair<String, Field>> apply1{{"apply_patch_parts", Field(UInt64(1))}};
+    const std::vector<std::pair<String, Field>> apply0{{"apply_patch_parts", Field(UInt64(0))}};
+
+    /// Arm 1: lightweight (patch applied) == heavy mutation.
+    auto lw1_opt = OracleExec::executeRows("SELECT id, v FROM " + a, context, ResultShape::SortedBag, apply1);
+    auto heavy_opt = OracleExec::executeRows("SELECT id, v FROM " + b, context, ResultShape::SortedBag);
+    if (!lw1_opt || !heavy_opt)
+        return false;
+    if (!OracleCompare::equal(*lw1_opt, *heavy_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "lightweight update oracle mismatch (lightweight vs heavy)!\n"
+                "UPDATE with apply_patch_parts=1 ({} rows) vs ALTER UPDATE ({} rows) on {}/{}\n{}",
+                lw1_opt->size(), heavy_opt->size(), a, b,
+                OracleCompare::diffSummary(*lw1_opt, *heavy_opt)),
+            context, &fixture);
+
+    /// Arm 2: patch not applied == the original seed.
+    auto lw0_opt = OracleExec::executeRows("SELECT id, v FROM " + a, context, ResultShape::SortedBag, apply0);
+    if (!lw0_opt)
+        return false;
+    if (!OracleCompare::equal(*lw0_opt, *seed_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "lightweight update oracle mismatch (apply_patch_parts=0 not original)!\n"
+                "apply_patch_parts=0 ({} rows) vs original seed ({} rows) on {}\n{}",
+                lw0_opt->size(), seed_opt->size(), a,
+                OracleCompare::diffSummary(*lw0_opt, *seed_opt)),
+            context, &fixture);
+
+    /// Arm 3: materialization is a no-op on the applied result.
+    if (!fixture.execute("OPTIMIZE TABLE " + a + " FINAL"))
+        return false;
+    auto lw1_post_opt = OracleExec::executeRows("SELECT id, v FROM " + a, context, ResultShape::SortedBag, apply1);
+    if (!lw1_post_opt)
+        return false;
+    if (!OracleCompare::equal(*lw1_opt, *lw1_post_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "lightweight update oracle mismatch (materialization changed result)!\n"
+                "apply_patch_parts=1 before OPTIMIZE FINAL ({} rows) vs after ({} rows) on {}\n{}",
+                lw1_opt->size(), lw1_post_opt->size(), a,
+                OracleCompare::diffSummary(*lw1_opt, *lw1_post_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "lightweight update oracle passed");
     return true;
 }
 

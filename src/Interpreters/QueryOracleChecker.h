@@ -199,6 +199,11 @@ public:
     /// element-wise CAST of the pre-ALTER snapshot.
     bool checkAlterModifyWiden(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Lightweight-update oracle (self-seeded): a lightweight UPDATE (patch part) must leave a table
+    /// in the same state as the equivalent heavy ALTER UPDATE, apply_patch_parts must toggle the
+    /// patch coherently, and OPTIMIZE FINAL materialization must be a no-op on the applied result.
+    bool checkLightweightUpdate(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
