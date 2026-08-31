@@ -97,6 +97,13 @@ static NO_INLINE void insertManyFromRepeatedly(IColumn & dst, const IColumn & sr
     dst.insertManyFrom(src, 0, length);
 }
 
+static void reserveRepeatedArray(IColumn & dst, size_t array_size, size_t length)
+{
+    auto & dst_array = assert_cast<ColumnArray &>(dst);
+    dst_array.getOffsets().reserve_exact(length);
+    dst_array.getData().reserve(length * array_size);
+}
+
 
 template <const std::string & str_type>
 static void BM_insertManyFrom(benchmark::State & state)
@@ -120,16 +127,18 @@ template <const std::string & str_type>
 static void BM_insertFromRepeatedlyArray(benchmark::State & state)
 {
     auto type = DataTypeFactory::instance().get(str_type);
-    auto src = mockRepeatedArrayColumn(type, static_cast<size_t>(state.range(0)));
+    const size_t array_size = static_cast<size_t>(state.range(0));
+    const size_t length = static_cast<size_t>(state.range(1));
+    auto src = mockRepeatedArrayColumn(type, array_size);
 
     for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         auto dst = type->createColumn();
-        dst->reserve(ROWS);
+        reserveRepeatedArray(*dst, array_size, length);
         state.ResumeTiming();
 
-        insertFromRepeatedly(*dst, *src, ROWS);
+        insertFromRepeatedly(*dst, *src, length);
         benchmark::DoNotOptimize(dst);
     }
 }
@@ -138,16 +147,18 @@ template <const std::string & str_type>
 static void BM_insertManyFromRepeatedlyArray(benchmark::State & state)
 {
     auto type = DataTypeFactory::instance().get(str_type);
-    auto src = mockRepeatedArrayColumn(type, static_cast<size_t>(state.range(0)));
+    const size_t array_size = static_cast<size_t>(state.range(0));
+    const size_t length = static_cast<size_t>(state.range(1));
+    auto src = mockRepeatedArrayColumn(type, array_size);
 
     for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         auto dst = type->createColumn();
-        dst->reserve(ROWS);
+        reserveRepeatedArray(*dst, array_size, length);
         state.ResumeTiming();
 
-        insertManyFromRepeatedly(*dst, *src, ROWS);
+        insertManyFromRepeatedly(*dst, *src, length);
         benchmark::DoNotOptimize(dst);
     }
 }
@@ -177,10 +188,18 @@ BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_int64);
 BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_string);
 BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_string);
 
-BENCHMARK_TEMPLATE(BM_insertFromRepeatedlyArray, type_array_int64)->Arg(0)->Arg(1)->Arg(2)->Arg(16);
-BENCHMARK_TEMPLATE(BM_insertFromRepeatedlyArray, type_array_string)->Arg(0)->Arg(1)->Arg(2)->Arg(16);
-BENCHMARK_TEMPLATE(BM_insertFromRepeatedlyArray, type_array_low_cardinality_string)->Arg(0)->Arg(1)->Arg(2)->Arg(16);
+#define REGISTER_ARRAY_REPEATED_BENCHMARKS(type) \
+    BENCHMARK_TEMPLATE(BM_insertFromRepeatedlyArray, type) \
+        ->Args({0, 2})->Args({1, 2})->Args({2, 2})->Args({16, 2}) \
+        ->Args({2, 4})->Args({2, 16})->Args({2, 256}) \
+        ->Args({0, ROWS})->Args({1, ROWS})->Args({2, ROWS})->Args({16, ROWS}); \
+    BENCHMARK_TEMPLATE(BM_insertManyFromRepeatedlyArray, type) \
+        ->Args({0, 2})->Args({1, 2})->Args({2, 2})->Args({16, 2}) \
+        ->Args({2, 4})->Args({2, 16})->Args({2, 256}) \
+        ->Args({0, ROWS})->Args({1, ROWS})->Args({2, ROWS})->Args({16, ROWS})
 
-BENCHMARK_TEMPLATE(BM_insertManyFromRepeatedlyArray, type_array_int64)->Arg(0)->Arg(1)->Arg(2)->Arg(16);
-BENCHMARK_TEMPLATE(BM_insertManyFromRepeatedlyArray, type_array_string)->Arg(0)->Arg(1)->Arg(2)->Arg(16);
-BENCHMARK_TEMPLATE(BM_insertManyFromRepeatedlyArray, type_array_low_cardinality_string)->Arg(0)->Arg(1)->Arg(2)->Arg(16);
+REGISTER_ARRAY_REPEATED_BENCHMARKS(type_array_int64);
+REGISTER_ARRAY_REPEATED_BENCHMARKS(type_array_string);
+REGISTER_ARRAY_REPEATED_BENCHMARKS(type_array_low_cardinality_string);
+
+#undef REGISTER_ARRAY_REPEATED_BENCHMARKS
