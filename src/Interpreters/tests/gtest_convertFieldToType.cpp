@@ -447,33 +447,30 @@ TEST(ConvertFieldToTypeStrictness, OutOfRangeDateAndTimeIntegers)
     EXPECT_TRUE(convertFieldToType(Field(Int64(-1)), *datetime_type).isNull());
 }
 
-/// A `DateTime64` column stores a raw `Int64` tick count, which for low scales spans far more time points than
-/// the calendar window `[0000-01-01, 9999-12-31]` the column can represent. An exact conversion of a value
-/// outside that window (or of one whose scaling overflows `Int64`) must return `Null` rather than an impossible
-/// time point that is displayed clamped at the boundary.
+/// A `DateTime64` column stores a raw `Int64` tick count. Scaling a whole number of seconds up to that tick
+/// count can overflow `Int64`, and the result is then not representable at all - such a value must be rejected
+/// (`Null`) rather than throwing out of a comparison. Ticks that do fit `Int64` are kept even when they fall
+/// outside the calendar window `[0000-01-01, 9999-12-31]`: the column can really store them (they are only
+/// displayed clamped to the boundary), so rejecting them would make an existing row unmatchable by its value.
 TEST(ConvertFieldToTypeStrictness, OutOfRangeDateTime64Integers)
 {
     const auto & type_factory = DataTypeFactory::instance();
 
     const auto seconds_type = type_factory.get("DateTime64(0, 'UTC')");
-    const auto seconds_type_east = type_factory.get("DateTime64(0, 'Etc/GMT-14')");
     const auto nanoseconds_type = type_factory.get("DateTime64(9, 'UTC')");
 
-    /// `9999-12-31 23:59:59` UTC, the last representable time point, and the first one past it.
+    /// `9999-12-31 23:59:59` UTC, the last time point the column can display, and the first one past it.
     EXPECT_EQ(
         convertFieldToType(Field(Int64(253402300799)), *seconds_type),
         Field(DecimalField<DateTime64>(DateTime64(253402300799), 0)));
-    EXPECT_TRUE(convertFieldToType(Field(Int64(253402300800)), *seconds_type).isNull());
-
-    /// The window is shifted by the UTC offset of the column's time zone.
     EXPECT_EQ(
-        convertFieldToType(Field(Int64(253402250399)), *seconds_type_east),
-        Field(DecimalField<DateTime64>(DateTime64(253402250399), 0)));
-    EXPECT_TRUE(convertFieldToType(Field(Int64(253402250400)), *seconds_type_east).isNull());
+        convertFieldToType(Field(Int64(253402300800)), *seconds_type),
+        Field(DecimalField<DateTime64>(DateTime64(253402300800), 0)));
 
-    /// Scaling the seconds up to nanoseconds overflows the `Int64` storage.
+    /// Scaling the seconds up to nanoseconds overflows the `Int64` tick storage.
     EXPECT_EQ(
         convertFieldToType(Field(Int64(1)), *nanoseconds_type),
         Field(DecimalField<DateTime64>(DateTime64(1000000000), 9)));
     EXPECT_TRUE(convertFieldToType(Field(Int64(253402300799)), *nanoseconds_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(253402300799)), *nanoseconds_type).isNull());
 }

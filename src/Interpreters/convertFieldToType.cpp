@@ -226,28 +226,6 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 }
 
 
-/** Is a raw `DateTime64` tick count representable by the column, i.e. does it fall inside the calendar window
-  * `[0000-01-01, 9999-12-31]` of the column's time zone?
-  * The `Int64` tick storage is wider than that window for low scales, and a value outside it is clamped to the
-  * boundary when it is formatted, so an exact conversion of such a value cannot match any stored value.
-  * For a high enough scale the window in ticks is wider than the `Int64` storage, and it is clamped to it.
-  */
-bool dateTime64TickIsRepresentable(Int64 ticks, const DataTypeDateTime64 & type)
-{
-    const auto & time_zone = type.getTimeZone();
-    const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(type.getScale());
-    const Int128 max_ticks = std::min(
-        static_cast<Int128>(time_zone.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59)) * scale_multiplier
-            + (scale_multiplier - 1),
-        static_cast<Int128>(std::numeric_limits<Int64>::max()));
-    const Int128 min_ticks = std::max(
-        static_cast<Int128>(time_zone.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0)) * scale_multiplier,
-        static_cast<Int128>(std::numeric_limits<Int64>::min()));
-
-    return static_cast<Int128>(ticks) >= min_ticks && static_cast<Int128>(ticks) <= max_ticks;
-}
-
-
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     if (from_type_hint && from_type_hint->equals(type))
@@ -529,16 +507,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto scale = date_time64_type.getScale();
             const Int64 whole = applyVisitor(FieldVisitorConvertToNumber<Int64>(), src);
 
-            /// The number of seconds is scaled up to ticks, which can overflow the `Int64` storage of the column,
-            /// and even when it does not, it can land outside the calendar window the column can represent.
-            /// Such a value cannot equal any stored value, so return Null ("cannot convert") like the `Date`,
-            /// `Date32` and `DateTime` branches above, instead of materializing an impossible time point.
+            /// Scaling the seconds up to ticks can overflow the `Int64` storage of the column. Such a value is
+            /// not representable at all, so return Null ("cannot convert") like the `Date`, `Date32` and
+            /// `DateTime` branches above, instead of throwing out of a comparison or an `IN` set.
+            /// Values that fit into `Int64` but fall outside the calendar window `[0000-01-01, 9999-12-31]`
+            /// are deliberately kept: unlike the narrower `Date`/`DateTime`, a `DateTime64` column really can
+            /// store such a tick count (it is only displayed clamped to the boundary), so rejecting it would
+            /// make an existing row unmatchable by its own value.
             DateTime64 decimal_value;
             if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<DateTime64>(
                     whole, 0, DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale), decimal_value))
-                return {};
-
-            if (!dateTime64TickIsRepresentable(decimal_value.value, date_time64_type))
                 return {};
 
             return Field(DecimalField<DateTime64>(decimal_value, scale));
