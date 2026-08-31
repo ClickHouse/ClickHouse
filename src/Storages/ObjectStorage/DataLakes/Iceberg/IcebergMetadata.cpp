@@ -297,6 +297,13 @@ void IcebergMetadata::update(const ContextPtr & local_context)
             previous_table_uuid.value_or("no_uuid"),
             actual_table_uuid.value_or("no_uuid"));
 
+        /// Everything the schema processor holds describes the previous table. The replacement
+        /// restarts its own `schema-id` numbering, so its schemas would be rejected as a
+        /// rebinding of an existing id, and its snapshot ids would resolve through the previous
+        /// table's mapping. The processor is shared between all copies of
+        /// `PersistentTableComponents` for this table, so clearing it here clears it for all.
+        persistent_components.schema_processor->reset();
+
         /// The content cells keyed by the previous UUID are unreachable once the trusted UUID
         /// moves, but the latest-version cells under the previous UUID and under the table path
         /// are not - they still point at the replaced table's metadata file - so drop them.

@@ -117,6 +117,13 @@ public:
 
     ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
+    /// Drop everything derived from the metadata of one table. An Iceberg table that an external
+    /// writer recreated at the same root restarts its own `schema-id` numbering, so its schemas
+    /// would otherwise collide with the previous table's under the same ids. Called from
+    /// `IcebergMetadata::update` when a change of `table-uuid` proves the table was replaced;
+    /// the processor is shared between all copies of `PersistentTableComponents` for the table.
+    void reset();
+
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
