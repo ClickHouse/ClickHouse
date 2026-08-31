@@ -114,3 +114,32 @@ SELECT 'nothing written at all', sumIf(value, event = 'ExternalAggregationWriteP
 SELECT 'residue was there to leave alone', sumIf(value, event = 'AdaptiveAggregationPressureSweeps') > 0 FROM system.events;
 SELECT 'thawed onto the baseline path', sumIf(value, event = 'AdaptiveAggregationThaws') > 0 FROM system.events;
 "
+
+# The scenarios above aggregate keys only, so none of their assertions can observe an aggregate state
+# travelling through the release. This one carries a live aggregate and asserts the exact totals in
+# place of the file-to-sweep ratio, which stays above where it was measured: a lost or corrupted state
+# contribution moves sum(c), and the ratio oracle is not perturbed because it is in another scenario.
+# The memory limit is deliberately not pinned here - a live aggregate raises the spilled volume, and
+# this scenario checks results, not the limit.
+$CLICKHOUSE_LOCAL --query "
+SET max_threads = 4;
+SET max_block_size = 8192;
+SET enable_adaptive_aggregator = 1;
+SET adaptive_aggregator_freeze_threshold = 1000;
+SET adaptive_aggregator_freeze_threshold_bytes = 0;
+SET group_by_two_level_threshold = 1000;
+SET group_by_two_level_threshold_bytes = 1000000;
+SET max_bytes_before_external_group_by = 80000000;
+SET max_bytes_ratio_before_external_group_by = 0;
+SET collect_hash_table_stats_during_aggregation = 0;
+
+SELECT count(), sum(c) FROM
+(
+    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k, count() AS c
+    FROM numbers_mt(6000000)
+    GROUP BY k
+);
+
+SELECT 'released with live states', sumIf(value, event = 'AdaptiveAggregationResidueReleases') > 0 FROM system.events;
+SELECT 'thawed onto the baseline path', sumIf(value, event = 'AdaptiveAggregationThaws') > 0 FROM system.events;
+"
