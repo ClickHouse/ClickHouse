@@ -52,6 +52,10 @@ struct StatisticsUtils
     /// merged: a column type change (e.g. numeric → String) may preserve the state size while
     /// switching to a different hash function, producing wrong estimates if the states are mixed.
     static bool isSame(const IAggregateFunction & a, const IAggregateFunction & b);
+
+    /// Heap bytes owned by a Field beyond sizeof(Field): the length of a String value, 0 for
+    /// scalar types. Used for cache-weight accounting of statistics holding min/max Fields.
+    static size_t fieldMemoryUsageBytes(const Field & field);
 };
 
 class IStatistics;
@@ -90,6 +94,11 @@ public:
     /// shifts the aggregate-function state layout) should return false so that
     /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
     virtual bool isCompatibleWith(const IStatistics &) const { return true; }
+
+    /// Approximate memory usage of the statistics object, for cache accounting
+    /// (`PartStatisticsCache`). Implementations may over- or underestimate slightly;
+    /// exactness is not required.
+    virtual size_t memoryUsageBytes() const = 0;
 
 protected:
     SingleStatisticsDescription stat;
@@ -159,6 +168,10 @@ public:
     const StatsMap & getStats() const { return stats; }
     bool structureEquals(const ColumnStatistics & other) const;
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
+    /// Deep copy, including data-dependent state that a factory-fresh object would not have
+    /// (e.g. feature flags read from the serialized form).
+    std::shared_ptr<ColumnStatistics> clone() const;
+    size_t memoryUsageBytes() const;
 
 private:
     friend class MergeTreeStatisticsFactory;
@@ -183,6 +196,7 @@ public:
     void buildIfExists(const Block & block);
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;
+    size_t memoryUsageBytes() const;
 };
 
 struct ColumnDescription;

@@ -96,6 +96,9 @@ void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*versi
 
 UInt64 StatisticsUniq::estimateCardinality() const
 {
+    /// Statistics objects are shared across concurrent queries via the statistics caches.
+    /// `insertResultInto` is in general allowed to mutate the state, but for the uniq family
+    /// it only reads `set.size()`; this method relies on that.
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
     return column->getUInt(0);

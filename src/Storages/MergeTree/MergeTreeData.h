@@ -2137,8 +2137,6 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
-    mutable std::mutex stats_mutex;
-    ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);

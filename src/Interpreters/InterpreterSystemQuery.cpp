@@ -512,6 +512,10 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
             break;
+        case Type::CLEAR_STATISTICS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_STATISTICS_CACHE);
+            system_context->clearStatisticsCaches();
+            break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearUncompressedCache();
@@ -2809,6 +2813,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
+            break;
+        case Type::CLEAR_STATISTICS_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_STATISTICS_CACHE);
             break;
         case Type::CLEAR_MMAP_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_MMAP_CACHE);

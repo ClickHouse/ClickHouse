@@ -2843,7 +2843,7 @@ public:
 private:
     void prepare()
     {
-        ctx->all_gathered_data.statistics = ctx->source_part->loadStatistics();
+        ctx->all_gathered_data.statistics = ctx->source_part->loadStatistics({});
 
         MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,

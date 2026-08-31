@@ -101,6 +101,7 @@ struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
 class PrimaryIndexCache;
+class PartStatisticsCache;
 using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
 class DeleteBitmapCache;
@@ -239,8 +240,16 @@ public:
 
     void remove();
 
-    ColumnsStatistics loadStatistics() const;
-    ColumnsStatistics loadStatistics(const Names & required_columns) const;
+    /// An empty `required_columns` set means all columns.
+    ColumnsStatistics loadStatistics(const NameSet & required_columns) const;
+
+    /// Load the statistics of all columns through the shared part statistics cache when one is
+    /// configured (statistics of a part are immutable, so the entry stays valid for the part's
+    /// lifetime). Falls back to a direct load when `cache` is nullptr. The returned object is
+    /// shared with the cache and must not be mutated.
+    std::shared_ptr<const ColumnsStatistics> loadStatisticsWithCache(PartStatisticsCache * cache, const NameSet & required_columns) const;
+    void removeStatisticsFromCache(PartStatisticsCache * cache) const;
+    UInt128 getStatisticsCacheKey() const;
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
 

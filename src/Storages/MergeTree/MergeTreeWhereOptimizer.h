@@ -32,7 +32,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
  */
 
 class ConditionSelectivityEstimator;
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<const ConditionSelectivityEstimator>;
 class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
