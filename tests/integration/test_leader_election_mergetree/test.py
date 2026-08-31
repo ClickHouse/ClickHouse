@@ -4111,3 +4111,118 @@ def test_vanished_parts_retired_on_takeover(started_cluster):
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_RESTORE_BROKEN_SRC = "12345678-abcd-abcd-abcd-12345678ab44"
+SHARED_UUID_RESTORE_BROKEN_DST = "12345678-abcd-abcd-abcd-12345678ab45"
+
+
+def test_restore_broken_part_as_detached_fenced_to_admission_epoch(started_cluster):
+    """
+    Regression for the `restore_broken_parts_as_detached = 1` branch of `RESTORE`.
+
+    Every other stage of a restore is fenced to the leadership epoch that admitted the command,
+    but the broken-part branch used to escape that fence: after the last per-file
+    `assertWritableLeaderAtEpoch` of the copy loop, a non-retryable load failure went straight to
+    `renameToDetached("broken-from-backup")`. That rename publishes the part under a persistent
+    name in the SHARED `detached/` namespace and nothing ever removes it again — the part is never
+    published, so the restore's final publish fence does not see it. A node that lost the lease
+    after copying the part (even one that reacquired it under a NEW epoch) could therefore leave a
+    `broken-from-backup_*` entry behind from a `RESTORE` that was rejected.
+
+    The `merge_tree_restored_part_load_failure` failpoint drives the broken-part branch without a
+    corrupted backup, and `merge_tree_leader_election_stale_lease_before_restore_detach_broken`
+    makes exactly that one fence — and no earlier one — see a stale epoch, so the copy loop still
+    runs to completion and the test provably exercises the new check.
+    """
+    ensure_node_up(node1)
+    load_failure = "merge_tree_restored_part_load_failure"
+    stale_epoch = "merge_tree_leader_election_stale_lease_before_restore_detach_broken"
+    src = "test_restore_broken_src"
+    dst = "test_restore_broken_dst"
+    backup_destination = (
+        "S3('http://minio1:9001/root/backups/test_restore_broken_fenced', "
+        "'minio', 'ClickHouse_Minio_P@ssw0rd')"
+    )
+    # Same rationale as `test_restore_fenced_to_admission_epoch`: the destination is pre-created
+    # (and its leadership awaited) so the restore is admitted and can only be rejected at the
+    # fence. `wait_for_leader`'s probe rows make it non-empty, and its UUID differs from the
+    # backed-up one.
+    restore_settings = (
+        "SETTINGS allow_non_empty_tables = true, allow_different_table_def = true, "
+        "restore_broken_parts_as_detached = true"
+    )
+
+    def detached_broken_parts(table):
+        return node1.query(
+            f"SELECT name FROM system.detached_parts "
+            f"WHERE table = '{table}' AND reason = 'broken-from-backup' ORDER BY name"
+        ).split()
+
+    try:
+        create_table_on_first_node(node1, src, SHARED_UUID_RESTORE_BROKEN_SRC)
+        create_table_on_first_node(node1, dst, SHARED_UUID_RESTORE_BROKEN_DST)
+        wait_for_leader([node1], table_name=src)
+        wait_for_leader([node1], table_name=dst)
+
+        # A single INSERT, so the backup holds exactly one data part and the always-on
+        # (`REGULAR`) load-failure failpoint breaks precisely that part.
+        node1.query(f"INSERT INTO {src} VALUES (1), (2), (3)")
+        node1.query(f"BACKUP TABLE {src} TO {backup_destination}")
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {load_failure}")
+        node1.query(f"SYSTEM ENABLE FAILPOINT {stale_epoch}")
+        try:
+            rejected = False
+            try:
+                node1.query(
+                    f"RESTORE TABLE {src} AS {dst} FROM {backup_destination} {restore_settings}"
+                )
+            except Exception as e:
+                msg = str(e)
+                assert "Leadership epoch" in msg or "stale lease" in msg, (
+                    f"RESTORE was rejected, but not by the leadership-epoch fence: {msg}"
+                )
+                rejected = True
+            assert rejected, (
+                "A RESTORE whose broken part is detached under a stale leadership epoch "
+                "should have been rejected"
+            )
+            assert detached_broken_parts(dst) == [], (
+                "The rejected RESTORE detached a broken part under a stale leadership epoch"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {stale_epoch}")
+
+        # The decisive check: reload the destination's part set from shared storage, as the next
+        # leader would after a failover. A `broken-from-backup_*` directory written by the aborted
+        # restore is in the shared `detached/` prefix and would show up here.
+        node1.query(f"DETACH TABLE {dst}")
+        node1.query(f"ATTACH TABLE {dst}")
+        wait_for_leader([node1], table_name=dst)
+        assert detached_broken_parts(dst) == [], (
+            "The aborted RESTORE left a broken-from-backup part on the shared storage"
+        )
+        assert int(node1.query(f"SELECT count() FROM {dst} WHERE x > 0").strip()) == 0, (
+            "The aborted RESTORE published parts into the destination"
+        )
+
+        # Positive control: with only the load failure injected — i.e. a fresh epoch — the very
+        # same RESTORE reaches `renameToDetached` and does leave the broken part detached. This
+        # proves the failpoint really drives the `restore_broken_parts_as_detached` branch, so
+        # the assertions above are not vacuous.
+        node1.query(f"RESTORE TABLE {src} AS {dst} FROM {backup_destination} {restore_settings}")
+        assert detached_broken_parts(dst) == ["broken-from-backup_all_1_1_0"], (
+            "The broken part was not detached by a RESTORE admitted under a fresh epoch"
+        )
+    finally:
+        for failpoint in (load_failure, stale_epoch):
+            try:
+                node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+        for table in (src, dst):
+            try:
+                node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass

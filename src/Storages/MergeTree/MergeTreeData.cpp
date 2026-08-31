@@ -457,6 +457,14 @@ namespace FailPoints
     /// broken/duplicate part on shared storage.
     extern const char merge_tree_leader_election_stale_lease_during_takeover_scan[];
     extern const char merge_tree_leader_election_stale_lease_detached_ddl[];
+    /// Deterministically simulates a leadership lease that went stale (lost and reacquired under a
+    /// newer epoch) after a restored part was copied, right before the `RESTORE` renames it into
+    /// the shared `detached/` namespace as `broken-from-backup_*`.
+    extern const char merge_tree_leader_election_stale_lease_before_restore_detach_broken[];
+
+    /// Makes the load of a part restored from a backup fail with a non-retryable error, so the
+    /// `restore_broken_parts_as_detached = 1` branch is taken without needing a corrupted backup.
+    extern const char merge_tree_restored_part_load_failure[];
 
     /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of publishing
     /// a batch of parts (`Transaction::renameParts`): the first part is renamed to its persistent
@@ -9610,13 +9618,18 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         reservation->update(reservation->getSize() - file_size);
     }
 
-    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken, admission_epoch))
         restored_parts_holder->addPart(part);
     else
         restored_parts_holder->increaseNumBrokenParts();
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
+MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(
+    const String & part_name,
+    const DiskPtr & disk,
+    const String & temp_part_dir,
+    bool detach_if_broken,
+    UInt64 admission_epoch) const
 {
     MutableDataPartPtr part;
 
@@ -9635,6 +9648,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
+        fiu_do_on(FailPoints::merge_tree_restored_part_load_failure,
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Injected load failure for the restored part {}", part_name);
+        });
+
         MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
@@ -9661,6 +9679,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
                        .withPartType(MergeTreeDataPartType::Wide)
                        .build();
         }
+        /// `renameToDetached` publishes the part under a persistent name in the shared `detached/`
+        /// namespace, and nothing ever removes it again - the part is not published, so the final
+        /// publish fence of the `RESTORE` never sees it. Fence it like every other irreversible
+        /// rename: a lease lost since the part was copied - even one already reacquired as a newer
+        /// epoch - must not leave a `broken-from-backup_*` entry behind from the stale epoch.
+        UInt64 fence_epoch = admission_epoch;
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_before_restore_detach_broken,
+        {
+            fence_epoch = fence_epoch >= 1 ? fence_epoch - 1 : fence_epoch + 1;
+        });
+        assertWritableLeaderAtEpoch(fence_epoch);
+
         /// Errors should not be ignored in RESTORE, since you should not restore to broken disks.
         part->renameToDetached("broken-from-backup");
     };
