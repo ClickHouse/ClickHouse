@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
@@ -563,6 +564,24 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        /// An Enum arrives as its underlying number, but `CAST(enum AS String)` uses the name.
+        /// Only `to_type` is unwrapped by the caller, so unwrap the hint here.
+        const IDataType * unwrapped_hint = from_type_hint;
+        while (unwrapped_hint)
+        {
+            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
+                unwrapped_hint = nullable_hint->getNestedType().get();
+            else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
+                unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
+            else
+                break;
+        }
+
+        /// Re-enter so that a `FixedString` target still zero-pads the name to its width.
+        if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
+            return convertFieldToTypeImpl(
+                enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
+
         return applyVisitor(FieldVisitorToString(), src);
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
@@ -920,7 +939,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
         catch (Exception & e)
         {
-            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
+            /// A value that ends before the deserializer expected is reported as an attempt to read after eof,
+            /// which says nothing about the query - it reads like a problem with the data. Comparing a numeric
+            /// column with an empty string, `WHERE n <> ''`, is a common mistake and deserves the same message
+            /// as `WHERE n <> 'abc'` already gets.
+            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.safeGet<String>(), type.getName());
 
             e.addMessage(fmt::format("while converting '{}' to {}", src.safeGet<String>(), type.getName()));
