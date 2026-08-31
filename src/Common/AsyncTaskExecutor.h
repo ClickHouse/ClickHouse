@@ -62,8 +62,10 @@ public:
         UInt64 initial_span_id_ = 0);
 
     /// Add an attribute to the span covering the current (and any future) execution of the task.
+    /// Best-effort like `Span::addAttribute`: returns false if the attribute could not be buffered
+    /// (e.g. allocation failure), because losing a span attribute must not fail the task itself.
     /// Thread-safe: can be called both from inside the fiber and from other threads.
-    void addSpanAttribute(OpenTelemetry::SpanAttribute attribute);
+    bool addSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept;
 
     /// Record the outcome of the current task execution on its span. The status is buffered and
     /// applied to the span when the routine exits (normally or by unwinding).

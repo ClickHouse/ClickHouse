@@ -134,7 +134,7 @@ class RemoteQueryExecutorReadContext
 public:
     void cancel() {}
     void setTimer() {}
-    void addSpanAttribute(OpenTelemetry::SpanAttribute) {}
+    bool addSpanAttribute(OpenTelemetry::SpanAttribute) noexcept { return false; }
     void skipDrainOnCancel() {}
 };
 

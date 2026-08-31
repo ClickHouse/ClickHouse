@@ -24,10 +24,18 @@ AsyncTaskExecutor::AsyncTaskExecutor(
 {
 }
 
-void AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute)
+bool AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
 {
-    std::lock_guard guard(span_attributes_mutex);
-    span_attributes.push_back(std::move(attribute));
+    try
+    {
+        std::lock_guard guard(span_attributes_mutex);
+        span_attributes.push_back(std::move(attribute));
+        return true;
+    }
+    catch (...) /// Ok: noexcept, allocation failure
+    {
+        return false;
+    }
 }
 
 void AsyncTaskExecutor::setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept

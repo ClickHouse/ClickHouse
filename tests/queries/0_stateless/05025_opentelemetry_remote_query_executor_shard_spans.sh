@@ -57,6 +57,29 @@ function fragment_counts_query
     "
 }
 
+function assert_fragment_spans
+{
+    local _trace_id="$1"
+    local _query_id="$2"
+    ${CLICKHOUSE_CLIENT} -q "
+        with UUIDNumToString(toFixedString(unhex('$_trace_id'), 16)) as t
+        select
+            if(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards') = 2
+                   and uniqExactIf(attribute['clickhouse.shard_num'], attribute['clickhouse.shard_num'] in ('1', '2')) = 2,
+               'exactly one fragment span per shard: OK',
+               'exactly one fragment span per shard: FAIL, ' || toString(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards')) || ' spans'),
+            if(countIf(attribute['clickhouse.initial_query_id'] = '$_query_id'
+                   and attribute['clickhouse.query_id'] != ''
+                   and attribute['clickhouse.processed_stage'] != '') = 2
+                   and countIf(attribute['clickhouse.target_host'] != '') = 2,
+               'fragment span attributes: OK', 'fragment span attributes: FAIL')
+        from system.opentelemetry_span_log
+        where finish_date >= yesterday() and trace_id = t
+          and operation_name = 'RemoteQueryExecutor::execute'
+        format TSV
+    "
+}
+
 ${CLICKHOUSE_CLIENT} -q "drop table if exists dist_over_two_shards"
 ${CLICKHOUSE_CLIENT} -q "
     create table dist_over_two_shards (dummy UInt8)
@@ -85,24 +108,29 @@ for async_settings in "1 1" "1 0" "0 0"; do
 
     poll_spans "$(fragment_counts_query "$trace_id" "$query_id")" "2 2 2 2 2" || exit 1
 
-    ${CLICKHOUSE_CLIENT} -q "
-        with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
-        select
-            if(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards') = 2
-                   and uniqExactIf(attribute['clickhouse.shard_num'], attribute['clickhouse.shard_num'] in ('1', '2')) = 2,
-               'exactly one fragment span per shard: OK',
-               'exactly one fragment span per shard: FAIL, ' || toString(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards')) || ' spans'),
-            if(countIf(attribute['clickhouse.initial_query_id'] = '$query_id'
-                   and attribute['clickhouse.query_id'] != ''
-                   and attribute['clickhouse.processed_stage'] != '') = 2
-                   and countIf(attribute['clickhouse.target_host'] != '') = 2,
-               'fragment span attributes: OK', 'fragment span attributes: FAIL')
-        from system.opentelemetry_span_log
-        where finish_date >= yesterday() and trace_id = t
-          and operation_name = 'RemoteQueryExecutor::execute'
-        format TSV
-    "
+    assert_fragment_spans "$trace_id" "$query_id"
 done
+
+# The *Cluster table functions (urlCluster, s3Cluster, ...) do not go through
+# ReadFromRemote: their RemoteQueryExecutors are wired in IStorageCluster::readFromCluster,
+# so the fragment attributes must be asserted on that path separately. (The cluster()
+# function is a remote() variant over StorageDistributed and would not cover it.)
+# urlCluster over test_cluster_two_shards loops back to this server over HTTP; the cluster
+# of a *Cluster function uses every replica as a shard, and with two single-replica shards
+# the spans carry the same shard_num values 1 and 2.
+echo "=== urlCluster (IStorageCluster path) ==="
+
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+url_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-url"
+
+${CLICKHOUSE_CLIENT} \
+    --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
+    --query_id "$url_query_id" \
+    --query "select * from urlCluster('test_cluster_two_shards', 'http://localhost:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1', 'TSV', 'x UInt8') format Null"
+
+poll_spans "$(fragment_counts_query "$trace_id" "$url_query_id")" "2 2 2 2 2" || exit 1
+
+assert_fragment_spans "$trace_id" "$url_query_id"
 
 # The synchronous path has no fiber: the span is kept alive by the executor itself and
 # finished on EndOfStream. It must cover the whole remote read, not only connection
