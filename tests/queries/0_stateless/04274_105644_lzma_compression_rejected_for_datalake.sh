@@ -16,6 +16,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE_PREFIX="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 
+# Named collections are server-global, so the names are scoped to this run.
+COLLECTION_LZMA="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_lzma"
+COLLECTION_CLEAN="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_clean"
+COLLECTION_S3="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_s3"
+COLLECTION_S3_CLEAN="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_s3_clean"
+COLLECTION_AZURE="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_azure"
+COLLECTION_AZURE_CLEAN="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_azure_clean"
+
 TABLES=(
     "${TABLE_PREFIX}_lzma"
     "${TABLE_PREFIX}_gzip"
@@ -28,6 +36,12 @@ TABLES=(
     "${TABLE_PREFIX}_kv_compression"
     "${TABLE_PREFIX}_kv_compression_method"
     "${TABLE_PREFIX}_kv_compression_named"
+    "${TABLE_PREFIX}_nc_lzma"
+    "${TABLE_PREFIX}_nc_clean"
+    "${TABLE_PREFIX}_nc_s3"
+    "${TABLE_PREFIX}_nc_s3_clean"
+    "${TABLE_PREFIX}_nc_azure"
+    "${TABLE_PREFIX}_nc_azure_clean"
 )
 
 for table in "${TABLES[@]}"; do
@@ -157,8 +171,90 @@ ${CLICKHOUSE_CLIENT} --query "
     ENGINE = IcebergS3('http://localhost:11111/test/${TABLE_PREFIX}_kv_compression_named', 'Parquet', compression = 'lzma')
 " 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
+# 15. Named-collection carrier. Cases 12 to 14 pass the argument inline, so they
+#     exercise the key-value branch of the parser but never
+#     `fromNamedCollection`, which resolves the collection and marks the
+#     provenance separately. A collection carrying `compression` must reach the
+#     same rejection.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE NAMED COLLECTION ${COLLECTION_LZMA} AS
+        path = '${USER_FILES_PATH}/${TABLE_PREFIX}_nc_lzma', format = 'Parquet', compression = 'lzma'
+"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_nc_lzma (c0 Int) ENGINE = IcebergLocal(${COLLECTION_LZMA})
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
+# 16. Control for case 15: the same collection without `compression` is accepted
+#     and reads back, so case 15 attributes to the argument rather than to the
+#     named-collection carrier being rejected as such.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE NAMED COLLECTION ${COLLECTION_CLEAN} AS
+        path = '${USER_FILES_PATH}/${TABLE_PREFIX}_nc_clean', format = 'Parquet'
+"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_nc_clean (c0 Int) ENGINE = IcebergLocal(${COLLECTION_CLEAN})
+"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_nc_clean"
+
+# 17. Second carrier: the `S3` collection parser is independent of the `Local` one
+#     in case 15, and this uses the canonical `compression_method` key rather than
+#     the `compression` alias, so neither the parser nor the spelling of case 15
+#     covers it. The message is matched instead of the `BAD_ARGUMENTS` name because
+#     an unreachable bucket reports `BAD_ARGUMENTS` as well, so the name alone
+#     cannot tell the rejection apart from a failure to list the bucket.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE NAMED COLLECTION ${COLLECTION_S3} AS
+        url = 'http://localhost:11111/test/${TABLE_PREFIX}_nc_s3', compression_method = 'lzma'
+"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_nc_s3 (c0 Int) ENGINE = IcebergS3(${COLLECTION_S3})
+" 2>&1 | grep -o -m1 "not supported by data lake engines"
+
+# 18. Control for case 17: the same collection without the key must not produce the
+#     compression message (`grep -c` returns 0). The statement still fails, because
+#     the URL resolves to nothing, and that failure carries a different message.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE NAMED COLLECTION ${COLLECTION_S3_CLEAN} AS
+        url = 'http://localhost:11111/test/${TABLE_PREFIX}_nc_s3_clean'
+"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_nc_s3_clean (c0 Int) ENGINE = IcebergS3(${COLLECTION_S3_CLEAN})
+" 2>&1 | grep -c "not supported by data lake engines" || true
+
+# 19. Third carrier: the `Azure` collection parser, back on the `compression` alias.
+#     The endpoint only has to be well-formed, because the rejection precedes the
+#     Azure client.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE NAMED COLLECTION ${COLLECTION_AZURE} AS
+        blob_path = '${TABLE_PREFIX}_nc_azure', container = 'cont',
+        storage_account_url = 'http://localhost:11112/devstoreaccount1', compression = 'lzma'
+"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_nc_azure (c0 Int) ENGINE = IcebergAzure(${COLLECTION_AZURE})
+" 2>&1 | grep -o -m1 "not supported by data lake engines"
+
+# 20. Control for case 19: without the key the statement fails while authenticating
+#     to the endpoint instead, so the compression message is absent.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE NAMED COLLECTION ${COLLECTION_AZURE_CLEAN} AS
+        blob_path = '${TABLE_PREFIX}_nc_azure_clean', container = 'cont',
+        storage_account_url = 'http://localhost:11112/devstoreaccount1'
+"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_nc_azure_clean (c0 Int) ENGINE = IcebergAzure(${COLLECTION_AZURE_CLEAN})
+" 2>&1 | grep -c "not supported by data lake engines" || true
+
+# The `HDFS` collection parser carries the same assignment and is left uncovered
+# here: no stateless test drives `IcebergHDFS`, and the `use-hdfs` tag that would
+# admit one applies to the whole file, so every case above would stop running in
+# Cloud.
+
 # Cleanup.
 for table in "${TABLES[@]}"; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${table}"
     rm -rf "${USER_FILES_PATH:?}/${table}"
+done
+for collection in "${COLLECTION_LZMA}" "${COLLECTION_CLEAN}" "${COLLECTION_S3}" "${COLLECTION_S3_CLEAN}" \
+                  "${COLLECTION_AZURE}" "${COLLECTION_AZURE_CLEAN}"; do
+    ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS ${collection}"
 done
