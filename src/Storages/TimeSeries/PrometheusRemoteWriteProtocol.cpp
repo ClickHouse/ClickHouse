@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/Progress.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -300,6 +301,9 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
+    /// The INSERT check comes first: the engine-specific refusals below must not tell a caller
+    /// without write access what kind of table hides behind the name.
+    context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
     /// Check the engine of the target table: a Distributed target is written through its own sink,
     /// which routes the rows to the TimeSeries table of each shard.
     resolvePrometheusQueryTarget(*time_series_storage);
