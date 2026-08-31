@@ -1,0 +1,16 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- `IcebergMetadata::drop` runs in the background and reads this from the global
+                 context, so it cannot be set per query. -->
+            <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>

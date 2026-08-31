@@ -218,7 +218,6 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .table_uuid = table_uuid,
         .path_resolver = IcebergPathResolver(
             table_location, root_derivation.table_root, configuration->getTypeName(), configuration->getNamespace()),
-        .table_root_was_derived = root_derivation.relation == IcebergPathResolver::RootRelation::AdoptedDescendant,
     };
 }
 
@@ -686,7 +685,7 @@ void IcebergMetadata::mutate(
 
 void IcebergMetadata::checkTableRootIsQueriedPath(std::string_view operation) const
 {
-    if (!persistent_components.table_root_was_derived)
+    if (!persistent_components.tableRootWasDerived())
         return;
 
     throw Exception(
@@ -1545,7 +1544,7 @@ void IcebergMetadata::drop(ContextPtr context)
     {
         /// Skipped rather than refused: this runs after the table is already marked as dropped, so
         /// throwing here only makes `DatabaseCatalog` retry the drop forever.
-        if (persistent_components.table_root_was_derived)
+        if (persistent_components.tableRootWasDerived())
         {
             LOG_WARNING(
                 log,
@@ -1641,13 +1640,17 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         .metadata_compression_method = metadata_compression_method,
         .table_path = standard_persistent_components.table_path,
         .table_uuid = standard_persistent_components.table_uuid,
+        /// The root has to come from the locally computed components: it is derived from where the
+        /// metadata document sits, which is not on the wire. Dropping it back to `table_path` here
+        /// would re-root every data and manifest key onto the queried path on this side only, which
+        /// is the very bug this derivation exists to fix, and would leave every operation scoped to
+        /// the queried path unrefused. `table_location` stays the deserialized one, because the
+        /// paths this resolver is asked to resolve are the ones the sender recorded against it.
         .path_resolver = IcebergPathResolver(
             table_location,
-            standard_persistent_components.table_path,
+            standard_persistent_components.path_resolver.getTableRoot(),
             configuration_ptr->getTypeName(),
-            configuration_ptr->getNamespace()),
-        /// Consistent with the resolver above, which is rooted at `table_path` itself.
-        .table_root_was_derived = false};
+            configuration_ptr->getNamespace())};
     auto metadata = std::make_unique<IcebergMetadata>(object_storage, configuration.lock(), std::move(deserialized_persistent_components), local_context);
     return metadata;
 }
