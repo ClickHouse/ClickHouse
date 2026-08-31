@@ -1,5 +1,5 @@
 <test>
-    <!-- Repeat one right-side Array row many times through the join output path.
+    <!-- Repeat one compact right-side row many times through the join output path.
          Empty arrays only need offset insertion. Single-element arrays can bulk-copy
          their nested value, including the already-specialized LowCardinality path. -->
     <settings>
@@ -13,25 +13,52 @@
     <create_query>
         CREATE TABLE tab
         (
-            empty_array Array(UInt64),
-            single_u64 Array(UInt64),
-            single_string Array(String),
-            single_lc Array(LowCardinality(String))
+            empty_0 Array(UInt64),
+            empty_1 Array(UInt64),
+            empty_2 Array(UInt64),
+            empty_3 Array(UInt64),
+            u64_0 Array(UInt64),
+            u64_1 Array(UInt64),
+            u64_2 Array(UInt64),
+            u64_3 Array(UInt64),
+            string_0 Array(String),
+            string_1 Array(String),
+            string_2 Array(String),
+            string_3 Array(String),
+            lc_0 Array(LowCardinality(String)),
+            lc_1 Array(LowCardinality(String)),
+            lc_2 Array(LowCardinality(String)),
+            lc_3 Array(LowCardinality(String))
         ) ENGINE = Memory
     </create_query>
 
     <fill_query>
         INSERT INTO tab VALUES
-            ([], [42], ['repeated'], [toLowCardinality('repeated')])
+            ([], [], [], [], [42], [42], [42], [42],
+             ['repeated'], ['repeated'], ['repeated'], ['repeated'],
+             [toLowCardinality('repeated')], [toLowCardinality('repeated')],
+             [toLowCardinality('repeated')], [toLowCardinality('repeated')])
     </fill_query>
 
     <query>
         SELECT
             l.number,
-            r.empty_array,
-            r.single_u64,
-            r.single_string,
-            r.single_lc
+            r.empty_0,
+            r.empty_1,
+            r.empty_2,
+            r.empty_3,
+            r.u64_0,
+            r.u64_1,
+            r.u64_2,
+            r.u64_3,
+            r.string_0,
+            r.string_1,
+            r.string_2,
+            r.string_3,
+            r.lc_0,
+            r.lc_1,
+            r.lc_2,
+            r.lc_3
         FROM numbers(50000000) AS l
         ANY LEFT JOIN tab AS r ON 1
         FORMAT Null
