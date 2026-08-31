@@ -23,6 +23,7 @@ extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
 extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
 extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
 extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
+extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
 }
 
 namespace DB
@@ -89,6 +90,7 @@ OracleRegistry::OracleRegistry()
     add("partition equivalence", ProfileEvents::ASTFuzzerOraclePartitionEquivalenceChecks, &QueryOracleChecker::checkPartitionEquivalence);
     add("LowCardinality equivalence", ProfileEvents::ASTFuzzerOracleLowCardinalityEquivalenceChecks, &QueryOracleChecker::checkLowCardinalityEquivalence);
     add("SAMPLE equivalence", ProfileEvents::ASTFuzzerOracleSampleEquivalenceChecks, &QueryOracleChecker::checkSampleEquivalence);
+    add("projection equivalence", ProfileEvents::ASTFuzzerOracleProjectionEquivalenceChecks, &QueryOracleChecker::checkProjectionEquivalence);
 }
 
 const OracleRegistry & OracleRegistry::instance()

@@ -106,6 +106,12 @@ public:
     /// real sampling bug.
     bool checkSampleEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Projection-equivalence oracle (self-seeded): an aggregating projection must not change
+    /// results. The same integer-aggregate query with optimize_use_projections=0 vs =1 must be
+    /// identical; a difference is a real projection bug. Integer aggregates only (float sums are
+    /// non-associative across the projection vs base-table paths).
+    bool checkProjectionEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
