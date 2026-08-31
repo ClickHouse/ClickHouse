@@ -142,8 +142,8 @@ SELECT 'K10 all inner', count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_
 SELECT 'K11 right equi', count() FROM t1 RIGHT JOIN sj_all_right ON (t1.key = sj_all_right.key);
 
 -- ALL INNER applies a right-only conjunct after the join, so it never becomes a filter over the
--- prebuilt join. K12 is the spelling optimize_and_compare_chain derives a third conjunct from,
--- K13 and K14 are written by hand.
+-- prebuilt join. The cases differ in how the conjunct arises: optimize_and_compare_chain derives
+-- it in K12, the rest spell it out in the query.
 SELECT 'K12 derived', count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = 'k1') AND (t1.key = sj_all_inner.key) SETTINGS optimize_and_compare_chain = 1;
 -- K12 only carries a derived conjunct while that pass is on, so pin the count either way. Both
 -- arms state the setting explicitly because the test runner randomizes it.
