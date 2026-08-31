@@ -386,6 +386,23 @@ bool typeContainsUUIDFamily(const IDataType & type)
     return false;
 }
 
+/// A type whose values can absorb a `String` as one of their alternatives: the text form of a
+/// `UUID`-family constant would then be stored as a string instead of being parsed back into the
+/// `UUID`/`UUID2` alternative, and the sharding expression would be evaluated over the wrong value.
+bool typeContainsVariantLike(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        result = result || which.isVariant() || which.isDynamic() || which.isObject();
+    };
+    check(type);
+    /// `forEachChild` walks the whole nested type tree.
+    type.forEachChild(check);
+    return result;
+}
+
 /// Re-encode `UUID`/`UUID2` values inside a folded constant as their text form. The text form is
 /// self-describing: parsing it into the type of the column the constant is compared with produces the
 /// value in the layout of that type, while the raw binary `Field` would have been taken verbatim by
@@ -449,22 +466,28 @@ Field encodeUUIDFamilyAsText(const Field & value, const IDataType & type)
 class ReplacingConstantExpressionsMatcher
 {
 public:
-    using Data = Block;
+    struct Data
+    {
+        Block & block_with_constants;
+        /// Whether the table has a column that could absorb the text form of a `UUID`-family constant
+        /// into a `String` alternative instead of parsing it back (see `typeContainsVariantLike`).
+        bool text_encoding_is_ambiguous = false;
+    };
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &)
     {
         return true;
     }
 
-    static void visit(ASTPtr & node, Block & block_with_constants)
+    static void visit(ASTPtr & node, Data & data)
     {
         if (!node->as<ASTFunction>())
             return;
 
         std::string name = node->getColumnName();
-        if (block_with_constants.has(name))
+        if (data.block_with_constants.has(name))
         {
-            const auto & result = block_with_constants.getByName(name);
+            const auto & result = data.block_with_constants.getByName(name);
             if (!isColumnConst(*result.column))
                 return;
 
@@ -475,7 +498,14 @@ public:
             /// type (`analyzeEquals` in `evaluateExpressionOverConstantCondition`) restores the value
             /// in the right layout.
             if (result.type && typeContainsUUIDFamily(*result.type))
+            {
+                /// Both representations are ambiguous against a `Variant`/`Dynamic`/`JSON` column: the raw
+                /// binary is taken verbatim, and the text form is accepted into the `String` alternative.
+                /// Leave the expression unfolded, so that no shard is pruned instead of the wrong one.
+                if (data.text_encoding_is_ambiguous)
+                    return;
                 value = encodeUUIDFamilyAsText(value, *result.type);
+            }
 
             node = make_intrusive<ASTLiteral>(std::move(value));
         }
@@ -492,7 +522,17 @@ void replaceConstantExpressions(
     auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, storage_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
-    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
+    ReplacingConstantExpressionsMatcher::Data data{block_with_constants, false};
+    for (const auto & column : columns)
+    {
+        if (column.type && typeContainsVariantLike(*column.type))
+        {
+            data.text_encoding_is_ambiguous = true;
+            break;
+        }
+    }
+
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(data);
     visitor.visit(node);
 }
 

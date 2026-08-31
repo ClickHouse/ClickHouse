@@ -1,0 +1,5 @@
+Variant(String, UUID2) sharding key, not pruned
+2	2
+2	2
+UUID2 sharding key, still pruned
+1	1
