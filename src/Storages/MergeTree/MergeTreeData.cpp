@@ -9806,6 +9806,12 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         if (analyzed_partition_ids)
             analyzed_partition_ids->insert(part->info.getPartitionId());
 
+        /// Empty parts must not prune their partition here: this analysis answers "which
+        /// partitions could the predicate match", which depends only on the partition key.
+        /// The partition is recorded as analyzed above, which suppresses the ZooKeeper
+        /// widening in `allocateBlockNumbersInAffectedPartitions` - so pruning a matching
+        /// all-empty partition leaves it without a block number, and lightweight updates
+        /// use these block numbers as a hard read bound after `update_sequential_consistency`.
         if (!partition_pruner.canBePruned(*part, /*can_prune_empty_parts=*/ false))
             affected_partition_ids.insert(part->info.getPartitionId());
     }

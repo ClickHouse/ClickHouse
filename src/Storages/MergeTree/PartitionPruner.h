@@ -20,6 +20,9 @@ public:
         bool strict = false,
         bool skip_analysis = false);
 
+    /// Pass `can_prune_empty_parts = false` when the answer is used as a statement about the
+    /// partition (mutation / lightweight-update block-number scoping) rather than about the
+    /// part: an empty part's partition key still has to be matched against the predicate.
     bool canBePruned(const IMergeTreeDataPart & part, bool can_prune_empty_parts = true) const;
 
     bool isUseless() const { return useless; }
