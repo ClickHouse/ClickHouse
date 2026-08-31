@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDistributed.h>
@@ -73,6 +74,27 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
     target.remote_time_series_storage_id.database_name = distributed->getRemoteDatabaseName();
     target.remote_time_series_storage_id.table_name = std::move(remote_table_name);
     return target;
+}
+
+namespace
+{
+bool hasInstantSelector(const PrometheusQueryTree::Node * node)
+{
+    if (!node)
+        return false;
+    if (node->node_type == PrometheusQueryTree::NodeType::InstantSelector)
+        return true;
+    for (const auto * child : node->children)
+        if (hasInstantSelector(child))
+            return true;
+    return false;
+}
+}
+
+bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query)
+{
+    /// A range selector carries an instant selector as its child, so one node type covers both.
+    return hasInstantSelector(promql_query.getRoot());
 }
 
 void checkTimeSeriesWrapperReadContract(const StorageID & storage_id, const ContextPtr & context)

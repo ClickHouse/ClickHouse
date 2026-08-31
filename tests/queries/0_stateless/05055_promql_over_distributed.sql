@@ -97,6 +97,8 @@ DROP TABLE ts_skip_default;
 -- A non-default value would be silently dropped by the generated cluster() call: fail closed.
 CREATE TABLE ts_skip_on AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 1;
 SELECT * FROM prometheusQuery(ts_skip_on, 'm', 140); -- { serverError NOT_IMPLEMENTED }
+-- A selector-free query never reads the wrapper, so wrapper-only settings must not refuse it.
+SELECT count() FROM prometheusQuery(ts_skip_on, '1 + 2', 140);
 -- An explicit query setting overrides the declaration on the normal path and reaches the generated
 -- cluster() call too, so with it the reads match exactly: must pass.
 SELECT count() > 0 FROM prometheusQuery(ts_skip_on, 'm', 140) SETTINGS skip_unavailable_shards = 0;
