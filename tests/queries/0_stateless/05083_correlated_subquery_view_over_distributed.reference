@@ -1,0 +1,8 @@
+directly over the Distributed table
+through a view
+through a view over a view
+a view over a local table still works
+100
+100
+an uncorrelated subquery over the view still works
+100

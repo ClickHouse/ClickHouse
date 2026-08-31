@@ -12,6 +12,8 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/traverseQueryTree.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 
 #include <memory>
@@ -548,11 +550,53 @@ void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery
 
 }
 
-void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
+/// Whether reading this table reaches a remote table. A `VIEW` is an opaque `TABLE` node at this
+/// point - the analyzer expands it later, inside `StorageView::read` - so its own `isRemote` says
+/// nothing about what it reads. Follow the referential dependencies the catalog records for such a
+/// table instead. Without this, a correlated subquery over a view of a `Distributed` table passed the
+/// check below and then broke a planner invariant (`Column identifier ... is already registered`,
+/// a `LOGICAL_ERROR` that aborts a debug build) instead of being refused.
+static bool readsFromRemoteTable(
+    const StoragePtr & storage,
+    const StorageID & table_id,
+    const ContextPtr & context,
+    std::unordered_set<String> & visited,
+    size_t depth)
+{
+    static constexpr size_t max_dependency_depth = 16;
+
+    if (!storage)
+        return false;
+
+    if (storage->isRemote())
+        return true;
+
+    if (!(storage->isView() || storage->readsFromOtherTables()) || !context || depth >= max_dependency_depth)
+        return false;
+
+    if (!visited.insert(table_id.getFullTableName()).second)
+        return false;
+
+    for (const auto & dependency : DatabaseCatalog::instance().getReferentialDependencies(table_id))
+    {
+        auto dependency_storage = DatabaseCatalog::instance().tryGetTable(dependency, context);
+        if (readsFromRemoteTable(dependency_storage, dependency, context, visited, depth + 1))
+            return true;
+    }
+
+    return false;
+}
+
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     bool has_remote = false;
     bool has_correlated_subquery = false;
     QueryTreeNodes nodes_to_process = { node };
+
+    /// Tables whose own storage is local but that read from other tables. Resolving what they reach
+    /// takes the catalog's dependency graph, so it is deferred to the end and only done when the query
+    /// actually has a correlated subquery.
+    std::vector<const TableNode *> opaque_tables;
 
     while (!nodes_to_process.empty())
     {
@@ -581,6 +625,8 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
                 const auto & storage = table_node.getStorage();
                 if (storage && storage->isRemote())
                     has_remote = true;
+                else if (storage && (storage->isView() || storage->readsFromOtherTables()))
+                    opaque_tables.push_back(&table_node);
                 break;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
@@ -605,6 +651,18 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
             if (child)
                 nodes_to_process.push_back(child);
         }
+    }
+
+    if (!has_correlated_subquery)
+        return;
+
+    for (const auto * table_node : opaque_tables)
+    {
+        std::unordered_set<String> visited;
+        if (readsFromRemoteTable(table_node->getStorage(), table_node->getStorageID(), context, visited, 0))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported with remote tables. In query {}",
+                node->formatASTForErrorMessage());
     }
 }
 
