@@ -871,7 +871,15 @@ void StorageTimeSeriesSelector::readImpl(
         context,
         log);
 
-    ContextPtr interpreter_context = context;
+    auto modified_context = Context::createCopy(context);
+    ContextPtr interpreter_context = modified_context;
+
+    if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read"))
+        modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read", UInt64{4 * 1024 * 1024});
+
+    if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem"))
+        modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", UInt64{4 * 1024 * 1024});
+
     if (!whole_metric_id_range_conditions.empty())
     {
         /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering
@@ -882,9 +890,7 @@ void StorageTimeSeriesSelector::readImpl(
         /// the same granules through the cheap continuous-range path. Setting
         /// `use_index_for_in_with_subqueries_max_values = 1` makes the set unusable for index
         /// analysis without affecting the row-level filter.
-        auto modified_context = Context::createCopy(context);
         modified_context->setSetting("use_index_for_in_with_subqueries_max_values", UInt64{1});
-        interpreter_context = modified_context;
         LOG_DEBUG(log, "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
                   quoteString(config.selector.toString()));
     }
