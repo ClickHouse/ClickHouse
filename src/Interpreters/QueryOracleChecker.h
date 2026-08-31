@@ -96,6 +96,11 @@ public:
     /// identical multiset; a difference is a real partition-pruning / cross-partition-merge bug.
     bool checkPartitionEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// LowCardinality-equivalence oracle (self-seeded): LowCardinality(T) stores the same logical
+    /// values as T. Identical data as LowCardinality(String) vs plain String must read back and
+    /// group identically; a difference is a real LowCardinality bug.
+    bool checkLowCardinalityEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
