@@ -298,8 +298,27 @@ bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & 
 /// already constant-folded live in ConstantNode::source_expression, which is NOT a child
 /// (children_size == 0), so they are correctly ignored: by then they are constants evaluated on
 /// the initiator and safe to ship.
+///
+/// A bare `IN some_table` / `NOT IN some_table` carries a TABLE node - or a TABLE_FUNCTION node for
+/// a table function - instead of a QUERY node, and reads a table by name exactly the way a subquery
+/// does: on the normal StorageView path against the initiator's table, per-shard once the
+/// optimization fires. Those count here too, otherwise two spellings of the same predicate over the
+/// same view return different rows. Only the right-hand side of an `IN` is inspected for them,
+/// because the query's own join tree is made of TABLE nodes as well.
 bool containsSubqueryNode(const QueryTreeNodePtr & node)
 {
+    if (const auto * function_node = node->as<FunctionNode>();
+        function_node && isNameOfInFunction(function_node->getFunctionName()))
+    {
+        const auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() >= 2)
+        {
+            const auto right_node_type = arguments[1]->getNodeType();
+            if (right_node_type == QueryTreeNodeType::TABLE || right_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+                return true;
+        }
+    }
+
     for (const auto & child : node->getChildren())
     {
         if (!child)
