@@ -172,6 +172,7 @@ void AllocationQueue::notifyRecoveryProgress(ResourceAllocation & allocation)
     /// Publish against the allocation, not the queue's owner pointer. Completion may arrive before
     /// the scheduler finishes parking the owner; the next activation consumes this durable bit.
     allocation.memory_growth_recovery_pending = true;
+    memory_growth_suspension_changed = true;
     scheduleActivation();
 }
 
