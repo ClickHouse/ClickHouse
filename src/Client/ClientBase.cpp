@@ -65,10 +65,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <IO/Ask.h>
@@ -652,11 +651,17 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             throw;
         }
     }
+    else if (dialect == Dialect::kusto)
+    {
+        /// KQL is lexically a different language, so it does not go through the SQL
+        /// tokenizer at all. Any failure is thrown; the interactive path below already
+        /// reports a thrown exception the same way it reports a returned message.
+        res = parseKQLQuery(
+            pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
     else
     {
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-        else if (dialect == Dialect::prql)
+        if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
@@ -670,10 +675,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             String message;
             try
             {
-                if (dialect == Dialect::kusto)
-                    res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-                else
-                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             }
             catch (const Exception & e)
             {
@@ -690,10 +692,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         }
         else
         {
-            if (dialect == Dialect::kusto)
-                res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-            else
-                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
     }
 
@@ -3130,10 +3129,17 @@ void ClientBase::processParsedSingleQuery(
     /// at, and emitting `BEL` would just contaminate the captured stderr stream.
     /// The default lives here (not in the CLI option) so that a value from the
     /// client config file is not clobbered when the flag is omitted.
+    ///
+    /// The threshold is checked against the client's own clock rather than
+    /// `elapsedSeconds`, which prefers the server-reported time. The server-reported time only
+    /// advances when a `Progress` packet arrives, and no final `Progress` packet is sent when a query
+    /// fails, so on the error path it is stale by an unbounded amount - enough to skip the chime for a
+    /// query that clearly ran past the threshold. The wall-clock time the user waited for is also what
+    /// the chime is about.
     UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 5);
     if (chime_threshold_seconds > 0
         && stderr_is_a_tty
-        && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+        && progress_indication.clientElapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
     {
         error_stream << '\x07';
         error_stream.flush();
@@ -3414,6 +3420,25 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 is_first = false;
                 have_error |= buzz_house;
                 error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
+
+                /// The AST fuzzer feeds whole test files to one session, often several files in
+                /// a row, so a statement that does not parse is expected rather than a finding -
+                /// e.g. SQL DDL of the next file read under a `dialect = 'kusto'` a previous file
+                /// left behind. Skip the statement and keep fuzzing (the per-query parse in
+                /// `processWithASTFuzzer` tolerates syntax errors the same way).
+                if (query_fuzzer_runs && !buzz_house)
+                {
+                    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
+                    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    Tokens tokens(this_query_begin, all_queries_end);
+                    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                        ++token_iterator;
+                    this_query_begin = token_iterator->end;
+                    current_exception.reset();
+                    continue;
+                }
+
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
