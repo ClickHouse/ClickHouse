@@ -37,6 +37,7 @@ extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
 extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
 extern const Event ASTFuzzerOracleGroupingSetsChecks;
 extern const Event ASTFuzzerOracleRowPolicyChecks;
+extern const Event ASTFuzzerOracleFinalMergeChecks;
 }
 
 namespace DB
@@ -117,6 +118,7 @@ OracleRegistry::OracleRegistry()
     add("ARRAY JOIN identity", ProfileEvents::ASTFuzzerOracleArrayJoinIdentityChecks, &QueryOracleChecker::checkArrayJoinIdentity);
     add("grouping-set equivalence", ProfileEvents::ASTFuzzerOracleGroupingSetsChecks, &QueryOracleChecker::checkGroupingSetsEquivalence);
     add("row-policy equivalence", ProfileEvents::ASTFuzzerOracleRowPolicyChecks, &QueryOracleChecker::checkRowPolicyEquivalence);
+    add("FINAL-merge dedup", ProfileEvents::ASTFuzzerOracleFinalMergeChecks, &QueryOracleChecker::checkFinalMergeReplacing);
 }
 
 const OracleRegistry & OracleRegistry::instance()
