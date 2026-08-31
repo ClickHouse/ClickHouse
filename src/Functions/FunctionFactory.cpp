@@ -151,9 +151,7 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     if (!res)
         return nullptr;
 
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().tryGetQueryContext();
+    ContextPtr query_context = CurrentThread::isInitialized() ? CurrentThread::get().tryGetQueryContext() : nullptr;
 
     if (query_context && query_context->getSettingsRef()[Setting::log_queries])
         query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
