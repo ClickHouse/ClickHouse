@@ -7,11 +7,11 @@ keywords: ['Managed Postgres', 'мониторинг', 'обсервабилит
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-overview-beta" />
 
-Вы можете отслеживать сервисы ClickHouse Managed Postgres следующими
+Вы можете отслеживать сервисы Managed Postgres следующими
 способами:
 
 | Раздел                                                                        | Описание                                                                                                            | Требуется настройка              |
@@ -20,14 +20,13 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | [Query Insights](/ru/products/managed-postgres/monitoring/query-insights)        | Телеметрия по операторам: каждый шаблон запроса ранжируется по влиянию и сопровождается диагностическими счётчиками | Не требуется                     |
 | [Конечная точка Prometheus](/ru/products/managed-postgres/monitoring/prometheus) | Сбор метрик в Prometheus, Grafana, Datadog или любой коллектор, совместимый с OpenMetrics                           | API key + конфигурация скрейпера |
 | [Справочник по метрикам](/ru/products/managed-postgres/monitoring/metrics)       | Полный список метрик, доступных через конечную точку Prometheus, с типами, метками и их значениями                  | Н/Д                              |
-| [Уведомления](/ru/products/managed-postgres/monitoring/notifications)            | Оповещения в консоли, по email и Slack, когда сервис требует внимания, например при заполнении хранилища            | Не требуется                     |
 
 <div id="quick-start">
   ## Быстрый старт
 </div>
 
-Откройте Cloud Console и перейдите на вкладку **Мониторинг** любого
-экземпляра ClickHouse Managed Postgres, чтобы увидеть графики в реальном времени для CPU, памяти, IOPS,
+Откройте облачную консоль и перейдите на вкладку **Мониторинг** любого
+экземпляра Managed Postgres, чтобы увидеть графики в реальном времени для CPU, памяти, IOPS,
 подключений, транзакций, коэффициента попаданий в кэш и взаимных блокировок. Никакой
 дополнительной настройки не требуется.
 

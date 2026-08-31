@@ -27,8 +27,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTFunction.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -65,7 +63,6 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ServerSetting
@@ -87,49 +84,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-void replaceLegacyToTimeInAlterExpression(IAST * ast)
-{
-    if (auto * function = ast->as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
-        function->name = "toTimeWithFixedDate";
-
-    for (const auto & child : ast->children)
-        replaceLegacyToTimeInAlterExpression(child.get());
-
-    /// TTL GROUP BY keys are not `children` of their `ASTTTLElement`.
-    if (auto * ttl_element = ast->as<ASTTTLElement>())
-    {
-        for (const auto & group_by_key : ttl_element->group_by_key)
-            replaceLegacyToTimeInAlterExpression(group_by_key.get());
-        for (const auto & group_by_assignment : ttl_element->group_by_assignments)
-            replaceLegacyToTimeInAlterExpression(group_by_assignment.get());
-    }
-}
-
-void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
-{
-    for (const auto & child : alter.command_list->children)
-    {
-        auto * command = child->as<ASTAlterCommand>();
-
-        /// Every slot that reaches table metadata, so that a reload re-derives the same spelling the
-        /// statement resolved. Slots that only drive a one-off mutation (`predicate`,
-        /// `update_assignments`) are left alone: their expression is never stored as metadata,
-        /// so it must keep resolving as the session wrote it.
-        for (IAST * payload : {command->col_decl,
-                               command->order_by,
-                               command->sample_by,
-                               command->index_decl,
-                               command->constraint_decl,
-                               command->projection_decl,
-                               command->ttl,
-                               command->select})
-        {
-            if (payload)
-                replaceLegacyToTimeInAlterExpression(payload);
-        }
-    }
-}
 
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
@@ -432,8 +386,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextM
 BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
-    auto & alter = query_ptr->as<ASTAlterQuery &>();
-
+    const auto & alter = query_ptr->as<ASTAlterQuery &>();
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);
@@ -465,9 +418,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
-    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
-
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
@@ -481,18 +431,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
-
-        /// Substitute the database of the altered table into table functions that use the current database
-        /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
-        /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
-        /// which replaces `currentDatabase()` with the database of the session.
-        /// The table identifiers are not qualified here: they are qualified with the database
-        /// of the altered table when the query is interpreted on each host.
-        if (table_id)
-        {
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-            visitor.substituteDatabaseInTableFunctions(*alter.command_list);
-        }
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
@@ -555,14 +493,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateReplicatedDatabaseSegments(segments, database);
 
     if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
-    {
-        /// The patch part is committed while the pipeline runs, so the share lock must outlive this
-        /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
-        QueryPlanResourceHolder update_resources;
-        update_resources.table_locks.emplace_back(std::move(table_lock));
-        lightweight_result->pipeline.addResources(std::move(update_resources));
         return std::move(lightweight_result.value());
-    }
 
     return runCommandSegments(segments, table, getContext());
 }
@@ -697,10 +628,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS adds statistics like the dedicated ADD STATISTICS command does,
-            /// so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_COLUMN:
@@ -714,10 +641,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS replaces the explicit statistics of the column like the dedicated
-            /// MODIFY STATISTICS command does, so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::COMMENT_COLUMN:
@@ -802,11 +725,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_PROJECTION:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_PROJECTION, database, table);
-            break;
-        }
-        case ASTAlterCommand::MODIFY_PROJECTION:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_PROJECTION, database, table);
             break;
         }
         case ASTAlterCommand::DROP_PROJECTION:

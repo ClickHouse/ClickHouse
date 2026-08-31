@@ -7,27 +7,27 @@ title: 'Escalado automático'
 doc_type: 'guide'
 ---
 
-import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-El escalado es la capacidad de ajustar los recursos disponibles para satisfacer la demanda de los clientes. Los servicios de los niveles Scale y Enterprise pueden escalarse horizontalmente mediante llamadas programáticas a una API o cambiando la configuración en la UI. Los servicios del nivel Scale y los servicios del nivel Enterprise con perfiles estándar `1:4` también pueden **escalarse automáticamente** de forma vertical para satisfacer la demanda de la aplicación.
+El escalado es la capacidad de ajustar los recursos disponibles para satisfacer la demanda de los clientes. Los servicios de los niveles Scale y Enterprise (con el perfil estándar 1:4) pueden escalarse horizontalmente mediante llamadas programáticas a una API o cambiando la configuración en la UI para ajustar los recursos del sistema. Estos servicios también pueden **escalarse automáticamente** de forma vertical para satisfacer la demanda de la aplicación.
 
 <ScalePlanFeatureBadge feature="Escalado vertical automático" />
 
 <Note>
-  Los niveles Scale y Enterprise admiten servicios tanto de una sola réplica como de múltiples réplicas. Los servicios Scale de una sola réplica y los servicios Enterprise con perfiles estándar `1:4` admiten el autoescalado vertical de autoservicio. Los servicios Enterprise con perfiles personalizados requieren redimensionamiento vertical con asistencia del soporte técnico. Los servicios Scale y Enterprise pueden escalarse horizontalmente hasta varias réplicas. Los servicios del nivel Basic tienen una sola réplica, un tamaño fijo y no permiten escalado vertical ni horizontal. Para obtener más información, consulte [servicios grandes de una sola réplica](/es/products/cloud/features/large-single-replica-services).
+  Los niveles Scale y Enterprise admiten servicios tanto de una sola réplica como de múltiples réplicas, mientras que el nivel Basic solo admite servicios de una sola réplica. Los servicios de una sola réplica están diseñados para tener un tamaño fijo y no permiten escalado vertical ni horizontal. Puede actualizar al nivel Scale o Enterprise para escalar sus servicios.
 </Note>
 
 <div id="how-scaling-works-in-clickhouse-cloud">
   ## Cómo funciona el escalado en ClickHouse Cloud
 </div>
 
-ClickHouse Cloud admite el escalado horizontal manual para los servicios de los niveles Scale y Enterprise. Los servicios del nivel Scale también admiten autoescalado vertical; la compatibilidad con el autoescalado vertical en el nivel Enterprise depende del perfil, como se describe a continuación. El [escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) está disponible en Private Preview para los servicios de los niveles Scale y Enterprise.
+Actualmente, ClickHouse Cloud admite autoescalado vertical y escalado horizontal manual para los servicios del nivel Scale.
 
 Para los servicios del nivel Enterprise, el escalado funciona de la siguiente manera:
 
-* **Escalado horizontal**: El escalado horizontal manual está disponible en todos los perfiles estándar y personalizados del nivel Enterprise.
+* **Escalado horizontal**: El escalado horizontal manual estará disponible en todos los perfiles estándar y personalizados del nivel Enterprise.
 * **Escalado vertical**:
-  * Los perfiles estándar `1:4` admiten autoescalado vertical.
+  * Los perfiles estándar (1:4) admitirán autoescalado vertical.
   * Los perfiles personalizados (`highMemory` y `highCPU`) no admiten autoescalado vertical ni escalado vertical manual. Sin embargo, estos servicios pueden escalarse verticalmente poniéndose en contacto con el soporte.
 
 <Note>
@@ -44,13 +44,8 @@ Para los servicios del nivel Enterprise, el escalado funciona de la siguiente ma
 </div>
 
 * [Autoescalado vertical](/es/products/cloud/features/autoscaling/vertical) — Escalado automático de CPU y memoria según el uso
-
-- [Escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) — Escalado automático de réplicas según la demanda de carga de trabajo
-
 * [Escalado horizontal](/es/products/cloud/features/autoscaling/horizontal) — Escalado manual de réplicas mediante API o UI
 * [Make Before Break (MBB)](/es/products/cloud/features/autoscaling/make-before-break) — Cómo ClickHouse Cloud realiza operaciones de escalado sin interrupciones
 * [Inactividad automática](/es/products/cloud/features/autoscaling/idling) — Ahorro de costes mediante la suspensión automática del servicio
 * [Recomendaciones de escalado](/es/products/cloud/features/autoscaling/scaling-recommendations) — Cómo interpretar las recomendaciones de escalado
 * [Escalado programado](/es/products/cloud/features/autoscaling/scheduled-scaling) — Comprenda la función de Escalado programado, que le permite definir exactamente cuándo su servicio debe ampliar o reducir sus recursos, independientemente de las métricas en tiempo real
-
-- [Servicios grandes de una sola réplica](/es/products/cloud/features/large-single-replica-services) — Escalado vertical para servicios de una sola réplica en los niveles Scale y Enterprise

@@ -161,7 +161,7 @@ ClickHouse는 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalak
 
 현재 다음 카탈로그를 지원합니다. 전체 설정 방법은 각 카탈로그의 참고 가이드를 참조하십시오.
 
-| Catalog                                                                      | Formats        |      Read      | Create table | INSERT | 참고 가이드                                                                       |
+| Catalog                                                                      | Formats        |      Read      | Create table | INSERT | 참고 가이드                                                              |
 | ---------------------------------------------------------------------------- | -------------- | :------------: | :----------: | :----: | ---------------------------------------------------------------------------- |
 | [AWS Glue Catalog](/ko/guides/use-cases/data-warehousing/glue-catalog)          | Iceberg        |      ✅ 베타      |       ❌      |    ❌   | [Glue 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/glue-catalog)             |
 | [BigLake Metastore](/ko/guides/use-cases/data-warehousing/biglake-catalog)      | Iceberg        |      ✅ 베타      |       ❌      |    ❌   | [BigLake 메타스토어 가이드](/ko/guides/use-cases/data-warehousing/biglake-catalog)      |
@@ -170,6 +170,5 @@ ClickHouse는 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalak
 | [Lakekeeper](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Iceberg        |      ✅ 베타      |       ❌      |    ❌   | [Lakekeeper 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog) |
 | [Project Nessie](/ko/guides/use-cases/data-warehousing/nessie-catalog)          | Iceberg        | ✅ Experimental |       ❌      |    ❌   | [Nessie 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/nessie-catalog)         |
 | [Microsoft OneLake](/ko/guides/use-cases/data-warehousing/onelake-catalog)      | Iceberg        |      ✅ 베타      |     ✅ 베타     |  ✅ 베타  | [OneLake 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/onelake-catalog)       |
-| [SeaweedFS](/ko/guides/use-cases/data-warehousing/seaweedfs-catalog)            | Iceberg        |      ✅ 베타      |     ✅ 베타     |  ✅ 베타  | [SeaweedFS 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/seaweedfs-catalog)   |
 
-현재 모든 카탈로그 통합은 Experimental 또는 베타 설정을 활성화해야 사용할 수 있습니다. Microsoft OneLake, Databricks Unity Catalog, SeaweedFS를 제외한 모든 카탈로그는 **읽기 전용** 액세스만 제공합니다. 즉, 카탈로그 연결을 통해 테이블을 쿼리할 수는 있지만, 테이블을 생성하거나 데이터를 쓸 수는 없습니다. 카탈로그의 데이터를 ClickHouse로 로드해 더 빠르게 분석하려면 [분석 가속화 가이드](/ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics)에 설명된 대로 `INSERT INTO SELECT`를 사용하십시오. 오픈 테이블 포맷에 데이터를 다시 쓰려면 [데이터 쓰기 가이드](/ko/guides/use-cases/data-warehousing/getting-started/writing-data)에 설명된 대로 독립형 Iceberg 테이블을 생성하십시오.
+현재 모든 카탈로그 통합은 Experimental 또는 베타 설정을 활성화해야 사용할 수 있습니다. Microsoft OneLake와 Databricks Unity Catalog를 제외한 모든 카탈로그는 **읽기 전용** 액세스만 제공합니다. 즉, 카탈로그 연결을 통해 테이블을 쿼리할 수는 있지만, 테이블을 생성하거나 데이터를 쓸 수는 없습니다. 카탈로그의 데이터를 ClickHouse로 로드해 더 빠르게 분석하려면 [분석 가속화 가이드](/ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics)에 설명된 대로 `INSERT INTO SELECT`를 사용하십시오. 오픈 테이블 포맷에 데이터를 다시 쓰려면 [데이터 쓰기 가이드](/ko/guides/use-cases/data-warehousing/getting-started/writing-data)에 설명된 대로 독립형 Iceberg 테이블을 생성하십시오.

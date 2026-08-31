@@ -101,65 +101,6 @@ TEST(PrometheusMetricsWriter, DimensionalEscapesLabelValues)
     EXPECT_EQ(expected, output);
 }
 
-TEST(PrometheusMetricsWriter, HistogramConstantLabels)
-{
-    HistogramMetrics::MetricFamily family("test_histogram_constant_labels_gtest", "Test histogram", {1}, {"database"});
-
-    auto & metric = family.withLabels({"db1"});
-    metric.observe(0);
-
-    std::string output;
-    {
-        WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter::writeHistogramMetric(buffer, family, R"(environment="staging",shard="s1")");
-    }
-
-    static constexpr const char * expected =
-        "# HELP ClickHouseHistogramMetrics_test_histogram_constant_labels_gtest Test histogram\n"
-        "# TYPE ClickHouseHistogramMetrics_test_histogram_constant_labels_gtest histogram\n"
-        "ClickHouseHistogramMetrics_test_histogram_constant_labels_gtest_bucket{environment=\"staging\",shard=\"s1\",database=\"db1\",le=\"1\"} 1\n"
-        "ClickHouseHistogramMetrics_test_histogram_constant_labels_gtest_bucket{environment=\"staging\",shard=\"s1\",database=\"db1\",le=\"+Inf\"} 1\n"
-        "ClickHouseHistogramMetrics_test_histogram_constant_labels_gtest_count{environment=\"staging\",shard=\"s1\",database=\"db1\"} 1\n"
-        "ClickHouseHistogramMetrics_test_histogram_constant_labels_gtest_sum{environment=\"staging\",shard=\"s1\",database=\"db1\"} 0\n";
-
-    EXPECT_EQ(expected, output);
-}
-
-TEST(PrometheusMetricsWriter, DimensionalConstantLabels)
-{
-    DimensionalMetrics::MetricFamily family("test_dimensional_constant_labels_gtest", "Test dimensional metrics", {"database"});
-
-    auto & metric = family.withLabels({"db1"});
-    metric.set(42.0);
-
-    std::string output;
-    {
-        WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter::writeDimensionalMetric(buffer, family, R"(environment="staging",shard="s1")");
-    }
-
-    static constexpr const char * expected =
-        "# HELP ClickHouseDimensionalMetrics_test_dimensional_constant_labels_gtest Test dimensional metrics\n"
-        "# TYPE ClickHouseDimensionalMetrics_test_dimensional_constant_labels_gtest gauge\n"
-        "ClickHouseDimensionalMetrics_test_dimensional_constant_labels_gtest{environment=\"staging\",shard=\"s1\",database=\"db1\"} 42\n";
-
-    EXPECT_EQ(expected, output);
-}
-
-TEST(PrometheusMetricsWriter, InfoConstantLabels)
-{
-    PrometheusMetricsWriter writer({{"shard", "s1"}, {"environment", "stag\"ing"}});
-
-    std::string output;
-    {
-        WriteBufferFromString buffer(output);
-        writer.writeInfo(buffer);
-    }
-
-    /// Constant labels are sorted by name and written before the version labels; label values are escaped.
-    EXPECT_NE(output.find("ClickHouse_Info{environment=\"stag\\\"ing\",shard=\"s1\",name=\""), std::string::npos) << output;
-}
-
 TEST(PrometheusMetricsWriter, DimensionalCounter)
 {
     DimensionalMetrics::MetricFamily family(

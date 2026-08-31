@@ -30,15 +30,15 @@ ClickHouse Cloud は、AWS、GCP、Azure のマーケットプレイスから申
 ClickHouse Cloud console で **Billing** に移動します。**Payment details** セクションに、マーケットプレイス 名とリンクが表示されているはずです。
 
 <div id="i-am-an-existing-clickhouse-cloud-user-what-happens-when-i-subscribe-to-clickhouse-cloud-via-aws--gcp--azure-marketplace">
-  ### 既存の ClickHouse Cloud ユーザーです。AWS / GCP / Azure マーケットプレイス経由で ClickHouse Cloud をサブスクライブするとどうなりますか？​
+  ### 既存の ClickHouse Cloud ユーザーです。AWS / GCP / Azure マーケットプレイス経由で ClickHouse Cloud を購読するとどうなりますか？​
 </div>
 
 クラウドプロバイダーのマーケットプレイスから ClickHouse Cloud にサインアップするには、2 段階のプロセスがあります。
 
-1. まず、クラウドプロバイダーのマーケットプレイスポータルで ClickHouse Cloud を「サブスクライブ」します。購読が完了したら、「Pay Now」または「Manage on Provider」 (マーケットプレイスによって異なります) をクリックします。すると ClickHouse Cloud にリダイレクトされます。
-2. ClickHouse Cloud で新しいアカウントを登録するか、既存のアカウントでサインインします。どちらの場合でも、マーケットプレイス請求に紐づいた新しい ClickHouse Cloud 組織が作成されます。
+1. まず、クラウドプロバイダーのマーケットプレイスポータルで ClickHouse Cloud を「購読」します。購読が完了したら、「Pay Now」または「Manage on Provider」 (マーケットプレイスによって異なります) をクリックします。すると ClickHouse Cloud にリダイレクトされます。
+2. ClickHouse Cloud で新しいアカウントを登録するか、既存のアカウントでサインインします。どちらの場合でも、マーケットプレイスの請求に紐づいた新しい ClickHouse Cloud 組織が作成されます。
 
-注記: 以前の ClickHouse Cloud へのサインアップで作成した既存のサービスや組織はそのまま残り、マーケットプレイス請求には紐づきません。ClickHouse Cloud では、請求先がそれぞれ異なる複数の組織を、同じアカウントで管理できます。
+注記: 以前の ClickHouse Cloud へのサインアップで作成した既存のサービスや組織はそのまま残り、マーケットプレイスの請求には紐づきません。ClickHouse Cloud では、請求先がそれぞれ異なる複数の組織を、同じアカウントで管理できます。
 
 ClickHouse Cloud コンソールの左下のメニューから組織を切り替えられます。
 
@@ -53,7 +53,7 @@ ClickHouse Cloud コンソールの左下のメニューから組織を切り替
 組織 の Billing ページで、請求が実際にマーケットプレイスにリンクされていることを確認できます。問題が発生した場合は、[ClickHouse Cloud Support](https://clickhouse.com/support/program) までお問い合わせください。
 
 <Note>
-  以前の ClickHouse Cloud 登録に含まれる既存のサービスおよび 組織 はそのまま残り、マーケットプレイス請求には接続されません。
+  以前の ClickHouse Cloud 登録に含まれる既存のサービスおよび organizations はそのまま残り、マーケットプレイス請求には接続されません。
 </Note>
 
 <div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-how-can-i-unsubscribe">
@@ -96,7 +96,7 @@ ClickHouse Cloud の Usage statement はこれとは異なる請求サイクル�
   ### 一般的な請求情報はどこで確認できますか？
 </div>
 
-[請求の概要ページ](/ja/products/cloud/reference/billing/billing-overview)をご覧ください。
+[請求の概要ページ](/ja/products/cloud/reference/billing/index)をご覧ください。
 
 <div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
   ### クラウドプロバイダーのマーケットプレイス経由で支払う場合と、ClickHouse に直接支払う場合で、ClickHouse Cloud の料金に違いはありますか？
@@ -110,14 +110,8 @@ ClickHouse Cloud の Usage statement はこれとは異なる請求サイクル�
 
 はい。複数の ClickHouse 組織を、同じクラウドマーケットプレイス請求先アカウント (AWS、GCP、または Azure) に利用料金を後払いで請求するよう設定できます。ただし、前払いクレジットはデフォルトでは組織間で共有されません。組織間でクレジットを共有する必要がある場合は、[ClickHouse Cloud Support](https://clickhouse.com/support/program) にお問い合わせください。
 
-<div id="can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions">
-  ### 同じ組織内のサービスごとに異なるマーケットプレイスサブスクリプションを使用して請求できますか？
-</div>
-
-いいえ。請求は組織レベルで設定されるため、1 つのClickHouse Cloud組織内のすべてのサービスは同じマーケットプレイスサブスクリプションに請求されます。サービスごとに個別に請求する必要がある場合は、請求設定ごとに別の組織を作成してください。同じClickHouse Cloud consoleのユーザーアカウントから複数の組織を管理でき、それぞれに独自の請求設定を設けることができます。
-
 <div id="automatically-move-to-PAYG-when-running-out-of-credit">
-  ### ClickHouse 組織が cloud marketplace のコミットメント支出契約で課金されている場合、クレジットを使い切ると自動的に PAYG 課金へ移行しますか？
+  ### ClickHouse Organization が cloud marketplace のコミットメント契約で課金されている場合、クレジットを使い切ると自動的に PAYG 課金へ移行しますか？
 </div>
 
-marketplace のコミットメント支出契約が有効で、クレジットを使い切った場合、組織は自動的に PAYG 課金へ移行します。ただし、現在の契約の有効期限が切れた場合は、新しい marketplace 契約を組織に関連付けるか、クレジットカードによる直接課金へ組織を移行する必要があります。 
+marketplace のコミットメント契約が有効な状態でクレジットを使い切った場合、お客様の Organization は自動的に PAYG 課金へ移行します。ただし、既存の契約が終了した場合は、新しい marketplace 契約をお客様の Organization に紐付けるか、クレジットカードによる直接課金に移行する必要があります。

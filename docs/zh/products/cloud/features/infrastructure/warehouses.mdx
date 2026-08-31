@@ -7,7 +7,7 @@ doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
-import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Compute-compute separation" />
 
@@ -15,12 +15,12 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   ## 什么是计算-计算分离？
 </div>
 
-在讨论什么是计算-计算分离之前，先了解 ClickHouse Cloud 中的**服务**是什么，会很有帮助。
+在讨论计算-计算分离之前，先了解 ClickHouse Cloud 中的**服务**是什么，会很有帮助。
 
 每个 ClickHouse Cloud 服务都包括：
 
 * 具有专用 CPU 和内存集群的 ClickHouse 计算节点 (称为**副本**)
-* 用于连接服务的一个端点 (或通过 ClickHouse Cloud UI 控制台创建的多个端点) ，例如 `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`，供本地应用和第三方应用连接
+* 用于连接该服务的一个端点 (或通过 ClickHouse Cloud UI 控制台创建的多个端点) ，例如 `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`，供本地应用和第三方应用连接
 * 一个对象存储文件夹，服务会在其中存储所有数据以及部分元数据：
 
 <Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 中的单个服务" />
@@ -29,7 +29,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 *图 1 - ClickHouse Cloud 中的单个服务*
 
-你不仅可以使用单个服务，也可以创建多个可访问同一共享存储的服务，从而为特定工作负载分配专用资源，而无需复制数据。
+除了使用单个服务外，你还可以创建多个可访问同一共享存储的服务，这样就能为特定工作负载分配专用资源，而无需复制数据。
 这一概念称为**计算-计算分离**。
 
 计算-计算分离意味着，每个服务都有自己的一组副本和一个端点，但共用同一个对象存储文件夹，并访问相同的表、视图等。
@@ -75,8 +75,8 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   ### 数据库凭据
 </div>
 
-由于同一仓库中的所有服务共享同一组表，因此它们在服务之间也共享访问控制。
-这意味着，在服务 1 中创建的所有数据库用户，也都可以使用服务 2，并且拥有相同的权限 (针对表、视图等的授权) ，反之亦然。
+由于一个仓库中的所有服务共享同一组表，因此这些服务之间也共享访问控制。
+这意味着，在服务 1 中创建的所有数据库用户，也都可以用相同的权限 (针对表、视图等的授权) 使用服务 2，反之亦然。
 每个服务使用不同的端点，但所有服务共用相同的用户名和密码。换句话说，**使用相同存储的服务之间，用户是共享的**，如下图所示：
 
 <Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="共享相同数据的服务之间的用户访问" />
@@ -90,10 +90,10 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 </div>
 
 若要限制其他应用或临时用户对特定服务的访问，可以配置网络限制。
-为此，请在 ClickHouse Cloud 控制台中，进入你希望限制访问的目标服务的服务选项卡，然后选择 **设置**。
+为此，请在 ClickHouse Cloud 控制台中，进入你希望限制访问的目标服务的服务标签页，然后选择 **设置**。
 
 IP 过滤设置可针对每个服务单独配置，这意味着你可以控制哪些应用可以访问哪些服务。
-这样，你就可以限制对特定服务的访问。
+这样，你就可以限制用户使用特定服务。
 
 在下面的示例中，Alice 被限制访问仓库中的服务 2：
 
@@ -103,7 +103,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 *图 5 - 由于网络访问控制设置，Alice 无法访问服务 2*
 
-当你以个人身份连接、而非使用 *default* 用户时，也可以使用 ClickHouse 角色和授权来控制其对数据的访问。
+当用户以个人身份连接、而非使用&#95;默认&#95;用户时，也可以使用 ClickHouse 角色和授权来控制其对数据的访问。
 
 <div id="read-vs-read-write">
   ### 只读与读写服务
@@ -111,17 +111,17 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 服务可以是以下类型之一：
 
-* **读写**
+* **read-write**
   * 可以读取和写入 ClickHouse 中的数据
   * 执行后台合并操作 (例如，数据 insert 后合并 parts) ，这会消耗 CPU 和内存
   * 可以将数据导出到外部
-* **只读**
+* **read-only**
   * 只能读取数据；不能在 ClickHouse 中写入或修改数据
   * 除系统表外，不执行后台合并操作，因此其资源可完全集中用于读取查询
   * 仍然可以将数据导出到外部 (例如，通过表函数) ，但不能更改 ClickHouse 内部的数据
   * 空闲时会立即休眠；不像读写服务那样，可能因后台合并而持续保持活跃。
 
-有时，你可能希望将某个服务设为只读，以便将关键读取工作负载与写入/合并带来的额外开销隔离开来。
+有时，你可能希望将某个服务设为只读，以便将关键读取 workload 与写入/合并带来的额外开销隔离开来。
 你可以对第二个服务以及之后创建的任何其他服务这样做；不过，第一个服务始终是读写服务，如下图所示：
 
 <Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="仓库中的读写与只读服务" />
@@ -140,13 +140,14 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
   ## 扩缩容
 </div>
 
-仓库中的各项服务均可独立扩缩容。您可以调整副本数量和规格，启用水平和垂直自动扩缩容，并配置服务在无活动时自动进入空闲状态。
+仓库中的每个服务都可以根据您的工作负载从以下几个方面进行调整：
 
-包括主节点在内的服务均可使用单个副本运行，但不建议在生产环境中采用此配置——为实现高可用性，请至少使用 2 个副本。在 Scale 和 Enterprise 层级中，无需联系支持团队即可使用单副本主节点和次级服务。采用标准 `1:4` profile 的 Scale 服务和 Enterprise 服务支持自助式垂直自动扩缩容；采用自定义 profile 的 Enterprise 服务则需由支持团队协助进行垂直调整。基础版服务的规格固定不变。有关详细信息，请参阅[大型单副本服务](/zh/products/cloud/features/large-single-replica-services)。
+* 节点数量 (副本数) 。主节点 (即仓库中最先创建的服务) 应具有 2 个或更多节点。每个次级服务可以有 1 个或更多节点。
+* 节点 (副本) 的大小
+* 服务是否应自动扩缩容 (水平和垂直)
+* 服务是否应在无活动时进入休眠
 
-默认情况下，仓库中所有服务的副本总数上限为 50。有关详细信息，请参阅[使用限制](/zh/products/cloud/guides/best-practices/usagelimits)。如需提高此上限，请联系[支持团队](https://clickhouse.com/support/program)。
-
-[定时扩缩容](/zh/products/cloud/features/autoscaling/scheduled-scaling)适用于仓库中的各项服务。仓库限制仍然适用——请合理安排时间表，确保高峰时段所有服务的副本总数不超过仓库上限。有关详细信息，请参阅[自动扩缩容](/zh/products/cloud/features/autoscaling/overview)。
+更多信息，请参阅[“自动扩缩容”](/zh/products/cloud/features/autoscaling/overview)页面。
 
 <div id="changes-in-behavior">
   ## `clusterAllReplicas` 行为的变化
@@ -162,6 +163,10 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
+<Note>
+  次级单节点服务可以进行垂直扩容，而主节点单节点服务则不能。
+</Note>
+
 <div id="limitations">
   ## 局限性
 </div>
@@ -173,7 +178,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 某些工作负载无法隔离到特定服务；在某些边缘情况下，一个服务中的某类工作负载会影响同一仓库中的另一项服务。这些情况包括：
 
 * **默认情况下，所有读写服务都会处理后台合并操作。** 将数据插入 ClickHouse 时，数据库会先将数据写入一些暂存分区，然后在后台执行合并。这些合并会消耗内存和 CPU 资源。当两个读写服务共享同一存储时，它们都会执行后台操作。这意味着，可能会出现 Service 1 中发起了一个 `INSERT` 查询，但合并操作却由 Service 2 完成的情况。
-  请联系[支持团队](https://clickhouse.com/support/program)以关闭读写服务上的合并。
+  请注意，只读服务不会执行后台合并，因此不会在这类操作上消耗资源。我们的支持团队可以关闭某个服务上的合并。
 
 * **所有读写服务都会执行 S3Queue 表引擎的插入操作。** 在某个读写服务上创建 S3Queue 表时，仓库中的所有其他读写服务也都可能会从 S3 读取数据并将数据写入数据库。
 
@@ -186,7 +191,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 
 * **ClickHouse 版本**：[升级计划](/zh/products/cloud/features/admin-features/upgrades)由主节点的设置决定。次级服务不能拥有独立于主节点的发布计划。
 
-* **默认情况下，处于休眠/已停止状态的服务可能会阻塞 `CREATE`/`RENAME`/`DROP DATABASE` 查询。** 如果在服务处于休眠或已停止状态时执行这些查询，查询可能会挂起。要绕过此限制，你可以在会话级别或单个查询级别使用 [`settings distributed_ddl_task_timeout=0`](/zh/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) 运行数据库管理查询。
+* **默认情况下，处于休眠/已停止状态的服务可能会阻塞 `CREATE`/`RENAME`/`DROP DATABASE` 查询。** 如果在服务处于休眠或已停止状态时执行这些查询，查询可能会挂起。要绕过此限制，你可以在会话级别或单个查询级别使用 [`settings distributed_ddl_task_timeout=0`](/zh/reference/settings/session-settings#distributed_ddl_task_timeout) 运行数据库管理查询。
 
 例如：
 
@@ -197,6 +202,8 @@ SETTINGS distributed_ddl_task_timeout=0
 
 如果你手动停止了某个服务，则需要再次将其启动，查询才能执行。
 
+* **单副本主节点** 当前默认情况下，次级服务可以有一个副本，而主节点至少必须有 2 个。
+  如需启用单副本主节点，请联系支持团队。此行为将在 2026 年第二季度默认启用。
 * **主节点空闲**：默认已启用主节点自动进入空闲状态。
 
 <div id="pricing">

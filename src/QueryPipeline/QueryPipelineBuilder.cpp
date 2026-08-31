@@ -202,7 +202,8 @@ void QueryPipelineBuilder::addDefaultTotals()
 
 void QueryPipelineBuilder::dropTotalsAndExtremes()
 {
-    pipe.dropTotalsAndExtremes();
+    pipe.dropTotals();
+    pipe.dropExtremes();
 }
 
 void QueryPipelineBuilder::addExtremesTransform()
@@ -392,30 +393,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     return result;
 }
 
-std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesPaired(
-    std::unique_ptr<QueryPipelineBuilder> left,
-    std::unique_ptr<QueryPipelineBuilder> right,
-    ProcessorPtr joining,
-    Processors * collected_processors)
-{
-    left->checkInitializedAndNotCompleted();
-    right->checkInitializedAndNotCompleted();
-
-    left->pipe.dropExtremes();
-    right->pipe.dropExtremes();
-
-    if (left->hasTotals() || right->hasTotals())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
-
-    /// The joining transform may rely on the order of each input stream (e.g. IEJoin expects
-    /// pre-sorted inputs), so a multi-stream input cannot be silently squashed here.
-    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());
-
-    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
-}
-
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByShards(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
@@ -600,13 +577,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     ///  - the second for the NonJoinedBlocksTransforms until the first DelayedPorts finishes
     bool use_parallel_non_joined = join->supportParallelNonJoinedBlocksProcessing();
 
-    /// When delayed blocks exist, JoiningTransform still needs non-joined rows emission for the main bucket (GraceHashJoin spilled case).
-    /// When only parallel non-joined (no delayed blocks), non-joined emission inside JoiningTransform
-    /// is entirely disabled (the parallel NonJoinedBlocksTransform handles it).
-    const bool emit_non_joined = !use_parallel_non_joined || delayed_root != nullptr;
-    /// finish_counter is needed for non-joined rows emission and for publishing probe runtime statistics.
-    auto joining_finish_counter = std::make_shared<FinishCounter>(num_streams);
-    auto joining_right_rows_match_counter = std::make_shared<RightRowsMatchCounter>();
+    /// When delayed blocks exist, JoiningTransform still needs a finish_counter so it can emit
+    /// non-joined rows for the main bucket (GraceHashJoin spilled case).
+    /// When only parallel non-joined (no delayed blocks), nullptr disables non-joined emission
+    /// inside JoiningTransform entirely (the parallel NonJoinedBlocksTransform handles it).
+    auto joining_finish_counter = (use_parallel_non_joined && !delayed_root)
+        ? nullptr
+        : std::make_shared<FinishCounter>(num_streams);
 
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)
@@ -621,7 +598,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         }
 
         auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
+            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter);
 
         connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
@@ -806,8 +783,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto finish_counter = std::make_shared<FinishCounter>(1);
-        auto match_counter = std::make_shared<RightRowsMatchCounter>();
-        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, joins[i], max_block_size, false, false, finish_counter, match_counter);
+        auto joining = std::make_shared<JoiningTransform>(
+            left_header, output_header, joins[i], max_block_size, false, false, finish_counter);
 
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
@@ -837,13 +814,38 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 }
 
 
+namespace
+{
+
+/// Drop the totals and extremes streams of `pipe` (which are irrelevant for set
+/// construction / CTE materialization) using a `DroppingTransform` instead of a
+/// `NullSink`. The transform consumes all output ports (data + totals + extremes),
+/// forwards the data streams and discards totals/extremes. Unlike a childless
+/// `NullSink`, it keeps the dropping node connected to the data path, so
+/// `ExecutingGraph::initializeExecution` does not seed it and does not pull the
+/// gated source sub-pipeline before its materialized CTE has been built.
+void dropTotalsAndExtremesViaTransform(Pipe & pipe, const SharedHeader & header)
+{
+    if (!pipe.getTotalsPort() && !pipe.getExtremesPort())
+        return;
+
+    bool has_totals = pipe.getTotalsPort() != nullptr;
+    bool has_extremes = pipe.getExtremesPort() != nullptr;
+    auto dropping = std::make_shared<DroppingTransform>(header, pipe.numOutputPorts(), has_totals, has_extremes);
+    auto * totals_in = dropping->getTotalsPort();
+    auto * extremes_in = dropping->getExtremesPort();
+    pipe.addTransform(std::move(dropping), totals_in, extremes_in);
+}
+
+}
+
 void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremes();
+    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -862,7 +864,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
 )
 {
     checkInitializedAndNotCompleted();
-    dropTotalsAndExtremes();
+    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
     resize(1);
 
     auto transform = std::make_shared<MaterializingCTETransform>(

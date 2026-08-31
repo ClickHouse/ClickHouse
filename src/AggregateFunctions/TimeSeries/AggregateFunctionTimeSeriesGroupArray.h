@@ -1,7 +1,6 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -23,13 +22,14 @@ namespace ErrorCodes
 }
 
 /// Aggregate function sorting pairs (timestamp, values) by timestamp.
-/// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value,
-/// where a NaN value loses to any other value (see `timeseriesMaxValueForDuplicateTimestamp`).
+/// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value.
 template <typename TimestampType, typename ValueType, bool array_arguments>
 class AggregateFunctionTimeSeriesGroupArray final :
     public IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>
 {
 public:
+    static constexpr bool DateTime64Supported = true;
+
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
@@ -96,11 +96,11 @@ public:
                 {
                     if (elements[i].timestamp == elements[i - 1].timestamp)
                     {
-                        /// If there are multiple values with the same timestamp, then we move the kept value
+                        /// If there are multiple values with the same timestamp, then we move the biggest value
                         /// to the first position in each group of values with the same timestamp.
                         /// We do that because std::unique() which is called below will remove all except the first element
                         /// in each group of values with the same timestamp.
-                        elements[i - 1].value = timeseriesMaxValueForDuplicateTimestamp(elements[i - 1].value, elements[i].value);
+                        elements[i - 1].value = std::max(elements[i - 1].value, elements[i].value);
                         need_deduplication = true;
                     }
                 }

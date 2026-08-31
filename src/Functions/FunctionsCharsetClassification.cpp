@@ -105,7 +105,7 @@ struct CharsetClassificationImpl
             std::string_view result_value;
 
             /// Go through the dictionary and find the charset with the highest weight
-            Float64 max_result = zero_frequency_log * max_string_size;
+            Float64 max_result = zero_frequency_log * (max_string_size);
             for (const auto & item : encodings_freq)
             {
                 Float64 score = naiveBayes(item.map, model, max_result);
@@ -149,15 +149,12 @@ using FunctionDetectLanguageUnknown = FunctionTextClassificationString<CharsetCl
 REGISTER_FUNCTION(DetectCharset)
 {
     FunctionDocumentation::Description description_charset = R"(
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+Detects the character set of a non-UTF8-encoded input string.
 
 :::warning
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
-
-Detects the character set of a non-UTF8-encoded input string.
 )";
     FunctionDocumentation::Syntax syntax_charset = "detectCharset(s)";
     FunctionDocumentation::Arguments arguments_charset = {
@@ -165,7 +162,7 @@ Detects the character set of a non-UTF8-encoded input string.
     };
     FunctionDocumentation::ReturnedValue returned_value_charset = {"Returns a string containing the code of the detected character set", {"String"}};
     FunctionDocumentation::Examples examples_charset = {
-        {"Basic usage", "SET allow_experimental_nlp_functions = 1;\nSELECT detectCharset('Ich bleibe für ein paar Tage.')", "WINDOWS-1252"}
+        {"Basic usage", "SELECT detectCharset('Ich bleibe für ein paar Tage.')", "WINDOWS-1252"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_charset = {22, 2};
     FunctionDocumentation::Category category_charset = FunctionDocumentation::Category::NLP;
@@ -174,16 +171,13 @@ Detects the character set of a non-UTF8-encoded input string.
     factory.registerFunction<FunctionDetectCharset>(documentation_charset);
 
     FunctionDocumentation::Description description_unknown = R"(
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
+Prefer this version when your character set is UTF-16 or UTF-32.
 
 :::warning
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
-
-Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
-Prefer this version when your character set is UTF-16 or UTF-32.
 )";
     FunctionDocumentation::Syntax syntax_unknown = "detectLanguageUnknown('s')";
     FunctionDocumentation::Arguments arguments_unknown = {
@@ -191,7 +185,7 @@ Prefer this version when your character set is UTF-16 or UTF-32.
     };
     FunctionDocumentation::ReturnedValue returned_value_unknown = {"Returns the 2-letter ISO code of the detected language. Other possible results: `un` = unknown, can not detect any language, `other` = the detected language does not have 2 letter code.", {"String"}};
     FunctionDocumentation::Examples examples_unknown = {
-        {"Basic usage", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguageUnknown('Ich bleibe für ein paar Tage.')", "de"}
+        {"Basic usage", "SELECT detectLanguageUnknown('Ich bleibe für ein paar Tage.')", "de"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_unknown = {22, 2};
     FunctionDocumentation::Category category_unknown = FunctionDocumentation::Category::NLP;

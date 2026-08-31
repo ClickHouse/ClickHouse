@@ -550,7 +550,7 @@ ClickHouse 支持大量数据类型。请务必根据你的使用场景选择尽
 对于数值类型，你可以查看数据集中的最小值和最大值，以确认当前的精度值是否符合数据集的实际情况。 
 
 ```sql
--- Find min/max values for the payment_type field
+-- 查找 payment_type 字段的最小值/最大值
 SELECT
     min(payment_type),max(payment_type),
     min(passenger_count), max(passenger_count)
@@ -857,6 +857,6 @@ Query id: 30116a77-ba86-4e9f-a9a2-a01670ad2e15
   ## 后续步骤
 </div>
 
-希望本指南能帮助你更好地理解如何使用 ClickHouse 排查慢查询，以及如何进一步提升其性能。若想深入了解这一主题，你还可以阅读[查询分析器](/zh/guides/clickhouse/performance-and-monitoring/analyzer)和[性能分析](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler)的相关内容，更清楚地了解 ClickHouse 究竟是如何执行查询的。
+希望本指南能帮助你更好地了解如何使用 ClickHouse 排查慢查询，并进一步提升查询速度。若想深入了解这一主题，你可以继续阅读[查询分析器](/zh/guides/clickhouse/performance-and-monitoring/analyzer)和[性能分析](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler)的相关内容，更清楚地了解 ClickHouse 究竟是如何执行查询的。
 
-随着你对 ClickHouse 特性的不断熟悉，我建议你进一步阅读[分区键](/zh/concepts/best-practices/partitioning-keys)和[数据跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)的相关内容，了解更多可用于加速查询的高级技术。
+随着你对 ClickHouse 特性的进一步熟悉，建议你阅读[分区键](/zh/concepts/best-practices/partitioning-keys)和[数据跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)的相关内容，了解更多可用于加速查询的高级技术。

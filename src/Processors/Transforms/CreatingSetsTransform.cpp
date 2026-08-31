@@ -34,15 +34,15 @@ CreatingSetsTransform::~CreatingSetsTransform()
 {
     if (promise_to_build)
     {
-        /// An unfulfilled promise means the build was abandoned, not that it failed: publish the
-        /// retryable "no set" outcome. `work` resets the promise after storing a real error.
+        /// set_exception can also throw
         try
         {
-            promise_to_build->set_value(nullptr);
+            promise_to_build->set_exception(std::make_exception_ptr(
+                Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to build set, most likely pipeline executor was stopped")));
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed to set_value for promise");
+            tryLogCurrentException(log, "Failed to set_exception for promise");
         }
     }
 

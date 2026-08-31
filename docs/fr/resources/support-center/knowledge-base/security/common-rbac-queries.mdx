@@ -1,19 +1,23 @@
 ---
 title: Requêtes RBAC courantes
-description: "Requêtes permettant d'accorder des autorisations spécifiques aux utilisateurs."
+description: "Requêtes pour accorder des permissions spécifiques aux utilisateurs."
 date: 2023-09-28
 tags: ['Sécurité et authentification', 'Gestion du Cloud']
 keywords: ['RBAC', 'Requêtes']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="introduction">
   ## Introduction
 </div>
 
-Voici quelques requêtes courantes pour vous aider à accorder des autorisations spécifiques à des utilisateurs.
+Voici quelques requêtes courantes pour accorder des permissions spécifiques aux utilisateurs.
 
 <div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
-  ## Comment accorder à un autre utilisateur les mêmes privilèges que l’utilisateur courant ?
+  ## Comment accorder à un autre utilisateur les mêmes permissions que l’utilisateur actuel ?
 </div>
 
 ```sql
@@ -21,17 +25,17 @@ GRANT CURRENT GRANTS ON *.* TO another_user;
 ```
 
 <div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
-  ## Comment accorder à un utilisateur une autorisation spécifique en fonction des privilèges de l&#39;utilisateur courant ?
+  ## Comment accorder à un utilisateur une permission précise en fonction des privilèges de l’utilisateur courant ?
 </div>
 
-Dans l&#39;exemple ci-dessous, `another_user` pourra exécuter des commandes `SELECT` sur toutes les bases de données et toutes les tables de l&#39;utilisateur courant.
+Dans l’exemple ci-dessous, `another_user` pourra exécuter des commandes `SELECT` sur l’ensemble des bases de données et des tables de l’utilisateur courant.
 
 ```sql
 GRANT CURRENT GRANTS(SELECT ON *.*) TO another_user;
 ```
 
 <div id="how-do-i-grant-a-specific-permission-to-a-user-for-a-specific-database-based-on-the-grants-of-the-current-user">
-  ## Comment accorder à un utilisateur une autorisation spécifique sur une base de données donnée, en fonction des autorisations de l&#39;utilisateur courant ?
+  ## Comment accorder à un utilisateur une permission spécifique sur une base de données donnée à partir des privilèges de l&#39;utilisateur actuel ?
 </div>
 
 Dans l&#39;exemple ci-dessous, `another_user` pourra exécuter des commandes `INSERT` sur toutes les tables de `my_database`.

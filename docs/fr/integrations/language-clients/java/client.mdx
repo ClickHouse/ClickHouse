@@ -22,6 +22,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   * Maven Central (page du projet) : https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * Builds nocturnes (lien vers le dépôt) : https://central.sonatype.com/repository/maven-snapshots/
+  * Ancien dépôt Artifactory des builds nocturnes (lien vers le dépôt) : https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -58,7 +59,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   L&#39;objet Client est initialisé par `com.clickhouse.client.api.Client.Builder#build()`. Chaque client possède son propre contexte et aucun objet n&#39;est partagé entre eux.
   Le Builder dispose de méthodes de configuration pour en simplifier la mise en œuvre.
 
-  Exemple :
+  Exemple :
 
   ```java showLineNumbers
    Client client = new Client.Builder()
@@ -335,7 +336,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   * `full` - le client peut transcoder lui-même les données et accepte un flux de données brutes
   * `-` - opération non prise en charge par ClickHouse pour ce format
 
-  Cette version du client prend en charge :
+  Cette version du client prend en charge :
 
   | Format                                                                                                           | Entrée | Sortie |
   | ---------------------------------------------------------------------------------------------------------------- | :----: | :----: |
@@ -466,7 +467,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
 
-  Envoie une requête d&#39;écriture à la base de données. La liste d&#39;objets est convertie dans un format efficace, puis envoyée au serveur. La classe des éléments de la liste doit être enregistrée au préalable à l&#39;aide de la méthode `register(Class, TableSchema)`.
+  Envoie une requête d&#39;écriture vers la base de données. La liste des objets est convertie dans un format efficace, puis envoyée au serveur. La classe des éléments de la liste doit être enregistrée au préalable à l&#39;aide de la méthode `register(Class, TableSchema)`.
 
   **Signatures**
 
@@ -514,14 +515,14 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   | `serverSetting(String name, String value)`      | Définit individuellement les paramètres du serveur pour une opération.                                                                                                                           |
   | `serverSetting(String name, Collection values)` | Définit des paramètres serveur individuels avec plusieurs valeurs pour une opération. Les éléments de la collection doivent être des valeurs `String`.                                           |
   | `setDBRoles(Collection dbRoles)`                | Définit les rôles DB à définir avant l’exécution d’une opération. Les éléments de la collection doivent être des valeurs `String`.                                                               |
-  | `setOption(String option, Object value)`        | Définit une option de configuration au format brut. Il ne s&#39;agit pas d&#39;un paramètre du serveur.                                                                                          |
+  | `setOption(String option, Object value)`        | Définit une option de configuration au format brut. Il ne s’agit pas d’un paramètre du serveur.                                                                                                  |
 
   ### InsertResponse
 
   Objet de réponse contenant le résultat de l&#39;opération d&#39;insertion. Il n&#39;est disponible que si le client a reçu une réponse du serveur.
 
   <Note>
-    Cet objet doit être fermé dès que possible afin de libérer la connexion, car celle-ci ne peut pas être réutilisée tant que toutes les données de la réponse précédente n&#39;ont pas été lues intégralement.
+    Cet objet doit être fermé dès que possible pour libérer la connexion, car celle-ci ne peut pas être réutilisée tant que toutes les données de la réponse précédente n&#39;ont pas été entièrement lues.
   </Note>
 
   | Méthode                         | Description                                                                                                             |
@@ -676,14 +677,14 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | `setQueryId(String queryId)`                      | Définit l’ID de requête qui sera attribué à l’opération.                                                                                                               |
   | `setFormat(ClickHouseFormat format)`              | Définit le format de la réponse. Voir `RowBinaryWithNamesAndTypes` pour la liste complète.                                                                             |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | Définit le temps d’exécution de l’opération sur le serveur. N’affecte pas le délai d’expiration de lecture.                                                            |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | Définit le temps d’exécution de l’opération sur le serveur. N&#39;affecte pas le délai d’expiration de lecture.                                                        |
   | `waitEndOfQuery(Boolean waitEndOfQuery)`          | Demande au serveur d’attendre la fin de la requête avant d’envoyer une réponse.                                                                                        |
   | `setUseServerTimeZone(Boolean useServerTimeZone)` | Le fuseau horaire du serveur (voir la config du client) sera utilisé pour interpréter les types date/heure dans le résultat d&#39;une opération. Par défaut : `false`. |
-  | `setUseTimeZone(String timeZone)`                 | Demande au serveur d’utiliser `timeZone` pour la conversion de l’heure. Voir [session&#95;timezone](/fr/reference/settings/session-settings/other#session_timezone).      |
+  | `setUseTimeZone(String timeZone)`                 | Demande au serveur d’utiliser `timeZone` pour la conversion de l’heure. Voir [session&#95;timezone](/fr/reference/settings/session-settings#session_timezone).            |
   | `serverSetting(String name, String value)`        | Définit des paramètres serveur spécifiques pour une opération.                                                                                                         |
-  | `serverSetting(String name, Collection values)`   | Définit des paramètres serveur individuels avec plusieurs valeurs pour une opération. Les éléments de la collection doivent être des valeurs `String`.                 |
-  | `setDBRoles(Collection dbRoles)`                  | Définit les rôles DB à appliquer avant l’exécution d’une opération. Les éléments de la collection doivent être des valeurs `String`.                                   |
-  | `setOption(String option, Object value)`          | Définit une option de configuration au format brut. Il ne s’agit pas d’un paramètre du serveur.                                                                        |
+  | `serverSetting(String name, Collection values)`   | Définit un paramètre du serveur avec plusieurs valeurs pour une opération. Les éléments de la collection doivent être des valeurs `String`.                            |
+  | `setDBRoles(Collection dbRoles)`                  | Définit les rôles DB à appliquer avant d’exécuter une opération. Les éléments de la collection doivent être des valeurs `String`.                                      |
+  | `setOption(String option, Object value)`          | Définit une option de configuration au format brut. Il ne s’agit pas d’un paramètre serveur.                                                                           |
 
   ### QueryResponse
 
@@ -792,7 +793,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   **Note :** l&#39;approche en streaming nécessite une lecture rapide, faute de quoi elle peut provoquer un timeout d&#39;écriture sur le serveur, car les données sont lues directement depuis le flux réseau.
 
-  ### Lecture des tableaux
+  ### Lecture des Arrays
 
   **Méthodes de `ClickHouseBinaryFormatReader`**
 
@@ -801,14 +802,14 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   * `getStringArray(...)` - pour `Array(String)` (et les valeurs d’enum représentées par leur nom).
   * `getObjectArray(...)` - option générique pour tout type d’élément de `Array(...)`, y compris les tableaux imbriqués. À utiliser pour lire des tableaux contenant des valeurs `Nullable` et des tableaux imbriqués.
 
-  Des surcharges par index et par nom sont disponibles pour toutes les méthodes. L&#39;index est indexé à partir de 1. Les surcharges par index accèdent directement à une colonne.
-  Les méthodes par nom nécessitent une recherche via l&#39;index à chaque appel.
+  Des surcharges par index et par nom sont disponibles pour toutes les méthodes. L&#39;index est basé sur 1. Les surcharges par index accèdent directement à une colonne.
+  Les méthodes par nom nécessitent une recherche par index à chaque appel.
 
   ```java
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-
+          
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -826,8 +827,8 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   * `getStringArray(...)` - pour `Array(String)` (et les valeurs d&#39;enum représentées par leur nom).
   * `getObjectArray(...)` - option générique pour tout type d&#39;élément de `Array(...)`, y compris les tableaux imbriqués. À utiliser pour lire des tableaux contenant des valeurs NULL et des tableaux imbriqués.
 
-  Des surcharges par index et par nom sont disponibles pour toutes les méthodes. L&#39;index est indexé à partir de 1. Les surcharges par index accèdent directement à une colonne.
-  Les méthodes par nom nécessitent une recherche via l&#39;index à chaque appel.
+  Des surcharges par index et par nom sont disponibles pour toutes les méthodes. L&#39;index est basé sur 1. Les surcharges par index accèdent directement à une colonne.
+  Les méthodes par nom nécessitent une recherche par index à chaque appel.
 
   ```java
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
@@ -939,7 +940,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
       | `ClickHouseClientOption#PROXY_PASSWORD` | `Client.Builder#setProxyCredentials` |              |
     </Tab>
 
-    <Tab title="Délais d’expiration & nouvelle tentative">
+    <Tab title="Délais d’expiration & tentatives de nouvelle exécution">
       | Configuration V1                                | Méthode Builder                      | Commentaires                 |
       | ----------------------------------------------- | ------------------------------------ | ---------------------------- |
       | `ClickHouseClientOption#MAX_EXECUTION_TIME`     | `Client.Builder#setExecutionTimeout` |                              |

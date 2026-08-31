@@ -10,19 +10,17 @@ title: 异步插入
 
 异步插入会先将传入数据写入内存缓冲区，再根据可配置的阈值将其刷写到存储，从而把批处理责任从客户端转移到服务器端。这种方式可显著减少 parts 创建开销、降低 CPU 使用率，并确保摄取即使在高并发下也能保持高效。
 
-其核心行为由 [`async_insert`](/zh/reference/settings/session-settings/async-insert#async_insert) 设置控制。
+其核心行为由 [`async_insert`](/zh/reference/settings/session-settings#async_insert) 设置控制。
 
-<Frame>
-  <img src="/images/bestpractices/async_inserts.webp" alt="异步插入" />
-</Frame>
+<Image img="/images/bestpractices/async_inserts.webp" size="lg" alt="异步插入" />
 
 异步插入同时支持 HTTP 和原生 TCP 接口。
 
 启用后 (`async_insert = 1`) ，插入操作会先被缓冲，只有在满足以下某个刷写条件时才会写入磁盘：
 
-* 缓冲区达到指定的数据大小 ([`async_insert_max_data_size`](/zh/reference/settings/session-settings/async-insert#async_insert_max_data_size)，默认 100 MiB) 。
-* 达到时间阈值 ([`async_insert_busy_timeout_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)，默认 200 ms，在 Cloud 上为 1000 ms) 。
-* 累积到最大插入查询数 ([`async_insert_max_query_number`](/zh/reference/settings/session-settings/async-insert#async_insert_max_query_number)，默认 450) 。
+* 缓冲区达到指定的数据大小 ([`async_insert_max_data_size`](/zh/reference/settings/session-settings#async_insert_max_data_size)，默认 100 MiB) 。
+* 达到时间阈值 ([`async_insert_busy_timeout_ms`](/zh/reference/settings/session-settings#async_insert_busy_timeout_max_ms)，默认 200 ms，在 Cloud 上为 1000 ms) 。
+* 累积到最大插入查询数 ([`async_insert_max_query_number`](/zh/reference/settings/session-settings#async_insert_max_query_number)，默认 450) 。
 
 哪个阈值先达到，就会触发刷写。
 
@@ -32,7 +30,7 @@ title: 异步插入
   ### 选择返回模式
 </div>
 
-可以通过 [`wait_for_async_insert`](/zh/reference/settings/session-settings/wait-for#wait_for_async_insert) 设置进一步细化异步插入的行为。
+可以通过 [`wait_for_async_insert`](/zh/reference/settings/session-settings#wait_for_async_insert) 设置进一步细化异步插入的行为。
 
 当该值设为 1 (默认值) 时，ClickHouse 只有在数据成功写入磁盘后才会确认插入。这样可以提供更强的持久性保障，也让错误处理更直接：如果在刷写期间发生问题，错误会返回给客户端。对于大多数生产场景，尤其是在必须可靠跟踪插入失败时，建议使用此模式。
 
@@ -50,7 +48,7 @@ title: 异步插入
   ### 自适应异步插入
 </div>
 
-从 24.2 版本开始，ClickHouse 默认使用自适应刷写超时 ([`async_insert_use_adaptive_busy_timeout`](/zh/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout))。不再使用固定的刷写间隔，而是根据传入数据速率，在最小值 ([`async_insert_busy_timeout_min_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms)，默认 50 毫秒) 和最大值 ([`async_insert_busy_timeout_max_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)，默认 200 毫秒，Cloud 上为 1000 毫秒) 之间动态调整超时。
+从 24.2 版本开始，ClickHouse 默认使用自适应刷写超时 ([`async_insert_use_adaptive_busy_timeout`](/zh/reference/settings/session-settings#async_insert_use_adaptive_busy_timeout)) 。不再使用固定的刷写间隔，而是根据传入数据速率，在最小值 ([`async_insert_busy_timeout_min_ms`](/zh/reference/settings/session-settings#async_insert_busy_timeout_min_ms)，默认 50 毫秒) 和最大值 ([`async_insert_busy_timeout_max_ms`](/zh/reference/settings/session-settings#async_insert_busy_timeout_max_ms)，默认 200 毫秒，Cloud 上为 1000 毫秒) 之间动态调整超时。
 
 当数据频繁到达时，超时会保持更接近最小值，以便更早刷写并降低端到端延迟。当数据较为稀疏时，超时则会增大并趋近最大值，以积累更大的批次。这在默认模式 (`wait_for_async_insert=1`) 下尤其有用，因为如果使用固定且较高的超时，即使数据已经可以刷写，客户端仍需阻塞等待整个时间间隔结束。
 
@@ -60,7 +58,7 @@ title: 异步插入
 
 Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到插入时进行。如果某个插入查询中的任意一行出现解析错误或类型错误，**该查询中的所有数据都不会被 刷写**——整个查询的载荷都会被拒绝。在默认模式 (`wait_for_async_insert=1`) 下，错误会返回给客户端。在发出即忘模式下，错误会被写入服务器日志和 [`system.asynchronous_inserts`](/zh/reference/system-tables/asynchronous_inserts) 表。
 
-每次 刷写 都会针对缓冲区中每个不同的分区键值至少创建一个 part。即使对于没有分区键的表，如果缓冲数据超过 [`max_insert_block_size`](/zh/reference/settings/session-settings/max-insert#max_insert_block_size) (默认约 100 万行) ，单次 刷写 也可能生成多个 parts。
+每次 刷写 都会针对缓冲区中每个不同的分区键值至少创建一个 part。即使对于没有分区键的表，如果缓冲数据超过 [`max_insert_block_size`](/zh/reference/settings/session-settings#max_insert_block_size) (默认约 100 万行) ，单次 刷写 也可能生成多个 parts。
 
 <Note>
   即使使用了异步插入，如果分区键的基数较高，你仍然可能遇到[&quot;parts 过多&quot;](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)错误。

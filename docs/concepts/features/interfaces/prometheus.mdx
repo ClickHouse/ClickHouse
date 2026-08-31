@@ -1,20 +1,18 @@
 ---
-description: 'Prometheus HTTP API support in ClickHouse: remote write, remote read, PromQL queries, and server metrics.'
-sidebarTitle: 'Prometheus and PromQL'
+description: 'Documentation for the Prometheus protocol support in ClickHouse'
+sidebarTitle: 'Prometheus protocols'
 slug: /interfaces/prometheus
-title: 'Prometheus protocols and PromQL'
+title: 'Prometheus protocols'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-## Expose ClickHouse server metrics {#expose}
+## Exposing metrics {#expose}
 
 <Note>
 If you're using ClickHouse Cloud, you can expose metrics to Prometheus using the [Prometheus Integration](/products/cloud/features/monitoring/prometheus).
 </Note>
 
-Configure a dedicated port when a Prometheus server needs to scrape ClickHouse's own metrics:
+ClickHouse can expose its own metrics for scraping from Prometheus:
 
 ```xml
 <prometheus>
@@ -27,10 +25,9 @@ Configure a dedicated port when a Prometheus server needs to scrape ClickHouse's
     <histograms>true</histograms>
     <dimensional_metrics>true</dimensional_metrics>
 </prometheus>
-```
 
-Section `<prometheus.handlers>` can be used to make more extended handlers on the same port.
-This section is similar to [`<http_handlers>`](/concepts/features/interfaces/http) but works for prometheus protocols:
+Section `<prometheus.handlers>` can be used to make more extended handlers.
+This section is similar to [<http_handlers>](/concepts/features/interfaces/http) but works for prometheus protocols:
 
 ```xml
 <prometheus>
@@ -46,10 +43,6 @@ This section is similar to [`<http_handlers>`](/concepts/features/interfaces/htt
                 <errors>true</errors>
                 <histograms>true</histograms>
                 <dimensional_metrics>true</dimensional_metrics>
-                <labels>
-                    <environment>production</environment>
-                    <shard from_env="SHARD_NAME"></shard>
-                </labels>
             </handler>
         </my_rule_1>
     </handlers>
@@ -58,207 +51,118 @@ This section is similar to [`<http_handlers>`](/concepts/features/interfaces/htt
 
 Settings:
 
-| Name | Default | Description |
-|---|---|---|
-| `port` | none | Port that serves ClickHouse metrics. |
-| `endpoint` | `/metrics` | HTTP endpoint for scraping metrics. It starts with `/`. Should not be used with the `<handlers>` section. |
-| `url` / `headers` / `method` | none | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/concepts/features/interfaces/http) section. |
-| `info` | true | Exposes the `ClickHouse_Info` gauge with server identity labels (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`). |
-| `metrics` | true | Exposes metrics from [`system.metrics`](/reference/system-tables/metrics). |
-| `asynchronous_metrics` | true | Exposes metrics from [`system.asynchronous_metrics`](/reference/system-tables/asynchronous_metrics). |
-| `events` | true | Exposes metrics from [`system.events`](/reference/system-tables/events). |
-| `errors` | true | Exposes error counts from [`system.errors`](/reference/system-tables/errors). |
-| `histograms` | true | Exposes metrics from [`system.histogram_metrics`](/reference/system-tables/histogram_metrics). |
-| `dimensional_metrics` | true | Exposes metrics from [`system.dimensional_metrics`](/reference/system-tables/dimensional_metrics). |
-| `labels` | none | Constant labels added to every exposed metric. Each child element defines one label: the element name is the label name (which must match `[a-zA-Z_][a-zA-Z0-9_]*`) and the element value is the label value. Label values support standard config substitutions such as the `from_env` attribute. A label name is rejected when it starts with `__` (reserved by Prometheus), or when it would collide with a label this endpoint already writes for one of its enabled sections. The reserved set therefore follows the endpoint's active export surface: `le` when `histograms` is enabled; the `ClickHouse_Info` labels (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) when `info` is enabled; and any label used by an exposed histogram or dimensional metric family (for example, `group`, `direction`, or `operation_type`) when `histograms` or `dimensional_metrics` is enabled. Because it depends on what the endpoint actually exposes, a name can be valid on one endpoint but rejected on another. |
+| Name                         | Default    | Description                                                                                                                                                                                  |
+|------------------------------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `port`                       | none       | Port for serving the exposing metrics protocol.                                                                                                                                              |
+| `endpoint`                   | `/metrics` | HTTP endpoint for scraping metrics by prometheus server. Starts with `/`. Should not be used with the `<handlers>` section.                                                                  |
+| `url` / `headers` / `method` | none       | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/concepts/features/interfaces/http) section.                                    |
+| `metrics`                    | true       | Expose metrics from the [system.metrics](/reference/system-tables/metrics) table.                                                                                                        |
+| `asynchronous_metrics`       | true       | Expose current metrics values from the [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) table.                                                               |
+| `events`                     | true       | Expose metrics from the [system.events](/reference/system-tables/events) table.                                                                                                          |
+| `errors`                     | true       | Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/reference/system-tables/errors) as well. |
+| `histograms`                 | true       | Expose histogram metrics from [system.histogram_metrics](/reference/system-tables/histogram_metrics) |
+| `dimensional_metrics`        | true       | Expose dimensional metrics from [system.dimensional_metrics](/reference/system-tables/dimensional_metrics) |
 
-Check the endpoint:
-
+Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
 ```bash
-curl http://127.0.0.1:9363/metrics
+curl 127.0.0.1:9363/metrics
 ```
 
-<CloudNotSupportedBadge/>
+## Remote-write protocol {#remote-write}
 
-## Prometheus HTTP API and PromQL {#prometheus-http-api-and-promql}
-
-ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
-
-### Prerequisites {#prerequisites}
-
-Enable the [`allow_experimental_time_series_table`](/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) setting for the user that creates and accesses the table:
-
-```sql
-SET allow_experimental_time_series_table = 1;
-```
-
-Create a database and a `TimeSeries` table:
-
-```sql
-CREATE DATABASE prometheus;
-CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
-```
-
-For HTTP API requests, enable `allow_experimental_time_series_table` in the profile of the API user.
-
-### Configure the Prometheus API {#configure-prometheus-api}
-
-Configure one prefix-routed handler on the main ClickHouse HTTP port:
+ClickHouse supports the [remote-write](https://prometheus.io/docs/specs/remote_write_spec/) protocol.
+Data are received by this protocol and written to a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table
+(which should be created beforehand).
 
 ```xml
-<http_handlers>
-    <defaults/>
-    <rule>
-        <url_prefix>/prometheus/api/v1</url_prefix>
-        <handler>
-            <type>prometheus_api_v1</type>
-        </handler>
-    </rule>
-</http_handlers>
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
 ```
 
-`<defaults/>` preserves the built-in handlers for endpoints such as `/ping` and for SQL requests. The prefix above exposes these endpoints through one handler:
+Settings:
 
-| Endpoint | Purpose |
-|---|---|
-| `/prometheus/api/v1/write` | Prometheus remote write |
-| `/prometheus/api/v1/read` | Prometheus remote read |
-| `/prometheus/api/v1/query` | Instant PromQL queries |
-| `/prometheus/api/v1/query_range` | Range PromQL queries |
+| Name                         | Default | Description                                                                                                                                                                                         |
+|------------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `port`                       | none    | Port for serving the `remote-write` protocol.                                                                                                                                                       |
+| `url` / `headers` / `method` | none    | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/concepts/features/interfaces/http) section.                                           |
+| `table`                      | none    | The name of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table to write data received by the `remote-write` protocol. This name can optionally contain the name of a database too. |
+| `database`                   | none    | The name of a database where the table specified in the `table` setting is located if it's not specified in the `table` setting.                                                                    |
 
-The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter. It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
+## Remote-read protocol {#remote-read}
 
-To use one fixed table for every request, configure it in the handler:
+ClickHouse supports the [remote-read](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) protocol.
+Data are read from a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table and sent via this protocol.
 
 ```xml
-<handler>
-    <type>prometheus_api_v1</type>
-    <database>prometheus</database>
-    <table>metrics</table>
-</handler>
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
 ```
 
-A table configured in the handler cannot be overridden by request parameters.
+Settings:
 
-Routing and handler settings:
+| Name                         | Default | Description                                                                                                                                                                                      |
+|------------------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `port`                       | none    | Port for serving the `remote-read` protocol.                                                                                                                                                     |
+| `url` / `headers` / `method` | none    | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/concepts/features/interfaces/http) section.                                        |
+| `table`                      | none    | The name of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table to read data to send by the `remote-read` protocol. This name can optionally contain the name of a database too. |
+| `database`                   | none    | The name of a database where the table specified in the `table` setting is located if it's not specified in the `table` setting.                                                                 |
 
-| Name | Default | Description |
-|---|---|---|
-| `url_prefix` | none | Rule filter that matches every request path that starts with the configured prefix. |
-| `table` | none | The name of a `TimeSeries` table. When omitted, the request must provide the `table` query parameter. The configured name can include a database. |
-| `database` | none | The database containing the table. A request can provide it as a query parameter. When omitted, ClickHouse uses a database from a qualified `table` value or falls back to `default`. |
+## Configuration for multiple protocols {#multiple-protocols}
 
-### Ingest metrics with remote write {#remote-write}
+Multiple protocols can be specified together in one place:
 
-ClickHouse supports the [Prometheus remote-write protocol](https://prometheus.io/docs/specs/remote_write_spec/). Configure Prometheus to write to the handler:
-
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
-    basic_auth:
-      username: default
-      password: <password>
-```
-
-Prometheus sends samples to the `prometheus.metrics` table.
-
-To batch data from many concurrent remote-write requests into fewer parts, enable [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) by adding the `async_insert` setting to the URL (or by enabling it in the user profile):
-
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
-```
-
-ClickHouse acknowledges an asynchronous remote-write request only after the data is flushed to all inner tables of the `TimeSeries` table, regardless of the [`wait_for_async_insert`](/reference/settings/session-settings/wait-for#wait_for_async_insert) setting: the remote-write protocol treats an acknowledged write as durable. If the flush fails, the request returns an error and Prometheus retries it.
-
-### Query with PromQL {#promql-query-support}
-
-Use the instant-query endpoint to evaluate a PromQL expression at one point in time:
-
-```bash
-curl --user default:<password> --get \
-  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
-  --data-urlencode "query=rate(http_requests_total[5m])" \
-  --data-urlencode "database=prometheus" \
-  --data-urlencode "table=metrics"
-```
-
-Use the range-query endpoint to evaluate an expression over a time range:
-
-```bash
-curl --user default:<password> --get \
-  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
-  --data-urlencode "query=rate(http_requests_total[5m])" \
-  --data-urlencode "start=2026-08-15T12:00:00Z" \
-  --data-urlencode "end=2026-08-15T13:00:00Z" \
-  --data-urlencode "step=60s" \
-  --data-urlencode "database=prometheus" \
-  --data-urlencode "table=metrics"
-```
-
-See the [supported PromQL features](/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) for the function and aggregation operator list used by the HTTP API, the `promql` dialect, and the table functions.
-
-#### Grafana {#grafana}
-
-Configure a Prometheus data source with the base URL ending before `/api/v1`:
-
-```yaml
-apiVersion: 1
-datasources:
-  - name: ClickHouse Prometheus
-    type: prometheus
-    access: proxy
-    url: https://clickhouse.example.com:8443/prometheus
-    basicAuth: true
-    basicAuthUser: default
-    jsonData:
-      httpMethod: GET
-      customQueryParameters: database=prometheus&table=metrics
-    secureJsonData:
-      basicAuthPassword: <password>
-```
-
-Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
-
-<Note>
-Only the query endpoints `/api/v1/query` and `/api/v1/query_range` and the metadata endpoints `/api/v1/series` and `/api/v1/labels` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). The label values endpoint (`/api/v1/label/<name>/values`), which a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete, is not implemented and returns an error. Write PromQL expressions in code mode instead of the query builder.
-</Note>
-
-#### SQL entry points {#sql-entry-points}
-
-ClickHouse uses the same PromQL converter for the HTTP API, the `promql` dialect, and the [`prometheusQuery`](/reference/functions/table-functions/prometheusQuery) and [`prometheusQueryRange`](/reference/functions/table-functions/prometheusQueryRange) table functions.
-
-Run PromQL directly with `clickhouse-client`:
-
-```bash
-clickhouse-client \
-  --dialect promql \
-  --promql_database prometheus \
-  --promql_table metrics \
-  --query 'rate(http_requests_total[5m])'
-```
-
-Use the table functions to embed PromQL in a SQL query:
-
-```sql
-SELECT *
-FROM prometheusQuery(
-    prometheus.metrics,
-    'rate(http_requests_total[5m])',
-    now()
-);
-```
-
-### Read metrics with remote read {#remote-read}
-
-ClickHouse supports the [Prometheus remote-read protocol](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) at `/prometheus/api/v1/read`.
-
-Configure a Prometheus server to read from the same `TimeSeries` table:
-
-```yaml
-remote_read:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/read?database=prometheus&table=metrics
-    basic_auth:
-      username: default
-      password: <password>
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+        <my_rule_2>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_2>
+        <my_rule_3>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_3>
+    </handlers>
+</prometheus>
 ```

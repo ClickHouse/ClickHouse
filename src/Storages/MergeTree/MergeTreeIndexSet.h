@@ -142,11 +142,7 @@ private:
         return actions == nullptr;
     }
 
-    /// Index key columns with the types they have in the index granule block. The type is needed
-    /// because `atomFromDAG` matches a query subexpression to a key column by name only, while
-    /// `ExpressionActions::execute` later binds the granule column by name too. A name that
-    /// matches under a different type would silently substitute a differently-typed column.
-    std::unordered_map<String, DataTypePtr> key_columns;
+    std::unordered_set<String> key_columns;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
 

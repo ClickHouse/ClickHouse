@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/GeoJSONRowOutputFormat.h>
 
-#include <algorithm>
 #include <cmath>
 
 #include <Columns/ColumnArray.h>
@@ -47,9 +46,8 @@ struct GeoTypeEntry
     bool ring; /// The innermost array is a polygon ring (>= 4 points and closed).
 };
 
-constexpr std::array<GeoTypeEntry, 7> geo_type_table{{
+constexpr std::array<GeoTypeEntry, 6> geo_type_table{{
     {"Point", "Point", 0, false, 0, false},
-    {"MultiPoint", "MultiPoint", 1, false, 0, false},
     {"LineString", "LineString", 1, false, 2, false},
     {"Ring", "Polygon", 1, true, 4, true},
     {"MultiLineString", "MultiLineString", 2, false, 2, false},
@@ -79,39 +77,6 @@ bool isPropertiesObjectLike(const DataTypePtr & type)
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
         return tuple->hasExplicitNames();
     return false;
-}
-
-/// Whether the format will emit a lone object-like `properties` column directly as the `properties`
-/// member — mirrors the constructor's `emit_properties_column_directly` decision, for use by the
-/// raw-bytes checker below, which runs on the header alone. Malformed headers (no geometry column,
-/// duplicate geometry or `id` columns) are rejected by the constructor itself, so they need no
-/// re-validation here.
-bool emitsPropertiesColumnDirectly(const Block & header)
-{
-    std::optional<size_t> lone_property_idx;
-    size_t property_count = 0;
-    for (size_t i = 0; i < header.columns(); ++i)
-    {
-        const auto & column = header.getByPosition(i);
-        const auto geo_type = removeNullable(column.type);
-        const String type_name = geo_type->getName();
-        const bool is_geometry = type_name == "Geometry"
-            || std::ranges::any_of(geo_type_table, [&](const auto & entry) { return type_name == entry.ch_name; });
-        if (is_geometry)
-            continue;
-        if (column.name == "id")
-            continue;
-        ++property_count;
-        lone_property_idx = i;
-    }
-
-    if (property_count != 1)
-        return false;
-
-    const auto & column = header.getByPosition(*lone_property_idx);
-    const auto properties_type = removeNullable(column.type);
-    return column.name == "properties"
-        && (isPropertiesObjectLike(properties_type) || WhichDataType(properties_type).isNothing());
 }
 
 }
@@ -228,7 +193,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     if (!found_geometry)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The GeoJSON output format requires exactly one geometry-typed column (Point, MultiPoint, LineString, "
+            "The GeoJSON output format requires exactly one geometry-typed column (Point, LineString, "
             "MultiLineString, Polygon, MultiPolygon, Ring, or Geometry), but found none");
 
     /// Emit a lone object-typed `properties` column directly as the properties object so that GeoJSON
@@ -485,26 +450,6 @@ void registerOutputFormatGeoJSON(FormatFactory & factory)
     /// Each output is one complete top-level `FeatureCollection`, so appending to an existing file
     /// would produce a second collection and a malformed document.
     factory.markFormatHasNoAppendSupport("GeoJSON");
-    /// The property column names are emitted as JSON object keys via `makeNamesValidJSONStrings` with
-    /// `output_format_json_validate_utf8`. When validation is off, a name that is not valid UTF-8
-    /// (a quoted alias with arbitrary bytes) makes the keys, and hence the output, non-textual. The
-    /// geometry and `id` columns are not emitted as keys, but checking all header names here is a safe
-    /// (fail-close) over-approximation. The property values can synthesize further object keys from
-    /// named `Tuple` element names. The format forces `write_named_tuples_as_objects` only when a lone
-    /// object-like `properties` column is emitted directly as the `properties` object, so the check
-    /// forces it only for that shape; ordinary property columns follow the user's JSON settings, where
-    /// a disabled setting means the element names never reach the payload. All of this is knowable from
-    /// the header, so the text framings reject or base64-encode the output accordingly.
-    factory.registerOutputFormatMayProduceRawBytesChecker(
-        "GeoJSON",
-        [](const FormatSettings & settings, const Block & header)
-        {
-            FormatSettings tuple_settings = settings;
-            if (emitsPropertiesColumnDirectly(header))
-                tuple_settings.json.write_named_tuples_as_objects = true;
-            return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8)
-                || JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, tuple_settings, settings.json.validate_utf8);
-        });
 }
 
 }

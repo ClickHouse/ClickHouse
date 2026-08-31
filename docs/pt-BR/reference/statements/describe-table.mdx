@@ -21,13 +21,13 @@ A instrução `DESCRIBE` retorna uma linha para cada coluna da tabela com os seg
 * `default_type` — Uma cláusula usada na [expressão padrão](/pt-BR/reference/statements/create/table) da coluna: `DEFAULT`, `MATERIALIZED` ou `ALIAS`. Se não houver expressão padrão, será retornada uma string vazia.
 * `default_expression` — Uma expressão especificada após a cláusula `DEFAULT`.
 * `comment` — Um [comentário da coluna](/pt-BR/reference/statements/alter/column#comment-column).
-* `codec_expression` — Um [codec](/pt-BR/reference/statements/create/table/codec) aplicado à coluna.
+* `codec_expression` — Um [codec](/pt-BR/reference/statements/create/table#column_compression_codec) aplicado à coluna.
 * `ttl_expression` — Uma expressão [TTL](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
-* `is_subcolumn` — Um indicador igual a `1` para subcolunas internas. Ele é incluído no resultado apenas se a descrição de subcolunas estiver habilitada pela configuração [describe&#95;include&#95;subcolumns](/pt-BR/reference/settings/session-settings/describe-include#describe_include_subcolumns).
+* `is_subcolumn` — Um indicador igual a `1` para subcolunas internas. Ele é incluído no resultado apenas se a descrição de subcolunas estiver habilitada pela configuração [describe&#95;include&#95;subcolumns](/pt-BR/reference/settings/session-settings#describe_include_subcolumns).
 
 Todas as colunas em estruturas de dados [Nested](/pt-BR/reference/data-types/nested-data-structures/index) são descritas separadamente. O nome de cada coluna recebe o prefixo do nome da coluna pai e um ponto.
 
-Para mostrar subcolunas internas de outros tipos de dados, use a configuração [describe&#95;include&#95;subcolumns](/pt-BR/reference/settings/session-settings/describe-include#describe_include_subcolumns).
+Para mostrar subcolunas internas de outros tipos de dados, use a configuração [describe&#95;include&#95;subcolumns](/pt-BR/reference/settings/session-settings#describe_include_subcolumns).
 
 **Exemplo**
 
@@ -81,4 +81,4 @@ Esse uso retorna metadados sobre as colunas de resultado da consulta ou subconsu
 
 **Veja também**
 
-* a configuração [describe&#95;include&#95;subcolumns](/pt-BR/reference/settings/session-settings/describe-include#describe_include_subcolumns).
+* a configuração [describe&#95;include&#95;subcolumns](/pt-BR/reference/settings/session-settings#describe_include_subcolumns).

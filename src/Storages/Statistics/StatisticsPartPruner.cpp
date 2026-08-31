@@ -150,7 +150,8 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
 
         if (const auto * col = columns.tryGet(name))
         {
-            if (statisticsHasMinMax(col->statistics))
+            if (col->statistics.types_to_desc.contains(StatisticsType::MinMax)
+                || col->statistics.types_to_desc.contains(StatisticsType::Basic))
             {
                 stats_column_name_to_type_map[col->name] = col->type;
                 useless = false;
@@ -170,11 +171,7 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     ActionsDAG actions_dag(columns);
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag));
 
-    /// Pruning estimates must not run a query pipeline: only state that is already computed may be
-    /// read here.
-    auto new_key_condition = std::make_unique<KeyCondition>(
-        filter_dag, context, column_names, expression,
-        /* single_point_ */ false, /* skip_analysis_ */ false, /* require_ready_sets_ */ true);
+    auto new_key_condition = std::make_unique<KeyCondition>(filter_dag, context, column_names, expression);
 
     if (new_key_condition->alwaysUnknownOrTrue())
     {
@@ -196,14 +193,12 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
 
 BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 {
-    /// Filter to estimates that actually carry numeric min/max values. Both `MinMax` and
-    /// `Basic` (on numeric/temporal types) populate `estimated_min`/`estimated_max`; for
-    /// other types (Array, Tuple, Map, ...) `Basic` leaves them as `nullopt`. Checking
-    /// `estimated_min.has_value()` is the authoritative gate regardless of statistic type.
+    /// Filter to estimates that carry numeric min/max — either the legacy `MinMax` type or
+    /// `Basic` (which exposes the same min/max via `Estimate::estimated_min/max`).
     Estimates minmax_estimates;
     for (const auto & [col_name, estimate] : estimates)
     {
-        if (estimate.estimated_min.has_value())
+        if (estimate.types.contains(StatisticsType::MinMax) || estimate.types.contains(StatisticsType::Basic))
             minmax_estimates[col_name] = estimate;
     }
 

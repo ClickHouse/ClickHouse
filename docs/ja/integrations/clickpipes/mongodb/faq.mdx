@@ -50,7 +50,7 @@ MongoDB ドキュメントは、デフォルトではネスト構造を保持し
   ### パブリックIPを持たない、またはプライベートネットワーク内にあるMongoDBデータベースに接続できますか？
 </div>
 
-はい。パブリックインターネットに公開されていないデータソースにClickPipesが到達する方法については、[ClickPipes のネットワーク](/ja/integrations/clickpipes/networking)を参照してください。
+パブリックIPを持たない、またはプライベートネットワーク内にあるMongoDBデータベースへの接続には、AWS PrivateLink をサポートしています。現在、Azure Private Link と GCP Private Service Connect には対応していません。
 
 <div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
   ### MongoDB データベースからデータベース/テーブルを削除するとどうなりますか？
@@ -102,10 +102,10 @@ MongoDB からデータベース/テーブルを削除しても、ClickPipes は
 
 AWS 上の MongoDB (および DocumentDB) クラスターに対してのみ、PrivateLink をサポートしています。
 
-単一ノードのリレーショナルデータベースとは異なり、MongoDB クライアントでは、設定された `ReadPreference` に従うために、Replica Set の検出が正常に完了している必要があります。そのため、MongoDB クライアントが Replica Set 接続を正常に確立し、接続先ノードがダウンした場合に別のノードへ切り替えられるよう、クラスター内のすべてのノードに対して PrivateLink を設定する必要があります。
+単一ノードのリレーショナルデータベースとは異なり、MongoDB クライアントでは、設定された `ReadPreference` に従うために、レプリカセットの検出が正常に完了している必要があります。そのため、MongoDB クライアントがレプリカセット接続を正常に確立し、接続先ノードがダウンした場合に別のノードへ切り替えられるよう、クラスター内のすべてのノードに対して PrivateLink を設定する必要があります。
 
-クラスター内の単一ノードに接続したい場合は、ClickPipes の設定時に接続文字列に `/?directConnection=true` を指定することで、Replica Set の検出をスキップできます。この場合の PrivateLink の設定は、単一ノードのリレーショナルデータベースの場合と同様で、PrivateLink を利用する最も簡単な方法です。
+クラスター内の単一ノードに接続したい場合は、ClickPipes の設定時に接続文字列に `/?directConnection=true` を指定することで、レプリカセットの検出をスキップできます。この場合の PrivateLink の設定は、単一ノードのリレーショナルデータベースの場合と同様で、PrivateLink を利用する最も簡単な方法です。
 
-Replica Set 接続の場合、MongoDB 向け PrivateLink は VPC リソース または VPC エンドポイントサービス のいずれかで設定できます。VPC リソースを使用する場合は、`GROUP` リソース構成に加えて、クラスター内の各ノードごとに `CHILD` リソース構成を作成する必要があります。VPC エンドポイントサービスを使用する場合は、クラスター内の各ノードごとに個別の Endpoint Service (および個別の NLB) を作成する必要があります。
+レプリカセット接続の場合、MongoDB 向け PrivateLink は VPC リソース または VPC エンドポイントサービス のいずれかで設定できます。VPC リソースを使用する場合は、`GROUP` リソース構成に加えて、クラスター内の各ノードごとに `CHILD` リソース構成を作成する必要があります。VPC エンドポイントサービスを使用する場合は、クラスター内の各ノードごとに個別の Endpoint Service (および個別の NLB) を作成する必要があります。
 
-詳細については、[ClickPipes 向け AWS PrivateLink](/ja/integrations/clickpipes/networking/aws-privatelink) のドキュメントを参照してください。サポートが必要な場合は、ClickHouse Support までお問い合わせください。
+詳細については、[ClickPipes 向け AWS PrivateLink](/ja/integrations/clickpipes/aws-privatelink) のドキュメントを参照してください。サポートが必要な場合は、ClickHouse Support までお問い合わせください。

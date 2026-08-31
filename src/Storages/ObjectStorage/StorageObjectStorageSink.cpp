@@ -1,7 +1,4 @@
-#include <IO/CompressionMethod.h>
-#include <IO/WriteBufferFromFileBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>

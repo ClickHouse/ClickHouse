@@ -29,9 +29,6 @@ void validateSupportedColumns(
     ColumnsDescription & columns,
     const StorageObjectStorageConfiguration & configuration);
 
-/// An empty column name has no identifier to render it with, so it cannot survive analysis.
-void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
-
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
@@ -39,17 +36,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt,
     bool allow_page_cache = true);
-
-/// Joins an object's path under a storage prefix (a namespace, or a data source description).
-/// A leading separator is dropped only when there is a prefix to join under, since `fs::path`
-/// would otherwise treat the path as absolute and discard the prefix. An empty prefix leaves the
-/// path as written: on a filesystem-backed storage that separator is what makes a path absolute.
-std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path);
-
-/// Inverse of `joinPathUnderPrefix` under the same prefix. An empty prefix again needs care, for
-/// the opposite reason: `fs::relative` of an absolute path against an empty base is the empty
-/// path, which would lose the value rather than leave it.
-std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
 std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);

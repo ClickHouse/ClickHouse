@@ -285,7 +285,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-# This function mirrors the PR description checks in ClickHousePullRequestTrigger.
+# This function mirrors the PR description checks in ClickhousePullRequestTrigger.
 # Returns None if the PR should not be mentioned in changelog.
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number
@@ -392,10 +392,9 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     if re.match(r"^[\-\*] ", entry):
         entry = entry[2:]
 
-    # Better style. Uppercase only the first letter (str.capitalize lowercases
-    # the rest of the string, mangling URLs and identifiers).
+    # Better style.
     if re.match(r"^[a-z]", entry):
-        entry = entry[0].upper() + entry[1:]
+        entry = entry.capitalize()
 
     if not category:
         # Shouldn't happen, because description check in CI should catch such PRs.

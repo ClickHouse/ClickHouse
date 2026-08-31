@@ -30,11 +30,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 경량 `DELETE`는 [뮤테이션(mutation)](/ko/reference/statements/alter/index#mutations)으로 구현되며, 행을 삭제된 것으로 표시하지만 즉시 물리적으로 삭제하지는 않습니다.
 
-기본적으로 `DELETE` 문은 행이 삭제된 것으로 표시되는 작업이 완료될 때까지 기다린 후 반환됩니다. 데이터 양이 많으면 이 작업에 오랜 시간이 걸릴 수 있습니다. 또는 설정 [`lightweight_deletes_sync`](/ko/reference/settings/session-settings/lightweight#lightweight_deletes_sync)를 사용해 백그라운드에서 비동기적으로 실행할 수 있습니다. 이 설정을 비활성화하면 `DELETE` 문은 즉시 반환되지만, 백그라운드 뮤테이션이 완료될 때까지 데이터가 쿼리에서 계속 보일 수 있습니다.
+기본적으로 `DELETE` 문은 행이 삭제된 것으로 표시되는 작업이 완료될 때까지 기다린 후 반환됩니다. 데이터 양이 많으면 이 작업에 오랜 시간이 걸릴 수 있습니다. 또는 설정 [`lightweight_deletes_sync`](/ko/reference/settings/session-settings#lightweight_deletes_sync)를 사용해 백그라운드에서 비동기적으로 실행할 수 있습니다. 이 설정을 비활성화하면 `DELETE` 문은 즉시 반환되지만, 백그라운드 뮤테이션이 완료될 때까지 데이터가 쿼리에서 계속 보일 수 있습니다.
 
 뮤테이션은 삭제된 것으로 표시된 행을 물리적으로 삭제하지 않으며, 이는 다음 머지 때만 수행됩니다. 따라서 일정 기간 동안 데이터가 실제로는 스토리지에서 삭제되지 않고 삭제된 것으로만 표시될 수 있습니다.
 
-예측 가능한 시간 내에 데이터가 스토리지에서 삭제되도록 보장해야 한다면 테이블 설정 [`min_age_to_force_merge_seconds`](/ko/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds) 사용을 고려하십시오. 또는 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 명령을 사용할 수 있습니다. `ALTER TABLE ... DELETE`를 사용해 데이터를 삭제하면 영향을 받는 모든 파트를 다시 생성하므로 상당한 리소스를 사용할 수 있다는 점에 유의하십시오.
+예측 가능한 시간 내에 데이터가 스토리지에서 삭제되도록 보장해야 한다면 테이블 설정 [`min_age_to_force_merge_seconds`](/ko/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds) 사용을 고려하십시오. 또는 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 명령을 사용할 수 있습니다. `ALTER TABLE ... DELETE`를 사용해 데이터를 삭제하면 영향을 받는 모든 파트를 다시 생성하므로 상당한 리소스를 사용할 수 있다는 점에 유의하십시오.
 
 <div id="deleting-large-amounts-of-data">
   ## 대량의 데이터 삭제

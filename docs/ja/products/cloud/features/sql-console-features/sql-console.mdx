@@ -89,15 +89,15 @@ SQL Consoleでは、テーブルに対してフィルタとソートを同時に
 <Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="md" alt="2000 より大きい範囲にフィルタを追加する" />
 
 <div id="creating-a-query-from-filters-and-sorts">
-  ### フィルタとソートからクエリを作成する
+  ### フィルターとソートからクエリを作成する
 </div>
 
-SQL Console では、設定したソート条件やフィルタ条件をワンクリックでそのままクエリに変換できます。ツールバーで任意のソートおよびフィルタのパラメーターを指定し、[Create Query] ボタンを選択するだけです。[Create query] をクリックすると、テーブルビューに表示されているデータに対応する SQL コマンドがあらかじめ入力された新しいクエリタブが開きます。
+SQL Console では、設定したソート条件やフィルター条件をワンクリックでそのままクエリに変換できます。ツールバーで任意のソートおよびフィルターのパラメーターを指定し、[Create Query] ボタンを選択するだけです。[Create query] をクリックすると、テーブルビューに表示されているデータに対応する SQL コマンドがあらかじめ入力された新しいクエリタブが開きます。
 
-<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="md" alt="ソートとフィルタからクエリを作成する" />
+<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="md" alt="ソートとフィルターからクエリを作成する" />
 
 <Note>
-  &#91;Create Query&#93; 機能の使用時に、フィルタやソートの設定は必須ではありません。
+  [Create Query] 機能の使用時に、フィルターやソートの設定は必須ではありません。
 </Note>
 
 SQL Console でのクエリについて詳しくは、(link) のクエリドキュメントを参照してください。
@@ -129,13 +129,13 @@ SQL Console で新しいクエリを作成する方法は 2 つあります。
 * 選択したコマンドを実行
 * カーソル位置のコマンドを実行
 
-選択したコマンドを実行するには、目的のコマンドまたは一連のコマンドを選択して [Run] ボタンをクリックします (または `cmd / ctrl + enter` ショートカットを使用します)。選択範囲がある場合は、SQL エディタのコンテキストメニュー (エディタ内の任意の場所を右クリックして開きます) から [Run selected] を選択することもできます。
+選択したコマンドを実行するには、目的のコマンドまたは一連のコマンドを選択して [Run] ボタンをクリックします (または `cmd / ctrl + enter` ショートカットを使用します) 。選択範囲がある場合は、SQL エディタのコンテキストメニュー (エディタ内の任意の場所を右クリックして開きます) から [Run selected] を選択することもできます。
 
 <Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="md" alt="選択したクエリを実行" />
 
 現在のカーソル位置のコマンドは、次の 2 つの方法で実行できます。
 
-* 拡張実行オプションメニューから [At Cursor] を選択する (または、対応する `cmd / ctrl + shift + enter` キーボードショートカットを使用する
+* 拡張実行オプションメニューから [At Cursor] を選択する (または、対応する `cmd / ctrl + shift + enter` キーボードショートカットを使用する) 
 
 <Image img="/images/cloud/sqlconsole/run-at-cursor-2.webp" size="md" alt="カーソル位置で実行" />
 
@@ -179,7 +179,7 @@ SQL Console で新しいクエリを作成する方法は 2 つあります。
 
 SQL Console では、チームメンバーとクエリを簡単に共有できます。SQL Console では、全体設定とユーザーごとの設定の両方で調整できる、4 段階のアクセスレベルをサポートしています。
 
-* オーナー (共有オプションを変更可能)
+* オーナー (共有オプションを変更可能) 
 * 書き込みアクセス
 * 読み取り専用アクセス
 * アクセスなし
@@ -238,7 +238,7 @@ SQL Console では、チームメンバーとクエリを簡単に共有でき�
   ### ページネーション設定の調整
 </div>
 
-デフォルトでは、クエリ結果ペインにすべての結果レコードが1ページに表示されます。結果セットが大きい場合は、見やすくするために結果をページ分けして表示する方が適していることがあります。これは、結果ペインの右下にあるページネーションセレクターを使用して設定できます。
+デフォルトでは、クエリ結果ペインにはすべての結果レコードが1ページに表示されます。結果セットが大きい場合は、見やすくするために結果をページ分けして表示する方が適していることがあります。これは、結果ペインの右下にあるページネーションセレクターを使用して設定できます。
 
 <Image img="/images/cloud/sqlconsole/pagination.webp" size="md" alt="ページネーションのオプション" />
 
@@ -290,7 +290,7 @@ ORDER BY
 
 <Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="md" alt="週ごとの trip total" />
 
-ほとんどのチャートタイプでは、数値軸に複数のフィールドを設定できます。これを示すため、fare&#95;total フィールドを y 軸にドラッグします。
+ほとんどのチャートタイプでは、数値軸に複数のフィールドを設定できます。これを示すため、`fare_total` フィールドを y 軸にドラッグします。
 
 <Image img="/images/cloud/sqlconsole/bar-chart.webp" size="md" alt="棒グラフ" />
 

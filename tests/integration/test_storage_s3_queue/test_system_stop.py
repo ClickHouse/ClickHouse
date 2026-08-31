@@ -1,6 +1,5 @@
 """Test SYSTEM STOP/PAUSE/CANCEL/REFRESH and ALL BACKGROUND controls on an S3Queue table."""
 
-import concurrent.futures
 import logging
 import threading
 import time
@@ -66,25 +65,6 @@ def assert_dst_count_stable(node, table, expected, seconds=5):
     while time.time() < deadline:
         assert int(node.query(f"SELECT count() FROM {table}_dst")) == expected
         time.sleep(1)
-
-
-PAUSE_AFTER_COMMIT_FAILPOINT = "object_storage_queue_pause_after_commit"
-
-
-def wait_failpoint_paused(node, failpoint, timeout=60):
-    """Block until a background thread parks at `failpoint`.
-
-    `SYSTEM WAIT FAILPOINT ... PAUSE` blocks, so it runs on a worker thread: a failpoint that is
-    never reached must fail the test rather than hang it. The executor is not joined on the failure
-    path, because its worker is still stuck inside the blocking query."""
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
-    done, _ = concurrent.futures.wait([future], timeout=timeout)
-    if not done:
-        pool.shutdown(wait=False, cancel_futures=True)
-        raise AssertionError(f"failpoint {failpoint} was not reached within {timeout}s")
-    pool.shutdown(wait=False)
-    future.result()
 
 
 def wait_count_stabilizes(node, table, checks=8, interval=0.5, timeout=60):
@@ -700,21 +680,12 @@ def test_pause_stops_after_current_batch(started_cluster):
     # over all the files and drains them slowly, one committed file at a time.
     node.query(f"SYSTEM STOP {table}")
     generate_random_files(started_cluster, files_path, count=n_files, start_ind=0)
+    node.query(f"SYSTEM START {table}")
 
-    # The drain must be paused mid-backlog, which means acting at a point the client cannot observe
-    # by polling `count()`: the count only holds an intermediate value for about as long as one
-    # commit takes. The failpoint parks the streaming task right after a commit instead, so the
-    # count is frozen, the rest of the backlog is provably pending, and the PAUSE below is
-    # guaranteed to reach the blocked check that ends the cycle.
-    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_COMMIT_FAILPOINT}")
-    try:
-        node.query(f"SYSTEM START {table}")
-        wait_failpoint_paused(node, PAUSE_AFTER_COMMIT_FAILPOINT)
-        assert int(node.query(f"SELECT count() FROM {table}_dst")) == ROWS_PER_FILE
-        node.query(f"SYSTEM PAUSE {table}")
-    finally:
-        # Also releases the parked task, so the cycle resumes even if an assertion above fired.
-        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_COMMIT_FAILPOINT}")
+    # Wait until the drain is demonstrably in progress (a couple of files committed), then PAUSE
+    # mid-drain with most of the backlog still pending.
+    wait_dst_count(node, table, 2 * ROWS_PER_FILE)
+    node.query(f"SYSTEM PAUSE {table}")
 
     # The in-flight batch reaches its durable boundary and consumption stops: the count settles well
     # below the full backlog instead of draining every remaining file.
@@ -722,13 +693,6 @@ def test_pause_stops_after_current_batch(started_cluster):
     assert 0 < settled < n_files * ROWS_PER_FILE, (
         "PAUSE should stop after the current batch's durable boundary, but "
         f"{settled // ROWS_PER_FILE}/{n_files} files were processed"
-    )
-    # PAUSE arrived while the task was parked at the boundary, so the cycle must end at exactly that
-    # boundary: no further file may be committed. Without the barrier the stopping point is whatever
-    # the drain happened to reach, which the range check above cannot distinguish.
-    assert settled == ROWS_PER_FILE, (
-        f"PAUSE was issued at a committed boundary of {ROWS_PER_FILE} rows, so the cycle must end "
-        f"there, but {settled} rows were committed"
     )
 
     # The files left pending are genuinely unprocessed: START drains the rest.
@@ -778,25 +742,15 @@ def test_azure_queue_pause_stops_after_current_batch(started_cluster):
     generate_random_files(
         started_cluster, files_path, count=n_files, start_ind=0, storage="azure"
     )
+    node.query(f"SYSTEM START {table}")
 
-    # Same post-commit barrier as the S3Queue variant: see the comment there.
-    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_COMMIT_FAILPOINT}")
-    try:
-        node.query(f"SYSTEM START {table}")
-        wait_failpoint_paused(node, PAUSE_AFTER_COMMIT_FAILPOINT)
-        assert int(node.query(f"SELECT count() FROM {table}_dst")) == ROWS_PER_FILE
-        node.query(f"SYSTEM PAUSE {table}")
-    finally:
-        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_COMMIT_FAILPOINT}")
+    wait_dst_count(node, table, 2 * ROWS_PER_FILE)
+    node.query(f"SYSTEM PAUSE {table}")
 
     settled = wait_count_stabilizes(node, table)
     assert 0 < settled < n_files * ROWS_PER_FILE, (
         "PAUSE should stop after the current batch's durable boundary, but "
         f"{settled // ROWS_PER_FILE}/{n_files} files were processed"
-    )
-    assert settled == ROWS_PER_FILE, (
-        f"PAUSE was issued at a committed boundary of {ROWS_PER_FILE} rows, so the cycle must end "
-        f"there, but {settled} rows were committed"
     )
 
     node.query(f"SYSTEM START {table}")

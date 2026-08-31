@@ -46,10 +46,6 @@ SELECT
 
 此函数的结果与 `now('UTC')` 相同。添加它仅是为了支持 MySQL。推荐使用 [`now`](#now)。
 
-<Note>
-  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
-</Note>
-
 **语法**
 
 ```sql
@@ -1600,31 +1596,31 @@ LIMIT 10
 
 **替换字段：**
 
-| 占位符        | 描述               | 表示形式 | 示例                         |
-| ---------- | ---------------- | ---- | -------------------------- |
-| G          | 纪元               | 文本   | AD                         |
-| C          | 纪元的世纪 (&gt;=0)   | 数值   | 20                         |
-| Y          | 纪元中的年份 (&gt;=0)  | 年    | 1996                       |
-| x          | 周所在年份 (暂不支持)     | 年    | 1996                       |
-| w          | 周所在年份中的周数 (暂不支持) | 数值   | 27                         |
-| e          | 星期中的第几天          | 数值   | 2                          |
-| E          | 星期几              | 文本   | Tuesday; Tue               |
-| y          | 年                | 年    | 1996                       |
-| D          | 一年中的第几天          | 数值   | 189                        |
-| M          | 一年中的月份           | 月    | July; Jul; 07              |
-| d          | 一个月中的第几天         | 数值   | 10                         |
-| a          | 一天中的上/下半天        | 文本   | PM                         |
-| K          | 半天内的小时 (0~11)    | 数值   | 0                          |
-| h          | 半天内的钟点小时 (1~12)  | 数值   | 12                         |
-| H          | 一天中的小时 (0~23)    | 数值   | 0                          |
-| k          | 一天中的钟点小时 (1~24)  | 数值   | 24                         |
-| m          | 一小时中的分钟          | 数值   | 30                         |
-| s          | 一分钟中的秒           | 数值   | 55                         |
-| S          | 秒的小数部分           | 数值   | 978                        |
-| z          | 时区               | 文本   | Eastern Standard Time; EST |
-| Z          | 时区偏移量            | 时区   | -0800; -0812               |
-| &#39;      | 文本转义符            | 定界符  |                            |
-| &#39;&#39; | 单引号              | 字面量  | &#39;                      |
+| 占位符        | 描述                | 表示形式 | 示例                         |
+| ---------- | ----------------- | ---- | -------------------------- |
+| G          | 纪元                | 文本   | AD                         |
+| C          | 纪元的世纪 (&gt;=0)    | 数值   | 20                         |
+| Y          | 纪元中的年份 (&gt;=0)   | 年    | 1996                       |
+| x          | 周所在年份 (暂不支持)      | 年    | 1996                       |
+| w          | 周所在年份中的周数 (暂不支持)  | 数值   | 27                         |
+| e          | 星期中的第几天           | 数值   | 2                          |
+| E          | 星期几               | 文本   | Tuesday; Tue               |
+| y          | 年                 | 年    | 1996                       |
+| D          | 一年中的第几天           | 数值   | 189                        |
+| M          | 一年中的月份            | 月    | July; Jul; 07              |
+| d          | 一个月中的第几天          | 数值   | 10                         |
+| a          | 一天中的上/下半天         | 文本   | PM                         |
+| K          | 半天内的小时 (0~11)     | 数值   | 0                          |
+| h          | 半天内的钟点小时 (1~12)   | 数值   | 12                         |
+| H          | 一天中的小时 (0~23)     | 数值   | 0                          |
+| k          | 一天中的钟点小时 (1~24)   | 数值   | 24                         |
+| m          | 一小时中的分钟           | 数值   | 30                         |
+| s          | 一分钟中的秒            | 数值   | 55                         |
+| S          | 秒的小数部分            | 数值   | 978                        |
+| z          | 时区                | 文本   | Eastern Standard Time; EST |
+| Z          | 时区偏移量             | 时区   | -0800; -0812               |
+| &#39;      | 文本转义符             | 定界符  |                            |
+| &#39;&#39; | 单引号               | 字面量  | &#39;                      |
 
 **语法**
 
@@ -1652,8 +1648,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                  │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromDaysSinceYearZero">
@@ -1847,9 +1843,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
-│                                                   2023-03-16 18:00:00.000 │
-└───────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
+│                                                 2023-03-16 18:00:00.000 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromUnixTimestamp">
@@ -1964,10 +1960,6 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
 
 返回在查询分析时刻，服务器 (或会话) 时区中的当前时间。
 该函数是一个常量表达式。它是符合 SQL 标准 / PostgreSQL 的 `LOCALTIME`，等价于 `CAST(now() AS Time)`。
-
-<Note>
-  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
-</Note>
 
 **语法**
 
@@ -2238,10 +2230,6 @@ SELECT monthName(date_value)
 
 返回查询分析时的当前日期和时间。该函数是一个常量表达式。
 
-<Note>
-  此函数是非确定性的：对于相同的参数，可能会返回不同的结果。
-</Note>
-
 **语法**
 
 ```sql
@@ -2304,10 +2292,6 @@ SELECT NOW, CURRENT_TIMESTAMP
 
 返回查询分析时刻的当前日期和时间，具有子秒级精度。该函数是一个常量表达式。
 
-<Note>
-  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
-</Note>
-
 **语法**
 
 ```sql
@@ -2346,10 +2330,6 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
 返回处理每个数据块时的当前日期和时间。与函数 [`now`](#now) 不同，它不是常量表达式，因此对于运行时间较长的查询，不同块中的返回值会不同。
 
 在运行时间较长的 `INSERT SELECT` 查询中，使用此函数生成当前时间是合理的。
-
-<Note>
-  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
-</Note>
 
 **语法**
 
@@ -2397,10 +2377,6 @@ FORMAT PrettyCompactMonoBlock
 
 在长时间运行的 INSERT SELECT 查询中，使用此函数生成当前时间很有意义。
 
-<Note>
-  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
-</Note>
-
 **语法**
 
 ```sql
@@ -2444,12 +2420,8 @@ FORMAT PrettyCompactMonoBlock
 
 引入版本：v23.6.0
 
-返回服务器的时区，即 [`timezone`](/zh/reference/settings/server-settings/settings/other#timezone) 设置的值。
+返回服务器的时区，即 [`timezone`](/zh/reference/settings/server-settings/settings#timezone) 设置的值。
 如果该函数是在分布式表的上下文中执行的，则会生成一个普通列，其值对应各个分片。否则，会生成一个常量值。
-
-<Note>
-  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
-</Note>
 
 **语法**
 
@@ -3004,9 +2976,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
-│                                               1995-12-16 │
-└──────────────────────────────────────────────────────────┘
+┌─minus(CAST('1⋯Quarter(10))─┐
+│                1996-09-16 │
+└───────────────────────────┘
 ```
 
 <div id="subtractSeconds">
@@ -3292,7 +3264,7 @@ Introduced in: v1.1.0
 
 <Note>
   尽管此函数可以接受扩展类型 `Date32` 和 `DateTime64` 的值作为参数，
-  但如果传入超出正常范围的时间 (`Date` 为 1970 年至 2149 年 / `DateTime` 为 2106 年)，则会产生错误结果。
+  但如果传入超出正常范围的时间 (`Date` 为 1970 年至 2149 年 / `DateTime` 为 2106 年) ，则会产生错误结果。
 </Note>
 
 **Syntax**
@@ -3431,10 +3403,6 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 引入版本：v21.4.0
 
 返回当前会话的时区名称，或者将时区偏移量或时区名称转换为规范的时区名称。
-
-<Note>
-  此函数是非确定性的：对于相同的参数，可能会返回不同的结果。
-</Note>
 
 **语法**
 
@@ -3896,7 +3864,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 将日期或日期时间向上取整到当月的最后一天。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 进行配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 进行配置。
 </Note>
 
 **语法**
@@ -3938,7 +3906,7 @@ Introduced in: v23.5.0
 将日期或日期时间向上取整到最近的星期六或星期日。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 来配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 来配置。
 </Note>
 
 **语法**
@@ -3963,15 +3931,15 @@ toLastDayOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
-    toLastDayOfWeek(toDate('2023-04-23')), /* a Sunday */
-    toLastDayOfWeek(toDate('2023-04-23'), 1) /* a Sunday */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* 星期五 */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* 星期五 */
+    toLastDayOfWeek(toDate('2023-04-23')), /* 星期日 */
+    toLastDayOfWeek(toDate('2023-04-23'), 1) /* 星期日 */
 FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
@@ -4178,7 +4146,7 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- 无效日期，返回 NULL
 将日期或日期时间向下取整到同一周的周一。返回该日期。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 进行配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 进行配置。
 </Note>
 
 **语法**
@@ -4201,8 +4169,8 @@ toMonday(value)
 
 ```sql title=Query
 SELECT
-toMonday(toDateTime('2023-04-21 10:20:30')), -- A Friday
-toMonday(toDate('2023-04-24'));              -- Already a Monday
+toMonday(toDateTime('2023-04-21 10:20:30')), -- 星期五
+toMonday(toDate('2023-04-24'));              -- 已经是星期一
 ```
 
 ```response title=Response
@@ -4710,7 +4678,7 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 将日期时间向下取整到当天起始时刻。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 来配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 来配置。
 </Note>
 
 **语法**
@@ -4750,7 +4718,7 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 将日期时间向下取整到所在十五分钟时间间隔的起始时刻。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 进行配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 进行配置。
 </Note>
 
 **语法**
@@ -4780,7 +4748,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
@@ -4796,7 +4764,7 @@ Introduced in：v22.6.0
 将日期时间向下取整到最近的五分钟时间间隔的起始时刻。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 来配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 来配置。
 </Note>
 
 **Syntax**
@@ -4828,7 +4796,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -4844,7 +4812,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 将日期时间向下取整到该小时的起始时刻。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 进行配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 进行配置。
 </Note>
 
 **语法**
@@ -4859,11 +4827,11 @@ toStartOfHour(datetime)
 
 **返回值**
 
-返回向下取整到整点的日期时间。[`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+返回向下舍入到整点的日期时间。[`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 
 **示例**
 
-**向下取整到整点**
+**向下舍入到整点**
 
 ```sql title=Query
 SELECT
@@ -4885,7 +4853,7 @@ Introduced in: v1.1.0
 将日期或日期时间向下取整到 ISO 年的第一天，该日期可能与普通年份的第一天不同。参见 [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date)。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 来配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 来配置。
 </Note>
 
 **Syntax**
@@ -4960,7 +4928,7 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**别名**: `date_bin`, `time_bucket`
+**别名**: `time_bucket`, `date_bin`
 
 **参数**
 
@@ -5108,7 +5076,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 将日期时间向下取整到该分钟的起始时刻。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 进行配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 进行配置。
 </Note>
 
 **语法**
@@ -5152,7 +5120,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 将日期或日期时间向下取整到该月的第一天。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 来配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 来配置。
 </Note>
 
 **语法**
@@ -5243,7 +5211,7 @@ Introduced in: v1.1.0
 将日期或日期时间向下取整到所在季度的第一天。季度的第一天可能是 1 月 1 日、4 月 1 日、7 月 1 日或 10 月 1 日。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 来配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 来配置。
 </Note>
 
 **语法**
@@ -5334,7 +5302,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 将日期时间向下取整到最近一个十分钟时间间隔的起始时刻。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 进行配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 进行配置。
 </Note>
 
 **语法**
@@ -5364,7 +5332,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toStartOfTenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:10:00
 toStartOfTenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -5380,7 +5348,7 @@ toStartOfTenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 将日期或日期时间向下取整到最近的星期日或星期一。
 
 <Note>
-  可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 来配置返回类型。
+  可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 来配置返回类型。
 </Note>
 
 **语法**
@@ -5405,10 +5373,10 @@ toStartOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
-        toStartOfWeek(toDate('2023-04-24')), /* a Monday */
-        toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* 星期五 */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* 星期五 */
+        toStartOfWeek(toDate('2023-04-24')), /* 星期一 */
+        toStartOfWeek(toDate('2023-04-24'), 1) /* 星期一 */
     FORMAT Vertical
 ```
 
@@ -5430,7 +5398,7 @@ Row 1:
 将日期或日期时间向下取整到当年的第一天。返回值为 `Date` 对象。
 
 <Note>
-  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 来配置。
+  返回类型可通过设置 [`enable_extended_results_for_datetime_functions`](/zh/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 来配置。
 </Note>
 
 **语法**
@@ -5465,37 +5433,29 @@ SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
   ## toTimeWithFixedDate
 </div>
 
-引入版本：v25.5.0
+Introduced in: v1.1.0
 
-提取日期时间的时间部分。
-返回结果是相对于固定时间点的偏移量，该时间点目前为 `1970-01-02`；
-但确切的时间点属于实现细节，未来可能会变更。
+提取日期或日期时间中的时间部分。
+返回结果是相对于某个固定时间点的偏移量，目前该时间点为 `1970-01-02`，
+但这一确切时间点属于实现细节，未来可能会变更。
 
-因此，不应单独使用 `toTimeWithFixedDate`。
-该函数的主要用途是计算两个日期时间之间的时间差，例如 `toTimeWithFixedDate(dt1) - toTimeWithFixedDate(dt2)`。
+因此，`toTime` 不应单独使用。
+该函数的主要用途是计算两个日期或日期时间之间的时间差，例如 `toTime(dt1) - toTime(dt2)`。
 
-这是旧版 `toTime` 函数，因名称 `toTime` 现已被
-[`toTime`](/zh/reference/functions/regular-functions/type-conversion-functions#toTime) 占用而在 v25.5 中更名；该函数会将值转换为
-[`Time`](/zh/reference/data-types/time) 数据类型。
-启用设置
-[`use_legacy_to_time`](/zh/reference/settings/session-settings#use_legacy_to_time) 后，仍可通过旧名称 `toTime` 访问该函数 (自 v26.7 起默认值为 `0`，而在 v25.6 至 v26.6 期间默认值为 `1`) 。
-
-如果 `datetime` 参数包含亚秒部分，返回的 `DateTime` 值会舍弃这些部分，精度为秒。
-
-**语法**
+**Syntax**
 
 ```sql
-toTimeWithFixedDate(datetime[, timezone])
+toTimeWithFixedDate(date[, timezone])
 ```
 
 **参数**
 
-* `datetime` — 要转换为时间的日期时间。[`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
-* `timezone` — 可选。返回值的时区。[`String`](/zh/reference/data-types/string)
+* `date` — 要转换为时间的日期值。[`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+* `timezone` — 可选。返回值使用的时区。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
-以相对于固定时间点 (目前为 1970-01-02) 的偏移量形式返回日期时间中的时间部分。[`DateTime`](/zh/reference/data-types/datetime)
+以相对于某个固定时间点的偏移量形式，返回日期或日期时间值中的时间部分 (当前固定时间点为 1970-01-02) 。[`DateTime`](/zh/reference/data-types/datetime)
 
 **示例**
 
@@ -5509,31 +5469,6 @@ SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDat
 ┌─result─┬─toTypeName(result)─┐
 │   3600 │ Int32              │
 └────────┴────────────────────┘
-```
-
-**将丢弃亚秒部分**
-
-```sql title=Query
-SELECT toTimeWithFixedDate(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
-```
-
-```response title=Response
-┌──────────────result─┬─toTypeName(result)─┐
-│ 1970-01-02 01:20:30 │ DateTime           │
-└─────────────────────┴────────────────────┘
-```
-
-**以 legacy 名称调用的同一函数**
-
-```sql title=Query
-SET use_legacy_to_time = 1;
-SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
-```
-
-```response title=Response
-┌──────────────result─┬─toTypeName(result)─┐
-│ 1970-01-02 01:20:30 │ DateTime           │
-└─────────────────────┴────────────────────┘
 ```
 
 <div id="toTimezone">
@@ -5629,8 +5564,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                       2023-03-15 16:00:00 │
-└───────────────────────────────────────────────────────────┘
+│                                     2023-03-15 16:00:00 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp">
@@ -5718,7 +5653,7 @@ from_date32:     1509840000
 无论该周在新的一年中包含多少天，都不影响这一点，即使只包含一天也是如此。
 也就是说，如果 12 月的最后一周包含下一年的 1 月 1 日，那么它将被视为下一年的第 1 周。
 
-第一个参数也可以指定为 [`String`](/zh/reference/data-types/string)，格式需受 [`parseDateTime64BestEffort`](/zh/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) 支持。支持字符串参数仅是为了兼容 MySQL，因为某些第三方工具依赖这种行为。由于未来对字符串参数的支持可能会取决于新的 MySQL 兼容性设置，而且字符串解析通常较慢，因此建议不要使用这种方式。
+第一个参数也可以指定为 [`String`](/zh/reference/data-types/string)，格式需受 [`parseDateTime64BestEffort()`](/zh/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) 支持。支持字符串参数仅是为了兼容 MySQL，因为某些第三方工具依赖这种行为。由于未来对字符串参数的支持可能会取决于新的 MySQL 兼容性设置，而且字符串解析通常较慢，因此建议不要使用这种方式。
 
 **语法**
 
@@ -5950,7 +5885,7 @@ SELECT toYearNumSinceEpoch(toDate('2024-10-01'))
 
 警告：`toYearWeek()` 返回的周数可能与 `toWeek()` 的返回结果不同。`toWeek()` 始终返回给定年份上下文中的周数；而当 `toWeek()` 返回 `0` 时，`toYearWeek()` 会返回对应上一年最后一周的值。请参见下面示例中的 `prev_yearWeek`。
 
-第一个参数也可以指定为 [`String`](/zh/reference/data-types/string)，格式需为 [`parseDateTime64BestEffort`](/zh/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) 支持的格式。支持字符串参数仅仅是为了兼容某些第三方工具所要求的 MySQL 行为。由于未来对字符串参数的支持可能会依赖新的 MySQL 兼容性设置，且字符串解析通常较慢，因此建议不要使用这种方式。
+第一个参数也可以指定为 [`String`](/zh/reference/data-types/string)，格式需为 [`parseDateTime64BestEffort()`](/zh/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) 支持的格式。支持字符串参数仅仅是为了兼容某些第三方工具所要求的 MySQL 行为。由于未来对字符串参数的支持可能会依赖新的 MySQL 兼容性设置，且字符串解析通常较慢，因此建议不要使用这种方式。
 
 **语法**
 
@@ -5991,17 +5926,13 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 返回查询分析时刻的当前日期。等同于 `toDate(now())`。
 
-<Note>
-  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
-</Note>
-
 **语法**
 
 ```sql
 today()
 ```
 
-**别名**：`current_date`, `curdate`
+**别名**：`curdate`, `current_date`
 
 **参数**
 
@@ -6048,10 +5979,6 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 引入版本：v1.1.0
 
 不接受任何参数，并返回查询分析过程中某一时刻的昨天日期。
-
-<Note>
-  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
-</Note>
 
 **语法**
 
