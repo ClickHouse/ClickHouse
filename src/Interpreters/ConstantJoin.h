@@ -31,8 +31,7 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
-    /// Every result class walks the probe block by ascending row index and emits each left row
-    /// before moving to the next one, so the left block order is preserved.
+    /// Every result class walks the probe block by ascending row index.
     bool preservesLeftBlockOrder() const override { return true; }
 
     bool isCloneSupported() const override

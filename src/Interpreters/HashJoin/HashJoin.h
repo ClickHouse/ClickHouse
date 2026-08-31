@@ -131,8 +131,7 @@ public:
         return getTotals().empty() && getTotalRowCount() == 0;
     }
 
-    /// HashJoin streams the left side through once, emitting each left row (with its matched
-    /// right columns) in input order, so the left block order is preserved.
+    /// The left side is streamed through once, each row emitted in input order.
     bool preservesLeftBlockOrder() const override { return true; }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,

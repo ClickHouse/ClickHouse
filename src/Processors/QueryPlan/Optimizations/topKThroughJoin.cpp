@@ -103,9 +103,8 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// pass, so we must NOT defer and instead let `topKThroughJoin` inject its own
 /// `Sort + Limit`.
 ///
-/// For a physical `JoinStep` we read `preservesLeftBlockOrder()` directly, which already
-/// covers `FullSortingMergeJoin`; the explicit type check below keeps mode 2 covered even
-/// if that join were ever to opt in. For
+/// For a physical `JoinStep` we read `preservesLeftBlockOrder()` directly and also flag
+/// `FullSortingMergeJoin` explicitly (mode 2). For
 /// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
 /// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
 /// `FULL_SORTING_MERGE` / `PARALLEL_FULL_SORTING_MERGE` (the parallel variant

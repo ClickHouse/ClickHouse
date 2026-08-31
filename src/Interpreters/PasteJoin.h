@@ -29,8 +29,7 @@ public:
     std::string getName() const override { return "PasteJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    /// PasteJoin concatenates the left and right blocks side by side by row position, so left
-    /// rows keep their input order.
+    /// The left and right blocks are concatenated side by side by row position.
     bool preservesLeftBlockOrder() const override { return true; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override

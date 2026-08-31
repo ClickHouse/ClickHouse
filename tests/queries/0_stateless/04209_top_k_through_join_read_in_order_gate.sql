@@ -103,10 +103,9 @@ FROM ( EXPLAIN actions = 0
 );
 
 -- full_sorting_merge path: even with both flags on, `full_sorting_merge` builds a
--- `FullSortingMergeJoin`, which reports `preservesLeftBlockOrder() == false` because its
--- physicalization re-sorts the left input by the join keys. Independently of that, the
--- inserted `Sort ... before JOIN` (`addSortingForMergeJoin`) also blocks traversal, because
--- `optimizeReadInOrder`'s `findReadingStep` does not descend through a `SortingStep`,
+-- `FullSortingMergeJoin`, whose physicalization re-sorts the left input by the join keys and
+-- inserts a `Sort ... before JOIN` on it (`addSortingForMergeJoin`),
+-- and `optimizeReadInOrder`'s `findReadingStep` does not descend through a `SortingStep`,
 -- so read-in-order is never installed. The deferral must therefore NOT fire - otherwise
 -- both optimizations get silently disabled. `topKThroughJoin` is expected to inject its
 -- own `Sort + Limit`, mirroring the `through_join_off`, `spilling_on` and `partial_merge`

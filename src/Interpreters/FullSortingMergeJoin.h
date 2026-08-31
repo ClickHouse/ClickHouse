@@ -171,9 +171,6 @@ public:
     /// Left and right streams have the same priority and are processed simultaneously
     JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
 
-    /// The left stream is re-sorted by the join keys before the merge, so its original order is not
-    /// preserved and it inherits the fail-closed `IJoin::preservesLeftBlockOrder() == false`.
-
 private:
     std::shared_ptr<TableJoin> table_join;
     SharedHeader right_sample_block;
