@@ -1,5 +1,5 @@
 # docker build -t clickhouse/test-base .
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # ARG for quick switch to a given ubuntu mirror. Defaults stay canonical so local
 # builds are unchanged; CI passes the in-region AWS mirror on the command line
@@ -77,7 +77,7 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Install newer lcov from source
-# Ubuntu 22.04 has old 1.14 version, we need 2.x for --sort-tables and --hierarchical options
+# Ubuntu's bundled lcov is too old, we need 2.4+ for --sort-tables and --hierarchical options
 RUN cd /tmp \
     && wget -q https://github.com/linux-test-project/lcov/releases/download/v2.4/lcov-2.4.tar.gz \
     && tar xzf lcov-2.4.tar.gz \
