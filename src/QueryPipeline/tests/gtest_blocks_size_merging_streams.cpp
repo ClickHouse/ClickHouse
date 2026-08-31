@@ -297,6 +297,13 @@ TEST(MergingSortedTest, SerializedPlanDefersHierarchicalMergeValidationToFullSor
     deserialized_full_sort_settings.updatePlanSettings(reserialized_plan_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     EXPECT_EQ(SortingStep::Settings(reserialized_plan_settings).max_streams_per_hierarchical_merge_for_validation, 1);
 
+    QueryPlanSerializationSettings old_full_sort_plan_settings;
+    EXPECT_THROW(
+        step.serializeSettings(
+            old_full_sort_plan_settings,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION - 1),
+        Exception);
+
     step.convertToFinishSorting(sort_description, false, false);
     QueryPlanSerializationSettings finish_sorting_plan_settings;
     EXPECT_NO_THROW(step.serializeSettings(finish_sorting_plan_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION));

@@ -140,6 +140,7 @@ struct QueryPlanOptimizationSettings
     size_t max_step_description_length = 0;
 
     size_t max_block_size = 0;
+    size_t max_streams_per_hierarchical_merge = 0;
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;

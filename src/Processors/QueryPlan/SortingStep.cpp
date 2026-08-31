@@ -156,12 +156,18 @@ static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before
 /// mergers does not reduce the number of streams, so building the tree would never terminate. Reject it
 /// instead of silently treating it as `2`, so that the value reported by `system.settings` always
 /// describes the pipeline that is actually built.
-static void checkMaxStreamsPerHierarchicalMerge(size_t max_streams_per_hierarchical_merge)
+static void checkMaxStreamsPerHierarchicalMergeValue(size_t max_streams_per_hierarchical_merge)
 {
     if (max_streams_per_hierarchical_merge == 1)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Setting max_streams_per_hierarchical_merge should be 0 (disables hierarchical merging) or >= 2, got 1");
+}
+
+void SortingStep::Settings::checkMaxStreamsPerHierarchicalMerge() const
+{
+    checkMaxStreamsPerHierarchicalMergeValue(max_streams_per_hierarchical_merge);
+    checkMaxStreamsPerHierarchicalMergeValue(max_streams_per_hierarchical_merge_for_validation);
 }
 
 SortingStep::Settings::Settings(const DB::Settings & settings)
@@ -655,8 +661,7 @@ void SortingStep::fullSortStreams(
 
 void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
 {
-    checkMaxStreamsPerHierarchicalMerge(sort_settings.max_streams_per_hierarchical_merge);
-    checkMaxStreamsPerHierarchicalMerge(sort_settings.max_streams_per_hierarchical_merge_for_validation);
+    sort_settings.checkMaxStreamsPerHierarchicalMerge();
 
     scatterByPartitionIfNeeded(pipeline);
     scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
@@ -843,6 +848,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
+    if (type == Type::Full && version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION)
+        sort_settings.checkMaxStreamsPerHierarchicalMerge();
+
     sort_settings.updatePlanSettings(settings, version);
 }
 

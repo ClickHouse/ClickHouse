@@ -102,6 +102,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 11 registers the `max_streams_per_hierarchical_merge_for_validation` plan setting. The
 /// hierarchical-merge fan-in remains local and is reset to `0` after deserialization; only the original
 /// value is carried so a worker that actually builds a full sort can reject the invalid value `1`.
+/// Serializing such a value to an older version fails closed because that version cannot carry it.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 11;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front

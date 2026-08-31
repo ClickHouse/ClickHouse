@@ -63,6 +63,7 @@ public:
         explicit Settings(size_t max_block_size_);
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
+        void checkMaxStreamsPerHierarchicalMerge() const;
         void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
 
         bool operator==(const Settings & other) const = default;

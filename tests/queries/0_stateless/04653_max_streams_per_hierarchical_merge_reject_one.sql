@@ -19,8 +19,8 @@ SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number SETTINGS max
 SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number SETTINGS max_streams_per_hierarchical_merge = 16);
 
 SELECT '-- rejected on the serialized query plan path --';
--- The setting is not serialized and the deserializing side resets it to 0, so the rebuilt full sort
--- would never see the invalid value. It has to be rejected while the plan is serialized instead.
+-- The fan-in remains local, but serialization version 11 carries the original value for validation.
+-- The rebuilt full sort rejects it when its pipeline is built.
 SELECT number FROM numbers(10) ORDER BY number
 SETTINGS serialize_query_plan = 1, max_streams_per_hierarchical_merge = 1; -- { serverError BAD_ARGUMENTS }
 
