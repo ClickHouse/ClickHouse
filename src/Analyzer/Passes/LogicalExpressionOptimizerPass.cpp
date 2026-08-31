@@ -1089,6 +1089,12 @@ static void convertNotEqualsChainToNotIn(
             /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
             if (!tryConvertToColumnType(literal, expr_type))
                 all_constants_convert_losslessly = false;
+
+            /// `notEquals` compares the string family zero-padded, set membership does not:
+            /// `'a' != toFixedString('a', 2)` is false while `'a' NOT IN (toFixedString('a', 2))` is
+            /// true, so the rewritten chain would contradict its own conjunct.
+            if (stringFamilyPairIsNotEqualityEquivalent(expr_type, literal->getResultType()))
+                all_constants_convert_losslessly = false;
         }
 
         if (!all_constants_convert_losslessly)
@@ -2619,6 +2625,12 @@ private:
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
                 if (!tryConvertToColumnType(literal, expr_type))
+                    all_constants_convert_losslessly = false;
+
+                /// `equals` compares the string family zero-padded, set membership does not:
+                /// `'a' = toFixedString('a', 2)` is true while `'a' IN (toFixedString('a', 2))` is
+                /// false, so the rewritten chain would contradict its own operand.
+                if (stringFamilyPairIsNotEqualityEquivalent(expr_type, literal->getResultType()))
                     all_constants_convert_losslessly = false;
             }
 
