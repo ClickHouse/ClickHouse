@@ -53,14 +53,14 @@ bool JoinSwitcher::switchJoin()
     /// Destroy old join & create new one.
     join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
 
-    /// The query pipeline was built with a hash join, so report the algorithm that takes over.
-    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::PARTIAL_MERGE);
-
     bool success = true;
     for (const Block & saved_block : right_blocks)
         success = success && join->addBlockToJoin(saved_block);
 
     switched = true;
+
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::PARTIAL_MERGE);
+
     return success;
 }
 
