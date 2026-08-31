@@ -1,5 +1,6 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -56,7 +57,7 @@ bool isBareUUIDTypeName(const String & name)
     return equalsCaseInsensitiveString(name, "uuid");
 }
 
-bool substituteBareUUIDInPlace(IAST & ast);
+bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position);
 bool foldConstantStringExpression(ASTPtr & argument);
 
 /// Position of the type name argument of a function, or `last_type_name_argument` when the type name is
@@ -149,7 +150,7 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)
     if (!ParserDataType{}.parse(pos, type_ast, expected) || !type_ast || pos->type != TokenType::EndOfStream)
         return false;
 
-    if (!substituteBareUUIDInPlace(*type_ast))
+    if (!substituteBareUUIDInPlace(*type_ast, false))
         return false;
 
     type_literal->value = type_ast->formatWithSecretsOneLine();
@@ -184,7 +185,7 @@ bool substituteBareUUIDInColumnsListLiteral(ASTLiteral & literal)
         || pos->type != TokenType::EndOfStream)
         return false;
 
-    if (!substituteBareUUIDInPlace(*columns_list))
+    if (!substituteBareUUIDInPlace(*columns_list, false))
         return false;
 
     literal.value = columns_list->formatWithSecretsOneLine();
@@ -454,7 +455,15 @@ bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function)
     return false;
 }
 
-bool substituteBareUUIDInPlace(IAST & ast)
+/** Rewrite bare `UUID` type names in a persisted definition.
+  *
+  * `in_table_function_position` tells whether `ast` is (or is nested inside the arguments of) a table function.
+  * The schema-string rewrite must only be applied there: several table functions share their name with a regular
+  * scalar function, most notably `format`, which is both `format(format_name, structure, data)` and the string
+  * formatting function `format(pattern, ...)`. Rewriting by name alone would corrupt the data argument of a
+  * persisted `SELECT format('{} {}', 'id UUID', 'x')`.
+  */
+bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position)
 {
     bool substituted = false;
 
@@ -464,21 +473,30 @@ bool substituteBareUUIDInPlace(IAST & ast)
         substituted = true;
     }
 
-    if (auto * function = ast.as<ASTFunction>())
+    auto * function = ast.as<ASTFunction>();
+    if (function)
     {
         substituted |= substituteBareUUIDInTypeNameLiteral(*function);
         substituted |= substituteBareUUIDInColumnsListLiteralArgument(*function);
-        /// A table function nested in a wrapper (for example, `loop(url(...))`) does not have a dedicated
-        /// table-expression node. `getTableFunctionStructureArguments` recognizes only table-function names,
-        /// so calling it for every function is safe and reaches those nested carriers.
-        substituted |= substituteBareUUIDInTableFunction(*function);
+        if (in_table_function_position)
+            substituted |= substituteBareUUIDInTableFunction(*function);
     }
 
     /// A table function is recognized by its position rather than by its name, so that the schema string of any
     /// table function is frozen, including ones added later.
+    const IAST * table_function_child = nullptr;
+    if (const auto * table_expression = ast.as<ASTTableExpression>())
+        table_function_child = table_expression->table_function.get();
+    else if (const auto * create = ast.as<ASTCreateQuery>())
+        table_function_child = create->as_table_function;
+
+    /// A table function nested in a wrapper (for example, `loop(url(...))`) does not have a dedicated
+    /// table-expression node of its own, so the whole argument subtree of a table function keeps the position.
+    const bool propagate_position = in_table_function_position && (function || ast.as<ASTExpressionList>());
+
     for (const auto & child : ast.children)
         if (child)
-            substituted |= substituteBareUUIDInPlace(*child);
+            substituted |= substituteBareUUIDInPlace(*child, propagate_position || child.get() == table_function_child);
 
     return substituted;
 }
@@ -491,7 +509,7 @@ ASTPtr applyUUIDTypeVersion(const ASTPtr & type_ast, UInt64 uuid_type_version)
         return type_ast;
 
     auto cloned = type_ast->clone();
-    if (substituteBareUUIDInPlace(*cloned))
+    if (substituteBareUUIDInPlace(*cloned, false))
         return cloned;
     return type_ast;
 }
@@ -501,7 +519,7 @@ bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version)
     if (uuid_type_version != 2)
         return false;
 
-    return substituteBareUUIDInPlace(ast);
+    return substituteBareUUIDInPlace(ast, false);
 }
 
 String ASTDataType::getID(char delim) const
