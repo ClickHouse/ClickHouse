@@ -196,13 +196,26 @@ String KeeperClient::executeFourLetterCommand(const String & command)
     {
 #if USE_SSL
         socket = Poco::Net::SecureStreamSocket();
+
+        /// SNI: strip port from "hostname:port" so the TLS server sees the correct host name.
+        {
+            String sni_host = host_without_scheme.substr(0, host_without_scheme.rfind(':'));
+            if (!sni_host.empty() && sni_host.front() == '[' && sni_host.back() == ']')
+                sni_host = sni_host.substr(1, sni_host.size() - 2);
+            static_cast<Poco::Net::SecureStreamSocket *>(&socket)->setPeerHostName(sni_host);
+        }
+
+        static_cast<Poco::Net::SecureStreamSocket *>(&socket)->setLazyHandshake(true);
 #else
         throw Poco::Exception(
             "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
 #endif
     }
 
-    socket.connect(Poco::Net::SocketAddress{host_without_scheme}, zk_args.connection_timeout_ms * 1000);
+    const int connect_timeout_ms = host_is_secure && zk_args.secure_connection_timeout_ms > 0
+        ? zk_args.secure_connection_timeout_ms
+        : zk_args.connection_timeout_ms;
+    socket.connect(Poco::Net::SocketAddress{host_without_scheme}, connect_timeout_ms * 1000);
 
     socket.setReceiveTimeout(zk_args.operation_timeout_ms * 1000);
     socket.setSendTimeout(zk_args.operation_timeout_ms * 1000);
@@ -439,6 +452,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("connection-timeout", "", "set connection timeout in seconds. default 10s.")
             .argument("<seconds>")
             .binding("connection-timeout"));
+
+    options.addOption(
+        Poco::Util::Option("secure-connection-timeout", "", "set TLS connection timeout in seconds; defaults to connection-timeout.")
+            .argument("<seconds>")
+            .binding("secure-connection-timeout"));
 
     options.addOption(
         Poco::Util::Option("session-timeout", "", "set session timeout in seconds. default 10s.")
@@ -817,12 +835,29 @@ void KeeperClient::connectToKeeper()
                 config().setString("openSSL.client.verificationMode", "none");
                 config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
             }
+            else
+            {
+                /// Mirror clickhouse-client behaviour: always set the handler explicitly so
+                /// certificate rejection does not depend on Poco's built-in default.
+                if (!config().has("openSSL.client.invalidCertificateHandler.name"))
+                    config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
+            }
 
             /// keeper-client loads the system CA store unless the config says otherwise.
             /// Seeded explicitly rather than relying on Poco's built-in default for this key,
             /// so the behaviour does not silently change on a contrib bump.
             if (!config().has("openSSL.client.loadDefaultCAFile"))
                 config().setString("openSSL.client.loadDefaultCAFile", "true");
+
+            /// Seed the same protocol/session defaults that clickhouse-client ships in
+            /// clickhouse-client.xml, so keeper-client behaves identically when the server
+            /// config.xml does not carry an <openSSL> section.
+            if (!config().has("openSSL.client.disableProtocols"))
+                config().setString("openSSL.client.disableProtocols", "sslv2,sslv3");
+            if (!config().has("openSSL.client.cacheSessions"))
+                config().setString("openSSL.client.cacheSessions", "true");
+            if (!config().has("openSSL.client.preferServerCiphers"))
+                config().setString("openSSL.client.preferServerCiphers", "true");
 
             /// connectToKeeper() reloads config.xml on every reconnect, so the TLS material may
             /// have changed since the context was built - renewed certificates, edited settings.
@@ -847,6 +882,8 @@ void KeeperClient::connectToKeeper()
 
     new_zk_args.availability_zones.resize(new_zk_args.hosts.size());
     new_zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
+    new_zk_args.secure_connection_timeout_ms = config().getInt("secure-connection-timeout",
+        config().getInt("connection-timeout", 10)) * 1000;
     new_zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     new_zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     new_zk_args.use_xid_64 = config().hasOption("use-xid-64");
