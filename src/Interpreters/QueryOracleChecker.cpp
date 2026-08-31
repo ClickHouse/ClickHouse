@@ -77,6 +77,7 @@ extern const Event ASTFuzzerOracleCastRoundtripChecks;
 extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
 extern const Event ASTFuzzerOracleTupleSummingChecks;
 extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
+extern const Event ASTFuzzerOracleDeleteMutationChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3321,6 +3322,56 @@ bool QueryOracleChecker::checkSchemaRoundtrip(const ASTSelectQuery &, const Cont
     }
 
     LOG_TRACE(logger, "schema round-trip oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkDeleteMutation(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded mutation oracle (task_40/41): DELETE removes exactly the rows where the predicate
+    /// is true. Against a never-mutated snapshot, the surviving rows of a mutated table must equal
+    /// the snapshot filtered by NOT p. The predicate is on a non-null Int64 column so 3-valued logic
+    /// cannot make "survivors" ambiguous. OracleMutationLifecycle: snapshot -> mutate (synchronously)
+    /// -> compare -> preserve-on-mismatch.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("del", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName("t");
+    const String snap = fixture.allocName("snap");
+    const String cols = " (k UInt64, g UInt8, v Int64) ENGINE = MergeTree ORDER BY k";
+    if (!fixture.execute("CREATE TABLE " + t + cols) || !fixture.execute("CREATE TABLE " + snap + cols))
+        return false;
+    const String seed = " SELECT number, number % 8, toInt64(number) - 500 FROM numbers(1000)";
+    if (!fixture.execute("INSERT INTO " + t + seed) || !fixture.execute("INSERT INTO " + snap + seed))
+        return false;
+
+    /// Apply the mutation synchronously so the read below sees the finished state.
+    const std::vector<std::pair<String, Field>> sync{
+        {"mutations_sync", Field(UInt64(2))}, {"alter_sync", Field(UInt64(2))}, {"lightweight_deletes_sync", Field(UInt64(2))}};
+    if (!fixture.execute("DELETE FROM " + t + " WHERE v > 100", sync))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "DELETE-mutation oracle: {} vs snapshot {}", t, snap);
+
+    auto actual_opt = OracleExec::executeRows("SELECT k, g, v FROM " + t, context, ResultShape::SortedBag);
+    auto expected_opt = OracleExec::executeRows("SELECT k, g, v FROM " + snap + " WHERE v <= 100", context, ResultShape::SortedBag);
+    if (!actual_opt || !expected_opt)
+        return false;
+
+    if (!OracleCompare::equal(*actual_opt, *expected_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "DELETE-mutation oracle mismatch!\n"
+                "after DELETE FROM {} WHERE v > 100 ({} rows) vs snapshot WHERE v <= 100 ({} rows)\n{}",
+                t, actual_opt->size(), expected_opt->size(),
+                OracleCompare::diffSummary(*actual_opt, *expected_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "DELETE-mutation oracle passed");
     return true;
 }
 
