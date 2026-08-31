@@ -16,7 +16,7 @@ Fast individual queries are the foundation of high QPS. The less work each query
 
 - The [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) of the MergeTree table engine family, which skips reading data that doesn't match the query.
 - Caches such as the [query cache](/concepts/features/performance/caches/query-cache), which serves repeated `SELECT` queries directly from cached results.
-- [Projections](/concepts/features/projections/projections) and [materialized views](/concepts/features/materialized-views/index), which precompute results at insert time so queries read less data.
+- [Projections](/concepts/features/projections/projections), which precompute data at insert time and can be selected automatically by ClickHouse, and [materialized views](/concepts/features/materialized-views/index), which store precomputed results in a separate target table that queries can read directly.
 
 ## Controlling and limiting concurrency {#controlling-and-limiting-concurrency}
 
