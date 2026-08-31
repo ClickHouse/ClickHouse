@@ -56,15 +56,16 @@ inline bool maskURIPassword(std::string * uri)
             continue;
 
         /// `[^:]*:` - the colon that opens the password.
+        /// A later iteration searches from a not-smaller position, so a miss here can never become a match.
         size_t password_begin = uri->find(':', separator + SEPARATOR.length());
         if (password_begin == std::string::npos)
-            continue;
+            break;
         ++password_begin;
 
         /// `[^@]*@` - the at sign that closes it.
         size_t password_end = uri->find('@', password_begin);
         if (password_end == std::string::npos)
-            continue;
+            break;
 
         uri->replace(password_begin, password_end - password_begin, "[HIDDEN]");
         return true;
