@@ -13,9 +13,9 @@ import { Image } from "/snippets/components/Image.jsx";
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
 
-<Update label="August 24, 2026">
+<Update label="2026-08-31">
 
-This week expands ClickHouse Cloud's global reach with new AWS regions in Taipei and Malaysia, and adds Global Access support for Private Service Connect.
+This week expands ClickHouse Cloud's global reach with new AWS regions in Taipei and Malaysia, adds Global Access support for Private Service Connect, and makes it easier for SAML users to move between organizations.
 
 ### New AWS regions: Taipei and Malaysia {#new-aws-regions-taipei-and-malaysia}
 
@@ -24,6 +24,10 @@ ClickHouse Cloud is now available in AWS Taipei (`ap-east-2`) and AWS Malaysia (
 ### Private Service Connect supports Global Access {#private-service-connect-supports-global-access}
 
 Private Service Connect (PSC) on GCP now supports Global Access. When enabled, clients in other GCP regions within the same VPC can connect to the PSC endpoint, including from regions not natively supported in ClickHouse Cloud, such as `asia-northeast3` (Seoul). The ClickHouse Cloud service and PSC endpoint must remain in the same GCP region.
+
+### Switch between SAML organizations {#switch-between-saml-organizations}
+
+SAML users who belong to multiple SAML organizations can now switch between them directly from the org switcher, which re-authenticates them behind the scenes. There's no longer any need to bookmark each organization's URL or manually log out and back in — just bookmark your main organization and switch from there. This covers SAML-to-SAML switching; existing non-SAML org switching is unchanged.
 
 </Update>
 
