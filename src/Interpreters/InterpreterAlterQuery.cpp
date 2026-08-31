@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -28,7 +29,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTFunction.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
@@ -90,24 +90,6 @@ namespace ErrorCodes
 namespace
 {
 
-void replaceLegacyToTimeInAlterExpression(IAST * ast)
-{
-    if (auto * function = ast->as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
-        function->name = "toTimeWithFixedDate";
-
-    for (const auto & child : ast->children)
-        replaceLegacyToTimeInAlterExpression(child.get());
-
-    /// TTL GROUP BY keys are not `children` of their `ASTTTLElement`.
-    if (auto * ttl_element = ast->as<ASTTTLElement>())
-    {
-        for (const auto & group_by_key : ttl_element->group_by_key)
-            replaceLegacyToTimeInAlterExpression(group_by_key.get());
-        for (const auto & group_by_assignment : ttl_element->group_by_assignments)
-            replaceLegacyToTimeInAlterExpression(group_by_assignment.get());
-    }
-}
-
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
     for (const auto & child : alter.command_list->children)
@@ -115,9 +97,10 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
         auto * command = child->as<ASTAlterCommand>();
 
         /// Every slot that reaches table metadata, so that a reload re-derives the same spelling the
-        /// statement resolved. Slots that only drive a one-off mutation (`predicate`,
-        /// `update_assignments`) are left alone: their expression is never stored as metadata,
-        /// so it must keep resolving as the session wrote it.
+        /// statement resolved. Mutation expressions (`predicate`, `update_assignments`, the
+        /// `IN PARTITION` value in `partition`) need it too: they are persisted in mutation entries
+        /// and resolved by the background executor and by replicas with the server default settings,
+        /// not with the settings of this session.
         for (IAST * payload : {command->col_decl,
                                command->order_by,
                                command->sample_by,
@@ -125,10 +108,13 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
                                command->constraint_decl,
                                command->projection_decl,
                                command->ttl,
-                               command->select})
+                               command->select,
+                               command->predicate,
+                               command->update_assignments,
+                               command->partition})
         {
             if (payload)
-                replaceLegacyToTimeInAlterExpression(payload);
+                replaceLegacyToTime(*payload);
         }
     }
 }

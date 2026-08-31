@@ -570,6 +570,7 @@ namespace
                 }
 
                 pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                pipeline.disableProfileEventUpdate();
                 executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
             catch (...)
@@ -681,6 +682,7 @@ namespace
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
                         pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                        pipeline.disableProfileEventUpdate();
                         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
                     }
 
