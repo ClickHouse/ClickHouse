@@ -18,11 +18,9 @@ SQL console users are created for each session and authenticated using X.509 cer
 
 Basic SQL console roles can be assigned to users with Service Read Only and Service Admin permissions. For more information, refer to [Manage SQL Console Role Assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). This guide demonstrates how to create a custom role for a SQL console user.
 
-<Note>
-**Manage database roles from the console (beta)**
-
-You can also manage database roles directly from the ClickHouse Cloud console by adding data permissions to custom roles. This feature is in beta and is available for services running ClickHouse version 26.4 and above. Roles assigned manually using the `sql-console-role:<email>` naming convention take precedence over roles assigned through the console. For more information, see [Manage database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
-</Note>
+<Tip>
+Prefer [cloud-managed database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) to manage database access from the console. `sql-console-role:<email>` roles are not compatible with [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
 
 To create a custom role for a SQL console user and grant it a general role, run the following commands. The email address must match the user's email address in the console. 
 

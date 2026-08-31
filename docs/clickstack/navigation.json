@@ -89,7 +89,8 @@
             "clickstack/features/dashboards/overview",
             "clickstack/features/dashboards/dashboard-templates",
             "clickstack/features/dashboards/sql-visualizations",
-            "clickstack/features/dashboards/row-click-drilldowns"
+            "clickstack/features/dashboards/row-click-drilldowns",
+            "clickstack/features/dashboards/release-markers"
           ]
         },
         "clickstack/notebooks",
@@ -151,9 +152,9 @@
       "group": "Guides",
       "pages": [
         {
+          "expanded": true,
           "group": "Ingesting data",
           "pages": [
-            "clickstack/ingesting-data/index",
             "clickstack/ingesting-data/overview",
             "clickstack/ingesting-data/opentelemetry",
             "clickstack/ingesting-data/vector",

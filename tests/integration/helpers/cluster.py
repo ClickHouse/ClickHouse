@@ -2230,9 +2230,12 @@ class ClickHouseCluster:
         self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
-        # (affect only WITH_COVERAGE=1 build)
+        # (affect only WITH_COVERAGE=1 build).
+        # %c enables continuous mode: counters are memory-mapped into the file,
+        # so the profile survives SIGKILL / `docker kill` intact instead of being
+        # lost or half-written by an exit-time dump interrupted by the kill.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%4m.profraw"
+            "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -150,6 +151,7 @@ public:
 
         bool enable_adaptive_aggregator = false;
         UInt64 adaptive_aggregator_freeze_threshold = 0;
+        UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
 
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
@@ -169,6 +171,20 @@ public:
         bool enable_parallel_single_level_merge = false;
 
         bool serialize_string_with_zero_byte = false;
+
+        struct TopKParams
+        {
+            /// LIMIT values above this never get the optimization; keeps the heap
+            /// arithmetic and preallocation trivially safe.
+            static constexpr size_t max_k = 100000;
+
+            size_t k = 0;                           /// the query's LIMIT K (heap capacity)
+            std::vector<int> directions;            /// per-column ORDER BY directions
+            std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
+            UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
+        };
+        std::optional<TopKParams> top_k;
 
         /// Use the `PackedStringRef`-based hash table for a single non-nullable `String` key
         /// (`key_packed_string`); if false, fall back to the legacy `StringHashTable`-based method
@@ -217,7 +233,8 @@ public:
             bool enable_parallel_single_level_merge_,
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
-            UInt64 adaptive_aggregator_freeze_threshold_);
+            UInt64 adaptive_aggregator_freeze_threshold_,
+            UInt64 adaptive_aggregator_freeze_threshold_bytes_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -584,6 +601,7 @@ private:
     void executeImpl(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -606,11 +624,12 @@ private:
         AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool prefetch, typename Method, typename State>
+    template <bool prefetch, bool top_k = false, typename Method, typename State>
     requires MapAggregationState<State>
     void executeImplBatch(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -620,12 +639,22 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
+    struct DestroyedState
+    {
+        AggregateDataPtr slot;
+        size_t row;
+    };
+
+    template <typename Method>
+    void trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
+
     /// A set method has no aggregate states: the batch only registers the keys.
-    template <bool prefetch, typename Method, typename State>
+    template <bool prefetch, bool top_k = false, typename Method, typename State>
     requires SetAggregationState<State>
     void executeImplBatch(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -637,9 +666,15 @@ private:
 
     /// Registers keys without building aggregate states; shared by the set methods and by the
     /// no-aggregates fast path of the map methods.
-    template <bool prefetch, typename Method, typename State>
+    template <bool prefetch, bool top_k, typename Method, typename State>
     void executeImplBatchNoAggregates(
-        Method & method, State & state, Arena * aggregates_pool, size_t row_begin, size_t row_end, bool all_keys_are_const) const;
+        Method & method,
+        State & state,
+        const ColumnRawPtrs & key_columns,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        bool all_keys_are_const) const;
 
     void initAdaptiveSession(AggregatedDataVariants & local_result, AdaptiveAggregationSession & shared) const;
 
@@ -975,6 +1010,9 @@ private:
     /// dataflow statistics must describe the untruncated aggregation output (it prices the
     /// shipping term of the parallel-replicas plan, where the partial aggregation materializes
     /// every group), so the chunk of a truncated conversion cannot be measured as is.
+    /// `full_group_count`, when non-null, receives the bucket table's group count: the group-by
+    /// limit must be enforced against the true cardinality, which the chunk's row count
+    /// understates when the Top-K conversion truncates it.
     template <typename Method>
     AggregatedChunk convertOneBucketToChunk(
         AggregatedDataVariants & data_variants,
@@ -982,7 +1020,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        UInt64 * topk_full_key_bytes) const;
+        UInt64 * topk_full_key_bytes,
+        size_t * full_group_count) const;
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
@@ -1001,13 +1040,16 @@ private:
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
 
+    /// `full_group_count`, when non-null, receives the merged bucket's group count (see
+    /// `convertOneBucketToChunk`).
     AggregatedChunk mergeAndConvertOneBucketToChunk(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         bool final,
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+        size_t * full_group_count) const;
 
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
@@ -1140,6 +1182,17 @@ private:
         Columns columns,
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
+        AggregateFunctionInstructions & instructions,
+        NestedColumnsHolder & nested_columns_holder) const;
+
+    /// The instruction-building tail of `prepareAggregateInstructions`: the combinator
+    /// unwrapping (-State, -Array) and the batch wiring for one aggregate whose argument
+    /// pointers are already in place. Called directly for staged chunks, whose payload
+    /// columns the seal already normalized to the drain's form.
+    void buildAggregateFunctionInstruction(
+        size_t i,
+        bool has_sparse_arguments,
+        AggregateColumns & aggregate_columns,
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder) const;
 

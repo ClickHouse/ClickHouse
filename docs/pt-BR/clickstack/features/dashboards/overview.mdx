@@ -200,13 +200,54 @@ Para remover, editar ou duplicar uma visualização, passe o cursor sobre ela e 
 
 Cada tile tem um painel **Configurações de exibição** com opções que controlam como seu valor é exibido. Abra-o no editor do tile clicando em **Configurações de exibição**. As opções disponíveis dependem do tipo de visualização.
 
-Tiles Number podem mostrar um **gráfico de fundo**: uma linha de tendência desenhada atrás do valor, para que sua variação ao longo do intervalo de tempo selecionado fique visível de relance. Isso é útil para tiles de SLO e de orçamento de erro, em que a tendência do valor importa tanto quanto a leitura atual.
+<div id="number-tile-color">
+  #### Cor do bloco numérico
+</div>
 
-Com um tile Number selecionado, abra **Configurações de exibição** e defina **Gráfico de fundo** como **Linha** ou **Área** (ou **Nenhum** para desativá-lo). A linha de tendência é derivada de uma versão da consulta do tile agrupada em buckets de tempo, portanto nenhuma configuração adicional é necessária. Por padrão, ela herda a cor do tile; defina uma **Cor de fundo** para substituí-la por uma cor específica da paleta.
+Os blocos numéricos permitem escolher uma **Cor** estática na paleta de gráficos selecionada. Com um bloco numérico selecionado, abra **Configurações de exibição** e use o controle **Cor** (identificado como **Cor do bloco numérico** para fins de acessibilidade) para escolher uma amostra de cor ou limpe a seleção para usar a cor de texto padrão.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Painel Configurações de exibição de um tile Number, com Gráfico de fundo definido como Área" size="lg" />
+As cores são armazenadas como tokens de paleta, e não como valores hexadecimais brutos, para que o mesmo bloco seja exibido corretamente em temas claros, escuros e de IDE.
 
-Os gráficos de fundo se aplicam a tiles Number do construtor de consultas. Tiles Number de Raw SQL retornam um único valor sem dimensão de tempo para agrupar em buckets, portanto a opção aparece, mas fica desabilitada para eles.
+**Tokens categóricos** (matizes para várias séries):
+
+| Token              | Rótulo     |
+| ------------------ | ---------- |
+| `chart-blue`       | Azul       |
+| `chart-orange`     | Laranja    |
+| `chart-red`        | Vermelho   |
+| `chart-cyan`       | Ciano      |
+| `chart-green`      | Verde      |
+| `chart-pink`       | Rosa       |
+| `chart-purple`     | Roxo       |
+| `chart-light-blue` | Azul-claro |
+| `chart-brown`      | Marrom     |
+| `chart-gray`       | Cinza      |
+
+**Tokens semânticos** (orientados a status):
+
+| Token           | Rótulo  |
+| --------------- | ------- |
+| `chart-success` | Sucesso |
+| `chart-warning` | Aviso   |
+| `chart-error`   | Erro    |
+
+Use tokens semânticos quando o número representar um status (por exemplo, uma contagem de erros em `chart-error` ou uma taxa saudável em `chart-success`). Use tokens categóricos quando quiser diferenciar visualmente blocos de KPI relacionados sem indicar um status.
+
+Configurações mais antigas ainda podem armazenar tokens numéricos legados (`chart-1` a `chart-10`). O ClickStack os mapeia para os tokens nomeados por matiz acima ao carregar um dashboard.
+
+A mesma paleta também oferece **regras de cor** opcionais no mesmo painel lateral: condições ordenadas avaliadas em relação ao valor exibido (a última correspondência prevalece). Quando nenhuma regra corresponde, aplica-se a cor estática e, em seguida, a cor de texto padrão.
+
+<div id="number-tile-background-chart">
+  #### Gráfico de fundo do bloco numérico
+</div>
+
+Blocos numéricos podem mostrar um **gráfico de fundo**: uma linha de tendência desenhada atrás do valor, para que sua variação ao longo do intervalo de tempo selecionado fique visível de relance. Isso é útil para tiles de SLO e de orçamento de erro, em que a tendência do valor importa tanto quanto a leitura atual.
+
+Com um bloco numérico selecionado, abra **Configurações de exibição** e defina **Gráfico de fundo** como **Linha** ou **Área** (ou **Nenhum** para desativá-lo). A linha de tendência é derivada de uma versão da consulta do tile agrupada em buckets de tempo, portanto nenhuma configuração adicional é necessária. Por padrão, ela herda a cor do tile; defina uma **Cor de fundo** para substituí-la por uma cor específica da paleta.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Painel Configurações de exibição de um bloco numérico, com Gráfico de fundo definido como Área" size="lg" />
+
+Os gráficos de fundo se aplicam a blocos numéricos do construtor de consultas. Blocos numéricos de Raw SQL retornam um único valor sem dimensão de tempo para agrupar em buckets, portanto a opção aparece, mas fica desabilitada para eles.
 
 Tiles de tabela podem aplicar listras às linhas com **Plano de fundo alternado das linhas**, que colore uma linha sim, outra não para facilitar a leitura de tabelas largas. Isso fica desativado por padrão.
 
@@ -215,6 +256,46 @@ Com um tile de tabela selecionado, abra **Configurações de exibição** e ativ
 <Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Painel Configurações de exibição de um tile de tabela, com Plano de fundo alternado das linhas ativado" size="lg" />
 
 Tiles de tabela também mantêm um separador entre a linha de cabeçalho e os dados enquanto você rola, para que os cabeçalhos das colunas permaneçam distintos.
+
+<div id="api-number-tile-color">
+  #### API de dashboards: cor do bloco numérico
+</div>
+
+Ao criar ou atualizar dashboards pela API externa (`POST` / `PUT` `/api/v2/dashboards`), defina `color` em uma configuração de bloco numérico do construtor como um token de paleta. Valores hexadecimais brutos são rejeitados.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` aceita qualquer token das listas categórica e semântica acima (por exemplo, `chart-blue` ou `chart-success`). Opcionalmente, `backgroundChart.color` substitui a cor do minigráfico pelo mesmo enum de token. Consulte a [referência da API do ClickStack](/pt-BR/clickstack/api-reference) para informações sobre autenticação e URLs base.
 
 <div id="dashboard-listing-search">
   ## Dashboard - listagem e busca
@@ -233,28 +314,37 @@ Os dashboards podem ser marcados como favoritos para facilitar o acesso na barra
 <Tagging />
 
 <div id="custom-filters">
-  ## Filtros personalizados
+  ## Filtros personalizados e variáveis
 </div>
 
 Além dos [filtros de texto livre](#filter-dashboards) disponíveis em todos os dashboards, os dashboards salvos oferecem suporte a filtros personalizados em listas suspensas preenchidas com dados consultados no ClickHouse. Esses filtros fornecem controles reutilizáveis de apontar e clicar, para que quem visualiza o dashboard possa filtrar sem precisar escrever expressões manualmente.
 
 <Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Filtro suspenso de serviços mostrando os nomes de serviço disponíveis" size="lg" />
 
-As etapas a seguir mostram como adicionar um filtro personalizado ao dashboard criado na seção [&quot;Criando dashboards&quot;](#creating-dashboards).
+Cada filtro permite que quem visualiza escolha um ou mais valores e realiza uma ou ambas as ações a seguir com eles:
+
+* **Transmissão** — aplica a seleção como uma condição de filtro aos blocos correspondentes. Os blocos não precisam ser atualizados para fazer referência ao filtro.
+* **Variável** — expõe a seleção às consultas dos blocos como `$variableName`, para que cada bloco decida onde e como o valor é usado.
+
+Um filtro deve realizar pelo menos uma das duas ações. A transmissão é ativada por padrão ao criar um filtro.
+
+As etapas a seguir mostram como adicionar um filtro ao dashboard criado na seção [&quot;Criando dashboards&quot;](#creating-dashboards).
 
 <Steps>
   <Step title="Abra a caixa de diálogo Editar filtros" id="open-edit-filters">
-    Abra um dashboard salvo e selecione **Editar filtros** na barra de ferramentas.
+    Abra um dashboard salvo e selecione **Editar filtros e variáveis** na barra de ferramentas.
 
     <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Botão Editar filtros na barra de ferramentas do dashboard" size="lg" />
   </Step>
 
   <Step title="Adicione um novo filtro" id="add-new-filter">
-    Clique em **Adicionar novo filtro**. Configure o filtro fornecendo um **Nome**, selecionando uma **Fonte de dados** e inserindo uma **Expressão de filtro** — uma coluna SQL ou expressão cujos valores distintos preencherão a lista suspensa. Clique em **Salvar filtro**.
+    Clique em **Adicionar novo filtro**. Configure o filtro fornecendo um **Nome de exibição**, selecionando uma **Fonte de dados** e inserindo uma **Expressão de filtro** — uma coluna SQL ou expressão cujos valores distintos preencherão a lista suspensa. Clique em **Salvar filtro**.
 
     Por exemplo, para adicionar um filtro de serviço a dados de traces, use `ServiceName` como expressão de filtro com a fonte de dados `Traces`. O &quot;Filtro de valores da lista suspensa&quot; é opcional e permite restringir quais valores aparecem na lista suspensa.
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Caixa de diálogo Adicionar filtro com os campos Nome, Fonte de dados e Expressão de filtro" size="md" />
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Caixa de diálogo Adicionar filtro com os campos Nome de exibição, Fonte de dados e Expressão de filtro" size="md" />
+
+    A mesma caixa de diálogo também controla se o filtro [transmite](#broadcast-filters) seu valor e se ele está [disponível como variável](#dashboard-variables), ambos descritos abaixo.
 
     O modal Filtros mostra todos os filtros configurados para o dashboard. Nele, você pode editar ou excluir filtros existentes, ou adicionar outros.
 
@@ -276,6 +366,85 @@ As etapas a seguir mostram como adicionar um filtro personalizado ao dashboard c
 
 <Note>
   Filtros personalizados em listas suspensas estão disponíveis em dashboards salvos. Para ver esse padrão em ação, consulte o [dashboard do Kubernetes](#kubernetes-dashboard), que fornece filtros suspensos integrados para pod do Kubernetes, Implantação, nome do nó, Espaço de nomes e Cluster.
+</Note>
+
+<div id="broadcast-filters">
+  ### Transmissão
+</div>
+
+Com a **Condição de filtro de transmissão** ativada, os valores selecionados são aplicados como condição de filtro aos blocos do dashboard, sem que nenhum deles faça referência explícita ao filtro. Por padrão, a condição é aplicada a todos os blocos. Use **Aplica-se às fontes** para restringi-la aos blocos que usam um determinado conjunto de fontes — útil quando a expressão do filtro só faz sentido para parte dos dados do dashboard.
+
+Os blocos do construtor de gráficos adotam filtros de transmissão automaticamente. Os blocos de Raw SQL devem incluir a [macro `$__filters`](/pt-BR/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) e ter uma fonte selecionada, pois o ClickStack não consegue inferir onde a condição deve ser inserida em uma consulta escrita manualmente.
+
+<div id="dashboard-variables">
+  ### Variáveis
+</div>
+
+Com **Disponível como variável** habilitado, a seleção do filtro também fica disponível para consultas de blocos como `$variableName`. Por padrão, o **Nome da variável** é o nome de exibição do filtro, com caracteres inválidos removidos, mas pode ser substituído. Os nomes devem começar com uma letra e podem conter apenas letras, dígitos e sublinhados.
+
+Use uma variável quando não quiser propagar uma condição `WHERE` — por exemplo, para inserir o valor em uma expressão `SELECT`, uma cláusula `HAVING` ou uma chave de junção, ou para filtrar um bloco com base em uma coluna diferente da expressão do próprio filtro.
+
+<div id="referencing-variables">
+  #### Referência a uma variável
+</div>
+
+Uma variável é expandida para os valores atualmente selecionados no respectivo menu suspenso. A forma de referência controla a renderização:
+
+| Referência          | Expande para                                                                                                                                                                             | Seleção vazia |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `$name`, `${name}`  | Os valores selecionados, no formato `sqlstring` ou `lucene`, dependendo do contexto. As chaves delimitam o nome quando ele é seguido por caracteres de palavra, como em `${name}_total`. | `NULL`        |
+| `${name:sqlstring}` | Os valores selecionados, entre aspas simples, separados por vírgulas e com escape como valores SQL, por exemplo, `'a', 'b'`                                                              | `NULL`        |
+| `${name:csv}`       | Sem aspas e separados por vírgulas: `a,b`. Sem escape para SQL.                                                                                                                          | string vazia  |
+| `${name:regex}`     | Uma alternância de regex, com escape para regex: `(a\|b)`.                                                                                                                               | `.*`          |
+| `${name:lucene}`    | Um `OR` de termos entre aspas, para entradas do Lucene: `("a" OR "b")`.                                                                                                                  | `("")`        |
+
+Como `$name` é renderizado como `NULL` antes de qualquer seleção, prefira as seguintes macros sempre que for esperado um predicado SQL. Ambas as macros são expandidas para `1=1` enquanto a variável não tiver nenhuma seleção, para que a consulta permaneça válida:
+
+| Macro                                         | Descrição                                                                                                                               |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | Expande para `toString(<filter expression>) IN ($variable)` quando há valores selecionados para `variable` e para `1=1` caso contrário. |
+| `$__filter(<expression>, $<variable>)`        | Expande para `<expression> IN ($variable)` quando há valores selecionados para `variable` e para `1=1` caso contrário.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | Expande para `<condition>` quando a variável tem uma seleção e para `1=1` caso contrário.                                               |
+
+<div id="variables-in-builder-tiles">
+  #### Como usar variáveis em blocos do construtor de gráficos
+</div>
+
+Cada campo de expressão SQL no construtor de gráficos aceita referências a variáveis: colunas `SELECT` e expressões por série, `WHERE`, `GROUP BY` e `HAVING`. O editor oferece preenchimento automático para as variáveis do dashboard e mostra no que cada referência é expandida para a seleção atual.
+
+Prefira usar as macros `$__filter` e `$__conditionalAll` no modo SQL para que as consultas permaneçam válidas quando não houver valores selecionados para as variáveis. As macros não estão disponíveis em campos Lucene — use referências diretas às variáveis nesses casos (por exemplo, `ServiceName:$service`).
+
+Em um campo Lucene, as aspas em torno da própria referência à variável determinam como uma seleção com vários valores é correspondida. Considerando `$service` selecionado como `a,b`:
+
+| Referência               | Expande para                           | Comportamento de correspondência                                                                             |
+| ------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `ServiceName:$service`   | `ServiceName:("a" OR "b")`             | Correspondência por substring — traduzida para SQL como `ServiceName ILIKE '%a%' OR ServiceName ILIKE '%b%'` |
+| `ServiceName:"$service"` | `(ServiceName:"a" OR ServiceName:"b")` | Correspondência exata para cada valor selecionado                                                            |
+
+Coloque a referência à variável entre aspas — `Field:"$var"` — quando os valores selecionados precisarem corresponder exatamente a `Field`, e não a substrings.
+
+<div id="variables-in-sql-tiles">
+  #### Como usar variáveis em blocos SQL
+</div>
+
+Blocos de Raw SQL fazem referência a variáveis da mesma forma, em qualquer ponto da consulta:
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+Consulte [visualizações baseadas em SQL](/pt-BR/clickstack/features/dashboards/sql-visualizations#dashboard-variables) para ver a lista completa de macros disponíveis para blocos SQL.
+
+<Note>
+  Os alertas em um bloco que faz referência a uma variável de dashboard são avaliados com todas as variáveis em seu estado vazio, e não com os valores selecionados no dashboard.
 </Note>
 
 <div id="drilldown-to-search">

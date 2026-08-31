@@ -96,7 +96,7 @@ are taken from the `credentials` key of the optional parameter map, or from the
         .returned_value = {"The translated text, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
             {"Translate to French", "SELECT aiTranslate('Hello, world!', 'French')", "Bonjour le monde!"},
-            {"Translate to Japanese with style instructions", "SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5", ""},
+            {"Translate to Japanese with style instructions", "CREATE TABLE articles (body String) ENGINE = Memory;\nINSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');\nSELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
