@@ -10,6 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 opts=(
     --enable_analyzer=1
     --join_algorithm='hash'
+    # Cache keys are stamped by join-order optimization; keep its plan stable across both runs.
+    --query_plan_optimize_join_order_limit=10
+    --query_plan_optimize_join_order_randomize=0
 )
 
 # Large enough that the size estimate selects the parallel layout.
