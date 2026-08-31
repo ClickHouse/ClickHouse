@@ -88,6 +88,7 @@ extern const Event ASTFuzzerOracleFinalMergeChecks;
 extern const Event ASTFuzzerOracleWithFillChecks;
 extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
 extern const Event ASTFuzzerOracleDictGetChecks;
+extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3890,6 +3891,48 @@ bool QueryOracleChecker::checkDictGetVsJoin(const ASTSelectQuery &, const Contex
             context, &fixture);
 
     LOG_TRACE(logger, "dictGet vs JOIN oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkMaterializedColumn(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_33 arm a): a MATERIALIZED column (computed at insert time) and an ALIAS
+    /// column (computed at read time) must both equal recomputing their defining expression on every
+    /// row. A divergence is a real materialized-column / alias-recomputation bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("matcol", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute(
+            "CREATE TABLE " + tbl + " (a Int64, b Int64, "
+            "m Int64 MATERIALIZED a * 2 + b, al Int64 ALIAS a + b) ENGINE = MergeTree ORDER BY a"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " (a, b) SELECT number % 17, toInt64(number) - 100 FROM numbers(400)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "materialized column oracle: {}", tbl);
+
+    /// Count rows where the stored / aliased value disagrees with a fresh recomputation.
+    auto viol_opt = OracleExec::executeRows(
+        "SELECT countIf(m != a * 2 + b) + countIf(al != a + b) FROM " + tbl,
+        context, ResultShape::SortedBag);
+    if (!viol_opt)
+        return false;
+
+    if (viol_opt->size() != 1 || (*viol_opt)[0] != "0")
+        raiseOracleMismatch(
+            fmt::format(
+                "materialized column oracle mismatch!\n"
+                "{} rows on {} disagree with the recomputed MATERIALIZED/ALIAS expression",
+                viol_opt->empty() ? "?" : (*viol_opt)[0], tbl),
+            context, &fixture);
+
+    LOG_TRACE(logger, "materialized column oracle passed");
     return true;
 }
 
