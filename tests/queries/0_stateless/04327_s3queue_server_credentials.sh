@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # Tag no-fasttest: exercises the `S3Queue` engine, which is not compiled into the fast-test build.
+# Tag no-replicated-database: named collections are server-global, not database-scoped
 #
 # `S3Queue` must honor the S3 user-credential restriction the same way the `s3` table function and `S3`
 # engine do, including the per-session/profile `s3_allow_server_credentials_in_user_queries` override given
