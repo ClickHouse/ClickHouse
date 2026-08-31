@@ -8,6 +8,7 @@ SECRET_URL="http://leakuser:AVRO_LEAK_CANARY_9f3a2b@registry.invalid:8080/subjec
 PLAIN_URL="http://registry.invalid:8080/subjects"
 SECRET_DISK="disk(type = 's3', endpoint = 'http://localhost:9000/x', access_key_id = 'AK_LEAK_CANARY', secret_access_key = 'SK_LEAK_CANARY')"
 SECRET_BASE="http://baseuser:URL_BASE_LEAK_CANARY_4c1e7d@base.invalid/dir/"
+SECRET_CUSTOM="http://customuser:CUSTOM_URI_LEAK_CANARY_7b2e91@custom.invalid/p"
 
 # A query_log entry is written after the response is sent, so wait for it to appear.
 # An empty result after the last attempt is printed as is and fails the test.
@@ -45,7 +46,7 @@ $CLICKHOUSE_CLIENT -q "
 # the native protocol ships it as a Field dump, which cannot be restored.
 SESSION="05054_$CLICKHOUSE_DATABASE"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}&session_timeout=60" \
-    --data-binary "SET SQL_05054_plain = 'no-secret-here', SQL_05054_disk = $SECRET_DISK"
+    --data-binary "SET SQL_05054_plain = 'no-secret-here', SQL_05054_disk = $SECRET_DISK, SQL_05054_uri = '$SECRET_CUSTOM'"
 
 echo 'processes, custom settings (plain, disk)'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}" --data-binary "
@@ -64,3 +65,12 @@ echo 'processes, String setting with a URI password'
 $CLICKHOUSE_CLIENT -q "
     SELECT Settings['url_base'] FROM system.processes
     WHERE query_id = queryID() SETTINGS url_base = '$SECRET_BASE'"
+
+# A custom setting holding a plain String is not a secret CustomType, so only its value shape reaches it.
+echo 'processes, custom setting with a URI password'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}" --data-binary "
+    SELECT Settings['SQL_05054_uri'] FROM system.processes
+    WHERE query_id = queryID() SETTINGS log_comment = 'settings_map_mask_custom_uri'"
+
+echo 'query_log, custom setting with a URI password'
+read_query_log "Settings['SQL_05054_uri']" settings_map_mask_custom_uri
