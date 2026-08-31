@@ -183,6 +183,12 @@ void AllocationQueue::retrySuction(ResourceAllocation & allocation)
     if (is_not_usable || !allocation.increasing_hook.is_linked())
         return;
     chassert(allocation.memory_growth_recovery_pending || allocation.memory_growth_suction_priority);
+    if (allocation.memory_growth_recovery_pending)
+    {
+        allocation.memory_growth_suction_priority = true;
+        if (suspended_growth == &allocation)
+            suspended_growth = nullptr;
+    }
     allocation.memory_growth_suspended = false;
     memory_growth_suspension_changed = true;
     scheduleActivation();
@@ -613,14 +619,12 @@ void AllocationQueue::processActivation()
             const bool local_suction_exists = std::any_of(
                 running_allocations.begin(), running_allocations.end(), [](const ResourceAllocation & allocation)
                 {
-                    return allocation.memory_growth_suction_priority;
+                    return allocation.memory_growth_suction_priority && !allocation.memory_growth_recovery_pending;
                 });
             auto ready_for_suction = std::find_if(
                 increasing_allocations.begin(), increasing_allocations.end(), [this, local_suction_exists](const ResourceAllocation & allocation)
                 {
-                    if (!allocation.memory_growth_recovery_pending
-                        || allocation.memory_growth_suction_priority
-                        || allocation.memory_growth_suspended)
+                    if (!allocation.memory_growth_recovery_pending || allocation.memory_growth_suspended)
                         return false;
                     return !local_suction_exists && canEnterSuction(allocation);
                 });
@@ -729,7 +733,9 @@ bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
     IncreaseRequest * old_increase = increase;
     auto suction = std::find_if(increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
     {
-        return allocation.memory_growth_suction_priority && !allocation.memory_growth_suspended;
+        return allocation.memory_growth_suction_priority
+            && !allocation.memory_growth_suspended
+            && !allocation.memory_growth_recovery_pending;
     });
     auto eligible = std::find_if(increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
     {
