@@ -1,4 +1,5 @@
-option(ENABLE_SUBSTRAIT "Enable Substrait" ${ENABLE_PROTOBUF})
+# Disabled by default as nothing uses it yet.
+option(ENABLE_SUBSTRAIT "Enable Substrait" OFF)
 
 if(NOT ENABLE_SUBSTRAIT)
     message(STATUS "Not using Substrait")
