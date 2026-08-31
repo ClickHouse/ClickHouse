@@ -90,6 +90,12 @@ def test_system_logs_engine_expr(start_cluster):
     assert expected in node2.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
     )
+    comment = node2.query(
+        "SELECT comment FROM system.tables WHERE database='system' and name='query_log'"
+    )
+    assert ".examples" in comment
+    assert "Configured query log comment." in comment
+    assert "It is safe to truncate or drop this table at any time." in comment
 
 
 def test_system_logs_engine_s3_plain_rw_expr(start_cluster):
