@@ -175,6 +175,10 @@ public:
     /// that the policy actually applies in the oracle context and skips otherwise (keeps it sound).
     bool checkRowPolicyEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// FINAL-merge oracle (self-seeded): reading a ReplacingMergeTree(ver) table with FINAL must equal
+    /// the hand-written per-key max-version dedup argMax(v, ver) GROUP BY key.
+    bool checkFinalMergeReplacing(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
