@@ -79,6 +79,7 @@ extern const Event ASTFuzzerOracleTupleSummingChecks;
 extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
 extern const Event ASTFuzzerOracleDeleteMutationChecks;
 extern const Event ASTFuzzerOracleUpdateMutationChecks;
+extern const Event ASTFuzzerOracleMaterializeIndexChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3423,6 +3424,56 @@ bool QueryOracleChecker::checkUpdateMutation(const ASTSelectQuery &, const Conte
             context, &fixture);
 
     LOG_TRACE(logger, "UPDATE-mutation oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkMaterializeIndexInvariance(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded mutation oracle (task_40): a data-skipping index only prunes granules; adding one
+    /// and materializing it must not change the data. After ADD INDEX + MATERIALIZE INDEX the table
+    /// must equal a never-mutated snapshot; a difference is a real index-materialization / mutation
+    /// bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("matidx", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName("t");
+    const String snap = fixture.allocName("snap");
+    const String cols = " (k UInt64, g UInt8, v Int64, s String) ENGINE = MergeTree ORDER BY k";
+    if (!fixture.execute("CREATE TABLE " + t + cols) || !fixture.execute("CREATE TABLE " + snap + cols))
+        return false;
+    const String seed = " SELECT number, number % 8, toInt64(number) - 500, toString(number % 43) FROM numbers(1000)";
+    if (!fixture.execute("INSERT INTO " + t + seed) || !fixture.execute("INSERT INTO " + snap + seed))
+        return false;
+
+    const std::vector<std::pair<String, Field>> sync{
+        {"mutations_sync", Field(UInt64(2))}, {"alter_sync", Field(UInt64(2))}};
+    if (!fixture.execute("ALTER TABLE " + t + " ADD INDEX ix v TYPE minmax GRANULARITY 1", sync))
+        return false;
+    if (!fixture.execute("ALTER TABLE " + t + " MATERIALIZE INDEX ix", sync))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "MATERIALIZE-INDEX invariance oracle: {} vs snapshot {}", t, snap);
+
+    auto actual_opt = OracleExec::executeRows("SELECT k, g, v, s FROM " + t, context, ResultShape::SortedBag);
+    auto expected_opt = OracleExec::executeRows("SELECT k, g, v, s FROM " + snap, context, ResultShape::SortedBag);
+    if (!actual_opt || !expected_opt)
+        return false;
+
+    if (!OracleCompare::equal(*actual_opt, *expected_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "MATERIALIZE-INDEX invariance oracle mismatch!\n"
+                "after ADD INDEX + MATERIALIZE INDEX on {} ({} rows) vs snapshot ({} rows)\n{}",
+                t, actual_opt->size(), expected_opt->size(),
+                OracleCompare::diffSummary(*actual_opt, *expected_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "MATERIALIZE-INDEX invariance oracle passed");
     return true;
 }
 
