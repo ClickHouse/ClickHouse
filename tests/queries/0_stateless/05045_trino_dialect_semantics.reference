@@ -24,3 +24,6 @@ b	2
 -- ... and over an empty window frame
 \N
 1
+-- ... and for an EXPLAIN wrapper
+1
+-- LEFT JOIN UNNEST of an element type that cannot be Nullable is rejected

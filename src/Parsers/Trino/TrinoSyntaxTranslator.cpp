@@ -10,6 +10,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -1235,9 +1236,13 @@ private:
         if (splitTopLevelCommas(order_begin, order_end).size() != 1)
             throwNotSupported(name, "Multiple ORDER BY keys in an aggregate", "");
         size_t key_end = order_end;
+        std::optional<bool> nulls_first;
         if (key_end >= order_begin + 2 && isKeywordAt(key_end - 2, "NULLS")
             && (isKeywordAt(key_end - 1, "FIRST") || isKeywordAt(key_end - 1, "LAST")))
+        {
+            nulls_first = tokenIsKeyword(tokens[key_end - 1], "FIRST");
             key_end -= 2;
+        }
         bool descending = false;
         if (key_end > order_begin && (isKeywordAt(key_end - 1, "ASC") || isKeywordAt(key_end - 1, "DESC")))
         {
@@ -1247,6 +1252,15 @@ private:
         if (key_end == order_begin)
             throwNotSupported(name, "This ORDER BY in an aggregate", "");
         String key = translateSubRange(order_begin, key_end, /*type_context=*/ false);
+
+        /// Trino places NULLs last for `ASC` and first for `DESC` unless asked otherwise, while both
+        /// `arraySort` and `arrayReverseSort` always place them last. A NULLs-first ordering is
+        /// expressed with a leading null group in the sort key; its polarity follows the direction,
+        /// because `arrayReverseSort` orders the whole key descending.
+        if (nulls_first.value_or(descending))
+            key = descending
+                ? "tuple(if(isNull(" + key + "), 1, 0), " + key + ")"
+                : "tuple(if(isNull(" + key + "), 0, 1), " + key + ")";
 
         /// Trailing FILTER (WHERE ...) and OVER clauses attach to the rewritten aggregate.
         String tail;

@@ -10,6 +10,7 @@
 
 #include <Poco/String.h>
 
+#include <algorithm>
 #include <functional>
 #include <limits>
 #include <unordered_map>
@@ -237,8 +238,52 @@ void replaceIdentifier(ASTPtr & ast, const String & name, const ASTPtr & replace
         ast = replacement->clone();
         return;
     }
+    /// A nested lambda binds its own parameters: the substitution must never descend into its
+    /// parameter tuple, and must stop entirely when the nested lambda shadows the name.
+    if (auto * lambda = ast->as<ASTFunction>(); lambda && lambda->name == "lambda")
+    {
+        std::vector<String> parameters;
+        ASTPtr body;
+        if (tryGetLambda(ast, parameters, body))
+        {
+            if (std::find(parameters.begin(), parameters.end(), name) != parameters.end())
+                return;
+            replaceIdentifier(lambda->arguments->children[1], name, replacement);
+            return;
+        }
+    }
     for (auto & child : ast->children)
         replaceIdentifier(child, name, replacement);
+}
+
+/// Builds the three-valued rewrite of `all_match` / `any_match` / `none_match`. The predicate is
+/// evaluated into an array of codes: 0 for `false`, 1 for `true`, 2 for `NULL`. Presence of
+/// `decisive_code` gives `decisive_result`, otherwise a `NULL` anywhere makes the result `NULL`,
+/// otherwise the result is `default_result`. The plain ClickHouse helpers (`arrayAll`,
+/// `arrayExists`) cannot be used: they coerce a `NULL` predicate result to `false`.
+ASTPtr makeThreeValuedMatch(ASTFunction & function, ASTs & arguments, UInt64 decisive_code, UInt64 decisive_result, UInt64 default_result)
+{
+    requireArguments(function, arguments, 2, 2, "(array, function)");
+    std::vector<String> parameters;
+    ASTPtr body;
+    if (!tryGetLambda(arguments[1], parameters, body) || parameters.size() != 1)
+        throwWrongArguments(function, "a one-argument lambda");
+
+    ASTPtr code = makeFunctionWithArguments("ifNull",
+        {makeFunctionWithArguments("toUInt8", {body->clone()}), make_intrusive<ASTLiteral>(UInt64(2))});
+    ASTPtr codes = makeFunctionWithArguments("arrayMap", {makeLambda(parameters, code), arguments[0]});
+
+    auto has_code = [&codes](UInt64 code_value)
+    {
+        return makeFunctionWithArguments("has", {codes->clone(), make_intrusive<ASTLiteral>(code_value)});
+    };
+
+    return makeFunctionWithArguments("multiIf",
+        {has_code(decisive_code),
+         make_intrusive<ASTLiteral>(decisive_result),
+         has_code(2),
+         make_intrusive<ASTLiteral>(Field()),
+         make_intrusive<ASTLiteral>(default_result)});
 }
 
 /// Simple renames: the argument order and semantics match.
@@ -394,31 +439,44 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             requireArguments(function, arguments, 2, 2, "(array, function)");
             moveLambdaToFront(function, arguments, "arrayFilter");
         }},
-        {"all_match", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {"all_match", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
-            requireArguments(function, arguments, 2, 2, "(array, function)");
-            moveLambdaToFront(function, arguments, "arrayAll");
+            node = makeThreeValuedMatch(function, arguments, /*decisive_code=*/ 0, /*decisive_result=*/ 0, /*default_result=*/ 1);
         }},
-        {"any_match", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {"any_match", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
-            requireArguments(function, arguments, 2, 2, "(array, function)");
-            moveLambdaToFront(function, arguments, "arrayExists");
+            node = makeThreeValuedMatch(function, arguments, /*decisive_code=*/ 1, /*decisive_result=*/ 1, /*default_result=*/ 0);
         }},
         {"none_match", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
-            requireArguments(function, arguments, 2, 2, "(array, function)");
-            moveLambdaToFront(function, arguments, "arrayExists");
-            node = makeFunctionWithArguments("not", {node});
+            node = makeThreeValuedMatch(function, arguments, /*decisive_code=*/ 1, /*decisive_result=*/ 0, /*default_result=*/ 1);
         }},
         {"map_filter", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
             requireArguments(function, arguments, 2, 2, "(map, function)");
             moveLambdaToFront(function, arguments, "mapFilter");
         }},
-        {"zip_with", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {"zip_with", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
             requireArguments(function, arguments, 3, 3, "(array, array, function)");
-            moveLambdaToFront(function, arguments, "arrayMap");
+            /// Trino zips up to the length of the longer array and pads the shorter one with `NULL`,
+            /// while ClickHouse higher-order functions require all arrays to have equal sizes, so the
+            /// pairs are built with `arrayZipUnaligned` and the lambda is applied to the tuple elements.
+            std::vector<String> parameters;
+            ASTPtr body;
+            if (!tryGetLambda(arguments[2], parameters, body) || parameters.size() != 2)
+                throwWrongArguments(function, "a two-argument lambda");
+
+            const String element = "__trino_zip_element";
+            ASTPtr result = body->clone();
+            for (size_t i = 0; i < parameters.size(); ++i)
+                replaceIdentifier(result, parameters[i],
+                    makeFunctionWithArguments("tupleElement",
+                        {make_intrusive<ASTIdentifier>(element), make_intrusive<ASTLiteral>(UInt64(i + 1))}));
+
+            node = makeFunctionWithArguments("arrayMap",
+                {makeLambda({element}, result),
+                 makeFunctionWithArguments("arrayZipUnaligned", {arguments[0], arguments[1]})});
         }},
         {"array_first", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {

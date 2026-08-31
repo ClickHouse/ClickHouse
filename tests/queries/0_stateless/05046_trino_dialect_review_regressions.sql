@@ -37,4 +37,25 @@ FROM (VALUES 0) AS src (v)
 CROSS JOIN UNNEST(ARRAY[1, 2]) AS t (x)
 ORDER BY t.x;
 
+-- Both bracket-quoted spellings of a JSON path member are supported.
+SELECT json_extract('{"hello": 2}', '$[''hello'']');
+SELECT json_extract('{"a": {"b c": [7, 8]}}', '$.a[''b c''][0]');
+
+-- zip_with zips to the longer array and pads the shorter one with NULLs.
+SELECT zip_with(ARRAY[1, 2], ARRAY[10], (x, y) -> coalesce(x, 0) + coalesce(y, 0));
+SELECT zip_with(ARRAY[1], ARRAY[10, 20], (x, y) -> CAST(y AS BIGINT));
+
+-- The output lambda of reduce is inlined, but must not substitute into a nested lambda
+-- that shadows its parameter (the inner filter keeps its own `s`).
+SELECT reduce(ARRAY[1, 2, 3], CAST(0 AS BIGINT), (s, x) -> s + x, s -> s + cardinality(filter(ARRAY[10, 20, 30], s -> s > 15)));
+
+-- all_match / any_match / none_match are three-valued when the predicate returns NULL.
+SELECT all_match(ARRAY[NULL], x -> x), any_match(ARRAY[NULL], x -> x), none_match(ARRAY[NULL], x -> x);
+SELECT all_match(ARRAY[true, NULL], x -> x), any_match(ARRAY[false, NULL], x -> x), none_match(ARRAY[false, NULL], x -> x);
+SELECT all_match(ARRAY[false, NULL], x -> x), any_match(ARRAY[true, NULL], x -> x), none_match(ARRAY[true, NULL], x -> x);
+
+-- An explicit NULLS FIRST / NULLS LAST of an ordered aggregate is honored.
+SELECT array_agg(x ORDER BY x ASC NULLS FIRST), array_agg(x ORDER BY x DESC NULLS LAST) FROM (VALUES 1, NULL, 2) AS t(x);
+SELECT array_agg(x ORDER BY x ASC NULLS LAST), array_agg(x ORDER BY x DESC NULLS FIRST) FROM (VALUES 1, NULL, 2) AS t(x);
+
 DROP TABLE trino_review_regressions;

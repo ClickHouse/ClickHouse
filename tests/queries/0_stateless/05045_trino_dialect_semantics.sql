@@ -52,3 +52,14 @@ SELECT '-- ... and over an empty window frame';
 SELECT sum(x) OVER (ORDER BY x ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING) AS s
 FROM (VALUES 1, 2) AS t(x)
 ORDER BY x;
+
+SELECT '-- ... and for an EXPLAIN wrapper';
+SELECT count() > 0 FROM (
+    EXPLAIN QUERY TREE
+    SELECT r.y FROM (VALUES 1) AS l(x) LEFT JOIN (VALUES (2, 10)) AS r(x, y) ON l.x = r.x
+) WHERE explain LIKE '%Nullable%';
+
+SELECT '-- LEFT JOIN UNNEST of an element type that cannot be Nullable is rejected';
+SELECT u.x
+FROM (VALUES 1) AS s(d)
+LEFT JOIN UNNEST(ARRAY[ARRAY[1, 2]]) AS u(x) ON TRUE; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
