@@ -65,6 +65,7 @@ extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
 extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
 extern const Event ASTFuzzerOracleCodecRoundtripChecks;
 extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
+extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2742,6 +2743,69 @@ bool QueryOracleChecker::checkEngineEquivalence(const ASTSelectQuery &, const Co
     }
 
     LOG_TRACE(logger, "engine-equivalence oracle passed ({} rows)", mt_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkPartitionEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: PARTITION BY is transparent to query results. The same query over
+    /// identical data in a partitioned vs a non-partitioned MergeTree must return the identical
+    /// multiset; a difference is a real partition-pruning or cross-partition-merge bug. Only exact
+    /// (integer) aggregates are used, so cross-partition merging cannot differ by float rounding.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("partition", context);
+    if (!fixture.valid())
+        return false;
+
+    const String part = fixture.allocName("part");
+    const String nopart = fixture.allocName("nopart");
+    const String cols = " (k UInt64, g UInt8, v Int64, s String)";
+    if (!fixture.execute("CREATE TABLE " + part + cols + " ENGINE = MergeTree PARTITION BY g ORDER BY k"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + nopart + cols + " ENGINE = MergeTree ORDER BY k"))
+        return false;
+
+    const String seed = " SELECT number, number % 8, toInt64(number) * 3 - 500, toString(number % 53) FROM numbers(600)";
+    if (!fixture.execute("INSERT INTO " + part + seed) || !fixture.execute("INSERT INTO " + nopart + seed))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "partition-equivalence oracle: {} (partitioned) vs {}", part, nopart);
+
+    /// Representative queries; each must return the same multiset from both tables. {prefix, suffix}
+    /// with the table name spliced in between.
+    static const std::array<std::pair<std::string_view, std::string_view>, 3> query_shapes = {{
+        {"SELECT k, g, v, s FROM ", ""},
+        {"SELECT g, count(), sum(v), min(v), max(v) FROM ", " GROUP BY g"},
+        {"SELECT k, v FROM ", " WHERE v > 0 AND g < 4"},
+    }};
+
+    for (const auto & [prefix, suffix] : query_shapes)
+    {
+        const String qp = String(prefix) + part + String(suffix);
+        const String qn = String(prefix) + nopart + String(suffix);
+        auto part_rows_opt = OracleExec::executeRows(qp, context, ResultShape::SortedBag);
+        auto nopart_rows_opt = OracleExec::executeRows(qn, context, ResultShape::SortedBag);
+        if (!part_rows_opt || !nopart_rows_opt)
+            return false;
+
+        if (!OracleCompare::equal(*part_rows_opt, *nopart_rows_opt))
+        {
+            fixture.preserve();
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+                "partition-equivalence oracle mismatch!\n"
+                "partitioned ({} rows): {}\n"
+                "non-partitioned ({} rows): {}\n{}",
+                part_rows_opt->size(), qp,
+                nopart_rows_opt->size(), qn,
+                OracleCompare::diffSummary(*part_rows_opt, *nopart_rows_opt));
+        }
+    }
+
+    LOG_TRACE(logger, "partition-equivalence oracle passed");
     return true;
 }
 
