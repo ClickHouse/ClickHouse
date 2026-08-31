@@ -156,6 +156,10 @@ public:
     /// never-mutated snapshot; a difference is a real index-materialization bug.
     bool checkMaterializeIndexInvariance(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// De-Morgan / comparison-symmetry oracle (self-seeded): three-valued-logic identities that
+    /// must hold row-for-row over Nullable data (De Morgan, comparison operator symmetry).
+    bool checkPredicateDeMorgan(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

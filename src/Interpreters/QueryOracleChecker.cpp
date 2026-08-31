@@ -80,6 +80,7 @@ extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
 extern const Event ASTFuzzerOracleDeleteMutationChecks;
 extern const Event ASTFuzzerOracleUpdateMutationChecks;
 extern const Event ASTFuzzerOracleMaterializeIndexChecks;
+extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3474,6 +3475,59 @@ bool QueryOracleChecker::checkMaterializeIndexInvariance(const ASTSelectQuery &,
             context, &fixture);
 
     LOG_TRACE(logger, "MATERIALIZE-INDEX invariance oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkPredicateDeMorgan(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: three-valued-logic identities that must hold for every row over Nullable
+    /// data (each checked with IS NOT DISTINCT FROM so NULL==NULL counts as equal):
+    ///   NOT(p AND q) == (NOT p) OR (NOT q)      (De Morgan, valid in Kleene 3VL)
+    ///   NOT(p OR q)  == (NOT p) AND (NOT q)
+    ///   (a < b)  == (b > a),  (a <= b) == (b >= a),  (a = b) == (b = a)   (comparison symmetry)
+    /// The probe counts violating rows across all identities; a non-zero count is a real bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("demorgan", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, a Nullable(Int64), b Nullable(Int64)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number,"
+            " if(number % 4 = 0, NULL, toInt64(number % 11) - 5),"
+            " if(number % 5 = 0, NULL, toInt64(number % 11) - 5) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "De-Morgan predicate oracle: {}", tbl);
+
+    const String probe =
+        "SELECT countIf(NOT ((NOT((a > 0) AND (b > 0))) IS NOT DISTINCT FROM (NOT(a > 0) OR NOT(b > 0))))"
+        " + countIf(NOT ((NOT((a > 0) OR (b > 0))) IS NOT DISTINCT FROM (NOT(a > 0) AND NOT(b > 0))))"
+        " + countIf(NOT ((a < b) IS NOT DISTINCT FROM (b > a)))"
+        " + countIf(NOT ((a <= b) IS NOT DISTINCT FROM (b >= a)))"
+        " + countIf(NOT ((a = b) IS NOT DISTINCT FROM (b = a)))"
+        " FROM " + tbl;
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false;
+    UInt64 violations = 0;
+    try { violations = value->safeGet<UInt64>(); } catch (...) { return false; }
+
+    if (violations != 0)
+        raiseOracleMismatch(
+            fmt::format(
+                "De-Morgan predicate oracle mismatch!\n"
+                "{} rows violate a De Morgan / comparison-symmetry identity on table {}.\nProbe: {}",
+                violations, tbl, probe),
+            context, &fixture);
+
+    LOG_TRACE(logger, "De-Morgan predicate oracle passed");
     return true;
 }
 
