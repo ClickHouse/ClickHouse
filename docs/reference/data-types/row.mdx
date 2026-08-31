@@ -116,4 +116,7 @@ mirrors: a tuple literal such as `('alpha', 10, 'x')` in `TSV` and `Values`, and
 an object such as `{"a":"alpha","b":10,"c":"x"}` in `JSON`. Only the binary
 storage layout differs. Comparison follows `Tuple` as well: a `Row` is comparable
 (lexicographically, field by field) when all of its fields are comparable, so it
-can be used in `ORDER BY` and with comparison operators.
+can be used in `ORDER BY` and with comparison operators. When a `Row` column is
+part of a `MergeTree` sorting key, the index analyzes predicates on it (`=`,
+range comparisons, `IN`) like predicates on the equivalent named `Tuple`, so
+granule pruning works the same way.

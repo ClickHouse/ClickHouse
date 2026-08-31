@@ -1,5 +1,8 @@
 #include <DataTypes/DataTypeRow.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Serializations/SerializationRow.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
@@ -169,6 +172,50 @@ void DataTypeRow::updateHashImpl(SipHash & hash) const
         hash.update(names[i]);
         elems[i]->updateHash(hash);
     }
+}
+
+
+DataTypePtr lowerRowTypesToTuples(const DataTypePtr & type)
+{
+    if (const auto * row_type = typeid_cast<const DataTypeRow *>(type.get()))
+    {
+        DataTypes elements = row_type->getElements();
+        for (auto & element : elements)
+            element = lowerRowTypesToTuples(element);
+        return std::make_shared<DataTypeTuple>(elements, row_type->getElementNames());
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements = tuple_type->getElements();
+        bool changed = false;
+        for (auto & element : elements)
+        {
+            auto lowered = lowerRowTypesToTuples(element);
+            changed |= lowered.get() != element.get();
+            element = std::move(lowered);
+        }
+        if (!changed)
+            return type;
+        return tuple_type->hasExplicitNames()
+            ? std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames())
+            : std::make_shared<DataTypeTuple>(elements);
+    }
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto lowered = lowerRowTypesToTuples(array_type->getNestedType());
+        if (lowered.get() == array_type->getNestedType().get())
+            return type;
+        return std::make_shared<DataTypeArray>(lowered);
+    }
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto lowered_key = lowerRowTypesToTuples(map_type->getKeyType());
+        auto lowered_value = lowerRowTypesToTuples(map_type->getValueType());
+        if (lowered_key.get() == map_type->getKeyType().get() && lowered_value.get() == map_type->getValueType().get())
+            return type;
+        return std::make_shared<DataTypeMap>(lowered_key, lowered_value);
+    }
+    return type;
 }
 
 

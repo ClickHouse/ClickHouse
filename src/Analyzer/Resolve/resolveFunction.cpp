@@ -2114,10 +2114,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// side is lowered to its named Tuple equivalent, like in comparisons.
         if (in_first_argument->getNodeType() != QueryTreeNodeType::LAMBDA)
         {
-            if (const auto * lhs_row_type = typeid_cast<const DataTypeRow *>(in_first_argument->getResultType().get()))
+            if (typeid_cast<const DataTypeRow *>(in_first_argument->getResultType().get()))
                 in_first_argument = castNodeToType(
                     in_first_argument,
-                    std::make_shared<DataTypeTuple>(lhs_row_type->getElements(), lhs_row_type->getElementNames()),
+                    lowerRowTypesToTuples(in_first_argument->getResultType()),
                     scope);
         }
 

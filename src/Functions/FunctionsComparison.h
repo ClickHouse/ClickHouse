@@ -62,14 +62,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Row shares ColumnTuple with Tuple, so a Row argument is compared as the equivalent named Tuple.
-static DataTypePtr lowerRowToTuple(const DataTypePtr & type)
-{
-    if (const auto * row = typeid_cast<const DataTypeRow *>(type.get()))
-        return std::make_shared<DataTypeTuple>(row->getElements(), row->getElementNames());
-    return type;
-}
-
 /// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
 /// with a non-string type on the other return true to not allow comparison
 static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, const DataTypePtr & right_type)
@@ -1789,8 +1781,9 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        /// Row shares ColumnTuple with Tuple, so a Row argument is compared as the equivalent named Tuple.
         if (typeid_cast<const DataTypeRow *>(arguments[0].get()) || typeid_cast<const DataTypeRow *>(arguments[1].get()))
-            return getReturnTypeImpl(DataTypes{lowerRowToTuple(arguments[0]), lowerRowToTuple(arguments[1])});
+            return getReturnTypeImpl(DataTypes{lowerRowTypesToTuples(arguments[0]), lowerRowTypesToTuples(arguments[1])});
 
         if ((name == NameEquals::name || name == NameNotEquals::name))
         {
@@ -1945,7 +1938,7 @@ public:
         {
             ColumnsWithTypeAndName lowered = arguments;
             for (auto & argument : lowered)
-                argument.type = lowerRowToTuple(argument.type);
+                argument.type = lowerRowTypesToTuples(argument.type);
             return executeImpl(lowered, result_type, input_rows_count);
         }
 

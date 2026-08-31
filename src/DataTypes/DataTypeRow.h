@@ -56,4 +56,9 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 };
 
+/// Replace every Row inside `type` with its named Tuple equivalent, recursing through
+/// Tuple, Array and Map. Row shares ColumnTuple with Tuple, so the value representation
+/// is unchanged - only the type is relabeled.
+DataTypePtr lowerRowTypesToTuples(const DataTypePtr & type);
+
 }

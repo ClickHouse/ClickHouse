@@ -31,43 +31,6 @@ extern const int UNKNOWN_ELEMENT_OF_ENUM;
 namespace
 {
 
-/// Replace every Row inside `type` with its named Tuple equivalent; the columns are
-/// ColumnTuple either way, so only the type needs rewriting.
-DataTypePtr lowerRowTypesToTuples(const DataTypePtr & type)
-{
-    if (const auto * row_type = typeid_cast<const DataTypeRow *>(type.get()))
-    {
-        DataTypes elements = row_type->getElements();
-        for (auto & element : elements)
-            element = lowerRowTypesToTuples(element);
-        return std::make_shared<DataTypeTuple>(elements, row_type->getElementNames());
-    }
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        DataTypes elements = tuple_type->getElements();
-        bool changed = false;
-        for (auto & element : elements)
-        {
-            auto lowered = lowerRowTypesToTuples(element);
-            changed |= lowered.get() != element.get();
-            element = std::move(lowered);
-        }
-        if (!changed)
-            return type;
-        return tuple_type->hasExplicitNames()
-            ? std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames())
-            : std::make_shared<DataTypeTuple>(elements);
-    }
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-    {
-        auto lowered = lowerRowTypesToTuples(array_type->getNestedType());
-        if (lowered.get() == array_type->getNestedType().get())
-            return type;
-        return std::make_shared<DataTypeArray>(lowered);
-    }
-    return type;
-}
-
 /// Unwrap Nullable to get to the underlying Tuple type.
 /// Also unwrap LowCardinality for robustness, even though LowCardinality(Tuple) is not supported.
 const DataTypeTuple * getTupleType(const DataTypePtr & type)

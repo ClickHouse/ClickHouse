@@ -1079,11 +1079,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         /// The rewrites and set building below recognize tuple semantics only via Tuple,
         /// so a Row left-hand side is lowered to its named Tuple equivalent, like in the
         /// query-tree analyzer.
-        if (const auto * left_row_type = typeid_cast<const DataTypeRow *>(left_argument_type.get()))
+        if (typeid_cast<const DataTypeRow *>(left_argument_type.get()))
         {
             if (!data.only_consts)
             {
-                auto lowered_type = std::make_shared<DataTypeTuple>(left_row_type->getElements(), left_row_type->getElementNames());
+                auto lowered_type = lowerRowTypesToTuples(left_argument_type);
                 ASTPtr replacement = makeASTFunction(
                     node.name,
                     makeASTFunction(
