@@ -1786,9 +1786,9 @@ public:
     /// cached result stays valid for the rest of the traversal.
     std::unordered_map<QueryTreeNodePtr, bool> correlated_subquery_cache;
 
-    /// One entry per query level: whether that level's GROUP BY keys are wrapped in Nullable after
-    /// aggregation. Such a key keeps its declared type, while an expression equal to it elsewhere in
-    /// the same level is a Nullable-converted copy of it.
+    /// One entry per query level: whether that level's `GROUP BY` keys are wrapped in `Nullable`
+    /// after aggregation. Such a key keeps its declared type, while an expression equal to it
+    /// elsewhere in the same level is a `Nullable`-converted copy of it.
     std::vector<bool> nullable_group_by_keys_stack;
 
     bool subtreeContainsCorrelatedSubquery(const QueryTreeNodePtr & node)
@@ -1847,8 +1847,8 @@ public:
 
         if (function_node->getFunctionName() == "and")
         {
-            /// Neither optimization below can move a Nullable copy of an expression, so where the
-            /// GROUP BY keys become Nullable they must not move the expression such a copy is of.
+            /// Neither optimization below can move a `Nullable` copy of an expression, so where the
+            /// `GROUP BY` keys become `Nullable` they must not move the expression such a copy is of.
             if (!nullable_group_by_keys_stack.empty() && nullable_group_by_keys_stack.back())
                 return;
 
