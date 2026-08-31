@@ -60,7 +60,7 @@ PageCacheWriter::PageCacheWriter(
 {
 }
 
-size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim & claim)
+size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const FillRole & role)
 {
     /// A bypass tier populates nothing - skip before any `getOrSet`.
     if (bypass_if_missing)
@@ -107,10 +107,12 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
     return loaded ? range_member.size : 0;
 }
 
-CacheWriter::Claim PageCacheWriter::claimLeadRole()
+CacheWriter::FillRole PageCacheWriter::takeFillRole()
 {
+    /// This tier elects no downloader, so the role only answers "is there anything left to fill".
     /// Re-probe read-only: if the block was cached by a concurrent query since `resolve`, adopt its cell
-    /// (`committed()` then reports the whole block) and hold no claim; otherwise hold the claim to fill it.
+    /// (`committed()` then reports the whole block) and hold nothing; otherwise take the role to fill it.
+    /// Two readers can both take it and both fetch; `getOrSet` keeps the first write.
     bool resident = false;
     if (auto got = cache->get(PageCacheByteRange{range_member.offset, range_member.size}.hash(file.baseHash()), inject_eviction))
     {
@@ -119,7 +121,7 @@ CacheWriter::Claim PageCacheWriter::claimLeadRole()
         resident = true;
     }
 
-    return makeClaim(/*held=*/!resident, /*release=*/nullptr);
+    return makeFillRole(/*held=*/!resident, /*release=*/nullptr);
 }
 
 ChainedBuffers PageCacheWriter::read(ByteRange sub)
