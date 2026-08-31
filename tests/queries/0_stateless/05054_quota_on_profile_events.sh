@@ -9,10 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Quotas and users are server-global entities, so scope the names to this test's database.
 # Do not assign anything to shared users like `default`.
-U1="user1_05048_${CLICKHOUSE_DATABASE}"
-U2="user2_05048_${CLICKHOUSE_DATABASE}"
-Q1="quota1_05048_${CLICKHOUSE_DATABASE}"
-Q2="quota2_05048_${CLICKHOUSE_DATABASE}"
+U1="user1_05054_${CLICKHOUSE_DATABASE}"
+U2="user2_05054_${CLICKHOUSE_DATABASE}"
+Q1="quota1_05054_${CLICKHOUSE_DATABASE}"
+Q2="quota2_05054_${CLICKHOUSE_DATABASE}"
 
 cleanup()
 {
