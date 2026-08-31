@@ -46,16 +46,21 @@ SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%paa%' SETTINGS
 SYSTEM FLUSH LOGS query_log;
 
 -- Q1 (rows budget): TextIndexDiscardPatternScan set; Q2 (covers every row): TextIndexDiscardPatternQueryLowSelectivity set.
+-- `no_postings_read` is the contract itself: both guards must act *before* any posting list is
+-- read, so a regression that materializes postings and only then discards would still set the
+-- counters above while failing here.
 SELECT 'q1',
     ProfileEvents['TextIndexDiscardPatternScan'] > 0 AS discarded_scan,
-    ProfileEvents['TextIndexDiscardPatternQueryLowSelectivity'] > 0 AS bypassed_low_selectivity
+    ProfileEvents['TextIndexDiscardPatternQueryLowSelectivity'] > 0 AS bypassed_low_selectivity,
+    ProfileEvents['TextIndexReadPostings'] = 0 AS no_postings_read
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_guards_q1';
 
 SELECT 'q2',
     ProfileEvents['TextIndexDiscardPatternScan'] > 0 AS discarded_scan,
-    ProfileEvents['TextIndexDiscardPatternQueryLowSelectivity'] > 0 AS bypassed_low_selectivity
+    ProfileEvents['TextIndexDiscardPatternQueryLowSelectivity'] > 0 AS bypassed_low_selectivity,
+    ProfileEvents['TextIndexReadPostings'] = 0 AS no_postings_read
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_guards_q2';
