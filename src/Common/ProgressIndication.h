@@ -73,6 +73,10 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return static_cast<double>(getElapsedNanoseconds()) / 1e9; }
 
+    /// Wall-clock time since the query started, measured on the client. Unlike `elapsedSeconds()`
+    /// this never prefers the server-reported figure, whose last update a failing query never sends.
+    double clientElapsedSeconds() const { return static_cast<double>(watch.elapsed()) / 1e9; }
+
     struct MemoryUsage
     {
         UInt64 total = 0;

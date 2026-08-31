@@ -60,8 +60,7 @@ echo "3. clickhouse-client (no --chime), 1.5s < default 5s threshold: $(bel_coun
 # Case 4: `--chime 1`, slow query that ends in an error, stderr redirected — expect no
 # `BEL` (suppressed by the TTY guard) AND verify the error path actually fires so the
 # test would loudly notice if `throwIf` semantics or the error path itself changes.
-# `sleep` is nested inside `throwIf`'s argument so it always runs before the throw;
-# as sibling projection columns their evaluation order would be unspecified.
+# `sleep` is nested inside `throwIf`'s argument so it always runs before the throw.
 ${CLICKHOUSE_CLIENT} --chime 1 -q "SELECT throwIf(sleep(1.5) = 0, 'expected error')" 2> "$err4" > /dev/null
 rc=$?
 if [ "$rc" -eq 0 ]; then
@@ -105,9 +104,9 @@ echo "8. clickhouse-client --chime 0, slow query (~6s > default 5s threshold), p
 
 # Case 9: `--chime 10`, fast query, stderr attached to a pty — expect no `BEL`.
 # This is the only path where `BEL` is emitted, so it is the one place where a
-# regression of the threshold gate (`elapsedSeconds() >= chime_threshold_seconds`)
-# would actually surface. Cases 1-6 cannot catch such a regression because the
-# TTY guard suppresses `BEL` regardless of the threshold.
+# regression of the threshold gate would actually surface. Cases 1-6 cannot catch
+# such a regression because the TTY guard suppresses `BEL` regardless of the
+# threshold.
 /usr/bin/script -qc "${CLICKHOUSE_CLIENT} --chime 10 -q 'SELECT sleep(0.1) FORMAT Null'" /dev/null > "$tty9" 2>&1
 echo "9. clickhouse-client --chime 10, fast query (0.1s < 10s threshold), pty stderr: $(bel_count "$tty9")"
 
@@ -126,9 +125,10 @@ echo "10. clickhouse-client (no --chime), slow query (~6s > default 5s threshold
 # place where the "chime on error in TTY" contract is exercised: case 4 covers
 # the non-TTY suppression branch and would still pass if a regression emitted
 # `BEL` only on success and silently dropped it on errors.
-# `sleep` is nested inside `throwIf`'s argument so it always runs before the throw;
-# as sibling projection columns their evaluation order would be unspecified.
-/usr/bin/script -eqc "${CLICKHOUSE_CLIENT} --chime 1 -q \"SELECT throwIf(sleep(1.5) = 0, 'expected error')\"" /dev/null > "$tty11" 2>&1
+# `sleep` is nested inside `throwIf`'s argument so it always runs before the throw. The pinned
+# `interactive_delay` keeps the server's partial elapsed value under the threshold, so the
+# error path is exercised on every run rather than under an unlucky progress cadence.
+/usr/bin/script -eqc "${CLICKHOUSE_CLIENT} --chime 1 --interactive_delay 800000 -q \"SELECT throwIf(sleep(1.5) = 0, 'expected error')\"" /dev/null > "$tty11" 2>&1
 rc=$?
 if [ "$rc" -eq 0 ]; then
     case11_status="FAIL: query unexpectedly succeeded"

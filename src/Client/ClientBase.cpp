@@ -3132,7 +3132,7 @@ void ClientBase::processParsedSingleQuery(
     UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 5);
     if (chime_threshold_seconds > 0
         && stderr_is_a_tty
-        && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+        && progress_indication.clientElapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
     {
         error_stream << '\x07';
         error_stream.flush();
