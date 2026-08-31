@@ -35,6 +35,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -778,6 +779,14 @@ protected:
                     || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
                         && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})));
 
+                /// `SHOW CREATE DICTIONARY` is authorized by `SHOW DICTIONARIES`, which `SHOW COLUMNS` does not
+                /// imply, so that privilege alone makes a dictionary's CREATE query readable. A non-null
+                /// configuration holds exactly for a `CREATE DICTIONARY` object.
+                const auto * storage_dictionary = table ? table->as<StorageDictionary>() : nullptr;
+                const bool can_show_create_query = can_show_columns
+                    || (storage_dictionary && storage_dictionary->getConfiguration()
+                        && access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, table_name));
+
                 TableLockHolder lock;
 
                 /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
@@ -889,7 +898,7 @@ protected:
                         .engine_full = columns_mask[src_index + 1] != 0,
                         .as_select = columns_mask[src_index + 2] != 0};
 
-                    auto rendered = can_expose_metadata && can_show_columns
+                    auto rendered = can_expose_metadata && can_show_create_query
                         ? database->getRenderedCreateTableQuery(table_name, context, fields)
                         : renderCreateQuery(nullptr, RenderOptions{}, fields);
 

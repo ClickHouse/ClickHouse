@@ -36,6 +36,9 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
         SOURCE(CLICKHOUSE(DB '${db}' TABLE 'dict_src')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);
     CREATE DICTIONARY ${db}.leaky_dict (id UInt64, v String) PRIMARY KEY id
         SOURCE(CLICKHOUSE(DB '${dbx}' TABLE 'hidden_src')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);
+    -- Reports engine 'Dictionary' exactly like local_dict above, but it is a plain table whose
+    -- CREATE query carries a column list of its own, so SHOW CREATE TABLE governs it.
+    CREATE TABLE ${db}.dict_engine_tbl (id UInt64, v String) ENGINE = Dictionary('${db}.local_dict');
 
     CREATE TABLE ${db}.local_target (hidden_col String) ENGINE = Memory;
     CREATE TABLE ${dbx}.mv_target (hidden_col String) ENGINE = Memory;
@@ -106,6 +109,27 @@ schema_probe
 ${CLICKHOUSE_CLIENT} --user="${user}" --query "
     SELECT empty(view_definition) FROM information_schema.views
     WHERE table_schema = '${db}' AND table_name = 'dep_view';"
+
+echo "--- a dictionary's CREATE query follows SHOW CREATE DICTIONARY, not SHOW COLUMNS ---"
+# ${user} still holds only SHOW TABLES on ${db}.*. The key expressions and index types stay
+# withheld after the SHOW DICTIONARIES grant, and dict_engine_tbl (a plain table declared as
+# ENGINE = Dictionary, granted the same privilege) stays withheld entirely.
+dictionary_probe() {
+    ${CLICKHOUSE_CLIENT} --user="${user}" --query "
+        SELECT notEmpty(create_table_query), notEmpty(partition_key), notEmpty(skipping_indices_types)
+        FROM system.tables WHERE database = '${db}' AND name = 'local_dict';
+        SELECT notEmpty(create_table_query) FROM system.tables
+            WHERE database = '${db}' AND name = 'dict_engine_tbl';
+    "
+}
+dictionary_probe
+${CLICKHOUSE_CLIENT} --query "
+    GRANT SHOW DICTIONARIES ON ${db}.local_dict TO ${user};
+    GRANT SHOW DICTIONARIES ON ${db}.dict_engine_tbl TO ${user};"
+dictionary_probe
+# Each row above matches what the interpreter hands the same user for the same object.
+${CLICKHOUSE_CLIENT} --user="${user}" --query "SHOW CREATE DICTIONARY ${db}.local_dict" 2>&1 | grep -o -m1 'CREATE DICTIONARY'
+${CLICKHOUSE_CLIENT} --user="${user}" --query "SHOW CREATE TABLE ${db}.dict_engine_tbl" 2>&1 | grep -o -m1 ACCESS_DENIED
 
 echo "--- another database's table names are filtered out of the dependency arrays ---"
 # Database names are random per run, so every assertion is a membership test. The four

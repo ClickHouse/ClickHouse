@@ -52,6 +52,8 @@ Test schema commands with target permission
 DESCRIBE OK
 SHOW COLUMNS OK
 ENGINE = Alias
+Test table and persisted metadata with target permission
+1	1	1	1	1	1	1
 Test system.tables with an Alias database-level grant
 1	1	1	1
 Test other metadata tables with an Alias database-level grant

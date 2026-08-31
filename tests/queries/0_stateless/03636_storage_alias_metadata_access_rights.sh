@@ -251,6 +251,22 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "DESCRIBE 
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "SHOW COLUMNS FROM test_alias_access FORMAT Null; SELECT 'SHOW COLUMNS OK';"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access FORMAT TSVRaw;" | grep -o "ENGINE = Alias" | uniq
 
+echo "Test table and persisted metadata with target permission"
+# The same seven flags the two column-scoped blocks above assert as withheld. Target `SHOW
+# COLUMNS` is what changed, so these must come back through the `Alias` here.
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        notEmpty(partition_key),
+        notEmpty(sorting_key),
+        notEmpty(primary_key),
+        notEmpty(sampling_key),
+        notEmpty(skipping_indices_types),
+        notEmpty(create_table_query),
+        notEmpty(engine_full)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
+
 # Test database-level access shortcuts with a cross-database `Alias`
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE DATABASE ${alias_database};
