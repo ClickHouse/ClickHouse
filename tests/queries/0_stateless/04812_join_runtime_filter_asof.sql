@@ -36,7 +36,7 @@ SETTINGS enable_join_runtime_filters = 1;
 
 SELECT '--- runtime filter IS applied to equality key for ASOF INNER JOIN ---';
 
-SELECT trimLeft(explain)
+SELECT replaceRegexpOne(explain, '^[\\s└├─│]+', '')
 FROM (
     EXPLAIN PLAN
     SELECT l.id, l.ts, r.ts, r.val
