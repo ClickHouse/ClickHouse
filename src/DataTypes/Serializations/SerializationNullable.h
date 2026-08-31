@@ -27,6 +27,7 @@ public:
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
     const SerializationPtr & getNested() const { return nested; }
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
