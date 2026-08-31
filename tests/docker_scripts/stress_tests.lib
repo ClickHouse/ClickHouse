@@ -350,10 +350,20 @@ function check_logs_for_critical_errors()
 
 function collect_query_and_trace_logs()
 {
+    # `--client`: dump via the running server. Required on a CAS disk because
+    # clickhouse-local starts with uuid 0 and refuses to claim the server-root.
+    local use_client=0
+    if [[ "${1:-}" == "--client" ]]; then
+        use_client=1
+    fi
     for table in query_log trace_log metric_log aggregated_zookeeper_log
     do
         # Don't ignore errors here, it leads to ignore sanitizer reports when running clickhouse-local
-        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
+        if [[ "$use_client" == "1" ]]; then
+            clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
+        else
+            clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
+        fi
     done
 }
 

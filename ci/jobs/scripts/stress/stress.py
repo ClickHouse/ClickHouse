@@ -128,6 +128,14 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     options = []
     client_options = []
 
+    # Honour the CAS-as-default MergeTree policy so clickhouse-test skips
+    # `no-cas-storage` / `no-object-storage` / `no-s3-storage` tests. Without
+    # this flag those tests still run and fail against a CAS disk.
+    if os.environ.get("USE_CAS_S3_STORAGE_FOR_MERGE_TREE") == "1":
+        options.append("--cas-s3-storage")
+    elif os.environ.get("USE_CAS_STORAGE_FOR_MERGE_TREE") == "1":
+        options.append("--cas-storage")
+
     if upgrade_check:
         # Disable settings randomization for upgrade checks to prevent test failures caused by missing settings in old version
         options.append("--no-random-settings")

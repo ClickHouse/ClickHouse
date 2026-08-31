@@ -1549,6 +1549,8 @@ if __name__ == "__main__":
             res = ch.start_minio(param)
         elif command == "start_azurite":
             res = ch.start_azurite()
+        elif command == "start_rustfs":
+            res = ch.start_rustfs()
         else:
             raise ValueError(f"Unknown command: {command}")
     except Exception:

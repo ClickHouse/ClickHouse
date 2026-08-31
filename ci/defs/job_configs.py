@@ -875,6 +875,11 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_ASAN_UBSAN],
         ),
         Job.ParamSet(
+            parameter="amd_asan_ubsan, cas s3 storage",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
             parameter="amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.DEB_AMD_TSAN],

@@ -142,7 +142,12 @@ def get_additional_envs(info, check_name: str) -> List[str]:
             "AZURE_STORAGE_ACCOUNT_URL=$AZURE_STORAGE_ACCOUNT_URL",
         ])
 
-    if "s3" in check_name:
+    # "cas s3" must win over the plain "s3" substring. Otherwise
+    # `USE_S3_STORAGE_FOR_MERGE_TREE=1` is also set and install.sh's
+    # if/elif chain installs the plain-S3 default policy instead of CAS.
+    if "cas s3" in check_name:
+        result.append("USE_CAS_S3_STORAGE_FOR_MERGE_TREE=1")
+    elif "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
     result.append(
