@@ -253,6 +253,11 @@ protected:
 
     /// Record an error of the current or just-failed query into the AI context buffer.
     void recordErrorForAIContext(std::string_view query_or_input);
+
+    /// The same, for a query that failed to parse. In interactive mode the parse error is only
+    /// printed - no exception is set and no query is ever started - so there is nothing for
+    /// `recordErrorForAIContext` to pick up, and the agent would not see the failed query at all.
+    void recordParseErrorForAIContext(std::string_view query, const String & message);
 #endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;

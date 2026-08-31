@@ -1,0 +1,176 @@
+import json
+import os
+import pty
+import select
+import shlex
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+TIMEOUT_SECONDS = 60
+
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+# The reply of the mock provider: no tool calls, so the agent finishes the turn right away.
+ANSWER = "MOCK-ANSWER"
+
+requests = []
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        requests.append(json.loads(self.rfile.read(length)))
+
+        body = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": ANSWER},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def make_config(port):
+    """A client configuration that points the AI agent at the mock provider. The credentials
+    come from the configuration and not from the environment, so the agent does not ask for
+    the confirmation of using an API key found in the environment."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).strip(".python") + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse><ai>"
+            "<provider>openai</provider>"
+            "<api_key>mock-key</api_key>"
+            f"<base_url>http://127.0.0.1:{port}/v1</base_url>"
+            "<model>gpt-4o</model>"
+            "</ai></clickhouse>"
+        )
+    return path
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def main():
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    base = shlex.split(os.environ["CLICKHOUSE_LOCAL"])
+    argv = base + [
+        "--config-file",
+        make_config(server.server_port),
+        "--history_file=/dev/null",
+    ]
+
+    child_pid, master = pty.fork()
+    if child_pid == 0:
+        os.environ["TERM"] = "xterm"
+        # An API key in the environment would take precedence over the configured mock provider.
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.execv(base[0], argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        # A query that does not parse: the client only prints the syntax error, no query is
+        # ever started and no exception is raised, so this is the case most likely to be
+        # missing from the context of the agent - and the one the user asks it to fix.
+        os.write(master, b"ELECT 1\n")
+        drain(master, debug_log_fd, 1.0)
+
+        os.write(master, b"? fix this query\n")
+        read_until(master, debug_log_fd, lambda o: ANSWER in o, TIMEOUT_SECONDS)
+
+        question = ""
+        if requests:
+            for message in requests[-1]["messages"]:
+                if message["role"] == "user":
+                    question = str(message["content"])
+                    break
+
+        ok = (
+            "<recent_queries>" in question
+            and "Query: ELECT 1" in question
+            and "Syntax error" in question
+            # The syntax error is highlighted for the terminal; the markup must not leak
+            # into the prompt of the model.
+            and "\x1b" not in question
+        )
+        print(f"recent_queries_contain_the_failed_query: {'OK' if ok else 'FAIL'}")
+        if not ok:
+            debug_log_fd.write("question: " + repr(question) + "\n")
+    finally:
+        os.write(master, b"exit\n")
+        drain(master, debug_log_fd, 1.0)
+        os.close(master)
+        debug_log_fd.close()
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()

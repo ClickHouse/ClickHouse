@@ -216,6 +216,40 @@ namespace
 
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
+#if USE_CLIENT_AI
+/// Drop the ANSI escape sequences from a message formatted for the terminal, so it can be reused
+/// where the markup is not rendered (the prompt of the AI agent).
+String stripTerminalEscapeSequences(const String & text)
+{
+    String result;
+    result.reserve(text.size());
+
+    for (size_t i = 0; i < text.size();)
+    {
+        if (text[i] != '\x1b')
+        {
+            result += text[i];
+            ++i;
+            continue;
+        }
+
+        ++i;
+        /// A CSI sequence (`ESC [`, which is what the highlighting uses) runs until a byte in the
+        /// `@`..`~` range; anything else is treated as a two-character escape sequence.
+        if (i < text.size() && text[i] == '[')
+        {
+            ++i;
+            while (i < text.size() && !(text[i] >= '@' && text[i] <= '~'))
+                ++i;
+        }
+        if (i < text.size())
+            ++i;
+    }
+
+    return result;
+}
+#endif
+
 /// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
 bool hasStreamingTableExpression(const DB::IAST & ast)
 {
@@ -497,6 +531,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     std::unique_ptr<IParserBase> parser;
     ASTPtr res;
 
+    /// `tryParseQuery` moves `pos` even when the parse fails, so the beginning of the text being
+    /// parsed is remembered here, for the AI context buffer to record what the user has typed.
+    [[maybe_unused]] const char * const query_begin = pos;
+
     size_t max_length = 0;
 
     if (!allow_multi_statements)
@@ -660,6 +698,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             {
                 error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
                 client_exception.reset(e.clone());
+#if USE_CLIENT_AI
+                recordParseErrorForAIContext({query_begin, static_cast<size_t>(end - query_begin)}, getExceptionMessage(e, false));
+#endif
                 return nullptr;
             }
             throw;
@@ -695,12 +736,21 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             {
                 error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
                 client_exception.reset(e.clone());
+#if USE_CLIENT_AI
+                recordParseErrorForAIContext({query_begin, static_cast<size_t>(end - query_begin)}, getExceptionMessage(e, false));
+#endif
                 return nullptr;
             }
 
             if (!res)
             {
                 error_stream << std::endl << message << std::endl << std::endl;
+#if USE_CLIENT_AI
+                /// A parse failure is reported without an exception here, so it is recorded now:
+                /// otherwise the query the user has just typed and its error would be missing from
+                /// the context of the AI agent, which is exactly the case they ask it to fix.
+                recordParseErrorForAIContext({query_begin, static_cast<size_t>(end - query_begin)}, message);
+#endif
                 return nullptr;
             }
         }
@@ -4577,6 +4627,16 @@ void ClientBase::recordErrorForAIContext(std::string_view query_or_input)
     /// standalone; it must keep the AI-initiated flag, so a failed query of the agent is not
     /// replayed into the conversation as if the user had typed it.
     ai_query_context->recordError(String(query_or_input), message, /*from_ai=*/ ai_running_query);
+}
+
+void ClientBase::recordParseErrorForAIContext(std::string_view query, const String & message)
+{
+    if (!is_interactive || !ai_query_context)
+        return;
+
+    /// The parse errors are formatted for the terminal (they highlight the position of the error),
+    /// but the recorded text goes into the prompt of a model, where the escape sequences are noise.
+    ai_query_context->recordError(String(query), stripTerminalEscapeSequences(message), /*from_ai=*/ ai_running_query);
 }
 #endif
 
