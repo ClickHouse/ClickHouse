@@ -59,6 +59,7 @@ extern const Event ASTFuzzerOracleSubqueryWrapChecks;
 extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
 extern const Event ASTFuzzerOracleDistinctViaGroupByChecks;
 extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
+extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2510,6 +2511,59 @@ bool QueryOracleChecker::checkPrewhereEquivalence(const ASTSelectQuery & select,
     }
 
     LOG_TRACE(logger, "PREWHERE-equivalence oracle passed ({} rows)", ref_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkSkipIndexEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// Skip (data-skipping) indexes only prune granules that cannot match; they must never change
+    /// the result. Running byte-identical SQL with `use_skip_indexes=0` vs `=1` must return the
+    /// identical multiset — a difference is a real granule-pruning bug. Both sides run the SAME
+    /// text (only the setting differs), so the usual structural gates that protect AST rewrites do
+    /// not apply; require a single MergeTree-family table and a WHERE (nothing to prune otherwise).
+    if (!select.where())
+        return false;
+
+    auto storage = resolveSingleTableStorage(select, context);
+    if (!storage || !storage->getName().ends_with("MergeTree"))
+        return false;
+
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    /// Strip ORDER BY / LIMIT / SETTINGS (the last so the query cannot override our overlay) and
+    /// compare the row multiset.
+    auto q_ast = select.clone();
+    stripOrderAndLimit(q_ast->as<ASTSelectQuery &>());
+    const String sql = formatAST(q_ast);
+    if (sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "skip-index-equivalence oracle: {}", sql);
+
+    const std::vector<std::pair<String, Field>> off{{"use_skip_indexes", Field(UInt64(0))}};
+    const std::vector<std::pair<String, Field>> on{{"use_skip_indexes", Field(UInt64(1))}};
+
+    auto off_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, off);
+    auto on_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, on);
+    if (!off_rows_opt || !on_rows_opt)
+        return false;
+
+    if (!OracleExec::isStable(sql, *off_rows_opt, context, ResultShape::SortedBag, off))
+        return false;
+
+    if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "skip-index-equivalence oracle mismatch!\n"
+            "use_skip_indexes=0 ({} rows) vs use_skip_indexes=1 ({} rows): {}\n{}",
+            off_rows_opt->size(), on_rows_opt->size(), sql,
+            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+    }
+
+    LOG_TRACE(logger, "skip-index-equivalence oracle passed ({} rows)", off_rows_opt->size());
     return true;
 }
 

@@ -71,6 +71,11 @@ public:
     /// read-time optimization of WHERE). A divergence is a real PREWHERE bug.
     bool checkPrewhereEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Skip-index-equivalence oracle: skip indexes only prune granules, they must never change the
+    /// result. Running the same query with `use_skip_indexes=0` vs `=1` must return the identical
+    /// multiset; a difference is a real skip-index granule-pruning bug.
+    bool checkSkipIndexEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
