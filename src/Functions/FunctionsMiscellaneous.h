@@ -101,6 +101,19 @@ private:
 };
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
+/// A lambda is only as deterministic as its body. A non-deterministic call that depends on a lambda
+/// argument stays inside the lambda's own `ActionsDAG` - only a nullary one is hoisted into the outer
+/// DAG - so a caller that walks the outer DAG cannot see it. The plan-time join conversions ask this
+/// question before they constant-fold a filter.
+template <typename Predicate>
+bool innerDAGFunctionsSatisfy(const ActionsDAG & dag, Predicate && predicate)
+{
+    for (const auto & node : dag.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && !predicate(*node.function_base))
+            return false;
+    return true;
+}
+
 class FunctionExpression final : public IFunctionBase
 {
 public:
@@ -139,6 +152,16 @@ public:
 
     const LambdaCapture & getCapture() const { return *capture; }
     const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
+
+    bool isDeterministic() const override
+    {
+        return innerDAGFunctionsSatisfy(getAcionsDAG(), [](const IFunctionBase & f) { return f.isDeterministic(); });
+    }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        return innerDAGFunctionsSatisfy(getAcionsDAG(), [](const IFunctionBase & f) { return f.isDeterministicInScopeOfQuery(); });
+    }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
@@ -290,6 +313,16 @@ public:
             }
         }
         return true;
+    }
+
+    bool isDeterministic() const override
+    {
+        return innerDAGFunctionsSatisfy(getAcionsDAG(), [](const IFunctionBase & f) { return f.isDeterministic(); });
+    }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        return innerDAGFunctionsSatisfy(getAcionsDAG(), [](const IFunctionBase & f) { return f.isDeterministicInScopeOfQuery(); });
     }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
