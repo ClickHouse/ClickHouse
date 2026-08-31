@@ -25,11 +25,20 @@
          pre-check off on the suffix instead of scanning every remaining row twice. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat(if(number % 100000 &lt; 25000, 'nonmatching:', 'https://example.com/'), toString(number)), '^https?://([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 100000</query>
 
-    <!-- Same shape, but the matching distinct suffix ends just before the next power-of-two checkpoint
-         (25000 rejected rows, then 7000 matching rows in a 32000-row block): the checkpoint schedule must
-         advance on rows that reach the full path, or the whole suffix would keep the cache and the
-         pre-check without ever re-evaluating either. -->
+    <!-- Same shape, but the matching distinct suffix is much shorter than the rejected prefix
+         (25000 rejected rows, then 7000 matching rows in a 32000-row block): the checkpoint must keep
+         firing during the rejected run, or the whole suffix would keep the cache and the pre-check
+         without ever re-evaluating either. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat(if(number % 32000 &lt; 25000, 'nonmatching:', 'https://example.com/'), toString(number)), '^https?://([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 32000</query>
+
+    <!-- One repeated rejecting haystack: every row after the first is served by the adjacent-duplicate
+         compare, and the ratio checkpoint ahead of it must keep firing without disturbing that path. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(materialize(concat('https://example.com/', repeat('longpathcomponent/', 25))), '^missing', 'X'))</query>
+
+    <!-- The same repeated haystack with a pattern whose reject cannot short-circuit: the duplicate
+         compare must be consulted ahead of the non-matching pre-check, or every repeat would re-run
+         the full-scan reject. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(materialize(concat('https://example.com/', repeat('longpathcomponent/', 25))), '[0-9]{50}', 'X'))</query>
 
     <!-- Mostly-distinct haystacks: the distinct-ratio guard must disable deduplication. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>

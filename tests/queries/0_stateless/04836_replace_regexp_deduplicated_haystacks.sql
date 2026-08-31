@@ -65,7 +65,8 @@ SELECT countIf(replaceRegexpOne(h, '^missing', 'X') != replaceRegexpOne(h, mater
 FROM (SELECT concat('ab', toString(number % 7), 'cd') AS h FROM numbers(1000))
 SETTINGS max_block_size = 100;
 
--- Adjacent repeats without any match: once the pre-check is on, it runs before the previous-value compare.
+-- Adjacent repeats without any match: with the pre-check on, the first row of a run is rejected by the
+-- pre-check and the repeats are served by the previous-value compare.
 SELECT countIf(replaceRegexpAll(h, '^missing', 'X') != replaceRegexpAll(h, materialize('^missing'), 'X'))
 FROM (SELECT concat('ab', toString(intDiv(number, 4) % 3), 'cd') AS h FROM numbers(2000))
 SETTINGS max_block_size = 2000;
@@ -79,6 +80,25 @@ SETTINGS max_block_size = 5000;
 -- the pre-check on the prefix, and the re-evaluated match ratio turns the pre-check off again on the suffix.
 SELECT countIf(replaceRegexpOne(h, '^ab([0-9]+)', '<\\1>') != replaceRegexpOne(h, materialize('^ab([0-9]+)'), '<\\1>'))
 FROM (SELECT if(number < 1000, concat('xx', toString(number), 'yy'), concat('ab', toString(number), 'cd')) AS h FROM numbers(4000))
+SETTINGS max_block_size = 4000;
+
+-- Every row is the same rejecting haystack: the ratio checkpoint runs ahead of the adjacent-duplicate
+-- path, so it keeps firing even though every row after the first is a repeat.
+SELECT countIf(replaceRegexpOne(h, '^missing', 'X') != replaceRegexpOne(h, materialize('^missing'), 'X'))
+FROM (SELECT materialize('abcdefgh') AS h FROM numbers(1000))
+SETTINGS max_block_size = 1000;
+
+-- A run of one repeated rejecting value arriving after the pre-check engaged: the first occurrence is
+-- rejected by the pre-check and still becomes the previous value, so the repeats are served by the
+-- compare against the copied-through result.
+SELECT countIf(replaceRegexpOne(h, '^missing', 'X') != replaceRegexpOne(h, materialize('^missing'), 'X'))
+FROM (SELECT if(number < 500, concat('ab', toString(number), 'cd'), 'repeatedvalue') AS h FROM numbers(2000))
+SETTINGS max_block_size = 2000;
+
+-- Alternating rejecting and matching runs, each longer than the ratio window: the windowed match ratio
+-- turns the pre-check on and off repeatedly within one block.
+SELECT countIf(replaceRegexpOne(h, '^ab([0-9]+)', '<\\1>') != replaceRegexpOne(h, materialize('^ab([0-9]+)'), '<\\1>'))
+FROM (SELECT if(intDiv(number, 100) % 2 = 0, concat('xx', toString(number), 'yy'), concat('ab', toString(number), 'cd')) AS h FROM numbers(4000))
 SETTINGS max_block_size = 4000;
 
 -- The values a repeat is expected to produce, so that the cases above cannot pass by both sides being wrong.

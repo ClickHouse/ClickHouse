@@ -396,19 +396,22 @@ struct ReplaceRegexpImpl
 
         HashMap<std::string_view, CachedResult> results_cache;
         bool map_enabled = true;
-        /// The first checkpoint fires early so that even a block far shorter than the default
-        /// `max_block_size` samples its match ratio and can enable the non-matching pre-check.
-        size_t next_ratio_check = 32;
+        /// The heuristics are re-evaluated once per window of rows. The window is small so that even a
+        /// block far shorter than the default `max_block_size` samples its match ratio, and so that a
+        /// wrong decision is corrected within a bounded number of rows.
+        static constexpr size_t ratio_check_window = 32;
         /// The distinct ratio needs a longer sample: values that repeat with a longer cycle would be
         /// written off as distinct before the first repeat can arrive.
         static constexpr size_t min_rows_for_distinct_ratio_check = 256;
 
         bool precheck_non_matching = false;
-        size_t matched_rows = 0;
+        size_t rows_in_window = 0;
+        size_t matched_in_window = 0;
         /// Rows rejected by the non-matching pre-check never reach the cache, so the distinct ratio
         /// must be measured against the rows that did, not against `i`: otherwise a rejected prefix
         /// dilutes the ratio and keeps the cache enabled for a fully distinct matching suffix.
-        size_t rows_past_precheck = 0;
+        /// Adjacent duplicates do count: they are repeats the caching strategy serves.
+        size_t rows_for_distinct_ratio = 0;
 
         std::string_view prev_haystack;
         bool has_prev_haystack = false;
@@ -429,50 +432,62 @@ struct ReplaceRegexpImpl
         {
             budget.charge();
 
+            /// The checkpoint runs ahead of every fast path below, so every row advances it and no
+            /// `continue` can starve it: a block of pre-check rejects, of adjacent duplicates, or of
+            /// cache-disabled rows all keep re-evaluating the heuristics on schedule. The match ratio
+            /// covers only the last window, so the pre-check follows a shift between rejecting and
+            /// matching runs within at most two windows regardless of the block's shape.
+            if (rows_in_window == ratio_check_window)
+            {
+                precheck_non_matching = matched_in_window * 20 < ratio_check_window;
+                if (map_enabled && rows_for_distinct_ratio >= min_rows_for_distinct_ratio_check
+                    && results_cache.size() * 10 > rows_for_distinct_ratio * 9)
+                {
+                    map_enabled = false;
+                    results_cache.clearAndShrink();
+                }
+                rows_in_window = 0;
+                matched_in_window = 0;
+            }
+            ++rows_in_window;
+
             const std::string_view haystack = get_haystack(i);
 
-            /// Before the prev-value compare: for a rejected row this check plus the copy is exactly the
-            /// plain loop's cost, while the compare would read the whole haystack.
+            /// Ahead of the pre-check: an adjacent duplicate is served by a compare against a value that
+            /// is still cache-hot, which costs about as much as the copy both paths pay, while re-running
+            /// the reject on every repeat of the same value is arbitrarily expensive for patterns that
+            /// cannot short-circuit. A distinct row loses only a compare that exits at the first
+            /// differing byte (or at the length check).
+            if (has_prev_haystack && haystack == prev_haystack)
+            {
+                copy_cached(prev_result);
+                matched_in_window += prev_result.matched;
+                ++rows_for_distinct_ratio;
+                res_offsets[i] = res_offset;
+                continue;
+            }
+
+            /// A rejected row plus the copy is exactly the plain loop's cost. It is non-matching by
+            /// definition, so leaving `matched_in_window` untouched counts it correctly. The row still
+            /// becomes the previous value, so repeats of it are served by the compare above instead of
+            /// re-running the reject.
             if (precheck_non_matching
                 && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
             {
+                const UInt64 rejected_start = res_offset;
                 res_data.resize(res_data.size() + haystack.size());
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
                 res_offset += haystack.size();
                 budget.charge();
                 budget.charge(haystack.size());
+                prev_haystack = haystack;
+                has_prev_haystack = true;
+                prev_result = {rejected_start, haystack.size(), false};
                 res_offsets[i] = res_offset;
                 continue;
             }
 
-            ++rows_past_precheck;
-
-            if (has_prev_haystack && haystack == prev_haystack)
-            {
-                copy_cached(prev_result);
-                matched_rows += prev_result.matched;
-                res_offsets[i] = res_offset;
-                continue;
-            }
-
-            /// The checkpoint must not be gated on `map_enabled`: the match ratio has to keep being
-            /// re-evaluated after the cache is disabled, or a matching suffix behind a rejected prefix
-            /// would pay the pre-check plus the full match for every remaining row.
-            /// The schedule advances on `rows_past_precheck`, not on `i`: rows rejected by the pre-check
-            /// skip this checkpoint, so an absolute-index schedule would keep doubling across a long
-            /// rejected run and a matching suffix that ends before the next power of two would never be
-            /// re-evaluated at all.
-            if (rows_past_precheck >= next_ratio_check)
-            {
-                if (map_enabled && rows_past_precheck >= min_rows_for_distinct_ratio_check
-                    && results_cache.size() * 10 > rows_past_precheck * 9)
-                {
-                    map_enabled = false;
-                    results_cache.clearAndShrink();
-                }
-                precheck_non_matching = matched_rows * 20 < i;
-                next_ratio_check *= 2;
-            }
+            ++rows_for_distinct_ratio;
 
             const UInt64 result_start = res_offset;
             bool row_matched;
@@ -496,7 +511,7 @@ struct ReplaceRegexpImpl
             else
                 row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
 
-            matched_rows += row_matched;
+            matched_in_window += row_matched;
             prev_haystack = haystack;
             has_prev_haystack = true;
             prev_result = {result_start, res_offset - result_start, row_matched};
