@@ -902,6 +902,12 @@ protected:
                         ? database->getRenderedCreateTableQuery(table_name, context, fields)
                         : renderCreateQuery(nullptr, RenderOptions{}, fields);
 
+                    /// The dictionary disjunct is decided on the object the iterator captured, while
+                    /// the rendering resolves the name again. Emit it only when that one rendering is
+                    /// itself a dictionary, as `SHOW CREATE DICTIONARY` requires.
+                    if (!can_show_columns && !rendered->is_dictionary)
+                        rendered = renderCreateQuery(nullptr, RenderOptions{}, fields);
+
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(rendered->create_table_query);
 

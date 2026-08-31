@@ -111,9 +111,11 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query "
     WHERE table_schema = '${db}' AND table_name = 'dep_view';"
 
 echo "--- a dictionary's CREATE query follows SHOW CREATE DICTIONARY, not SHOW COLUMNS ---"
-# ${user} still holds only SHOW TABLES on ${db}.*. The key expressions and index types stay
-# withheld after the SHOW DICTIONARIES grant, and dict_engine_tbl (a plain table declared as
-# ENGINE = Dictionary, granted the same privilege) stays withheld entirely.
+# ${user} still holds only SHOW TABLES on ${db}.*. A dictionary row carries no key expressions and
+# no secondary indices, so partition_key and skipping_indices_types read 0 in both arms: they pin
+# that nothing starts emitting them, not the width of the SHOW DICTIONARIES disjunct, which the
+# create_table_query transition and the dict_engine_tbl control establish. dict_engine_tbl (a plain
+# table declared as ENGINE = Dictionary, granted the same privilege) stays withheld entirely.
 dictionary_probe() {
     ${CLICKHOUSE_CLIENT} --user="${user}" --query "
         SELECT notEmpty(create_table_query), notEmpty(partition_key), notEmpty(skipping_indices_types)
