@@ -375,7 +375,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * all connections, then read and skip the remaining packets to make sure
       * these connections did not remain hanging in the out-of-sync state.
       */
-    if (established || (isQueryPending() && connections))
+    if (established || ((isQueryPending() || drain_was_skipped) && connections))
     {
         /// May also throw (so as cancel() above)
         try
@@ -474,6 +474,22 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
+
+    /// Plan-level execution limits are serialized beginning with version 10. Before that version,
+    /// sending a plan would silently lose them. Use the original SQL request for old replicas: it
+    /// carries the query settings and lets the remote server build a plan with the same limits.
+    /// This keeps `serialize_query_plan` usable while a cluster is being upgraded.
+    if (query_plan
+        && (query_plan->getMaxThreads() || query_plan->getConcurrencyControl())
+        && !connections->supportsQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS))
+    {
+        LOG_DEBUG(
+            log,
+            "Sending query as SQL because a replica does not support query-plan serialization version {} required for execution limits",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+        query_plan.reset();
+        stage = query_plan_fallback_stage;
+    }
 
     const auto & settings = context->getSettingsRef();
     if (isReplicaUnavailable() || needToSkipUnavailableShard())
@@ -904,6 +920,8 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
     /// so the round-trip would be pure overhead — skip it on both sides.
     const bool send_response = announcement.mode != CoordinationMode::Default;
 
+    announcement_received = true;
+
     auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
     if (send_response)
         connections->sendMergeTreeAllRangesAnnouncementResponse(response);
@@ -974,6 +992,18 @@ void RemoteQueryExecutor::finish()
     /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
     if (!connections || !sent_query || finished)
         return;
+
+    /// `tryCancel` above may have torn the read side down without draining the packet that was in
+    /// flight. The loop below reads from those same connections, and reading from a canceled buffer
+    /// aborts ("ReadBuffer is canceled. Can't read from it."). Disconnect instead of draining, exactly
+    /// as the already-cancelled branch above does and for the same reasons: the read side may be gone
+    /// (#95466), and an out-of-sync connection must not go back to the pool (#93018). `SCOPE_EXIT`
+    /// marks the executor finished on the way out.
+    if (drain_was_skipped)
+    {
+        connections->disconnect();
+        return;
+    }
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
@@ -1153,8 +1183,25 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
 
     was_cancelled = true;
 
+    /// A parallel-replicas follower that has not announced yet is still planning, and the only packet
+    /// it owes us is the announcement itself - which is worthless once we are cancelling, because it
+    /// exists to let the coordinator assign ranges we are no longer going to assign. Waiting for it
+    /// means waiting out that replica's whole planning phase (measured at ~290 ms on TPC-H q22 at
+    /// sf=100). Replicas that already announced are drained as before: they may be mid-block.
+    ///
+    /// Only for a query that reads with parallel replicas. `announcement_received` can only ever be set
+    /// by `processMergeTreeInitialReadAnnouncement`, so without this guard every ordinary distributed
+    /// query - which never announces - would skip the drain too, including on the normal completion path
+    /// through `finish()`, and hand a connection back to the pool part-way through a packet.
+    const bool skip_drain = extension && extension->parallel_reading_coordinator && !announcement_received;
+
     if (read_context)
+    {
+        if (skip_drain)
+            read_context->skipDrainOnCancel();
+
         read_context->cancel();
+    }
 
     /// Query could be cancelled during connection creation, query sending or data receiving.
     /// We should send cancel request if connections were already created, query were sent
@@ -1164,6 +1211,12 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
         connections->sendCancel();
         LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
     }
+
+    /// Skipping the drain leaves the socket part-way through a packet, so it must never go back to the
+    /// pool. The destructor only disconnects while the query is still pending, and `finish()` marks it
+    /// finished right after calling this - so record it and disconnect there unconditionally.
+    if (skip_drain)
+        drain_was_skipped = true;
 }
 
 bool RemoteQueryExecutor::isQueryPending() const

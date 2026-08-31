@@ -2136,8 +2136,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// globally (see Aggregator::ensureLimitsFixedMapMerge), so shards could each keep a
                         /// different, locally-permitted set of keys and the initiator would return more groups
                         /// in total than the limit allows. Matches the precedent set by
-                        /// AggregatingStep::canUseShardedAggregation and useDataParallelAggregation, which
-                        /// disable independent aggregation for the same reason.
+                        /// `useDataParallelAggregation`, which disables independent aggregation for the same
+                        /// reason.
                         const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
                             && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
 
@@ -2467,14 +2467,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// It is just a safety check needed until we have a proper sending plan to replicas.
                     /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                     /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                    /// The chosen table and union children are TableNodes, so a table function matches
+                    /// neither and equality against them is meaningless when table_node is null.
                     const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                         = query_context->canUseParallelReplicasOnFollower()
-                        && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+                        && (!table_node || table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
                         ContextPtr updated_context = effective_context;
-                        if (const UnionNode * table_union = planner_context->getGlobalPlannerContext()->parallel_replicas_table_union)
+                        if (const UnionNode * table_union
+                            = table_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
                         {
                             SelectQueryOptions options;
                             for (const auto & child : table_union->getQueries().getNodes())
@@ -2492,6 +2495,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             auto mutable_context = Context::createCopy(effective_context);
                             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                             updated_context = mutable_context;
+                            /// Source processors may hold only a weak_ptr to the context they read
+                            /// with, so this copy has to outlive read() for the whole pipeline.
+                            query_plan.addInterpreterContext(updated_context);
                         }
 
                         effective_storage->read(
@@ -3049,9 +3055,9 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         return;
 
     const auto * children_step = root_node->children.front()->step.get();
+    /// Only steps that support clone(), because the lookup plan below is cloned per lookup batch.
     bool is_allowed_storage = typeid_cast<const ReadFromMergeTree *>(children_step)
-                           || typeid_cast<const ReadNothingStep *>(children_step)
-                           || typeid_cast<const ReadFromPreparedSource *>(children_step);
+                           || typeid_cast<const ReadNothingStep *>(children_step);
     if (!is_allowed_storage)
         return;
 
