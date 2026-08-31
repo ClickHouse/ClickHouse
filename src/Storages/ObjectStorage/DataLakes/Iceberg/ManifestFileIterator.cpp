@@ -48,6 +48,11 @@ namespace DB::Iceberg
 
 using namespace DB;
 
+/// How often the row loops consult `stop_condition`. The callback may take a lock, so it is
+/// amortized over rows; 256 rows decode within a few milliseconds, which bounds how late a
+/// stop is noticed.
+static constexpr size_t stop_check_period = 256;
+
 namespace
 {
     /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
@@ -484,6 +489,11 @@ ManifestFileIterator::ManifestFileIterator(
     UInt64 next_row_id = *inherited_first_row_id_;
     for (size_t row_index = 0; row_index < total_rows; ++row_index)
     {
+        /// This walk runs before `next` is ever entered, so it must honor the stop condition
+        /// itself; `next` then stops on its first row and the incomplete ids are never read.
+        if (stop_condition && row_index % stop_check_period == 0 && stop_condition())
+            return;
+
         const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
         if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status != ManifestEntryStatus::ADDED
             || parsed_entry->parsed_first_row_id.has_value())
@@ -689,8 +699,6 @@ bool ManifestFileIterator::isInitialized() const
 
 ProcessedManifestFileEntryPtr ManifestFileIterator::next()
 {
-    static constexpr size_t stop_check_period = 256;
-
     if (fully_initialized.load())
         return nullptr;
 
