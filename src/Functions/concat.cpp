@@ -214,8 +214,10 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// When called with a single argument, concat delegates to toString which is injective.
-        return arguments.size() == 1;
+        /// When called with a single argument, concat delegates to toString, so the claim has to be
+        /// the one toString makes: it depends on the argument type, because rendering a date-time in a
+        /// time zone that has a UTC offset transition maps two distinct instants onto one string.
+        return arguments.size() == 1 && to_string->isInjective(arguments);
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
