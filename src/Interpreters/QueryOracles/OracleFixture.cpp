@@ -48,9 +48,9 @@ OracleFixture::~OracleFixture()
     if (preserved)
         return;
     /// Drop in reverse creation order. executeStatement is fail-close and never throws, so this is
-    /// destructor-safe; a failed drop just leaves the table for the next cleanup pass.
-    for (auto it = created.rbegin(); it != created.rend(); ++it)
-        OracleExec::executeStatement("DROP TABLE IF EXISTS " + *it + " SYNC", base_context);
+    /// destructor-safe; a failed drop just leaves the object for the next cleanup pass.
+    for (auto it = teardown.rbegin(); it != teardown.rend(); ++it)
+        OracleExec::executeStatement(*it, base_context);
 }
 
 std::string OracleFixture::allocName(std::string_view suffix)
@@ -61,13 +61,21 @@ std::string OracleFixture::allocName(std::string_view suffix)
         name += "_";
         name += suffix;
     }
-    created.push_back(name);
+    teardown.push_back("DROP TABLE IF EXISTS " + name + " SYNC");
     return name;
 }
 
 bool OracleFixture::execute(const std::string & sql, const SettingsOverlay & overlay)
 {
     return OracleExec::executeStatement(sql, base_context, overlay);
+}
+
+bool OracleFixture::createAuxiliary(const std::string & create_sql, const std::string & drop_sql)
+{
+    if (!OracleExec::executeStatement(create_sql, base_context))
+        return false;
+    teardown.push_back(drop_sql);
+    return true;
 }
 
 }
