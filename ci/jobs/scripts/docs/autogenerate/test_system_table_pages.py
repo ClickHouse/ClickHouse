@@ -27,7 +27,7 @@ EXPECTED_FIELD_COUNTS = {
     "description": EXPECTED_DOCUMENTATION_COUNT,
     "columns_notes": 10,
     "examples": 105,
-    "see_also": 59,
+    "see_also": 60,
 }
 PLACEHOLDERS = {
     "{{PROFILE_EVENTS}}": 1,
@@ -114,6 +114,8 @@ def main():
     structured_comments = "\n".join(documents.values())
     for field, expected_count in EXPECTED_FIELD_COUNTS.items():
         assert len(re.findall(rf"(?m)^\.{field}$", structured_comments)) == expected_count
+    assert ".see_also" in documents["asynchronous_metric_log"]
+    assert "**See Also**" not in documents["asynchronous_metric_log"]
     assert ".additional_sections" not in structured_comments
     assert ".get_columns" not in structured_comments
     assert "{{SYSTEM_TABLE_COLUMNS}}" not in structured_comments

@@ -704,7 +704,7 @@ key:
 value:      0
 ```
 
-**See Also**
+.see_also
 
 - [asynchronous_metric_log setting](/reference/settings/server-settings/settings/asynchronous#asynchronous_metric_log) — Enabling and disabling the setting.
 - [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) — Contains metrics, calculated periodically in the background.
