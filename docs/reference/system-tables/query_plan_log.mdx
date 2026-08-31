@@ -16,19 +16,19 @@ import SystemTableCloud from '/snippets/_system_table_cloud.mdx';
 
 Contains the query plan that was executed for a query, annotated with per-step runtime statistics, captured while the query ran. Unlike [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze), which executes the query a second time, this table lets you inspect an execution that has already happened — including one that failed partway through.
 
-Capture is disabled by default. Set [`log_query_plans`](/operations/settings/settings#log_query_plans) to `1` to enable it, per query, per session or per user.
+Capture is disabled by default. Set [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) to `1` to enable it, per query, per session or per user.
 
 One row is written per query execution. The following are captured:
 
 - `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default). Queries running with `enable_analyzer = 0` are not captured.
 - Queries that failed during execution, with the plan they were running, under `status = 'ExceptionWhileProcessing'`. These carry the plan but no runtime statistics, because statistics are collected when the pipeline is finalized, which a failing query never reaches.
 
-The following are not captured: `INSERT`, `EXPLAIN` and other statement kinds, queries answered from the [query result cache](/operations/query-cache) (no plan is built for them), secondary queries of a distributed query on remote shards, and internal queries. A query that fails before a plan exists — a parse error, or an unknown table — leaves no row at all.
+The following are not captured: `INSERT`, `EXPLAIN` and other statement kinds, queries answered from the [query result cache](/concepts/features/performance/caches/query-cache) (no plan is built for them), secondary queries of a distributed query on remote shards, and internal queries. A query that fails before a plan exists — a parse error, or an unknown table — leaves no row at all.
 
 `ascii_plan` holds the plan rendered in the same form as [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze): the plan tree, the expressions behind each step, and per-step rows, bytes, time and parallelism.
 
 <Note>
-Enabling `log_query_plans` makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/operations/settings/settings#log_processors_profiles) uses. Queries that are not captured are unaffected.
+Enabling `log_query_plans` makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses. Queries that are not captured are unaffected.
 </Note>
 
 Where this table does not exist, `log_query_plans` has no effect and no query is instrumented: that is the case in `clickhouse-local`, and on a server whose configuration removes the `<query_plan_log>` section.
@@ -81,7 +81,7 @@ Expression (Project names)
 
 Percentages are relative to the time the pipeline existed, so they do not include parsing and planning and will not sum to 100%.
 
-Plans of queries of the same shape can be compared over time, across hosts or across ClickHouse versions by grouping on `normalized_query_hash`, which holds the same value as in [`system.query_log`](/operations/system-tables/query_log):
+Plans of queries of the same shape can be compared over time, across hosts or across ClickHouse versions by grouping on `normalized_query_hash`, which holds the same value as in [`system.query_log`](/reference/system-tables/query_log):
 
 ```sql title="Query"
 SELECT
@@ -98,8 +98,8 @@ LIMIT 10;
 
 ## See also {#see-also}
 
-- [`log_query_plans`](/operations/settings/settings#log_query_plans) — setting that enables capture.
+- [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) — setting that enables capture.
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan) — shows the plan of a query without executing it.
 - [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze) — executes the query and shows the plan with runtime statistics.
-- [`system.query_log`](/operations/system-tables/query_log) — query-level metrics, joinable on `query_id`.
-- [`system.processors_profile_log`](/operations/system-tables/processors_profile_log) — per-processor metrics for the same execution.
+- [`system.query_log`](/reference/system-tables/query_log) — query-level metrics, joinable on `query_id`.
+- [`system.processors_profile_log`](/reference/system-tables/processors_profile_log) — per-processor metrics for the same execution.

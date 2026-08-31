@@ -2267,7 +2267,7 @@ Write the query plan that was actually executed, together with per-step runtime 
 Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured. The plan is rendered in the same form as [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze): the plan tree, the expressions behind
 each step, and per-step rows, bytes, time and parallelism.
 
-Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/operations/settings/settings#log_processors_profiles) uses, so it is not free. Queries that are not captured
+Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured
 are unaffected.
 
 The setting has no effect when there is no `system.query_plan_log` table to write to, which is the case in `clickhouse-local` and on servers whose configuration removes the `<query_plan_log>` section. Nothing is captured then, and the query pays none of the cost above.
