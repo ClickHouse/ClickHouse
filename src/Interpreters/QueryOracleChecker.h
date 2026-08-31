@@ -235,6 +235,10 @@ public:
     /// must hold for ANY data (restriction never increases count, DISTINCT never exceeds count, etc.).
     bool checkCardinalityMonotonicity(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// PQS pivot-containment oracle (self-seeded): a set of predicates all rectified TRUE for a
+    /// chosen pivot row must return that row — otherwise the filter/index wrongly dropped it.
+    bool checkPivotedContainment(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

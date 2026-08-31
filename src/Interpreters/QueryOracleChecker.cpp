@@ -98,6 +98,7 @@ extern const Event ASTFuzzerOracleSubcolumnChecks;
 extern const Event ASTFuzzerOracleViewTtlChecks;
 extern const Event ASTFuzzerOracleCorrelatedSubqueryChecks;
 extern const Event ASTFuzzerOracleCardinalityChecks;
+extern const Event ASTFuzzerOraclePivotContainmentChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -4527,6 +4528,63 @@ bool QueryOracleChecker::checkCardinalityMonotonicity(const ASTSelectQuery &, co
     }
 
     LOG_TRACE(logger, "cardinality monotonicity oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkPivotedContainment(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_46, PQS technique): pick a real pivot row, build a conjunction of
+    /// predicates each rectified to be TRUE for that pivot (via scalar subqueries reading the pivot's
+    /// own values), and assert the pivot survives the filter. By construction every predicate holds for
+    /// the pivot, so a correct filter MUST return it; if the rectified query drops the pivot, a
+    /// predicate-construction / index-filtering bug dropped a row that had to be returned.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("pqs", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + t + " (id UInt32, a Int64, b Int64, g UInt8) ENGINE = MergeTree ORDER BY (g, id)"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + t + " SELECT number, toInt64(number % 50) - 25, toInt64(number * 7 % 40), toUInt8(number % 4) "
+            "FROM numbers(300)"))
+        return false;
+
+    /// Pivot id in [10, 259] (present in the 300-row fixture); varied per invocation for coverage.
+    const UInt64 pid = 10 + thread_local_rng() % 250;
+    const String p = std::to_string(pid);
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "pivot containment oracle: {} pivot id={}", t, pid);
+
+    /// Every clause is rectified TRUE for the pivot via scalar subqueries over the pivot's own row.
+    const String sub = " FROM " + t + " WHERE id = " + p + ")";
+    const String where =
+        "a <= (SELECT a" + sub + " AND a >= (SELECT a" + sub
+        + " AND b != (SELECT b" + sub + " + 1"
+        + " AND g = (SELECT g" + sub
+        + " AND (a + b) <= (SELECT a + b" + sub
+        + " AND modulo(id, 7) = (SELECT id % 7" + sub;
+
+    auto hit_opt = OracleExec::executeRows(
+        "SELECT count() FROM (SELECT id FROM " + t + " WHERE " + where + ") WHERE id = " + p,
+        context, ResultShape::SortedBag);
+    if (!hit_opt)
+        return false;
+
+    if (hit_opt->size() != 1 || (*hit_opt)[0] != "1")
+        raiseOracleMismatch(
+            fmt::format(
+                "pivot containment oracle mismatch!\n"
+                "pivot id={} was dropped by a filter of predicates all rectified TRUE for it "
+                "(containment count={}, expected 1) on {}\nWHERE {}",
+                pid, hit_opt->empty() ? "?" : (*hit_opt)[0], t, where),
+            context, &fixture);
+
+    LOG_TRACE(logger, "pivot containment oracle passed");
     return true;
 }
 
