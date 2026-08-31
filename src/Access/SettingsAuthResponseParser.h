@@ -21,12 +21,21 @@ class SettingsAuthResponseParser
     static constexpr auto valid_until_key = "valid_until";
 
 public:
+    enum class MetadataStatus : uint8_t
+    {
+        Absent,
+        Valid,
+        Invalid,
+    };
+
     struct Result
     {
         bool is_ok = false;
         SettingsChanges settings;
         Strings roles;
+        MetadataStatus roles_status = MetadataStatus::Absent;
         std::optional<time_t> valid_until;
+        MetadataStatus valid_until_status = MetadataStatus::Absent;
     };
 
     Result parse(const Poco::Net::HTTPResponse & response, std::istream * body_stream) const;

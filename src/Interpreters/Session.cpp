@@ -391,6 +391,11 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         settings_from_auth_server = auth_result.settings;
         auto & access_control = global_context->getAccessControl();
         external_roles = access_control.find<Role>(auth_result.external_role_names);
+        if (external_roles.size() != auth_result.external_role_names.size())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Some roles returned by the HTTP authentication server are unknown: [{}]", fmt::join(auth_result.external_role_names, ", "));
+        }
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
 
@@ -675,7 +680,8 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
 
         // Always get setting from profile
         // profile can be changed by ALTER PROFILE during single session
-        auto settings = access->getDefaultSettings();
+        // Recalculate access after replacing external roles, because profiles can be assigned to them.
+        auto settings = new_session_context->getAccess()->getDefaultSettings();
         const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
         if (max_session_for_user_field)
             max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();

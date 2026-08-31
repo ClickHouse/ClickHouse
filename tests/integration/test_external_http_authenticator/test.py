@@ -189,7 +189,7 @@ def test_roles_grant_session_access_and_are_not_persisted(started_cluster):
     assert "http_reader" not in node1.query("SHOW GRANTS FOR role_user")
 
 
-def test_multiple_and_unknown_roles(started_cluster):
+def test_multiple_roles(started_cluster):
     ensure_http_reader_objects()
     node1.query("DROP TABLE IF EXISTS role_a_test")
     node1.query("DROP TABLE IF EXISTS role_b_test")
@@ -206,8 +206,13 @@ def test_multiple_and_unknown_roles(started_cluster):
     assert query_as("multi_role_user", "SELECT count() FROM role_a_test") == "0\n"
     assert query_as("multi_role_user", "SELECT count() FROM role_b_test") == "0\n"
 
+
+def test_unknown_roles_reject_authentication(started_cluster):
+    ensure_http_reader_objects()
     create_http_user(node1, "unknown_role_user")
-    query_as("unknown_role_user", "SELECT count() FROM http_auth_role_test")
+    assert "Some roles returned by the HTTP authentication server are unknown" in query_error_as(
+        "unknown_role_user", "SELECT count() FROM http_auth_role_test"
+    )
     assert (
         node1.query(
             "SELECT count() FROM system.roles WHERE name = 'role_that_does_not_exist'"
@@ -224,14 +229,9 @@ def test_multiple_and_unknown_roles(started_cluster):
         "malformed_roles_bool_user",
     ],
 )
-def test_malformed_roles_keep_settings_and_apply_no_partial_roles(started_cluster, user):
-    ensure_http_reader_objects()
+def test_malformed_roles_reject_authentication(started_cluster, user):
     create_http_user(node1, user)
-    assert query_as(user, "SELECT getSetting('auth_num')") == "15\n"
-    assert "Not enough privileges" in query_error_as(user, "SELECT x FROM http_auth_role_test")
-    assert node1.contains_in_log(
-        "Failed to parse roles from authentication response. Skip them."
-    )
+    assert "Authentication failed" in query_error_as(user, "SELECT 1")
 
 
 def test_partial_settings_and_roles_are_independent(started_cluster):
@@ -289,6 +289,87 @@ def test_http_interface_receives_roles_and_named_session_refreshes_them(started_
     assert "Not enough privileges" in second
 
 
+def test_external_role_settings_profile_applies_to_fresh_session(started_cluster):
+    node1.query("DROP USER IF EXISTS external_role_settings_user")
+    node1.query("DROP SETTINGS PROFILE IF EXISTS external_role_with_profile_settings")
+    node1.query("DROP ROLE IF EXISTS external_role_with_profile")
+    node1.query("CREATE ROLE external_role_with_profile")
+    node1.query(
+        "CREATE SETTINGS PROFILE external_role_with_profile_settings "
+        "SETTINGS max_threads = 1 TO external_role_with_profile"
+    )
+    create_http_user(node1, "external_role_settings_user")
+
+    assert (
+        query_as("external_role_settings_user", "SELECT getSetting('max_threads')")
+        == "1\n"
+    )
+
+
+def test_named_session_reauthentication_refreshes_role_derived_session_limit(started_cluster):
+    node1.query("DROP USER IF EXISTS named_session_limits_user")
+    node1.query("DROP SETTINGS PROFILE IF EXISTS named_session_unlimited_settings")
+    node1.query("DROP SETTINGS PROFILE IF EXISTS named_session_limited_settings")
+    node1.query("DROP ROLE IF EXISTS named_session_unlimited")
+    node1.query("DROP ROLE IF EXISTS named_session_limited")
+    node1.query("CREATE ROLE named_session_unlimited")
+    node1.query("CREATE ROLE named_session_limited")
+    node1.query(
+        "CREATE SETTINGS PROFILE named_session_unlimited_settings "
+        "SETTINGS max_sessions_for_user = 0 TO named_session_unlimited"
+    )
+    node1.query(
+        "CREATE SETTINGS PROFILE named_session_limited_settings "
+        "SETTINGS max_sessions_for_user = 1 TO named_session_limited"
+    )
+    create_http_user(node1, "named_session_limits_user")
+
+    def query_named_session(
+        session_id, role_header, query, detach=False, nothrow=False
+    ):
+        return node1.exec_in_container(
+            [
+                "curl",
+                "-sS",
+                "-u",
+                f"named_session_limits_user:{GOOD_PASSWORD}",
+                "-H",
+                f"Custom-Header: {role_header}",
+                "--data-binary",
+                query,
+                f"http://localhost:8123/?session_id={session_id}",
+            ],
+            detach=detach,
+            nothrow=nothrow,
+        )
+
+    assert (
+        query_named_session("external-role-limit-a", "roles-unlimited", "SELECT 1")
+        == "1\n"
+    )
+
+    query_named_session(
+        "external-role-limit-b",
+        "roles-unlimited",
+        "SELECT sleep(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000",
+        detach=True,
+    )
+    wait_condition(
+        lambda: node1.query(
+            "SELECT count() FROM system.processes "
+            "WHERE user = 'named_session_limits_user'"
+        ),
+        lambda response: response == "1\n",
+        max_attempts=20,
+        delay=0.5,
+    )
+
+    error = query_named_session(
+        "external-role-limit-a", "roles-limited", "SELECT 1", nothrow=True
+    )
+    assert "has overflown session count 1" in error
+
+
 def test_expired_and_zero_deadlines_reject_authentication(started_cluster):
     for user in ["expiry_past_user", "expiry_zero_user"]:
         create_http_user(node1, user)
@@ -304,15 +385,9 @@ def test_expired_and_zero_deadlines_reject_authentication(started_cluster):
         "expiry_out_of_range_user",
     ],
 )
-def test_malformed_deadlines_do_not_discard_roles_or_settings(started_cluster, user):
-    ensure_http_reader_objects()
+def test_malformed_deadlines_reject_authentication(started_cluster, user):
     create_http_user(node1, user)
-    query_as(user, "SELECT count() FROM http_auth_role_test")
-    if user == "expiry_string_user":
-        assert query_as(user, "SELECT getSetting('auth_num')") == "15\n"
-    assert node1.contains_in_log(
-        "Failed to parse valid_until from authentication response. Skip it."
-    )
+    assert "Authentication failed" in query_error_as(user, "SELECT 1")
 
 
 def run_expiring_native_session(user):
@@ -353,15 +428,18 @@ def test_local_deadline_cannot_be_extended_by_helper(started_cluster):
 
 def test_external_roles_are_forwarded_with_other_current_roles(started_cluster):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS interserver_roles_test")
+        node.query("DROP TABLE IF EXISTS interserver_helper_roles_test")
+        node.query("DROP TABLE IF EXISTS interserver_initiator_roles_test")
         node.query("DROP ROLE IF EXISTS helper_reader")
         node.query("DROP ROLE IF EXISTS initiator_reader")
-        node.query("CREATE TABLE interserver_roles_test (a UInt8, b UInt8) ENGINE=Memory")
-        node.query("INSERT INTO interserver_roles_test VALUES (1, 2)")
+        node.query("CREATE TABLE interserver_helper_roles_test (x UInt8) ENGINE=Memory")
+        node.query("CREATE TABLE interserver_initiator_roles_test (y UInt8) ENGINE=Memory")
+        node.query("INSERT INTO interserver_helper_roles_test VALUES (1)")
+        node.query("INSERT INTO interserver_initiator_roles_test VALUES (2)")
         node.query("CREATE ROLE helper_reader")
         node.query("CREATE ROLE initiator_reader")
-        node.query("GRANT SELECT ON interserver_roles_test TO helper_reader")
-        node.query("GRANT SHOW COLUMNS ON interserver_roles_test TO initiator_reader")
+        node.query("GRANT SELECT ON interserver_helper_roles_test TO helper_reader")
+        node.query("GRANT SELECT ON interserver_initiator_roles_test TO initiator_reader")
         create_http_user(node, "interserver_user")
 
     node1.query("GRANT initiator_reader TO interserver_user")
@@ -369,10 +447,12 @@ def test_external_roles_are_forwarded_with_other_current_roles(started_cluster):
     node1.query("GRANT READ ON REMOTE TO interserver_user")
     assert query_as(
         "interserver_user",
-        "SELECT sum(a), sum(b) FROM clusterAllReplicas("
-        "'external_roles_cluster', default.interserver_roles_test) "
+        "SELECT sum(x) FROM clusterAllReplicas("
+        "'external_roles_cluster', default.interserver_helper_roles_test) "
+        "UNION ALL SELECT sum(y) FROM clusterAllReplicas("
+        "'external_roles_cluster', default.interserver_initiator_roles_test) "
         "SETTINGS push_external_roles_in_interserver_queries=1",
-    ) == "2\t4\n"
+    ) == "2\n4\n"
 
 
 def test_unknown_forwarded_role_fails_closed(started_cluster):

@@ -79,11 +79,13 @@ SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, std:
             }
 
             result.roles = std::move(parsed_roles);
+            result.roles_status = MetadataStatus::Valid;
         }
     }
     catch (...)
     {
-        LOG_INFO(getLogger("HTTPAuthentication"), "Failed to parse roles from authentication response. Skip them.");
+        result.roles_status = MetadataStatus::Invalid;
+        LOG_INFO(getLogger("HTTPAuthentication"), "Failed to parse roles from authentication response.");
     }
 
     try
@@ -99,11 +101,13 @@ SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, std:
                 throw Exception(ErrorCodes::INCORRECT_DATA, "The `valid_until` value in authentication response is outside the `time_t` range");
 
             result.valid_until = static_cast<time_t>(timestamp);
+            result.valid_until_status = MetadataStatus::Valid;
         }
     }
     catch (...)
     {
-        LOG_INFO(getLogger("HTTPAuthentication"), "Failed to parse valid_until from authentication response. Skip it.");
+        result.valid_until_status = MetadataStatus::Invalid;
+        LOG_INFO(getLogger("HTTPAuthentication"), "Failed to parse valid_until from authentication response.");
     }
 
     return result;

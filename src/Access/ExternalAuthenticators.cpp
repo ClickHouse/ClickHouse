@@ -572,22 +572,23 @@ bool ExternalAuthenticators::checkHTTPBasicCredentials(
     auto params = getHTTPAuthenticationParams(server);
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 
-    auto [is_ok, settings_from_auth_server, roles_from_auth_server, valid_until_from_auth_server]
-        = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
+    auto response = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
 
-    if (!is_ok)
+    if (!response.is_ok
+        || response.roles_status == SettingsAuthResponseParser::MetadataStatus::Invalid
+        || response.valid_until_status == SettingsAuthResponseParser::MetadataStatus::Invalid)
         return false;
 
-    if (valid_until_from_auth_server)
+    if (response.valid_until)
     {
         const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        if (now > *valid_until_from_auth_server)
+        if (now > *response.valid_until)
             return false;
     }
 
-    std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
-    std::ranges::move(roles_from_auth_server, std::back_inserter(external_role_names));
-    valid_until = valid_until_from_auth_server;
+    std::ranges::move(response.settings, std::back_inserter(settings));
+    std::ranges::move(response.roles, std::back_inserter(external_role_names));
+    valid_until = response.valid_until;
     return true;
 }
 }

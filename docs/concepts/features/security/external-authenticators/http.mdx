@@ -111,11 +111,11 @@ An HTTP authentication server can return optional session settings, roles, and a
     "reader",
     "analyst"
   ],
-  "valid_until": 1788192000
+  "valid_until": 1893456000
 }
 ```
 
-Each field is optional and is parsed independently. If the response body is not a valid JSON object, ClickHouse ignores all optional response metadata. A malformed field does not prevent ClickHouse from keeping metadata parsed successfully from the other fields.
+`1893456000` is 2030-01-01 00:00:00 UTC. Each field is optional and is parsed independently. If the response body is not a valid JSON object, ClickHouse ignores all optional response metadata. Malformed `settings` do not prevent ClickHouse from keeping metadata parsed successfully from the other fields.
 
 #### Session settings {#passing-session-settings}
 
@@ -123,10 +123,10 @@ The `settings` object contains key-value pairs that ClickHouse applies as sessio
 
 #### Roles {#roles}
 
-The `roles` array contains local ClickHouse role names. ClickHouse ignores names that do not identify an existing role. Returned roles are attached only to the authenticated session and are not persisted as grants for the user. Each successful authentication replaces the roles returned by the previous authentication, including when reauthenticating a named HTTP session.
+The `roles` array contains local ClickHouse role names. If the field is present, it must be an array of strings and every name must identify an existing role; otherwise, ClickHouse rejects authentication. Returned roles are attached only to the authenticated session and are not persisted as grants for the user. When ClickHouse creates a session, settings profiles attached to returned roles apply to it. Each successful authentication replaces the roles returned by the previous authentication, including when reauthenticating a named HTTP session.
 
 #### `valid_until` {#valid-until}
 
-The optional `valid_until` value is an absolute Unix timestamp in seconds. If it is absent, the authentication server adds no expiry deadline. A supplied deadline that has already expired rejects authentication. If the user's ClickHouse authentication method also has `VALID UNTIL`, the earlier deadline applies.
+The optional `valid_until` value is an absolute Unix timestamp in seconds. If it is absent, the authentication server adds no expiry deadline. If present, it must be an integer timestamp; malformed values and deadlines that have already expired reject authentication. If the user's ClickHouse authentication method also has `VALID UNTIL`, the earlier deadline applies.
 
 ClickHouse checks the deadline before subsequent queries. A query that starts before the deadline is not canceled solely because the deadline passes while it is running.

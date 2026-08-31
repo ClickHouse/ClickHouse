@@ -38,19 +38,13 @@ USER_RESPONSES = {
         "roles": ["http_reader"],
     },
     "expiry_zero_user": {"valid_until": 0},
-    "expiry_string_user": {
-        "settings": {"auth_num": "UInt64_15"},
-        "roles": ["http_reader"],
-        "valid_until": "not-a-timestamp",
-    },
-    "expiry_bool_user": {"roles": ["http_reader"], "valid_until": True},
-    "expiry_fraction_user": {"roles": ["http_reader"], "valid_until": 1.5},
-    "expiry_out_of_range_user": {
-        "roles": ["http_reader"],
-        "valid_until": 9223372036854775808,
-    },
+    "expiry_string_user": {"valid_until": "not-a-timestamp"},
+    "expiry_bool_user": {"valid_until": True},
+    "expiry_fraction_user": {"valid_until": 1.5},
+    "expiry_out_of_range_user": {"valid_until": 9223372036854775808},
     "interserver_user": {"roles": ["helper_reader"]},
     "interserver_unknown_user": {"roles": ["initiator_only_role"]},
+    "external_role_settings_user": {"roles": ["external_role_with_profile"]},
 }
 
 
@@ -66,6 +60,11 @@ def get_response(user: str, request: http.server.BaseHTTPRequestHandler):
             return {"roles": ["named_session_reader"]}
         if request.headers.get("Custom-Header") == "roles-none":
             return {"roles": []}
+    if user == "named_session_limits_user":
+        if request.headers.get("Custom-Header") == "roles-unlimited":
+            return {"roles": ["named_session_unlimited"]}
+        if request.headers.get("Custom-Header") == "roles-limited":
+            return {"roles": ["named_session_limited"]}
     return USER_RESPONSES.get(user)
 
 

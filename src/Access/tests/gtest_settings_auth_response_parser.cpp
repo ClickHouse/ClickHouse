@@ -38,8 +38,10 @@ TEST(SettingsAuthResponseParser, ParsesIndependentMetadataFields)
     EXPECT_EQ(result.settings[0].name, "auth_num");
     EXPECT_EQ(result.settings[0].value.safeGet<UInt64>(), 15u);
     EXPECT_EQ(result.roles, Strings({"reader", "analyst"}));
+    EXPECT_EQ(result.roles_status, SettingsAuthResponseParser::MetadataStatus::Valid);
     ASSERT_TRUE(result.valid_until.has_value());
     EXPECT_EQ(*result.valid_until, static_cast<time_t>(1788192000));
+    EXPECT_EQ(result.valid_until_status, SettingsAuthResponseParser::MetadataStatus::Valid);
 }
 
 TEST(SettingsAuthResponseParser, NonOKStatusRejectsWithoutParsingMetadata)
@@ -51,7 +53,9 @@ TEST(SettingsAuthResponseParser, NonOKStatusRejectsWithoutParsingMetadata)
     EXPECT_FALSE(result.is_ok);
     EXPECT_TRUE(result.settings.empty());
     EXPECT_TRUE(result.roles.empty());
+    EXPECT_EQ(result.roles_status, SettingsAuthResponseParser::MetadataStatus::Absent);
     EXPECT_FALSE(result.valid_until.has_value());
+    EXPECT_EQ(result.valid_until_status, SettingsAuthResponseParser::MetadataStatus::Absent);
 }
 
 TEST(SettingsAuthResponseParser, InvalidRootKeepsSuccessfulHTTPStatusAndIgnoresMetadata)
@@ -61,7 +65,9 @@ TEST(SettingsAuthResponseParser, InvalidRootKeepsSuccessfulHTTPStatusAndIgnoresM
     EXPECT_TRUE(result.is_ok);
     EXPECT_TRUE(result.settings.empty());
     EXPECT_TRUE(result.roles.empty());
+    EXPECT_EQ(result.roles_status, SettingsAuthResponseParser::MetadataStatus::Absent);
     EXPECT_FALSE(result.valid_until.has_value());
+    EXPECT_EQ(result.valid_until_status, SettingsAuthResponseParser::MetadataStatus::Absent);
 }
 
 TEST(SettingsAuthResponseParser, PreservesSettingsParsedBeforeConversionFailure)
@@ -80,10 +86,12 @@ TEST(SettingsAuthResponseParser, PreservesSettingsParsedBeforeConversionFailure)
     EXPECT_EQ(result.settings[0].name, "auth_a_valid");
     EXPECT_EQ(result.settings[0].value.safeGet<UInt64>(), 15u);
     EXPECT_EQ(result.roles, Strings({"reader"}));
+    EXPECT_EQ(result.roles_status, SettingsAuthResponseParser::MetadataStatus::Valid);
     EXPECT_EQ(result.valid_until, static_cast<time_t>(1788192000));
+    EXPECT_EQ(result.valid_until_status, SettingsAuthResponseParser::MetadataStatus::Valid);
 }
 
-TEST(SettingsAuthResponseParser, MalformedRolesAreIgnoredAtomically)
+TEST(SettingsAuthResponseParser, MalformedRolesAreInvalidAtomically)
 {
     for (const auto & roles : {R"("reader")", R"(["reader", 123])", R"(["reader", true])"})
     {
@@ -93,11 +101,13 @@ TEST(SettingsAuthResponseParser, MalformedRolesAreIgnoredAtomically)
         ASSERT_TRUE(result.is_ok);
         ASSERT_EQ(result.settings.size(), 1u);
         EXPECT_TRUE(result.roles.empty());
+        EXPECT_EQ(result.roles_status, SettingsAuthResponseParser::MetadataStatus::Invalid);
         EXPECT_EQ(result.valid_until, static_cast<time_t>(1788192000));
+        EXPECT_EQ(result.valid_until_status, SettingsAuthResponseParser::MetadataStatus::Valid);
     }
 }
 
-TEST(SettingsAuthResponseParser, MalformedValidUntilIsIgnoredIndependently)
+TEST(SettingsAuthResponseParser, MalformedValidUntilIsInvalidIndependently)
 {
     for (const auto & valid_until : {R"("not-a-timestamp")", "true", "1.5", "9223372036854775808"})
     {
@@ -107,7 +117,9 @@ TEST(SettingsAuthResponseParser, MalformedValidUntilIsIgnoredIndependently)
         ASSERT_TRUE(result.is_ok);
         ASSERT_EQ(result.settings.size(), 1u);
         EXPECT_EQ(result.roles, Strings({"reader"}));
+        EXPECT_EQ(result.roles_status, SettingsAuthResponseParser::MetadataStatus::Valid);
         EXPECT_FALSE(result.valid_until.has_value());
+        EXPECT_EQ(result.valid_until_status, SettingsAuthResponseParser::MetadataStatus::Invalid);
     }
 }
 
@@ -116,6 +128,8 @@ TEST(SettingsAuthResponseParser, ExplicitZeroValidUntilIsPreserved)
     const auto result = parseResponse(R"({"valid_until":0})");
 
     ASSERT_TRUE(result.is_ok);
+    EXPECT_EQ(result.roles_status, SettingsAuthResponseParser::MetadataStatus::Absent);
     ASSERT_TRUE(result.valid_until.has_value());
     EXPECT_EQ(*result.valid_until, 0);
+    EXPECT_EQ(result.valid_until_status, SettingsAuthResponseParser::MetadataStatus::Valid);
 }

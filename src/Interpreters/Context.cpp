@@ -2218,7 +2218,12 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto user = access_control.read<User>(user_id_);
 
     auto default_roles = user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
+    /// External roles are part of the authenticated session's enabled roles. Include them when
+    /// calculating login settings too, so profiles assigned to externally authenticated roles
+    /// are applied consistently with their access rights and row policies.
+    auto current_roles = default_roles;
+    current_roles.insert(current_roles.end(), external_roles_.begin(), external_roles_.end());
+    auto enabled_roles = access_control.getEnabledRolesInfo(current_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
     if (!database.empty())

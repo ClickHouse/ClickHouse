@@ -2,7 +2,9 @@
 
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
+#include <Access/SettingsProfile.h>
 #include <Access/User.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
@@ -14,6 +16,11 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int SET_NON_GRANTED_ROLE;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace
@@ -127,4 +134,36 @@ TEST(ContextExternalRoles, SetUserClearsStaleExternalRolesOnUserSwitch)
     /// The stale external role must be gone; otherwise the target user would silently keep it enabled.
     EXPECT_TRUE(session_context->getExternalRoles().empty());
     EXPECT_FALSE(contains(session_context->getCurrentRoles(), role_id));
+}
+
+/// Roles returned by an external authenticator participate in the authenticated session in the
+/// same way as the user's default roles. In particular, settings profiles assigned to such a role
+/// must be applied while initializing the session context.
+TEST(ContextExternalRoles, SetUserAppliesSettingsProfilesFromExternalRoles)
+{
+    auto context = getMutableContext().context;
+    auto & access_control = context->getAccessControl();
+    access_control.addMemoryStorage("gtest_external_roles_profiles_memory", /*allow_backup_=*/ false);
+
+    auto user = std::make_shared<User>();
+    user->setName("gtest_external_roles_profiles_user");
+    UUID user_id = access_control.insert(user);
+
+    auto role = std::make_shared<Role>();
+    role->setName("gtest_external_roles_profiles_role");
+    UUID role_id = access_control.insert(role);
+
+    auto profile = std::make_shared<SettingsProfile>();
+    profile->setName("gtest_external_roles_profiles_profile");
+    profile->to_roles = RolesOrUsersSet(role_id);
+    profile->elements.emplace_back();
+    profile->elements.back().setting_name = "max_threads";
+    profile->elements.back().value = Field(UInt64{1});
+    access_control.insert(profile);
+
+    auto session_context = Context::createCopy(context);
+    session_context->makeQueryContext();
+    session_context->setUser(user_id, /*external_roles=*/ {role_id});
+
+    EXPECT_EQ(session_context->getSettingsRef()[Setting::max_threads], 1);
 }
