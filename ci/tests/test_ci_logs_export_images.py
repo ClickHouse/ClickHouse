@@ -103,3 +103,157 @@ def test_sender_user_config_is_the_one_functional_tests_install():
     assert f"    {HELPER.SENDER_USER}:" in config
     assert "constraints:" in config
     assert "async_insert: 1" in config
+
+
+def _extra_column_names(extra_columns):
+    """The names of the columns declared by an EXTRA_COLUMNS string, in order,
+    without the index declarations."""
+    names = []
+    for item in extra_columns.split(","):
+        item = item.strip()
+        if not item or item.startswith("INDEX "):
+            continue
+        names.append(item.split()[0])
+    return names
+
+
+def _aliases(expression):
+    """The aliases of a SELECT expression list, in order. Only the alias of the
+    whole element counts, so that the `AS` of a nested `CAST(x AS UInt32)` is not
+    mistaken for one."""
+    elements = []
+    depth = 0
+    current = []
+    for char in expression:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            elements.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    elements.append("".join(current))
+    names = []
+    for element in elements:
+        found = re.findall(r"\bAS (\w+)", element)
+        assert found, f"no alias in {element!r}"
+        names.append(found[-1])
+    return names
+
+
+def _assignment(path, variable):
+    """The literal of a `os.environ["<variable>"] = (...)` assignment in a CI
+    job script. The scripts build the expression from `Info()`, which is not
+    available here, so the literal is read from the source."""
+    source = (REPO_ROOT / path).read_text()
+    match = re.search(
+        r'os\.environ\["' + variable + r'"\] = \((.*?)\n\s*\)\n',
+        source,
+        re.DOTALL,
+    )
+    assert match, f"no assignment of {variable} in {path}"
+    return match.group(1)
+
+
+SETUP_LOG_CLUSTER = (
+    REPO_ROOT / "ci" / "jobs" / "scripts" / "functional_tests" / "setup_log_cluster.sh"
+)
+
+
+def _shell_default(variable):
+    """The default value of a `VAR=${VAR:-"..."}` assignment in
+    setup_log_cluster.sh."""
+    match = re.search(
+        r"^" + variable + r"=\$\{" + variable + r':-"(.*)"\}$',
+        SETUP_LOG_CLUSTER.read_text(),
+        re.MULTILINE,
+    )
+    assert match, f"no default of {variable} in {SETUP_LOG_CLUSTER}"
+    return match.group(1)
+
+
+def test_destination_structure_is_shared_with_the_functional_tests():
+    """The structure hash of a destination table is computed from the columns,
+    so functional and integration tests only share a table while these two
+    declarations are identical."""
+    assert _shell_default("EXTRA_COLUMNS") == HELPER.EXTRA_COLUMNS
+    assert _shell_default("EXTRA_ORDER_BY_COLUMNS") == HELPER.EXTRA_ORDER_BY_COLUMNS
+
+
+@pytest.mark.parametrize(
+    "path,variable",
+    [
+        ("ci/jobs/scripts/clickhouse_proc.py", "EXTRA_COLUMNS_EXPRESSION"),
+        ("ci/jobs/sqlstorm_test.py", "EXTRA_COLUMNS_EXPRESSION"),
+    ],
+)
+def test_job_expression_follows_the_column_order(path, variable):
+    """A `SELECT {expression}, *` in a different order than EXTRA_COLUMNS gives
+    the local sender table a different header than the destination table, so
+    `Distributed` converts every exported batch by name and logs a warning for
+    each of them - which `system.text_log` then exports as well."""
+    assert _aliases(_assignment(path, variable)) == _extra_column_names(
+        HELPER.EXTRA_COLUMNS
+    )
+
+
+def test_integration_job_expression_follows_the_column_order():
+    """The integration-test job provides the expression in two parts, and the
+    helper inserts the per-server `test_name` and `node_name` between them."""
+    path = "ci/jobs/integration_test_job.py"
+    head = _assignment(path, HELPER.EXTRA_COLUMNS_EXPRESSION_HEAD_ENV)
+    tail = _assignment(path, HELPER.EXTRA_COLUMNS_EXPRESSION_TAIL_ENV)
+    assert _aliases(head) + ["test_name", "node_name"] + _aliases(
+        tail
+    ) == _extra_column_names(HELPER.EXTRA_COLUMNS)
+
+
+def test_helper_expression_follows_the_column_order(monkeypatch):
+    monkeypatch.delenv(HELPER.EXTRA_COLUMNS_EXPRESSION_HEAD_ENV, raising=False)
+    monkeypatch.delenv(HELPER.EXTRA_COLUMNS_EXPRESSION_TAIL_ENV, raising=False)
+    expected = _extra_column_names(HELPER.EXTRA_COLUMNS)
+    # The default expression of a local run
+    assert _aliases(HELPER._extra_columns_expression("test", "node")) == expected
+    # And the one built from the values the CI job provides
+    monkeypatch.setenv(
+        HELPER.EXTRA_COLUMNS_EXPRESSION_HEAD_ENV,
+        _assignment("ci/jobs/integration_test_job.py", "EXTRA_COLUMNS_EXPRESSION_HEAD"),
+    )
+    monkeypatch.setenv(
+        HELPER.EXTRA_COLUMNS_EXPRESSION_TAIL_ENV,
+        _assignment("ci/jobs/integration_test_job.py", "EXTRA_COLUMNS_EXPRESSION_TAIL"),
+    )
+    assert _aliases(HELPER._extra_columns_expression("test", "node")) == expected
+
+
+def test_cache_directory_of_a_local_run_is_per_session(monkeypatch):
+    """Without the CI identity the markers would be shared by every run on the
+    machine, so a transient outage in one run would suppress the export in all
+    the later ones."""
+    for name in (
+        "CLICKHOUSE_CI_LOGS_CACHE_DIR",
+        HELPER.EXTRA_COLUMNS_EXPRESSION_HEAD_ENV,
+        HELPER.EXTRA_COLUMNS_EXPRESSION_TAIL_ENV,
+        "INTEGRATION_TESTS_RUN_ID",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CLICKHOUSE_CI_LOGS_HOST", "logs.example.com")
+    monkeypatch.setenv(HELPER.LOCAL_RUN_ID_ENV, "0" * 32)
+    first = HELPER._cache_dir()
+    monkeypatch.setenv(HELPER.LOCAL_RUN_ID_ENV, "1" * 32)
+    assert HELPER._cache_dir() != first
+    # The workers of one run share the id, and so the markers
+    monkeypatch.setenv(HELPER.LOCAL_RUN_ID_ENV, "0" * 32)
+    assert HELPER._cache_dir() == first
+
+
+def test_a_successful_probe_wins_over_a_later_failure(tmp_path):
+    """One pytest-xdist worker hitting a transient failure must not disable the
+    export for the whole job after another worker has already connected."""
+    assert HELPER._disabled_reason(tmp_path) is None
+    (tmp_path / "disabled").write_text("cannot connect")
+    assert HELPER._disabled_reason(tmp_path) == "cannot connect"
+    (tmp_path / "connected").touch()
+    assert HELPER._disabled_reason(tmp_path) is None

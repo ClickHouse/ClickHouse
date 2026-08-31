@@ -63,13 +63,32 @@ EXTRA_COLUMNS = (
 )
 EXTRA_ORDER_BY_COLUMNS = "check_name, test_name"
 
+# The values for the extra columns are provided by the CI job in two parts, in
+# the EXTRA_COLUMNS order: everything before `test_name` and everything after
+# `node_name` (the two per-server columns the helper fills in itself). The
+# expression has to produce the columns in exactly the EXTRA_COLUMNS order:
+# the local `*_sender` table is created as `SELECT {expression}, *`, so its
+# header follows the expression, while the destination table follows
+# EXTRA_COLUMNS. A different order is not a hard error - `Distributed` converts
+# the block by name - but it logs a structure-mismatch warning for every
+# exported batch, and since `system.text_log` is exported too, the export would
+# feed its own warnings back into the stream.
+EXTRA_COLUMNS_EXPRESSION_HEAD_ENV = "EXTRA_COLUMNS_EXPRESSION_HEAD"
+EXTRA_COLUMNS_EXPRESSION_TAIL_ENV = "EXTRA_COLUMNS_EXPRESSION_TAIL"
+
 # Used when the CI job did not provide the values (e.g. a manual local run with
 # the credentials exported by hand).
-DEFAULT_EXTRA_COLUMNS_EXPRESSION = (
+DEFAULT_EXTRA_COLUMNS_EXPRESSION_HEAD = (
     "toLowCardinality('') AS repo, CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, "
-    "now() AS check_start_time, toLowCardinality('') AS check_name, "
+    "now() AS check_start_time, toLowCardinality('') AS check_name"
+)
+DEFAULT_EXTRA_COLUMNS_EXPRESSION_TAIL = (
     "toLowCardinality('') AS instance_type, '' AS instance_id"
 )
+
+# Set by tests/integration/conftest.py for a run without a `--run-id`, see
+# _cache_dir.
+LOCAL_RUN_ID_ENV = "INTEGRATION_TESTS_LOCAL_RUN_ID"
 
 # The names are chosen to sort after the test-provided configs, so that the
 # definitions survive test configs which merge the same sections with
@@ -170,22 +189,47 @@ def _cache_dir():
     on the same (reused) worker. The default location is therefore namespaced by
     the identity of the job: the values for the extra columns (they contain the
     check name, the commit and the check start time), the run id and the
-    destination host. A run without them (a manual local run) gets its own
-    namespace as well, shared for the whole checkout.
+    destination host.
+
+    A manual local run provides none of them, so it is namespaced by the
+    checkout and by the id of the pytest session instead (see
+    tests/integration/conftest.py): the id is shared by the pytest-xdist workers
+    of one run and differs between runs, so the markers of a run with a
+    transient outage do not suppress the export in the next run.
     """
     explicit = os.environ.get("CLICKHOUSE_CI_LOGS_CACHE_DIR")
     if explicit:
         return Path(explicit)
-    job_identity = "\n".join(
+    job_identity = [
         os.environ.get(name, "")
         for name in (
-            "EXTRA_COLUMNS_EXPRESSION",
+            EXTRA_COLUMNS_EXPRESSION_HEAD_ENV,
+            EXTRA_COLUMNS_EXPRESSION_TAIL_ENV,
             "INTEGRATION_TESTS_RUN_ID",
             "CLICKHOUSE_CI_LOGS_HOST",
         )
-    )
-    job_key = hashlib.sha1(job_identity.encode()).hexdigest()[:16]
+    ]
+    if not any(job_identity[:-1]):
+        job_identity.append(str(Path(__file__).resolve().parents[3]))
+        job_identity.append(os.environ.get(LOCAL_RUN_ID_ENV, ""))
+    job_key = hashlib.sha1("\n".join(job_identity).encode()).hexdigest()[:16]
     return Path(tempfile.gettempdir()) / "clickhouse_ci_logs_export" / job_key
+
+
+def _disabled_reason(cache_dir):
+    """The reason the export was disabled for this job, or None.
+
+    A successful probe is authoritative: once any pytest-xdist worker has proven
+    the CI Logs cluster reachable, a transient failure in another worker must not
+    disable the export for the rest of the job. The markers are only ever
+    created, never removed, so the check does not race with a concurrent
+    worker."""
+    if (cache_dir / "connected").exists():
+        return None
+    marker = cache_dir / "disabled"
+    if not marker.exists():
+        return None
+    return marker.read_text()
 
 
 def write_instance_config(config_d_dir):
@@ -245,8 +289,16 @@ def _escape_sql_string(value):
 
 
 def _extra_columns_expression(test_name, node_name):
-    base = os.environ.get("EXTRA_COLUMNS_EXPRESSION", DEFAULT_EXTRA_COLUMNS_EXPRESSION)
-    return f"{base}, toLowCardinality('{_escape_sql_string(test_name)}') AS test_name, toLowCardinality('{_escape_sql_string(node_name)}') AS node_name"
+    head = os.environ.get(
+        EXTRA_COLUMNS_EXPRESSION_HEAD_ENV, DEFAULT_EXTRA_COLUMNS_EXPRESSION_HEAD
+    )
+    tail = os.environ.get(
+        EXTRA_COLUMNS_EXPRESSION_TAIL_ENV, DEFAULT_EXTRA_COLUMNS_EXPRESSION_TAIL
+    )
+    return (
+        f"{head}, toLowCardinality('{_escape_sql_string(test_name)}') AS test_name, "
+        f"toLowCardinality('{_escape_sql_string(node_name)}') AS node_name, {tail}"
+    )
 
 
 def _adapt_create_statement(table, hash_value, statement):
@@ -374,22 +426,23 @@ def _ensure_remote_tables(client_bin_path, tables):
     CI Logs cluster does not slow down every test."""
     cache_dir = _cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
-    disabled_marker = cache_dir / "disabled"
-    if disabled_marker.exists():
-        logging.info(
-            "CI logs export: disabled earlier in this job: %s",
-            disabled_marker.read_text(),
-        )
-        return set()
-
-    if not (cache_dir / "connected").exists():
+    connected_marker = cache_dir / "connected"
+    if not connected_marker.exists():
+        reason = _disabled_reason(cache_dir)
+        if reason is not None:
+            logging.info("CI logs export: disabled earlier in this job: %s", reason)
+            return set()
         error = _probe_connection(client_bin_path)
         if error is not None:
-            reason = f"cannot connect to the CI Logs cluster: {error}"
-            logging.warning("CI logs export: %s", reason)
-            disabled_marker.write_text(reason)
-            return set()
-        (cache_dir / "connected").touch()
+            # Another worker may have proven the cluster reachable while this
+            # probe was failing; its success wins over this transient failure.
+            if not connected_marker.exists():
+                reason = f"cannot connect to the CI Logs cluster: {error}"
+                logging.warning("CI logs export: %s", reason)
+                (cache_dir / "disabled").write_text(reason)
+                return set()
+        else:
+            connected_marker.touch()
 
     created = set()
     for table, hash_value, statement in tables:
@@ -442,12 +495,9 @@ def setup_for_instance(cluster, instance):
 
 
 def _setup_for_instance(cluster, instance):
-    disabled_marker = _cache_dir() / "disabled"
-    if disabled_marker.exists():
-        logging.info(
-            "CI logs export: disabled earlier in this job: %s",
-            disabled_marker.read_text(),
-        )
+    reason = _disabled_reason(_cache_dir())
+    if reason is not None:
+        logging.info("CI logs export: disabled earlier in this job: %s", reason)
         return
 
     test_name = _test_name(cluster)

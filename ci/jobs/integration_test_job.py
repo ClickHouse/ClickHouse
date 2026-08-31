@@ -890,12 +890,17 @@ def setup_ci_logs_export_env(info: Info, check_start_time: float) -> None:
     os.environ["CLICKHOUSE_CI_LOGS_HOST"] = host
     os.environ["CLICKHOUSE_CI_LOGS_USER"] = "ci"
     os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = password
-    # Values for the extra columns of the destination tables. test_name and
-    # node_name are appended per server by the test framework.
-    os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
+    # Values for the extra columns of the destination tables, split at the
+    # position of test_name and node_name: the test framework fills those in per
+    # server, and the expression has to follow the EXTRA_COLUMNS order, see
+    # tests/integration/helpers/ci_logs_export.py.
+    os.environ["EXTRA_COLUMNS_EXPRESSION_HEAD"] = (
         f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, "
         f"'{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, "
-        f"toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, "
+        f"toLowCardinality('{info.job_name}') AS check_name"
+    )
+    os.environ["EXTRA_COLUMNS_EXPRESSION_TAIL"] = (
+        f"toLowCardinality('{info.instance_type}') AS instance_type, "
         f"'{info.instance_id}' AS instance_id"
     )
     print("Export of system logs to the CI Logs cluster is enabled")
