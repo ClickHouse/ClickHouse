@@ -3,10 +3,14 @@
 -- emit path, because the test runner randomizes them. The block at the end asserts which arms
 -- actually took the gather: without it a green run cannot tell the two paths apart.
 --
--- Every arm that must gather carries a `FixedString(40)` column. Whether the in-memory row store
--- claims the narrow columns instead depends on a planner estimate, which is not stable across runs,
--- but 40 bytes is above the row store's inclusive 32-byte limit, so that one column stays on the
--- columnar path in either case. Arms that must NOT gather carry no such column.
+-- Whether the in-memory row store claims a narrow column instead of the gather depends on a planner
+-- estimate that is not stable across runs, so every arm takes that estimate out of its own outcome
+-- in one of two ways: it reads a fixture carrying a `FixedString(40)` payload, which is above the
+-- row store's inclusive 32-byte limit and so stays on the columnar path either way, or it pins
+-- `enable_hash_join_row_store` explicitly. Neither row store setting is randomized by the test
+-- runner. Carrying a `FixedString(40)` is not what makes an arm gather: several arms that must NOT
+-- gather read fixtures that have one, and it is the emit path their settings and shape select that
+-- makes them negative.
 
 DROP TABLE IF EXISTS dg_build;
 DROP TABLE IF EXISTS dg_probe;
@@ -62,8 +66,9 @@ INSERT INTO dg_build SELECT
     toFixedString(leftPad(toString(number), 40, 'w'), 40)
 FROM numbers(2000);
 
--- 1000 probe rows against 2000 unique build keys keeps the estimated fanout below the row store's
--- `min_rows_ratio_for_hash_join_row_store` of 5, so these columns reach the columnar emit path.
+-- 1000 probe rows against 2000 unique build keys usually keeps the estimated fanout below the row
+-- store's `min_rows_ratio_for_hash_join_row_store` of 5, but that estimate is not a guarantee, so
+-- `c_fs40` is what holds these columns on the columnar emit path.
 CREATE TABLE dg_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_probe SELECT number * 2 FROM numbers(1000);
 
@@ -87,7 +92,9 @@ SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, 
 -- one column took the gather, which stays true if a single admitted type falls back, because the values
 -- of the two paths are identical by construction. Pinning the row store off leaves all 30 payload
 -- columns of `dg_build` on the columnar path for all 1000 probe rows, with no planner estimate in the
--- path, so 30000 is exact and dropping one type from `directGatherAdmits` moves it by 1000.
+-- path, so 30000 is exact. Dropping a type from `directGatherAdmits` moves it by 1000 per payload
+-- column of that type, which is 2000 for `FixedString`: `dg_build` carries both a 7-byte and a
+-- 40-byte one.
 SELECT 'arm1d per-type arming', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
@@ -110,6 +117,8 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 -- Arm 2: 100 probe keys have no match. With `join_use_nulls = 0` an unmatched right value is the type
 -- default, which is what a zero ref word makes the gather write. `Enum8` defaults to its first value
 -- instead of zero, so it is excluded from the gather and stays on the generic path in the same query.
+-- The row store is pinned off in both halves because it would claim `c_enum` itself, and an `Enum8`
+-- the gather never sees cannot show a wrong default in `countIf(c_enum = 'a')`.
 CREATE TABLE dg_mixed (k UInt64, c_u64 UInt64, c_fs7 FixedString(7), c_fs40 FixedString(40), c_enum Enum8('a' = 1, 'b' = 2, 'c' = 3))
 ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_mixed SELECT number + 1, number * 1000003, toFixedString(leftPad(toString(number), 7, 'x'), 7),
@@ -122,12 +131,14 @@ SELECT 'arm2 unmatched defaults', count(), sum(cityHash64(*)),
     countIf(c_u64 = 0), countIf(c_fs7 = toFixedString('', 7)), countIf(c_enum = 'a')
 FROM dg_mixed_probe LEFT JOIN dg_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
     log_comment = 'dg_arm2_defaults', ast_fuzzer_runs = 0;
 
 SELECT 'arm2 unmatched nulls', count(), sum(cityHash64(*)),
     countIf(c_u64 IS NULL), countIf(c_fs7 IS NULL), countIf(c_enum IS NULL)
 FROM dg_mixed_probe LEFT JOIN dg_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 1,
+    enable_hash_join_row_store = 0,
     log_comment = 'dg_arm2_nulls', ast_fuzzer_runs = 0;
 
 -- Arms 3 and 5: ten build rows per key. The threshold pin selects the emit builder; the gathering
@@ -158,20 +169,21 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 -- or nothing: its gather input is the subset of ref words the walk selects, so one column left on the
 -- generic path forces every column onto it. The two arms differ only in that switch. The
 -- `LowCardinality(String)` column is what keeps the output mixed: neither the gather nor the row
--- store can take it, and with only one row-store-useful column left the row store cannot initialize
--- at all.
+-- store can take it. Only `a` is narrow enough for the row store to claim, so both arms also pin
+-- the row store off to keep the emit path theirs to choose.
 CREATE TABLE dg_list_mixed (k UInt64, a UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003, toString(number % 50) FROM numbers(2000);
 
 SELECT 'arm5b mixed limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7,
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0,
     log_comment = 'dg_arm5b_mixed_limit_offset', ast_fuzzer_runs = 0;
 
 SELECT 'arm5c mixed by blocks', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
+    enable_hash_join_row_store = 0,
     log_comment = 'dg_arm5c_mixed_by_blocks', ast_fuzzer_runs = 0;
 
 -- Arm 4: `SEMI` strictness leaves `output_by_row_list` false, which is the single-inline-ref builder.
@@ -181,7 +193,8 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 
 -- Arm 6: a `Nullable` stored column gathers its null map and its nested plane; an unmatched row
 -- writes a set null byte over a zeroed nested value, which is what `insertDefaultInto` inserts.
--- The `full_sorting_merge` twin pins the same values through an algorithm sharing no code.
+-- The row store unwraps `Nullable` and would claim both payloads, so it is pinned off. The
+-- `full_sorting_merge` twin pins the same values through an algorithm sharing no code.
 CREATE TABLE dg_nullable (k UInt64, a Nullable(UInt64), b Nullable(FixedString(7))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_nullable SELECT number, if(number % 5 = 0, NULL, number * 1000003),
     if(number % 7 = 0, NULL, toFixedString(leftPad(toString(number), 7, 'x'), 7)) FROM numbers(2000);
@@ -200,7 +213,8 @@ SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, 
 -- Arm 7: lazy replication under an upstream `arrayJoin` wraps the right columns wider than 8 bytes
 -- (`u`, `w`, `d`) in `ColumnReplicated`, which the gather reads through the per-block indexes:
 -- `row' = indexes[row]` addresses the nested column. The two key ranges overlap, so all 45 rows
--- reach the probe emit path: 4 gathered columns by 45 rows.
+-- reach the probe emit path: 4 gathered columns by 45 rows. Every column here fits the row store's
+-- inclusive 32-byte limit, so it is pinned off to make 180 exact.
 SELECT 'arm7 replicated', count(), sum(cityHash64(*)) FROM
 (
     SELECT number AS k FROM numbers(1, 9)
@@ -214,7 +228,8 @@ RIGHT JOIN
 ) AS r USING (k)
 SETTINGS enable_lazy_columns_replication = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0,
     join_use_nulls = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
-    joined_block_split_single_row = 0, log_comment = 'dg_arm7_replicated', ast_fuzzer_runs = 0;
+    joined_block_split_single_row = 0, enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm7_replicated', ast_fuzzer_runs = 0;
 
 -- Arm 8: the row store and the gather coexisting. A ratio of zero admits the row store without
 -- consulting any row-count estimate; `USING` saves no right key, so `n1` and `n2` are the two
