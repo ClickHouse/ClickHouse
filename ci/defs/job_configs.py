@@ -577,6 +577,22 @@ class JobConfigs:
             parameter=BuildTypes.ARM_FUZZERS,
             provides=[],
             runs_on=RunnerLabels.ARM_LARGE,
+            # This is the only build that runs `tests/fuzz/build.sh`, which packs the
+            # fuzzer options and the dictionary into the artifact the nightly job runs
+            # from. Without them in the digest, a change that only tunes a `.options`
+            # file reuses a cached build and the nightly silently runs the old settings.
+            # `tests/queries/0_stateless` also feeds the seed corpus archives, but it is
+            # deliberately left out: it would rebuild the fuzzers on every test-only pull
+            # request, and the seeds are refreshed by any source change anyway.
+            digest_config=Job.CacheDigestConfig(
+                include_paths=build_digest_config.include_paths
+                + [
+                    "./tests/fuzz/build.sh",
+                    "./tests/fuzz/all.dict",
+                    "./tests/fuzz/*.options",
+                ],
+                with_git_submodules=True,
+            ),
         ),
     )
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
@@ -1860,7 +1876,12 @@ class JobConfigs:
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                # Mounted from the repository and executed inside the container, so it
+                # does not reach the job through the build artifact.
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     libfuzzer_corpus_minimization_job = Job.Config(
@@ -1872,7 +1893,12 @@ class JobConfigs:
         ),
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                # Mounted from the repository and executed inside the container, so it
+                # does not reach the job through the build artifact.
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
