@@ -8579,7 +8579,7 @@ To disable the split of `Resize` nodes, set this setting to 0. This will prevent
     DECLARE(UInt64, max_streams_per_hierarchical_merge, 16, R"(
 Maximum number of input streams per `MergingSortedTransform` when merging streams produced by a full sort. Instead of funneling all sorted streams into a single merge node, a multi-layer tree of `MergingSortedTransform` processors is built, each merging at most this many inputs. This reduces `status_mutex` contention in the pipeline executor on high-core-count systems. Read-in-order and merge-only sorting steps keep a single merge node.
 
-The setting is local to the pipeline where it is applied. Full sorts reconstructed from a serialized query plan use a single merge node because this setting is not serialized.
+The setting is local to the pipeline where it is applied. Full sorts reconstructed from a serialized query plan use a single merge node because the fan-in is not serialized. The original value is carried only for validation, so a reconstructed full sort still rejects the invalid value 1.
 
 Possible values:
 

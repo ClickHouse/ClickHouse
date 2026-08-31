@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <Columns/ColumnVector.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -274,4 +275,35 @@ TEST(MergingSortedTest, SerializedPlanDisablesHierarchicalMerge)
 {
     QueryPlanSerializationSettings plan_settings;
     EXPECT_EQ(SortingStep::Settings(plan_settings).max_streams_per_hierarchical_merge, 0);
+}
+
+TEST(MergingSortedTest, SerializedPlanDefersHierarchicalMergeValidationToFullSort)
+{
+    auto pipe = getInputStreams({"K1"}, {{1, 1, 1}});
+    auto sort_description = getSortDescription({"K1"});
+
+    SortingStep::Settings settings(8192);
+    settings.temporary_files_buffer_size = 1;
+    settings.max_streams_per_hierarchical_merge = 1;
+    SortingStep step(pipe.getSharedHeader(), sort_description, 0, settings);
+
+    QueryPlanSerializationSettings full_sort_plan_settings;
+    EXPECT_NO_THROW(step.serializeSettings(full_sort_plan_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION));
+    auto deserialized_full_sort_settings = SortingStep::Settings(full_sort_plan_settings);
+    EXPECT_EQ(deserialized_full_sort_settings.max_streams_per_hierarchical_merge, 0);
+    EXPECT_EQ(deserialized_full_sort_settings.max_streams_per_hierarchical_merge_for_validation, 1);
+
+    QueryPlanSerializationSettings reserialized_plan_settings;
+    deserialized_full_sort_settings.updatePlanSettings(reserialized_plan_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    EXPECT_EQ(SortingStep::Settings(reserialized_plan_settings).max_streams_per_hierarchical_merge_for_validation, 1);
+
+    step.convertToFinishSorting(sort_description, false, false);
+    QueryPlanSerializationSettings finish_sorting_plan_settings;
+    EXPECT_NO_THROW(step.serializeSettings(finish_sorting_plan_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION));
+
+    QueryPlanSerializationSettings old_plan_settings;
+    step.serializeSettings(
+        old_plan_settings,
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION - 1);
+    EXPECT_EQ(SortingStep::Settings(old_plan_settings).max_streams_per_hierarchical_merge_for_validation, 0);
 }

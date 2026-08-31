@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
@@ -103,6 +104,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_to_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_streams_per_hierarchical_merge_for_validation;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
     extern const QueryPlanSerializationSettingsFloat remerge_sort_lowered_memory_bytes_ratio;
@@ -203,19 +205,15 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
     /// Hierarchical merging is a local pipeline optimization and is not serialized.
     max_streams_per_hierarchical_merge = 0;
+    max_streams_per_hierarchical_merge_for_validation
+        = settings[QueryPlanSerializationSetting::max_streams_per_hierarchical_merge_for_validation];
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
 }
 
-void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    /// `max_streams_per_hierarchical_merge` is not serialized, and the deserializing side resets it to `0`.
-    /// Validate the value here so that an invalid `1` is still rejected on the serialized-plan paths
-    /// (`serialize_query_plan`, distributed plans), where the full sort is rebuilt on a worker and
-    /// `checkMaxStreamsPerHierarchicalMerge` in `SortingStep::fullSort` would never see the user's value.
-    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
-
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
     settings[QueryPlanSerializationSetting::max_bytes_to_sort] = size_limits.max_bytes;
@@ -229,6 +227,12 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
+
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION)
+        settings[QueryPlanSerializationSetting::max_streams_per_hierarchical_merge_for_validation]
+            = max_streams_per_hierarchical_merge_for_validation != 0
+            ? max_streams_per_hierarchical_merge_for_validation
+            : max_streams_per_hierarchical_merge;
 }
 
 static ITransformingStep::Traits getTraits(size_t limit)
@@ -652,6 +656,7 @@ void SortingStep::fullSortStreams(
 void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
 {
     checkMaxStreamsPerHierarchicalMerge(sort_settings.max_streams_per_hierarchical_merge);
+    checkMaxStreamsPerHierarchicalMerge(sort_settings.max_streams_per_hierarchical_merge_for_validation);
 
     scatterByPartitionIfNeeded(pipeline);
     scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
@@ -836,9 +841,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    sort_settings.updatePlanSettings(settings);
+    sort_settings.updatePlanSettings(settings, version);
 }
 
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;

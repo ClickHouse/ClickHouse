@@ -56,13 +56,14 @@ public:
         bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
         size_t max_streams_per_hierarchical_merge = 16;
+        size_t max_streams_per_hierarchical_merge_for_validation = 0;
         String temporary_files_codec = {};
 
         explicit Settings(const DB::Settings & settings);
         explicit Settings(size_t max_block_size_);
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
-        void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+        void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
 
         bool operator==(const Settings & other) const = default;
     };
