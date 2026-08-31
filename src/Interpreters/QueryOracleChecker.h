@@ -112,6 +112,11 @@ public:
     /// non-associative across the projection vs base-table paths).
     bool checkProjectionEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Aggregate-If identity oracle (self-seeded): `aggIf(x, cond)` must equal the same aggregate
+    /// computed by arithmetic/if masking (e.g. sumIf(v,c)=sum(v*c), maxIf(v,c)=max(if(c,v,NULL))).
+    /// Compares the -If combinator against a DIFFERENT computation path; a divergence is a real bug.
+    bool checkAggregateIfIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
