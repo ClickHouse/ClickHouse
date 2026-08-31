@@ -31,17 +31,27 @@ FORMAT Null;
 SELECT count(), sum(k), sum(x) FROM
 (
     SELECT k, x FROM t_read_in_order_3 FINAL ARRAY JOIN vals AS x ORDER BY k
-    SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
-        read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1
 )
-SETTINGS query_plan_remove_redundant_sorting = 0;
+SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
+    read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1,
+    query_plan_remove_redundant_sorting = 0;
 
--- The two queries above only reach the merge while the plan still puts buffering in front of a
--- sorted merge, and their results are correct either way, so pin the shape rather than assume it.
-SET do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
-    read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1;
+-- Each query above only reaches the merge while the plan still puts buffering in front of a sorted
+-- merge, and the results are correct either way, so pin the shape of each rather than assume it.
+-- Every SETTINGS clause sits on the outermost statement, matching the query it pins: one attached to
+-- an inner subquery loses to the same setting arriving as a client option.
+SELECT countIf(explain LIKE '%BufferChunks%') > 0, countIf(explain LIKE '%MergingSortedTransform%') > 0
+FROM (EXPLAIN PIPELINE SELECT k, x FROM t_read_in_order_3 FINAL ARRAY JOIN vals AS x ORDER BY k
+      SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
+          read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1);
 
 SELECT countIf(explain LIKE '%BufferChunks%') > 0, countIf(explain LIKE '%MergingSortedTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT k, x FROM t_read_in_order_3 FINAL ARRAY JOIN vals AS x ORDER BY k);
+FROM (EXPLAIN PIPELINE SELECT count(), sum(k), sum(x) FROM
+      (
+          SELECT k, x FROM t_read_in_order_3 FINAL ARRAY JOIN vals AS x ORDER BY k
+      )
+      SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
+          read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1,
+          query_plan_remove_redundant_sorting = 0);
 
 DROP TABLE t_read_in_order_3;
