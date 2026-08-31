@@ -71,23 +71,16 @@ SELECT count() FROM t_ret_settings;
 
 -- Source-only `database` setting must be restored before delayed RETURNING planning/execution.
 SELECT 'source database setting does not leak into returning';
-DROP DATABASE IF EXISTS db_ret_settings_b;
-DROP TABLE IF EXISTS t_ret_db;
-DROP TABLE IF EXISTS t_ret_probe;
-CREATE DATABASE db_ret_settings_b;
-CREATE TABLE t_ret_db (id UInt64) ENGINE = Memory;
-CREATE TABLE t_ret_probe (id UInt64) ENGINE = Memory;
-CREATE TABLE db_ret_settings_b.t_ret_db (id UInt64) ENGINE = Memory;
-CREATE TABLE db_ret_settings_b.t_ret_probe (id UInt64) ENGINE = Memory;
-INSERT INTO t_ret_probe VALUES (1);
-INSERT INTO db_ret_settings_b.t_ret_probe VALUES (1), (2);
-INSERT INTO t_ret_db SELECT 1
-SETTINGS database = 'db_ret_settings_b'
+DROP TABLE IF EXISTS default.t_ret_db;
+DROP TABLE IF EXISTS default.t_ret_probe;
+CREATE TABLE default.t_ret_db (id UInt64) ENGINE = Memory;
+CREATE TABLE default.t_ret_probe (id UInt64) ENGINE = Memory;
+INSERT INTO default.t_ret_probe VALUES (1);
+INSERT INTO default.t_ret_db SELECT 1
+SETTINGS database = 'system'
 RETURNING (SELECT count() FROM t_ret_probe);
-DROP TABLE t_ret_db;
-DROP TABLE t_ret_probe;
-DROP TABLE db_ret_settings_b.t_ret_db;
-DROP DATABASE db_ret_settings_b;
+DROP TABLE default.t_ret_db;
+DROP TABLE default.t_ret_probe;
 
 -- RETURNING-subquery construction settings are currently rejected fail-close.
 SELECT 'returning construction settings are rejected';
