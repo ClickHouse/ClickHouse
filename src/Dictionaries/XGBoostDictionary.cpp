@@ -227,7 +227,7 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
 #endif
             ,
             .syntax = "LAYOUT(XGBOOST([objective '...'] [num_iterations N] [max_depth N] [eta 0.3] [...]))",
-            .introduced_in = {26, 7}});
+            .introduced_in = {26, 9}});
 }
 
 }

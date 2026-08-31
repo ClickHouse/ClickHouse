@@ -295,7 +295,7 @@ REGISTER_FUNCTION(PredictXGBoost)
         .examples
         = {{"Predict", "SELECT predictXGBoost('model', 1.0, 2.0);", "7.0"},
            {"Predict with parameters", "SELECT predictXGBoost('model', 1.0, 2.0, map('type', 0, 'iteration_end', 0));", "7.0"}},
-        .introduced_in = {26, 7},
+        .introduced_in = {26, 9},
         .category = FunctionDocumentation::Category::MachineLearning});
 }
 
