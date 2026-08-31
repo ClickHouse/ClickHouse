@@ -153,15 +153,20 @@ SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 5,
 That query runs on the existing three workers plus two newly leased workers.
 
 ```mermaid
+%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%
 flowchart TB
-    subgraph t1["Tenant — already holding 3 leased workers"]
-      W1[W1]
-      W2[W2]
-      W3[W3]
-    end
-    Q1["Query A (3 workers)"] --> W1 & W2 & W3
-    Q2["Query B (3 workers)"] --> W1 & W2 & W3
-    Q3["Query C (5 workers)"] --> W1 & W2 & W3
+    W1["W1 — already leased"]
+    W2["W2 — already leased"]
+    W3["W3 — already leased"]
+    Q1["Query A (3 workers)"] --> W1
+    Q1 --> W2
+    Q1 --> W3
+    Q2["Query B (3 workers)"] --> W1
+    Q2 --> W2
+    Q2 --> W3
+    Q3["Query C (5 workers)"] --> W1
+    Q3 --> W2
+    Q3 --> W3
     Q3 --> W4[W4 new]
     Q3 --> W5[W5 new]
 ```
