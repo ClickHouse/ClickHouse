@@ -673,7 +673,7 @@ The server successfully detected this situation and will download merged part fr
     M(DNSRequestMicroseconds, "Total time spent in forward DNS requests counted by DNSRequests, including the failed ones counted by DNSError.", ValueType::Microseconds) \
     M(DNSReverseRequests, "Total count of reverse DNS requests (address to host names, PTR) sent to the resolver, for example to match a client address against a `host_regexp` in the users configuration. Requests served from the DNS cache are not counted.", ValueType::Number) \
     M(DNSReverseRequestMicroseconds, "Total time spent in reverse DNS requests counted by DNSReverseRequests, including the failed ones counted by DNSReverseError.", ValueType::Microseconds) \
-    M(DNSReverseError, "Total count of errors in reverse DNS resolution", ValueType::Number) \
+    M(DNSReverseError, "Total count of failed reverse DNS requests among the requests counted by DNSReverseRequests. Both requests that ended with an error and requests that returned no PTR records are counted, because the resolver reports NXDOMAIN and other non-success statuses by returning an empty answer.", ValueType::Number) \
     M(PartsLockHoldMicroseconds, "Total time spent holding data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLockWaitMicroseconds, "Total time spent waiting for data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLocks, "Number of times data parts lock has been acquired for MergeTree tables", ValueType::Number) \

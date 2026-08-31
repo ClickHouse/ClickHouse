@@ -171,17 +171,28 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     ProfileEvents::increment(ProfileEvents::DNSReverseRequests);
     ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::DNSReverseRequestMicroseconds);
 
+    std::unordered_set<String> ptr_records;
+
     try
     {
         if (address.family() == Poco::Net::IPAddress::Family::IPv4)
-            return ptr_resolver->resolve(address.toString());
-        return ptr_resolver->resolve_v6(address.toString());
+            ptr_records = ptr_resolver->resolve(address.toString());
+        else
+            ptr_records = ptr_resolver->resolve_v6(address.toString());
     }
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::DNSReverseError);
         throw;
     }
+
+    /// An empty answer is a failed lookup as well: `c-ares` reports `NXDOMAIN`, `SERVFAIL` and other
+    /// non-success statuses by leaving the result set empty rather than by raising an error,
+    /// and every caller treats the absence of PTR records as a resolution failure.
+    if (ptr_records.empty())
+        ProfileEvents::increment(ProfileEvents::DNSReverseError);
+
+    return ptr_records;
 }
 
 Poco::Net::IPAddress pickAddress(const DNSResolver::IPAddresses & addresses)
