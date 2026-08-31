@@ -116,7 +116,7 @@ void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const Stri
     const auto inserted_it = observations.emplace(file_path, Observation{generation, since, lru.begin(), 0}).first;
     /// The weight is remembered, because the two copies of the path may have different capacities.
     inserted_it->second.entry_weight = weight(inserted_it->first, lru.front());
-    size_in_bytes += inserted_it->second.entry_weight;
+    entries_size_in_bytes += inserted_it->second.entry_weight;
     evictWhileOverLimitsUnlocked();
 }
 
@@ -125,18 +125,53 @@ size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::weight(const
     return sizeof(Observation) + 2 * sizeof(String) + key.capacity() + lru_entry.capacity();
 }
 
+bool ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::overLimitsUnlocked() const
+{
+    return (max_entries && observations.size() > max_entries)
+        || (max_bytes && sizeInBytesUnlocked() > max_bytes);
+}
+
+size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::sizeInBytesUnlocked() const
+{
+    /// The bucket array of `observations` is a part of the registry, and it is the part
+    /// which stays allocated after the entries are gone, so it must be accounted as well.
+    return entries_size_in_bytes + observations.bucket_count() * sizeof(void *);
+}
+
+bool ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::reclaimBucketArrayUnlocked()
+{
+    const size_t bucket_count_before = observations.bucket_count();
+    /// Rehashing on every insertion which is over the limit would be quadratic, so the
+    /// bucket array is rebuilt only when it is mostly empty, which is the case after a
+    /// large eviction or after the limits were lowered.
+    if (bucket_count_before <= 2 * (observations.size() + 1))
+        return false;
+
+    observations.rehash(0);
+    return observations.bucket_count() < bucket_count_before;
+}
+
 void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::evictWhileOverLimitsUnlocked()
 {
     /// The most recently touched entry is at the front, so a freshly inserted observation
     /// is evicted only when it alone does not fit into the limit.
-    while (!observations.empty()
-        && ((max_entries && observations.size() > max_entries) || (max_bytes && size_in_bytes > max_bytes)))
+    while (overLimitsUnlocked())
     {
+        /// Reclaiming the memory the erased entries left behind can be enough by itself.
+        if (reclaimBucketArrayUnlocked())
+            continue;
+
+        if (observations.empty())
+            break;
+
         const auto evicted_it = observations.find(lru.back());
-        size_in_bytes -= evicted_it->second.entry_weight;
+        entries_size_in_bytes -= evicted_it->second.entry_weight;
         observations.erase(evicted_it);
         lru.pop_back();
     }
+
+    /// The limits are satisfied, but the entries which are gone may still hold their buckets.
+    reclaimBucketArrayUnlocked();
 }
 
 time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const String & file_path, UInt64 generation) const
@@ -173,7 +208,7 @@ void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::setMaxSizeInBy
 size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::sizeInBytes() const
 {
     std::lock_guard lock(mutex);
-    return size_in_bytes;
+    return sizeInBytesUnlocked();
 }
 
 size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::count() const

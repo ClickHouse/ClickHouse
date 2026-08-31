@@ -297,27 +297,30 @@ void expectForeignProcessingObserversAreBoundedByBytes()
 {
     if constexpr (requires { typename Meta::ForeignProcessingObservers; })
     {
-        /// All the paths below are of the same length, hence of the same weight.
+        static constexpr size_t observations_count = 100;
+        const auto path_of = [](size_t i) { return "data/" + std::to_string(1000 + i) + ".csv"; };
+
         typename Meta::ForeignProcessingObservers observers(/* max_entries */ 0, /* max_bytes */ 0);
-        observers.set("data/aaa.csv", /* generation */ 1, 1);
-        const size_t weight_of_one_entry = observers.sizeInBytes();
-        ASSERT_GT(weight_of_one_entry, 0);
+        for (size_t i = 0; i < observations_count; ++i)
+            observers.set(path_of(i), /* generation */ 1, static_cast<time_t>(i + 1));
 
-        observers.setMaxSizeInBytes(2 * weight_of_one_entry);
-        observers.set("data/bbb.csv", /* generation */ 1, 2);
-        observers.set("data/ccc.csv", /* generation */ 1, 3);
-
-        ASSERT_EQ(observers.count(), 2);
-        ASSERT_LE(observers.sizeInBytes(), 2 * weight_of_one_entry);
-        ASSERT_EQ(observers.get("data/aaa.csv", 1), 0);
-        ASSERT_EQ(observers.get("data/bbb.csv", 1), 2);
-        ASSERT_EQ(observers.get("data/ccc.csv", 1), 3);
+        const size_t size_of_all = observers.sizeInBytes();
+        ASSERT_GT(size_of_all, 0);
 
         /// Lowering the limit evicts the least recently used entries immediately.
-        observers.setMaxSizeInBytes(weight_of_one_entry);
-        ASSERT_EQ(observers.count(), 1);
-        ASSERT_EQ(observers.get("data/bbb.csv", 1), 0);
-        ASSERT_EQ(observers.get("data/ccc.csv", 1), 3);
+        observers.setMaxSizeInBytes(size_of_all / 2);
+        ASSERT_LE(observers.sizeInBytes(), size_of_all / 2);
+        ASSERT_GT(observers.count(), 0);
+        ASSERT_LT(observers.count(), observations_count);
+        ASSERT_EQ(observers.get(path_of(0), 1), 0);
+        ASSERT_GT(observers.get(path_of(observations_count - 1), 1), 0);
+
+        /// The limit keeps holding while new observations arrive.
+        for (size_t i = 0; i < observations_count; ++i)
+            observers.set(path_of(observations_count + i), /* generation */ 1, static_cast<time_t>(i + 1));
+
+        ASSERT_LE(observers.sizeInBytes(), size_of_all / 2);
+        ASSERT_GT(observers.count(), 0);
     }
     else
         FAIL() << "There is no registry of foreign processing observations";
@@ -326,6 +329,35 @@ void expectForeignProcessingObserversAreBoundedByBytes()
 TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversAreBoundedByBytes)
 {
     expectForeignProcessingObserversAreBoundedByBytes();
+}
+
+/// Evicting the entries is not enough: an `std::unordered_map` keeps its peak bucket array,
+/// so the registry of a long-lived table would stay at its high-water mark even after the
+/// limits were lowered. The memory must be given back.
+template <typename Meta = ObjectStorageQueueIFileMetadata>
+void expectForeignProcessingObserversReclaimTheBucketArray()
+{
+    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
+    {
+        static constexpr size_t observations_count = 10000;
+
+        typename Meta::ForeignProcessingObservers observers(/* max_entries */ 0, /* max_bytes */ 0);
+        for (size_t i = 0; i < observations_count; ++i)
+            observers.set("data/" + std::to_string(1000 + i) + ".csv", /* generation */ 1, static_cast<time_t>(i + 1));
+
+        const size_t size_of_all = observers.sizeInBytes();
+        observers.setMaxEntries(1);
+        ASSERT_EQ(observers.count(), 1);
+        /// The remaining entry is one of ten thousand, so nothing close to the peak may be left.
+        ASSERT_LT(observers.sizeInBytes(), size_of_all / 100);
+    }
+    else
+        FAIL() << "There is no registry of foreign processing observations";
+}
+
+TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversReclaimTheBucketArray)
+{
+    expectForeignProcessingObserversReclaimTheBucketArray();
 }
 
 /// An observation of a path made for an earlier foreign hold must not be returned for a

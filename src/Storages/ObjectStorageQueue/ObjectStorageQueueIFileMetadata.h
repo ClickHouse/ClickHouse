@@ -40,6 +40,7 @@ public:
         time_t get(const String & path, UInt64 generation) const;
         void setMaxEntries(size_t max_entries_);
         void setMaxSizeInBytes(size_t max_bytes_);
+        /// The whole heap footprint of the registry: the entries and the bucket array.
         size_t sizeInBytes() const;
         size_t count() const;
 
@@ -56,6 +57,11 @@ public:
         /// (as the key of `observations` and as an element of the `lru` list).
         static size_t weight(const String & key, const String & lru_entry);
         void evictWhileOverLimitsUnlocked() TSA_REQUIRES(mutex);
+        bool overLimitsUnlocked() const TSA_REQUIRES(mutex);
+        size_t sizeInBytesUnlocked() const TSA_REQUIRES(mutex);
+        /// `std::unordered_map::erase` never shrinks the bucket array, so the registry would
+        /// keep its high-water mark forever. Returns whether the bucket array became smaller.
+        bool reclaimBucketArrayUnlocked() TSA_REQUIRES(mutex);
 
         size_t max_entries;
         /// Zero means that only `max_entries` bounds the registry.
@@ -63,7 +69,7 @@ public:
         mutable std::mutex mutex;
         mutable std::list<String> lru TSA_GUARDED_BY(mutex);
         mutable std::unordered_map<String, Observation> observations TSA_GUARDED_BY(mutex);
-        size_t size_in_bytes TSA_GUARDED_BY(mutex) = 0;
+        size_t entries_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     };
 
     struct FileStatus
