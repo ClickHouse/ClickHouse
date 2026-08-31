@@ -1031,6 +1031,15 @@ azureBlobStorage(storage_account_url, container_name, blobpath, account_name, ac
 ```
 
 </Tab>
+<Tab title="Workload identity">
+
+Uses Azure workload identity via `extra_credentials`; mutually exclusive with `account_name` / `account_key` and requires `storage_account_url` (not `connection_string`):
+
+```sql
+azureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, structure])
+```
+
+</Tab>
 <Tab title="Named collection">
 
 See [Named Collections](#named-collections) below for the full list of supported keys:
@@ -1047,7 +1056,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | Argument                         | Description                                                                                                                                                                                                                                                                                                                                               |
 |----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `connection_string`              | A connection string that includes embedded credentials (account name + account key or SAS token). When using this form, `account_name` and `account_key` should **not** be passed separately. See [Configure a connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account). |
-| `storage_account_url`            | The storage account endpoint URL, e.g. `https://myaccount.blob.core.windows.net/`. When using this form, you **must** also pass `account_name` and `account_key`.                                                                                                                                                                                         |
+| `storage_account_url`            | The storage account endpoint URL, e.g. `https://myaccount.blob.core.windows.net/`. When using this form, pass either `account_name` and `account_key`, or `extra_credentials(client_id=, tenant_id=)` for workload identity.                                                                                                                              |
 | `container_name`                 | Container name.                                                                                                                                                                                                                                                                                                                                           |
 | `blobpath`                       | File path. Supports the following wildcards in read-only mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                                                                                                                                                                                            |
 | `account_name`                   | Storage account name. **Required** when using `storage_account_url` without SAS; must **not** be passed when using `connection_string`.                                                                                                                                                                                                                               |
