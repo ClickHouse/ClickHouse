@@ -22,6 +22,7 @@ SET group_by_two_level_threshold = 1000;
 SET group_by_two_level_threshold_bytes = 1000000;
 SET max_bytes_before_external_group_by = 80000000;
 SET max_bytes_ratio_before_external_group_by = 0;
+SET max_memory_usage = 300000000;
 -- The hash-table statistics remember the thaw verdict and a marked query skips the adaptive
 -- engagement, so without this only the first run of the shape would reach it.
 SET collect_hash_table_stats_during_aggregation = 0;

@@ -2492,7 +2492,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && spill_decision_memory > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
+        size_t size = spill_decision_memory + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
     }
 

@@ -1684,12 +1684,9 @@ std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregation
 
     std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
 
-    /// Read under the coordinator lock: the sweeps replace this pointer while holding it.
-    if (!shared.early_drain_variants)
-        return {};
-
-    /// The sweeps detach only at the part floor, so a residue below it is never written by them
-    /// and stays resident until the merge.
+    /// Read under the coordinator lock: the sweeps replace this pointer while holding it. They
+    /// detach only at the part floor, so a residue below it is never written by them and stays
+    /// resident until the merge.
     while (shared.early_drain_variants->hasData())
     {
         /// Declared before the table so that reverse-order destruction frees the table first:
@@ -1713,9 +1710,9 @@ std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregation
         sweep_lock.lock();
     }
 
-    /// The whole budget is granted only when nothing is in flight and holding it keeps a new detach
-    /// from starting, while the coordinator lock keeps a sweep from refilling the table, so memory
-    /// already on its way out cannot enter the reading.
+    /// The whole budget is granted only when no detached table or reserved writer is in flight, and
+    /// holding it keeps a new detach from starting, while the coordinator lock keeps a sweep from
+    /// refilling the table, so memory already committed to a write cannot enter the reading.
     AdaptiveAggregationSession::SpillReservation quiesce;
     if (!quiesce.reserveOrWait(shared, adaptive_pressure_detached_bytes_budget))
         return {};
