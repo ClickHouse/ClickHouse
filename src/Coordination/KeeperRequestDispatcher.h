@@ -140,6 +140,10 @@ private:
         {
             if (!lock())
                 return false;
+            /// The read is parked here until the batch commits; start measuring that wait. Done
+            /// under the lock because only the successful path parks the request.
+            request_for_session.request->spans.maybeInitialize(
+                KeeperSpan::ReadWaitForWrite, request_for_session.request->tracing_context.get());
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;

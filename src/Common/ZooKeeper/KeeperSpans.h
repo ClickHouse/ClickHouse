@@ -80,6 +80,10 @@ public:
         const OpenTelemetry::TracingContext * parent_context,
         UInt64 start_time_us = now());
 
+    /// Whether `maybeInitialize` has been called for this operation. For a span that only some
+    /// requests go through, this tells the finalizing side which ones to observe.
+    bool isStarted(KeeperSpan::Operation operation) const { return maybe_spans[operation].start_time_us != 0; }
+
     template <typename MakeAttributes>
     void maybeFinalize(
         KeeperSpan::Operation operation,

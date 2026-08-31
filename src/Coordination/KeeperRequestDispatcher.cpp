@@ -90,6 +90,39 @@ static size_t getSubrequestCount(const Coordination::ZooKeeperRequest & request)
         return 1;
 }
 
+/// A read request that cannot be answered before the in-flight writes of its own session commit is
+/// parked (see `LateReads`); the span measures how long it waits there.
+static void startReadWaitForWriteSpan(const KeeperRequestForSession & read)
+{
+    read.request->spans.maybeInitialize(KeeperSpan::ReadWaitForWrite, read.request->tracing_context.get());
+}
+
+static void finalizeReadWaitForWriteSpans(
+    KeeperRequestsForSessions & reads,
+    OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
+    const String & error_message = {})
+{
+    for (auto & read : reads)
+    {
+        /// Reads that were answered without waiting never started the span.
+        if (!read.request->spans.isStarted(KeeperSpan::ReadWaitForWrite))
+            continue;
+
+        read.request->spans.maybeFinalize(
+            KeeperSpan::ReadWaitForWrite,
+            [&]
+            {
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(read.request->getOpNum())},
+                    {"keeper.session_id", read.session_id},
+                    {"keeper.xid", read.request->xid},
+                };
+            },
+            status,
+            error_message);
+    }
+}
+
 /// Estimated memory used by a request/response struct, for queue size byte limits.
 static size_t getRequestBytesCost(const Coordination::ZooKeeperRequest & request)
 {
@@ -862,6 +895,7 @@ void KeeperRequestDispatcher::dispatchThread()
                             chassert(!requests.empty());
                             if (session)
                                 session->reordering_version = current_reordering_version;
+                            startReadWaitForWriteSpan(request);
                             late_reads.push_back(std::move(request));
                         }
                         else
@@ -978,7 +1012,9 @@ void KeeperRequestDispatcher::dropInFlightRequests()
             if (batch.intermediate_reads_idx < batch.intermediate_reads.size() &&
                 batch.intermediate_reads[batch.intermediate_reads_idx].first == batch.committed_requests)
             {
-                for (const auto & read_request : batch.intermediate_reads[batch.intermediate_reads_idx].second)
+                auto & dropped_reads = batch.intermediate_reads[batch.intermediate_reads_idx].second;
+                finalizeReadWaitForWriteSpans(dropped_reads, OpenTelemetry::SpanStatus::ERROR, "Connection loss");
+                for (const auto & read_request : dropped_reads)
                 {
                     reads_dropped += 1;
                     addErrorResponse(read_request, Coordination::Error::ZCONNECTIONLOSS);
@@ -992,6 +1028,7 @@ void KeeperRequestDispatcher::dropInFlightRequests()
             auto reads = batch.late_reads.takeAndFinishIfEmpty();
             if (reads.empty())
                 break;
+            finalizeReadWaitForWriteSpans(reads, OpenTelemetry::SpanStatus::ERROR, "Connection loss");
             for (const auto & read_request : reads)
             {
                 reads_dropped += 1;
@@ -1070,6 +1107,7 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
     {
         auto reads = std::move(batch.intermediate_reads[batch.intermediate_reads_idx].second);
         batch.intermediate_reads_idx += 1;
+        finalizeReadWaitForWriteSpans(reads);
 
         /// (We could re-check whether the requests' sessions are still alive, but it doesn't seem
         ///  worth the map lookup cost. We already checked session liveness just before starting
@@ -1104,6 +1142,7 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
             auto reads = batch.late_reads.takeAndFinishIfEmpty();
             if (reads.empty())
                 break;
+            finalizeReadWaitForWriteSpans(reads);
             executeReads(std::move(reads));
         }
 
