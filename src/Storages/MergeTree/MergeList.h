@@ -179,6 +179,8 @@ class MergeList final : public BackgroundProcessList<MergeListElement, MergeInfo
 private:
     using Parent = BackgroundProcessList<MergeListElement, MergeInfo>;
     std::atomic<size_t> merges_with_ttl_counter = 0;
+    /// Set by cancelAll (on server shutdown): entries inserted after it are cancelled at birth.
+    std::atomic<bool> all_cancelled = false;
 public:
     MergeList()
         : Parent(CurrentMetrics::Merge)
@@ -215,9 +217,13 @@ public:
             hook();
     }
 
+    /// Cancel all current merges and mutations, and also all inserted later.
+    /// Used on server shutdown, when their results would be discarded anyway.
     void cancelAll()
     {
         /// Cancel every running merge/mutation in the table, including a still in-flight pipeline.
+        /// `all_cancelled` prevents new entries from being inserted after this point (checked in `insert`).
+        all_cancelled = true;
         std::vector<std::function<void()>> hooks_to_invoke;
         {
             std::lock_guard lock{mutex};
@@ -231,6 +237,15 @@ public:
         }
         for (const auto & hook : hooks_to_invoke)
             hook();
+    }
+
+    template <typename... Args>
+    EntryPtr insert(Args &&... args)
+    {
+        auto entry = Parent::insert(std::forward<Args>(args)...);
+        if (all_cancelled)
+            (*entry)->is_cancelled = true;
+        return entry;
     }
 
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)

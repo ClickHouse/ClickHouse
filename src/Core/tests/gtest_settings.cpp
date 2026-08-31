@@ -184,6 +184,33 @@ GTEST_TEST(QueryParameters, DuplicateNameOnTheWireLastOccurrenceWins)
     ASSERT_EQ(parameters.at("x"), "2");
 }
 
+GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
+{
+    /// A client older than a setting has no typed field for it, so it holds the setting as a custom
+    /// field and sends it with the CUSTOM flag. The receiver knows the setting, so it must end up in
+    /// the typed field and be seen as changed.
+    Settings sent;
+    sent.setCustom("log_comment", Field(String("hello")));
+    sent.setCustom("max_block_size", Field(UInt64(1234)));
+    sent.setCustom("custom_unknown_here", Field(String("kept")));
+
+    WriteBufferFromOwnString out;
+    sent.write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+
+    Settings settings;
+    ReadBufferFromString in(out.str());
+    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+
+    ASSERT_TRUE(settings.isChanged("log_comment"));
+    ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
+    ASSERT_TRUE(settings.isChanged("max_block_size"));
+    ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(1234)));
+
+    /// A name that is not a setting here stays a custom setting.
+    ASSERT_TRUE(settings.isChanged("custom_unknown_here"));
+    ASSERT_EQ(settings.get("custom_unknown_here"), Field(String("kept")));
+}
+
 GTEST_TEST(SettingFieldTimespan, ValueAlwaysFitsInt64Microseconds)
 {
     constexpr Int64 max_ms = std::numeric_limits<Int64>::max() / 1000;
