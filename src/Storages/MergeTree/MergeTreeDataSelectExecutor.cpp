@@ -1936,6 +1936,11 @@ bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
     const ContextPtr & context,
     LoggerPtr log)
 {
+    /// `filterPartsByPartition` rejects such a part before it prunes anything; hold the same invariant
+    /// here so no shortcut below can classify a corrupted part as excluded.
+    if (!part->isEmpty() && !part->getMinMaxIndex()->initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
+
     const auto & settings = context->getSettingsRef();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     auto storage_settings = part->storage.getSettings();
