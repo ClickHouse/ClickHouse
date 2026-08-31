@@ -248,14 +248,14 @@ common_integration_test_job_config = Job.Config(
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
@@ -636,7 +636,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
@@ -646,7 +646,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
@@ -673,7 +673,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
@@ -683,7 +683,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
@@ -1416,19 +1416,19 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
     )
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
@@ -1473,7 +1473,7 @@ class JobConfigs:
     ast_fuzzer_targeted_pr_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
@@ -1677,7 +1677,7 @@ class JobConfigs:
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
         # runners are in us-east-1, where Canonical's mirrors are often unreachable.
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
@@ -1693,7 +1693,7 @@ class JobConfigs:
     )
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
         # runners are in us-east-1, where Canonical's mirrors are often unreachable.
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
@@ -1844,13 +1844,13 @@ class JobConfigs:
     )
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py keeper",
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_SERVER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
@@ -1932,7 +1932,7 @@ class JobConfigs:
     )
     update_toolchain_dockerfile_job = Job.Config(
         name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
         enable_gh_auth=True,
     )
@@ -1961,18 +1961,6 @@ class JobConfigs:
         ),
         timeout=1800,
         enable_gh_auth=True,
-        # Run on a red head too. This job is the only writer of the
-        # `build-profile-diff` PR comment, so skipping it leaves the comment
-        # posted for an older commit pinned to the PR, reading as if it
-        # described the head. `Build (arm_release)` runs after every regular
-        # build (`set_run_after(REGULAR_BUILD_NAMES)` in ci/workflows/pull_request.py)
-        # and inherits the default "no upstream failure" gate, so an unrelated
-        # build failure skips it and would skip this job with it. With no
-        # profile data for the head the job posts the "no data" text over the
-        # stale comparison (see main()) instead of leaving it. Not
-        # `run_unless_cancelled`: that would also ignore the job filter and run
-        # this on a `release` or `do not test` PR.
-        run_on_upstream_failure=True,
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
@@ -2008,7 +1996,7 @@ class JobConfigs:
     )
     promql_compliance_job = Job.Config(
         name=JobNames.PROMQL_COMPLIANCE,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         run_in_docker="clickhouse/test-base",
         # Wait for integration upload post-hooks, including failed integration jobs.
         run_after=[
