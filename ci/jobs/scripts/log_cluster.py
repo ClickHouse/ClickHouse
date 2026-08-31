@@ -6,6 +6,7 @@ import requests
 
 from ci.praktika.info import Info
 from ci.praktika.secret import Secret
+from ci.praktika.utils import Utils
 
 
 @dataclass(frozen=True)
@@ -79,11 +80,29 @@ class LogCluster:
             cast="toLowCardinality('{}')",
         ),
         MetaColumn(name="instance_id", type="String"),
+        MetaColumn(
+            name="workflow_start_time",
+            type="DateTime('UTC')",
+            cast="toDateTime('{}', 'UTC')",
+        ),
     )
 
     @classmethod
     def meta_columns(cls):
         return cls.META_COLUMNS
+
+    @classmethod
+    def workflow_start_time(cls):
+        """Start of the workflow this job belongs to, as a UTC datetime string.
+
+        `Info().workflow_start_time` is GitHub's `created_at` of the run
+        (`2026-08-14T17:01:52Z`), resolved by the config job: the same value
+        for every job of the run, and a rerun keeps it. Grouping rows by it
+        therefore reconstructs one workflow run.
+        """
+        return Utils.gh_str_to_datetime(Info().workflow_start_time).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
     @classmethod
     def meta_values(cls, check_start_time, check_name="", commit_sha=""):
@@ -103,6 +122,7 @@ class LogCluster:
             "check_name": check_name or info.job_name,
             "instance_type": info.instance_type,
             "instance_id": info.instance_id,
+            "workflow_start_time": cls.workflow_start_time(),
         }
 
     @classmethod

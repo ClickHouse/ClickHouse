@@ -73,6 +73,7 @@ from ci.jobs.scripts.log_cluster import LogCluster
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.utils import Utils
 
 CHECK_NAME = "arm_release"
 # The master sccache-warmup build: compiled with the PR build's exact cmake
@@ -299,8 +300,7 @@ def walk_cutoff(event_time: str, days: int) -> str:
     now = datetime.datetime.now(datetime.timezone.utc)
     anchor = now
     if event_time:
-        parsed = datetime.datetime.fromisoformat(event_time.replace("Z", "+00:00"))
-        anchor = min(parsed, now)
+        anchor = min(Utils.gh_str_to_datetime(event_time), now)
     start = anchor.date() - datetime.timedelta(days=days + UPLOAD_DELAY_DAYS)
     return f"{start.isoformat()}T00:00:00Z"
 
