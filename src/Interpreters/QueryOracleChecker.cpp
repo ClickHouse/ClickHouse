@@ -86,6 +86,7 @@ extern const Event ASTFuzzerOracleGroupingSetsChecks;
 extern const Event ASTFuzzerOracleRowPolicyChecks;
 extern const Event ASTFuzzerOracleFinalMergeChecks;
 extern const Event ASTFuzzerOracleWithFillChecks;
+extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3790,6 +3791,47 @@ bool QueryOracleChecker::checkWithFillGrid(const ASTSelectQuery &, const Context
             context, &fixture);
 
     LOG_TRACE(logger, "WITH FILL grid oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkPipeEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_16): pipe syntax is a pure syntactic re-rendering — the pipe form's AST
+    /// is meant to be identical to the equivalent nested-subquery query — so a classic SELECT and its
+    /// pipe rendering must return the same multiset. A divergence is a real pipe-parser/analyzer bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("pipe", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (a Int64, b Int64) ENGINE = MergeTree ORDER BY a"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 13, toInt64(number) FROM numbers(300)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "pipe equivalence oracle: {}", tbl);
+
+    auto classic_opt = OracleExec::executeRows(
+        "SELECT a, b FROM " + tbl + " WHERE a < 5", context, ResultShape::SortedBag);
+    auto pipe_opt = OracleExec::executeRows(
+        "FROM " + tbl + " |> WHERE a < 5 |> SELECT a, b", context, ResultShape::SortedBag);
+    if (!classic_opt || !pipe_opt)
+        return false;
+
+    if (!OracleCompare::equal(*classic_opt, *pipe_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "pipe equivalence oracle mismatch!\n"
+                "classic SELECT ({} rows) vs pipe rendering ({} rows) on {}\n{}",
+                classic_opt->size(), pipe_opt->size(), tbl,
+                OracleCompare::diffSummary(*classic_opt, *pipe_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "pipe equivalence oracle passed");
     return true;
 }
 

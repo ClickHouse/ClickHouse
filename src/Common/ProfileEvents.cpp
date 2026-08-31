@@ -80,6 +80,7 @@
     M(ASTFuzzerOracleRowPolicyChecks, "Number of row-policy equivalence oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleFinalMergeChecks, "Number of FINAL-merge (ReplacingMergeTree dedup) oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleWithFillChecks, "Number of ORDER BY WITH FILL grid oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOraclePipeEquivalenceChecks, "Number of pipe-operator equivalence oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleMismatches, "Number of oracle mismatches detected by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
