@@ -8894,10 +8894,14 @@ Maximum total number of posting rows to read when text index LIKE evaluation by 
 
 Bounds the actual read work: a matched token with a large (non-embedded) posting list costs its cardinality in rows, so a single very common token can exhaust this budget. When either this limit or `text_index_like_max_postings_to_read` is exceeded, the dictionary scan is cut short and LIKE evaluation falls back to brute force on the column data.
 
+The budget is charged per part against the whole part, except where the index is read after earlier pruning has already narrowed the rows, in which case a token those rows cannot reach costs nothing. It is not charged against the mark set of a combined predicate such as `pk = ... AND message LIKE ...`, so a token that is common in the part but rare in the surviving rows is still charged in full.
+
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(Bool, use_text_index_like_pattern_bypass, true, R"(
 Whether a LIKE/ILIKE pattern query whose matched tokens cover every row may skip reading their posting lists.
+
+"Every row" means every row of the part, not of the rows surviving an earlier predicate, so a combined predicate does not make the bypass more eager.
 
 Such a read cannot prune anything, so skipping it is pure saving. Disable to force the posting lists to be read anyway, which is what a test guarding the posting-list reader needs.
 
