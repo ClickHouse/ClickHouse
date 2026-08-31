@@ -9651,6 +9651,18 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                 return true;
         }
 
+        /// A non-deterministic function can also hide inside a column's own expression. The analysis
+        /// below resolves an `ALIAS` (or `MATERIALIZED`/`DEFAULT`) column against the storage - that is
+        /// deliberate - so `now` inside such a definition is folded here just the same, while the
+        /// asynchronous execution re-expands the definition and evaluates it again, later. The
+        /// definitions form a directed acyclic graph, so following them terminates.
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            if (auto column_default = metadata_snapshot->getColumns().getDefault(identifier->name());
+                column_default && column_default->expression && self(column_default->expression, self))
+                return true;
+        }
+
         return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
     };
     if (contains_nondeterministic_function(predicate, contains_nondeterministic_function))
