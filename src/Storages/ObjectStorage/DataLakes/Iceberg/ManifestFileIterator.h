@@ -91,6 +91,7 @@ public:
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         Int64 table_snapshot_id,
+        std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_);
@@ -127,6 +128,7 @@ private:
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         Int64 table_snapshot_id,
+        std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         Int32 manifest_schema_id,
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
@@ -147,6 +149,7 @@ private:
     const Int64 inherited_sequence_number;
     const Int64 inherited_snapshot_id;
     const Int64 table_snapshot_id;
+    std::vector<std::optional<UInt64>> entry_first_row_ids;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
