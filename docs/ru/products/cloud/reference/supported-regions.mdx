@@ -13,60 +13,61 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
   ## Поддерживаемые регионы
 </div>
 
-В следующих таблицах перечислены поддерживаемые регионы для каждого облачного провайдера. Значки указывают на доступность Частного региона, HIPAA и PCI. Регионы без значков пока не поддерживают ни одну из этих возможностей.
+В следующих таблицах перечислены поддерживаемые регионы для каждого облачного провайдера. Значки указывают на доступность: `Public` для общедоступных регионов, а `Private`, `HIPAA` или `PCI` — для регионов, где доступны соответствующие возможности.
 
 <Tabs>
   <Tab title="AWS" id="aws-regions" icon="aws">
-    | Регион           | Доступность                                                                                              |
-    | ---------------- | -------------------------------------------------------------------------------------------------------- |
-    | `af-south-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `ap-east-1`      | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-east-2`      | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-northeast-1` | —                                                                                                        |
-    | `ap-northeast-2` | —                                                                                                        |
-    | `ap-south-1`     | —                                                                                                        |
-    | `ap-southeast-1` | —                                                                                                        |
-    | `ap-southeast-2` | —                                                                                                        |
-    | `ap-southeast-3` | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-southeast-5` | <Badge color="purple">Private</Badge>                                                                    |
-    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-north-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `il-central-1`   | —                                                                                                        |
-    | `mx-central-1`   | <Badge color="purple">Private</Badge> <Badge color="blue">PCI</Badge>                                    |
-    | `sa-east-1`      | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | Регион           | Доступность                                                                                                |
+    | ---------------- | ---------------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | <Badge color="purple">Приватный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">Приватный</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">Приватный</Badge>                                                                    |
+    | `ap-northeast-1` | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `ap-northeast-2` | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `ap-south-1`     | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-southeast-1` | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `ap-southeast-2` | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `ap-southeast-3` | <Badge color="purple">Приватный</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">Приватный</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-central-1`   | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-north-1`     | <Badge color="purple">Приватный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-2`      | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `il-central-1`   | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `me-central-1`   | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `mx-central-1`   | <Badge color="purple">Приватный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `sa-east-1`      | <Badge color="purple">Приватный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-2`      | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west-2`      | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
   </Tab>
 
   <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
-    | Регион                    | Доступность                                                        |
-    | ------------------------- | ------------------------------------------------------------------ |
-    | `asia-northeast1`         | —                                                                  |
-    | `asia-southeast1`         | —                                                                  |
-    | `australia-southeast1`    | <Badge color="purple">Private</Badge>                              |
-    | `europe-west2`            | —                                                                  |
-    | `europe-west3`            | <Badge color="purple">Private</Badge>                              |
-    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `europe-west6`            | <Badge color="purple">Private</Badge>                              |
-    | `northamerica-northeast1` | <Badge color="purple">Private</Badge>                              |
-    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-west1`                | <Badge color="purple">Private</Badge>                              |
+    | Регион                    | Доступность                                                                                                |
+    | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+    | `asia-northeast1`         | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `asia-southeast1`         | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `australia-southeast1`    | <Badge color="purple">Приватный</Badge>                                                                    |
+    | `europe-west2`            | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `europe-west3`            | <Badge color="purple">Приватный</Badge>                                                                    |
+    | `europe-west4`            | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">Приватный</Badge>                                                                    |
+    | `northamerica-northeast1` | <Badge color="purple">Приватный</Badge>                                                                    |
+    | `us-central1`             | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">Приватный</Badge>                                                                    |
   </Tab>
 
   <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
-    | Регион                 | Доступность                           |
-    | ---------------------- | ------------------------------------- |
-    | `Australia East`       | <Badge color="purple">Private</Badge> |
-    | `East US 2`            | —                                     |
-    | `Germany West Central` | —                                     |
-    | `Japan East`           | <Badge color="purple">Private</Badge> |
-    | `UAE North`            | <Badge color="purple">Private</Badge> |
-    | `West US 3`            | —                                     |
+    | Регион                 | Доступность                             |
+    | ---------------------- | --------------------------------------- |
+    | `Australia East`       | <Badge color="purple">Частный</Badge>   |
+    | `East US 2`            | <Badge color="yellow">Публичный</Badge> |
+    | `Germany West Central` | <Badge color="yellow">Публичный</Badge> |
+    | `Japan East`           | <Badge color="purple">Частный</Badge>   |
+    | `UAE North`            | <Badge color="purple">Частный</Badge>   |
+    | `West US 3`            | <Badge color="yellow">Публичный</Badge> |
   </Tab>
 </Tabs>
 
