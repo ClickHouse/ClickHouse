@@ -153,22 +153,13 @@ void registerStatementExists(StatementFactory & factory)
 {
     factory.registerStatement("EXISTS",
     {
-        .description = R"(
-Returns a single column of type `UInt8` with a single value: `1` if the table, the dictionary or the database exists,
-and `0` otherwise.
-
-**Examples**
-
-**Check whether a table exists**
-
-```sql title="Query"
-EXISTS TABLE test;
+        .description = R"DOCS_MD(
+```sql
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
-```response title="Response"
-1
-```
-)",
+Returns a single `UInt8`-type column, which contains the single value `0` if the table or database does not exist, or `1` if the table exists in the specified database.
+)DOCS_MD",
         .syntax = R"(
 EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
 )",

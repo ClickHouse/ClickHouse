@@ -4,6 +4,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -16,6 +17,8 @@ namespace DB
 
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+
+struct SkipIndexReadInput;
 
 struct SkipIndexReadResult
 {
@@ -52,7 +55,11 @@ public:
         ContextPtr context_,
         LoggerPtr log_);
 
-    SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
+    SkipIndexReadResultPtr read(
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        const SkipIndexReadInput & input,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
 
     /// Whether `read` prunes by JOIN runtime filters. It snapshots them once per part, fail-open,
     /// so its result must not be built before the build side has published the filters.
@@ -232,12 +239,18 @@ public:
     /// Lazily constructs and caches the MergeTreeIndexReadResult for a given data part. If it is already being built by
     /// another thread, waits for its result. Throws if the builder fails.
     ///
-    /// This map uses raw pointer of data part as key because it is unique and stable for the lifetime of the part.
-    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part, const RangesInDataParts & projection_parts, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
+    /// This map is keyed by `part_index_in_query`, which is unique and stable for the query.
+    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(
+        size_t part_index,
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        const SkipIndexReadInput & input,
+        const RangesInDataParts & projection_parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
-    void clear(const DataPartPtr & part);
+    void clear(size_t part_index);
 
     /// Whether index read results may include a skip index part (for any part of the query).
     bool hasSkipIndexReader() const { return skip_index_reader != nullptr; }
@@ -252,7 +265,7 @@ private:
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
 
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
-    std::unordered_map<const IMergeTreeDataPart *, IndexReadResultEntry> index_read_result_registry;
+    std::unordered_map<size_t, IndexReadResultEntry> index_read_result_registry;
     SharedMutex index_read_result_registry_mutex;
 };
 

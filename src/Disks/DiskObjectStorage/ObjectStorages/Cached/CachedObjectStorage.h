@@ -165,6 +165,7 @@ private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
+    WriteSettings patchSettings(const WriteSettings & write_settings) const override;
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;
