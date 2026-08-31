@@ -112,6 +112,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -7529,6 +7530,45 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
         query_context,
         /* is_attach */ true,
         /* allow_attach_while_readonly */ allow_attach_while_readonly);
+
+    /// All-or-nothing pre-check for the database `max_rows` limit. The per-part check inside
+    /// `commitPart` cannot roll back: parts committed earlier in the loop are already in ZooKeeper,
+    /// so failing in the middle would leave the command partially applied. Ask ZooKeeper up front
+    /// which parts are already deduplicated -- those add no rows and are excluded from the
+    /// aggregate, so attaching only duplicates stays a no-op even when the database is over the
+    /// limit -- and validate the rest together before anything is committed. The per-part check
+    /// remains the authoritative one for inserts racing with this pre-check.
+    if (deduplicate_part && !allow_attach_while_readonly && hasDatabaseRowsLimit())
+    {
+        const bool deduplicate = (*getSettings())[MergeTreeSetting::replicated_deduplication_window] != 0;
+        auto zookeeper = getZooKeeper();
+
+        UInt64 incoming_rows = 0;
+        std::unordered_set<String> seen_block_id_paths;
+        for (const auto & part : loaded_parts)
+        {
+            bool will_be_deduplicated = false;
+            if (deduplicate)
+            {
+                const std::vector<DeduplicationHash> deduplication_hashes{DeduplicationHash::createUnifiedHash(
+                    part->checksums.getTotalChecksumUInt128(), part->info.getPartitionId())};
+                for (const auto & block_id_path : getDeduplicationPaths(zookeeper_path, deduplication_hashes))
+                {
+                    /// A part that repeats another part of the same batch is deduplicated as well.
+                    if (!seen_block_id_paths.insert(block_id_path).second || zookeeper->exists(block_id_path))
+                    {
+                        will_be_deduplicated = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!will_be_deduplicated)
+                incoming_rows += part->rows_count;
+        }
+
+        checkDatabaseRowsLimit(incoming_rows);
+    }
 
     results.reserve(loaded_parts.size());
 

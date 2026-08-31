@@ -7597,6 +7597,12 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
+bool MergeTreeData::hasDatabaseRowsLimit() const
+{
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(getStorageID().getDatabaseName());
+    return database && database->getMaxRows() != 0;
+}
+
 void MergeTreeData::checkDatabaseRowsLimit(UInt64 incoming_rows, UInt64 outgoing_rows) const
 {
     /// This is a best-effort snapshot check, not a reservation spanning the commit: concurrent

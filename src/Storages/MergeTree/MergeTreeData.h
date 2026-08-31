@@ -888,6 +888,10 @@ public:
         bool allow_delay = true,
         bool check_database_rows_limit = true) const;
 
+    /// Whether the owning database has a non-zero `max_rows` limit. Cheap guard for callers that
+    /// would otherwise do extra work (e.g. ZooKeeper lookups) just to prepare the check below.
+    bool hasDatabaseRowsLimit() const;
+
     /// Throw if adding `incoming_rows` to this table's database, after removing
     /// `outgoing_rows` from the same database, would exceed `max_rows`.
     void checkDatabaseRowsLimit(UInt64 incoming_rows, UInt64 outgoing_rows = 0) const;
