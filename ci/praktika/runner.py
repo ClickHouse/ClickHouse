@@ -101,6 +101,9 @@ class Runner:
             PR_LABELS=[],
             EVENT_TIME="",
             WORKFLOW_CONFIG=workflow_config,
+            # Mirror _setup_env: a job body may read its own configuration (e.g. to
+            # derive an output filename from `provides`), which is None here otherwise.
+            JOB_CONFIG=job,
         ).dump()
 
         if pr and pr > 0:

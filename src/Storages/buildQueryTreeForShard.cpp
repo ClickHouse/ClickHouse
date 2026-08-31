@@ -4,6 +4,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Analyzer/TableQualifiers.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -1205,98 +1206,6 @@ private:
     std::unordered_set<String> & tails;
 };
 
-/// `name[at]` opens a quoted span (a string constant `'...'` or a backquoted identifier `` `...` ``). Return the
-/// offset just past the closing quote, or `name.size()` if unterminated. A backslash escapes the next character
-/// (including the quote and another backslash), matching `writeAnyEscapedString` (the escaping used by both string
-/// constants and backquoted identifiers), so the span ends at the first unescaped matching quote.
-size_t skipQuotedSpan(const String & name, size_t at)
-{
-    const char quote = name[at];
-    size_t pos = at + 1;
-    while (pos < name.size())
-    {
-        if (name[pos] == '\\')
-            pos += 2; /// Skip the backslash and the character it escapes.
-        else if (name[pos] == quote)
-            return pos + 1;
-        else
-            ++pos;
-    }
-    return name.size();
-}
-
-/// Erase the numeric index of every GENUINE analyzer-generated table qualifier in a column action name, rewriting
-/// `__tableN.<tail>` to `__table.<tail>`. A `__tableN.` is treated as a genuine qualifier only when `<tail>` is one of
-/// `genuine_tails` (the column names collected structurally from the query tree, see
-/// `CollectGenuineQualifierTailsVisitor`). Returns the normalized name.
-///
-/// Why this is the right operation. The shard query tree is renumbered independently from the initiator's:
-/// `buildQueryTreeForShard` runs `createUniqueAliasesIfNecessary`, which restarts the `__tableN` aliases at 1. When a
-/// distributed read is nested inside a subquery, the same source column is therefore named `__table1.x` on the shard
-/// but `__tableK.x` (K > 1) in the initiator's tree even though the columns correspond. The ONLY systematic difference
-/// between the shard name and the initiator's expected name is this qualifier numbering, so erasing just the genuine
-/// qualifier number on both sides makes corresponding columns compare equal while leaving every other difference
-/// intact. The column name (`x`) is the same on both sides; only the `__tableN` integer differs, so the closed set of
-/// tails collected from the initiator tree applies to the shard names too.
-///
-/// We do NOT erase the number of a `__table<digits>.` that merely looks like a qualifier but is user text: a string
-/// constant such as `'__table1.'` (skipped as a quoted span), a backquoted identifier, a lambda argument named
-/// `__table1.` (its tail is not a genuine column name), or a bare column named `__table9` (no trailing dot). Such text
-/// is left untouched, so two distinct expressions like `concat('__table1.', x)` and `concat('__table2.', x)` keep
-/// their distinct literals and do not collapse onto one another. The digit run is never parsed into an integer, so an
-/// over-long run cannot overflow.
-String normalizeGenuineQualifiers(const String & name, const std::unordered_set<String> & genuine_tails)
-{
-    static constexpr std::string_view prefix = "__table";
-    String result;
-    result.reserve(name.size());
-    size_t pos = 0;
-    while (pos < name.size())
-    {
-        if (name[pos] == '\'' || name[pos] == '`')
-        {
-            /// Copy the quoted span verbatim: its contents are user text, never an analyzer qualifier.
-            size_t span_end = skipQuotedSpan(name, pos);
-            result.append(name, pos, span_end - pos);
-            pos = span_end;
-            continue;
-        }
-
-        bool boundary = pos == 0 || !isWordCharASCII(name[pos - 1]);
-        if (boundary && name.compare(pos, prefix.size(), prefix) == 0)
-        {
-            size_t digit_begin = pos + prefix.size();
-            size_t digit_end = digit_begin;
-            while (digit_end < name.size() && isNumericASCII(name[digit_end]))
-                ++digit_end;
-            if (digit_end > digit_begin && digit_end < name.size() && name[digit_end] == '.')
-            {
-                /// Read the tail right after the dot. It is the column name as `buildColumnIdentifier` renders it:
-                /// either a backquoted span (`` `col` `` for a column whose name needs quoting, e.g. one containing a
-                /// dot) or a bare run of identifier characters. The qualifier is genuine only when that tail is a known
-                /// column name from the query tree.
-                size_t tail_begin = digit_end + 1;
-                size_t tail_end = tail_begin;
-                if (tail_begin < name.size() && name[tail_begin] == '`')
-                    tail_end = skipQuotedSpan(name, tail_begin);
-                else
-                    while (tail_end < name.size() && isWordCharASCII(name[tail_end]))
-                        ++tail_end;
-                if (tail_end > tail_begin && genuine_tails.contains(name.substr(tail_begin, tail_end - tail_begin)))
-                {
-                    /// Genuine qualifier `__table<digits>.<tail>`: copy `__table` and the `.`, dropping the digits.
-                    result.append(prefix);
-                    result.push_back('.');
-                    pos = digit_end + 1;
-                    continue;
-                }
-            }
-        }
-        result.push_back(name[pos]);
-        ++pos;
-    }
-    return result;
-}
 
 }
 
@@ -1329,7 +1238,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     }
 
     /// Index the shard columns by their normalized name (the genuine `__tableN.` qualifier numbering erased, see
-    /// `normalizeGenuineQualifiers`). The shard query tree is renumbered independently from the initiator's:
+    /// `normalizeGeneratedTableQualifiers`). The shard query tree is renumbered independently from the initiator's:
     /// `buildQueryTreeForShard` runs `createUniqueAliasesIfNecessary`, which restarts the `__tableN` aliases at 1, so
     /// when this distributed read is nested inside a subquery the same source column is named `__table1.x` on the
     /// shard but `__tableK.x` (K > 1) in the initiator's tree. Erasing the genuine qualifier number on both sides
@@ -1341,7 +1250,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     std::unordered_map<String, size_t> shard_normalized_to_index;
     shard_normalized_to_index.reserve(shard_header.columns());
     for (size_t i = 0; i < shard_header.columns(); ++i)
-        shard_normalized_to_index.emplace(normalizeGenuineQualifiers(shard_header.getByPosition(i).name, genuine_qualifier_tails), i);
+        shard_normalized_to_index.emplace(normalizeGeneratedTableQualifiers(shard_header.getByPosition(i).name, &genuine_qualifier_tails), i);
 
     std::vector<size_t> shard_index_for_expected(expected_header.columns());
     std::vector<bool> shard_column_used(shard_header.columns(), false);
@@ -1356,7 +1265,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             inlined_name = it->second;
 
         /// Match by normalized name so the independent shard/initiator qualifier numbering does not matter.
-        auto shard_it = shard_normalized_to_index.find(normalizeGenuineQualifiers(inlined_name, genuine_qualifier_tails));
+        auto shard_it = shard_normalized_to_index.find(normalizeGeneratedTableQualifiers(inlined_name, &genuine_qualifier_tails));
         if (shard_it == shard_normalized_to_index.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
 

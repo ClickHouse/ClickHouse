@@ -161,6 +161,23 @@ namespace
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
+/// Collapses runs of `/`, leaving `.` and `..` as written: redundant separators are the only
+/// part of a path's spelling that no filesystem lookup depends on. A `..` resolves against the
+/// target of a preceding symlink, not against that symlink's parent, so dropping one lexically
+/// can name a different file.
+std::string collapseRedundantSeparators(const std::string & path)
+{
+    std::string result;
+    result.reserve(path.size());
+    for (char c : path)
+    {
+        if (c == '/' && !result.empty() && result.back() == '/')
+            continue;
+        result.push_back(c);
+    }
+    return result;
+}
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -187,12 +204,15 @@ void listFilesWithRegexpMatchingImpl(
     /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
     /// entry through both the zero-level branch and the recursive descent, so without this
     /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
+    /// The returned path is collapsed so that one file is named by one path whichever branch
+    /// matched it: the prefixes below can end up with a doubled separator, and
+    /// `fs::directory_iterator` preserves the spelling it is handed.
     auto add_matched_path = [&](const std::string & path, size_t bytes)
     {
         if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
         {
             total_bytes_to_read += bytes;
-            result.push_back(path);
+            result.push_back(collapseRedundantSeparators(path));
         }
     };
 
@@ -206,8 +226,9 @@ void listFilesWithRegexpMatchingImpl(
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
             (void)fs::canonical(path_for_ls + for_match);
-            fs::path absolute_path = fs::absolute(path_for_ls + for_match);
-            absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
+            /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
+            /// survive here: the check and the reader would name different files.
+            const fs::path absolute_path = fs::absolute(path_for_ls + for_match).lexically_normal();
             /// This exact-match branch is reached for suffixes without globs, including the
             /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
             /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
@@ -1541,11 +1562,20 @@ void StorageFileSource::beforeDestroy()
                 String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
                 file_path.replace_filename(new_filename);
 
-                // Normalize new path
-                file_path = file_path.lexically_normal();
-
-                // Checking access rights
-                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), file_path, true);
+                // Checking access rights. A `..` is resolved through any preceding symlink first,
+                // because the check folds it lexically while the rename below does not, and the
+                // two would otherwise disagree about where the file lands. Paths without `..`
+                // are passed as written, so a symlink out of `user_files` still works.
+                auto checked_path = file_path;
+                for (const auto & component : file_path)
+                {
+                    if (component == "..")
+                    {
+                        checked_path = fs::weakly_canonical(file_path.parent_path()) / file_path.filename();
+                        break;
+                    }
+                }
+                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), checked_path, true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
