@@ -964,7 +964,12 @@ void SchemaConverter::processPrimitiveColumn(
     /// directly; if size or scale differs, the Field additionally goes through
     /// tryConvertFieldToType, which rescales it the same way as the castColumn that is applied
     /// to the values - see PageDecoderInfo::cast_stats_to_output_type.
-    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale)
+    /// `decoded_is_time_of_day` says that the decoded values are a time-of-day (parquet `TIME`),
+    /// i.e. that a `Time64` output type has the same semantics as the decoded values. It must stay
+    /// false for every other decoded semantic: casting a `DateTime64` (parquet `TIMESTAMP`) to
+    /// `Time64` wraps by day and is therefore not order-preserving, so min/max stats of the raw
+    /// values must not be used for pruning.
+    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale, bool decoded_is_time_of_day = false)
     {
         const IDataType * output_type = type_hint ? type_hint.get() : out_inferred_type.get();
         WhichDataType which(output_type->getTypeId());
@@ -980,6 +985,11 @@ void SchemaConverter::processPrimitiveColumn(
         }
         else if (which.isTime64())
         {
+            /// Stats are usable only when the decoded values are already a time-of-day; a
+            /// `DateTime64 -> Time64` cast wraps by day (a row group spanning midnight would get
+            /// raw bounds like [23:00:00, 25:00:00] while the values are 23:00:00 and 01:00:00).
+            if (!decoded_is_time_of_day)
+                return;
             /// Same restriction as for DateTime64: tryConvertFieldToType supports a Time64 target
             /// only for a Decimal64 source Field.
             if (decoded_size != 8)
@@ -1216,7 +1226,7 @@ void SchemaConverter::processPrimitiveColumn(
         else
         {
             converter->field_decimal_scale = scale;
-            allow_decimal_stats(sizeof(Int64), scale);
+            allow_decimal_stats(sizeof(Int64), scale, is_time_of_day);
             if (converter->input_size == 4)
                 /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
                 /// particular cast is not supported for some reason.
