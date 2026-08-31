@@ -86,6 +86,11 @@ public:
     /// Creates its own fixture tables via OracleFixture; rate-limited.
     bool checkCodecRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Engine-equivalence oracle (self-seeded): identical schema + data stored in a MergeTree vs a
+    /// row-based engine (Memory/TinyLog/Log/StripeLog) must read back the identical multiset. A
+    /// difference is a real engine read/serialization bug.
+    bool checkEngineEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
