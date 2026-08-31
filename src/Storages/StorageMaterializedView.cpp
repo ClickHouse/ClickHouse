@@ -101,8 +101,7 @@ String StorageMaterializedView::generateRefreshTempTableName(const StorageID & v
 
 String StorageMaterializedView::generateRefreshTempTableName(const UUID & view_uuid)
 {
-    /// Only the UUID part of the id is used by generateInnerTableName when a UUID is present, so the
-    /// placeholder names cannot affect the result.
+    /// `generateInnerTableName` uses only the UUID when one is present, so the placeholders are inert.
     return generateRefreshTempTableName(StorageID{TABLE_WITH_UUID_NAME_PLACEHOLDER, TABLE_WITH_UUID_NAME_PLACEHOLDER, view_uuid});
 }
 
@@ -752,8 +751,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
     auto rename_query = make_intrusive<ASTRenameQuery>();
     rename_query->exchange = exchange;
-    /// The target keeps its name and only its storage is replaced, so its row policies must stay on
-    /// that name instead of following the data onto the stale table dropped right after.
+    /// The target keeps its name and only its storage is replaced, so its policies stay on it.
     rename_query->replaces_storage_keeping_name = true;
     rename_query->addElement(fresh_table.database_name, fresh_table.table_name, stale_table_id.database_name, stale_table_id.table_name);
 

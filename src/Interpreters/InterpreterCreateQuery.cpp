@@ -2800,9 +2800,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         auto ast_rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->dictionary = create.is_dictionary;
-        /// This is the replacement swap, not a user RENAME/EXCHANGE: only the target's storage is
-        /// replaced, its name and the row policies bound to that name must stay put (see the flag's
-        /// doc in ASTRenameQuery.h). Applies to all branches below (plain create, rename and exchange).
+        /// A replacement swap, not a user `RENAME`: the target keeps its name and its access entities.
         ast_rename->replaces_storage_keeping_name = true;
         if (is_plain_create)
         {

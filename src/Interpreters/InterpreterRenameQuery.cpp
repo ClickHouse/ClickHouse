@@ -41,26 +41,21 @@ namespace ErrorCodes
 
 namespace
 {
-    /// A single re-keying of a row policy: move the policy identified by `id` so that its
-    /// `(database, table_name)` becomes (`new_database`, `new_table`), keeping its short name.
+    /// Moves the policy `id` to (`new_database`, `new_table`), keeping its short name.
     struct RowPolicyRekey
     {
         UUID id;
         String new_database;
-        String new_table; /// RowPolicyName::ANY_TABLE_MARK ("") means a database-wide policy.
+        String new_table; /// `RowPolicyName::ANY_TABLE_MARK` ("") means a database-wide policy.
     };
 
-    /// The transient table name a policy is parked under during phase 1 of `applyRowPolicyRekeys`.
-    /// Must be identical between the preflight (which checks it is free) and the apply (which uses
-    /// it), so it lives in one place. It embeds the policy UUID and the index to be unique among
-    /// the re-keys of a single rename.
+    /// Transient name a policy is parked under while its binding is moved. Unique per (policy,
+    /// position), so two re-keys of the same rename cannot collide on it.
     String tempRekeyTableName(const UUID & id, size_t index)
     {
         return ".tmp_rename_row_policy_" + toString(id) + "_" + std::to_string(index);
     }
 
-    /// Returns the re-keyings needed so that row policies bound to (`from_db`, `from_table`)
-    /// follow the table to (`to_db`, `to_table`).
     std::vector<RowPolicyRekey> collectRowPolicyRekeys(
         const AccessControl & access_control,
         const String & from_db, const String & from_table,
@@ -76,9 +71,8 @@ namespace
         return result;
     }
 
-    /// Returns the re-keyings needed when a whole database is renamed from `from_db` to `to_db`:
-    /// every row policy bound to `from_db` (both database-wide `ON from_db.*` and per-table
-    /// `ON from_db.tbl`) must move to `to_db`, keeping its table name.
+    /// A database rename moves both the database-wide `ON db.*` policies and the per-table
+    /// `ON db.tbl` ones, so the match is on the database alone and the table name is preserved.
     std::vector<RowPolicyRekey> collectRowPolicyRekeysForDatabase(
         const AccessControl & access_control, const String & from_db, const String & to_db)
     {
@@ -92,9 +86,6 @@ namespace
         return result;
     }
 
-    /// True if a database-wide row policy (`ON db.*`) is defined on `db`. Such a policy filters
-    /// every table in `db` via the ANY_TABLE_MARK fallback in EnabledRowPolicies::getFilter, but it
-    /// is not bound to any single table name, so it cannot follow one table out of the database.
     bool hasDatabaseWideRowPolicy(const AccessControl & access_control, const String & db)
     {
         for (const auto & id : access_control.findAll<RowPolicy>())
@@ -106,19 +97,10 @@ namespace
         return false;
     }
 
-    /// Verifies that every planned re-key can be applied, BEFORE the rename is committed. Throws,
-    /// leaving nothing changed, when a policy cannot be moved:
-    ///   - it lives in a read-only storage,
-    ///   - another policy in the same plan would end up on the same destination name,
-    ///   - its destination name is already taken by a policy that is not itself moving out of the way,
-    ///   - the transient parking name used during the move is already taken by a non-moving policy.
-    /// Two cases are declined rather than rejected, and both drop the whole plan: a replicated access
-    /// storage, and a read-only policy while `may_refuse` is false. `rekeys` is therefore mutable and
-    /// is the same vector the caller passes to `applyRowPolicyRekeys`, so the apply skips exactly what
-    /// was dropped.
-    /// `log_declined` is false when the caller only wants the checks, so the skip is logged once.
-    /// `may_refuse` is false on the paths that cannot report a rejection to a user: refusing there
-    /// would abort server startup instead (see the callers).
+    /// Verifies every planned re-key is applicable before the rename commits, so a policy that
+    /// cannot follow its table rejects the rename instead of failing after the commit. `rekeys` is
+    /// pruned in place, so a later apply skips exactly what was dropped. `may_refuse` false means the
+    /// caller cannot surface a rejection to a user, so such a case declines the plan instead.
     void preflightRowPolicyRekeys(
         const AccessControl & access_control, std::vector<RowPolicyRekey> & rekeys, bool log_declined = true,
         bool may_refuse = true)
@@ -126,9 +108,8 @@ namespace
         if (rekeys.empty())
             return;
 
-        /// (1) Read-only storage: `AccessControl::update` would throw after the commit point. A policy
-        /// that is both read-only and shared is still a genuine cannot-move on this node, so this stays
-        /// first and the rename fails rather than silently skipping below.
+        /// (1) Read-only storage: `AccessControl::update` cannot move the policy at all. Checked
+        /// before the decline below, so a read-only policy in a shared storage still fails the rename.
         for (const auto & rekey : rekeys)
         {
             auto policy = access_control.tryRead<RowPolicy>(rekey.id);
@@ -155,10 +136,9 @@ namespace
                 policy->formatTypeWithName());
         }
 
-        /// (2) A re-key in a replicated access storage is published globally, while the rename
-        /// applies only to this server. The condition is on the server's CONFIGURATION, not on the
-        /// affected policies, and it drops ALL re-keys: a partial plan can leave a name that this
-        /// operation would otherwise have kept filtered unfiltered.
+        /// (2) A replicated access storage is shared with servers this rename does not apply to, so a
+        /// re-key there would be published globally. Drops the whole plan: a partial one can leave a
+        /// name unfiltered that the rename would otherwise have kept covered.
         if (access_control.containsStorage(ReplicatedAccessStorage::STORAGE_TYPE))
         {
             if (log_declined)
@@ -174,9 +154,8 @@ namespace
             return;
         }
 
-        /// (3) Two re-keys of this plan whose destinations are the same full name. Each one alone is
-        /// applicable, so only a check on the plan itself catches the pair; otherwise phase 2 of the
-        /// apply would throw after the commit and leave the loser parked under a name no table has.
+        /// (3) Two re-keys of this plan sharing one destination name. Each is applicable alone, so
+        /// only a check on the plan as a whole catches the pair.
         std::unordered_map<String, RowPolicyPtr> destinations;
         destinations.reserve(rekeys.size());
         for (const auto & rekey : rekeys)
@@ -201,18 +180,15 @@ namespace
                     backQuoteIfNeed(dst_name.toString()));
         }
 
-        /// IDs that are moving (so their current name is about to be vacated and must not be
-        /// treated as a collision with another moving policy's destination).
+        /// Policies that are moving, so their current name is about to be vacated.
         std::unordered_set<UUID> moving_ids;
         moving_ids.reserve(rekeys.size());
         for (const auto & rekey : rekeys)
             moving_ids.insert(rekey.id);
 
-        /// `allow_moving_occupant` must be true only for a policy's final destination: an EXCHANGE
-        /// legitimately swaps two same-short-name policies, so each one's destination is the other's
-        /// current name and both are in `rekeys`. For a transient parking name it must be false --
-        /// a later-moving policy sitting on an earlier one's parking name is a real collision that
-        /// phase 1 of the apply would hit AFTER the table rename has committed.
+        /// `allow_moving_occupant` is true only for a final destination: an `EXCHANGE` swaps two
+        /// same-short-name policies, so each one's destination is the other's current name. A parking
+        /// name has no such excuse, so an occupant there is a real collision.
         const auto reject_if_taken =
             [&](const RowPolicyName & name, const UUID & moving_id, const RowPolicyPtr & moving_policy,
                 bool allow_moving_occupant, const char * what)
@@ -254,10 +230,9 @@ namespace
         }
     }
 
-    /// A database-wide policy (`ON db.*`) is bound to no single table name, so it cannot follow an
-    /// object to another database: the destination lookup is `new_db.tbl` then `new_db.*` and never
-    /// sees the old `db.*`, which would leave the moved data unfiltered. A same-database rename is
-    /// unaffected -- the policy keeps covering the object through the ANY_TABLE_MARK fallback.
+    /// A database-wide policy (`ON db.*`) is bound to no table name, so it cannot follow an object to
+    /// another database: the destination lookup is `new_db.tbl` then `new_db.*` and never sees the old
+    /// `db.*`. A same-database rename is unaffected, the `ANY_TABLE_MARK` fallback still covers it.
     void rejectCrossDatabaseMoveUnderDatabaseWidePolicy(
         const AccessControl & access_control,
         const String & from_db, const String & from_name, const String & to_db)
@@ -274,10 +249,9 @@ namespace
             backQuoteIfNeed(from_db));
     }
 
-    /// True if this rename replaces the storage behind a name while keeping that name, so the row
-    /// policies bound to it must stay there. The AST flag does not survive a Replicated database's
-    /// DDL queue (see its doc in ASTRenameQuery.h), so the one site that crosses that boundary is
-    /// recognized from the parent table UUID instead. All three conditions below are required.
+    /// True if this rename replaces the storage behind a name while keeping that name, so the
+    /// policies bound to it stay there. The AST flag does not survive a `Replicated` database's DDL
+    /// queue (see `ASTRenameQuery::replaces_storage_keeping_name`), so that site is matched by UUID.
     bool keepsNameOfReplacedStorage(const ASTRenameQuery & rename, const ContextPtr & context, const RenameDescription & elem)
     {
         if (rename.replaces_storage_keeping_name)
@@ -290,15 +264,12 @@ namespace
         if (!parent_table_uuid.has_value())
             return false;
 
-        /// Match by UUID-derived equality, not by a `.tmp.inner_id.` prefix: a user can create such a
-        /// name, and a prefix would also match another view's temp table.
+        /// Exact match, not a prefix: a `.tmp.inner_id.` name is user-creatable.
         return elem.from_table_name == StorageMaterializedView::generateRefreshTempTableName(*parent_table_uuid);
     }
 
-    /// Everything about a rename's row policies that must be decided BEFORE the rename commits:
-    /// reject the moves that cannot be applied, then return the plan for the ones that can.
-    /// Returns an empty plan when this rename keeps the name (so no policy moves) or when the
-    /// preflight declined the whole plan. See the two call sites in executeToTables.
+    /// Decides everything about a rename's row policies before it commits: rejects the moves that
+    /// cannot be applied and returns the plan for the rest. Empty when no policy moves.
     std::vector<RowPolicyRekey> collectAndPreflightRowPolicyRekeys(
         const AccessControl & access_control,
         const ASTRenameQuery & rename,
@@ -306,26 +277,17 @@ namespace
         const RenameDescription & elem,
         bool exchange_tables)
     {
-        /// Row policies are keyed by (database, table). They must follow the table on rename,
-        /// otherwise after the rename the policy stays orphaned on the old name and the table
-        /// becomes readable with no filtering under its new name (a row-policy escape).
+        /// Row policies are keyed by (database, table), so one must follow its table on rename.
+        /// Otherwise it stays orphaned on the old name and the table is unfiltered under the new one.
         std::vector<RowPolicyRekey> rekeys;
 
-        /// A storage-replacing swap keeps the surviving name, so its row policies must stay on it and
-        /// filter the replacement data; re-keying would move them onto the transient side of the swap,
-        /// which is dropped right after (see the flag's doc in ASTRenameQuery.h). The Ordinary-to-Atomic
-        /// conversion is name-preserving the same way for its OUTER moves; its nested inner-table
-        /// renames do change the name (`.inner.<name>` -> `.inner_id.<uuid>`) and must re-key as usual.
+        /// The `Ordinary` to `Atomic` conversion is name-preserving for its outer moves. Its nested
+        /// inner-table renames do change the name (`.inner.<name>` to `.inner_id.<uuid>`) and re-key.
         const bool converting_database_engine = context->isConvertingDatabaseEngine();
         const bool conversion_keeps_table_name = converting_database_engine && elem.from_table_name == elem.to_table_name;
 
-        /// `EXCHANGE TABLES t AND t` is a documented no-op that succeeds (DatabaseAtomic::renameTable
-        /// returns early for it, and 01109_exchange_tables pins that). Such an element moves no
-        /// binding, so there is nothing to re-key and nothing that can escape - while evaluating the
-        /// transition for it could only invent a failure, because the same policy is collected on both
-        /// sides of the swap. This overlaps `conversion_keeps_table_name` only for a same-database
-        /// element: the conversion's outer moves are cross-database (staging db -> original db) with
-        /// the table name equal, so both conditions are needed.
+        /// `EXCHANGE TABLES t AND t` is a no-op that succeeds, and the same policy is collected on
+        /// both sides of it, so evaluating a transition for such an element could only invent a failure.
         const bool same_name = elem.from_database_name == elem.to_database_name && elem.from_table_name == elem.to_table_name;
 
         if (keepsNameOfReplacedStorage(rename, context, elem) || conversion_keeps_table_name || same_name)
@@ -335,18 +297,13 @@ namespace
         {
             rejectCrossDatabaseMoveUnderDatabaseWidePolicy(
                 access_control, elem.from_database_name, elem.from_table_name, elem.to_database_name);
-            /// EXCHANGE swaps data both ways, so the destination's `db.*` would likewise fail to
-            /// follow the object arriving from the other database.
+            /// An `EXCHANGE` swaps data both ways, so the destination's `db.*` would likewise fail
+            /// to follow the object arriving from the other database.
             if (exchange_tables)
                 rejectCrossDatabaseMoveUnderDatabaseWidePolicy(
                     access_control, elem.to_database_name, elem.to_table_name, elem.from_database_name);
         }
 
-        /// Collect and PREFLIGHT the per-table re-keys here, before the first mutation of the rename
-        /// (`removeDependencies` / `renameTable`, or the DDL enqueue on a Replicated initiator): if a
-        /// policy cannot be moved, the rename is rejected now with nothing changed. The actual re-key
-        /// runs after the rename commits, where a throw could not be rolled back and would leave the
-        /// table unfiltered.
         rekeys = collectRowPolicyRekeys(
             access_control, elem.from_database_name, elem.from_table_name, elem.to_database_name, elem.to_table_name);
         if (exchange_tables)
@@ -361,18 +318,14 @@ namespace
         return rekeys;
     }
 
-    /// Applies a set of row-policy re-keyings collision-free by routing every affected policy
-    /// through a unique temporary table name first, then to its final destination. The two-phase
-    /// move is needed for EXCHANGE TABLES, where two policies with the same short name would
-    /// otherwise transiently collide while being swapped between the two table names.
-    /// `preflightRowPolicyRekeys` must have proven every step applicable beforehand; the rollback
-    /// here covers only residual errors.
+    /// Applies re-keyings through a unique parking name first, then to the final destination: an
+    /// `EXCHANGE` swaps two same-short-name policies, which would otherwise collide mid-move.
+    /// `preflightRowPolicyRekeys` must have proven each step applicable; the rollback covers residuals.
     void applyRowPolicyRekeys(AccessControl & access_control, const std::vector<RowPolicyRekey> & rekeys)
     {
         if (rekeys.empty())
             return;
 
-        /// Remember the original binding of each policy so we can restore it if something throws.
         std::vector<std::pair<UUID, RowPolicyName>> original_names;
         original_names.reserve(rekeys.size());
         for (const auto & rekey : rekeys)
@@ -405,8 +358,7 @@ namespace
 
         try
         {
-            /// Phase 1: park every policy under a unique temporary table name (preflighted as free)
-            /// to avoid transient name collisions during the swap.
+            /// Phase 1: park every policy under its transient name, preflighted as free.
             for (size_t i = 0; i < rekeys.size(); ++i)
             {
                 const String tmp_table = tempRekeyTableName(rekeys[i].id, i);
@@ -418,7 +370,7 @@ namespace
                 });
             }
 
-            /// Phase 2: move every policy from its temporary name to the final destination.
+            /// Phase 2: move every policy to its final destination.
             for (const auto & rekey : rekeys)
             {
                 access_control.update(rekey.id, [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
@@ -442,8 +394,7 @@ void preflightRowPolicyRekeysForRenames(const ContextPtr & context, const std::v
 {
     const auto & access_control = context->getAccessControl();
 
-    /// Skipped for the same reason `collectAndPreflightRowPolicyRekeys` skips it: the conversion's
-    /// staging database is renamed back to the original name.
+    /// The conversion's staging database is renamed back to the original name.
     const bool converting_database_engine = context->isConvertingDatabaseEngine();
 
     for (const auto & [from, to] : renames)
@@ -452,8 +403,8 @@ void preflightRowPolicyRekeysForRenames(const ContextPtr & context, const std::v
             rejectCrossDatabaseMoveUnderDatabaseWidePolicy(
                 access_control, from.database_name, from.table_name, to.database_name);
 
-        /// One fresh vector per pair, as the nested rename will build it: the parking names the checks
-        /// probe come from each vector's own indices, so a combined vector would probe unused names.
+        /// One vector per pair, as the nested rename will build it: parking names come from a
+        /// vector's own indices, so a combined vector would probe names nothing will use.
         auto rekeys = collectRowPolicyRekeys(
             access_control, from.database_name, from.table_name, to.database_name, to.table_name);
         preflightRowPolicyRekeys(
@@ -521,9 +472,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     chassert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
 
-    /// `getContext()` is const, but updating row policies (a process-global access entity)
-    /// requires a mutable AccessControl. A copied context shares the same AccessControl
-    /// singleton, so updates through it persist and replicate as usual.
+    /// `getContext` is const, but a row policy is a process-global access entity and updating one
+    /// needs a mutable `AccessControl`. A copied context shares the same singleton.
     auto mutable_context = Context::createCopy(getContext());
     auto & access_control = mutable_context->getAccessControl();
 
@@ -561,10 +511,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
 
-        /// Hoisted above the Replicated branch below so an initiator-visible rejection happens before
-        /// the DDL entry is written to Keeper. A replica whose own state blocks the move rejects the
-        /// entry and never commits it, so the divergence can be in the table NAME, not only in
-        /// filtering. Preflighting here bounds it to the peer-only case, it does not remove it.
+        /// Must run above the `Replicated` branch below, so a rejection reaches the initiator before
+        /// the DDL entry is in Keeper. A replica whose own state blocks the move still rejects the
+        /// entry locally, so this bounds the divergence to that peer rather than removing it.
         std::vector<RowPolicyRekey> row_policy_rekeys = collectAndPreflightRowPolicyRekeys(
             access_control, rename, getContext(), elem, exchange_tables);
 
@@ -667,9 +616,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 query_context->dropStorageCacheEntry(to_table_id);
             }
 
-            /// Re-key row policies last. Preflight above already rejected the unrecoverable cases
-            /// (read-only storage, destination or transient-name collision); this still has its own
-            /// rollback for any residual error, and nothing after it can throw.
+            /// Last, so nothing after it can throw. The preflight above already rejected the
+            /// unrecoverable cases and the rollback inside covers residual errors.
             applyRowPolicyRekeys(access_control, row_policy_rekeys);
         }
         catch (...)
@@ -703,14 +651,12 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     {
         catalog.assertDatabaseDoesntExist(new_name);
 
-        /// See executeToTables: a copied context shares the same AccessControl singleton.
+        /// See `executeToTables`: a copied context shares the same `AccessControl` singleton.
         auto mutable_context = Context::createCopy(getContext());
         auto & access_control = mutable_context->getAccessControl();
 
-        /// Row policies bound to the database (both `ON db.*` and `ON db.tbl`) must follow it,
-        /// otherwise they are orphaned on the old database name (a row-policy escape).
-        /// Preflight before the rename commits (see executeToTables): reject the rename now if a
-        /// policy cannot be moved, instead of committing the rename and then failing the re-key.
+        /// Row policies bound to the database, both `ON db.*` and `ON db.tbl`, must follow it or they
+        /// are orphaned on the old database name.
         auto row_policy_rekeys = collectRowPolicyRekeysForDatabase(access_control, old_name, new_name);
         preflightRowPolicyRekeys(access_control, row_policy_rekeys);
 

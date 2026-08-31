@@ -50,16 +50,10 @@ using RenameDescriptions = std::vector<RenameDescription>;
 
 using TableGuards = std::map<UniqueTableName, std::unique_ptr<DDLGuard>>;
 
-/// Throws if the row policies bound to any of `renames` (each {from, to} a table move) could not
-/// follow their table. Callers that execute several renames non-transactionally (StorageTimeSeries's
-/// inner tables) use this to reject the whole set before moving anything, because a rejection from
-/// the second move cannot roll the first one back.
-///
-/// Every `{from, to}` is assumed to genuinely change the name, which is what an inner rename does
-/// when it follows its parent. The name-preserving special cases of a user-level rename
-/// (`replaces_storage_keeping_name`, an `EXCHANGE t AND t` no-op) are therefore not evaluated: they
-/// need the `ASTRenameQuery`, which a `{from, to}` pair does not carry. Widen the contract before
-/// using it for anything else.
+/// Throws if the row policies bound to any of `renames` could not follow their table, so a caller
+/// executing several renames non-transactionally can reject the whole set before moving anything.
+/// Every `{from, to}` must genuinely change the name: the name-preserving cases of a user rename
+/// need the `ASTRenameQuery`, which a pair does not carry, so they are not evaluated here.
 void preflightRowPolicyRekeysForRenames(const ContextPtr & context, const std::vector<std::pair<StorageID, StorageID>> & renames);
 
 /** Rename one table

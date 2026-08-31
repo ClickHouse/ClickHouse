@@ -53,14 +53,9 @@ public:
     /// Special flag for CREATE OR REPLACE. Do not throw if the second table does not exist.
     bool rename_if_cannot_exchange{false};
 
-    /// Set for a synthetic rename/exchange that replaces the STORAGE behind a name while keeping that
-    /// name's identity: the access entities keyed to it, including row policies, must stay on it,
-    /// because the other side of the swap is a transient table that is dropped right after.
-    /// Internal only, never produced by the parser, and deliberately not formatted into SQL text, so a
-    /// rename replayed from a Replicated database's DDL queue always arrives false; the one such site
-    /// that crosses that boundary is recognized from the parent table UUID instead
-    /// (keepsNameOfReplacedStorage). Set it at every such site (grep for the flag name); a rename that
-    /// genuinely moves a name must leave it false so its policies keep following the table.
+    /// Set for a synthetic rename or exchange that replaces the storage behind a name while keeping
+    /// that name, so the access entities keyed to it stay put: the other side of the swap is a
+    /// transient table. Not formatted into SQL text, so it always arrives false over a DDL queue.
     bool replaces_storage_keeping_name{false};
 
     explicit ASTRenameQuery(Elements elements_ = {})

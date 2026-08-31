@@ -530,11 +530,8 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         local_context->setSetting("check_table_dependencies", false);
         local_context->setSetting("check_referential_table_dependencies", false);
         {
-            /// The conversion moves every table through a temporary database and then renames that
-            /// database back, so the final (database, table) of each moved table is unchanged. Mark
-            /// the whole workflow so InterpreterRenameQuery can tell those internal moves from a user
-            /// rename when deciding what to do with row policies. The flag is on the shared context
-            /// part, so it is also visible to the nested inner-table renames the storages perform.
+            /// Every table moves through a temporary database that is then renamed back, so each
+            /// table's final (database, table) is unchanged. Mark it so a rename can tell them apart.
             context->setConvertingDatabaseEngine(true);
             SCOPE_EXIT({ context->setConvertingDatabaseEngine(false); });
             convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);

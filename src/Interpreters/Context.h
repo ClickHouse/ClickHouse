@@ -1932,11 +1932,8 @@ public:
     bool isServerCompletelyStarted() const;
     void setServerCompletelyStarted();
 
-    /// Whether a database engine conversion (Ordinary -> Atomic) is currently moving tables through a
-    /// temporary database at startup. The flag lives in the shared part so every context observes it,
-    /// including the storage-owned contexts used by the nested renames of materialized-view and
-    /// time-series inner tables. Set it only around the conversion itself, and always clear it (the
-    /// caller uses SCOPE_EXIT).
+    /// True while a database engine conversion (`Ordinary` to `Atomic`) is moving tables through a
+    /// temporary database at startup. On the shared part, so nested storage-owned contexts see it too.
     bool isConvertingDatabaseEngine() const;
     void setConvertingDatabaseEngine(bool value);
 

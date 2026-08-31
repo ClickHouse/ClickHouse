@@ -717,11 +717,8 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
-    /// The entry is executed from its SQL text, so every field of the re-parsed AST that is not part
-    /// of that text is lost. Re-publish the parent table UUID (which does survive, as a serialized
-    /// entry field) so the executing interpreter can still tell that this entry belongs to a
-    /// refreshable materialized view's refresh - InterpreterRenameQuery needs it to keep row policies
-    /// on the target name across the refresh swap.
+    /// The entry is re-parsed from its SQL text, so AST fields absent from that text are lost. The
+    /// parent table UUID survives as an entry field, so re-publish it for the executing interpreter.
     if (entry.parent_table_uuid.has_value() && !query_context->getParentTable().has_value())
         query_context->setParentTable(*entry.parent_table_uuid);
 
