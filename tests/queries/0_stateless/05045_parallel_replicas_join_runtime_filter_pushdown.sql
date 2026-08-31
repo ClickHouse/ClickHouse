@@ -21,6 +21,10 @@ SET enable_join_runtime_filters = 1;
 SET parallel_replicas_filter_pushdown = 1;
 -- Keep the small table on the build side so the plan shape below is stable.
 SET query_plan_join_swap_table = false;
+-- The plan below asserts that the filter reaches the read step as a `PREWHERE`, so pin the two
+-- optimizations that fold it in.
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 SELECT replaceAll(replaceRegexpOne(explain, '^[^A-Za-z]*', ''), currentDatabase(), 'default') AS step
 FROM (
