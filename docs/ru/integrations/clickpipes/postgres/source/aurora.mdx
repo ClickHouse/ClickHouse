@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Поддерживаемые версии Postgres
@@ -97,7 +98,17 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-Публикация `clickpipes` будет содержать набор событий изменений, сгенерированных указанными таблицами, и впоследствии будет использоваться для приёма потока репликации.
+Публикация `clickpipes` определяет набор таблиц, события изменений из которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы действительно не планируете реплицировать все таблицы, поскольку включение лишних таблиц увеличивает объём WAL-трафика из Postgres в ClickPipes и снижает общую эффективность репликации.
+
+<div id="iam-authentication">
+  ### Использование аутентификации IAM (необязательно)
+</div>
+
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+    Для аутентификации IAM при репликации параметр `rds.iam_auth_for_replication` должен быть установлен в `1`.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## Настройка сетевого доступа
@@ -107,7 +118,7 @@ postgres=> SHOW rds.logical_replication ;
   ### Управление доступом на основе IP
 </div>
 
-Если вы хотите ограничить трафик к своему кластеру Aurora, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в правила входящего трафика (`Inbound rules`) вашей группы безопасности Aurora.
+Если вы хотите ограничить трафик к своему кластеру Aurora, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в правила входящего трафика (`Inbound rules`) вашей группы безопасности Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Где найти группу безопасности в Aurora PostgreSQL?" size="lg" border />
 

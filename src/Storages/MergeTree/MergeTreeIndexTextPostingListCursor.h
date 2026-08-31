@@ -4,6 +4,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
+#include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/PostingListSegment.h>
 #include <memory>
 #include <vector>
@@ -127,6 +128,10 @@ private:
     /// into `shared_values`, avoiding a copy and supporting arrays larger than BLOCK_SIZE.
     alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
     const uint32_t * decoded_values_ptr = decoded_values;
+
+    /// Per-block payload codec for the current segment's codec type; lazily created and reused across all
+    /// blocks of this cursor (a posting list is written with a single codec).
+    std::unique_ptr<IPostingListBlockCodec> block_codec;
 
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
     size_t index = 0;            /// Read position within `decoded_values_ptr`.

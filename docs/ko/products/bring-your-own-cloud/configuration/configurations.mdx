@@ -32,7 +32,7 @@ BYOC 배포에서는 **Network Load Balancers (NLBs)**를 사용해 ClickHouse �
 * 일반적으로 고객 관리형 VPC를 사용하는 경우 기본적으로 활성화됩니다.
 * ClickHouse 관리형 전용 VPC를 사용하는 경우 기본적으로 비활성화됩니다.
 
-요구 사항에 따라 어떤 엔드포인트를 활성화할지 조정하려면 **ClickHouse Cloud Support**와 협의할 수 있습니다.
+ClickHouse Cloud 콘솔에서 BYOC 인프라용 프라이빗 로드 밸런서를 직접 활성화할 수 있습니다. 다른 엔드포인트 조정(예: 공용 로드 밸런서 제거)은 **ClickHouse Cloud Support**와 협의하십시오.
 
 <div id="private-load-balancer-security-group">
   ### AWS용 프라이빗 로드 밸런서 보안 그룹
@@ -53,10 +53,10 @@ BYOC 배포에서 프라이빗 로드 밸런서를 사용하는 경우, 의도�
 </Note>
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink 또는 Private Service Connect
+  ## PrivateLink, Private Service Connect 또는 Private Link
 </div>
 
-최대한의 네트워크 격리와 보안을 위해 BYOC 배포에서는 **AWS PrivateLink** 또는 **GCP Private Service Connect**를 사용할 수 있습니다. 이러한 옵션을 사용하면 VPC peering 없이, 엔드포인트를 퍼블릭 인터넷에 노출하지 않고도 애플리케이션을 ClickHouse Cloud 서비스에 비공개로 연결할 수 있습니다.
+최대한의 네트워크 격리와 보안을 위해 BYOC 배포에서는 **AWS PrivateLink**, **GCP Private Service Connect** 또는 **Azure Private Link**를 사용할 수 있습니다. 이러한 옵션을 사용하면 VPC/VNet peering 없이, 엔드포인트를 공용 인터넷에 노출하지 않고도 애플리케이션을 ClickHouse Cloud 서비스에 비공개로 연결할 수 있습니다.
 
 단계별 설정 방법은 [Private Networking 설정 가이드](/ko/products/bring-your-own-cloud/onboarding/network)를 참조하십시오.
 
@@ -64,13 +64,36 @@ BYOC 배포에서 프라이빗 로드 밸런서를 사용하는 경우, 의도�
   ## Kubernetes API 비공개 연결
 </div>
 
-기본적으로 BYOC 클러스터의 Kubernetes API 서버 엔드포인트는 공용 인터넷에서 접근할 수 있지만, IP 필터링을 통해 ClickHouse NAT Gateway IP에서만 접근이 허용됩니다. 보안을 더욱 강화하려면 Kubernetes API 서버가 Tailscale을 사용하는 비공개 네트워크 연결을 통해서만 접근 가능하도록 제한할 수 있습니다.
+기본적으로 BYOC 클러스터의 Kubernetes API 서버 엔드포인트는 공용 인터넷에서 접근할 수 있지만, IP 필터링을 통해 ClickHouse NAT Gateway IP에서만 접근이 허용됩니다. 보안을 더욱 강화하려면 Kubernetes API 서버가 프라이빗 네트워크 연결을 통해서만 접근 가능하도록 제한할 수 있습니다.
+
+사용 가능한 비공개 연결 옵션은 2가지입니다:
+
+<div id="k8s-api-private-connection-tailscale">
+  ### Tailscale (기본값)
+</div>
+
+비공개 API 엔드포인트가 활성화되면 ClickHouse 관리 서비스는 문제 해결 접근에 사용되는 것과 동일한 Tailscale 제로 트러스트 네트워크를 통해 Kubernetes API 서버에 연결합니다. 이 연결의 작동 방식에 대한 자세한 내용은 [Tailscale Private Network](/ko/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)를 참조하십시오.
 
 <Note>
   비공개 연결에 Tailscale만 전적으로 의존하는 경우, Tailscale 에이전트를 사용할 수 없게 되면 ClickHouse 지원팀이 해당 환경에 접근하지 못할 위험이 있습니다. 이로 인해 문제 해결이나 지원 응답 시간이 지연될 수 있습니다.
 </Note>
 
-비공개 API 엔드포인트 구성을 요청하려면 **ClickHouse 지원팀에 문의하십시오**.
+<div id="k8s-api-private-connection-vpc-lattice">
+  ### AWS VPC Lattice
+</div>
+
+<Info>
+  VPC Lattice 연결은 현재 비공개 프리뷰 단계입니다. 배포에서 이 기능을 활성화하려면 ClickHouse 지원팀에 문의하십시오.
+</Info>
+
+AWS 배포에서는 타사 구성 요소 없이 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/)를 통해 Kubernetes API 서버에 프라이빗 방식으로 연결할 수도 있습니다:
+
+* ClickHouse Cloud는 BYOC VPC 내부의 EKS API 서버 엔드포인트를 대상으로 하는 VPC Lattice Resource Gateway와 Resource Configuration을 자동으로 프로비저닝하고, AWS Resource Access Manager (RAM)를 통해 해당 Resource Configuration을 ClickHouse Cloud 관리 계정과 공유합니다.
+* ClickHouse 관리 서비스와 Kubernetes API 서버 간의 트래픽은 전부 AWS 프라이빗 네트워크 내에서 유지됩니다.
+* RAM 공유는 계정에서 생성되며 단일 BYOC 클러스터 범위로 한정됩니다. 이를 삭제하면 프라이빗 액세스 경로가 즉시 해제됩니다.
+* 액세스가 Kubernetes 클러스터 내부에서 실행되는 에이전트에 의존하지 않으므로, 클러스터 내 구성 요소를 사용할 수 없는 경우에도 ClickHouse 지원팀은 문제 해결을 위해 계속 액세스할 수 있습니다.
+
+프라이빗 API 엔드포인트 구성을 요청하려면 **ClickHouse 지원팀에 문의하십시오**.
 
 <div id="node-groups">
   ## 노드 그룹

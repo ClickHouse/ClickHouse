@@ -6,14 +6,10 @@ title: 'WebAssembly 用户自定义函数'
 doc_type: 'guide'
 ---
 
-import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="webassembly-user-defined-functions">
-  # WebAssembly 用户自定义函数
-</div>
-
-ClickHouse 支持创建以 WebAssembly 编写的用户自定义函数 (UDF) 。这样，你就可以将 Rust、C、C++ 等语言编写的自定义逻辑编译为 WebAssembly 模块并执行。
+ClickHouse 支持创建以 WebAssembly 编写的用户自定义函数 (UDF) 。这样一来，你可以将 Rust、C、C++ 等语言编译为 WebAssembly 模块，并执行用这些语言编写的自定义逻辑。
 
 <CloudNotSupportedBadge />
 
@@ -218,7 +214,7 @@ DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
   ## 创建 WebAssembly UDF
 </div>
 
-**语法**:
+**语法**：
 
 ```sql
 CREATE [OR REPLACE] FUNCTION function_name
@@ -244,7 +240,7 @@ RETURNS return_type
 * `DETERMINISTIC`：将该函数声明为确定性的——对于相同输入始终返回相同输出。指定后，当所有参数都是常量时，ClickHouse 可能会对调用进行常量折叠：函数会在查询分析阶段求值一次，结果会复用于每一行。
 * `SHA256_HASH`：用于校验的预期模块哈希 (若省略则自动填充) ，可用于确保不同副本上加载的是正确的 WASM 模块。
 * `SETTINGS`：函数级设置
-  * `serialization_format` String —— ABI 要求的序列化格式。支持的值：`MsgPack`、`JSONEachRow`、`CSV`、`TSV`、`TSVRaw`、`RowBinary` 和 `Buffers`。默认值：`MsgPack`。像 `Buffers` 这样基于块的格式必须返回单列，且该列的类型必须与声明的函数签名匹配。
+  * `serialization_format` String —— 用于序列化传递给模块的参数块并解析返回结果的格式。仅由 `ABI BUFFERED_V1` 使用。支持的值：`MsgPack`、`JSONEachRow`、`CSV`、`TSV`、`TSVRaw`、`RowBinary` 和 `Buffers`。默认值：`MsgPack`。像 `Buffers` 这样基于块的格式必须返回单列，且该列的类型必须与声明的函数签名匹配。
   * `webassembly_udf_enable_fuel` Bool —— 为该函数启用有限 fuel 预算。默认值：`true`。当为 `false` 时，查询级设置 `webassembly_udf_max_fuel` 会被该函数忽略。使用 `wasmtime` engine 时，禁用 fuel 限制可能会提升性能。但是，对于不受信任或有缺陷的 guest 代码，这可能会增加失控执行的风险。
 
 <div id="abis-versions">
@@ -287,52 +283,162 @@ WebAssembly 不区分有符号参数和无符号参数，而是通过不同的�
 </div>
 
 <Note>
-  此 ABI 仍处于 Experimental 阶段，未来版本中可能会发生变化。
+  此 ABI 仍处于实验阶段，未来的发行版中可能会有所变更。
 </Note>
 
-通过 WASM 内存中的 (反) 序列化一次处理整个块。支持任意参数和返回类型。
+通过 WASM 内存进行 (反) 序列化，一次处理整个块。支持任意参数类型和返回类型。
 
-序列化后的数据会被复制到 WASM 内存中，并将指向缓冲区的指针 (缓冲区由数据指针和数据大小组成) 以及输入中的行数一并传递给 UDF 函数。因此，WASM 侧的用户自定义函数始终接收两个 `i32` 参数，并返回单个 `i32` 值。
-guest 侧代码处理数据后，会返回一个指向结果缓冲区的指针，其中包含序列化后的结果数据。
+数据通过 WASM 内存中的缓冲区交换。缓冲区是一个 8 字节的结构，包含一个指向数据的指针和数据大小 (两个小端序 `u32` 值) 。缓冲区通过句柄传递——即指向该结构的指针，而非指向数据本身的指针。guest 代码必须导出两个函数，用于创建和销毁这些缓冲区。
 
-guest 侧代码必须提供两个函数，用于创建和销毁这些缓冲区。
+对于每个输入块，ClickHouse 会：
+
+1. 使用函数的 `serialization_format` (默认为 `MsgPack`) 序列化参数列。基于行的格式会逐行写入值，参数值的顺序与其在 `ARGUMENTS` 中声明的顺序一致；具有命名字段的格式使用参数名称，因此使用此类格式时，请在 `ARGUMENTS` 中声明参数名称。
+2. 调用模块导出的 `clickhouse_create_buffer`，并将序列化数据复制到返回的缓冲区所指向的内存中。
+3. 使用两个 `i32` 参数调用用户自定义函数：输入缓冲区句柄 (如果函数没有参数，则为 `0`) 和行数。该函数返回一个 `i32`——由 guest 代码自行分配的结果缓冲区句柄；返回 `0` 会导致查询报错失败。
+4. 读取结果缓冲区：其中必须恰好包含一列，且行数必须与输入完全相同，并以相同格式序列化。对于具有命名字段的格式，例如 `JSONEachRow`，结果列必须命名为 `result`。
+5. 对输入缓冲区 (如有) 和结果缓冲区的句柄调用 `clickhouse_destroy_buffer`。guest 代码不得自行释放结果缓冲区，也不得将输入句柄作为结果返回——否则该缓冲区会被销毁两次。
+
+函数会对每个输入块调用一次：大型查询会由查询管道拆分为多个块 (每次调用的最大行数还可通过 `webassembly_udf_max_input_block_size` 设置加以限制) ，因此每次调用传入的行数是该块的大小，而不是整个查询的大小。
+
+<Note>
+  缓冲区中的确切字节由所选格式定义，guest 代码必须自行解码和编码。对于 `String` 值，尤其需要注意：
+
+  * `MsgPack`：ClickHouse 使用 `bin` 类型家族 (`0xc4`/`0xc5`/`0xc6`) 写入 `String` 值，而非 `str` 家族。解析结果时，两种家族均可接受。
+  * `RowBinary`：每个 `String` 前面都会附加以无符号 varint ([LEB128](https://en.wikipedia.org/wiki/LEB128)) 编码的字节长度，而不是定长整数。
+  * `JSONEachRow`：每个结果行必须是包含 `result` 键的对象，例如 `{"result":"value"}`。
+</Note>
 
 ```
 (module
-  ;; 分配指定大小的新缓冲区
-  ;; 返回：Buffer 结构的句柄（非直接数据指针！），包含指向数据的指针及数据大小
+  ;; Allocate a new buffer of specified size
+  ;; Returns: handle to Buffer structure (not direct data pointer!) with pointer to data and size
   (func (export "clickhouse_create_buffer")
-    (param $size i32)    ;; 要分配的数据大小
-    (result i32))        ;; 返回具有足够空间的缓冲区句柄
+    (param $size i32)    ;; Size of data to allocate
+    (result i32))        ;; Returns buffer handle with enough space
 
-  ;; 通过句柄释放缓冲区
+  ;; Free a buffer by its handle
   (func (export "clickhouse_destroy_buffer")
-    (param $handle i32)  ;; 要释放的缓冲区句柄
-    (result))            ;; 无返回值
+    (param $handle i32)  ;; Buffer handle to free
+    (result))            ;; No return value
 
-    ;; 用户自定义函数
+    ;; User-defined function
     (func (export "user_defined_function1")
-      (param $input_buffer_handle i32)  ;; 输入缓冲区句柄
-      (param $n i32)                    ;; 输入的行数
-      (result i32))                     ;; 返回输出缓冲区句柄
+      (param $input_buffer_handle i32)  ;; Input buffer handle
+      (param $n i32)                    ;; Number of rows in input
+      (result i32))                     ;; Returns output buffer handle
 )
 ```
 
-C 定义示例：
+一个完整的独立运行 C 示例：`str_reverse` 使用 `serialization_format = 'RowBinary'` 反转每个输入字符串的字节。模块实例会跨块复用，因此 `clickhouse_destroy_buffer` 必须真正回收内存；这里会在所有缓冲区销毁后重置分配器。
 
 ```c
+#include <stdint.h>
+
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickhouseBuffer;
+} ClickHouseBuffer;
 
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size) { /* ... */ }
+#define HEAP_SIZE (1 << 24)
+static _Alignas(16) uint8_t heap[HEAP_SIZE];
+static uint32_t heap_pos = 0;
+static uint32_t live_buffers = 0;
 
-void clickhouse_destroy_buffer(ClickhouseBuffer * data) { /* ... */ }
+__attribute__((export_name("clickhouse_create_buffer")))
+ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
+{
+    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
+    if (heap_pos + total > HEAP_SIZE)
+        return 0; /* a zero handle makes the host fail the query with an error */
+    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
+    buf->size = size;
+    heap_pos += total;
+    ++live_buffers;
+    return buf;
+}
 
-/// 示例用户自定义函数
-ClickhouseBuffer * user_defined_function1(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
-ClickhouseBuffer * user_defined_function2(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
+__attribute__((export_name("clickhouse_destroy_buffer")))
+void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
+{
+    if (--live_buffers == 0)
+        heap_pos = 0;
+}
+
+/* RowBinary prefixes each String with its byte length as an unsigned varint (LEB128) */
+static uint64_t read_varint(const uint8_t ** pp)
+{
+    uint64_t value = 0;
+    for (int shift = 0;; shift += 7)
+    {
+        uint8_t b = *(*pp)++;
+        value |= (uint64_t)(b & 0x7f) << shift;
+        if (!(b & 0x80))
+            return value;
+    }
+}
+
+static void write_varint(uint8_t ** pp, uint64_t value)
+{
+    while (value >= 0x80)
+    {
+        *(*pp)++ = (uint8_t)(value | 0x80);
+        value >>= 7;
+    }
+    *(*pp)++ = (uint8_t)value;
+}
+
+/* Reverses the bytes of each input string */
+__attribute__((export_name("str_reverse")))
+ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
+{
+    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
+    if (!out)
+        return 0;
+    const uint8_t * in = input->data;
+    uint8_t * o = out->data;
+    for (uint32_t row = 0; row < num_rows; ++row)
+    {
+        uint64_t len = read_varint(&in);
+        write_varint(&o, len);
+        for (uint64_t i = 0; i < len; ++i)
+            o[i] = in[len - 1 - i];
+        in += len;
+        o += len;
+    }
+    out->size = (uint32_t)(o - out->data);
+    return out;
+}
+```
+
+使用 clang 和 `wasm-ld` (随 LLVM/lld 提供) 构建：
+
+```bash
+clang --target=wasm32 -ffreestanding -nostdlib -fno-builtin -c str_reverse.c
+wasm-ld --no-entry str_reverse.o -o str_reverse.wasm
+```
+
+函数必须在模块导出中可见：要么如上所示使用 `__attribute__((export_name("...")))` 标记，要么通过 `wasm-ld --export-all` 链接。`-fno-builtin` 可防止 clang 将普通的字节循环优化为对 `memcpy`/`memset` 的调用；在没有标准库时，这些函数不可用。
+
+加载模块并创建函数：
+
+```bash
+cat str_reverse.wasm | clickhouse client -q "INSERT INTO system.webassembly_modules (name, code) SELECT 'str_reverse', code FROM input('code String') FORMAT RawBlob"
+```
+
+```sql
+CREATE FUNCTION str_reverse LANGUAGE WASM ABI BUFFERED_V1
+FROM 'str_reverse' :: 'str_reverse'
+ARGUMENTS (s String) RETURNS String
+SETTINGS serialization_format = 'RowBinary';
+
+SELECT str_reverse(toString(number + 100)) FROM numbers(3);
+```
+
+```text
+001
+101
+201
 ```
 
 <div id="abi-assemblyscript">

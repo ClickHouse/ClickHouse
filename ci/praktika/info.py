@@ -1,11 +1,12 @@
 import json
 import os
 import traceback
-import urllib
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
 from .settings import Settings
+from .workflow import Workflow
 
 class Info:
 
@@ -43,6 +44,10 @@ class Info:
     @property
     def event_time(self):
         return self.env.EVENT_TIME
+
+    @property
+    def event_action(self):
+        return self.env.EVENT_ACTION
 
     @property
     def job_config(self):
@@ -130,7 +135,10 @@ class Info:
 
     @property
     def is_merge_queue_event(self):
-        return self.env.EVENT_TYPE == "merge_group"
+        # EVENT_TYPE always holds a Workflow.Event value, never GitHub's event
+        # name: the GitHub event is called "merge_group", praktika's value is
+        # "merge_queue". Compare against the enum so the two cannot drift.
+        return self.env.EVENT_TYPE == Workflow.Event.MERGE_QUEUE
 
     @property
     def is_push_event(self):
@@ -191,7 +199,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
@@ -211,7 +219,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break

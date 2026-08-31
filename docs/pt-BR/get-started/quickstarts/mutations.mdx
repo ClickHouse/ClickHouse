@@ -1,12 +1,13 @@
 ---
 slug: /guides/developer/mutations
 sidebarTitle: 'Atualização e exclusão de dados'
+searchable: true
 keywords: ['UPDATE', 'DELETE', 'mutações']
 title: 'Atualização e exclusão de dados no ClickHouse'
 description: 'Descreve como realizar operações de atualização e exclusão no ClickHouse'
 show_related_blogs: false
 doc_type: 'guide'
-useCases: ['Data warehousing']
+useCases: ['Armazenamento de dados']
 products: ['OSS']
 ---
 
@@ -123,7 +124,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 Algumas observações sobre exclusões leves:
 
 * Esse recurso está disponível apenas para a família de mecanismos de tabela `MergeTree`.
-* As exclusões leves são síncronas por padrão e aguardam que todas as réplicas processem a exclusão. Esse comportamento é controlado pela [configuração `lightweight_deletes_sync`](/pt-BR/reference/settings/session-settings#lightweight_deletes_sync).
+* As exclusões leves são síncronas por padrão e aguardam que todas as réplicas processem a exclusão. Esse comportamento é controlado pela [configuração `lightweight_deletes_sync`](/pt-BR/reference/settings/session-settings/lightweight#lightweight_deletes_sync).
 
 <div className="mt-8">
   <BackToQuickstarts />

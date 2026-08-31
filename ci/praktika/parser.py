@@ -18,9 +18,8 @@ class WorkflowYaml:
         runs_on: List[str]
         artifacts_gh_requires: List["WorkflowYaml.ArtifactYaml"]
         artifacts_gh_provides: List["WorkflowYaml.ArtifactYaml"]
-        addons: List["WorkflowYaml.JobAddonYaml"]
         gh_app_auth: bool
-        run_unless_cancelled: bool
+        always_run: bool
         parameter: Any
         secret_names_gh: List[str] = dataclasses.field(default_factory=list)
         variable_names_gh: List[str] = dataclasses.field(default_factory=list)
@@ -38,11 +37,6 @@ class WorkflowYaml:
 
         def __repr__(self):
             return self.name
-
-    @dataclasses.dataclass
-    class JobAddonYaml:
-        install_python: bool
-        requirements_txt_path: str
 
     name: str
     event: str
@@ -129,13 +123,12 @@ class WorkflowConfigParser:
         for job in self.config.jobs:
             job_yaml_config = WorkflowYaml.JobYaml(
                 name=job.name,
-                addons=[],
                 artifacts_gh_requires=[],
                 artifacts_gh_provides=[],
                 needs=[],
                 runs_on=[],
                 gh_app_auth=False,
-                run_unless_cancelled=job.run_unless_cancelled,
+                always_run=job.always_run,
                 parameter=None,
             )
             self.workflow_yaml_config.jobs.append(job_yaml_config)
@@ -196,17 +189,6 @@ class WorkflowConfigParser:
                     self.workflow_yaml_config.artifact_to_config[
                         dep_name
                     ].required_by.append(job.name)
-
-        # populate JobYaml.addons
-        for job in self.config.jobs:
-            if job.job_requirements:
-                addon_yaml = WorkflowYaml.JobAddonYaml(
-                    requirements_txt_path=job.job_requirements.python_requirements_txt,
-                    install_python=job.job_requirements.python,
-                )
-                self.workflow_yaml_config.job_to_config[job.name].addons.append(
-                    addon_yaml
-                )
 
         if self.config.enable_report:
             for job in self.config.jobs:

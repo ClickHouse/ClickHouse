@@ -878,12 +878,12 @@ Calcule JavaHash à partir de :
 
 <Warning>
   Cette fonction de hachage est peu performante.
-  Utilisez-la uniquement si cet algorithme est déjà utilisé dans un autre système et que vous devez obtenir le même résultat.
+  Utilisez-la uniquement si cet algorithme est déjà utilisé dans un autre système et que vous devez calculer le même résultat.
 </Warning>
 
 <Note>
-  Java ne prend en charge que le calcul du hachage d&#39;entiers signés.
-  Donc, si vous souhaitez calculer le hachage d&#39;entiers non signés, vous devez les convertir vers les types signés ClickHouse appropriés.
+  Java ne prend en charge que le calcul du hachage d&#39;entiers signés,
+  donc, si vous souhaitez calculer le hachage d&#39;entiers non signés, vous devez les convertir vers les types signés ClickHouse appropriés.
 </Note>
 
 **Syntaxe**
@@ -1893,7 +1893,7 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 
 Introduit dans : v23.2.0
 
-Identique à [`sipHash128`](#sipHash128), mais accepte en plus une clé explicite en argument au lieu d’utiliser une clé fixe.
+Identique à [`sipHash128`](#sipHash128), mais accepte en plus une clé explicite comme argument au lieu d’utiliser une clé fixe.
 
 <Tip>
   **utilisez sipHash128ReferenceKeyed pour les nouveaux projets**
@@ -2692,6 +2692,46 @@ SELECT xxHash64('Hello, world!');
 ┌─xxHash64('Hello, world!')─┐
 │      17691043854468224118 │
 └───────────────────────────┘
+```
+
+<div id="xxHash64Spark">
+  ## xxHash64Spark
+</div>
+
+Introduit dans : v26.7.0
+
+Calcule un [xxHash](http://cyan4973.github.io/xxHash/) à partir d’une chaîne de caractères avec la même seed que Spark.
+
+Cette fonction est identique à [`xxHash64`](#xxHash64), mais elle utilise la seed `42` et renvoie le résultat au format `Int64`.
+Seules les entrées `String` et `NULL` sont prises en charge.
+Pour `NULL`, la fonction renvoie `42`, conformément au comportement de Spark pour la seed.
+
+**Syntaxe**
+
+```sql
+xxHash64Spark(arg)
+```
+
+**Arguments**
+
+* `arg` — Chaîne d&#39;entrée à hacher. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie le hachage 64 bits calculé à partir de la chaîne d&#39;entrée. [`Int64`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+SELECT xxHash64Spark('ABC');
+```
+
+```response title=Response
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
 ```
 
 <div id="xxh3">

@@ -22,7 +22,7 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 
 연산자의 오른쪽에는 상수 표현식의 집합, 상수 표현식으로 구성된 튜플의 집합(위의 예시 참조), 데이터베이스 테이블 이름, 또는 괄호 안의 `SELECT` 서브쿼리를 사용할 수 있습니다.
 
-하위 호환성을 위해, 오른쪽이 단일 `tuple` 표현식인 경우 `IN` 연산자의 왼쪽 값에 따라 값의 집합 또는 하나의 tuple 값으로 해석될 수 있습니다. 왼쪽이 스칼라 값인 경우, ClickHouse는 이 단일 오른쪽 `tuple` 표현식의 각 요소를 별개의 `IN` 값으로 처리합니다.
+하위 호환성을 위해, 오른쪽이 단일 `tuple` 표현식인 경우 `IN` 연산자의 왼쪽 값에 따라 값의 집합 또는 하나의 tuple 값으로 해석될 수 있습니다. 왼쪽이 스칼라 값인 경우, ClickHouse는 이 단일 오른쪽 `tuple` 표현식의 각 원소를 별개의 `IN` 값으로 처리합니다:
 
 ```sql title="Query"
 SELECT
@@ -62,7 +62,7 @@ Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Se
 ClickHouse는 `IN` 서브쿼리의 좌측과 우측 타입이 서로 달라도 허용됩니다.
 이 경우, 우측에 [accurateCastOrNull](/ko/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) 함수를 적용한 것처럼 우측 값을 좌측 타입으로 변환합니다.
 
-이는 데이터 타입이 [널 허용](/ko/reference/data-types/nullable)으로 변환되고, 변환을 수행할 수 없는 경우 [NULL](/ko/reference/settings/formats#input_format_null_as_default)을 반환한다는 것을 의미합니다.
+이는 데이터 타입이 [널 허용](/ko/reference/data-types/nullable)으로 변환되고, 변환을 수행할 수 없는 경우 [NULL](/ko/reference/settings/formats/input-format#input_format_null_as_default)을 반환한다는 것을 의미합니다.
 
 **예시**
 
@@ -126,7 +126,7 @@ ORDER BY EventDate ASC
   ## NULL 처리
 </div>
 
-요청 처리 중 `IN` 연산자는 [NULL](/ko/reference/settings/formats#input_format_null_as_default)을 포함한 연산의 결과가 `NULL`이 연산자의 오른쪽에 있든 왼쪽에 있든 상관없이 항상 `0`이라고 가정합니다. [transform&#95;null&#95;in = 0](/ko/reference/settings/session-settings#transform_null_in)인 경우 `NULL` 값은 어떤 데이터셋에도 포함되지 않으며, 서로 대응되지도 않고 비교할 수도 없습니다.
+요청 처리 중 `IN` 연산자는 [NULL](/ko/reference/settings/formats/input-format#input_format_null_as_default)을 포함한 연산의 결과가 `NULL`이 연산자의 오른쪽에 있든 왼쪽에 있든 상관없이 항상 `0`이라고 가정합니다. [transform&#95;null&#95;in = 0](/ko/reference/settings/session-settings/other#transform_null_in)인 경우 `NULL` 값은 어떤 데이터셋에도 포함되지 않으며, 서로 대응되지도 않고 비교할 수도 없습니다.
 
 다음은 `t_null` 테이블을 사용한 예시입니다:
 
@@ -269,7 +269,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
   ### 분산 서브쿼리와 max_rows_in_set
 </div>
 
-분산 쿼리 중 전송되는 데이터의 양은 [`max_rows_in_set`](/ko/reference/settings/session-settings#max_rows_in_set) 및 [`max_bytes_in_set`](/ko/reference/settings/session-settings#max_bytes_in_set)으로 제어할 수 있습니다.
+분산 쿼리 중 전송되는 데이터의 양은 [`max_rows_in_set`](/ko/reference/settings/session-settings/max-rows#max_rows_in_set) 및 [`max_bytes_in_set`](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_set)으로 제어할 수 있습니다.
 
 특히 `GLOBAL IN` 쿼리가 대량의 데이터를 반환하는 경우 이는 매우 중요합니다. 다음 SQL을 살펴보십시오:
 
@@ -277,7 +277,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
 
-`some_predicate`가 충분히 선택적이지 않으면 많은 양의 데이터를 반환해 성능 문제가 발생할 수 있습니다. 이러한 경우 네트워크를 통한 데이터 전송을 제한하는 것이 좋습니다. 또한 [`set_overflow_mode`](/ko/reference/settings/session-settings#set_overflow_mode)는 `throw`(기본값)로 설정되어 있으므로, 이러한 임계값에 도달하면 예외가 발생한다는 점에 유의하십시오.
+`some_predicate`가 충분히 선택적이지 않으면 많은 양의 데이터를 반환해 성능 문제가 발생할 수 있습니다. 이러한 경우 네트워크를 통한 데이터 전송을 제한하는 것이 좋습니다. 또한 [`set_overflow_mode`](/ko/reference/settings/session-settings/other#set_overflow_mode)는 `throw`(기본값)로 설정되어 있으므로, 이러한 임계값에 도달하면 예외가 발생한다는 점에 유의하십시오.
 
 <div id="distributed-subqueries-and-max_parallel_replicas">
   ### 분산 서브쿼리와 max_parallel_replicas
@@ -307,4 +307,4 @@ SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
 
 `local_table_2`가 요구 사항을 충족하지 않는 경우의 한 가지 우회 방법은 `GLOBAL IN` 또는 `GLOBAL JOIN`을 사용하는 것입니다.
 
-테이블에 샘플링 키가 없는 경우에는 [parallel&#95;replicas&#95;custom&#95;key](/ko/reference/settings/session-settings#parallel_replicas_custom_key)의 더 유연한 옵션을 사용하여 서로 다르고 더 최적화된 동작을 구현할 수 있습니다.
+테이블에 샘플링 키가 없는 경우에는 [parallel&#95;replicas&#95;custom&#95;key](/ko/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key)의 더 유연한 옵션을 사용하여 서로 다르고 더 최적화된 동작을 구현할 수 있습니다.
