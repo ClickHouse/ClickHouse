@@ -1,6 +1,6 @@
 #include <Storages/StorageMergeTreeCodecBlockCounts.h>
 
-#include <Access/Common/AccessType.h>
+#include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -36,11 +36,13 @@ public:
 private:
     /// Checked from the name alone, before the catalog is consulted, so that a user who is not allowed to see
     /// the source table cannot tell an existing one from a missing one by `ACCESS_DENIED` against `UNKNOWN_TABLE`.
-    /// `SHOW COLUMNS` is what `DESCRIBE` of the source table itself requires, and it is implied by any grant on it,
-    /// so this only adds a tier below the `SELECT` check that follows the resolution.
+    /// `SHOW TABLES` is the privilege that governs whether the table's existence may be learned, and it is implied
+    /// by a grant on any single column of it, so this only adds a tier below the `SELECT` check on every column
+    /// that follows the resolution. `SHOW COLUMNS`, which `DESCRIBE` of the source table requires, is not implied
+    /// by column-level grants, so it would reject a user who holds `SELECT` on every column separately.
     void checkSourceTableNameAccess(const ContextPtr & context) const
     {
-        context->checkAccess(AccessType::SHOW_COLUMNS, source_table_id.database_name, source_table_id.table_name);
+        context->checkAccess(AccessType::SHOW_TABLES, source_table_id);
     }
 
     StoragePtr executeImpl(
@@ -145,7 +147,7 @@ Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The o
 
 Parts that do not record their substreams in `columns_substreams.txt` are not listed.
 
-Every reported value is derived from the table's data, so reading any column of the result requires the `SELECT` privilege on all columns of the table. A grant that covers only some of the columns is not enough. The privilege is also required to resolve the structure of the function, e.g. by `DESCRIBE`. A user who is not allowed to see the table at all, that is, one without the `SHOW COLUMNS` privilege on it, gets `ACCESS_DENIED` whether or not it exists, so the function does not tell such a user which tables exist.
+Every reported value is derived from the table's data, so reading any column of the result requires the `SELECT` privilege on all columns of the table. A grant that covers only some of the columns is not enough. The privilege is also required to resolve the structure of the function, e.g. by `DESCRIBE`. A user who is not allowed to see the table at all, that is, one without the `SHOW TABLES` privilege on it, gets `ACCESS_DENIED` whether or not it exists, so the function does not tell such a user which tables exist.
 
 If a row policy applies to the table for the current user, reading `codec_block_counts` throws `ACCESS_DENIED`, because the counts would cover rows the policy hides. The other columns stay readable, `system.parts_columns` reports them regardless of row policies.
 
