@@ -56,6 +56,7 @@ extern const Event ASTFuzzerOracleDQPChecks;
 extern const Event ASTFuzzerOracleIdentityWhereChecks;
 extern const Event ASTFuzzerOracleSubqueryWrapChecks;
 extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
+extern const Event ASTFuzzerOracleDistinctViaGroupByChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2348,6 +2349,96 @@ bool QueryOracleChecker::checkGroupByKeyPermutation(const ASTSelectQuery & selec
     }
 
     LOG_TRACE(logger, "GROUP BY key permutation oracle passed ({} rows)", ref_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// `SELECT DISTINCT <exprs> FROM ...` deduplicates the projected tuples; `SELECT <exprs>
+    /// FROM ... GROUP BY <exprs>` produces one row per distinct projected tuple — the same set.
+    /// The two run through different execution paths (DistinctStep vs the aggregator), so a
+    /// divergence is a real bug. Bespoke gate (isSafeForOracle rejects DISTINCT by design).
+    if (!select.distinct)
+        return false;
+    if (!select.select() || !select.tables())
+        return false;
+    /// DISTINCT combined with grouping/aggregation, or with row-limiting clauses that pick an
+    /// arbitrary subset, is out of scope.
+    if (select.groupBy() || select.having() || select.group_by_all || hasAggregates(select))
+        return false;
+    if (select.limitLength() || select.limitBy() || select.limitOffset())
+        return false;
+    if (select.prewhere() || select.qualify())
+        return false;
+
+    /// A bare/qualified `*` becomes a context-sensitive GROUP BY `*` after the rewrite (the
+    /// global gate rejects asterisks in GROUP BY); keep them out.
+    for (const auto & expr : select.select()->children)
+        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+            return false;
+
+    if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
+        return false;
+    if (referencesNonDeterministicDatabase(select))
+        return false;
+    {
+        SafeAggregateScan data;
+        scanAggregatesSafe(select.select(), data);
+        if (!data.window_functions.empty())
+            return false;
+    }
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    /// Reference: the DISTINCT query with ORDER BY / LIMIT / SETTINGS stripped.
+    auto ref_ast = select.clone();
+    stripOrderAndLimit(ref_ast->as<ASTSelectQuery &>());
+
+    /// Metamorphic: drop DISTINCT, GROUP BY the (alias-stripped) SELECT expressions.
+    auto gb_ast = ref_ast->clone();
+    {
+        auto & sel = gb_ast->as<ASTSelectQuery &>();
+        sel.distinct = false;
+        auto group_by = make_intrusive<ASTExpressionList>();
+        for (const auto & expr : sel.select()->children)
+        {
+            auto key = expr->clone();
+            key->setAlias(""); /// GROUP BY keys are the raw expressions, not `expr AS x`
+            group_by->children.push_back(std::move(key));
+        }
+        sel.setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by));
+    }
+
+    const String ref_sql = formatAST(ref_ast);
+    const String gb_sql = formatAST(gb_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH || gb_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle: grouped: {}", gb_sql);
+
+    auto ref_rows_opt = OracleExec::executeRows(ref_sql, context, ResultShape::SortedBag);
+    auto gb_rows_opt = OracleExec::executeRows(gb_sql, context, ResultShape::SortedBag);
+    if (!ref_rows_opt || !gb_rows_opt)
+        return false;
+
+    if (!OracleExec::isStable(ref_sql, *ref_rows_opt, context, ResultShape::SortedBag))
+        return false;
+
+    if (!OracleCompare::equal(*ref_rows_opt, *gb_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "DISTINCT-via-GROUP-BY oracle mismatch!\n"
+            "Reference query ({} rows): {}\n"
+            "Grouped query ({} rows): {}\n{}",
+            ref_rows_opt->size(), ref_sql,
+            gb_rows_opt->size(), gb_sql,
+            OracleCompare::diffSummary(*ref_rows_opt, *gb_rows_opt));
+    }
+
+    LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle passed ({} rows)", ref_rows_opt->size());
     return true;
 }
 
