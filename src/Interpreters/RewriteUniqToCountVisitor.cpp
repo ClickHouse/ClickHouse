@@ -143,6 +143,11 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
         auto group_by = sub_selectq->groupBy();
         if (!group_by)
             return false;
+        /// These modifiers emit rows beyond one per group - the super-aggregate "total" rows -
+        /// which `count()` would count as additional distinct values.
+        if (sub_selectq->group_by_with_rollup || sub_selectq->group_by_with_cube
+            || sub_selectq->group_by_with_totals || sub_selectq->group_by_with_grouping_sets)
+            return false;
         /// uniq expression list == subquery group by expression list
         if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), group_by->as<ASTExpressionList>(), alias))
             return false;

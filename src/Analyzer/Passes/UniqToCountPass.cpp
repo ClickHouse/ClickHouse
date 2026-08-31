@@ -1,5 +1,7 @@
 #include <Analyzer/Passes/UniqToCountPass.h>
 
+#include <DataTypes/DataTypeNullable.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -156,6 +158,14 @@ public:
 
         auto & uniq_arguments_nodes = function_node->getArguments().getNodes();
 
+        /// `uniq` does not count a NULL, but the `count()` that would replace it counts the row
+        /// `SELECT DISTINCT` or `GROUP BY` emits for it, so the rewrite would report one distinct
+        /// value too many. `canContainNull` rather than `isNullable`, because `Variant` and
+        /// `Dynamic` carry a NULL through a discriminator.
+        for (const auto & uniq_argument_node : uniq_arguments_nodes)
+            if (canContainNull(*uniq_argument_node->getResultType()))
+                return;
+
         /// Whether query matches 'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)'
         auto match_subquery_with_distinct = [&]() -> bool
         {
@@ -173,6 +183,12 @@ public:
         auto match_subquery_with_group_by = [&]() -> bool
         {
             if (!subquery_node->hasGroupBy())
+                return false;
+
+            /// These modifiers emit rows beyond one per group - the super-aggregate "total" rows -
+            /// which `count()` would count as additional distinct values.
+            if (subquery_node->isGroupByWithRollup() || subquery_node->isGroupByWithCube()
+                || subquery_node->isGroupByWithTotals() || subquery_node->isGroupByWithGroupingSets())
                 return false;
 
             /// uniq argument node list == subquery group by node list

@@ -1,0 +1,20 @@
+nullable distinct
+2
+2
+2
+2
+nullable group by
+2
+2
+rollup
+2
+2
+cube
+2
+2
+legacy analyzer
+2
+2
+still optimized
+2
+1
