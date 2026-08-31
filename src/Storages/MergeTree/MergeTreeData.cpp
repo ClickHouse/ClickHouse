@@ -1024,7 +1024,27 @@ void MergeTreeData::checkProperties(
     /// Rejects a schema where a column is wrapped by two Row wrappers, or where a
     /// wrapper references a missing column. Must happen here rather than lazily from
     /// the read optimizer, which only runs when `query_plan_use_row_wrappers` is on.
-    collectRowWrappers(new_metadata.columns);
+    auto new_row_wrappers = collectRowWrappers(new_metadata.columns);
+
+    /// A wrapper's stored values must always equal tuple(<sources>). A pre-existing column
+    /// promoted to a wrapper by ALTER may hold arbitrary values in already written parts
+    /// (it used to be insertable, or wrapped different columns), and the read optimizer
+    /// would serve those bytes under the source column names. So a column may only become
+    /// a wrapper when it is added: an existing column must already be the same wrapper.
+    for (const auto & wrapper : new_row_wrappers)
+    {
+        const auto * old_column = old_metadata.columns.tryGet(wrapper.wrapper_name);
+        if (!old_column)
+            continue;
+
+        auto old_wrapper = tryDescribeRowWrapper(*old_column, old_metadata.columns);
+        if (!old_wrapper || old_wrapper->wrapped_columns != wrapper.wrapped_columns)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot make existing column '{}' a Row wrapper of columns [{}]: parts written "
+                "before this ALTER may store values that differ from the wrapper expression. "
+                "A Row wrapper can only be created together with its column (in CREATE TABLE or ADD COLUMN)",
+                wrapper.wrapper_name, fmt::join(wrapper.wrapped_columns, ", "));
+    }
 
     KeyDescription new_sorting_key = new_metadata.sorting_key;
     KeyDescription new_primary_key = new_metadata.primary_key;
