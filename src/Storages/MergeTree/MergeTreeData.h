@@ -1214,7 +1214,34 @@ public:
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
-    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
+    /// Returns the set of partition IDs affected by mutation commands.
+    /// nullopt means all partitions are affected. An empty set means zero partitions are affected.
+    /// `commands_run_in_background` tells how the commands will be interpreted: an ALTER mutation
+    /// runs asynchronously with a context derived from the background context, while a lightweight
+    /// update interprets its commands in the foreground with the submitting context. The predicate
+    /// analysis must run in the matching context, otherwise it accepts or rejects predicates the
+    /// execution would treat differently.
+    /// If `analyzed_partition_ids` is not null, it receives the partition IDs whose parts every
+    /// predicate-pruned command actually analyzed (the intersection of the per-command local parts
+    /// snapshots). A caller that widens the result with externally visible partitions must widen
+    /// only with partitions absent from this set: a partition the pruner analyzed and ruled out
+    /// must not be re-added, and a partition it could not have seen must not be skipped.
+    std::optional<std::set<String>> getPartitionIdsAffectedByCommands(
+        const MutationCommands & commands,
+        ContextPtr query_context,
+        bool commands_run_in_background,
+        std::unordered_set<String> * analyzed_partition_ids) const;
+
+    /// Analyze the predicate and return partition IDs that cannot be pruned away.
+    /// Returns nullopt if pruning is not possible (e.g. no partition key, predicate doesn't reference it,
+    /// or an error occurred during analysis). An empty set means zero partitions are affected.
+    /// If `analyzed_partition_ids` is not null, it receives the partition IDs of all parts in the
+    /// snapshot the pruner iterated (both kept and pruned ones).
+    std::optional<std::set<String>> getPartitionIdsPrunedByPredicate(
+        const ASTPtr & predicate,
+        ContextPtr query_context,
+        bool command_runs_in_background,
+        std::unordered_set<String> * analyzed_partition_ids) const;
 
     /// Returns set of partition_ids of all Active parts
     std::unordered_set<String> getAllPartitionIds() const;
