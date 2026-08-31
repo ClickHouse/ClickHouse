@@ -187,7 +187,7 @@ QueryPlanStepPtr IntersectOrExceptStep::clone() const
 }
 
 /// First query-plan serialization version that registers the "IntersectOrExcept" step.
-static constexpr auto MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP = 10;
+static constexpr auto MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP = 11;
 
 void IntersectOrExceptStep::serialize(Serialization & ctx) const
 {
