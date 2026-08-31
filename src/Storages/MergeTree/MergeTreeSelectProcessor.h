@@ -201,7 +201,8 @@ private:
     ExpressionActionsPtr virtual_row_conversions;
     /// Precomputed header with PK column names/types; cloned and filled from index per block.
     Block pk_block_header;
-    /// Empty result-header columns shared by every emitted virtual row (they are immutable).
+    /// The result header's columns (all empty), shared by every emitted virtual row
+    /// instead of being cloned per block — a virtual row carries no data of its own.
     Columns virtual_row_empty_columns;
     bool read_in_reverse_order = false;
     std::optional<ChunkAndProgress> pending_virtual_row;
