@@ -393,6 +393,23 @@ std::string SQLConsoleUIRequestHandler::getResourcePath(const std::string & uri)
     return std::string(path);
 }
 
+namespace
+{
+
+/// Missing hashed/root assets must 404; other unmatched paths are SPA routes (quoted identifiers may contain '.').
+bool isSQLConsoleStaticAsset(std::string_view resource_path)
+{
+    if (resource_path.starts_with("assets/") || resource_path.starts_with("monacoeditorwork/"))
+        return true;
+
+    return resource_path == "env.js"
+        || resource_path == "index.html"
+        || resource_path == "third-party-licenses.json"
+        || resource_path == "third-party-license-types.json";
+}
+
+}
+
 void SQLConsoleUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     std::string resource_path = getResourcePath(request.getURI());
@@ -403,7 +420,7 @@ void SQLConsoleUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTP
         return;
     }
 
-    if (resource_path.find('.') == std::string::npos)
+    if (!isSQLConsoleStaticAsset(resource_path))
     {
         if (const auto * resource = findEmbeddedResource(SQLConsole::embedded_resources, "index.html"))
         {

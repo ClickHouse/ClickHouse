@@ -18,7 +18,9 @@ ${CLICKHOUSE_CURL} -I "${BASE_URL}/ui" | grep -i '^Content-Encoding:' | tr -d '\
 ${CLICKHOUSE_CURL} "${BASE_URL}/ui/env.js" | gzip -d | grep -o 'window\._env'
 ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/monacoeditorwork/editor.worker.bundle.js"
 ${CLICKHOUSE_CURL} "${BASE_URL}/ui/console/newQuery" | gzip -d | grep -o 'ClickHouse SQL Console' | head -n1
+# SPA fallback must boot index.html for table deep links whose identifiers contain '.' (quoted ClickHouse names).
+${CLICKHOUSE_CURL} "${BASE_URL}/ui/services/local/console/database/my.db/table/t" | gzip -d | grep -o 'ClickHouse SQL Console' | head -n1
 ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/ui/monacoeditorwork/editor.worker.bundle.js"
-${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/nonexistent.js"
+${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/assets/nonexistent.js"
 # A sibling route like "/uix" must not be captured by the "/ui" handler (route-boundary check).
 ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/uix"
