@@ -88,9 +88,47 @@ ${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO $user"
 deny_or_allow "RESTORE TABLE $src.t AS $db.r3 FROM $bk FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "REVOKE WRITE ON FILE FROM $user"
 
-echo "-- Disk(...) is exempt in this change: still allowed with SOURCES revoked"
-deny_or_allow "BACKUP TABLE $src.t TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk2') FORMAT Null"
+echo "-- BACKUP TO Disk(...) without WRITE ON DISK: denied, and it names the missing grant"
+${CLICKHOUSE_CLIENT} --user "$user" -q \
+    "BACKUP TABLE $src.t TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk2') FORMAT Null" 2>&1 \
+    | grep -c -m1 'WRITE ON DISK'
+echo "-- BACKUP TO Disk(...) with WRITE ON DISK: allowed"
+${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON DISK TO $user"
+deny_or_allow "BACKUP TABLE $src.t TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk3') FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "REVOKE WRITE ON DISK FROM $user"
+
+echo "-- RESTORE FROM Disk(...) without READ ON DISK: denied"
+deny_or_allow "RESTORE TABLE $src.t AS $db.rd1 FROM $bk_disk FORMAT Null"
+echo "-- the table was not created by the rejected restore"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '$db' AND name = 'rd1'"
+echo "-- RESTORE FROM Disk(...) with READ ON DISK: allowed and the row is readable"
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO $user"
+deny_or_allow "RESTORE TABLE $src.t AS $db.rd2 FROM $bk_disk FORMAT Null"
+${CLICKHOUSE_CLIENT} --user "$user" -q "SELECT x FROM $db.rd2"
+${CLICKHOUSE_CLIENT} -q "REVOKE READ ON DISK FROM $user"
+
+echo "-- WRITE ON DISK alone does not authorize reading a backup"
+${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON DISK TO $user"
+deny_or_allow "RESTORE TABLE $src.t AS $db.rd3 FROM $bk_disk FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "REVOKE WRITE ON DISK FROM $user"
+
+echo "-- FILE and DISK are separate capabilities: neither grant authorizes the other locator"
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON FILE TO $user"
+deny_or_allow "RESTORE TABLE $src.t AS $db.rd4 FROM $bk_disk FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "REVOKE READ ON FILE FROM $user"
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO $user"
+deny_or_allow "RESTORE TABLE $src.t AS $db.rd5 FROM $bk FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "REVOKE READ ON DISK FROM $user"
+
+echo "-- CREATE DATABASE ENGINE = Backup over Disk(...) without READ ON DISK: denied"
 deny_or_allow "CREATE DATABASE ${db}_b3 ENGINE = Backup('$src', $bk_disk)"
+echo "-- the database was not created"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.databases WHERE name = '${db}_b3'"
+
+echo "-- SOURCES covers the new source, so an admin-level grant needs no update"
+${CLICKHOUSE_CLIENT} -q "GRANT SOURCES ON *.* TO $user"
+deny_or_allow "RESTORE TABLE $src.t AS $db.rd6 FROM $bk_disk FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "REVOKE SOURCES ON *.* FROM $user"
 
 echo "-- re-attaching an already-authorized database does not re-demand the grant"
 ${CLICKHOUSE_CLIENT} --user "$user" -q "DETACH DATABASE ${db}_b2"

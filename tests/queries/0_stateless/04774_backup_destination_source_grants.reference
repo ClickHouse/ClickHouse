@@ -18,8 +18,27 @@ allowed
 42
 -- WRITE ON FILE alone does not authorize reading a backup
 denied
--- Disk(...) is exempt in this change: still allowed with SOURCES revoked
+-- BACKUP TO Disk(...) without WRITE ON DISK: denied, and it names the missing grant
+1
+-- BACKUP TO Disk(...) with WRITE ON DISK: allowed
 allowed
+-- RESTORE FROM Disk(...) without READ ON DISK: denied
+denied
+-- the table was not created by the rejected restore
+0
+-- RESTORE FROM Disk(...) with READ ON DISK: allowed and the row is readable
+allowed
+42
+-- WRITE ON DISK alone does not authorize reading a backup
+denied
+-- FILE and DISK are separate capabilities: neither grant authorizes the other locator
+denied
+denied
+-- CREATE DATABASE ENGINE = Backup over Disk(...) without READ ON DISK: denied
+denied
+-- the database was not created
+0
+-- SOURCES covers the new source, so an admin-level grant needs no update
 allowed
 -- re-attaching an already-authorized database does not re-demand the grant
 allowed
