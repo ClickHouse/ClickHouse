@@ -63,8 +63,16 @@ void CompressedWriteBuffer::nextImpl()
     {
         /// The frame sits right in front of the working buffer, inside `out`, which is exclusively
         /// ours (see declareOutBufferExclusive), so `out` has not moved since the buffer was set up.
+        /// Checked in every build, not only in debug: the working buffer is an alias into `out`, and
+        /// wrappers such as `HashingWriteBuffer` hand that alias further out, so a foreign write or
+        /// flush would otherwise be committed to disk as a well-formed block of wrong bytes. Failing
+        /// here cancels the whole chain (see `WriteBuffer::next`), so nothing incorrect is written.
         char * frame_begin = working_buffer.begin() - COMPRESSED_BLOCK_PREFIX_SIZE;
-        chassert(out.position() == frame_begin);
+        if (out.position() != frame_begin)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The output buffer of CompressedWriteBuffer was declared exclusive, but it was written to or flushed "
+                "by someone else while a block was assembled in place");
 
         char * header_ptr = frame_begin + sizeof(CityHash_v1_0_2::uint128);
 

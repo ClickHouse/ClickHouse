@@ -24,6 +24,9 @@ public:
     /// being copied there. The caller guarantees that nothing else writes to or flushes `out`
     /// while this buffer is alive, the same contract `HashingWriteBuffer` and `ForkWriteBuffer`
     /// rely on. Call before writes or constructing a wrapper that captures the working buffer.
+    /// A violation is detected in every build, including release: the block is not finished, the
+    /// whole buffer chain is canceled and `LOGICAL_ERROR` is thrown, so a foreign write can never
+    /// be committed as a valid-looking compressed block.
     void declareOutBufferExclusive();
 
     /// The amount of compressed data

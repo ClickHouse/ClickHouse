@@ -179,4 +179,27 @@ TEST(CompressedWriteBufferNone, ChunkedWritesAcrossBlocks)
         roundTrip(data, /*block_size=*/ 16384, /*out_buf_size=*/ 65536, chunk);
 }
 
+TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
+{
+    /// The exclusivity declared by declareOutBufferExclusive is enforced in release builds too:
+    /// the working buffer aliases `out`, so a foreign write while a block is assembled in place
+    /// must abort the block instead of committing a well-formed frame of wrong bytes.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
+    auto tmp_file = createTemporaryFile("/tmp/");
+    DB::WriteBufferFromFile out(tmp_file->path(), 1 << 20);
+    DB::CompressedWriteBuffer compressed_out(out, std::make_shared<DB::CompressionCodecNone>(), 1024);
+    compressed_out.declareOutBufferExclusive();
+
+    compressed_out.write("hello", 5);
+
+    /// Someone else writes to `out` even though it was declared exclusive.
+    out.write("x", 1);
+
+    EXPECT_THROW(compressed_out.next(), DB::Exception);
+    EXPECT_TRUE(compressed_out.isCanceled());
+#endif
+}
+
 }
