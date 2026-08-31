@@ -230,6 +230,7 @@
     M(IcebergCompactionSnapshots, "Number of iceberg compactions.") \
     M(IcebergCompactionMerge, "Number of executing background Iceberg compaction merges.") \
     M(IcebergCompactionSourceFiles, "Number of input source files (data files and position delete files) participating in currently executing Iceberg compaction merges.") \
+    M(IcebergCompactionCleanupTasks, "Number of background tasks for removing data files superseded by Iceberg compaction, which are scheduled or still retained by Iceberg tables.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -453,6 +454,7 @@
     M(SharedMergeTreeThreads, "Number of threads in the thread pools in internals of SharedMergeTree") \
     M(SharedMergeTreeThreadsActive, "Number of threads in the thread pools in internals of SharedMergeTree running a task") \
     M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
+    M(SharedMergeTreeBlobRefCounterNodes, "Number of blob reference-count nodes (one per data blob shared by 2+ blob-list parts) in the cluster-shared `_blob_manager/refcount` Keeper subtrees, measured periodically by the blob-manager stats task and summed over the server's Keeper-metadata disks.") \
     M(SharedMergeTreeFetch, "Number of fetches in progress") \
     M(SharedMergeTreeAssignedCurrentParts, "Number of parts locked by merge or mutation") \
     M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
@@ -560,6 +562,10 @@
     M(StatelessWorkerInUse, "Number of stateless workers currently in use by running queries.") \
     M(StatelessWorkerIdle, "Number of stateless workers currently held by the server but not used by any running query.") \
     M(StatelessWorkerServerActiveTasks, "Number of query execution tasks currently active on a stateless worker (accepted from a tenant and not yet released).") \
+    M(StatelessWorkerDiscoveryFreeWorkers, "Number of stateless workers that are registered and available to be leased, as tracked by the stateless worker discovery service.") \
+    M(StatelessWorkerDiscoveryLeasedWorkers, "Number of stateless workers currently leased to tenants, as tracked by the stateless worker discovery service.") \
+    M(StatelessWorkerDiscoveryDyingWorkers, "Number of stateless workers that have been evicted and are awaiting removal, as tracked by the stateless worker discovery service.") \
+    M(StatelessWorkerDiscoveryTenants, "Number of tenants registered with the stateless worker discovery service.") \
     M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
     M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
     M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \

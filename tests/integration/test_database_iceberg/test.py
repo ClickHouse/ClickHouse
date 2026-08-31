@@ -1086,6 +1086,66 @@ def test_select_manifest_without_sequence_number(started_cluster, rewrite_manife
     assert num_rows == int(node.query(f"SELECT count() FROM {table_ref} WHERE symbol = 'kek'"))
 
 
+@pytest.mark.parametrize("rewrite_manifest_list", [False, True])
+def test_select_manifest_without_snapshot_id(started_cluster, rewrite_manifest_list):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_manifest_without_snapshot_id_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name)
+
+    num_rows = 10
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(num_rows)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    assert num_rows == int(node.query(f"SELECT count() FROM (SELECT * FROM {table_ref})"))
+
+    snapshot = catalog.load_table(f"{root_namespace}.{table_name}").current_snapshot()
+    manifests = snapshot.manifests(table.io)
+    assert len(manifests) > 0
+
+    for manifest in manifests:
+        _rewrite_s3_avro_without_fields(
+            started_cluster.minio_client,
+            manifest.manifest_path,
+            ["snapshot_id", "sequence_number", "file_sequence_number"],
+            {"data_file": ["content"]},
+        )
+
+    if rewrite_manifest_list:
+        _rewrite_s3_avro_without_fields(
+            started_cluster.minio_client,
+            snapshot.manifest_list,
+            ["sequence_number", "min_sequence_number", "content"],
+        )
+
+    node.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    assert num_rows == int(node.query(f"SELECT count() FROM (SELECT * FROM {table_ref})"))
+    assert num_rows == int(node.query(f"SELECT count() FROM {table_ref} WHERE symbol = 'kek'"))
+    files_of_table = (
+        f"FROM system.iceberg_files WHERE database = '{CATALOG_NAME}' "
+        f"AND table = '{root_namespace}.{table_name}' "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    )
+    assert str(snapshot.snapshot_id) == node.query(
+        f"SELECT DISTINCT snapshot_id {files_of_table}"
+    ).strip()
+    # The data sequence number is inherited from the manifest list, which this run may have
+    # stripped of its own sequence number; then there is nothing to inherit and 0 is correct.
+    expected_sequence_number = 0 if rewrite_manifest_list else snapshot.sequence_number
+    assert str(expected_sequence_number) == node.query(
+        f"SELECT DISTINCT sequence_number {files_of_table}"
+    ).strip()
+
+
 def test_create(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1485,6 +1545,17 @@ def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster
                 f"AND create_table_query = '' AND engine_full = '' AND as_select = '' {settings}"
             )
             assert int(result.strip()) >= 1, f"create_table_query default, require={require}"
+
+            ## SHOW CREATE TABLE is served by InterpreterShowCreateQuery, a different code path
+            ## from the system.tables column filler above. It answers from catalog metadata and
+            ## must not fail because the storage object cannot be opened.
+            result = node.query(
+                f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` {settings}"
+            )
+            assert table_name in result, f"SHOW CREATE TABLE, require={require}"
+            assert (
+                "Injected metadata resolution failure" not in result
+            ), f"SHOW CREATE TABLE leaked the resolution error, require={require}"
     finally:
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
 

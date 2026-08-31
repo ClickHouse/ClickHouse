@@ -2,7 +2,6 @@
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
-#include <numeric>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -28,7 +27,6 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/BufferedShardByHashTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -66,6 +64,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
@@ -192,8 +191,7 @@ AggregatingStep::AggregatingStep(
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool memory_bound_merging_of_aggregation_results_enabled_,
-    bool explicit_sorting_required_for_aggregation_in_order_,
-    bool enable_sharding_aggregator_)
+    bool explicit_sorting_required_for_aggregation_in_order_)
     : ITransformingStep(
         input_header_,
         std::make_shared<const Block>(appendGroupingColumn(params_.getHeader(*input_header_, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_)),
@@ -213,7 +211,6 @@ AggregatingStep::AggregatingStep(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
-    , enable_sharding_aggregator(enable_sharding_aggregator_)
 {
 }
 
@@ -233,9 +230,7 @@ std::vector<size_t> AggregatingStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStage::PartialAggregation),
-        static_cast<size_t>(AggregatingStage::FinalAggregation),
-        static_cast<size_t>(AggregatingStage::Scatter),
-        static_cast<size_t>(AggregatingStage::AggregatingSharded)
+        static_cast<size_t>(AggregatingStage::FinalAggregation)
     };
 }
 
@@ -245,8 +240,6 @@ String AggregatingStep::getStepGroupName(size_t group) const
     {
         case AggregatingStage::PartialAggregation: return "partial aggregation";
         case AggregatingStage::FinalAggregation: return "final aggregation";
-        case AggregatingStage::Scatter: return "scatter";
-        case AggregatingStage::AggregatingSharded: return "shard aggregation";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingStep group {}", group);
 }
@@ -334,69 +327,6 @@ ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
     return dag;
 }
 
-/// Sharded aggregation: pre-partition rows by hash(key) % N before aggregation.
-/// As a result, same key from different rows will always go to the same shard and we can aggregate
-/// each shard independently without merge phase.
-bool AggregatingStep::canUseShardedAggregation(const QueryPipelineBuilder & pipeline) const
-{
-    if (!enable_sharding_aggregator)
-        return false;
-
-    /// Respect pipeline width — do not fan out a single stream into shards.
-    if (pipeline.getNumStreams() <= 1)
-        return false;
-    if (params.max_threads <= 1)
-        return false;
-
-    /// Avoid too much overhead from routing
-    if (pipeline.getNumStreams() * params.max_threads >= 100'000)
-        return false;
-
-    /// TODO(nihalzp): `max_rows_to_group_by` is enforced globally during the merge phase in normal
-    /// aggregation. Could be supported by a post-step that counts total keys across shards.
-    if (params.max_rows_to_group_by != 0)
-        return false;
-
-    /// Skip no-key aggregation as sharding does not give any benefit and has overhead.
-    if (params.keys_size < 1)
-        return false;
-
-    /// We do not want to take over cases covered by InOrder Aggregation as those are faster.
-    if (!sort_description_for_merging.empty())
-        return false;
-
-    if (!grouping_sets_params.empty())
-        return false;
-
-    /// TODO(nihalzp): Support this when we will have external aggregation
-    if (should_produce_results_in_order_of_bucket_number)
-        return false;
-
-    /// Sharding is useful for high cardinality keys. For single-key, skip 1-byte types
-    /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality. For multi-key, skip
-    /// if combined cardinality is low enough.
-    constexpr size_t low_cardinality_threshold_bytes = 1;
-    const bool is_low_cardinality_keyspace
-        = std::accumulate(
-              params.keys.begin(),
-              params.keys.end(),
-              size_t{0},
-              [&](size_t sum, const String & key) -> size_t
-              {
-                  const auto & type = pipeline.getHeader().getByName(key).type;
-                  if (type->lowCardinality())
-                      return sum;
-                  const auto inner = removeNullable(type);
-                  return sum
-                      + (inner->haveMaximumSizeOfValue() ? inner->getMaximumSizeOfValueInMemory() : low_cardinality_threshold_bytes + 1);
-              })
-        <= low_cardinality_threshold_bytes;
-    if (is_low_cardinality_keyspace)
-        return false;
-
-    return true;
-}
-
 const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const
 {
     if (!params.enable_adaptive_aggregator)
@@ -408,9 +338,13 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.only_merge)
         return "the step only merges";
 
-    /// TODO (nihalzp): Support the group-by limits and the overflow row.
-    if (params.max_rows_to_group_by != 0 || params.overflow_row)
-        return "group-by limits or the overflow row are set";
+
+    /// TODO (nihalzp): Support the break and any overflow modes and the overflow row.
+    if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode != OverflowMode::THROW)
+        return "a dropping group-by limit mode is set";
+
+    if (params.overflow_row)
+        return "the overflow row is set";
 
     if (params.keys_size < 1)
         return "the aggregation has no keys";
@@ -502,29 +436,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         params.group_by_two_level_threshold_bytes = 0;
     }
 
-    const bool use_sharded_aggregation = canUseShardedAggregation(pipeline);
-
-    const char * adaptive_rejection
-        = use_sharded_aggregation ? "the sharded aggregation is used instead" : adaptiveAggregatorRejectionReason(pipeline);
+    const char * adaptive_rejection = adaptiveAggregatorRejectionReason(pipeline);
     const bool use_adaptive_aggregator = adaptive_rejection == nullptr;
     if (!use_adaptive_aggregator && params.enable_adaptive_aggregator)
         LOG_TRACE(getLogger("AggregatingStep"), "Adaptive aggregation is not engaged: {}", adaptive_rejection);
     params.enable_adaptive_aggregator = use_adaptive_aggregator;
-
-    if (use_sharded_aggregation)
-    {
-        /// Even though there is no merge phase, two-level can help keep each hash table small
-        /// and make hash table operations faster. However, after benchmarking, there have been
-        /// mostly slowdowns for most common queries. Therefore, disable two-level for sharded aggregation.
-        params.group_by_two_level_threshold = 0;
-        params.group_by_two_level_threshold_bytes = 0;
-
-        /// Sharded aggregation does not implement temporary-file spill/merge yet.
-        params.max_bytes_before_external_group_by = 0;
-
-        /// TODO(nihalzp): Support it
-        params.stats_collecting_params.disable();
-    }
 
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
@@ -750,78 +666,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    /// Sharded aggregation: shard rows by hash(key) % N, then aggregate per shard independently.
-    if (use_sharded_aggregation)
-    {
-        /// TODO(nihalzp): Compare perf against always choosing a power of two.
-        const size_t num_shards = max_threads;
-        const size_t num_streams = pipeline.getNumStreams();
-
-        /// Resolve key column positions for BufferedShardByHashTransform.
-        auto stream_header = pipeline.getSharedHeader();
-        ColumnNumbers key_columns;
-        key_columns.reserve(transform_params->params.keys.size());
-        for (const auto & key : transform_params->params.keys)
-            key_columns.push_back(stream_header->getPositionByName(key));
-
-        /// Add BufferedShardByHashTransform to each stream (1 input -> num_shards outputs).
-        /// After this the pipeline has num_streams * num_shards output ports.
-        pipeline.transform(
-            [&, stream_header, key_columns](OutputPortRawPtrs ports)
-            {
-                Processors shard_transforms;
-                for (auto * port : ports)
-                {
-                    auto shard_transform = std::make_shared<BufferedShardByHashTransform>(stream_header, num_shards, key_columns);
-                    connect(*port, shard_transform->getInputs().front());
-                    shard_transforms.push_back(shard_transform);
-                }
-                return shard_transforms;
-            });
-
-        /// For each shard, collect outputs from all sharding transforms and merge them with Resize(num_streams -> 1).
-        /// After this the pipeline has num_shards output ports (one per shard).
-        if (num_streams > 1)
-        {
-            pipeline.transform(
-                [&, stream_header](OutputPortRawPtrs ports)
-                {
-                    chassert(ports.size() == num_streams * num_shards);
-                    Processors resize_processors;
-
-                    for (size_t shard = 0; shard < num_shards; ++shard)
-                    {
-                        /// Shard k from sharding transform i is at index: i * num_shards + shard
-                        auto resize = std::make_shared<ResizeProcessor>(stream_header, num_streams, 1);
-                        auto & resize_inputs = resize->getInputs();
-                        auto input_it = resize_inputs.begin();
-
-                        /// For shard `s`, connect the `s`-th output of each BufferedShardByHashTransform
-                        /// to this ResizeProcessor input. BufferedShardByHashTransform routes rows by
-                        /// `hash(group_by_key) % num_shards`, so identical GROUP BY keys always
-                        /// land on the same shard.
-                        for (size_t stream = 0; stream < num_streams; ++stream, ++input_it)
-                            connect(*ports[stream * num_shards + shard], *input_it);
-
-                        resize_processors.push_back(resize);
-                    }
-
-                    return resize_processors;
-                });
-        }
-
-        scatter = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Scatter));
-
-        pipeline.addSimpleTransform(
-            [&](const SharedHeader & shard_header)
-            { return std::make_shared<AggregatingTransform>(shard_header, transform_params, dataflow_cache_updater); });
-
-        chassert(!should_produce_results_in_order_of_bucket_number);
-
-        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::AggregatingSharded));
-        return;
-    }
-
     /// An aggregation without keys produces at most one row, so fanning its output out to
     /// multiple streams would only add processors and scheduling overhead to every downstream
     /// step (and to the whole pipeline execution) without any parallelism to gain.
@@ -909,7 +753,6 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
     if (!aggregating.empty())
     {
         IQueryPlanStep::describePipeline(aggregating, settings);
-        IQueryPlanStep::describePipeline(scatter, settings);
     }
     else
     {
@@ -1021,8 +864,6 @@ String AggregatingProjectionStep::getStepGroupName(size_t group) const
     {
         case AggregatingStep::AggregatingStage::PartialAggregation: return "partial aggregation";
         case AggregatingStep::AggregatingStage::FinalAggregation: return "final aggregation";
-        case AggregatingStep::AggregatingStage::Scatter: [[fallthrough]];
-        case AggregatingStep::AggregatingStage::AggregatingSharded: break;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingProjectionStep group {}", group);
 }
@@ -1146,6 +987,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     {
         settings[QueryPlanSerializationSetting::enable_adaptive_aggregator] = params.enable_adaptive_aggregator;
         settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]
+            = params.adaptive_aggregator_freeze_threshold_bytes;
     }
 
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
@@ -1350,7 +1193,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
@@ -1367,8 +1211,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         std::move(group_by_sort_description),
         ctx.settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number],
         ctx.settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging],
-        explicit_sorting_required,
-        false);
+        explicit_sorting_required);
 
     return aggregating_step;
 }
@@ -1390,8 +1233,7 @@ QueryPlanStepPtr AggregatingStep::clone() const
         group_by_sort_description,
         should_produce_results_in_order_of_bucket_number,
         memory_bound_merging_of_aggregation_results_enabled,
-        explicit_sorting_required_for_aggregation_in_order,
-        enable_sharding_aggregator
+        explicit_sorting_required_for_aggregation_in_order
     );
 }
 
