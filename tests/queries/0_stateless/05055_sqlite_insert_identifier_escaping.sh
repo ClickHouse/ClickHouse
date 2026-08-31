@@ -22,9 +22,7 @@ cleanup()
 trap cleanup EXIT
 cleanup
 
-# The database the user is allowed to address. The two odd table/column names are what the old
-# backslash escaping turns the injected identifiers into, so the injected script's first statement
-# succeeds and sqlite3_exec goes on to run the rest of it.
+# Odd names: the old backslash escaping produced them, so the injected script's first statement succeeds and the rest runs.
 sqlite3 "${ANCHOR}" 'CREATE TABLE "target\"(id INTEGER)'
 sqlite3 "${ANCHOR}" 'CREATE TABLE col_anchor("c\" INTEGER)'
 sqlite3 "${ANCHOR}" 'CREATE TABLE "ta""ble" ("c""1" INTEGER)'
@@ -46,8 +44,7 @@ classify()
     echo "${out:-NO_ERROR}"
 }
 
-# What the injected script would leave behind, read out of band with the sqlite3 CLI: the ClickHouse
-# read path cannot address these names, so an in-band readback would be a false negative.
+# Read out of band: the ClickHouse read path cannot address these names, so an in-band readback would be a false negative.
 injected_state()
 {
     sqlite3 "${ANCHOR}" "SELECT 'objects created in the anchor: ' || coalesce((SELECT group_concat(name) FROM (SELECT name FROM sqlite_master WHERE name LIKE '%\_marker' ESCAPE '\' ORDER BY name)), 'none')"
