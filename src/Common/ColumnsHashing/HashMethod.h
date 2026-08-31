@@ -478,7 +478,9 @@ template <
     bool enable_pre_computed_hashes_ = false>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
-    , public HashMethodKeysFixedPrecomputedHashState<enable_pre_computed_hashes_>
+    /// The predicate must match `has_pre_computed_hashes` below: the nullable and low-cardinality
+    /// variants can never take the optimization, so they must not carry its state either.
+    , public HashMethodKeysFixedPrecomputedHashState<enable_pre_computed_hashes_ && !has_nullable_keys_ && !has_low_cardinality_>
     , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, enable_prepared_keys_256_, enable_pre_computed_hashes_>, Value, Mapped, use_cache, need_offset>
 {
     using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, enable_prepared_keys_256_, enable_pre_computed_hashes_>;
