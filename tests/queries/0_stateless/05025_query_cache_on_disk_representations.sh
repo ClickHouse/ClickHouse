@@ -11,7 +11,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `max_block_size` is pinned: the size of a cached Const result is dominated by the per-chunk padding of the single-row
 # data columns, so a randomized (small) block size would multiply the number of chunks and blow up the entry size.
-settings="use_query_cache = 1, query_cache_on_disk_cache_name = 'cache_for_query_results', query_cache_squash_partial_results = 0, max_block_size = 65409"
+# `query_cache_tag` disambiguates the entries in system.query_cache: the flaky check runs this test many times against
+# one server, the in-memory query cache is server-global and keeps listing stale entries, and the tag (unlike the query
+# text with a short random number in it) is guaranteed unique per test instance.
+settings="use_query_cache = 1, query_cache_on_disk_cache_name = 'cache_for_query_results', query_cache_squash_partial_results = 0, max_block_size = 65409, query_cache_tag = '${CLICKHOUSE_DATABASE}'"
 
 rnd=$(tr -dc 1-9 </dev/urandom | head -c 5) # disambiguates the queries in system.query_log below
 
@@ -20,7 +23,7 @@ query_const="SELECT 1 AS v FROM numbers(2000000) WHERE ${rnd} > 0 SETTINGS ${set
 ${CLICKHOUSE_CLIENT} --query "${query_const}" | uniq -c | sed 's/^ *//'
 
 echo "-- The entry was accepted by the in-memory cache and stayed small (materialized it would be at least 2 MB)"
-${CLICKHOUSE_CLIENT} --query "SELECT result_size < 1000000 FROM system.query_cache WHERE query LIKE 'SELECT 1 AS v FROM numbers(2000000) WHERE ${rnd} > 0%'"
+${CLICKHOUSE_CLIENT} --query "SELECT result_size < 1000000 FROM system.query_cache WHERE tag = '${CLICKHOUSE_DATABASE}' AND query LIKE 'SELECT 1 AS v FROM numbers(2000000) WHERE ${rnd} > 0%'"
 
 echo "-- The result is served from disk when reads from the in-memory cache are disabled"
 ${CLICKHOUSE_CLIENT} --query "${query_const}, enable_reads_from_query_cache = 0" | uniq -c | sed 's/^ *//'
