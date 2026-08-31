@@ -210,6 +210,7 @@ public:
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
 
     StepAnalysisReport getAnalysisReport() const override;
+    std::optional<JoinProbeMatchRate> getProbeMatchRate() const override;
     const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
 
     bool alwaysReturnsEmptySet() const final;

@@ -630,6 +630,18 @@ size_t HashJoin::getTotalByteCount() const
     return res;
 }
 
+std::optional<JoinProbeMatchRate> HashJoin::getProbeMatchRate() const
+{
+    if (!matched_rows_stats)
+        return {};
+
+    const auto matched_rows = matched_rows_stats->getMatchedLeft();
+    if (!matched_rows)
+        return {};
+
+    return JoinProbeMatchRate{.probe_rows = matched_rows_stats->getInputLeft(), .matched_rows = *matched_rows};
+}
+
 StepAnalysisReport HashJoin::getAnalysisReport() const
 {
     StepAnalysisReport report;

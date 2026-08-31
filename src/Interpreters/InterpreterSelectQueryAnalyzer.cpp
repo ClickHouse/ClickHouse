@@ -22,6 +22,8 @@
 
 #include <Storages/IStorage.h>
 
+#include <Analyzer/Passes/ShipJoinPredicateToParallelReplicasPass.h>
+#include <Core/Joins.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/IdentifierNode.h>
@@ -172,7 +174,11 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
 template <typename... Args>
 QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
-    const ASTPtr & ast, const ContextMutablePtr & ctx, const SelectQueryOptions & select_options, Args &&... interpreter_args)
+    const ASTPtr & ast,
+    const ContextMutablePtr & ctx,
+    const SelectQueryOptions & select_options,
+    UInt64 ship_join_predicate,
+    Args &&... interpreter_args)
 {
     const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
     if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
@@ -198,6 +204,10 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
         return QueryPlanPtr{};
     // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
+    // Shipping an INNER JOIN's semi-join predicate into the replicas' fragment belongs to this plan alone:
+    // the single-node plan is the measurement base the cost model reads its statistics from, so its node
+    // hashes have to mean the same thing whether or not we ship. The caller passes the form to use.
+    ctx->setSetting("parallel_replicas_ship_join_predicate", Field{ship_join_predicate});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
@@ -241,6 +251,22 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         replacement_map.emplace(&table_node, std::move(replacement_table_expression));
     }
     query_tree = query_tree->cloneAndReplace(replacement_map);
+}
+
+/// The automatic parallel replicas cost model prices shipping an `INNER JOIN`'s semi-join predicate into
+/// the replicas' fragment with the join's measured match rate, and a join counts that rate only when it is
+/// built with analyze statistics on. The join is built during planning, far ahead of the cost model, so
+/// the choice cannot wait for it. Gate it on the rewrite being legal for this query at all - a query with
+/// no shippable predicate would pay the counting for nothing.
+static void enableJoinMatchRateCollectionIfNeeded(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
+{
+    if (!context->getSettingsRef()[Setting::automatic_parallel_replicas_mode]
+        || context->getJoinAnalyzeMode() != JoinAnalyzeMode::None
+        || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        return;
+
+    if (hasShippableJoinPredicate(query_tree, context))
+        context->setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
 }
 
 static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
@@ -298,10 +324,12 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names](
+              UInt64 ship_join_predicate)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, ship_join_predicate, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
+    enableJoinMatchRateCollectionIfNeeded(context, query_tree);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -321,9 +349,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
+           column_names](UInt64 ship_join_predicate)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, ship_join_predicate, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
+    enableJoinMatchRateCollectionIfNeeded(context, query_tree);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -335,10 +365,12 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_](
+              UInt64 ship_join_predicate)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, ship_join_predicate); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
+    enableJoinMatchRateCollectionIfNeeded(context, query_tree);
 }
 
 SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,

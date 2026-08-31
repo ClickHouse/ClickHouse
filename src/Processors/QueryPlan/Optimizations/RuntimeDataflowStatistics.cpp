@@ -81,11 +81,23 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         }
     }
 
+    if (join_match_rate_provider)
+    {
+        if (const auto match_rate = join_match_rate_provider())
+        {
+            res.join_node_hash = join_node_hash;
+            res.join_probe_rows = match_rate->probe_rows;
+            res.join_matched_probe_rows = match_rate->matched_rows;
+        }
+    }
+
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, output bytes={}",
+        "Collected statistics: input bytes={}, output bytes={}, join probe rows={}, join matched probe rows={}",
         res.input_bytes,
-        res.output_bytes);
+        res.output_bytes,
+        res.join_probe_rows,
+        res.join_matched_probe_rows);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
     {

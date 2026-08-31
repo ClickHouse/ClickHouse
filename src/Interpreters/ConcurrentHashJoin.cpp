@@ -569,6 +569,21 @@ JoinAnalysisCounters ConcurrentHashJoin::collectMatchedRowsCounters() const
     return counters;
 }
 
+std::optional<JoinProbeMatchRate> ConcurrentHashJoin::getProbeMatchRate() const
+{
+    /// `collectMatchedRowsCounters` dereferences the per-slot statistics unconditionally - EXPLAIN
+    /// ANALYZE, its only other caller, guarantees they are there. Here they may not be.
+    for (const auto & hash_join : hash_joins)
+        if (!hash_join->data->getMatchStats())
+            return {};
+
+    const auto counters = collectMatchedRowsCounters();
+    if (!counters.matched_left)
+        return {};
+
+    return JoinProbeMatchRate{.probe_rows = counters.left_rows, .matched_rows = *counters.matched_left};
+}
+
 StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
 {
     auto counters = collectMatchedRowsCounters();

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <Core/Block.h>
+#include <Core/Joins.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
@@ -142,6 +144,11 @@ public:
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
     virtual StepAnalysisReport getAnalysisReport() const = 0;
+
+    /// How many probe-side rows were tried against the build side and how many of them found a match.
+    /// The join counts them only when it was built with analyze statistics on (`join_analyze_mode`),
+    /// so this is null by default and for a join that does not keep the counters.
+    virtual std::optional<JoinProbeMatchRate> getProbeMatchRate() const { return {}; }
 
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;

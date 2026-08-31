@@ -31,4 +31,11 @@ public:
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
+
+/// Whether the rewrite above could inject a predicate into this query tree, without changing it. The
+/// automatic parallel replicas cost model needs the join's match rate to decide whether shipping pays,
+/// and a join only counts it when built with analyze statistics on - which has to be decided before
+/// planning, long before that cost model runs.
+bool hasShippableJoinPredicate(const QueryTreeNodePtr & query_tree_node, ContextPtr context);
+
 }

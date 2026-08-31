@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/types.h>
+
 #include <string_view>
 
 namespace DB
@@ -157,5 +159,15 @@ enum class JoinAnalyzeMode : uint8_t
     None = 0,
     Derived,
     Exact,
+};
+
+/// The match rate of a join's probe side, as measured while it ran. `matched_rows` counts probe rows
+/// that found at least one match, not output rows: a build side with duplicate keys emits several rows
+/// per matched probe row, and the semi-join predicate the parallel-replicas cost model prices ignores
+/// that multiplicity.
+struct JoinProbeMatchRate
+{
+    UInt64 probe_rows = 0;
+    UInt64 matched_rows = 0;
 };
 }

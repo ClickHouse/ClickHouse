@@ -8,6 +8,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
@@ -57,20 +58,88 @@ QueryTreeNodePtr findProjectionExpression(const QueryNode & subquery, const Stri
     return nullptr;
 }
 
-/// `SELECT key FROM table_expression`, with the key's column source remapped onto the cloned
-/// table expression: cloning the assembled node keeps both halves consistent.
+/// `c1 AND c2 AND ...`, the single conjunct itself, or null for an empty list.
+QueryTreeNodePtr combineConjuncts(QueryTreeNodes conjuncts, const ContextPtr & context)
+{
+    if (conjuncts.empty())
+        return nullptr;
+
+    if (conjuncts.size() == 1)
+        return std::move(conjuncts.front());
+
+    auto and_function = std::make_shared<FunctionNode>("and");
+    and_function->getArguments().getNodes() = std::move(conjuncts);
+    resolveOrdinaryFunctionNodeByName(*and_function, "and", context);
+
+    return and_function;
+}
+
+/// `SELECT key FROM table_expression WHERE predicates`, with the key's column source remapped onto the
+/// cloned table expression: cloning the assembled node keeps every half consistent.
 QueryTreeNodePtr buildKeySubquery(
-    const QueryTreeNodePtr & table_expression, const QueryTreeNodePtr & key, const ContextPtr & context)
+    const QueryTreeNodePtr & table_expression,
+    const QueryTreeNodePtr & key,
+    QueryTreeNodes predicates,
+    const ContextPtr & context)
 {
     const auto * key_column = key->as<ColumnNode>();
     auto subquery = std::make_shared<QueryNode>(Context::createCopy(context));
     subquery->setIsSubquery(true);
     subquery->getJoinTreeNode() = table_expression;
     subquery->getProjection().getNodes() = {key};
+    subquery->getWhere() = combineConjuncts(std::move(predicates), context);
     subquery->resolveProjectionColumns(
         {NameAndTypePair{key_column ? key_column->getColumnName() : key->getResultType()->getName(), key->getResultType()}});
 
     return subquery->clone();
+}
+
+/// Whether a conjunct of the join's `ON` - or of the enclosing `WHERE` - restricts the source side and
+/// nothing else, so that repeating it inside the injected subquery is sound and worth doing. It has to
+/// read columns of that side only, be deterministic, since the subquery evaluates it a second time, and
+/// carry no subquery of its own, which would nest another set to build inside the predicate.
+bool restrictsSourceSideOnly(const QueryTreeNodePtr & node, const QueryTreeNodePtr & source_side)
+{
+    bool reads_source_side = false;
+
+    QueryTreeNodes stack = {node};
+    while (!stack.empty())
+    {
+        const auto current = stack.back();
+        stack.pop_back();
+
+        switch (current->getNodeType())
+        {
+            case QueryTreeNodeType::QUERY:
+            case QueryTreeNodeType::UNION:
+                return false;
+            case QueryTreeNodeType::COLUMN:
+            {
+                if (current->as<ColumnNode>()->getColumnSourceOrNull() != source_side)
+                    return false;
+                reads_source_side = true;
+                break;
+            }
+            case QueryTreeNodeType::FUNCTION:
+            {
+                const auto * function_node = current->as<FunctionNode>();
+                if (!function_node->isOrdinaryFunction())
+                    return false;
+                const auto function_base = function_node->getFunction();
+                if (!function_base || !function_base->isDeterministic())
+                    return false;
+                break;
+            }
+            default:
+                break;
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                stack.push_back(child);
+    }
+
+    return reads_source_side;
 }
 
 /// Whether a side is cheap enough to be re-read as the `IN` source. Anything that aggregates or joins
@@ -120,10 +189,27 @@ class ShipJoinPredicateVisitor : public InDepthQueryTreeVisitorWithContext<ShipJ
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<ShipJoinPredicateVisitor>;
-    using Base::Base;
+
+    /// `function_name_` is the form of the predicate to inject, `in` or `globalIn`. Empty makes the visitor
+    /// only report whether a predicate could be injected, leaving the query tree untouched: the cost model
+    /// that makes the shipping decision runs long after the query tree is fixed, and all it needs this
+    /// early is whether the query is a candidate at all.
+    ShipJoinPredicateVisitor(ContextPtr context, String function_name_)
+        : Base(std::move(context))
+        , function_name(std::move(function_name_))
+    {
+    }
+
+    bool foundCandidate() const { return found_candidate; }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (auto * query_node = node->as<QueryNode>())
+        {
+            query_stack.push_back(query_node);
+            return;
+        }
+
         auto * join_node = node->as<JoinNode>();
         if (!join_node)
             return;
@@ -140,6 +226,14 @@ public:
         QueryTreeNodes conjuncts;
         collectConjuncts(join_node->getJoinExpression(), conjuncts);
 
+        /// A conjunct of the enclosing `WHERE` restricts one side of an `INNER` join just like a conjunct
+        /// of its `ON` does, but only when the whole join tree is this join: with another join above or
+        /// below, whether the conjunct still implies a restriction on this side depends on the kind of
+        /// every join in between. A nested join keeps its own `ON` conjuncts, which need no such argument.
+        QueryTreeNodes where_conjuncts;
+        if (!query_stack.empty() && query_stack.back()->getJoinTreeNode().get() == node.get() && query_stack.back()->hasWhere())
+            collectConjuncts(query_stack.back()->getWhere(), where_conjuncts);
+
         for (const auto & conjunct : conjuncts)
         {
             const auto * equals = conjunct->as<FunctionNode>();
@@ -150,9 +244,19 @@ public:
             const auto & rhs = equals->getArguments().getNodes()[1];
 
             /// The predicate can be pushed into either side; both are filtered by the same equality.
-            tryInject(*join_node, lhs, rhs, join_node->getLeftTableExpressionNode(), join_node->getRightTableExpressionNode());
-            tryInject(*join_node, rhs, lhs, join_node->getRightTableExpressionNode(), join_node->getLeftTableExpressionNode());
+            tryInject(
+                *join_node, lhs, rhs, join_node->getLeftTableExpressionNode(), join_node->getRightTableExpressionNode(),
+                conjuncts, where_conjuncts);
+            tryInject(
+                *join_node, rhs, lhs, join_node->getRightTableExpressionNode(), join_node->getLeftTableExpressionNode(),
+                conjuncts, where_conjuncts);
         }
+    }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (node->as<QueryNode>())
+            query_stack.pop_back();
     }
 
 private:
@@ -163,7 +267,9 @@ private:
         const QueryTreeNodePtr & target_key,
         const QueryTreeNodePtr & source_key,
         const QueryTreeNodePtr & target_side,
-        const QueryTreeNodePtr & source_side)
+        const QueryTreeNodePtr & source_side,
+        const QueryTreeNodes & join_conjuncts,
+        const QueryTreeNodes & where_conjuncts)
     {
         auto * target_query = target_side->as<QueryNode>();
         if (!target_query)
@@ -189,14 +295,26 @@ private:
         if (!projection_expression)
             return;
 
+        found_candidate = true;
+        if (function_name.empty())
+            return;
+
         const auto & context = getContext();
-        const String function_name
-            = context->getSettingsRef()[Setting::parallel_replicas_ship_join_predicate] == 2 ? "globalIn" : "in";
+
+        /// Everything else the query says about the source side belongs in the subquery too. Without it
+        /// the shipped predicate is sound but weaker than the join it stands for - `ON agg.k = d.k AND
+        /// d.x > 5` would ship every key of `d`, not just the keys of the rows the join can match - and
+        /// the cost model that decides whether shipping pays measures the join, not the weaker predicate.
+        QueryTreeNodes source_predicates;
+        for (const auto & conjuncts : {std::cref(join_conjuncts), std::cref(where_conjuncts)})
+            for (const auto & conjunct : conjuncts.get())
+                if (restrictsSourceSideOnly(conjunct, source_side))
+                    source_predicates.push_back(conjunct);
 
         auto in_function = std::make_shared<FunctionNode>(function_name);
         in_function->markAsOperator();
         in_function->getArguments().getNodes()
-            = {projection_expression->clone(), buildKeySubquery(source_side, source_key, context)};
+            = {projection_expression->clone(), buildKeySubquery(source_side, source_key, std::move(source_predicates), context)};
         resolveOrdinaryFunctionNodeByName(*in_function, function_name, context);
 
         /// WHERE is the whole point: it runs before the aggregation, so a replica reads and groups less.
@@ -222,17 +340,32 @@ private:
             function_name, target_column->getColumnName(),
             target_side.get() == join_node.getLeftTableExpressionNode().get() ? "left" : "right");
     }
+
+    const String function_name;
+    bool found_candidate = false;
+
+    /// The chain of query nodes enclosing the node being visited, innermost last.
+    std::vector<QueryNode *> query_stack;
 };
 
 }
 
 void ShipJoinPredicateToParallelReplicasPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    if (context->getSettingsRef()[Setting::parallel_replicas_ship_join_predicate] == 0)
+    const auto form = context->getSettingsRef()[Setting::parallel_replicas_ship_join_predicate];
+    if (form == 0)
         return;
 
-    ShipJoinPredicateVisitor visitor(std::move(context));
+    ShipJoinPredicateVisitor visitor(std::move(context), form == 2 ? "globalIn" : "in");
     visitor.visit(query_tree_node);
+}
+
+bool hasShippableJoinPredicate(const QueryTreeNodePtr & query_tree_node, ContextPtr context)
+{
+    ShipJoinPredicateVisitor visitor(std::move(context), /*function_name_=*/"");
+    QueryTreeNodePtr node = query_tree_node;
+    visitor.visit(node);
+    return visitor.foundCandidate();
 }
 
 }

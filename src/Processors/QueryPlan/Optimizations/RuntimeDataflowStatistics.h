@@ -8,10 +8,12 @@
 #include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
+#include <Core/Joins.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -32,6 +34,14 @@ struct RuntimeDataflowStatistics
     size_t input_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
+
+    /// The match rate of the join sitting above this node, when there is one. It prices shipping that
+    /// join's semi-join predicate into the replicas' fragment. `join_node_hash` identifies the join the
+    /// rate was measured on: this entry is keyed by the node below the join, so a query that reuses the
+    /// same subtree under a different join would otherwise read a rate that was never about its join.
+    size_t join_node_hash = 0;
+    size_t join_probe_rows = 0;
+    size_t join_matched_probe_rows = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -123,6 +133,15 @@ public:
 
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
+    /// Registers where to read the match rate of the join above the instrumented node once the query has
+    /// run. It is a callback because the join counts the rows as it executes and only knows the totals at
+    /// the end, by which time this updater is the last thing left holding the plan together.
+    void setJoinMatchRateProvider(size_t join_node_hash_, std::function<std::optional<JoinProbeMatchRate>()> provider)
+    {
+        join_node_hash = join_node_hash_;
+        join_match_rate_provider = std::move(provider);
+    }
+
 private:
     static bool shouldSampleBlock(Statistics & statistics, size_t block_rows);
 
@@ -133,6 +152,9 @@ private:
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+
+    size_t join_node_hash = 0;
+    std::function<std::optional<JoinProbeMatchRate>()> join_match_rate_provider;
 
     std::atomic_bool unsupported_case{false};
 

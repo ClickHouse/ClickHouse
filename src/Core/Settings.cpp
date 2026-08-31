@@ -8190,9 +8190,13 @@ The join itself still runs on the initiator, so row multiplicity is unchanged.
 
 Possible values:
 
-- 0 - Disabled.
-- 1 - Inject `IN (SELECT key FROM <build side>)`. Each replica evaluates the subquery itself.
-- 2 - Inject `GLOBAL IN (SELECT key FROM <build side>)`. The initiator evaluates it once and broadcasts the set.
+- 0 - Let `automatic_parallel_replicas_mode` decide. The predicate is then shipped only into the plan with
+  parallel replicas, never into the single-node plan, and only when the join's match rate - measured while a
+  previous run of the query executed - says the rows it removes are worth more than the scan of the build
+  side needed to build the set. Nothing is shipped on a query's first run, which is what measures the rate.
+- 1 - Always inject `IN (SELECT key FROM <build side>)`. Each replica evaluates the subquery itself.
+- 2 - Always inject `GLOBAL IN (SELECT key FROM <build side>)`. The initiator evaluates it once and
+  broadcasts the set. This is the form the automatic decision uses.
 )", EXPERIMENTAL) \
     DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables

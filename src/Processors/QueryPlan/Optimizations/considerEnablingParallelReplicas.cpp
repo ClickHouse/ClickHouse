@@ -22,6 +22,7 @@
 #include <Common/typeid_cast.h>
 
 #include <map>
+#include <optional>
 
 using namespace DB::QueryPlanOptimizations;
 
@@ -133,6 +134,36 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     return replicas_plan_top_node;
 }
 
+/// Prints a plan as a tree with the cache key of every node, so a failed match can be lined up node by
+/// node against the other plan. Temporary diagnostic for the join-on-top shape.
+void dumpPlanHashes(
+    const String & title, const QueryPlan::Node & root, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
+{
+    struct Item
+    {
+        const QueryPlan::Node * node;
+        size_t depth;
+    };
+    std::vector<Item> stack{{&root, 0}};
+    while (!stack.empty())
+    {
+        const auto [node, depth] = stack.back();
+        stack.pop_back();
+
+        const auto hash_it = hashes.find(node);
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "{}: {}{} hash {}",
+            title,
+            String(depth * 2, ' '),
+            node->step->getName(),
+            hash_it == hashes.end() ? 0 : hash_it->second);
+
+        for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
+            stack.push_back({*it, depth + 1});
+    }
+}
+
 /// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
 /// The working principle behind automatic parallel replicas is that we use statistics collected during execution of single-node plan
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
@@ -141,14 +172,12 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
     QueryPlan::Node & parallel_replicas_plan_root,
-    QueryPlan::Node & single_replica_plan_root)
+    const std::unordered_map<const QueryPlan::Node *, UInt64> & single_replica_plan_hashes)
 {
     auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
     if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
     {
-        auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
-
-        for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
+        for (const auto & [nopr_node, nopr_hash] : single_replica_plan_hashes)
         {
             if (nopr_hash == it->second)
             {
@@ -165,7 +194,8 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
                 return std::make_pair(nopr_node, nopr_hash);
             }
         }
-        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
+        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan (looking for {})", it->second);
+        dumpPlanHashes("PR plan", parallel_replicas_plan_root, pr_node_hashes);
         return std::make_pair(nullptr, 0);
     }
     else
@@ -229,6 +259,136 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
     return nullptr;
 }
 
+/// Whether `target` is somewhere in the subtree rooted at `subtree`.
+bool subtreeContains(const QueryPlan::Node & subtree, const QueryPlan::Node & target)
+{
+    if (&subtree == &target)
+        return true;
+
+    for (const auto * child : subtree.children)
+        if (subtreeContains(*child, target))
+            return true;
+
+    return false;
+}
+
+struct JoinAboveFragment
+{
+    const JoinStep * step = nullptr;
+    UInt64 node_hash = 0;
+    const QueryPlan::Node * build_side = nullptr;
+};
+
+/// The join whose probe side is the fragment the replicas would execute, if the plan has one. Shipping
+/// that join's semi-join predicate into the fragment is what the decision below is about, so everything
+/// this returns describes the *single-replica* plan: it is the plan the statistics were measured on, and
+/// the one that keeps meaning the same thing whether or not we end up shipping.
+///
+/// Only a single join is handled. With more than one, the predicate the rewrite would inject is no longer
+/// identified by "the join above the fragment", and the match rate of the wrong join would price it.
+std::optional<JoinAboveFragment> findJoinAboveFragment(
+    QueryPlan::Node & root,
+    const QueryPlan::Node & fragment_top,
+    const std::unordered_map<const QueryPlan::Node *, UInt64> & node_hashes)
+{
+    const QueryPlan::Node * join_node = nullptr;
+    bool single_join = true;
+
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](auto & node)
+        {
+            if (!typeid_cast<const JoinStep *>(node.step.get()))
+                return;
+            single_join &= join_node == nullptr;
+            join_node = &node;
+        });
+
+    if (!join_node || !single_join || join_node->children.size() != 2)
+        return {};
+
+    /// The predicate can only be shipped into the side the replicas execute, and the match rate the join
+    /// counts is the one of its probe (left) side. Anything else - the fragment on the build side, or a
+    /// join whose streams were swapped - is not the shape this prices.
+    const auto * join_step = typeid_cast<const JoinStep *>(join_node->step.get());
+    if (join_step->swap_streams || !subtreeContains(*join_node->children[0], fragment_top))
+        return {};
+
+    const auto hash_it = node_hashes.find(join_node);
+    if (hash_it == node_hashes.end())
+        return {};
+
+    return JoinAboveFragment{.step = join_step, .node_hash = hash_it->second, .build_side = join_node->children[1]};
+}
+
+/// The number of rows the previous run's index analysis says a read scans, or nothing when the branch
+/// does not end in a single MergeTree read.
+std::optional<size_t> selectedRowsOf(const QueryPlan::Node & branch)
+{
+    ReadFromMergeTree * reading_step = findReadingStep(branch);
+    if (!reading_step)
+        return {};
+
+    const auto analysis = reading_step->getAnalyzedResult() ? reading_step->getAnalyzedResult() : reading_step->selectRangesToRead();
+    if (!analysis)
+        return {};
+
+    return analysis->selected_rows;
+}
+
+/// Whether shipping the join's semi-join predicate into the replicas' fragment pays for itself.
+///
+/// Shipping trades one scan of the join's build side, done on the initiator to build the set, for the rows
+/// each replica then does not have to read and aggregate. Both sides are counted in rows: the build side's
+/// size in bytes is not measured anywhere, and rows are what the previous run measured on the other side.
+///
+/// The match rate is the join's, so it is a rate over the fragment's *output* rows - the groups an
+/// aggregating fragment produces - while the predicate filters the fragment's *input* rows. The two agree
+/// only when a key's group size does not depend on whether it matches; treat this as the estimate it is.
+bool shouldShipJoinPredicate(
+    const RuntimeDataflowStatistics & stats, const JoinAboveFragment & join, size_t rows_to_read, size_t num_replicas)
+{
+    if (!stats.join_probe_rows)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "No join match rate was measured, not shipping the join predicate");
+        return false;
+    }
+
+    if (stats.join_node_hash != join.node_hash)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The measured join match rate belongs to another join (hash {}, now {}), not shipping the join predicate",
+            stats.join_node_hash,
+            join.node_hash);
+        return false;
+    }
+
+    const auto build_side_rows = selectedRowsOf(*join.build_side);
+    if (!build_side_rows)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "Cannot size the join's build side, not shipping the join predicate");
+        return false;
+    }
+
+    const double match_rate = static_cast<double>(stats.join_matched_probe_rows) / static_cast<double>(stats.join_probe_rows);
+    const auto rows_saved_per_replica = static_cast<size_t>((1.0 - match_rate) * static_cast<double>(rows_to_read)) / num_replicas;
+
+    LOG_DEBUG(
+        getLogger("optimizeTree"),
+        "Shipping the join predicate would save {} of {} rows per replica against a {} row scan to build the set "
+        "(match rate {}/{})",
+        rows_saved_per_replica,
+        rows_to_read / num_replicas,
+        *build_side_rows,
+        stats.join_matched_probe_rows,
+        stats.join_probe_rows);
+
+    return rows_saved_per_replica > *build_side_rows;
+}
+
 /// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas
 void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
@@ -264,15 +424,12 @@ void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
             {
                 for (const auto & future_set : creating_sets_step->getSets())
                 {
+                    /// A set the parallel-replicas plan has and the single-replica plan does not is the
+                    /// one this optimization injected itself: the shipped join predicate is a `GLOBAL IN`
+                    /// that exists in no other plan. Leave it be - the merged plan is optimized further,
+                    /// and `addStepsToBuildSets` expands what is still unbuilt.
                     if (auto it = sets_map.find(future_set->getHash()); it != sets_map.end())
-                    {
                         future_set->replaceSetAndKey(it->second);
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
-                    }
                 }
             }
         });
@@ -323,7 +480,12 @@ void considerEnablingParallelReplicas(
         return;
     }
 
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
+    /// An explicitly set `parallel_replicas_ship_join_predicate` is a manual override: the single-node
+    /// plan already carries the rewrite, so the plan with parallel replicas has to carry it too, and the
+    /// cost-based choice below stays out of it.
+    const auto manual_ship_join_predicate = optimization_settings.parallel_replicas_ship_join_predicate;
+
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(manual_ship_join_predicate);
     if (!plan_with_parallel_replicas)
         return;
 
@@ -332,8 +494,11 @@ void considerEnablingParallelReplicas(
         return;
     LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
+    const auto single_replica_plan_hashes = calculateHashTableCacheKeys(root);
+    dumpPlanHashes("single-node plan", root, single_replica_plan_hashes);
     const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
-        = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
+        = findCorrespondingNodeInSingleNodePlan(
+            *final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), single_replica_plan_hashes);
     if (!corresponding_node_in_single_replica_plan)
         return;
 
@@ -428,6 +593,43 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
+                /// The fragment goes to the replicas as text or as a serialized plan, so it cannot carry the
+                /// join's runtime filter: the filter lives in the initiator's `RuntimeFilterLookup`. The
+                /// predicate that filter approximates can be shipped instead, and rebuilding the plan is what
+                /// puts it there - the rewrite happens in the analyzer, above everything this function sees.
+                /// It is deliberately absent from the single-replica plan, which is the base the statistics
+                /// above were measured against.
+                bool shipped_join_predicate = false;
+                if (!manual_ship_join_predicate)
+                {
+                    const auto join_above_fragment
+                        = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes);
+
+                    if (join_above_fragment && shouldShipJoinPredicate(*stats, *join_above_fragment, rows_to_read, num_replicas))
+                    {
+                        /// `globalIn`: the initiator evaluates the set once and broadcasts it. Plain `in` would
+                        /// make every replica repeat the scan of the build side, which costs more than sending
+                        /// the keys it distills down to.
+                        auto plan_with_shipped_predicate = optimization_settings.query_plan_with_parallel_replicas_builder(2);
+                        const auto * shipped_final_node
+                            = plan_with_shipped_predicate ? findTopNodeOfReplicasPlan(plan_with_shipped_predicate->getRootNode()) : nullptr;
+
+                        if (shipped_final_node)
+                        {
+                            plan_with_parallel_replicas = std::move(plan_with_shipped_predicate);
+                            final_node_in_replica_plan = shipped_final_node;
+                            shipped_join_predicate = true;
+                            LOG_DEBUG(getLogger("optimizeTree"), "Shipping the join predicate into the replicas' fragment");
+                        }
+                        else
+                        {
+                            LOG_DEBUG(
+                                getLogger("optimizeTree"),
+                                "The plan with the join predicate shipped has no parallel replicas fragment, keeping the plain one");
+                        }
+                    }
+                }
+
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
@@ -445,7 +647,18 @@ void considerEnablingParallelReplicas(
                 /// equivalent. A read for a *different* table would mean the single-node and parallel-replicas
                 /// plans diverged at the matched node - a broken invariant, so fail loudly rather than silently
                 /// apply a mismatched analysis.
-                if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
+                ///
+                /// Not when the join predicate was shipped: that analysis was made without the predicate, and
+                /// reusing it would fix the mark ranges before the set exists - throwing away the granule
+                /// pruning that is most of what shipping buys. Let the branch read analyze itself instead,
+                /// once the set is there.
+                if (shipped_join_predicate)
+                {
+                    LOG_DEBUG(
+                        getLogger("optimizeTree"),
+                        "Not reusing the single-node index analysis: the shipped predicate has to be analyzed with");
+                }
+                else if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
                     local_replica_plan_reading_step->setAnalyzedResult(analysis);
                 }
@@ -475,6 +688,14 @@ void considerEnablingParallelReplicas(
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_node_hash, rows_to_read);
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+
+        /// Also measure the match rate of the join above the fragment, so the next run of this query can
+        /// price shipping its semi-join predicate to the replicas. The join only counts it when the query
+        /// was planned with analyze statistics on, which `enableJoinMatchRateCollectionIfNeeded` arranges
+        /// for exactly the queries the rewrite can apply to.
+        if (const auto join_above_fragment
+            = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes))
+            join_above_fragment->step->recordProbeMatchRateInto(updater, join_above_fragment->node_hash);
     }
 }
 

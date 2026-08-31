@@ -1,0 +1,15 @@
+a non-equality ON conjunct is repeated inside the shipped subquery
+1
+2
+a WHERE conjunct on the source side is repeated too
+1
+2
+a WHERE conjunct on the target side is not
+1
+results are identical in every mode
+3000	4
+3000	4
+3000	4
+3000	4
+3000	4
+3000	4

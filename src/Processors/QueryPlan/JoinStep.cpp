@@ -239,6 +239,11 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
+void JoinStep::recordProbeMatchRateInto(const RuntimeDataflowStatisticsCacheUpdaterPtr & updater, size_t join_node_hash) const
+{
+    updater->setJoinMatchRateProvider(join_node_hash, [join_ptr = join] { return join_ptr->getProbeMatchRate(); });
+}
+
 JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
 {
     JoinAnalysisCounters counters;

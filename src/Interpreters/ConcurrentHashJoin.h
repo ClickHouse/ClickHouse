@@ -68,6 +68,7 @@ public:
     size_t getTotalByteCount() const override;
 
     StepAnalysisReport getAnalysisReport() const override;
+    std::optional<JoinProbeMatchRate> getProbeMatchRate() const override;
 
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }

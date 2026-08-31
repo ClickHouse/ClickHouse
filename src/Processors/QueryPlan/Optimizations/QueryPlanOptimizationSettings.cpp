@@ -144,6 +144,7 @@ namespace Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
+    extern const SettingsUInt64 parallel_replicas_ship_join_predicate;
     extern const SettingsBool parallel_replicas_plan_based;
 }
 
@@ -375,6 +376,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
+    parallel_replicas_ship_join_predicate = from[Setting::parallel_replicas_ship_join_predicate];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

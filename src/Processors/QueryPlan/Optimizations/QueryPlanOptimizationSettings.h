@@ -235,8 +235,12 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
-    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
+    /// Builds the plan with parallel replicas. The argument is the form of the join predicate to ship
+    /// into the replicas' fragment (`parallel_replicas_ship_join_predicate`): the rewrite belongs to that
+    /// plan alone, so the caller picks it per call rather than the plan builder reading a setting.
+    std::function<std::unique_ptr<QueryPlan>(UInt64)> query_plan_with_parallel_replicas_builder;
 
+    UInt64 parallel_replicas_ship_join_predicate = 0;
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
 };
