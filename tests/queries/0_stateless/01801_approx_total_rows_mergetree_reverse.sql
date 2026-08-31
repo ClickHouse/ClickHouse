@@ -4,6 +4,10 @@ create table data_01801 (key Int) engine=MergeTree() order by key settings index
 -- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
 SET parallel_replicas_index_analysis_only_on_coordinator = 0;
 
+-- Read-in-order relaxes the row limits (see `MergeTreeDataSelectExecutor::getRowLimits`), and the
+-- test runner randomizes `optimize_read_in_order`, so pin it to keep the queries below in order.
+SET optimize_read_in_order = 1;
+
 select * from data_01801 where key = 0 order by key settings max_rows_to_read=9 format Null;
 select * from data_01801 where key = 0 order by key desc settings max_rows_to_read=9 format Null;
 

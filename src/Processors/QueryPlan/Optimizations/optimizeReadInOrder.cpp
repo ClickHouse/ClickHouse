@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -236,6 +237,40 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
         dag = expression.clone();
 }
 
+/// A join preserves the SQL `LIMIT` above it as a bound on how many rows have to be read from the
+/// left side when every left row produces at least one output row and the join keeps the left order:
+/// then the `N`-th output row cannot appear later than the `N`-th left row, so a `LIMIT N` still lets
+/// the read stop early. `LEFT ANY` and `LEFT ALL` joins qualify. `INNER`, `SEMI` and `ANTI` joins can
+/// drop left rows, and an algorithm that reorders or buffers the left stream (grace hash join,
+/// partial merge join, spilling) breaks the correspondence, so there the output `LIMIT` says nothing
+/// about how much of the left side has to be read.
+bool joinPreservesLeftSideLimit(const IJoin & join)
+{
+    const auto & table_join = join.getTableJoin();
+    const auto strictness = table_join.strictness();
+    return isLeft(table_join.kind())
+        && (strictness == JoinStrictness::Any || strictness == JoinStrictness::All)
+        && join.preservesLeftBlockOrder()
+        && !join.hasDelayedBlocks();
+}
+
+bool joinPreservesLeftSideLimit(const IQueryPlanStep & step)
+{
+    if (const auto * join_step = typeid_cast<const JoinStep *>(&step))
+    {
+        /// With swapped streams the plan's first child is the right (build) side of the join,
+        /// so the left-side reasoning above does not apply to the subtree we descend into.
+        if (join_step->swap_streams)
+            return false;
+        return joinPreservesLeftSideLimit(*join_step->getJoin());
+    }
+
+    if (const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(&step))
+        return joinPreservesLeftSideLimit(*filled_join_step->getJoin());
+
+    return false;
+}
+
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
 void buildSortingDAG(
@@ -273,10 +308,13 @@ void buildSortingDAG(
 
     if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
     {
-        /// A join can drop rows of the left side, so the SQL `LIMIT` above it no longer
-        /// bounds how many rows have to be read.
+        /// A join can drop rows of the left side, so the hard read limit, which is pushed all the
+        /// way down into the reading step, must not survive it.
         limit = 0;
-        if (query_limit)
+        /// The soft `query_limit` (used for the primary-key-selectivity guard and for sizing the
+        /// first read task) does survive a join that preserves the left-side bound: there a
+        /// `LIMIT N` above the join still stops the read after at most `N` left rows.
+        if (query_limit && !joinPreservesLeftSideLimit(*step))
             *query_limit = 0;
     }
 

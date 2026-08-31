@@ -31,6 +31,9 @@ SET query_plan_optimize_join_order_randomize = 0;
 -- A spilling hash join does not preserve the left side order, so read-in-order is not
 -- propagated through it; disable automatic spilling to keep the in-order plan under test.
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+-- The test runner randomizes the read-in-order switches, but every assertion below is about the
+-- PK-selectivity guard on an in-order read through the join, so pin them.
+SET optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, join_algorithm = 'hash';
 
 -- The filter on `path` makes the projection win index analysis below the JOIN, and the retained
 -- runtime filter exempts the read from the guard: the projection read stays in order, no full sort.

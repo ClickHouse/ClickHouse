@@ -16,7 +16,10 @@ INSERT INTO rio_pk_selectivity_limit SELECT concat('path/', toString(number % 10
 INSERT INTO rio_pk_selectivity_limit SELECT concat('path/', toString(number % 1000), '/file.log'), number, [1] FROM numbers(50000, 25000);
 INSERT INTO rio_pk_selectivity_limit SELECT concat('path/', toString(number % 1000), '/file.log'), number, [1] FROM numbers(75000, 25000);
 
-SET max_threads = 4, enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5, read_in_order_use_virtual_row = 1;
+-- `optimize_read_in_order` is randomized by the test runner; the assertions below are about the
+-- guard, so pin it (and the other read-in-order switches) to keep the plan under test.
+SET max_threads = 4, enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5, read_in_order_use_virtual_row = 1,
+    optimize_read_in_order = 1;
 
 SELECT 'plain LIMIT keeps read-in-order';
 SELECT count() > 0 FROM

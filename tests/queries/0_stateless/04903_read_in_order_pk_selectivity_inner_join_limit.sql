@@ -30,7 +30,8 @@ SELECT count() > 0 FROM
     SETTINGS max_threads = 4, enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5,
         query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
-        query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0
+        query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
+        optimize_read_in_order = 1, join_algorithm = 'hash'
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
 -- Control: with the guard disabled the same plan does keep read-in-order through the join, so the
@@ -49,7 +50,45 @@ SELECT count() > 0 FROM
     SETTINGS max_threads = 4, enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 1.,
         query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
-        query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0
+        query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
+        optimize_read_in_order = 1, join_algorithm = 'hash'
+) WHERE explain LIKE '%PartialSortingTransform%';
+
+-- A `LEFT ALL` join preserves the left-side bound: every left row produces at least one output row
+-- and the left order survives, so the output `LIMIT` still stops the read early and the guard must
+-- keep read-in-order (no `PartialSortingTransform`), even though the primary key is poor.
+SELECT count() > 0 FROM
+(
+    EXPLAIN PIPELINE
+    SELECT l.path
+    FROM rio_pk_selectivity_left AS l
+    LEFT JOIN rio_pk_selectivity_right AS r ON l.key = r.key
+    WHERE l.path LIKE '%file.log'
+    ORDER BY l.path
+    LIMIT 10
+    SETTINGS max_threads = 4, enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5,
+        query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
+        query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
+        optimize_read_in_order = 1, join_algorithm = 'hash'
+) WHERE explain LIKE '%PartialSortingTransform%';
+
+-- Control: the same `LEFT JOIN` without a `LIMIT` has nothing to stop the read early, so the guard
+-- fires there. This shows the exemption above comes from the surviving `LIMIT` and not from the
+-- join kind switching read-in-order off by itself.
+SELECT count() > 0 FROM
+(
+    EXPLAIN PIPELINE
+    SELECT l.path
+    FROM rio_pk_selectivity_left AS l
+    LEFT JOIN rio_pk_selectivity_right AS r ON l.key = r.key
+    WHERE l.path LIKE '%file.log'
+    ORDER BY l.path
+    SETTINGS max_threads = 4, enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5,
+        query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
+        query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
+        optimize_read_in_order = 1, join_algorithm = 'hash'
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
 DROP TABLE rio_pk_selectivity_left;
