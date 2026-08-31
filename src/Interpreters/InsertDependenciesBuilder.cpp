@@ -1,5 +1,6 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>

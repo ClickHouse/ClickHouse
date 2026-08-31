@@ -127,7 +127,16 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     {
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space.
         std::vector<MergeConstraint> ttl_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
-        TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time, getMaxPartsToMergeAtOnce(ctx));
+        /// A `TTLDrop` merge of a table with only an unconditional rows TTL builds no read pipeline at all
+        /// (see `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare`): the source parts are fully expired
+        /// and nothing is read from them, so the per-(source part, column) block cost the memory estimate
+        /// models does not exist. Capping it there would only stretch TTL cleanup of wide tables into tiny
+        /// drop batches for no memory benefit. When any other TTL family is present the pipeline is built
+        /// as usual, and the memory-derived cap applies like it does to the other merges.
+        const size_t max_parts_to_drop_at_once = ctx.metadata_snapshot.hasOnlyRowsTTL()
+            ? ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once]
+            : getMaxPartsToMergeAtOnce(ctx);
+        TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time, max_parts_to_drop_at_once);
 
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
