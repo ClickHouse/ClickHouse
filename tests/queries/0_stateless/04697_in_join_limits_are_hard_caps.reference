@@ -8,3 +8,10 @@ hash: max_bytes_in_join stops the join after it spilled
 grace_hash without any spill threshold is rejected
 grace_hash with a spill threshold works
 10
+duplicate right keys count once, both algorithms
+400000
+400000
+a NULL right key is not in the hash table, both algorithms
+0
+0
+the cap fires on the key count, both algorithms

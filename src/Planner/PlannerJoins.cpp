@@ -1303,6 +1303,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         if (GraceHashJoin::isSupported(table_join))
         {
             /// Same spill threshold as `hash` uses, `grace_hash` just starts partitioned right away.
+            /// Legacy mode gets 0, which is what standalone `grace_hash` was built with before the
+            /// threshold applied to it, so the size limits stay its only spill trigger.
             return std::make_shared<GraceHashJoin>(
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
@@ -1311,7 +1313,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 right_table_expression_header,
                 table_join->getTempDataOnDisk(),
                 params.join_any_take_last_row,
-                params.max_bytes_before_external_join);
+                table_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : params.max_bytes_before_external_join);
         }
     }
 

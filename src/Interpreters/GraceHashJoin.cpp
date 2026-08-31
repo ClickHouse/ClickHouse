@@ -377,22 +377,26 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
-    Block materialized = materializeBlock(block);
-    const size_t rows = materialized.rows();
-    const size_t bytes = materialized.allocatedBytes();
-
-    /// Count what `SpillingHashJoin` hands over when it switches too, it passes `check_limits = false`.
-    const size_t new_total_rows = total_right_rows.fetch_add(rows) + rows;
-    const size_t new_total_bytes = total_right_bytes.fetch_add(bytes) + bytes;
-
-    addBlockToJoinImpl(std::move(materialized));
+    addBlockToJoinImpl(materializeBlock(block));
 
     /// In legacy mode these limits make us spill instead (see `hasMemoryOverflow`), so don't fail on them.
     if (!check_limits || table_join->legacyJoinSizeLimitsTriggerSpilling())
         return true;
 
     /// Spilling does not earn a query the right to go over the limits.
-    return table_join->sizeLimits().check(new_total_rows, new_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return checkSizeLimits();
+}
+
+bool GraceHashJoin::checkSizeLimits() const
+{
+    /// Count what the hash tables hold, exactly as `HashJoin` does when it checks the same limits: the
+    /// buckets built so far plus the one in memory now. Rows a bucket drops (NULL keys) or collapses
+    /// behind one key are not counted, and the map overhead is.
+    return table_join->sizeLimits().check(
+        accounted_right_rows + getTotalRowCount(),
+        accounted_right_bytes + getTotalByteCount(),
+        "JOIN",
+        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
@@ -406,7 +410,8 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// Half of it, because the hash table doubles in power-of-two steps and briefly holds 3x while resizing.
     bool has_overflow = external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold;
 
-    /// Old behaviour: the size limits spill as well, so whichever of the two comes first wins.
+    /// Legacy mode: the size limits spill as well. Standalone `grace_hash` is built with no threshold
+    /// then, `SpillingHashJoin` still passes one, so whichever comes first wins for the adaptive path.
     if (!has_overflow && table_join->legacyJoinSizeLimitsTriggerSpilling())
         has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
@@ -828,7 +833,12 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     size_t bucket_idx = current_bucket->idx;
 
     if (hash_join)
+    {
         stats.foldIn(*hash_join);
+        /// This bucket is about to be released, so its share of the hard cap has to survive it.
+        accounted_right_rows += hash_join->getTotalRowCount();
+        accounted_right_bytes += hash_join->getTotalByteCount();
+    }
 
     size_t prev_keys_num = 0;
     if (hash_join && buckets.size() > 1)
@@ -854,6 +864,11 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             addBlockToJoinImpl(std::move(block));
         }
         hash_join->onBuildPhaseFinish();
+
+        /// The same hard cap as during the build phase, now that this bucket's hash table is complete.
+        /// With `join_overflow_mode = 'break'` stop here instead of loading the remaining buckets.
+        if (!table_join->legacyJoinSizeLimitsTriggerSpilling() && !checkSizeLimits())
+            return nullptr;
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
             bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));

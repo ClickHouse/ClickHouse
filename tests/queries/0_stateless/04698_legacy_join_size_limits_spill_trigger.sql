@@ -32,3 +32,13 @@ SELECT count()
 FROM (SELECT number AS k FROM numbers(10)) AS t1
 INNER JOIN (SELECT number AS k FROM numbers(10)) AS t2
 USING (k);
+
+-- Legacy mode ignores the spill threshold for standalone `grace_hash`, the way it did before it
+-- applied there. A threshold of 1 byte would otherwise rehash every bucket until it runs out.
+SELECT 'legacy: the spill threshold does not apply';
+SET max_bytes_before_external_join = 1;
+SET max_bytes_in_join = '4M';
+SELECT count()
+FROM (SELECT number AS k FROM numbers(2000000)) AS t1
+INNER JOIN (SELECT number AS k FROM numbers(2000000)) AS t2
+USING (k);

@@ -146,6 +146,10 @@ private:
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
 
+    /// `max_rows_in_join` / `max_bytes_in_join` as a hard cap on the whole right side. False means
+    /// `join_overflow_mode = 'break'`; it throws for `'throw'`.
+    bool checkSizeLimits() const;
+
     size_t getNumBuckets() const;
     Buckets getCurrentBuckets() const;
 
@@ -181,9 +185,10 @@ private:
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
 
-    /// Everything we have been fed on the right side, for the `max_rows_in_join` / `max_bytes_in_join` check.
-    std::atomic<size_t> total_right_rows = 0;
-    std::atomic<size_t> total_right_bytes = 0;
+    /// What the buckets built and already released held, for the `max_rows_in_join` /
+    /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.
+    std::atomic<size_t> accounted_right_rows = 0;
+    std::atomic<size_t> accounted_right_bytes = 0;
 
     GraceHashJoinStats stats;
 

@@ -999,7 +999,17 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 - [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Limits size of the hash table.
 
 When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/reference/settings/session-settings/join#join_overflow_mode)
-setting instructs.
+setting instructs. These two are hard caps and never make a join spill to disk, so setting them at or
+below an explicit `max_bytes_before_external_join` prevents the join from spilling at all.
+
+To let a join keep running by spilling the right side to disk instead of failing, use:
+
+- [max_bytes_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) — Absolute spill threshold.
+- [max_bytes_ratio_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) — Spill threshold as a ratio of available memory.
+
+These are the single spill trigger for every hash-based algorithm, including `grace_hash`. The `join_algorithm` you pick
+decides how a join spills — `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect
+it in memory and switch over when the threshold is crossed — not whether these settings apply.
 
 ## Examples {#examples}
 

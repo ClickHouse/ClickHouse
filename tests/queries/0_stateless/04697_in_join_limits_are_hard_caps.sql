@@ -61,3 +61,36 @@ FROM (SELECT number AS k FROM numbers(10)) AS t1
 INNER JOIN (SELECT number AS k FROM numbers(10)) AS t2
 USING (k)
 SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = '1M';
+
+-- The cap counts what the hash tables hold, so it has to fire in the same place for `hash` and for
+-- `grace_hash`: duplicates collapse behind one key, and rows with a NULL key never enter a map.
+SET max_bytes_in_join = 0;
+SET max_rows_in_join = 1000;
+SET max_bytes_before_external_join = '16M';
+SET query_plan_join_swap_table = 0;
+
+SELECT 'duplicate right keys count once, both algorithms';
+SELECT count() FROM (SELECT number AS k FROM numbers(10)) AS t1
+INNER JOIN (SELECT number % 10 AS k FROM numbers(400000)) AS t2 USING (k)
+SETTINGS join_algorithm = 'hash';
+SELECT count() FROM (SELECT number AS k FROM numbers(10)) AS t1
+INNER JOIN (SELECT number % 10 AS k FROM numbers(400000)) AS t2 USING (k)
+SETTINGS join_algorithm = 'grace_hash';
+
+SELECT 'a NULL right key is not in the hash table, both algorithms';
+SELECT count() FROM (SELECT number AS k FROM numbers(10)) AS t1
+INNER JOIN (SELECT CAST(NULL, 'Nullable(UInt64)') AS k FROM numbers(400000)) AS t2 ON t1.k = t2.k
+SETTINGS join_algorithm = 'hash';
+SELECT count() FROM (SELECT number AS k FROM numbers(10)) AS t1
+INNER JOIN (SELECT CAST(NULL, 'Nullable(UInt64)') AS k FROM numbers(400000)) AS t2 ON t1.k = t2.k
+SETTINGS join_algorithm = 'grace_hash';
+
+-- And it fires at the same count for both: 10 keys behind 400000 rows.
+SELECT 'the cap fires on the key count, both algorithms';
+SET max_rows_in_join = 5;
+SELECT count() FROM (SELECT number AS k FROM numbers(10)) AS t1
+INNER JOIN (SELECT number % 10 AS k FROM numbers(400000)) AS t2 USING (k)
+SETTINGS join_algorithm = 'hash'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+SELECT count() FROM (SELECT number AS k FROM numbers(10)) AS t1
+INNER JOIN (SELECT number % 10 AS k FROM numbers(400000)) AS t2 USING (k)
+SETTINGS join_algorithm = 'grace_hash'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
