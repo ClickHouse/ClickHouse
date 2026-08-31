@@ -64,6 +64,7 @@ extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
 extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
 extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
 extern const Event ASTFuzzerOracleCodecRoundtripChecks;
+extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2685,6 +2686,62 @@ bool QueryOracleChecker::checkCodecRoundtrip(const ASTSelectQuery &, const Conte
     }
 
     LOG_TRACE(logger, "codec round-trip oracle passed ({} rows)", plain_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkEngineEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: the storage engine must not change the logical data. Identical schema and
+    /// deterministic seed in a MergeTree vs a row-based engine must read back the identical multiset;
+    /// a difference is a real engine read/serialization bug. Rate-limited to keep fixture churn low.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("engine", context);
+    if (!fixture.valid())
+        return false;
+
+    static constexpr std::array<std::string_view, 4> row_engines = {"Memory", "TinyLog", "StripeLog", "Log"};
+    const std::string_view other_engine = row_engines[thread_local_rng() % row_engines.size()];
+
+    const String mt = fixture.allocName("mt");
+    const String other = fixture.allocName("row");
+
+    /// A schema with varied types to stress each engine's serialization.
+    const String columns = " (k UInt64, i Int64, f Float64, s String, n Nullable(Int64),"
+                           " a Array(Int32), fs FixedString(4), dt DateTime)";
+    if (!fixture.execute("CREATE TABLE " + mt + columns + " ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + other + columns + " ENGINE = " + String(other_engine)))
+        return false;
+
+    const String seed = " SELECT number, toInt64(number) * 3 - 200, number * 0.25,"
+                        " toString(number % 91), if(number % 6 = 0, NULL, toInt64(number)),"
+                        " range(number % 5), toFixedString(toString(number % 900), 4),"
+                        " toDateTime('2021-01-01 00:00:00') + number FROM numbers(400)";
+    if (!fixture.execute("INSERT INTO " + mt + seed) || !fixture.execute("INSERT INTO " + other + seed))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "engine-equivalence oracle: {} (MergeTree) vs {} ({})", mt, other, other_engine);
+
+    auto mt_rows_opt = OracleExec::executeRows("SELECT * FROM " + mt, context, ResultShape::SortedBag);
+    auto other_rows_opt = OracleExec::executeRows("SELECT * FROM " + other, context, ResultShape::SortedBag);
+    if (!mt_rows_opt || !other_rows_opt)
+        return false;
+
+    if (!OracleCompare::equal(*mt_rows_opt, *other_rows_opt))
+    {
+        fixture.preserve();
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "engine-equivalence oracle mismatch!\n"
+            "MergeTree table {} ({} rows) vs {} table {} ({} rows)\n{}",
+            mt, mt_rows_opt->size(), other_engine, other, other_rows_opt->size(),
+            OracleCompare::diffSummary(*mt_rows_opt, *other_rows_opt));
+    }
+
+    LOG_TRACE(logger, "engine-equivalence oracle passed ({} rows)", mt_rows_opt->size());
     return true;
 }
 
