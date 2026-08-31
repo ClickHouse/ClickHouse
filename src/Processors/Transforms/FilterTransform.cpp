@@ -6,7 +6,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Field.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -60,13 +59,10 @@ const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
     return node;
 }
 
-std::optional<Field> tryGetConstantField(const ActionsDAG::Node * node)
+bool hasConstantColumn(const ActionsDAG::Node * node)
 {
     node = unwrapAlias(node);
-    if (!node->column || !isColumnConst(*node->column))
-        return {};
-
-    return assert_cast<const ColumnConst &>(*node->column).getField();
+    return node->column != nullptr;
 }
 
 template <typename Predicate>
@@ -212,7 +208,7 @@ std::vector<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
     if (unwrapped_column_node->type != ActionsDAG::ActionType::INPUT)
         return {};
 
-    if (!tryGetConstantField(constant_node))
+    if (!hasConstantColumn(constant_node))
         return {};
 
     std::vector<ConstantColumnPosition> positions;
@@ -265,9 +261,9 @@ std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(
             continue;
 
         std::vector<ConstantColumnPosition> constant_columns;
-        if (tryGetConstantField(node->children[1]))
+        if (hasConstantColumn(node->children[1]))
             constant_columns = getConstantColumnPositionsAfterFilter(node->children[0], node->children[1], dag, transformed_header);
-        if (constant_columns.empty() && tryGetConstantField(node->children[0]))
+        if (constant_columns.empty() && hasConstantColumn(node->children[0]))
             constant_columns = getConstantColumnPositionsAfterFilter(node->children[1], node->children[0], dag, transformed_header);
 
         for (const auto constant_column : constant_columns)
@@ -497,10 +493,10 @@ void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t 
             continue;
 
         /// Use the value that actually passed `equals` instead of parsing the comparison constant again.
-        /// String constants are parsed using query-specific settings that are already reflected in this column.
-        const auto & type = transformed_header.getByPosition(position).type;
-        auto column = type->createColumnConst(num_rows, (*columns[position])[0]);
-        columns[position] = std::move(column);
+        /// Copy it in column form because some values cannot be materialized as a `Field`.
+        auto value = columns[position]->cloneEmpty();
+        value->insertFrom(*columns[position], 0);
+        columns[position] = ColumnConst::create(std::move(value), num_rows);
     }
 }
 
