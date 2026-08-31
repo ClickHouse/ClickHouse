@@ -103,9 +103,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_shell(name, command, **kwargs):
+def run_shell_with_output(name, command, **kwargs):
     print(f"\n>>>> {name}\n")
-    Shell.check(command, **kwargs)
+    Shell.check(command, verbose=True, **kwargs)
     print(f"\n<<<< {name}\n")
 
 
@@ -127,7 +127,7 @@ def setup_build_caches_env(info):
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -328,13 +328,13 @@ def main():
                 f"ln -sf /build/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
             )
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
         # The sccache server sometimes fails to start because of issues with S3.
         # Start it explicitly with retries before cmake, since cmake can invoke
         # the compiler during configuration. Non-fatal: build can proceed without it.
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell_with_output("sccache stats", "sccache --show-stats")
         cmake_result_index = len(results)
         results.append(
             Result.from_commands_run(
@@ -461,18 +461,18 @@ def main():
             else:
                 results.append(retry_cmake)
 
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell_with_output("sccache stats", "sccache --show-stats")
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
             Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
             files.append(clang_tidy_cache_log)
-            run_shell(
+            run_shell_with_output(
                 "clang-tidy-cache.log stats",
                 f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
                 f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"',
             )
-        run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
+        run_shell_with_output("Output programs", f"ls -l {build_dir}/programs/")
         Shell.check("pwd")
         res = results[-1].is_ok()
 

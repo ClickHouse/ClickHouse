@@ -225,7 +225,7 @@ def main():
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
@@ -282,7 +282,7 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        Shell.check("sccache --show-stats")
+        Shell.check("sccache --show-stats", verbose=True)
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
@@ -290,8 +290,8 @@ def main():
                 " clickhouse-bundle clickhouse-stripped lexer_test",
             )
         )
-        Shell.check(f"{build_dir}/rust/chcache/chcache stats")
-        Shell.check("sccache --show-stats")
+        Shell.check(f"{build_dir}/rust/chcache/chcache stats", verbose=True)
+        Shell.check("sccache --show-stats", verbose=True)
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
