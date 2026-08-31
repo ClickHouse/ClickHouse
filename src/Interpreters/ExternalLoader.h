@@ -229,6 +229,9 @@ public:
 
     ActionLock getActionLock();
 
+    /// Retries objects whose last load was skipped due to SYSTEM STOP RELOAD DICTIONARIES.
+    void reloadBlockedObjects();
+
 protected:
     virtual LoadableMutablePtr createObject(
         const String & name,

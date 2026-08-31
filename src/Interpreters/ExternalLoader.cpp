@@ -693,6 +693,14 @@ public:
         return reload_blocker.cancel();
     }
 
+    void reloadBlockedObjects()
+    {
+        std::lock_guard lock{mutex};
+        for (auto & [name, info] : infos)
+            if (info.blocked)
+                startLoading(info);
+    }
+
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
@@ -1727,6 +1735,11 @@ void ExternalLoader::reloadConfig(const String & repository_name, const String &
 ActionLock ExternalLoader::getActionLock()
 {
     return loading_dispatcher->getActionLock();
+}
+
+void ExternalLoader::reloadBlockedObjects()
+{
+    loading_dispatcher->reloadBlockedObjects();
 }
 
 ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(
