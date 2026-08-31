@@ -18,3 +18,9 @@ Non-MergeTree source table, without SELECT on it
 ACCESS_DENIED
 Non-MergeTree source table, with SELECT on it
 BAD_ARGUMENTS
+Hidden source table, before it is resolved
+ACCESS_DENIED
+Missing source table
+ACCESS_DENIED
+Missing source table, for a user who can see the database
+UNKNOWN_TABLE
