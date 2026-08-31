@@ -101,6 +101,11 @@ public:
     /// group identically; a difference is a real LowCardinality bug.
     bool checkLowCardinalityEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// SAMPLE-equivalence oracle (self-seeded): SAMPLE 1.0 reads the whole table, so on a table
+    /// with a SAMPLE BY key `SELECT ... SAMPLE 1.0` must equal `SELECT ...`; a difference is a
+    /// real sampling bug.
+    bool checkSampleEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
