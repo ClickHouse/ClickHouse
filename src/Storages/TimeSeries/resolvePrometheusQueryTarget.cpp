@@ -5,6 +5,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -20,6 +21,12 @@ namespace DistributedSetting
 {
     extern const DistributedSettingsBool skip_unavailable_shards;
     extern const DistributedSettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
+}
+
+namespace Setting
+{
+    extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace ErrorCodes
@@ -91,13 +98,18 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     if (const auto & settings_changes = metadata->settings_changes)
     {
-        /// Compared by value, not presence: declaring the default explicitly changes nothing about
-        /// the read and must not refuse it.
+        /// Mirrors ClusterProxy::executeQuery: the table's declarations are only defaults, applied
+        /// when the query has not set the setting itself. The generated cluster() call sees the
+        /// query settings either way, so the read diverges exactly when the query leaves a setting
+        /// unset and the table declares something other than the query's current value.
         DistributedSettings declared;
         declared.applyChanges(settings_changes->as<const ASTSetQuery &>().changes);
-        const DistributedSettings defaults;
-        if (declared[DistributedSetting::skip_unavailable_shards].value != defaults[DistributedSetting::skip_unavailable_shards].value
-            || declared[DistributedSetting::skip_unavailable_shards_mode].value != defaults[DistributedSetting::skip_unavailable_shards_mode].value)
+        const auto & query_settings = context->getSettingsRef();
+        const bool skip_diverges = !query_settings[Setting::skip_unavailable_shards].changed
+            && declared[DistributedSetting::skip_unavailable_shards].value != query_settings[Setting::skip_unavailable_shards].value;
+        const bool mode_diverges = !query_settings[Setting::skip_unavailable_shards_mode].changed
+            && declared[DistributedSetting::skip_unavailable_shards_mode].value != query_settings[Setting::skip_unavailable_shards_mode].value;
+        if (skip_diverges || mode_diverges)
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "This operation is not supported over table {} because it sets skip_unavailable_shards or "
