@@ -85,7 +85,7 @@ namespace
         token.reserve(TOKEN_LENGTH);
 
         /// Ask for more bytes than characters, so that the expected number of rounds is one.
-        std::array<uint8_t, TOKEN_LENGTH * 2> buf;
+        std::array<uint8_t, TOKEN_LENGTH * 2> buf{};
         while (token.size() < TOKEN_LENGTH)
         {
             fillWithSecureRandomBytes(buf.data(), buf.size());
@@ -104,7 +104,7 @@ namespace
 
     String generateSalt()
     {
-        std::array<uint8_t, TOKEN_SALT_SIZE> key;
+        std::array<uint8_t, TOKEN_SALT_SIZE> key{};
         fillWithSecureRandomBytes(key.data(), key.size());
 
         String salt;
