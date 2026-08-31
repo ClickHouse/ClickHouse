@@ -11,6 +11,3 @@ BAD_ARGUMENTS
 -- reading through the chain reaches the target
 1
 2
--- a stored self-referential definition loads
--- and reading it is bounded
-TOO_DEEP_RECURSION
