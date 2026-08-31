@@ -319,24 +319,13 @@ std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties()
 
 JoinEstimation JoinStepLogical::getEstimation() const
 {
-    JoinEstimation estimation{
-        .output_rows = {},
+    return JoinEstimation{
+        .output_rows = result_rows_estimation,
         .left_rows = left_relation.estimated_rows,
         .right_rows = right_relation.estimated_rows,
-        .cost = {},
-        .selectivity = {},
+        .cost = estimated_cost,
+        .selectivity = estimated_selectivity,
     };
-
-    /// The estimator models the matched-pair semantics of `ALL` joins
-    /// that is why for other strictness values the output-derived estimates are wrong by construction
-    if (join_operator.strictness == JoinStrictness::All)
-    {
-        estimation.output_rows = result_rows_estimation;
-        estimation.cost = estimated_cost;
-        estimation.selectivity = estimated_selectivity;
-    }
-
-    return estimation;
 }
 
 void JoinStepLogical::describeActions(FormatSettings & settings) const
