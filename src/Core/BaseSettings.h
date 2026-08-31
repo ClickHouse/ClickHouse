@@ -10,6 +10,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
@@ -254,6 +255,9 @@ public:
 
     /// Get the tier (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL) of a setting
     SettingsTierType getTier(std::string_view name) const;
+
+    /// Tier of a built-in setting. Unlike `getTier`, ignores custom settings and returns nullopt instead of throwing when no setting exists.
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
 
     // ========================================================================
     // VALIDATION & CONVERSION (static utilities)
@@ -595,6 +599,16 @@ SettingsTierType BaseSettings<TTraits>::getTier(std::string_view name) const
 }
 
 template <typename TTraits>
+std::optional<SettingsTierType> BaseSettings<TTraits>::tryGetTierOfBuiltin(std::string_view name)
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        return accessor.getTier(index);
+    return std::nullopt;
+}
+
+template <typename TTraits>
 void BaseSettings<TTraits>::checkCanSet(std::string_view name, const Field & value)
 {
     name = TTraits::resolveName(name);
@@ -745,21 +759,8 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         bool is_important = (flags & Flags::IMPORTANT);
         bool is_custom = (flags & Flags::CUSTOM);
 
-        if (is_custom && Traits::allow_custom_settings)
+        if (is_custom && Traits::allow_custom_settings && index == static_cast<size_t>(-1))
         {
-            /// Honor the wire `CUSTOM` flag even when `name` collides with a built-in setting, rather
-            /// than coercing the value into that setting's typed slot. Query parameters are transported
-            /// through this `Settings` serialization, and a parameter whose name matches a built-in
-            /// setting (e.g. `--param_page` now that `page` is a real `Double` setting) must round-trip
-            /// as a string-valued custom field — otherwise a non-numeric value like `foo` would throw
-            /// while being parsed as the setting's type. A correctly-formed real settings packet never
-            /// flags a built-in setting as custom, so only such parameters take this branch.
-            ///
-            /// Store under the original wire name (`read_name`), not the alias-resolved `name`: a query
-            /// parameter whose name is a setting *alias* (e.g. `enable_analyzer`, an alias of
-            /// `allow_experimental_analyzer`) must round-trip under the user's chosen name so that
-            /// `SELECT {enable_analyzer:String}` can find it. `read_name` equals `name` for any
-            /// non-alias custom field, so this is exact for genuine custom settings.
             getCustomSetting(read_name).parseFromString(BaseSettingsHelpers::readString(in));
         }
         else if (index != static_cast<size_t>(-1))
