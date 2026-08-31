@@ -161,7 +161,7 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
     /// settings
     res_columns[col++]->insert(settings_map);
 
-    res_columns[col++]->insert(static_cast<UInt64>(query_create_time_ms / 1000));
+    res_columns[col++]->insert(query_create_time_ms / 1000);
 }
 
 static void repeatValuesInCommonColumns(MutableColumns & res_columns, size_t num_filled_columns)

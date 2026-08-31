@@ -64,6 +64,9 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # the storage is on the heap and outlives the local, and the diagnostic text itself
     # concedes it "could be a false positive as the storage may have been moved".
     no_warning(lifetime-safety-return-stack-addr-moved)
+    # False positives: it does not understand a field that is deliberately cleared before the
+    # captured local dies (e.g. via SCOPE_EXIT), see `after_fuzz_reconnect` in `FuzzLoop.cpp`.
+    no_warning(lifetime-safety-dangling-field)
 endif ()
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning
