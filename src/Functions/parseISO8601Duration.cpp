@@ -234,7 +234,10 @@ introduced by `T`:
 - `T` - starts the time section
 - `H` - hours
 - `M` - minutes, only after `T`
-- `S` - seconds, which may have a fractional part
+- `S` - seconds
+
+Any component may carry a fractional part, not only the lowest-order one as ISO 8601 requires, so
+`PT0.5H` is valid and returns 1800.
 
 Designators must appear in the order above and each may appear at most once. The week designator may
 be combined with the others, unlike in ISO 8601:2004 where it is exclusive.
@@ -242,9 +245,6 @@ be combined with the others, unlike in ISO 8601:2004 where it is exclusive.
 The year (`Y`) designator and the month (`M`) designator before `T` are rejected, because neither a
 year nor a month has a fixed length in seconds. Convert such durations against a reference date
 instead.
-
-A fractional part is accepted on any component, not only on the lowest-order one as ISO 8601
-requires, so `PT0.5H` is valid and returns 1800.
 
 Two forms that the standard and its extensions allow are not accepted:
 
