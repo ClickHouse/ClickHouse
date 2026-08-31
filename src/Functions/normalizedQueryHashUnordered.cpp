@@ -212,9 +212,14 @@ Like [`normalizedQueryHashUnordered`](#normalizedQueryHashUnordered), but return
 This is the variant to use over `system.query_log`, which also stores queries that failed to parse and queries truncated by
 the [`log_queries_cut_to_length`](/operations/settings/settings#log_queries_cut_to_length) setting.
 
-`query_log.query` holds the text as it was submitted, so a row gives `NULL` whenever that text is not ClickHouse SQL for the current session:
-a query written in another dialect, or one that needed a higher `max_parser_depth` than this session allows. To hash the ClickHouse SQL of such
-queries instead, turn on [`log_formatted_queries`](/operations/settings/settings#log_formatted_queries) and pass `formatted_query`.
+`query_log.query` holds the text as it was submitted, so a row gives `NULL` when that text does not parse as ClickHouse SQL for the current
+session: a query written in another dialect, or one that needed a higher `max_parser_depth` than this session allows. To hash the ClickHouse SQL
+of such queries instead, turn on [`log_formatted_queries`](/operations/settings/settings#log_formatted_queries) and pass `formatted_query`.
+
+An `INSERT` with inline data is the exception. Parsing stops at the payload, so such a row is hashed from its header and is never `NULL` because
+of what follows `VALUES` or `FORMAT`, however malformed or truncated that part is. `INSERT INTO t VALUES (` hashes like any other
+`INSERT INTO t VALUES`, and with [`allow_settings_after_format_in_insert`](/operations/settings/settings#allow_settings_after_format_in_insert)
+turned off a trailing `SETTINGS` clause is payload too.
     )";
     FunctionDocumentation::Syntax syntax = "normalizedQueryHashUnorderedOrNull(x)";
     FunctionDocumentation::Arguments arguments = {
