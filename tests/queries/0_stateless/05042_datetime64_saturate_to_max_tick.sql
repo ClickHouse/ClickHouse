@@ -47,3 +47,10 @@ SELECT 'a wide source beyond Int64 keeps its sign instead of narrowing first';
 SELECT toTime64(toInt128('9223372036854775808'), 6), toTime64(toInt128('-9223372036854775809'), 6);
 SELECT toTime64(toInt256('9223372036854775808'), 6), toTime64(toUInt128('9223372036854775808'), 6);
 SELECT toDateTime64(toInt128('9223372036854775808'), 9), toDateTime64(toInt128('-9223372036854775809'), 9);
+
+SELECT 'accurate casts saturate the same way, wide carriers still reject';
+-- Narrow carriers reach the saturating transform, so accurate casts clamp rather than reject (as they already did for Int32)
+SELECT accurateCast(toUInt32(3600000), 'Time64(6)'), accurateCastOrNull(toUInt32(3600000), 'Time64(6)'), accurateCastOrNull(toInt32(3600000), 'Time64(6)');
+SELECT accurateCastOrNull(toDate32('2299-12-31'), 'DateTime64(9, \'UTC\')');
+-- Wide carriers keep the accurate gate and report instead of saturating
+SELECT accurateCastOrNull(toUInt128('9223372036854775808'), 'DateTime64(9)'), accurateCastOrNull(toInt128('9223372036854775808'), 'DateTime64(9)'), accurateCastOrNull(toUInt128(3600000), 'Time64(6)');

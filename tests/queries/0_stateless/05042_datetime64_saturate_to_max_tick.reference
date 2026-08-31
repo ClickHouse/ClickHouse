@@ -30,3 +30,7 @@ a wide source beyond Int64 keeps its sign instead of narrowing first
 999:59:59.999999	-999:59:59.999999
 999:59:59.999999	999:59:59.999999
 2262-04-11 23:47:16.854775807	1677-09-21 00:12:43.145224192
+accurate casts saturate the same way, wide carriers still reject
+999:59:59.999999	999:59:59.999999	999:59:59.999999
+2262-04-11 23:47:16.854775807
+\N	\N	\N
