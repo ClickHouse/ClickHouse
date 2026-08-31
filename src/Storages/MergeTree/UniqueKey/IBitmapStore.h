@@ -44,6 +44,11 @@ public:
     /// settle at all before it can decide what its own state means.
     virtual std::vector<MergeTreePartInfo> stagedTargetsOf(const MergeTreePartInfo & owner) const = 0;
 
+    /// Every part that owes a settle. The store already knows this set, so a caller looking for
+    /// work does not have to walk the part set to rediscover it.
+    virtual std::vector<MergeTreePartInfo> stagedOwners() const = 0;
+
+
     /// Undo the above, for a write whose transaction ROLLED BACK. Only then: the entry is keyed by
     /// target, so the owner's removal never reaches it, but forgetting a committed owner's entry
     /// hides kills that are durable.
@@ -54,14 +59,15 @@ public:
     {
         /// Published into the target, or unlinked because the target is provably gone. Nothing left.
         size_t settled = 0;
-        /// Left staged: the target is missing while the part set is still loading, so "reclaimed"
-        /// and "not loaded yet" are the same observation. The next GC round retries it.
+        /// Left staged: the owner's transaction is still committing, or the target is missing
+        /// while the part set is still loading, so "reclaimed" and "not loaded yet" are the same
+        /// observation. The next settle round retries it.
         size_t deferred = 0;
         /// Left staged: the settle itself threw, the file does not name a parseable part, or the
         /// owner is no longer resolvable.
         size_t failed = 0;
 
-        /// Everything a retire path must refuse to proceed over.
+        /// Anything the caller has to come back for.
         bool anyOutstanding() const { return deferred > 0 || failed > 0; }
 
         void add(const SettleReport & other)
@@ -79,8 +85,8 @@ public:
         const MergeTreePartInfo & owner, const std::vector<MergeTreePartInfo> & targets, CSN csn) = 0;
 
     /// The same, for every target the index has for `owner`. For a caller holding a part and no
-    /// staging record -- a retire path, which must settle the owner completely, and recovery, whose
-    /// staging call is in a dead process.
+    /// staging record -- the background settle round, and a reload whose staging call is in a dead
+    /// process.
     virtual SettleReport settleStagedBitmaps(const MergeTreePartInfo & owner, CSN csn) = 0;
 
     /// The files in `part`'s own directory, sorted by version. `system.parts` introspection, NOT a resolution

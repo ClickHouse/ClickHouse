@@ -15,6 +15,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
@@ -379,7 +380,13 @@ void TransactionLog::tryFinalizeUnknownStateTransactions()
         std::lock_guard lock{running_list_mutex};
         std::swap(list, unknown_state_list);
         std::swap(list, unknown_state_list_loaded);
+        unknown_state_finalizing = !list.empty();
     }
+
+    SCOPE_EXIT({
+        std::lock_guard lock{running_list_mutex};
+        unknown_state_finalizing = false;
+    });
 
     for (auto & [txn, state_guard] : list)
     {
@@ -400,7 +407,7 @@ void TransactionLog::tryFinalizeUnknownStateTransactions()
 bool TransactionLog::hasUnknownStateTransactions() const
 {
     std::lock_guard lock{running_list_mutex};
-    return !unknown_state_list.empty() || !unknown_state_list_loaded.empty();
+    return !unknown_state_list.empty() || !unknown_state_list_loaded.empty() || unknown_state_finalizing;
 }
 
 CSN TransactionLog::getLatestSnapshot() const

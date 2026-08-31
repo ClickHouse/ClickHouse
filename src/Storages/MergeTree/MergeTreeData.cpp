@@ -368,6 +368,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsSeconds refresh_statistics_interval;
+    extern const MergeTreeSettingsSeconds unique_key_gc_interval_seconds;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -3126,9 +3127,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// tables require local disks per the storage-policy guard, so static/web
     /// UK parts are practically unreachable — still fail closed, not skip.)
     MutableDataPartsVector active_uk_parts_to_rebuild;
-    const bool uk_storage_is_writable = !is_static_storage && !all_disks_are_readonly && !is_table_readonly;
-    unique_key_storage_is_writable = uk_storage_is_writable;
-    if (uk_storage_is_writable)
+    storage_is_writable = !is_static_storage && !all_disks_are_readonly && !is_table_readonly;
+    if (storage_is_writable)
         unique_key_dense_index_ops->sweepOrphans(part_lock);
     {
         auto metadata_snapshot_for_rebuild = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
@@ -3155,7 +3155,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     {
         try
         {
-            unique_key_dense_index_ops->ensureValidDenseIndex(p, uk_storage_is_writable);
+            unique_key_dense_index_ops->ensureValidDenseIndex(p, storage_is_writable);
         }
         catch (...)
         {
@@ -3220,11 +3220,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// If all disks are readonly or the table is explicitly marked as readonly,
     /// it does not make sense to load outdated parts (we will not own them).
     ///
-    /// Skipping the load leaves the Outdated set absent rather than empty, which
-    /// `outdated_data_parts_loading_finished` cannot express. Read through
-    /// `outdatedPartsSetIsComplete()`.
-    outdated_data_parts_loading_skipped = !unloaded_parts.empty() && (all_disks_are_readonly || is_table_readonly);
-
     if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
@@ -3241,6 +3236,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             {
                 auto local_component_guard = Coordination::setCurrentComponent(component_name);
                 loadOutdatedDataParts(/*is_async=*/ true);
+
+                /// TODO(unique-key): an Outdated owner is indexed only once loaded, which happens
+                /// above -- after the table is readable. Until then a read of its target applies
+                /// fewer deletes than it should. This corrects the state once the load is done;
+                /// closing the window needs more than a settle. Outside `loadOutdatedDataParts`,
+                /// whose own catch terminates the server on anything that escapes it.
+                runUniqueKeySettleRound();
             });
     }
 
@@ -3618,6 +3620,7 @@ try
         outdated_data_parts_loading_finished = true;
         outdated_data_parts_cv.notify_all();
     }
+
 }
 catch (...)
 {
@@ -4145,9 +4148,9 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             }
 
             /// Above the `force` branch below: a forced round must not drop another part's kills either.
-            if (hasUnsettledStagedBitmaps(*part))
+            if (hasUnsettledBitmaps(*part))
             {
-                part->removal_state.store(DataPartRemovalState::HAS_UNSETTLED_STAGED_BITMAPS, std::memory_order_relaxed);
+                part->removal_state.store(DataPartRemovalState::HAS_UNSETTLED_BITMAPS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }
@@ -4241,6 +4244,9 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         }
     }
 
+    /// The parts are out of the set now, so nothing can resolve them and nothing will consult what
+    /// the unique-key bitmap store still has indexed under their names. Outside the lock above,
+    /// because the store must not be entered under the exclusive side of `data_parts_mutex`.
     dropUniqueKeyBitmaps(parts);
 
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
@@ -4612,7 +4618,7 @@ UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
     return *unique_key_txn_manager;
 }
 
-bool MergeTreeData::hasUnsettledStagedBitmaps(const IMergeTreeDataPart & part) const
+bool MergeTreeData::hasUnsettledBitmaps(const IMergeTreeDataPart & part) const
 {
     if (!unique_key_txn_manager)
         return false;
@@ -4622,42 +4628,6 @@ bool MergeTreeData::hasUnsettledStagedBitmaps(const IMergeTreeDataPart & part) c
         return false;
 
     return !uniqueKeyTxnManager().bitmapStore().stagedTargetsOf(part.info).empty();
-}
-
-void MergeTreeData::settleOutstandingStagedBitmaps()
-{
-    if (!unique_key_txn_manager)
-        return;
-
-    /// Active too: such a part blocks its own retirement, and nothing else comes back for it.
-    DataPartsVector owners;
-    {
-        auto lock = readLockParts();
-        for (const auto state : {DataPartState::Active, DataPartState::Outdated})
-            for (const auto & part : getDataPartsStateRange(state))
-                if (hasUnsettledStagedBitmaps(*part))
-                    owners.push_back(part);
-    }
-
-    for (const auto & part : owners)
-    {
-        try
-        {
-            const auto report = uniqueKeyTxnManager().settleStagedBitmaps(*part);
-
-            /// Deferred alone is nobody's problem: the next round retries, and a part whose
-            /// transaction is still committing defers every round until the commit lands.
-            if (report.failed)
-                LOG_WARNING(log, "Part {} could not settle {} staged delete bitmap(s)", part->name, report.failed);
-            else
-                LOG_TRACE(log, "Part {}: settled {}, deferred {}", part->name, report.settled, report.deferred);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log,
-                fmt::format("Could not settle the staged delete bitmaps of part {}", part->name));
-        }
-    }
 }
 
 void MergeTreeData::loadUniqueKeyBitmaps(const DataPartPtr & part)
@@ -4681,6 +4651,110 @@ void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
         uniqueKeyTxnManager().bitmapStore().dropPart(*part);
         LOG_TRACE(log, "Dropped the delete bitmaps of part {}", part->name);
     }
+}
+
+void MergeTreeData::startUniqueKeyGCTaskIfNeeded()
+{
+    if (unique_key_gc_task)
+        unique_key_gc_task->deactivate();
+
+    if (!hasUniqueKey())
+        return;
+
+    unique_key_gc_task = getContext()->getSchedulePool()->createTask(
+        getStorageID(), "MergeTreeData::uniqueKeyGC",
+        [this]
+        {
+            const UInt64 gc_interval_ms = (*getSettings())[MergeTreeSetting::unique_key_gc_interval_seconds].totalMilliseconds();
+
+            /// Zero disables reclamation only. Settling is not reclamation: a part holding a staged
+            /// bitmap is held back from removal, so stopping the settle would pin its owner for the
+            /// table's lifetime.
+            /// TODO(unique-key): give the settle its own schedule
+            if (gc_interval_ms)
+            {
+                try
+                {
+                    runUniqueKeyGCRound();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Background delete-bitmap GC round failed");
+                }
+            }
+
+            try
+            {
+                runUniqueKeySettleRound();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Background delete-bitmap settle round failed");
+            }
+
+            /// Keep ticking for the settle when reclamation is off, but never with no delay.
+            unique_key_gc_task->scheduleAfter(gc_interval_ms ? gc_interval_ms : 1000);
+        });
+    unique_key_gc_task->activateAndSchedule();
+}
+
+void MergeTreeData::runUniqueKeyGCRound() const
+{
+    std::vector<MergeTreePartInfo> part_infos;
+    {
+        auto parts_lock = readLockParts();
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+            part_infos.push_back(part->info);
+    }
+
+    if (part_infos.empty())
+        return;
+
+    uniqueKeyTxnManager().runGCRound(part_infos);
+}
+
+void MergeTreeData::runUniqueKeySettleRound() const
+{
+    if (!unique_key_txn_manager || !isStorageWritable())
+        return;
+
+    DataPartsVector owners;
+    {
+        auto parts_lock = readLockParts();
+        for (const auto & owner_info : uniqueKeyTxnManager().bitmapStore().stagedOwners())
+        {
+            /// Outdated too: those are the ones `grabOldParts` is holding back, and nothing else
+            /// comes back for them. A part already out of the set is `dropPart`'s business.
+            if (auto owner = getPartIfExistsUnlocked(
+                    owner_info, {DataPartState::Active, DataPartState::Outdated}, parts_lock))
+                owners.push_back(std::move(owner));
+        }
+    }
+
+    if (owners.empty())
+        return;
+
+    IBitmapStore::SettleReport report;
+    for (const auto & owner : owners)
+    {
+        try
+        {
+            report.add(uniqueKeyTxnManager().settleStagedBitmaps(*owner));
+        }
+        catch (...)
+        {
+            /// Not fail-closed: a staged bitmap left in place is still readable through its owner,
+            /// and the next round retries it.
+            tryLogCurrentException(log,
+                fmt::format("Could not settle the staged delete bitmaps of part '{}'", owner->name));
+        }
+    }
+
+    LOG_TRACE(log, "Settle round over {} owner(s): {} settled, {} deferred, {} failed",
+        owners.size(), report.settled, report.deferred, report.failed);
+
+    if (report.failed)
+        LOG_WARNING(log, "{} staged delete bitmap(s) could not be settled", report.failed);
 }
 
 size_t MergeTreeData::clearEmptyParts()
@@ -4712,7 +4786,7 @@ size_t MergeTreeData::clearEmptyParts()
                 continue;
 
             /// Dropping it would only move it to Outdated, where `grabOldParts` holds it back.
-            if (hasUnsettledStagedBitmaps(*part))
+            if (hasUnsettledBitmaps(*part))
                 continue;
 
             parts_names_to_drop.emplace_back(part->name);
@@ -6497,6 +6571,9 @@ void MergeTreeData::changeSettings(
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
+        bool has_unique_key_gc_interval_changed
+            = (*storage_settings.get())[MergeTreeSetting::unique_key_gc_interval_seconds].totalSeconds() != (*copy)[MergeTreeSetting::unique_key_gc_interval_seconds].totalSeconds();
+
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -6525,6 +6602,9 @@ void MergeTreeData::changeSettings(
         {
             startStatisticsCache();
         }
+
+        if (has_unique_key_gc_interval_changed)
+            startUniqueKeyGCTaskIfNeeded();
     }
 }
 
@@ -7193,6 +7273,7 @@ void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & 
 {
     LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+
     part_to_detach->makeCloneInDetached("unexpected", metadata_snapshot, /*disk_transaction*/ {});
 
     auto lock = lockParts();
@@ -7203,6 +7284,16 @@ void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & 
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix)
 {
+    /// Before anything is renamed or dropped. This path leaves the part set without passing through
+    /// Outdated, so `grabOldParts` never gets to hold it back, and a staged bitmap inside it is the
+    /// only copy of kills belonging to another part that is still healthy.
+    /// TODO(unique-key): an operator escape for a part that can never be settled.
+    if (hasUnsettledBitmaps(*part_to_detach))
+        throw Exception(ErrorCodes::ABORTED,
+            "Refusing to detach part {} of table {}: it still holds staged delete bitmaps for other "
+            "parts, and `detached/` puts them out of reach of every read and every settle",
+            part_to_detach->name, getStorageID().getNameForLogs());
+
     if (prefix.empty())
         LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
     else
@@ -7271,6 +7362,8 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
 
+    /// This path skips `removePartsFinally`, so it owes the reclaim itself. Safe under the parts
+    /// lock: forgetting an index entry resolves no part.
     dropUniqueKeyBitmaps({part});
 }
 

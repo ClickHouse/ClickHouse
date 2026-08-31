@@ -42,6 +42,9 @@ public:
 
     void registerStagedBitmaps(const MergeTreePartInfo & owner, const std::vector<MergeTreePartInfo> & targets) override;
     std::vector<MergeTreePartInfo> stagedTargetsOf(const MergeTreePartInfo & owner) const override;
+
+    std::vector<MergeTreePartInfo> stagedOwners() const override;
+
     SettleReport settleStagedBitmaps(
         const MergeTreePartInfo & owner, const std::vector<MergeTreePartInfo> & targets, CSN csn) override;
     SettleReport settleStagedBitmaps(const MergeTreePartInfo & owner, CSN csn) override;
@@ -68,6 +71,11 @@ private:
     struct PartEntry
     {
         std::mutex mutex;
+
+        /// The publish of one of this part's staged bitmaps, so two settlers of one version cannot
+        /// both stage through `<name>.tmp`. Not `mutex`: that one is on the read path.
+        /// Order is settle_mutex -> mutex.
+        std::mutex settle_mutex;
         /// Ascending csns of the settled files in the part's own directory.
         std::vector<CSN> settled;
 

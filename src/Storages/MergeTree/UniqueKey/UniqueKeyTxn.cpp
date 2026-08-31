@@ -78,10 +78,8 @@ std::mutex & UniqueKeyTxnManager::partitionLock(const String & partition_id)
     return partition_locks[partition_id];
 }
 
-size_t UniqueKeyTxnManager::runGCRound(const String & partition_id, const std::vector<MergeTreePartInfo> & parts)
+size_t UniqueKeyTxnManager::runGCRound(const std::vector<MergeTreePartInfo> & parts)
 {
-    PartitionWriteGuard write_guard(partitionLock(partition_id));
-
     const CSN oldest_snapshot = TransactionLog::instance().getOldestSnapshot();
 
     size_t reclaimed = 0;
@@ -203,42 +201,6 @@ IBitmapStore::SettleReport UniqueKeyTxnManager::settleStagedBitmaps(const IMerge
         return {.deferred = bitmap_store->stagedTargetsOf(part.info).size()};
 
     return bitmap_store->settleStagedBitmaps(part.info, csn);
-}
-
-void UniqueKeyTxnManager::runRecovery(const std::vector<MergeTreeDataPartPtr> & parts)
-{
-    auto component_guard = Coordination::setCurrentComponent("UniqueKeyTxnManager::runRecovery");
-
-    IBitmapStore::SettleReport total;
-    size_t parts_with_work = 0;
-
-    for (const auto & part : parts)
-    {
-        try
-        {
-            const auto report = settleStagedBitmaps(*part);
-            if (report.anyOutstanding())
-                ++parts_with_work;
-            total.add(report);
-        }
-        catch (...)
-        {
-            ++parts_with_work;
-            /// Not fail-closed: a staged bitmap left in place is still readable through its
-            /// owner, and the next settle retries it.
-            tryLogCurrentException(log,
-                fmt::format("Txn-state recovery: could not reconcile sidecars of part '{}'",
-                    part->name));
-        }
-    }
-
-    /// INFO and not TRACE: a table that had staged bitmaps left over is recovering from an unclean
-    /// stop, which an operator reading the startup log should see without having raised the level.
-    /// Silent when there was nothing to do, which is every ordinary startup.
-    if (parts_with_work)
-        LOG_INFO(log,
-            "Txn-state recovery over {} part(s): {} still owe a staged bitmap ({} deferred, {} failed)",
-            parts.size(), parts_with_work, total.deferred, total.failed);
 }
 
 }

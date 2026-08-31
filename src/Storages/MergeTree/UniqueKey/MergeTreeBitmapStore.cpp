@@ -147,6 +147,7 @@ void MergeTreeBitmapStore::dropPart(const IMergeTreeDataPart & part)
         std::lock_guard lock(entries_mutex);
         if (const auto it = entries.find(part.info); it != entries.end())
         {
+            /// Held past the erase so the check below runs with `entries_mutex` released.
             dropped = it->second;
             entries.erase(it);
         }
@@ -198,10 +199,15 @@ std::vector<CSN> MergeTreeBitmapStore::loadPart(const MergeTreePartInfo & part, 
                 const auto target = MergeTreePartInfo::tryParsePartName(
                     file.staged_for_target, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
                 if (target)
+                {
                     staged_targets.push_back(*target);
+                }
                 else
-                    LOG_ERROR(log, "Staged bitmap '{}' in part '{}' does not name a parseable part; "
-                        "reads of that target will not find it", file.name, part.getPartNameV1());
+                {
+                    LOG_ERROR(log, "Staged bitmap '{}' in part '{}' does not name a parseable "
+                        "part, so reads of that target will not find it",
+                        file.name, part.getPartNameV1());
+                }
             }
             else if (std::find(entry->settled.begin(), entry->settled.end(), file.version) == entry->settled.end())
             {
@@ -357,6 +363,21 @@ std::vector<MergeTreePartInfo> MergeTreeBitmapStore::stagedTargetsOf(const Merge
     return entry->staged_for;
 }
 
+std::vector<MergeTreePartInfo> MergeTreeBitmapStore::stagedOwners() const
+{
+    /// entries_mutex -> PartEntry::mutex, the one direction this file locks in.
+    std::vector<MergeTreePartInfo> owners;
+    std::lock_guard lock(entries_mutex);
+    for (const auto & [info, entry] : entries)
+    {
+        std::lock_guard entry_lock(entry->mutex);
+        if (!entry->staged_for.empty())
+            owners.push_back(info);
+    }
+
+    return owners;
+}
+
 IBitmapStore::SettleReport MergeTreeBitmapStore::settleStagedBitmaps(const MergeTreePartInfo & owner_info, CSN csn)
 {
     return settleStagedBitmaps(owner_info, stagedTargetsOf(owner_info), csn);
@@ -406,10 +427,14 @@ MergeTreeBitmapStore::SettleOutcome MergeTreeBitmapStore::settleOneStagedFile(
 {
     try
     {
-        /// Resolved before any entry lock: `findPart` takes the table's own locks
+        /// Resolved before the settle lock: `findPart` takes the table's own locks.
         const auto target = findPart(target_info);
         if (!target)
             return sweepOrphanTarget(owner, target_info);
+
+        /// Keyed on the owner: the published name comes from its csn.
+        const auto owner_entry = getOrCreateEntry(owner.info);
+        std::lock_guard settle_lock(owner_entry->settle_mutex);
 
         /// Before the publish, so the staged copy is still the durable record when the caller sees the failure
         fiu_do_on(FailPoints::unique_key_settle_staged_bitmap_fail,
@@ -430,10 +455,9 @@ MergeTreeBitmapStore::SettleOutcome MergeTreeBitmapStore::settleOneStagedFile(
 MergeTreeBitmapStore::SettleOutcome MergeTreeBitmapStore::sweepOrphanTarget(
     const IMergeTreeDataPart & owner, const MergeTreePartInfo & target)
 {
-    /// "Reclaimed" and "not loaded yet" are indistinguishable here, so only UNLINKING waits for the
-    /// load -- including a readonly table, whose Outdated set is never scheduled and so never becomes
-    /// complete. Deferring forever is correct there: nothing may be unlinked from such a table.
-    if (!data.outdatedPartsSetIsComplete())
+    /// "Reclaimed" and "not loaded yet" are indistinguishable here, so only UNLINKING waits for
+    /// the load.
+    if (!data.outdated_data_parts_loading_finished.load(std::memory_order_relaxed))
         return SettleOutcome::Deferred;
 
     removeStagedOwner(owner.info, target);
@@ -453,6 +477,8 @@ MergeTreeBitmapStore::SettleOutcome MergeTreeBitmapStore::publishStagedFile(
     const IMergeTreeDataPart & target,
     CSN csn)
 {
+    /// A reader can resolve to the staged file between this and the index update below;
+    /// `readVersion` falls through to the published version, which is what keeps that safe.
     DeleteBitmapFileOps::settleStagedFile(
         mutableStorage(owner), DeleteBitmap::fileNameForStagedTarget(partNameV1(target)),
         mutableStorage(target), csn, partNameV1(owner));

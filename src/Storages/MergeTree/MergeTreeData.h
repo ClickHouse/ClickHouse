@@ -1046,23 +1046,10 @@ public:
 
     size_t clearEmptyParts();
 
-    /// True only when the in-memory Outdated set is the whole Outdated set on disk. The load flag
-    /// alone cannot say that: it reads `true` both when the asynchronous load finished and when it
-    /// was never scheduled (readonly disks / `table_readonly`), and in the latter case the set is
-    /// absent rather than empty. Any decision to DESTROY state on the strength of "this part does
-    /// not resolve" has to wait for this.
-    bool outdatedPartsSetIsComplete() const
-    {
-        return outdated_data_parts_loading_finished.load(std::memory_order_relaxed)
-            && !outdated_data_parts_loading_skipped.load(std::memory_order_relaxed);
-    }
-
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
     /// Index-only -- no part lookup, no i/o -- so it is safe to call under the part-set lock.
-    bool hasUnsettledStagedBitmaps(const IMergeTreeDataPart & part) const;
-
-    void settleOutstandingStagedBitmaps();
+    bool hasUnsettledBitmaps(const IMergeTreeDataPart & part) const;
 
     /// Announce a part's directory to the bitmap store, which indexes the sidecars in it.
     void loadUniqueKeyBitmaps(const DataPartPtr & part);
@@ -1649,6 +1636,7 @@ protected:
     friend class VersionMetadataOnKeeper; // for access to log
     friend class MutationsState; // for access to log
     friend class UniqueKeyDenseIndexOps; // for access to log + data_parts_by_info
+    friend class MergeTreeBitmapStore; // for access to outdated_data_parts_loading_finished
 
     bool require_part_metadata;
 
@@ -2157,17 +2145,12 @@ protected:
     std::atomic_bool outdated_data_parts_loading_finished = true;
     std::atomic_bool unexpected_data_parts_loading_finished = true;
 
-    /// Set by `loadDataParts`; read through `outdatedPartsSetIsComplete()`.
-    std::atomic_bool outdated_data_parts_loading_skipped = false;
-    /// The writability `loadDataParts` decided for unique-key sidecar maintenance: false on static
-    /// storage, readonly disks, or `table_readonly`. Recorded rather than recomputed, so post-load
-    /// recovery cannot disagree with the load-time sweep. False until that decision is made.
-    bool uniqueKeyStorageIsWritable() const
+    bool isStorageWritable() const
     {
-        return unique_key_storage_is_writable.load(std::memory_order_relaxed);
+        return storage_is_writable.load(std::memory_order_relaxed);
     }
 
-    std::atomic_bool unique_key_storage_is_writable = false;
+    std::atomic_bool storage_is_writable = false;
 
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
@@ -2182,6 +2165,17 @@ protected:
     std::mutex refresh_parts_mutex;
 
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
+
+    /// Null on a table without a unique key, or when `unique_key_gc_interval_seconds = 0`.
+    BackgroundSchedulePoolTaskHolder unique_key_gc_task;
+
+    /// Periodic GC of superseded delete-bitmap sidecar versions. Mirrors `refresh_stats_task`:
+    /// started from `startup` and `changeSettings`, drained by `StorageMergeTree::shutdown`.
+    void startUniqueKeyGCTaskIfNeeded();
+    void runUniqueKeyGCRound() const;
+
+    /// Publish staged bitmaps into their targets.
+    void runUniqueKeySettleRound() const;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;

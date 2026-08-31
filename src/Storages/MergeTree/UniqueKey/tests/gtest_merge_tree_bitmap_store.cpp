@@ -276,7 +276,6 @@ TEST(MergeTreeBitmapStoreTest, SettleForAMissingTargetUnlinksTheStagedFile)
 
     /// The target is in no state at all and the part set is complete, so "reclaimed" is the only
     /// reading left: the bitmap is unlinked rather than carried by an owner nothing can resolve.
-    ASSERT_TRUE(tbl.table->outdatedPartsSetIsComplete());
     const auto report = store.settleStagedBitmaps(owner->info, {missing_target}, /*csn=*/5);
     EXPECT_EQ(report.settled, 1u);
     EXPECT_FALSE(report.anyOutstanding());
@@ -367,8 +366,8 @@ TEST(MergeTreeBitmapStoreTest, StagedOwnerThatLeftThePartSetIsRejected)
 
 #endif
 
-/// Goes red if the `hasUnsettledStagedBitmaps` guard in `grabOldParts` is dropped. No retire path
-/// reaches this state today -- they all settle first or refuse -- so the test builds it directly.
+/// Goes red if the `hasUnsettledBitmaps` guard in `grabOldParts` is dropped: a retire leaves the
+/// owner Outdated while it still owes, and only that guard keeps it from being removed.
 TEST(MergeTreeBitmapStoreTest, GrabOldPartsHoldsBackAPartWithUnsettledStagedBitmaps)
 {
     TableFixture tbl{/*with_unique_key=*/ true};
@@ -393,7 +392,7 @@ TEST(MergeTreeBitmapStoreTest, GrabOldPartsHoldsBackAPartWithUnsettledStagedBitm
 
     const auto held = tbl.table->getPartIfExists(owner_info, {MergeTreeData::DataPartState::Outdated});
     ASSERT_NE(held, nullptr);
-    EXPECT_EQ(held->removal_state.load(), DataPartRemovalState::HAS_UNSETTLED_STAGED_BITMAPS);
+    EXPECT_EQ(held->removal_state.load(), DataPartRemovalState::HAS_UNSETTLED_BITMAPS);
 }
 
 /// Goes red if the guard over-triggers. It does NOT catch the guard being dropped -- read it with
@@ -451,3 +450,4 @@ TEST(MergeTreeBitmapStoreTest, SettleCountsEveryTargetFailedWhenTheOwnerIsGone)
     EXPECT_EQ(report.settled, 0u);
     EXPECT_TRUE(report.anyOutstanding());
 }
+

@@ -193,6 +193,8 @@ private:
     using UnknownStateList = std::vector<std::pair<MergeTreeTransactionPtr, scope_guard>>;
     UnknownStateList unknown_state_list TSA_GUARDED_BY(running_list_mutex);
     UnknownStateList unknown_state_list_loaded TSA_GUARDED_BY(running_list_mutex);
+
+    bool unknown_state_finalizing TSA_GUARDED_BY(running_list_mutex) = false;
     /// Ordered list of snapshots that are currently used by some transactions. Needed for background cleanup.
     std::list<CSN> snapshots_in_use TSA_GUARDED_BY(running_list_mutex);
 

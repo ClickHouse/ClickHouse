@@ -88,13 +88,8 @@ public:
     /// Settle every bitmap staged inside `part`, into its targets, at `part`'s own `creation_csn`.
     IBitmapStore::SettleReport settleStagedBitmaps(const IMergeTreeDataPart & part);
 
-    /// Run a garbage collection round for the given partition and its parts.
-    size_t runGCRound(const String & partition_id, const std::vector<MergeTreePartInfo> & parts);
-
-    /// Publish every part's staged bitmaps into their targets at the owner's csn. Runs once at
-    /// table load, over the whole part set -- an owner still without a csn waits for the next
-    /// settle, and a rolled-back owner's bitmaps go with its directory.
-    void runRecovery(const std::vector<MergeTreeDataPartPtr> & parts);
+    /// Reclaim delete-bitmap versions of `parts` that no live snapshot can still read.
+    size_t runGCRound(const std::vector<MergeTreePartInfo> & parts);
 
 private:
     /// The pessimistic write lock for a partition

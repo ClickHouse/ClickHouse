@@ -233,17 +233,8 @@ StorageMergeTree::StorageMergeTree(
                         "You must either clear directory by hand or use ATTACH TABLE instead "
                         "of CREATE TABLE if you need to use those parts");
 
-    /// After the stale-data guard above, because recovery is not read-only: it unlinks
-    /// delete-bitmap sidecars, and a plain CREATE over an existing data directory must be
-    /// rejected before that happens.
-    ///
-    /// Gated on `uniqueKeyStorageIsWritable()`, the same decision the load-time SST sweep uses: on
-    /// readonly storage `loadDataParts` leaves the Outdated set unloaded, so a staged bitmap's
-    /// target would look reclaimed and its sidecar would be unlinked from a table that promised not
-    /// to write.
-    if (hasUniqueKey() && uniqueKeyStorageIsWritable())
-        uniqueKeyTxnManager().runRecovery(
-            getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}));
+    if (hasUniqueKey())
+        runUniqueKeySettleRound();
 
     increment.set(getMaxBlockNumber());
 
@@ -276,6 +267,7 @@ void StorageMergeTree::startup()
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
+        startUniqueKeyGCTaskIfNeeded();
     }
     catch (...)
     {
@@ -325,6 +317,9 @@ void StorageMergeTree::shutdown(bool)
 
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
+
+    if (unique_key_gc_task)
+        unique_key_gc_task->deactivate();
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
@@ -2359,10 +2354,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
 size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
 {
-    /// Before the grab, which holds those parts back. The only retry of a settle that failed or
-    /// deferred after the commit that staged it.
-    settleOutstandingStagedBitmaps();
-
     DataPartsVector parts_to_remove = grabOldParts(force);
     if (parts_to_remove.empty())
         return 0;

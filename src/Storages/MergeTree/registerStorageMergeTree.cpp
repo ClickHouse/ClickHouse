@@ -765,6 +765,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "Set the session setting `allow_experimental_unique_key = 1` to enable it.");
             }
 
+            /// Plain MergeTree only
+            if (args.mode <= LoadingStrictnessLevel::CREATE && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNIQUE KEY is only supported on plain MergeTree, not on {}",
+                    args.engine_name);
+            }
+
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
