@@ -122,6 +122,9 @@ private:
             ProfileEventLimit(const ProfileEventLimit & src) { *this = src; }
             ProfileEventLimit & operator =(const ProfileEventLimit & src)
             {
+                if (this == &src)
+                    return *this;
+
                 event = src.event;
                 max = src.max;
                 used.store(src.used.load());

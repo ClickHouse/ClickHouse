@@ -18,6 +18,7 @@
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
+#include <IO/ReadHelpers.h>
 #include <Core/Settings.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -741,9 +742,12 @@ namespace
                     continue;
                 }
 
-                auto value = config.getUInt64(interval_config + "." + limit_key, 0);
-                if (value)
-                    limits.profile_events_max[limit_key] = value;
+                /// Parse the value with the same rules as the DDL path, so that byte- and
+                /// time-valued events accept the size suffixes (e.g. `100G`). An explicitly
+                /// written tag always creates an entry, even with the value 0, which means
+                /// "track this event but do not limit it".
+                auto value = trim(config.getString(interval_config + "." + limit_key, "0"), isWhitespaceASCII);
+                limits.profile_events_max[limit_key] = parseWithSizeSuffix<QuotaValue>(value);
             }
         }
 

@@ -1831,3 +1831,37 @@ def test_quota_keyed_by_normalized_query_hash_from_users_xml():
 
     # Restore a clean config so later periodic reloads do not fail.
     copy_quota_xml("no_quotas.xml")
+
+
+def test_quota_on_profile_events_from_users_xml():
+    # Any tag inside <interval> which names a profile event defines a limit over it.
+    # The value is parsed with the same rules as in `CREATE QUOTA`, so size suffixes work,
+    # and an explicitly written 0 means "track this event but do not limit it" - the same
+    # as for the predefined resource types.
+    copy_quota_xml("profile_events_limits.xml")
+    assert (
+        instance.query(
+            "SELECT max_profile_events FROM system.quota_limits WHERE quota_name = 'myQuota'"
+        )
+        == "{'NetworkSendBytes':1073741824,'SelectQuery':0}\n"
+    )
+
+    # An unknown name is ignored (it only produces a warning in the log), so that a typo
+    # cannot break the server startup.
+    assert (
+        instance.query(
+            "SELECT mapContains(max_profile_events, 'NoSuchProfileEvent') FROM system.quota_limits WHERE quota_name = 'myQuota'"
+        )
+        == "0\n"
+    )
+
+    # The tracked events are reported in the usage tables even when they are not limited.
+    assert (
+        instance.query(
+            "SELECT mapKeys(max_profile_events) FROM system.quota_usage WHERE quota_name = 'myQuota'"
+        )
+        == "['NetworkSendBytes','SelectQuery']\n"
+    )
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")
