@@ -31,18 +31,18 @@ hello, world
 -- Test extractAllGroups with nullable
 [['abc','111'],['def','222']]
 []
-[]
-[]
+\N
+\N
 -- Test extractAllGroupsHorizontal with nullable
 [['abc','def'],['111','222']]
 [[],[]]
-[[],[]]
-[[],[]]
+\N
+\N
 -- Test extractAllGroupsVertical with nullable
 [['abc','111'],['def','222']]
 []
-[]
-[]
+\N
+\N
 -- Test ngrams with nullable
 ['Cli','lic','ick','ckH','kHo','Hou','ous','use']
 []

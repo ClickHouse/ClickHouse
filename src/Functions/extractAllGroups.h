@@ -81,6 +81,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(arguments[0].type.get());
+            nullable && isNothing(*nullable->getNestedType()))
+            return arguments[0].type;
+
         auto is_string_or_fixed_string_nullable = [](const IDataType & type) -> bool
         {
             if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
@@ -98,7 +102,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
@@ -109,10 +113,10 @@ public:
         if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column_haystack.get()))
         {
             column_haystack = col_nullable->getNestedColumnPtr();
-            // Preserve legacy behavior for NULL which is represented as Nothing and resulted in a call to
-            // ColumnNothing::getDataAt(size_t) which returns an empty string_view.
-            if (!isNothing(column_haystack->getDataType()))
-                null_map = &col_nullable->getNullMapData();
+            /// Preserve the default NULL-literal short circuit without evaluating the regular expression.
+            if (isNothing(column_haystack->getDataType()))
+                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+            null_map = &col_nullable->getNullMapData();
         }
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
