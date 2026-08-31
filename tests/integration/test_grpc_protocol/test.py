@@ -833,10 +833,16 @@ def test_cancel_latched_timeout_after_distinct_grpc():
         ## Now send the real gRPC `Cancel` while the soft timeout is already latched, then release the
         ## paused scan. The recorded `cancel_reason` turns the cancel into a hard abort (the
         ## `isCancelled() && !isCancelledBySoftTimeout()` check) instead of a soft-timeout continuation.
-        ## Ordering the release right after the cancel is safe: the resumed pre-latched scan takes well
-        ## over a second to consume the remaining rows, while the server observes the cancel within one
-        ## `interactive_delay` poll period of the stream write, so the two always overlap.
+        ##
+        ## The 1-second sleep between the cancel and the NOTIFY is required: the cancel must propagate
+        ## through the gRPC async-read callback -> `want_to_cancel` -> main-thread `isQueryCancelled()`
+        ## -> `cancelQuery(CANCELLED_BY_USER)` (which sets `cancel_reason`) BEFORE the NOTIFY releases the
+        ## transform. On ARM this propagation can take up to ~100 ms (`interactive_delay`), and the TCP
+        ## NOTIFY arrives on a separate thread in <5 ms; without the sleep the NOTIFY wins the race on
+        ## slower machines and the transform sees `cancel_reason == UNDEFINED` (soft timeout) instead of
+        ## `CANCELLED_BY_USER` (hard abort).
         cancel_event.set()
+        time.sleep(1)
 
         node.query("SYSTEM NOTIFY FAILPOINT distinct_transform_null_pause")
     finally:
