@@ -7,36 +7,36 @@
       "versionId": "e1eaf2ec1e2f85b8419d7b132e370f27c240dfc1938fcf27f60d9b10f0f11751",
       "translations": {
         "zh": {
-          "updatedAt": "2026-08-31T15:38:55.043Z",
+          "updatedAt": "2026-08-31T16:11:54.794Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-31T15:38:54.398Z",
+          "updatedAt": "2026-08-31T16:11:54.253Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-31T15:38:55.454Z",
+          "updatedAt": "2026-08-31T16:11:55.138Z",
           "fileName": "docs.json",
-          "postProcessHash": "b254c6dc28d4c31ad42579af5039b182e62428b7e09936c02eccf3e3cad232bd"
+          "postProcessHash": "468aac88b1d402b19bdc586143a6a1fee42af29432f3ac1f2184ec7ff9f4a518"
         },
         "ar": {
-          "updatedAt": "2026-08-31T15:38:55.241Z",
+          "updatedAt": "2026-08-31T16:11:54.965Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-31T15:38:54.828Z",
+          "updatedAt": "2026-08-31T16:11:54.619Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-31T15:38:53.791Z",
+          "updatedAt": "2026-08-31T16:11:53.857Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-31T15:38:54.621Z",
+          "updatedAt": "2026-08-31T16:11:54.436Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-31T15:38:54.154Z",
+          "updatedAt": "2026-08-31T16:11:54.049Z",
           "fileName": "docs.json"
         }
       },
@@ -35535,51 +35535,50 @@
     },
     {
       "fileId": "422b2b192f475b4ad7e855ed907f36f309748f1d33dad18d3c8a276e0f85f15f",
-      "versionId": "f772970fed82c85fbef8c0f25a80fe9ebe63363af6057392e76c0eccea900629",
+      "versionId": "c772602411e464c9c60604078a9dc61eea9966e8cb44ccdce8e6716c8ce9ed11",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.479Z",
-          "fileName": "es/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-          "postProcessHash": "60b219ae5f8a2a9cb591ee941ad637fd788468255050b7b27fc3890de31037b5"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.479Z",
-          "fileName": "ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-          "postProcessHash": "d4656a38ddfcb3ab0e7c4d936e0c1fcfc3f4dcb52804c0e39bf744acbf93e22e"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.480Z",
-          "fileName": "ko/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-          "postProcessHash": "dcfa1e6e86b18c66035bad2029fcf605ea291fda193475307b37f47a250c7716"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.480Z",
+          "updatedAt": "2026-08-31T16:12:00.743Z",
           "fileName": "pt-BR/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-          "postProcessHash": "203cbb0c3fd454472cce00440e2e4626012e8701b4dc7d9eb0f4cdd6d9797e04"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.480Z",
-          "fileName": "ru/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-          "postProcessHash": "d377e4e8a2511fce8a465ad339191bf27cbb7ade13469efeaef02e9b8516fb79"
+          "postProcessHash": "6d6fe8e4e1e4b1ccf7b511ad0b431f9713174e0384d9b82caa3b48f0447513ca"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.480Z",
+          "updatedAt": "2026-08-31T16:12:00.744Z",
           "fileName": "zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-          "postProcessHash": "31461828fc79b8fce0a7737d4df104b6dd0b6bb07eb11c75cf619b6f89b66d34"
+          "postProcessHash": "c0c87c0f3d32269800a248cdf70798496ff03bf7c6fee7fb82048f245327c20f"
+        },
+        "ru": {
+          "updatedAt": "2026-08-31T16:12:00.746Z",
+          "fileName": "ru/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
+          "postProcessHash": "e0794b94f707a212c049ec0e98100858e73c97d4fcff114cd9d6f1e5722fd723"
+        },
+        "es": {
+          "updatedAt": "2026-08-31T16:12:00.747Z",
+          "fileName": "es/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
+          "postProcessHash": "5eee7f4067d798daf9766ac84637e5ba1455d7d81fa9aef5505133177b2e5fb3"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.480Z",
+          "updatedAt": "2026-08-31T16:12:00.748Z",
           "fileName": "ar/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-          "postProcessHash": "39b679c0329ceef0ae4e719a86daea5e5fe91030dde5ba20536678b69961065d"
+          "postProcessHash": "98163098636dcc80f5fa2131a1b4d4f33e6eb505fab7986e36ce9024b3169216"
+        },
+        "ja": {
+          "updatedAt": "2026-08-31T16:12:00.749Z",
+          "fileName": "ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
+          "postProcessHash": "a95eda42ff69875b0e6b4eaeea039d28cfc8e1ac3268d58be7ade6239d893432"
+        },
+        "ko": {
+          "updatedAt": "2026-08-31T16:12:00.749Z",
+          "fileName": "ko/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
+          "postProcessHash": "dfa294652082af3803cd216d54bc924aa0e0039dc6ad1d285857d6f18967bfcd"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.480Z",
+          "updatedAt": "2026-08-31T16:12:00.750Z",
           "fileName": "fr/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-          "postProcessHash": "b1503ebb93c784f7ab44377a59f0f01ad453f9e6e21cfd9c6c5f4ab6b1f10fd4"
+          "postProcessHash": "b2011a672abf0a7afaeeb438da7fb59d2a6301cba7f3216c3f01b139d1e32802"
         }
       },
-      "fileName": "guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx",
-      "staged": false
+      "fileName": "guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer.mdx"
     },
     {
       "fileId": "054e7e57c9173764c35910e7a42c6abe1797d8f500d1a9f4e0e909669f5a79a8",
@@ -69600,51 +69599,50 @@
     },
     {
       "fileId": "57413c7e5940cf0154dcab5e5e5734cc1225da55d5e99843e6b48d0150445f65",
-      "versionId": "9b069ffc06b3c39532e7d495deb1de1a47e55c9c57d398b9501749a0e5bdb64e",
+      "versionId": "6572a4b167a978e6e179787a5c26b19381c1455ca6fec48cbf7e632184a119c2",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.706Z",
-          "fileName": "es/resources/changelogs/cloud/release-notes-index.mdx",
-          "postProcessHash": "92319873bab520e896722e2023da140c8e1f09e0fbb6297bb12fcc9a05ecb3cb"
-        },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:07.706Z",
+          "updatedAt": "2026-08-31T16:12:00.741Z",
           "fileName": "ja/resources/changelogs/cloud/release-notes-index.mdx",
-          "postProcessHash": "38094f6b89a9c404986e7063f4a1a91ffbeda505fd7ff95357b9f72dbf64f195"
+          "postProcessHash": "3afc4e7fda77f35e1ae070b1b452baa4e1023dcc5b5b2ca4ac272f0e8cceae93"
         },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.706Z",
-          "fileName": "ko/resources/changelogs/cloud/release-notes-index.mdx",
-          "postProcessHash": "f4fb572a953a5f42e2cd39b7f4d6d1e0cdb6c3a6455f9e9ae1e9abb74c12dfe4"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.707Z",
-          "fileName": "pt-BR/resources/changelogs/cloud/release-notes-index.mdx",
-          "postProcessHash": "ed995987f3a209703c75f3483fee41855097d5bf0796a885a836be59d9e4f8b2"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.707Z",
-          "fileName": "ru/resources/changelogs/cloud/release-notes-index.mdx",
-          "postProcessHash": "c1b12d95982b5bdc74a3659e6f659eb121d05f6eb651115af12b92d1778a22e8"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:07.707Z",
-          "fileName": "zh/resources/changelogs/cloud/release-notes-index.mdx",
-          "postProcessHash": "23f5343a6f64c1b7864d303a3eab4bd5983e1f09ed8fd92c12d8f7a054539da9"
+        "es": {
+          "updatedAt": "2026-08-31T16:12:00.741Z",
+          "fileName": "es/resources/changelogs/cloud/release-notes-index.mdx",
+          "postProcessHash": "4d308e9e37b786b10bb2fbe3256fba08b5a3a400cfcd71708d800bb4020104f8"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:07.707Z",
+          "updatedAt": "2026-08-31T16:12:00.742Z",
           "fileName": "ar/resources/changelogs/cloud/release-notes-index.mdx",
-          "postProcessHash": "be27303bd67f0a4a98637f62977181d776526ef1c0bae1fd01c4db4d25931eae"
+          "postProcessHash": "c9a5cfdc324f0f87b21458917acaf324865e4d6430058a9da9c419c588a728f8"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.707Z",
+          "updatedAt": "2026-08-31T16:12:00.742Z",
           "fileName": "fr/resources/changelogs/cloud/release-notes-index.mdx",
-          "postProcessHash": "1bab07cc3d6a73976604472e2868bcce6ace4ea5bbff0405114fc8e5d59a1a36"
+          "postProcessHash": "f652758823e1cdd7df9711e491e223684c6950ddf5abc68c6070eb10e54800de"
+        },
+        "ru": {
+          "updatedAt": "2026-08-31T16:12:00.744Z",
+          "fileName": "ru/resources/changelogs/cloud/release-notes-index.mdx",
+          "postProcessHash": "c6ee7697c2760ad1a6b07ab9a6660f8dae7a27fc8d89a743e335f08c7aa16b8a"
+        },
+        "zh": {
+          "updatedAt": "2026-08-31T16:12:00.745Z",
+          "fileName": "zh/resources/changelogs/cloud/release-notes-index.mdx",
+          "postProcessHash": "8b0ff9489993a6834653513381afa5bf57ef5de09b64125fe516083d6ae99332"
+        },
+        "ko": {
+          "updatedAt": "2026-08-31T16:12:00.745Z",
+          "fileName": "ko/resources/changelogs/cloud/release-notes-index.mdx",
+          "postProcessHash": "25e20a258c2a14df21e64f15c7efd2ea6bce8efec5eb195c341ddc2b351fa350"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-31T16:12:00.746Z",
+          "fileName": "pt-BR/resources/changelogs/cloud/release-notes-index.mdx",
+          "postProcessHash": "720e1c1e332d1631c6c0f71f5fc34133d04fa7a53198e414846a6a7eca5a2100"
         }
       },
-      "fileName": "resources/changelogs/cloud/release-notes-index.mdx",
-      "staged": false
+      "fileName": "resources/changelogs/cloud/release-notes-index.mdx"
     },
     {
       "fileId": "ebfcb2ae41a78fe48a2df43069560a1b612021ffdc85eab8646ab49e5f1ac4df",
@@ -137433,6 +137431,53 @@
         }
       },
       "fileName": "guides/clickhouse/kusto-query-language.mdx"
+    },
+    {
+      "fileId": "df22547d93031f0ce55d5d40a8ea28255eac71c7627d95e2f1486a91b8ee61fb",
+      "versionId": "20f6adc0b5301b8e69fdd86a3ba95909f28610ac9717a9d6f2dce88d8b164c30",
+      "translations": {
+        "ru": {
+          "updatedAt": "2026-08-31T16:12:00.752Z",
+          "fileName": "ru/resources/changelogs/cloud/release-notes/26_6.mdx",
+          "postProcessHash": "9adfc02dd52095b57cb0487e8f468714cf8d0891ecf9ded1d37536e8632a4dda"
+        },
+        "ko": {
+          "updatedAt": "2026-08-31T16:12:00.753Z",
+          "fileName": "ko/resources/changelogs/cloud/release-notes/26_6.mdx",
+          "postProcessHash": "ae74dea4bcba2ae1d0254838a9152cde61e6e98efce17e31e458e797200af7b9"
+        },
+        "es": {
+          "updatedAt": "2026-08-31T16:12:00.755Z",
+          "fileName": "es/resources/changelogs/cloud/release-notes/26_6.mdx",
+          "postProcessHash": "e55704ac1efaf57cf0cb3352bc7519ddd4f545b098a445505658e1e1bfc4aada"
+        },
+        "ja": {
+          "updatedAt": "2026-08-31T16:12:00.756Z",
+          "fileName": "ja/resources/changelogs/cloud/release-notes/26_6.mdx",
+          "postProcessHash": "df21d0d829436a0468571275eb4cb1f181999b810bada1da6ea6f185c9c694f6"
+        },
+        "zh": {
+          "updatedAt": "2026-08-31T16:12:00.757Z",
+          "fileName": "zh/resources/changelogs/cloud/release-notes/26_6.mdx",
+          "postProcessHash": "176bb0ce39a173aa17ef4f2073f89a6ff25cd31f84b5948b845d9f5210b6123f"
+        },
+        "fr": {
+          "updatedAt": "2026-08-31T16:12:00.759Z",
+          "fileName": "fr/resources/changelogs/cloud/release-notes/26_6.mdx",
+          "postProcessHash": "5b2b4d46daf5f94522d5be671e6eda830efc9db929d318596ee0e837cce93531"
+        },
+        "ar": {
+          "updatedAt": "2026-08-31T16:12:00.761Z",
+          "fileName": "ar/resources/changelogs/cloud/release-notes/26_6.mdx",
+          "postProcessHash": "362514f123f6b56ca110af75073fb59aca7a5d222560d3f6afce8199033c8828"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-31T16:12:00.764Z",
+          "fileName": "pt-BR/resources/changelogs/cloud/release-notes/26_6.mdx",
+          "postProcessHash": "7fcc1974eba5a468ecbb4ee8a8a459a54c77e9be9f6b790bf7dda07a70f0d32c"
+        }
+      },
+      "fileName": "resources/changelogs/cloud/release-notes/26_6.mdx"
     }
   ]
 }
