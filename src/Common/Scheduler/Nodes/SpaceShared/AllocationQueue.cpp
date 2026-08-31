@@ -377,6 +377,8 @@ void AllocationQueue::approveIncrease()
     increase = nullptr;
 
     setIncrease();
+    if (!increase && suspended_growth && suspended_growth->memory_growth_recovery_pending)
+        scheduleActivation();
 }
 
 void AllocationQueue::approveDecrease()
@@ -509,53 +511,6 @@ void AllocationQueue::processActivation()
     {
         std::lock_guard lock(mutex);
 
-        /// A completed spill remains in eviction order until every ancestor scope can give it the
-        /// single suction slot. This prevents sibling spillers from competing for the same release.
-        const bool local_suction_exists = std::any_of(
-            running_allocations.begin(), running_allocations.end(), [](const ResourceAllocation & allocation)
-            {
-                return allocation.memory_growth_suction_priority;
-            });
-        auto ready_for_suction = std::find_if(
-            increasing_allocations.begin(), increasing_allocations.end(), [this, local_suction_exists](const ResourceAllocation & allocation)
-            {
-                if (!allocation.memory_growth_recovery_pending || allocation.memory_growth_suction_priority)
-                    return false;
-                return !local_suction_exists && canEnterSuction(allocation);
-            });
-
-        if (ready_for_suction != increasing_allocations.end())
-        {
-            ResourceAllocation & recovering = *ready_for_suction;
-            recovering.memory_growth_recovery_pending = false;
-            recovering.memory_growth_suction_priority = true;
-            suction_changed = true;
-            recovering.memory_growth_suspended = false;
-            if (suspended_growth == &recovering)
-                suspended_growth = nullptr; // Pop the eviction-queue head into suction.
-
-            const ResourceCost old_size = recovering.increase.size;
-            const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
-            if (reconciled_size != old_size)
-            {
-                increasing_allocations.erase(increasing_allocations.iterator_to(recovering));
-                running_allocations.erase(running_allocations.iterator_to(recovering));
-                recovering.increase.size = reconciled_size;
-                recovering.fair_key = recovering.allocated + reconciled_size;
-                running_allocations.insert(recovering);
-                if (reconciled_size > 0)
-                    increasing_allocations.insert(recovering);
-                else
-                {
-                    recovering.memory_growth_suction_priority = false;
-                    suction_changed = true;
-                    recovering.onGrowthPressureResolved();
-                    recovering.increaseCancelled();
-                }
-            }
-            memory_growth_suspension_changed = true;
-        }
-
         if (memory_growth_suspension_retry_requested)
         {
             /// Forced spill can change actual demand while the original request remains parked.
@@ -647,8 +602,63 @@ void AllocationQueue::processActivation()
             }
         }
 
-        // Update requests
-        if (setIncrease() || memory_growth_suspension_changed)
+        // Update requests. A completed spill enters suction only after this queue has exhausted
+        // every currently visible fitting opportunity. This preserves normal scheduling during
+        // the spill phase and makes suction the final transition before eviction.
+        bool increase_changed = setIncrease();
+        if (!increase)
+        {
+            /// A completed spill remains in eviction order until every ancestor scope can give it
+            /// the single suction slot. This prevents sibling spillers from competing for the same
+            /// release.
+            const bool local_suction_exists = std::any_of(
+                running_allocations.begin(), running_allocations.end(), [](const ResourceAllocation & allocation)
+                {
+                    return allocation.memory_growth_suction_priority;
+                });
+            auto ready_for_suction = std::find_if(
+                increasing_allocations.begin(), increasing_allocations.end(), [this, local_suction_exists](const ResourceAllocation & allocation)
+                {
+                    if (!allocation.memory_growth_recovery_pending || allocation.memory_growth_suction_priority)
+                        return false;
+                    return !local_suction_exists && canEnterSuction(allocation);
+                });
+
+            if (ready_for_suction != increasing_allocations.end())
+            {
+                ResourceAllocation & recovering = *ready_for_suction;
+                recovering.memory_growth_recovery_pending = false;
+                recovering.memory_growth_suction_priority = true;
+                suction_changed = true;
+                recovering.memory_growth_suspended = false;
+                if (suspended_growth == &recovering)
+                    suspended_growth = nullptr; // Pop the eviction-queue head into suction.
+
+                const ResourceCost old_size = recovering.increase.size;
+                const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
+                if (reconciled_size != old_size)
+                {
+                    increasing_allocations.erase(increasing_allocations.iterator_to(recovering));
+                    running_allocations.erase(running_allocations.iterator_to(recovering));
+                    recovering.increase.size = reconciled_size;
+                    recovering.fair_key = recovering.allocated + reconciled_size;
+                    running_allocations.insert(recovering);
+                    if (reconciled_size > 0)
+                        increasing_allocations.insert(recovering);
+                    else
+                    {
+                        recovering.memory_growth_suction_priority = false;
+                        suction_changed = true;
+                        recovering.onGrowthPressureResolved();
+                        recovering.increaseCancelled();
+                    }
+                }
+                memory_growth_suspension_changed = true;
+                increase_changed = setIncrease() || increase_changed;
+            }
+        }
+
+        if (increase_changed || memory_growth_suspension_changed)
         {
             update.setIncrease(increase);
             memory_growth_suspension_changed = false;
