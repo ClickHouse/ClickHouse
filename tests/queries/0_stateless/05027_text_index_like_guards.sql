@@ -43,6 +43,26 @@ SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%common%'
 -- Selective token needle: the index serves it, no bypass, correct result.
 SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%paa%' SETTINGS text_index_like_min_pattern_length = 3;
 
+-- Embedded tokens covering the whole part: every matched posting list is inline in the dictionary
+-- and already folded during the scan, so there is no read left for the bypass to save - it must
+-- not fire, and the finished union answers from the index with no large posting read.
+DROP TABLE IF EXISTS t_text_index_like_embedded;
+CREATE TABLE t_text_index_like_embedded
+(
+    id UInt64,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+-- `splitByNonAlpha` treats digits as separators, so the suffix must be a letter for the ten
+-- tokens ('fooa'..'fooj') to stay distinct.
+INSERT INTO t_text_index_like_embedded SELECT number, concat('foo', char(97 + number)) FROM numbers(10);
+
+SELECT count() FROM t_text_index_like_embedded WHERE message LIKE '%foo%'
+    SETTINGS log_comment = 'like_guards_q3', text_index_like_min_pattern_length = 3;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Q1 (rows budget): TextIndexDiscardPatternScan set; Q2 (covers every row): TextIndexDiscardPatternQueryLowSelectivity set.
@@ -65,4 +85,15 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_guards_q2';
 
+-- Q3 (all postings embedded, union covers the part): no bypass, no large posting read - the
+-- folded union itself is the answer.
+SELECT 'q3',
+    ProfileEvents['TextIndexDiscardPatternQueryLowSelectivity'] > 0 AS bypassed_low_selectivity,
+    ProfileEvents['TextIndexUsedEmbeddedPostings'] > 0 AS used_embedded,
+    ProfileEvents['TextIndexReadPostings'] = 0 AS no_postings_read
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_guards_q3';
+
+DROP TABLE t_text_index_like_embedded;
 DROP TABLE t_text_index_like_guards;
