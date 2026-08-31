@@ -358,7 +358,7 @@ function start_server()
     wait_server_ports_free
 
     counter=0
-    max_attempt=${1:-6}
+    max_attempt=${1:-12}
     until clickhouse-client --receive_timeout 30 --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
