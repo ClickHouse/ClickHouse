@@ -221,6 +221,11 @@ public:
     /// value equals the corresponding extraction function (pure syntactic-sugar identity).
     bool checkDynamicSubcolumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Materialized-view / recompression-TTL oracle (self-seeded): an incrementally-maintained MV
+    /// target equals the ground truth recomputed from the base, and a RECOMPRESS TTL merge preserves
+    /// every row (delete-TTL, which is not result-invariant, is intentionally out of scope).
+    bool checkViewTtlConsistency(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
