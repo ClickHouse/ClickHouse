@@ -1,6 +1,8 @@
 #pragma once
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
@@ -38,7 +40,15 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
+    /// Injective only for a `FixedString` argument. A `String` is NUL-padded to the target width, so
+    /// 'a' and 'a\0' both become the same `FixedString(2)`. Every value of a `FixedString(M)`, in
+    /// contrast, has the same length, so padding appends the same suffix to all of them.
+    /// A caller that passes no arguments gets no claim, because the answer depends on them.
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        return sample_columns.size() == 2 && isFixedString(*removeNullable(recursiveRemoveLowCardinality(sample_columns[0].type)));
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

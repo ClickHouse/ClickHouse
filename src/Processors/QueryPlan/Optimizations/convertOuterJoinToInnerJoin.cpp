@@ -1,5 +1,6 @@
 #include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
@@ -116,7 +117,8 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
                 if (current_node->type == ActionsDAG::ActionType::INPUT)
                     join_keys_interesting_side.insert(current_node->result_name);
 
-                if (current_node->type == ActionsDAG::ActionType::FUNCTION && current_node->function_base->isInjective({}))
+                if (current_node->type == ActionsDAG::ActionType::FUNCTION
+                    && current_node->function_base->isInjective(getFunctionArgumentColumns(*current_node)))
                 {
                     for (const auto * child : current_node->children)
                         nodes_to_process.push(child);

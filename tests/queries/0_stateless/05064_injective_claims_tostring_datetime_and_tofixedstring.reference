@@ -1,0 +1,29 @@
+ground truth
+1
+1
+uniq elimination
+1
+1
+order by truncation
+2018-10-28 02:30:00	2
+2018-10-28 02:30:00	1
+2018-10-28 02:30:00	2
+2018-10-28 02:30:00	1
+group by
+1
+1
+1
+1
+limit by
+1
+1
+1
+1
+independent window partitions
+200
+200
+1600
+1600
+a fixed-offset time zone is still injective
+1
+1
