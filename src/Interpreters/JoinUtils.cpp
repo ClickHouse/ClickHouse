@@ -234,6 +234,24 @@ DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const 
     return subtype;
 }
 
+DataTypePtr removeNullableInsideTuple(const DataTypePtr & type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (!tuple_type)
+        return type;
+
+    DataTypes elements;
+    elements.reserve(tuple_type->getElements().size());
+    for (const auto & element : tuple_type->getElements())
+        elements.push_back(removeNullableInsideTuple(removeNullable(element)));
+
+    /// `accurateCastOrNull` matches the elements of two named Tuples by name and the elements of
+    /// unnamed ones by position, so the names have to be carried over.
+    if (tuple_type->hasExplicitNames())
+        return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+    return std::make_shared<DataTypeTuple>(elements);
+}
+
 bool canBecomeNullable(const DataTypePtr & type)
 {
     bool can_be_inside = type->canBeInsideNullable();
