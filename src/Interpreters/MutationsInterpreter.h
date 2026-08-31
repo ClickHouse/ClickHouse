@@ -298,6 +298,12 @@ private:
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
+    /// The columns this mutation writes into the new part. Computed once at the end of `execute`,
+    /// where every stage exists: it is the pipeline header minus the columns that only a readonly
+    /// stage supplies. Must not be assigned earlier - a header taken while `stages` is still being
+    /// built silently omits the columns of the stages appended afterwards. Null until `execute`
+    /// runs, so that calling `getUpdatedHeader` before it fails loudly instead of returning an
+    /// empty header.
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.

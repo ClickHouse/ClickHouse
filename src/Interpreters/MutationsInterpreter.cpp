@@ -2636,46 +2636,43 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         }
     }
 
-    if (!updated_header)
+    /// A readonly stage only reads unchanged columns so that indices, projections and TTL
+    /// expressions can be recalculated - writing them into the new part would rewrite data the
+    /// mutation does not change.
+    NameSet written_by_stages;
+    NameSet readonly_stage_columns;
+    bool rewrites_whole_part = settings.return_all_columns;
+    for (const auto & stage : stages)
     {
-        /// A readonly stage only reads unchanged columns so that indices, projections and TTL
-        /// expressions can be recalculated - writing them into the new part would rewrite data the
-        /// mutation does not change.
-        NameSet written_by_stages;
-        NameSet readonly_stage_columns;
-        bool rewrites_whole_part = settings.return_all_columns;
-        for (const auto & stage : stages)
+        if (stage.is_readonly)
         {
-            if (stage.is_readonly)
-            {
-                for (const auto & [column_name, _] : stage.column_to_updated)
-                    readonly_stage_columns.insert(column_name);
-                continue;
-            }
-
-            rewrites_whole_part |= stage.affects_all_columns;
             for (const auto & [column_name, _] : stage.column_to_updated)
-                written_by_stages.insert(column_name);
+                readonly_stage_columns.insert(column_name);
+            continue;
         }
 
-        Block header = builder.getHeader();
-
-        /// Once a stage rewrites the whole part - a DELETE filter does - every column is written
-        /// against the new row set, so a column left out here would keep hardlinked files with the
-        /// old row count. Only subtract when no stage claims the whole part.
-        if (!rewrites_whole_part)
-        {
-            Block kept;
-            for (const auto & column : header)
-            {
-                if (!readonly_stage_columns.contains(column.name) || written_by_stages.contains(column.name))
-                    kept.insert(column);
-            }
-            header = std::move(kept);
-        }
-
-        updated_header = std::make_unique<Block>(std::move(header));
+        rewrites_whole_part |= stage.affects_all_columns;
+        for (const auto & [column_name, _] : stage.column_to_updated)
+            written_by_stages.insert(column_name);
     }
+
+    Block header = builder.getHeader();
+
+    /// Once a stage rewrites the whole part - a DELETE filter does - every column is written
+    /// against the new row set, so a column left out here would keep hardlinked files with the
+    /// old row count. Only subtract when no stage claims the whole part.
+    if (!rewrites_whole_part)
+    {
+        Block kept;
+        for (const auto & column : header)
+        {
+            if (!readonly_stage_columns.contains(column.name) || written_by_stages.contains(column.name))
+                kept.insert(column);
+        }
+        header = std::move(kept);
+    }
+
+    updated_header = std::make_unique<Block>(std::move(header));
 
     return builder;
 }
