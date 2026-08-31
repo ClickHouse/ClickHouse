@@ -1192,6 +1192,84 @@ def test_move_after_processing_retry_recognizes_its_own_copy(started_cluster):
     assert move_collisions() == collisions_before
 
 
+def test_move_after_processing_retry_recognizes_its_own_copy_versioned(started_cluster):
+    """The retry-meets-its-own-copy proof on a bucket with versioning enabled: the provenance then
+    also carries `clickhouse_move_source_version_id`, and the retry's HEAD of the same source
+    version must match it - exercising the stamp and the version comparison with real version ids,
+    which the unversioned CI bucket never produces.
+    """
+    from minio.versioningconfig import VersioningConfig
+    from minio.commonconfig import ENABLED
+
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    client = started_cluster.minio_client
+    client.make_bucket(bucket)
+    client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+
+    table_name = f"move_retry_versioned_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = f"{token}_retry_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    def move_collisions():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueMoveCollisions' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    collisions_before = move_collisions()
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"1,2,3\n", bucket=bucket)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        bucket=bucket,
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+    try:
+        create_mv(node, table_name, dst_table_name)
+        for _ in range(1000):
+            if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+                break
+            time.sleep(0.1)
+        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+        for _ in range(100):
+            if (
+                count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+                and count_minio_objects(started_cluster, bucket, files_path) == 0
+            ):
+                break
+            time.sleep(0.1)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert count_minio_objects(started_cluster, bucket, files_path) == 0
+    assert move_collisions() == collisions_before
+
+    # The guarded copy stamped the version id, so the retry matched it rather than only the tuple.
+    moved = client.stat_object(bucket, f"{processed_prefix}/{file_name}")
+    metadata_keys = [k.lower() for k in (moved.metadata or {})]
+    assert any(k.endswith("clickhouse_move_source_version_id") for k in metadata_keys)
+
+
 def test_move_after_processing_recognizes_own_copy_across_attempts(started_cluster):
     """The own-committed-copy proof must outlive a single attempt's memory: whatever died between
     committing the guarded copy and removing the source - server restart, task cancellation - left no
