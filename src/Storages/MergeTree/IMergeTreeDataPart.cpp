@@ -1101,8 +1101,12 @@ void IMergeTreeDataPart::removeFromSkippingIndexCache(SkippingIndexCache * skipp
         if (!skip_index->getPhysicalFormat(*this, index_name))
             continue;
 
+        /// The definition hash is computed from the current metadata, so entries inserted by a reader that held
+        /// an older definition of a same-named index are not found here. That is only a missed eviction: their
+        /// key contains the removed part's path and checksum, so they can never be hit again and age out via LRU.
         auto marks_count = index_granularity->getMarksCountForSkipIndex(index_description.granularity);
-        skipping_index_cache->removeEntriesFromCache(key_prefix, part_checksum, index_name, marks_count);
+        skipping_index_cache->removeEntriesFromCache(
+            key_prefix, part_checksum, index_name, SkippingIndexCache::hashIndexDefinition(index_description), marks_count);
     }
 }
 

@@ -99,7 +99,12 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     if (cache_key_prefix.empty() || !index->supportsGranuleCache() || (skipping_index_cache && skipping_index_cache->maxSizeInBytes() == 0))
         skipping_index_cache = nullptr;
     else
-        skipping_index_cache_key = {cache_key_prefix, data_part_info->getChecksums().getTotalChecksumUInt128(), index->getFileName(), 0};
+        skipping_index_cache_key
+            = {cache_key_prefix,
+               data_part_info->getChecksums().getTotalChecksumUInt128(),
+               index->getFileName(),
+               SkippingIndexCache::hashIndexDefinition(index->index),
+               0};
 }
 
 MergeTreeIndexReader::~MergeTreeIndexReader() = default;
@@ -119,7 +124,9 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     {
         for (const auto & range : all_mark_ranges)
         {
-            chassert(range.begin < range.end);
+            /// A real check, not an assert: an empty range would underflow `range.end - 1` below.
+            if (range.begin >= range.end)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid mark range [{}, {}) for index {}", range.begin, range.end, index->getFileName());
             auto begin = SkippingIndexCache::blockRange(range.begin / SkippingIndexCache::GRANULES_PER_ENTRY, marks_count).begin;
             auto end = SkippingIndexCache::blockRange((range.end - 1) / SkippingIndexCache::GRANULES_PER_ENTRY, marks_count).end;
             if (!widened_mark_ranges.empty() && widened_mark_ranges.back().end >= begin)
@@ -219,7 +226,13 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             skipping_index_cache_key.block_number = block_number;
         }
 
-        chassert(mark % SkippingIndexCache::GRANULES_PER_ENTRY < current_block->granules.size());
+        /// A real check, not an assert: this indexes into an object shared with other queries through the cache,
+        /// so an out-of-range mark must not turn into an out-of-bounds read.
+        if (mark % SkippingIndexCache::GRANULES_PER_ENTRY >= current_block->granules.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mark {} is outside the cached block {} of index {} ({} granules, {} marks in part)",
+                mark, block_number, index->getFileName(), current_block->granules.size(), marks_count);
         granule = current_block->granules[mark % SkippingIndexCache::GRANULES_PER_ENTRY];
         return;
     }
