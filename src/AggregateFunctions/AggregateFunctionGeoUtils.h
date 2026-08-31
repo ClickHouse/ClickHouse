@@ -84,6 +84,8 @@ void insertMultiPolygonIntoColumn(const CartesianMultiPolygon & mp, IColumn & to
 
 /// Convert one typed or already-resolved Variant value directly from its physical columns.
 /// Empty geometry becomes an empty result (neutral for union, absorbing for intersection).
+/// Invalid ring shapes and rows that cannot fit the polygonal state point budget are rejected
+/// before allocating the corresponding Boost geometry containers.
 CartesianMultiPolygon columnToMultiPolygon(const IColumn & column, size_t row_num, GeometryColumnType geo_type, const char * function_name);
 
 /// The first call validates the complete geometry row before changing `out`. Each
