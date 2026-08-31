@@ -349,7 +349,7 @@ void benchmarkFind(
     auto filter = buildRuntimeFilter(kind, type, build_column);
     auto argument = makeArgument(probe_column, type);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto result = filter->find(argument);
         benchmark::DoNotOptimize(result);
@@ -470,7 +470,7 @@ static void BM_RuntimeFilterApproximateBuildUInt64(benchmark::State & state)
     const auto type = uint64Type();
     auto build_column = makeShuffledUInt64Column(rows);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto filter = buildRuntimeFilter(RuntimeFilterKind::Approximate, type, build_column);
         benchmark::DoNotOptimize(filter);
@@ -485,7 +485,7 @@ static void BM_RuntimeFilterApproximateBuildString(benchmark::State & state)
     const auto type = stringType();
     auto build_column = makeShuffledStringColumn(rows);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto filter = buildRuntimeFilter(RuntimeFilterKind::Approximate, type, build_column);
         benchmark::DoNotOptimize(filter);
@@ -508,7 +508,7 @@ static void BM_RuntimeFilterApproximateMergeUInt64(benchmark::State & state)
         sources.push_back(buildRuntimeFilter(RuntimeFilterKind::Approximate, type, column));
     }
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto destination = makeMergeDestination(RuntimeFilterKind::Approximate, type, filters_to_merge);
         for (const auto & source : sources)
@@ -534,7 +534,7 @@ static void BM_RuntimeFilterExactMergeUInt64(benchmark::State & state)
         sources.push_back(buildRuntimeFilter(RuntimeFilterKind::ExactContains, type, column));
     }
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto destination = makeMergeDestination(RuntimeFilterKind::ExactContains, type, filters_to_merge);
         for (const auto & source : sources)
@@ -556,7 +556,7 @@ static void BM_RuntimeFilterFinishInsertApproximateUInt64(benchmark::State & sta
     const auto type = uint64Type();
     auto build_column = makeShuffledUInt64Column(rows);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         auto filter = makeRuntimeFilter(RuntimeFilterKind::Approximate, type, DISABLE_ADAPTIVE_SKIP_THRESHOLD);
@@ -583,7 +583,7 @@ static void BM_RuntimeFilterExactContainsBuildUInt64(benchmark::State & state)
     const auto type = uint64Type();
     auto build_column = makeShuffledUInt64Column(rows);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto filter = buildRuntimeFilter(RuntimeFilterKind::ExactContains, type, build_column);
         benchmark::DoNotOptimize(filter.get());
@@ -603,7 +603,7 @@ static void BM_RuntimeFilterAdaptiveSkipApproximateUInt64(benchmark::State & sta
     auto filter = buildRuntimeFilter(RuntimeFilterKind::Approximate, type, build_column, DEFAULT_ADAPTIVE_SKIP_THRESHOLD);
     auto argument = makeArgument(probe_column, type);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto result = filter->find(argument);
         benchmark::DoNotOptimize(result);
@@ -627,7 +627,7 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyUInt64(benchmark::State & st
     auto chunks = splitColumnIntoChunks(build_column, chunk_rows);
     auto header = std::make_shared<const Block>(makeHeader(type));
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         {
@@ -674,7 +674,7 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64(benchmark
     auto chunks = splitColumnIntoChunks(build_column, chunk_rows);
     auto header = std::make_shared<const Block>(makeHeader(source_type));
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         {
