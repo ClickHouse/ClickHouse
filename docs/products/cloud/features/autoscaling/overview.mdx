@@ -23,7 +23,15 @@ Scaling is the ability to adjust available resources to meet client demands. Sca
   Scale and Enterprise tiers support both single-replica and multi-replica services. Single-replica Scale services and Enterprise services with standard `1:4` profiles support self-service vertical autoscaling. Enterprise services with custom profiles require support-assisted vertical resizing. Scale and Enterprise services can scale horizontally to multiple replicas. Basic tier services have a single replica, are fixed in size, and don't allow vertical or horizontal scaling. For more information, see [Large single-replica services](/products/cloud/features/large-single-replica-services).
 </Note>
 
-## Choosing
+## Choosing a compute option {#choosing-a-compute-option}
+
+Choose an option based on whether you want to change the capacity of your existing service, isolate a workload on dedicated compute, or temporarily add compute to an eligible query.
+
+| **Option** | **What it does** | **Use it when** |
+| --- | --- | --- |
+| Scaling your existing service | Vertical scaling changes CPU and memory. Horizontal scaling changes the number of replicas, manually or automatically where supported. | You want your existing service to scale up or down as workload demand changes. |
+| Warehouses | Creates separate services with dedicated compute and endpoints that share the same data. | You need long-lived compute isolation for different workloads. |
+| On-Demand Compute | Temporarily assigns workers from a managed pool through your existing service and endpoint. | An eligible select query needs additional compute without resizing the service. |
 
 ## How scaling works in ClickHouse Cloud {#how-scaling-works-in-clickhouse-cloud}
 
