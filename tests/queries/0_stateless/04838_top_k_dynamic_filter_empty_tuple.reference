@@ -1,0 +1,42 @@
+direct_has_filter	0
+normal_has_filter	1
+nested_has_filter	1
+nullable_nested_has_filter	1
+mixed_has_filter	1
+array_nested_has_filter	1
+direct_results
+()
+()
+()
+()
+()
+normal_results
+(99999)
+(99998)
+(99997)
+(99996)
+(99995)
+nested_results
+(())
+(())
+(())
+(())
+(())
+nullable_nested_results
+(NULL)
+(NULL)
+(NULL)
+(NULL)
+(())
+mixed_results
+(99999,())
+(99998,())
+(99997,())
+(99996,())
+(99995,())
+array_nested_results
+[(),()]
+[(),()]
+[(),()]
+[(),()]
+[()]
