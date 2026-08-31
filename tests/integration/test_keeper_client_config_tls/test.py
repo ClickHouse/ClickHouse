@@ -454,3 +454,85 @@ def test_ssl_context_rebuilt_after_config_change_and_reconnect(started_cluster):
     assert output.count("api_version") == 2, (
         "expected 'api_version' twice (once per ls command) but got:\n" + output
     )
+
+
+# Group G — directory-valued caConfig fingerprinting
+#
+# fingerprintTLSMaterial hashes directory entries (name + size + mtime) when
+# caConfig points to a directory.  Adding or removing a file in that directory
+# must change the fingerprint and trigger an SSL context rebuild on reconnect.
+
+
+def test_directory_ca_config_fingerprint_rebuilt_after_dir_change(started_cluster):
+    """SSL context is rebuilt when a file is added to a caConfig directory during reconnect.
+
+    Sequence:
+    1. Create /tmp/ca_dir_fingerprint/ with one dummy PEM stub; use loadDefaultCAFile=true
+       for the actual CA trust so the test is independent of OpenSSL c_rehash naming.
+    2. Connect — first 'ls /keeper' succeeds.
+    3. Stop ClickHouse; wait for session expiry.
+    4. Add a second dummy file to the CA directory — directory fingerprint changes.
+    5. Start ClickHouse; wait for Keeper to be ready.
+    6. Second 'ls /keeper' arrives; keeper-client detects the expired session, calls
+       connectToKeeper(), re-scans the directory, sees a new fingerprint, rebuilds
+       the SSL context, and reconnects successfully.
+    """
+    ca_dir = "/tmp/ca_dir_fingerprint"
+    mutable_cfg = "/tmp/reconnect_dir_fingerprint_cfg.xml"
+    session_timeout_s = 10
+
+    # Create the CA directory with one initial dummy file.
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p {ca_dir} && echo 'stub' > {ca_dir}/initial.pem",
+        ]
+    )
+
+    # Config: caConfig = directory, loadDefaultCAFile=true provides the actual CA.
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"cat > {mutable_cfg} << 'CONFEOF'\n"
+            f"<clickhouse><openSSL><client>\n"
+            f"  <caConfig>{ca_dir}</caConfig>\n"
+            f"  <loadDefaultCAFile>true</loadDefaultCAFile>\n"
+            f"</client></openSSL></clickhouse>\n"
+            f"CONFEOF",
+        ]
+    )
+
+    result = []
+    t = threading.Thread(
+        target=_run_client_interactive,
+        args=(node1, SECURE_PORT, mutable_cfg, result),
+        daemon=True,
+    )
+    t.start()
+
+    time.sleep(6)
+
+    node1.stop_clickhouse()
+    time.sleep(session_timeout_s + 2)
+
+    # Add a second file to the CA directory — this changes the directory fingerprint.
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"echo 'stub2' > {ca_dir}/added.pem",
+        ]
+    )
+
+    node1.start_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node1, port=SECURE_PORT)
+
+    t.join(timeout=60)
+
+    assert len(result) == 1, "keeper-client interactive session did not finish"
+    output = result[0]
+    assert output.count("api_version") == 2, (
+        "expected 'api_version' twice (once per ls command) but got:\n" + output
+    )

@@ -146,9 +146,45 @@ UInt128 fingerprintTLSMaterial(const Poco::Util::AbstractConfiguration & config)
                              "openSSL.client.caConfig"})
     {
         String path = config.getString(key, "");
+        if (path.empty())
+            continue;
+
         std::error_code ec;
-        /// caConfig may name a directory of hashed CA files; only regular files are hashed.
-        if (path.empty() || !fs::is_regular_file(path, ec))
+        if (fs::is_directory(path, ec) && !ec)
+        {
+            /// caConfig may point to a directory of hashed CA files (OpenSSL c_rehash layout).
+            /// Hash sorted entries' names + sizes + mtimes so that adding, removing, or
+            /// replacing any CA file inside the directory changes the fingerprint.
+            std::vector<std::pair<String, fs::path>> entries;
+            for (const auto & entry : fs::directory_iterator(path, ec))
+            {
+                if (ec)
+                    break;
+                std::error_code entry_ec;
+                if (fs::is_regular_file(entry.path(), entry_ec) && !entry_ec)
+                    entries.emplace_back(entry.path().filename().string(), entry.path());
+            }
+            std::sort(entries.begin(), entries.end());
+            for (const auto & [name, entry_path] : entries)
+            {
+                hash.update(name);
+                hash.update('\0');
+                std::error_code sz_ec, mt_ec;
+                const auto size = fs::file_size(entry_path, sz_ec);
+                const auto mtime = fs::last_write_time(entry_path, mt_ec);
+                if (!sz_ec)
+                    hash.update(size);
+                if (!mt_ec)
+                    hash.update(mtime.time_since_epoch().count());
+                hash.update('\0');
+            }
+            if (ec)
+                hash.update('\x01'); // directory became unreadable
+            hash.update('\0');
+            continue;
+        }
+
+        if (!fs::is_regular_file(path, ec))
             continue;
 
         try
