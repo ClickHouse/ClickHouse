@@ -320,7 +320,7 @@ GraceHashJoin::GraceHashJoin(
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
 
-    /// Legacy mode keeps the pre-unification trigger, where the size limits alone decide when to spill.
+    /// In legacy mode the size limits still drive spilling, so there is nothing to require here.
     if (external_join_threshold == 0 && !table_join->legacyJoinSizeLimitsTriggerSpilling())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -330,8 +330,8 @@ GraceHashJoin::GraceHashJoin(
             "configured (the ratio is ignored without them). To keep the join in memory instead, use join_algorithm = 'hash' "
             "with both of them at 0");
 
-    /// A hard cap at or below the spill threshold fails the query before it can spill. Only the explicit
-    /// setting takes part: a ratio-derived threshold would make the warning machine-dependent.
+    /// A cap below the threshold kills the query before it ever spills, which is worth a warning. Look only at
+    /// the explicit setting - the ratio depends on how much memory the machine has.
     const size_t explicit_threshold = table_join->explicitMaxBytesBeforeExternalJoin();
     const size_t hard_cap = table_join->sizeLimits().max_bytes;
     if (explicit_threshold != 0 && hard_cap != 0 && hard_cap <= explicit_threshold)
@@ -381,17 +381,17 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     const size_t rows = materialized.rows();
     const size_t bytes = materialized.allocatedBytes();
 
-    /// Count the blocks `SpillingHashJoin` hands over on a switch (`check_limits = false`) as well.
+    /// Count what `SpillingHashJoin` hands over when it switches too, it passes `check_limits = false`.
     const size_t new_total_rows = total_right_rows.fetch_add(rows) + rows;
     const size_t new_total_bytes = total_right_bytes.fetch_add(bytes) + bytes;
 
     addBlockToJoinImpl(std::move(materialized));
 
-    /// In legacy mode the size limits are the spill trigger (see `hasMemoryOverflow`), not a cap.
+    /// In legacy mode these limits make us spill instead (see `hasMemoryOverflow`), so don't fail on them.
     if (!check_limits || table_join->legacyJoinSizeLimitsTriggerSpilling())
         return true;
 
-    /// Hard caps on the whole right side: spilling does not buy a query the right to exceed them.
+    /// Spilling does not earn a query the right to go over the limits.
     return table_join->sizeLimits().check(new_total_rows, new_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
@@ -402,11 +402,11 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
-    /// Only the spill threshold decides; the size limits are hard caps checked in `addBlockToJoin`. Half of
-    /// it, because the hash table doubles its buffer in power-of-two steps and transiently holds 3X.
+    /// Only the threshold decides when to spill now, the size limits are caps checked in `addBlockToJoin`.
+    /// Half of it, because the hash table doubles in power-of-two steps and briefly holds 3x while resizing.
     bool has_overflow = external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold;
 
-    /// Before unification the size limits were the trigger, so whichever of the two fires first wins.
+    /// Old behaviour: the size limits spill as well, so whichever of the two comes first wins.
     if (!has_overflow && table_join->legacyJoinSizeLimitsTriggerSpilling())
         has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 

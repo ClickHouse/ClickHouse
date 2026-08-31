@@ -234,7 +234,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
         return;
     }
 
-    /// `requestSpill` is a second entry point into this, so re-check the state before rebuilding.
+    /// `requestSpill` can bring us here too, so look at the state again before rebuilding.
     if (state.load(std::memory_order_relaxed) != State::COLLECTING)
         return;
 
@@ -309,12 +309,12 @@ size_t SpillingHashJoin::getSpillableBytes() const
     switch (state.load(std::memory_order_acquire))
     {
         case State::COLLECTING:
-            /// Switching to GraceHashJoin moves everything collected so far to disk.
+            /// Switching to GraceHashJoin puts everything collected so far on disk.
             return concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
         case State::GRACE_HASH_JOIN:
             return chosen_join->getSpillableBytes();
         case State::IN_MEMORY_JOIN:
-            /// The build phase finished in memory, nothing left to spill.
+            /// Build phase finished in memory, nothing left to spill.
             return 0;
     }
 }

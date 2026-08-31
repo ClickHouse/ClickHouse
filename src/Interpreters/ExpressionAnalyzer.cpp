@@ -1099,7 +1099,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         // Grace hash join requires that columns exist in left_sample_block.
         Block left_sample_block(left_sample_columns);
         if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
-            /// Same spill threshold as the adaptive path; `grace_hash` only starts partitioned.
+            /// Same spill threshold as `hash` uses, `grace_hash` just starts partitioned right away.
             return std::make_shared<GraceHashJoin>(
                 context->getSettingsRef()[Setting::grace_hash_join_initial_buckets],
                 context->getSettingsRef()[Setting::grace_hash_join_max_buckets],

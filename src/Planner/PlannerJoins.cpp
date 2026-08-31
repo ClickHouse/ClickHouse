@@ -1281,7 +1281,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (GraceHashJoin::isSupported(table_join))
         {
-            /// Same spill threshold as the adaptive path; `grace_hash` only starts partitioned.
+            /// Same spill threshold as `hash` uses, `grace_hash` just starts partitioned right away.
             return std::make_shared<GraceHashJoin>(
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
