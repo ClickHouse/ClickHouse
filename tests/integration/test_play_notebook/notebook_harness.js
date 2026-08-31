@@ -552,6 +552,12 @@ function evalJSON(sandbox, expr) {
     return JSON.parse(vm.runInContext(`JSON.stringify((() => { ${expr} })())`, sandbox));
 }
 
+/// Same, for a scenario that has to let the page's own awaits (an editor restore, a debounce)
+/// run: the expression body may use `await`, and the promise it returns is awaited here.
+async function evalJSONAsync(sandbox, expr) {
+    return JSON.parse(await vm.runInContext(`(async () => { ${expr} })().then(JSON.stringify)`, sandbox));
+}
+
 async function main() {
     const src = process.argv[2];
     if (!src) {
@@ -883,6 +889,83 @@ async function main() {
         check(scenario, 'the degraded entry keeps the notebook structure query-only',
               out.degraded_results === 0 && out.degraded_cells === 41 && out.degraded_query === 'SELECT 1',
               out);
+    }
+
+    /// Contract 7: a run started on a cell that does not hold the editor waits for the editor to
+    /// move there, and that wait can be superseded - by another activation, a tab switch or another
+    /// run. `setActiveCell` reports whether its activation completed and the cell is still on
+    /// screen; a continuation that launched anyway would post the query of a background tab's cell
+    /// into whatever tab the user switched to, i.e. run the wrong statement.
+    {
+        const scenario = 'superseded-activation-does-not-launch';
+        const r = await runScenario(js, { href: base });
+        const out = await evalJSONAsync(r.sandbox, `
+            const tab = getActiveTab();
+            addCell(tab, 'query', tab.cells.length);
+            const [a, b] = tab.cells;
+            const real_post_all = postAll;
+            let launched = 0;
+            postAll = () => { ++launched; };
+
+            /// The editor is docked in B; the user clicks the header run of A and switches away
+            /// while the restore is still awaiting - exactly what \`activateTab\` bumps
+            /// \`activation_num\` for.
+            tab.activeCellId = b.id;
+            runCell(tab, a);
+            ++activation_num;
+            await new Promise(res => setTimeout(res, 50));
+            const superseded = launched;
+
+            /// The same click with nothing interfering does run.
+            tab.activeCellId = b.id;
+            runCell(tab, a);
+            await new Promise(res => setTimeout(res, 50));
+            const clean = launched;
+            const active_after = activeCell(tab) === a;
+
+            /// An activation that completes while its tab is no longer the one on screen is not a
+            /// success either: nothing may be launched into the tab the user is looking at.
+            tab.activeCellId = b.id;
+            const real_active_tab = activeTabId;
+            activeTabId = 'no-such-tab';
+            let background_ok = null;
+            try { background_ok = await setActiveCell(tab, a.id); } finally { activeTabId = real_active_tab; }
+
+            postAll = real_post_all;
+            return { superseded, clean, active_after, background_ok };
+        `);
+        check(scenario, 'a superseded activation launches nothing', out.superseded === 0, out);
+        check(scenario, 'an uncontested run of an inactive cell still launches', out.clean === 1, out);
+        check(scenario, 'the run happens with that cell holding the editor', out.active_after === true, out);
+        check(scenario, 'activating a cell of a background tab does not report success',
+              out.background_ok === false, out);
+    }
+
+    /// Contract 8: the editing backdrop and the renderer agree on where a fenced code block ends.
+    /// `highlightMarkdown` paints the textarea underlay, so a fence it closes early highlights the
+    /// rest of the cell as ordinary Markdown while `renderMarkdown` still shows it as code.
+    {
+        const scenario = 'markdown-edit-backdrop-fences';
+        const r = await runScenario(js, { href: base });
+        const out = evalJSON(r.sandbox, `
+            const B = '\\u0060';
+            return {
+                long: highlightMarkdown(B.repeat(4) + '\\n' + B.repeat(3) + '\\nstill code\\n' + B.repeat(4) + '\\ndone'),
+                equal: highlightMarkdown(B.repeat(3) + '\\ncode\\n' + B.repeat(3) + '\\ndone'),
+                tilde: highlightMarkdown('~~~~\\n~~~\\nstill code\\n~~~~\\ndone'),
+            };
+        `);
+        const code = (text) => '<span class="md-code">' + text + '</span>';
+        check(scenario, 'a shorter fence inside a longer one stays code',
+              out.long.includes(code('\u0060\u0060\u0060')), out.long);
+        check(scenario, 'the lines after it stay code', out.long.includes(code('still code')), out.long);
+        check(scenario, 'the equal-length fence ends the block',
+              !out.long.includes(code('done')), out.long);
+        check(scenario, 'a plain fence still opens and closes a block',
+              out.equal.includes(code('code')) && !out.equal.includes(code('done')), out.equal);
+        check(scenario, 'tilde fences follow the same rule',
+              out.tilde.includes(code('~~~')) && out.tilde.includes(code('still code'))
+              && !out.tilde.includes(code('done')), out.tilde);
     }
 
     if (failures) {

@@ -3157,8 +3157,8 @@ function commitResultShape(el) {
     /// editor first (exactly what its header's run action does) and launch there; one run at a time
     /// per tab, so an in-flight run of another cell is ended first.
     if (activeCell(tab) !== cell) {
-        setActiveCell(tab, cell.id).then(() => {
-            if (activeCell(tab) !== cell) return;
+        setActiveCell(tab, cell.id).then(activated => {
+            if (!activated) return;
             cancelTabRun(tab);
             postOne();
         });
@@ -14518,10 +14518,17 @@ function moveCell(tab, cell, delta) {
 /// Give a cell the shared editor: fold the current draft back into the cell being left, load
 /// this one's query and parameters, materialize its stored result, and repaint the chrome.
 /// Mirrors `activateTab`, one level down.
+///
+/// The restore is asynchronous, so it can be superseded meanwhile — by another cell activation, a
+/// tab switch or a run, all of which bump `activation_num`. The returned promise therefore resolves
+/// to WHETHER this activation completed and the cell still holds the shared editor on screen; a
+/// caller that launches something afterwards must gate on it, because `activeCell(tab) === cell`
+/// alone stays true for a background tab and would run this cell's query in the tab the user
+/// switched to.
 function setActiveCell(tab, id) {
     const cell = tab.cells.find(c => c.id === id && c.type === 'query');
-    if (!cell) return Promise.resolve();
-    if (activeCell(tab) === cell) { focusEditor(); return Promise.resolve(); }
+    if (!cell) return Promise.resolve(false);
+    if (activeCell(tab) === cell) { focusEditor(); return Promise.resolve(cellIsOnScreen(cell)); }
     markBootstrapDirty();
     captureActiveTab();
     /// Fold the captured editor state of the cell we are leaving back into its own history
@@ -14529,20 +14536,28 @@ function setActiveCell(tab, id) {
     refreshCurrentHistoryEntry(tab);
     tab.activeCellId = id;
     renderNotebook(tab);
-    return activateCellState(tab, cell).then(syncHistory);
+    return activateCellState(tab, cell).then(activated => {
+        /// A superseded activation left the page owned by whatever superseded it; stamping history
+        /// here would record the state of a cell the user has already moved away from.
+        if (!activated) return false;
+        syncHistory();
+        return cellIsOnScreen(cell);
+    });
 }
 
+/// Returns `true` when the activation ran to completion, `false` when a newer activation, tab
+/// switch or run superseded it mid-await.
 async function activateCellState(tab, cell) {
-    if (!cell) return;
+    if (!cell) return false;
     ++activation_num;
     const token = activation_num;
     await restoreEditor({ query: cell.query, params: cell.params, paramsSyncedQuery: cell.paramsSyncedQuery }, token);
-    if (token !== activation_num) return;
+    if (token !== activation_num) return false;
     /// Lazily render this cell's stored result, unless a query is running in the tab (bumping
     /// the tab's run generation would abort it) or it is already on screen.
     if (!cell.materialized && !tab.inFlight) {
         await materializeResult(cell);
-        if (token !== activation_num) return;
+        if (token !== activation_num) return false;
     }
     for (const el of tab.panel.querySelectorAll('query-result')) el.applyDeferredLayout();
     resultEl = tab.resultEl;
@@ -14552,6 +14567,7 @@ async function activateCellState(tab, cell) {
     renderTabBar();
     focusEditor();
     scheduleSave();
+    return true;
 }
 
 /// The header's ▶: run this cell. A cell that is not the active one takes the editor first,
@@ -14565,8 +14581,8 @@ function runCell(tab, cell) {
     /// `setActiveCell` restores the editor asynchronously; run only once it holds this query,
     /// and only if nothing else took the editor in the meantime.
     if (activeCell(tab) !== cell) {
-        setActiveCell(tab, cell.id).then(() => {
-            if (activeCell(tab) !== cell) return;
+        setActiveCell(tab, cell.id).then(activated => {
+            if (!activated) return;
             cancelTabRun(tab);
             postAll();
         });
@@ -14770,16 +14786,26 @@ function highlightMarkdown(source) {
     /// One entry per source line, joined below: appending a newline per line instead would
     /// leave the backdrop one line taller than the textarea it is laid over.
     const out = [];
-    let in_fence = false;
+    /// The regexp closing the code block currently open, or `null` outside one. It mirrors
+    /// `renderMarkdown` exactly - same fence character, at least as long as the opener, alone on
+    /// its line - so a shorter fence shown INSIDE a longer one is highlighted as code rather than
+    /// ending the block, and the edit view agrees with the rendered view about where the block ends.
+    let fence_close = null;
 
     for (const line of lines) {
         const escaped = escapeHTML(line);
-        if (/^\s*(```|~~~)/.test(line)) {
-            in_fence = !in_fence;
+        if (fence_close) {
+            const closes = fence_close.test(line);
+            out.push('<span class="md-' + (closes ? 'marker' : 'code') + '">' + escaped + '</span>');
+            if (closes) fence_close = null;
+            continue;
+        }
+        const fence = line.match(/^\s*(```+|~~~+)(.*)$/);
+        if (fence) {
+            fence_close = new RegExp('^\\s*' + fence[1][0].repeat(fence[1].length) + '+\\s*$');
             out.push('<span class="md-marker">' + escaped + '</span>');
             continue;
         }
-        if (in_fence) { out.push('<span class="md-code">' + escaped + '</span>'); continue; }
 
         const heading = escaped.match(/^(\s*#{1,6}\s+)(.*)$/);
         if (heading) {

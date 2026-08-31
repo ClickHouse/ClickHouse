@@ -2,12 +2,17 @@
 
 The Web UI can turn a tab into a notebook: an ordered list of query and Markdown cells. The
 display state that used to be tab-wide then belongs to one cell, and the single shared run row
-is docked under the cell whose run it reports. This test pins the three contracts that follow
-from that: the shared Logs/Metrics toggles and the logo follow the cell the row is docked under
-(the running cell while a run is in flight, not the cell the editor moved to), color modes and
-pinned columns persist onto the owning cell's own result snapshot without rewriting another
-cell's state, and a text cell's Markdown may link to ordinary relative targets while other
-schemes and protocol-relative targets stay unrendered.
+is docked under the cell whose run it reports. This test pins the contracts that follow from
+that: the shared Logs/Metrics toggles and the logo follow the cell the row is docked under (the
+running cell while a run is in flight, not the cell the editor moved to), color modes and pinned
+columns persist onto the owning cell's own result snapshot without rewriting another cell's
+state, stopping a run repaints the row from the cell that is on screen, the history entry keeps
+every cell's state within a bounded payload, a run whose editor handover was superseded launches
+nothing, and a text cell's Markdown renders (and highlights) block quotes, fenced code and link
+targets the way the page documents.
+
+Every scenario the harness defines is pinned by name below, so a harness edit that silently
+drops one cannot pass as "all scenarios passed".
 
 The stateless suite has no JavaScript runtime, so these contracts are driven by a Node.js
 harness (`notebook_harness.js`) executed inside the `clickhouse/mysql-js-client` container
@@ -18,6 +23,7 @@ asserts where the state lands.
 
 import io
 import os
+import re
 import tarfile
 
 import docker
@@ -30,6 +36,20 @@ DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node")
+
+# Every scenario `notebook_harness.js` defines, pinned by name so a harness edit that silently
+# drops one cannot pass as "all scenarios passed".
+SCENARIOS = (
+    "chrome-follows-running-cell",
+    "color-state-is-per-cell",
+    "markdown-relative-links",
+    "markdown-block-boundaries",
+    "stop-after-editor-moved-repaints-chrome",
+    "history-entry-keeps-off-active-cell-state",
+    "history-payload-is-bounded",
+    "superseded-activation-does-not-launch",
+    "markdown-edit-backdrop-fences",
+)
 
 
 @pytest.fixture(scope="module")
@@ -83,13 +103,18 @@ def test_play_notebook(started_cluster, nodejs_container):
     err = (stderr or b"").decode()
     assert code == 0, "harness failed:\n{}\n{}".format(out, err)
     assert "All scenarios passed" in out
-    # Pin the scenarios by name so a harness edit that silently drops one cannot pass
-    # as "all scenarios passed".
-    for scenario in (
-        "chrome-follows-running-cell",
-        "color-state-is-per-cell",
-        "markdown-relative-links",
-    ):
+    # The pinned list is itself checked against the harness, so a scenario added there later
+    # without extending `SCENARIOS` cannot stay unpinned either.
+    with open(
+        os.path.join(SCRIPT_DIR, "notebook_harness.js"), encoding="utf-8"
+    ) as harness:
+        declared = set(re.findall(r"const scenario = '([^']+)'", harness.read()))
+    assert declared == set(
+        SCENARIOS
+    ), "harness scenarios drifted from the pinned list: {}".format(
+        declared.symmetric_difference(SCENARIOS)
+    )
+    for scenario in SCENARIOS:
         assert (
             "PASS [{}]".format(scenario) in out
         ), "scenario {} did not run:\n{}".format(scenario, out)
