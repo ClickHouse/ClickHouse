@@ -9,6 +9,7 @@ SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET query_plan_optimize_join_order_limit = 1;
 SET allow_dynamic_type_in_join_keys = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS rf_null_shape_l_05054;
 DROP TABLE IF EXISTS rf_null_shape_r_05054;
