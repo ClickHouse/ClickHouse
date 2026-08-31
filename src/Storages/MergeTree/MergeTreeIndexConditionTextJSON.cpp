@@ -236,6 +236,9 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
     if (!which_literal.isNativeNumber() && !isBool(literal_type))
         return false;
 
+    if (which_literal.isFloat() && !std::isfinite(literal.safeGet<Float64>()))
+        return false;
+
     const String literal_text = serializeFieldAsText(literal, literal_type);
     for (const auto & target_type : getJSONPathValuesDynamicNumberTypes())
     {
