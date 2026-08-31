@@ -13,13 +13,11 @@ namespace DB
 enum class MemoryPressureLevel : uint8_t
 {
     Normal = 0,
-    Elevated = 1,
-    High = 2,
-    Critical = 3,
+    Elevated,
+    High,
+    Critical,
+    Count,
 };
-
-/// `Critical` is the last level; `MemoryPressureMonitor.cpp` asserts that against the enumerator count.
-inline constexpr size_t memoryPressureLevelCount() { return static_cast<size_t>(MemoryPressureLevel::Critical) + 1; }
 
 /// One level lower; `Normal` stays `Normal`.
 constexpr MemoryPressureLevel stepDown(MemoryPressureLevel level)
@@ -94,14 +92,14 @@ public:
 
     explicit PressureCooldown(uint64_t cooldown_ms_ = COOLDOWN_MS) : cooldown_ms(cooldown_ms_) {}
 
-    /// `thresholds_generation` identifies the ladder `raw` was classified against. A generation other
+    /// `thresholds_generation` identifies the ladder `raw_level` was classified against. A generation other
     /// than the held level's means that level came from a ladder that no longer exists, so it is
     /// replaced at once rather than decaying over a cooldown, and a reload needs no per-monitor flag.
     ///
     /// Reads the clock only when there is state to update.
-    MemoryPressureLevel apply(MemoryPressureLevel raw, uint16_t thresholds_generation);
+    MemoryPressureLevel apply(MemoryPressureLevel raw_level, uint16_t thresholds_generation);
     /// Time-injecting form, for tests.
-    MemoryPressureLevel apply(MemoryPressureLevel raw, uint64_t now_ms, uint16_t thresholds_generation);
+    MemoryPressureLevel apply(MemoryPressureLevel raw_level, uint64_t now_ms, uint16_t thresholds_generation);
 
     /// Clear the held level and its timestamp.
     void reset();
@@ -141,6 +139,7 @@ private:
     };
 
     static_assert(State::LEVEL_SHIFT + 2 == 64, "the packed state must fill exactly one word");
+    static_assert(static_cast<size_t>(MemoryPressureLevel::Count) <= 4, "the level field holds 2 bits");
 
     const uint64_t cooldown_ms;
     std::atomic<uint64_t> state{0};
@@ -180,6 +179,6 @@ private:
 };
 
 /// The global (root) monitor.
-MemoryPressureMonitor & memoryPressureMonitor();
+MemoryPressureMonitor & getGlobalMemoryPressureMonitor();
 
 }

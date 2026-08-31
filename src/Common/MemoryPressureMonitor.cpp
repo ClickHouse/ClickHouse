@@ -1,17 +1,13 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
-#include <base/EnumReflection.h>
+#include <Core/Defines.h>
 
 #include <algorithm>
 #include <chrono>
 
 namespace DB
 {
-
-/// Kept here rather than beside `memoryPressureLevelCount`: `MemoryPressureMonitor.h` reaches most of the
-/// codebase through `ThreadStatus.h`, and this check needs only one translation unit.
-static_assert(memoryPressureLevelCount() == magic_enum::enum_count<MemoryPressureLevel>());
 
 namespace ErrorCodes
 {
@@ -23,9 +19,11 @@ namespace
 
 /// The shared server-wide ladder in its published form. Relaxed ordering is enough: the word publishes
 /// no other memory alongside itself.
-std::atomic<uint64_t> & thresholdsState()
+std::atomic<uint64_t> & publishedThresholds()
 {
-    static std::atomic<uint64_t> state{MemoryPressureThresholds{75, 90, 95}.pack()};
+    static std::atomic<uint64_t> state{MemoryPressureThresholds{
+        DEFAULT_MEMORY_PRESSURE_ELEVATED_PCT, DEFAULT_MEMORY_PRESSURE_HIGH_PCT, DEFAULT_MEMORY_PRESSURE_CRITICAL_PCT}
+        .pack()};
     return state;
 }
 
@@ -68,16 +66,16 @@ void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt
             elevated_pct, high_pct, critical_pct);
 }
 
-MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw, uint16_t thresholds_generation)
+MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw_level, uint16_t thresholds_generation)
 {
-    if (raw == MemoryPressureLevel::Normal
+    if (raw_level == MemoryPressureLevel::Normal
         && State::unpack(state.load(std::memory_order_relaxed)).level == MemoryPressureLevel::Normal)
         return MemoryPressureLevel::Normal;
 
-    return apply(raw, steadyNowMs(), thresholds_generation);
+    return apply(raw_level, steadyNowMs(), thresholds_generation);
 }
 
-MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw, uint64_t now_ms, uint16_t thresholds_generation)
+MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw_level, uint64_t now_ms, uint16_t thresholds_generation)
 {
     uint64_t current = state.load(std::memory_order_relaxed);
     while (true)
@@ -85,10 +83,10 @@ MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw, uint64_t no
         const State held = State::unpack(current);
         State next = held;
 
-        if (raw >= held.level)                                  /// snap up, restart the cooldown
-            next = {raw, thresholds_generation, now_ms};
+        if (raw_level >= held.level)                                  /// snap up, restart the cooldown
+            next = {raw_level, thresholds_generation, now_ms};
         else if (thresholds_generation != held.generation)       /// stale ladder, take the new level now
-            next = {raw, thresholds_generation, now_ms};
+            next = {raw_level, thresholds_generation, now_ms};
         else if (held.elapsedTo(now_ms) >= cooldown_ms)          /// one step per cooldown
             next = {stepDown(held.level), thresholds_generation, now_ms};
 
@@ -117,8 +115,8 @@ void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 cr
 {
     validateMemoryPressureThresholds(elevated_pct, high_pct, critical_pct);
 
-    MemoryPressureThresholds next{elevated_pct, high_pct, critical_pct};
-    auto & state = thresholdsState();
+    const uint32_t next_packed_values = MemoryPressureThresholds{elevated_pct, high_pct, critical_pct}.packValues();
+    auto & state = publishedThresholds();
     uint64_t current = state.load(std::memory_order_relaxed);
 
     while (true)
@@ -128,20 +126,23 @@ void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 cr
         /// A reload that leaves the values alone must not move the generation: that would flush every
         /// sticky cooldown, so any `SYSTEM RELOAD CONFIG` would clear the pressure state of a server
         /// that is still under pressure.
-        if (live.packValues() == next.packValues())
+        if (live.packValues() == next_packed_values)
             return;
 
         /// A real change, so the levels classified against the old values are stale. The new generation
         /// tells every cooldown to take its next classification at once instead of decaying to it.
-        next.generation = static_cast<uint16_t>(live.generation + 1);
-        if (state.compare_exchange_weak(current, next.pack(), std::memory_order_relaxed))
+        const MemoryPressureThresholds next_values{
+            elevated_pct, high_pct, critical_pct, static_cast<uint16_t>(live.generation + 1)};
+
+        /// A failed exchange loads the observed word into `current`, so the retry re-reads `live`.
+        if (state.compare_exchange_weak(current, next_values.pack(), std::memory_order_relaxed))
             return;
     }
 }
 
 MemoryPressureThresholds getMemoryPressureThresholds()
 {
-    return MemoryPressureThresholds::unpack(thresholdsState().load(std::memory_order_relaxed));
+    return MemoryPressureThresholds::unpack(publishedThresholds().load(std::memory_order_relaxed));
 }
 
 MemoryPressureLevel classifyMemoryPressure(double pressure)
@@ -192,7 +193,7 @@ MemoryPressureLevel MemoryPressureMonitor::currentLevel()
     return own;
 }
 
-MemoryPressureMonitor & memoryPressureMonitor()
+MemoryPressureMonitor & getGlobalMemoryPressureMonitor()
 {
     static MemoryPressureMonitor instance;
     return instance;

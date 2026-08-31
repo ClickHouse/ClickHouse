@@ -47,7 +47,7 @@ namespace
 
 /// Divisors applied to a base size, indexed by `MemoryPressureLevel`. A table of another extent does
 /// not compile, so a new level cannot leave a zero divisor behind.
-using PressureReduction = std::array<size_t, memoryPressureLevelCount()>;
+using PressureReduction = std::array<size_t, static_cast<size_t>(MemoryPressureLevel::Count)>;
 
 /// A window is what one `readNextWindow` serves; a block is the unit it is read and stored in - one
 /// `ChainedBuffers` node.

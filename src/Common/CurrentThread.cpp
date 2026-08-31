@@ -119,7 +119,7 @@ MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
 {
     if (auto group = getGroup())
         return group->memory_pressure_monitor;
-    return memoryPressureMonitor();
+    return getGlobalMemoryPressureMonitor();
 }
 
 void CurrentThread::checkIfNotCancelled()

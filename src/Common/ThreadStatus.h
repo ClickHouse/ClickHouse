@@ -102,7 +102,7 @@ public:
     MemoryTracker memory_tracker{VariableContext::Process};
 
     /// This query's memory-pressure monitor; its parent is repointed to the user monitor at query start.
-    MemoryPressureMonitor memory_pressure_monitor{memory_tracker, memoryPressureMonitor()};
+    MemoryPressureMonitor memory_pressure_monitor{memory_tracker, getGlobalMemoryPressureMonitor()};
 
     struct SharedData
     {

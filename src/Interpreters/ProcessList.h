@@ -339,7 +339,7 @@ struct ProcessListForUser
 
     /// Per-user memory-pressure monitor: watches `user_memory_tracker`, escalates against the global
     /// monitor. A query monitor is repointed onto this one when the query joins the user.
-    MemoryPressureMonitor user_memory_pressure_monitor{user_memory_tracker, memoryPressureMonitor()};
+    MemoryPressureMonitor user_memory_pressure_monitor{user_memory_tracker, getGlobalMemoryPressureMonitor()};
 
     TemporaryDataOnDiskScopePtr user_temp_data_on_disk;
 
