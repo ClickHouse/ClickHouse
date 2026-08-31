@@ -44,6 +44,9 @@
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleChecks, "Number of oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleTLPAggregateChecks, "Number of TLP Aggregate (State/Merge) oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleMismatches, "Number of oracle mismatches detected by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
@@ -307,6 +310,7 @@
     M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
     M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
     M(PatchesAcquireLockTries, "Total number of tries to acquire lock for executing lightweight updates", ValueType::Number) \
+    M(PatchesAcquireLockBadVersionRetries, "Total number of retries while acquiring the lock for lightweight updates caused by a concurrent update committing first", ValueType::Number) \
     M(PatchesAcquireLockMicroseconds, "Total number of microseconds spent to acquire lock for executing lightweight updates", ValueType::Number) \
     \
     M(DiskObjectStorageWaitBlobRemovalMicroseconds, "Time spent waiting for pending blob removal after committing metadata transaction", ValueType::Microseconds) \
@@ -1652,6 +1656,8 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterGranulesDropped, "Number of granules pruned at read time by JOIN Runtime Filters", ValueType::Number) \
     \
     M(JoinBuildPostProcessingMicroseconds, "Elapsed time of post-processing steps after building the right JOIN side.", ValueType::Microseconds) \
+    \
+    M(JoinBuildRowStoreMicroseconds, "Elapsed time transforming the right JOIN side payload into row-major format.", ValueType::Microseconds) \
     \
     M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query.", ValueType::Number) \
     M(AIOutputTokens, "Total completion tokens consumed across all AI function calls in the query.", ValueType::Number) \

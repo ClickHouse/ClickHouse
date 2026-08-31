@@ -4,6 +4,7 @@
       "group": "ClickHouse guides",
       "pages": [
         "guides/clickhouse/index",
+        "guides/clickhouse/kusto-query-language",
         {
           "group": "Data formats",
           "pages": [
@@ -54,7 +55,16 @@
         {
           "group": "Performance & monitoring",
           "pages": [
-            "guides/clickhouse/performance-and-monitoring/query-optimization",
+            {
+              "group": "Query optimization",
+              "pages": [
+                "guides/clickhouse/performance-and-monitoring/query-optimization",
+                "guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
+                "guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks",
+                "guides/clickhouse/performance-and-monitoring/optimization-approaches",
+                "guides/clickhouse/performance-and-monitoring/query-optimization-example"
+              ]
+            },
             "guides/clickhouse/performance-and-monitoring/analyzer",
             "guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
             "guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
