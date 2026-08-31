@@ -624,7 +624,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
     return true;
 }
 
-/// Whether the second argument of an `IN`-like function is a set which has not been built yet.
+/// True if the second argument is a set which is not built yet.
 static bool hasNotReadySet(const ActionsDAG::Node * node)
 {
     if (node->children.size() != 2)
@@ -643,11 +643,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
-        /// A `GLOBAL IN` set is filled from an external table which the initiator sends to the shard
-        /// (see `ReadFromRemote::setExternalTable`), so it is not necessarily built when the split
-        /// predicate is prepared: `buildSetsForDAG` leaves such a set unready and evaluating the atom
-        /// throws `Not-ready Set is passed as the second argument for function 'globalIn'`. The split
-        /// predicate is used for pruning only, so drop the atom - the query still applies it later.
+        /// A `GLOBAL IN` set is filled later, from an external table the initiator sends to the shard.
+        /// This predicate only prunes, so drop the atom instead of executing it unbuilt.
         if (functionIsGlobalInOperator(node->function_base->getName()) && hasNotReadySet(node))
             return nullptr;
 

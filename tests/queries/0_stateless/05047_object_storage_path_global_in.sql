@@ -1,9 +1,8 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on S3
 
--- The set of a `GLOBAL IN` cannot be built while the listing prefilter is prepared, so the prefilter
--- must drop the atom instead of evaluating it against a not-ready set. Only the non-glob listing
--- prefilter is affected: the glob iterator filters lazily, once the set is already built.
+-- The `GLOBAL IN` set is not built yet when the listing prefilter runs, so the prefilter has to drop
+-- it. Only the non-glob prefilter is affected - the glob iterator filters later, once the set is there.
 
 SET s3_truncate_on_insert = 1;
 
