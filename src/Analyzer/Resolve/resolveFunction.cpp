@@ -1199,10 +1199,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
       * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
       * argument is a composition. A composition being resolved by itself denotes a function,
-      * not a value, so explain the operator instead of resolving further. The name is internal,
-      * so the public name `compose` stays available for ordinary and user defined functions.
+      * not a value, so explain the operator instead of resolving further. Only a node the parser
+      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
+      * function named `__compose` (or `compose`) resolves as usual.
       */
-    if (function_name == function_composition_name && !lambda_expression_untyped)
+    if (isFunctionComposition(*function_node_ptr) && !lambda_expression_untyped)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The function composition `f | g` can be used only where a function is expected: "
             "as an argument of a higher-order function such as arrayMap. "
@@ -2034,9 +2035,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// the standard diagnostics apply.
         for (auto & argument_node : argument_nodes)
         {
-            const auto * argument_function = argument_node->as<FunctionNode>();
-            if (argument_function && argument_function->getFunctionName() == function_composition_name)
-                argument_node = fuseCompositionToLambda(*argument_function, resolve_identifier_operand);
+            if (isFunctionComposition(*argument_node))
+                argument_node = fuseCompositionToLambda(argument_node->as<FunctionNode &>(), resolve_identifier_operand);
         }
 
         /// Free placeholders in the lambda position of a higher-order function lift the
@@ -2058,10 +2058,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 auto placeholder_names = collectFreePlaceholderNames(argument_nodes[0]);
 
+                /// A name bound in the query keeps priority, whether it is bound as an
+                /// expression (a column or an alias) or as a function (a lambda bound with
+                /// `WITH (x -> x + 10) AS _1`), which lives in a separate lookup.
                 bool any_placeholder_resolves = false;
                 for (const auto & placeholder_name : placeholder_names)
                 {
-                    if (tryResolveIdentifier({Identifier{placeholder_name}, IdentifierLookupContext::EXPRESSION}, scope, {}).isResolved())
+                    if (isFunctionAliasInScope(placeholder_name, scope)
+                        || tryResolveIdentifier({Identifier{placeholder_name}, IdentifierLookupContext::EXPRESSION}, scope, {}).isResolved())
                     {
                         any_placeholder_resolves = true;
                         break;

@@ -131,7 +131,7 @@ struct PlaceholderCollector
             case QueryTreeNodeType::FUNCTION:
             {
                 /// Placeholders inside a nested composition belong to its own operands.
-                if (node->as<FunctionNode &>().getFunctionName() == function_composition_name)
+                if (isFunctionComposition(*node))
                     return;
                 break;
             }
@@ -151,20 +151,35 @@ struct PlaceholderCollector
     }
 };
 
+/// The names a scope binds, split by what an occurrence of the name can be. Both kinds matter:
+/// substitution replaces a bare identifier `x` as well as the member access `x.a`, so a name
+/// that binds only as a qualifier still hides the compound form.
+struct BoundNames
+{
+    /// Names that bind a bare, one-part expression identifier: the arguments of a lambda, the
+    /// aliases of expressions, and the columns a subquery in the join tree exposes.
+    NameSet expressions;
+    /// Names that bind only the first part of a compound identifier: the alias of a table
+    /// expression and the name of a CTE. Once column lookup misses,
+    /// `IdentifierResolver::tryBindIdentifierToTableExpression` rejects a one-part expression
+    /// lookup, so `FROM (SELECT 1 AS z) AS x` makes `x.z` local but leaves a bare `x` free.
+    NameSet qualifiers;
+};
+
 /// The names of the columns a subquery in a join tree exposes to the query that selects from
 /// it. They are bound names at that query level, even though the expressions behind them live
 /// in another scope. Only names that are evident lexically are collected: an explicit alias, or
 /// the column name of a bare identifier projection.
-void collectProjectionNames(const QueryTreeNodePtr & node, NameSet & bound_names)
+void collectProjectionNames(const QueryTreeNodePtr & node, BoundNames & bound_names)
 {
     if (const auto * query_node = node->as<QueryNode>())
     {
         for (const auto & projection_node : query_node->getProjection().getNodes())
         {
             if (projection_node->hasAlias())
-                bound_names.insert(projection_node->getAlias());
+                bound_names.expressions.insert(projection_node->getAlias());
             else if (const auto * identifier_node = projection_node->as<IdentifierNode>())
-                bound_names.insert(identifier_node->getIdentifier().getParts().back());
+                bound_names.expressions.insert(identifier_node->getIdentifier().getParts().back());
         }
     }
     else if (const auto * union_node = node->as<UnionNode>())
@@ -174,16 +189,17 @@ void collectProjectionNames(const QueryTreeNodePtr & node, NameSet & bound_names
     }
 }
 
-/// The names a join tree binds: the aliases of its table expressions and the columns exposed by
-/// the subqueries it selects from. The columns of a real table cannot be known here — that
-/// needs the catalog — which is the conservative case documented at `subqueryReferencesIdentifier`.
-void collectNamesBoundInJoinTree(const QueryTreeNodePtr & node, NameSet & bound_names)
+/// The names a join tree binds: the aliases of its table expressions, which are qualifiers only,
+/// and the columns exposed by the subqueries it selects from, which bind a bare identifier. The
+/// columns of a real table cannot be known here — that needs the catalog — which is the
+/// conservative case documented at `subqueryReferencesIdentifier`.
+void collectNamesBoundInJoinTree(const QueryTreeNodePtr & node, BoundNames & bound_names)
 {
     if (!node)
         return;
 
     if (node->hasAlias())
-        bound_names.insert(node->getAlias());
+        bound_names.qualifiers.insert(node->getAlias());
 
     const auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
@@ -197,41 +213,51 @@ void collectNamesBoundInJoinTree(const QueryTreeNodePtr & node, NameSet & bound_
 }
 
 /// Collect every name bound at the level of one query: aliases (`SELECT 1 AS x`), the names of
-/// the CTEs it defines, and the aliases of its table expressions. Such a name is visible in the
-/// whole query, so the walk descends through it, but it stops at a nested query (which has its
-/// own level) and at a lambda (whose arguments are visible only inside its own body).
-void collectNamesBoundAtQueryLevel(const QueryTreeNodePtr & node, NameSet & bound_names, bool is_root)
+/// the CTEs it defines, and what its join tree binds. Such a name is visible in the whole query,
+/// so the walk descends through it, but it stops at a nested query (which has its own level) and
+/// at a lambda (whose arguments are visible only inside its own body).
+void collectNamesBoundAtQueryLevel(const QueryTreeNodePtr & node, BoundNames & bound_names, bool is_root)
 {
     if (!node)
         return;
 
-    if (node->hasAlias())
-        bound_names.insert(node->getAlias());
-
     if (is_root)
     {
+        /// An alias on the query node itself belongs to the enclosing scope, not to this level.
+        /// The join tree is collected separately: what it binds is not what an alias binds.
+        QueryTreeNodePtr join_tree_node;
         if (const auto * root_query_node = node->as<QueryNode>())
-            collectNamesBoundInJoinTree(root_query_node->getJoinTreeNode(), bound_names);
+        {
+            join_tree_node = root_query_node->getJoinTreeNode();
+            collectNamesBoundInJoinTree(join_tree_node, bound_names);
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child != join_tree_node)
+                collectNamesBoundAtQueryLevel(child, bound_names, false /*is_root*/);
+
+        return;
     }
-    else
+
+    if (node->hasAlias())
+        bound_names.expressions.insert(node->getAlias());
+
+    if (const auto * query_node = node->as<QueryNode>())
     {
-        if (const auto * query_node = node->as<QueryNode>())
-        {
-            if (query_node->isCTE())
-                bound_names.insert(query_node->getCTEName());
-            return;
-        }
-
-        if (const auto * union_node = node->as<UnionNode>())
-        {
-            if (union_node->isCTE())
-                bound_names.insert(union_node->getCTEName());
-            return;
-        }
-
-        if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
-            return;
+        if (query_node->isCTE())
+            bound_names.qualifiers.insert(query_node->getCTEName());
+        return;
     }
+
+    if (const auto * union_node = node->as<UnionNode>())
+    {
+        if (union_node->isCTE())
+            bound_names.qualifiers.insert(union_node->getCTEName());
+        return;
+    }
+
+    if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
+        return;
 
     for (const auto & child : node->getChildren())
         collectNamesBoundAtQueryLevel(child, bound_names, false /*is_root*/);
@@ -247,7 +273,7 @@ void collectNamesBoundAtQueryLevel(const QueryTreeNodePtr & node, NameSet & boun
 /// decided lexically: it needs the catalog, which is not available in this rewrite. So a name
 /// that is not bound by any of the constructs above is conservatively treated as referenced,
 /// and the composition fails cleanly instead of substituting into the subquery.
-bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name, NameSet bound_names)
+bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name, BoundNames bound_names)
 {
     if (!node)
         return false;
@@ -255,7 +281,15 @@ bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & 
     switch (node->getNodeType())
     {
         case QueryTreeNodeType::IDENTIFIER:
-            return !bound_names.contains(name) && node->as<IdentifierNode &>().getIdentifier().at(0) == name;
+        {
+            const auto & identifier = node->as<IdentifierNode &>().getIdentifier();
+            if (identifier.at(0) != name)
+                return false;
+            if (bound_names.expressions.contains(name))
+                return false;
+            /// A table alias or a CTE name binds `x.a` but not a bare `x`.
+            return !(identifier.isCompound() && bound_names.qualifiers.contains(name));
+        }
         case QueryTreeNodeType::LAMBDA:
         {
             const auto & lambda_node = node->as<LambdaNode &>();
@@ -269,7 +303,7 @@ bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & 
         case QueryTreeNodeType::UNION:
         {
             collectNamesBoundAtQueryLevel(node, bound_names, true /*is_root*/);
-            if (bound_names.contains(name))
+            if (bound_names.expressions.contains(name))
                 return false;
             break;
         }
@@ -286,8 +320,10 @@ bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & 
 
 bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name)
 {
-    return subqueryReferencesIdentifier(node, name, NameSet{});
+    return subqueryReferencesIdentifier(node, name, BoundNames{});
 }
+
+
 
 /// Every name that occurs as an identifier, a lambda argument, or an alias anywhere in the
 /// subtree. A name outside of this set cannot capture anything in it and cannot be captured
@@ -354,7 +390,7 @@ void substituteIdentifier(QueryTreeNodePtr & node, const String & name, const Qu
             /// Placeholders inside a nested composition belong to its own operands: a nested
             /// composition rebinds them like a shadowing lambda, so a placeholder-named
             /// argument is never substituted into one. Any other name is an ordinary capture.
-            if (node->as<FunctionNode &>().getFunctionName() == function_composition_name && parsePlaceholderName(name))
+            if (isFunctionComposition(*node) && parsePlaceholderName(name))
                 return;
             break;
         }
@@ -397,7 +433,7 @@ QueryTreeNodePtr normalizeOperandToLambda(
         case QueryTreeNodeType::FUNCTION:
         {
             const auto & function_operand = operand->as<FunctionNode &>();
-            if (function_operand.getFunctionName() == function_composition_name)
+            if (isFunctionComposition(*operand))
                 return fuseCompositionToLambda(function_operand, resolve_identifier_operand);
 
             if (collectFreePlaceholderNames(operand).empty())
@@ -407,11 +443,6 @@ QueryTreeNodePtr normalizeOperandToLambda(
         }
         case QueryTreeNodeType::IDENTIFIER:
         {
-            /// A bare placeholder is the identity function: `_1 | plus(_, 1)` is the same as
-            /// `(x -> x) | plus(_, 1)`.
-            if (tryGetPlaceholder(*operand))
-                return liftPlaceholdersToLambda(operand);
-
             /// The right operand is applied to exactly one value, so a variadic function name
             /// (e.g. toString) can be composed on the right; on the left the arity must be
             /// inferable from the function itself.
@@ -419,16 +450,31 @@ QueryTreeNodePtr normalizeOperandToLambda(
             if (!is_left_operand)
                 required_arity = 1;
 
-            auto lambda = resolve_identifier_operand(operand->as<IdentifierNode &>(), required_arity);
-            if (!lambda)
-                throwInvalidOperand(operand);
-            return lambda;
+            /// A name bound in the query keeps priority over the placeholder syntax, so the
+            /// scoped resolution comes first: in
+            /// `WITH (x -> x + 10) AS _1 SELECT arrayMap(_1 | toString, [1])`
+            /// the operand is the bound lambda, not the identity function.
+            if (auto lambda = resolve_identifier_operand(operand->as<IdentifierNode &>(), required_arity))
+                return lambda;
+
+            /// A bare placeholder is the identity function: `_1 | plus(_, 1)` is the same as
+            /// `(x -> x) | plus(_, 1)`.
+            if (tryGetPlaceholder(*operand))
+                return liftPlaceholdersToLambda(operand);
+
+            throwInvalidOperand(operand);
         }
         default:
             throwInvalidOperand(operand);
     }
 }
 
+}
+
+bool isFunctionComposition(const IQueryTreeNode & node)
+{
+    const auto * function_node = node.as<FunctionNode>();
+    return function_node && function_node->isOperator() && function_node->getFunctionName() == function_composition_name;
 }
 
 NameSet collectFreePlaceholderNames(const QueryTreeNodePtr & node)

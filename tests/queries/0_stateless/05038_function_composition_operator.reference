@@ -19,4 +19,4 @@
 [2,3,4]
 [1,3,5]
 18
-SELECT arrayMap(__compose(plus(_, 1), multiply(_, 2)), [1, 2, 3])
+SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3])

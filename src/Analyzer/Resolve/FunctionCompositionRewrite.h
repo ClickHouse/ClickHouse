@@ -13,13 +13,23 @@ namespace DB
 class FunctionNode;
 class IdentifierNode;
 
-/** The internal name of the function node that the `f | g` operator parses into.
-  * It is deliberately not a name a user can write by accident, so the operator does not steal
-  * the public name `compose`: a built-in function or a user defined function named `compose`
-  * keeps working as an ordinary function. The parser (`ParserExpressionImpl::operators_table`)
-  * produces this name for the operator, and nothing else does.
+/** The internal name of the function node that the `f | g` operator parses into. The parser
+  * (`ParserExpressionImpl::operators_table`) produces this name for the operator, and nothing
+  * else does. It is deliberately not a name a user can write by accident, so the operator does
+  * not steal the public name `compose`.
+  *
+  * The name alone does not reserve anything: `__compose` is a legal identifier too, so what
+  * makes a node a composition is the operator syntax the parser recorded in `is_operator`, not
+  * the name — see `isFunctionComposition`. A user defined function of either name keeps
+  * working when it is called as an ordinary function.
   */
 inline constexpr std::string_view function_composition_name = "__compose";
+
+/** Whether the node is the function node the `f | g` operator parses into: a function node with
+  * the internal name that the parser marked as written with operator syntax. An ordinary call
+  * written as `__compose(x, y)` is not a composition and resolves to the function of that name.
+  */
+bool isFunctionComposition(const IQueryTreeNode & node);
 
 /** Machinery behind the function composition operator `f | g` and the argument placeholders
   * `_`, `_1`, `_2`, ... Both are pure syntax sugar over lambdas and are resolved entirely at

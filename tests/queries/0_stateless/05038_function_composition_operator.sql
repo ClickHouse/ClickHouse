@@ -45,7 +45,9 @@ SELECT arrayMap((x -> CAST((x, x + 1), 'Tuple(a Int64, b Int64)')) | (t -> t.b),
 SELECT arrayFilter(modulo(_, 2) | equals(_, 1), [1, 2, 3, 4, 5]);
 SELECT arraySum(arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]));
 
--- The operator formats as the internal `__compose` function.
+-- The operator formats back as the operator, so a format and parse round trip preserves it.
+-- The internal name it parses into is not printed: it is not what the user wrote, and it is
+-- a name a user can define a function with.
 SELECT formatQuery('SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3])');
 
 -- The right operand must be a function of one argument.

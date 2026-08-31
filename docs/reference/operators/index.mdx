@@ -573,13 +573,13 @@ SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
 
 Each operand can be a lambda, the name of a function, another composition, or an expression with argument placeholders. The placeholders turn an expression into a lambda: `_1`, `_2`, ... refer to the first, second, ... lambda argument and may be used at any depth of the expression, and the largest placeholder number determines the number of arguments. The anonymous placeholder `_` introduces one argument per occurrence, in the order of occurrence, and must be a direct argument of a function call. For example, `plus(_, 1)` and `plus(_1, 1)` both mean `x -> plus(x, 1)`.
 
-Placeholders can also be used without the composition operator in the lambda position of a higher-order function: `arrayMap(_1 * 2 + 1, [1, 2, 3])`. Names bound in the query take priority over placeholders there, so a column or alias named `_1` keeps its meaning.
+Placeholders can also be used without the composition operator in the lambda position of a higher-order function: `arrayMap(_1 * 2 + 1, [1, 2, 3])`. Names bound in the query take priority over placeholders, so a column, an alias, or a lambda bound with `WITH` named `_1` keeps its meaning.
 
 The composition is resolved at query analysis time by inlining `f` into `g`, like SQL user defined functions are, and the result is an ordinary lambda. The right operand must be a function of one argument.
 
 A bare placeholder is the identity function, so `_1 | toString` is the same as `toString(_1)`.
 
-Note that the single `|` is not bitwise OR; use the `bitOr` function for that. The operator has no user-visible function name of its own, so `compose` is an ordinary name that can be used for a user defined function.
+Note that the single `|` is not bitwise OR; use the `bitOr` function for that. The operator has no user-visible function name of its own and reserves no name: every identifier, including `compose`, remains available for a user defined function.
 
 The following operators do not have a priority since they are brackets:
 
