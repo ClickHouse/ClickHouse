@@ -11,7 +11,14 @@ doc_type: 'reference'
   ## Descrição
 </div>
 
-Contém uma lista de todos os handlers HTTP definidos em SQL e criados com CREATE HANDLER.
+Contém uma lista de todos os handlers HTTP definidos em SQL e criados com [`CREATE HANDLER`](/pt-BR/reference/statements/create/handler).
+
+A leitura desta tabela requer o privilégio `SHOW HANDLERS`; sem ele, ela aparece vazia. Secrets que
+podem estar embutidos na consulta do handler (por exemplo, credenciais passadas para uma função de tabela) são exibidos nas
+colunas `query` e `create_query` somente quando o usuário tem permissão para visualizar secrets (a configuração do servidor
+`display_secrets_in_show_and_select` e a configuração de formato `format_display_secrets_in_show_and_select`
+estão habilitadas, e o usuário possui o privilégio `displaySecretsInShowAndSelect`); caso contrário, são
+mascarados, exatamente como em `SHOW CREATE TABLE`.
 
 <div id="columns">
   ## Colunas

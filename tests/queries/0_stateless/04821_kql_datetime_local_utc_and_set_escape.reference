@@ -1,0 +1,14 @@
+-- datetime_local_to_utc interprets the wall clock in the given zone --
+2023-03-15 16:00:00.0000000
+2023-03-15 16:00:00.1234567
+2023-03-16 00:00:00.0000000
+-- and datetime_utc_to_local is its inverse --
+2023-03-16 00:00:00.0000000
+2023-03-16 00:00:00.0000000
+-- both directions around a DST transition (America/New_York, 2023-03-12) --
+2023-03-11 17:00:00.0000000
+2023-03-12 16:00:00.0000000
+2023-03-12 13:00:00.0000000
+-- a plain SET still passes when the gate is off --
+2
+3
