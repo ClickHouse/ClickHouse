@@ -532,20 +532,17 @@ bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const Query
 
 bool ReadFromObjectStorageStep::sortingKeyIsComputableFromSourceHeader() const
 {
-    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
-    if (!sorting_key.expression_list_ast)
+    const auto & metadata = storage_snapshot->metadata;
+    if (!metadata->hasSortingKey())
         return false;
 
-    try
-    {
-        auto ast = sorting_key.expression_list_ast->clone();
-        auto syntax_result = TreeRewriter(getContext()).analyze(ast, info.source_header.getNamesAndTypesList());
-        ExpressionAnalyzer(ast, syntax_result, getContext()).getActionsDAG(false);
-    }
-    catch (...) /// Ok: this only probes computability, and the caller falls back to a full sort.
-    {
-        return false;
-    }
+    /// The key expression is analyzed once against every storage column, and this header is a
+    /// projection of those same columns, so the expression is computable here exactly when the
+    /// query still reads every column the key consumes.
+    for (const auto & column_name : metadata->getColumnsRequiredForSortingKey())
+        if (!info.source_header.has(column_name))
+            return false;
+
     return true;
 }
 
