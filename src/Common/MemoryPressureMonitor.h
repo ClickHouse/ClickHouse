@@ -18,7 +18,8 @@ enum class MemoryPressureLevel : uint8_t
     Critical = 3,
 };
 
-inline constexpr int memoryPressureLevelCount() { return 4; }
+/// `Critical` is the last level; `MemoryPressureMonitor.cpp` asserts that against the enumerator count.
+inline constexpr size_t memoryPressureLevelCount() { return static_cast<size_t>(MemoryPressureLevel::Critical) + 1; }
 
 /// One level lower; `Normal` stays `Normal`.
 constexpr MemoryPressureLevel stepDown(MemoryPressureLevel level)

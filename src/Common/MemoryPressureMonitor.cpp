@@ -1,12 +1,17 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <base/EnumReflection.h>
 
 #include <algorithm>
 #include <chrono>
 
 namespace DB
 {
+
+/// Kept here rather than beside `memoryPressureLevelCount`: `MemoryPressureMonitor.h` reaches most of the
+/// codebase through `ThreadStatus.h`, and this check needs only one translation unit.
+static_assert(memoryPressureLevelCount() == magic_enum::enum_count<MemoryPressureLevel>());
 
 namespace ErrorCodes
 {

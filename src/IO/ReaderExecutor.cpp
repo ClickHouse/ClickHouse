@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 
 namespace ProfileEvents
@@ -44,19 +45,20 @@ namespace ErrorCodes
 namespace
 {
 
-/// Divisors applied to the base window/block, indexed by `MemoryPressureLevel`.
-constexpr size_t WINDOW_REDUCTION[memoryPressureLevelCount()] = {1, 4, 16, 64};
-constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()] = {1, 2, 2, 8};
+/// Divisors applied to a base size, indexed by `MemoryPressureLevel`. A table of another extent does
+/// not compile, so a new level cannot leave a zero divisor behind.
+using PressureReduction = std::array<size_t, memoryPressureLevelCount()>;
 
-/// Shrink the base sizes for `pressure`, floored at `FLOOR` and capped at the base; the block is
-/// also capped at the window.
-ReaderExecutor::WindowSizes sizesAtPressure(MemoryPressureLevel pressure, size_t base_window, size_t base_block)
+/// A window is what one `readNextWindow` serves; a block is the unit it is read and stored in - one
+/// `ChainedBuffers` node.
+constexpr auto WINDOW_REDUCTION = std::to_array<size_t>({1, 4, 16, 64});
+constexpr auto BLOCK_REDUCTION = std::to_array<size_t>({1, 2, 2, 8});
+
+/// Shrink `base` for `pressure`, floored at `MIN_READER_EXECUTOR_SIZE` and capped at `base`.
+size_t sizeAtPressure(MemoryPressureLevel pressure, size_t base, const PressureReduction & reduction)
 {
-    const size_t level = static_cast<size_t>(pressure);
-    const size_t window = std::min(std::max(base_window / WINDOW_REDUCTION[level], MIN_READER_EXECUTOR_SIZE), base_window);
-    size_t block = std::min(std::max(base_block / BLOCK_REDUCTION[level], MIN_READER_EXECUTOR_SIZE), base_block);
-    block = std::min(block, window);
-    return {window, block};
+    const size_t reduced = base / reduction[static_cast<size_t>(pressure)];
+    return std::min(std::max(reduced, MIN_READER_EXECUTOR_SIZE), base);
 }
 
 }
@@ -513,7 +515,10 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 
 ReaderExecutor::WindowSizes ReaderExecutor::sampleWindowSizes() const
 {
-    return sizesAtPressure(CurrentThread::getMemoryPressureMonitor().currentLevel(), window_size, block_size);
+    const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
+    const size_t window = sizeAtPressure(pressure, window_size, WINDOW_REDUCTION);
+    /// A block never exceeds the window it is read within.
+    return {window, std::min(sizeAtPressure(pressure, block_size, BLOCK_REDUCTION), window)};
 }
 
 void ReaderExecutor::dropLongConnection(WindowSizes sizes)

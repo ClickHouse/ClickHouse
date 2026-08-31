@@ -479,7 +479,7 @@ TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
 {
     /// Under memory pressure the executor serves a smaller window, so its in-flight buffers hold
     /// less. The no-cache path serves the whole (pressure-adjusted) window, so the first window's
-    /// size is exactly `sizesAtPressure(level).window_bytes`, capped by the file.
+    /// size is exactly `sizeAtPressure(level, window_size, WINDOW_REDUCTION)`, capped by the file.
     constexpr size_t base_window = 8 * 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", base_window)};
 
