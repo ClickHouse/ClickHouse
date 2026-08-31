@@ -1123,6 +1123,7 @@ IcebergFileRecord buildIcebergFileRecord(
     record.schema_id = processed->resolved_schema_id;
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
+    record.first_row_id = processed->first_row_id;
 
     for (const auto & [column_id, info] : parsed.columns_infos)
     {
