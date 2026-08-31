@@ -61,6 +61,11 @@ public:
     /// aggregation bugs that depend on key order.
     bool checkGroupByKeyPermutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// DISTINCT-via-GROUP-BY oracle: `SELECT DISTINCT <exprs> ...` must return the identical
+    /// result set as `SELECT <exprs> ... GROUP BY <exprs>`. The two go through different
+    /// execution paths (DistinctStep vs aggregation), so a divergence is a real bug.
+    bool checkDistinctViaGroupBy(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
