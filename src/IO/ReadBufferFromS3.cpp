@@ -21,6 +21,7 @@
 #include <base/sleep.h>
 
 #include <cstdint>
+#include <exception>
 #include <utility>
 
 
@@ -90,6 +91,23 @@ void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer
     chassert(inner_begin <= inner_end);
     chassert(inner_begin >= outer_begin);
     chassert(inner_end <= outer_end);
+}
+
+bool isQueryCancellationException(const std::exception_ptr & exception)
+{
+    try
+    {
+        CurrentThread::checkIfNotCancelled();
+    }
+    catch (...)
+    {
+        /// A cancellation supplied through `QueryStatus::cancelQuery` can carry any exception code.
+        /// Compare exception identity instead of mutable cancellation state, so a real S3 error is
+        /// still reported if query cancellation races with exception unwinding.
+        return std::current_exception() == exception;
+    }
+
+    return false;
 }
 
 }
@@ -365,13 +383,15 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
-    const auto exception_code = getCurrentExceptionCode();
+    const auto exception = std::current_exception();
+    const auto exception_code = getExceptionErrorCode(exception);
 
     /// Explicit query cancellation is not an S3 read error and must not be retried. In particular,
     /// `sendRequest` can throw it before issuing a request, so do not report it in S3 error telemetry.
     if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED
         || exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-        || exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
+        || exception_code == ErrorCodes::TIMEOUT_EXCEEDED
+        || isQueryCancellationException(exception))
         return false;
 
     /// Callers check mutable query cancellation state only after this function classifies the caught

@@ -143,6 +143,7 @@ static struct InitFiu
     REGULAR(database_replicated_throw_on_stop_replication) \
     REGULAR(database_catalog_shutdown_sleep_per_table) \
     REGULAR(dummy_failpoint) \
+    ONCE(query_status_cancel_with_injected_exception) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
     REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(merge_tree_prefetched_read_pool_pause_before_create_readers) \

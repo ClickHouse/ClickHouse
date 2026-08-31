@@ -250,6 +250,65 @@ def test_prefetch_stops_after_max_execution_time(cluster):
     check_no_objects_after_drop(cluster, table_name=table)
 
 
+def test_custom_query_cancellation_is_not_s3_error(cluster):
+    node = cluster.instances["node"]
+    table = "s3_custom_query_cancellation"
+    query_id = uuid.uuid4().hex
+    pause_failpoint = "s3_read_before_get_object"
+    cancellation_failpoint = "query_status_cancel_with_injected_exception"
+
+    create_table(node, table, min_bytes_for_wide_part=0)
+    node.query(
+        f"INSERT INTO {table} SELECT toDate('2020-01-01'), number, repeat('x', 1024) FROM numbers(4096)"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {cancellation_failpoint}")
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    query_future = executor.submit(
+        node.query_and_get_answer_with_error,
+        f"SELECT sum(id) FROM {table} SETTINGS "
+        "max_threads=1, allow_prefetched_read_pool_for_remote_filesystem=1, "
+        "remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, "
+        "filesystem_prefetches_limit=1, enable_filesystem_cache=0, use_uncompressed_cache=0",
+        query_id=query_id,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE", timeout=60)
+        node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=20,
+            sleep_time=0.25,
+        )
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+
+        _, error = query_future.result(timeout=10)
+        assert "FAULT_INJECTED" in error, error
+        assert "Injected query cancellation exception" in error, error
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {cancellation_failpoint}")
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        node.query(
+            "SELECT sum(ProfileEvents['S3GetObject']), "
+            "sum(ProfileEvents['ReadBufferFromS3RequestsErrors']) FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type!='QueryStart'"
+        ).strip()
+        == "0\t0"
+    )
+    assert node.query(f"SELECT sum(id) FROM {table}").strip() == str(sum(range(4096)))
+
+    check_no_objects_after_drop(cluster, table_name=table)
+
+
 @pytest.mark.parametrize(
     "prefetch_memory_limit",
     ["'1Gi'", "1"],
