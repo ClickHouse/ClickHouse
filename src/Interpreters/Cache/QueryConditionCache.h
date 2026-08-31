@@ -99,7 +99,7 @@ public:
         const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & time_zone, const String & condition,
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
-    /// Check the cache if it contains an entry for the given table + part id and predicate hash.
+    /// Check the cache if it contains an entry for the given table + part id, predicate hash and time zone.
     /// A single logical consultation may probe more than one key (e.g. the bare condition hash and
     /// a skip-index-profiled hash); pass increment_profile_events = false on the extra probes so the
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.

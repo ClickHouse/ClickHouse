@@ -30,8 +30,9 @@
 #     stale "nothing matches" decision for the old file version must not be reused.
 #
 # The table gets a unique UUID per test run and a per-database file path, so the
-# cache keys are isolated and the test needs no global cache reset. The keys being
-# isolated does not make the hit assertions parallel-safe, though - see the
+# cache keys of the arms above are isolated. The time-zone section at the end resets
+# the cache globally on purpose: its entry-count control must observe an empty cache
+# first. Isolated keys do not make the hit assertions parallel-safe, though - see the
 # no-parallel tag above.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
