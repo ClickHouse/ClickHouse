@@ -405,6 +405,10 @@ struct ReplaceRegexpImpl
 
         bool precheck_non_matching = false;
         size_t matched_rows = 0;
+        /// Rows rejected by the non-matching pre-check never reach the cache, so the distinct ratio
+        /// must be measured against the rows that did, not against `i`: otherwise a rejected prefix
+        /// dilutes the ratio and keeps the cache enabled for a fully distinct matching suffix.
+        size_t rows_past_precheck = 0;
 
         std::string_view prev_haystack;
         bool has_prev_haystack = false;
@@ -441,6 +445,8 @@ struct ReplaceRegexpImpl
                 continue;
             }
 
+            ++rows_past_precheck;
+
             if (has_prev_haystack && haystack == prev_haystack)
             {
                 copy_cached(prev_result);
@@ -454,7 +460,8 @@ struct ReplaceRegexpImpl
             /// would pay the pre-check plus the full match for every remaining row.
             if (i >= next_ratio_check)
             {
-                if (map_enabled && i >= min_rows_for_distinct_ratio_check && results_cache.size() * 10 > i * 9)
+                if (map_enabled && rows_past_precheck >= min_rows_for_distinct_ratio_check
+                    && results_cache.size() * 10 > rows_past_precheck * 9)
                 {
                     map_enabled = false;
                     results_cache.clearAndShrink();
