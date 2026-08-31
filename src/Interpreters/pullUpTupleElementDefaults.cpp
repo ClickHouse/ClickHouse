@@ -122,6 +122,19 @@ void checkDefaultDoesNotReferenceElements(const IAST & expression, const NameSet
     NameSet bound;
     collectReferencedIdentifiers(expression, referenced, bound);
 
+    /// The default cannot reference the column it is written in, neither directly (`c`) nor through
+    /// subcolumn syntax (`c.a`): after the pull-up it becomes a self-referential column-level
+    /// default. `collectReferencedIdentifiers` inserts the root of a compound identifier as well, so
+    /// a reference such as `c.a` is caught by the column name alone. This has to be rejected here:
+    /// the cycle detection in `ColumnsDescription` compares whole identifiers, so it does not
+    /// recognize `c.a` as a reference to the column `c`, and the failure would be deferred to the
+    /// first insert that omits the column.
+    if (referenced.contains(column_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "DEFAULT expression inside the data type of column '{}' references the column itself. "
+            "A default expression cannot depend on the column it defines.",
+            column_name);
+
     for (const auto & name : referenced)
         if (visible_element_names.contains(name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
