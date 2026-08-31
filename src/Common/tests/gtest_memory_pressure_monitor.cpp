@@ -47,8 +47,14 @@ TEST(MemoryPressureMonitor, ValidateRejectsInvalidThresholds)
     EXPECT_THROW(validateMemoryPressureThresholds(90, 75, 95), DB::Exception);
     EXPECT_THROW(validateMemoryPressureThresholds(75, 95, 90), DB::Exception);
 
+    /// Zero is out of range: an `elevated` of 0 classifies every scope as `Elevated`, including a scope
+    /// with no hard limit, whose pressure is 0.
+    EXPECT_THROW(validateMemoryPressureThresholds(0, 0, 0), DB::Exception);
+    EXPECT_THROW(validateMemoryPressureThresholds(0, 90, 95), DB::Exception);
+    EXPECT_THROW(validateMemoryPressureThresholds(75, 0, 95), DB::Exception);
+
     /// Valid edges accepted.
-    EXPECT_NO_THROW(validateMemoryPressureThresholds(0, 0, 0));
+    EXPECT_NO_THROW(validateMemoryPressureThresholds(1, 1, 1));
     EXPECT_NO_THROW(validateMemoryPressureThresholds(100, 100, 100));
     EXPECT_NO_THROW(validateMemoryPressureThresholds(75, 90, 95));   // strictly increasing
     EXPECT_NO_THROW(validateMemoryPressureThresholds(75, 75, 90));   // equality allowed

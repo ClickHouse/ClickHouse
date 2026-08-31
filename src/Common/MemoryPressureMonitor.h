@@ -63,7 +63,8 @@ struct MemoryPressureThresholds
     MemoryPressureLevel classify(double pressure) const;
 };
 
-/// Each threshold must be in [0, 100] with `elevated <= high <= critical`, else throws `BAD_ARGUMENTS`.
+/// Each threshold must be in [1, 100] with `elevated <= high <= critical`, else throws `BAD_ARGUMENTS`.
+/// An `elevated` of 0 would classify every scope as `Elevated`, including one with no hard limit.
 void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
 
 /// The thresholds are server-wide: one shared ladder every monitor classifies against. `set` validates

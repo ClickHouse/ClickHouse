@@ -50,9 +50,10 @@ MemoryPressureLevel MemoryPressureThresholds::classify(double pressure) const
 
 void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct)
 {
-    if (elevated_pct > 100 || high_pct > 100 || critical_pct > 100)
+    auto out_of_range = [](UInt64 pct) { return pct < 1 || pct > 100; };
+    if (out_of_range(elevated_pct) || out_of_range(high_pct) || out_of_range(critical_pct))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Memory pressure thresholds must be in [0, 100], got "
+            "Memory pressure thresholds must be in [1, 100], got "
             "elevated={}, high={}, critical={}",
             elevated_pct, high_pct, critical_pct);
     if (!(elevated_pct <= high_pct && high_pct <= critical_pct))
