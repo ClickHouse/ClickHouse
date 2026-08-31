@@ -81,6 +81,9 @@ SSLOperationResult performSSLOperation(SSL * ssl, Operation && operation, bool z
 	ERR_clear_error();
 
 	SSLOperationResult result;
+	/// `errno` is only meaningful if it was set by this operation. In particular, a custom `BIO`
+	/// can report `SSL_ERROR_SYSCALL` without changing it, so do not inherit another syscall result.
+	errno = 0;
 	result.rc = operation();
 
 	if (result.rc < 0 || (zeroIsError && result.rc == 0))

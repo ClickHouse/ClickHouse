@@ -10,6 +10,7 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Net/SecureStreamSocket.h>
+#include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Net/SSLException.h>
 #include <Poco/Net/SocketAddress.h>
 
@@ -18,6 +19,7 @@
 #include <openssl/sslerr.h>
 
 #include <atomic>
+#include <cerrno>
 #include <exception>
 #include <latch>
 #include <memory>
@@ -44,6 +46,45 @@ void leaveShutdownWhileInInit(Poco::Net::Context::Ptr context)
     /// `ERR_GET_REASON` with `ossl_unused`, which causes compiler warnings when used.
     ASSERT_EQ((error >> ERR_LIB_OFFSET) & ERR_LIB_MASK, ERR_LIB_SSL);
     ASSERT_EQ(error & ERR_REASON_MASK, SSL_R_SHUTDOWN_WHILE_IN_INIT);
+}
+
+int failReadWithoutErrno(BIO *, char *, int)
+{
+    /// Return a fatal `BIO` error without setting either `errno` or the OpenSSL error queue.
+    return -1;
+}
+
+long failReadCtrl(BIO *, int command, long, void *) // NOLINT(google-runtime-int)
+{
+    if (command == BIO_CTRL_FLUSH)
+        return 1;
+    return 0;
+}
+
+int failReadCreate(BIO * bio)
+{
+    BIO_set_init(bio, 1);
+    BIO_set_data(bio, nullptr);
+    return 1;
+}
+
+int failReadDestroy(BIO *)
+{
+    return 1;
+}
+
+const BIO_METHOD * failReadBioMethod()
+{
+    static const BIO_METHOD * method = []
+    {
+        BIO_METHOD * result = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "fail-read-without-errno");
+        BIO_meth_set_read(result, failReadWithoutErrno);
+        BIO_meth_set_ctrl(result, failReadCtrl);
+        BIO_meth_set_create(result, failReadCreate);
+        BIO_meth_set_destroy(result, failReadDestroy);
+        return result;
+    }();
+    return method;
 }
 
 class LiveTLSPair
@@ -206,6 +247,31 @@ TEST(SSLErrorQueue, StaleErrorDoesNotChangeNonBlockingReadRetry)
     /// cleared for every attempt, not only for the first operation on the connection.
     leaveShutdownWhileInInit(pair.getClientContext());
     EXPECT_EQ(client.receiveBytes(&byte, 1), Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ);
+    EXPECT_EQ(ERR_peek_error(), 0UL);
+}
+
+
+TEST(SSLErrorQueue, StaleErrnoDoesNotRetryFatalBioError)
+{
+    LiveTLSPair pair;
+    auto & client = pair.getClient();
+    client.setSendTimeout(Poco::Timespan(0, 10'000));
+    client.setReceiveTimeout(Poco::Timespan(0, 10'000));
+
+    auto * client_impl = static_cast<Poco::Net::SecureStreamSocketImpl *>(client.impl());
+    SSL * ssl = client_impl->ssl();
+    ASSERT_NE(ssl, nullptr);
+
+    /// Replace only the read `BIO`; `SSL_set0_rbio` transfers its ownership to `SSL`.
+    BIO * failing_read_bio = BIO_new(failReadBioMethod());
+    ASSERT_NE(failing_read_bio, nullptr);
+    SSL_set0_rbio(ssl, failing_read_bio);
+
+    /// The failing `BIO` deliberately leaves `errno` unchanged. A stale retriable value must not
+    /// make `SecureSocketImpl::mustRetry` repeat the operation or report an unrelated socket error.
+    errno = EINTR;
+    char byte = 0;
+    EXPECT_THROW(client.receiveBytes(&byte, 1), Poco::Net::SSLConnectionUnexpectedlyClosedException);
     EXPECT_EQ(ERR_peek_error(), 0UL);
 }
 

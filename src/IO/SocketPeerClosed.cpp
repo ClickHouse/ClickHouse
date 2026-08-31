@@ -63,7 +63,7 @@ SSLSocketStateResult getSSLSocketStateImpl(ssl_st * ssl)
     ERR_clear_error();
     char c = 0;
     int res = SSL_peek(ssl, &c, 1);
-    SSLSocketStateResult result;
+    SSLSocketStateResult result{SocketState::Closed, false};
     if (res > 0)
     {
         result = {SocketState::DataPending, false}; /// Application data is waiting to be read; the peer is alive.
