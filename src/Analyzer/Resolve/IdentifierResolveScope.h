@@ -186,7 +186,7 @@ struct IdentifierResolveScope
     std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
 
     /** When `group_by_use_nulls` is enabled, maps every shape in which a GROUP BY key expression
-      * can arrive at the lookup during expression resolution to the original key node.
+      * can arrive at the lookup during expression resolution to the key node it is a shape of.
       *
       * Keys are resolved before other clauses, so a key is stored in its original form. But other
       * expressions are resolved bottom-up, and by the time an expression equal to a GROUP BY key is
@@ -194,6 +194,8 @@ struct IdentifierResolveScope
       * have already been converted to Nullable, and the types of all nodes above them have been
       * recomputed. So for each key the map also contains the key with every maximal proper sub-key
       * converted to Nullable (with ancestor types recomputed), and the key converted to Nullable itself.
+      * A key that is an `if`/`multiIf` with a constant condition is later collapsed to the branch it
+      * always takes, so the map also contains that branch, which is what the aggregation groups by.
       * This way the lookup uses exact comparison, including types.
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
