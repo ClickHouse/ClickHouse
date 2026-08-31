@@ -2509,3 +2509,96 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+
+
+def test_detach_database_drains_in_flight_ddl(started_cluster):
+    # `DETACH DATABASE` on a `Replicated` database detaches the tables one by one through the
+    # un-overridden `DatabaseAtomic::detachTable`, which does not maintain `tables_metadata_digest`.
+    # A replicated DDL entry that was already executing holds a `ZooKeeperMetadataTransaction`, so the
+    # "database is probably being dropped" exemption in `DatabaseReplicated::checkDigestValid` does not
+    # cover it, and its digest assertion compares the full counter against the half-emptied map:
+    # `LOGICAL_ERROR` `Digest does not match`, which aborts the server in debug and sanitizer builds.
+    db = "detach_drains_ddl"
+    fp_digest = "database_replicated_force_metadata_digest_check"
+    fp_create = "database_replicated_pause_before_commit_create_table"
+    fp_detach = "drop_database_before_exclusive_ddl_lock"
+    seeded = 5
+
+    main_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    main_node.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/test/{db}', 'shard1', 'replica1')"
+    )
+    for i in range(seeded):
+        main_node.query(f"CREATE TABLE {db}.t{i} (n UInt64) ENGINE = MergeTree ORDER BY n")
+
+    create_result = {}
+    detach_result = {}
+
+    def run(sql, sink):
+        try:
+            sink["out"] = main_node.query(sql)
+        except Exception as ex:  # noqa: BLE001 - reported by the assertions below
+            sink["error"] = str(ex)
+
+    create_thread = threading.Thread(
+        target=run,
+        args=(f"CREATE TABLE {db}.newt (n UInt64) ENGINE = MergeTree ORDER BY n", create_result),
+    )
+    detach_thread = threading.Thread(
+        target=run, args=(f"DETACH DATABASE {db}", detach_result)
+    )
+
+    try:
+        # Removes the 1-in-16 sampling of assertDigestWithProbability, so a skew is reported at once.
+        main_node.query(f"SYSTEM ENABLE FAILPOINT {fp_digest}")
+        main_node.query(f"SYSTEM ENABLE FAILPOINT {fp_create}")
+        main_node.query(f"SYSTEM ENABLE FAILPOINT {fp_detach}")
+
+        create_thread.start()
+        main_node.query(f"SYSTEM WAIT FAILPOINT {fp_create} PAUSE", timeout=60)
+
+        detach_thread.start()
+        # `fp_detach` sits after the per-table detach loop. Reaching it means the loop already ran while
+        # the CREATE was parked; timing out means the DETACH is still waiting for that entry to finish,
+        # which is the intended behaviour. Both outcomes fall through to the assertion below.
+        try:
+            main_node.query(f"SYSTEM WAIT FAILPOINT {fp_detach} PAUSE", timeout=30)
+        except Exception:  # noqa: BLE001 - a timeout here is the expected fixed-server path
+            pass
+
+        attached = int(
+            main_node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{db}'"
+            )
+        )
+        assert attached == seeded, (
+            f"DETACH DATABASE emptied the in-memory table map of {db} ({attached} of {seeded} tables "
+            f"left) while a replicated CREATE TABLE was still executing with its metadata transaction: "
+            f"the entry's digest assertion is about to compare the full counter against that map"
+        )
+    finally:
+        # Disabling a pauseable failpoint also resumes whoever is parked on it, so the two threads
+        # below can always be joined. Cleanup must not mask the assertion above, and it also runs when
+        # the server is already gone, so failures here are swallowed on purpose.
+        def release(fail_point, thread):
+            try:
+                main_node.query(f"SYSTEM DISABLE FAILPOINT {fail_point}")
+            except Exception:  # noqa: BLE001
+                pass
+            if thread is not None and thread.ident is not None:
+                thread.join(timeout=120)
+
+        release(fp_create, create_thread)
+        release(fp_detach, detach_thread)
+        release(fp_digest, None)
+
+    assert "error" not in create_result, create_result["error"]
+    assert "error" not in detach_result, detach_result["error"]
+    assert main_node.query("SELECT 1").strip() == "1"
+
+    main_node.query(f"ATTACH DATABASE {db}")
+    assert (
+        int(main_node.query(f"SELECT count() FROM system.tables WHERE database = '{db}'"))
+        == seeded + 1
+    )
+    main_node.query(f"DROP DATABASE {db} SYNC")
