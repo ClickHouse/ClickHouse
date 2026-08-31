@@ -8,6 +8,7 @@
 #include <Interpreters/QueryOracles/OracleExec.h>
 #include <Interpreters/QueryOracles/OracleCompare.h>
 #include <Interpreters/QueryOracles/OracleGate.h>
+#include <Interpreters/QueryOracles/OracleFixture.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -62,6 +63,7 @@ extern const Event ASTFuzzerOracleDistinctViaGroupByChecks;
 extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
 extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
 extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
+extern const Event ASTFuzzerOracleCodecRoundtripChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2632,6 +2634,57 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
     }
 
     LOG_TRACE(logger, "setting-flip-sweep oracle passed ({}, {} rows)", flip, off_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkCodecRoundtrip(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: ignores the fuzzed query and instead checks that codecs are lossless.
+    /// Identical data stored under CODEC(NONE) vs compression codecs must read back identical; a
+    /// difference is a real codec (de)compression bug. Rate-limited to keep fixture churn low.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("codec", context);
+    if (!fixture.valid())
+        return false;
+
+    const String plain = fixture.allocName("plain");
+    const String coded = fixture.allocName("coded");
+
+    if (!fixture.execute(
+            "CREATE TABLE " + plain + " (k UInt64, i Int64, f Float64, s String) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "CREATE TABLE " + coded + " (k UInt64, i Int64 CODEC(Delta, LZ4), f Float64 CODEC(Gorilla, ZSTD),"
+            " s String CODEC(ZSTD)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+
+    /// Deterministic identical seed for both (INSERT ... SELECT FROM numbers; never rand/now).
+    const String seed = " SELECT number, toInt64(number) * 7 - 100, number * 0.5, toString(number % 97) FROM numbers(500)";
+    if (!fixture.execute("INSERT INTO " + plain + seed) || !fixture.execute("INSERT INTO " + coded + seed))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "codec round-trip oracle: {} (CODEC(NONE)) vs {} (codecs)", plain, coded);
+
+    auto plain_rows_opt = OracleExec::executeRows("SELECT * FROM " + plain, context, ResultShape::SortedBag);
+    auto coded_rows_opt = OracleExec::executeRows("SELECT * FROM " + coded, context, ResultShape::SortedBag);
+    if (!plain_rows_opt || !coded_rows_opt)
+        return false;
+
+    if (!OracleCompare::equal(*plain_rows_opt, *coded_rows_opt))
+    {
+        fixture.preserve(); /// keep the two tables for triage
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "codec round-trip oracle mismatch!\n"
+            "CODEC(NONE) table {} ({} rows) vs codec table {} ({} rows)\n{}",
+            plain, plain_rows_opt->size(), coded, coded_rows_opt->size(),
+            OracleCompare::diffSummary(*plain_rows_opt, *coded_rows_opt));
+    }
+
+    LOG_TRACE(logger, "codec round-trip oracle passed ({} rows)", plain_rows_opt->size());
     return true;
 }
 
