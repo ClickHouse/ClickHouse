@@ -2,7 +2,7 @@
 -- past `max_joined_block_size_rows`. 03567 stays serial (right side below
 -- `parallel_hash_join_threshold`). 03633 / 04102 zero `min_joined_block_size_*`,
 -- which skips the squash. Leave min non-zero, force parallel, cap at 9.
--- Random settings limits: parallel_hash_join_threshold=(1, 1); max_threads=(4, 4); max_joined_block_size_rows=(9, 9); min_joined_block_size_rows=(65536, 65536); min_joined_block_size_bytes=(524288, 524288); joined_block_split_single_row=(1, 1); query_plan_join_swap_table=(0, 0); enable_lazy_columns_replication=(0, 0); enable_analyzer=(1, 1)
+-- Random settings limits: parallel_hash_join_threshold=(1, 1); max_threads=(4, 4); max_joined_block_size_rows=(9, 9); min_joined_block_size_rows=(65536, 65536); min_joined_block_size_bytes=(524288, 524288); joined_block_split_single_row=(1, 1); enable_lazy_columns_replication=(0, 0); enable_analyzer=(1, 1)
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0;
