@@ -15,6 +15,7 @@ extern const Event ASTFuzzerOracleIdentityWhereChecks;
 extern const Event ASTFuzzerOracleSubqueryWrapChecks;
 extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
 extern const Event ASTFuzzerOracleDistinctViaGroupByChecks;
+extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
 }
 
 namespace DB
@@ -72,6 +73,7 @@ OracleRegistry::OracleRegistry()
     add("Subquery wrap", ProfileEvents::ASTFuzzerOracleSubqueryWrapChecks, &QueryOracleChecker::checkSubqueryWrap);
     add("GROUP BY key permutation", ProfileEvents::ASTFuzzerOracleGroupByKeyPermutationChecks, &QueryOracleChecker::checkGroupByKeyPermutation);
     add("DISTINCT via GROUP BY", ProfileEvents::ASTFuzzerOracleDistinctViaGroupByChecks, &QueryOracleChecker::checkDistinctViaGroupBy);
+    add("PREWHERE equivalence", ProfileEvents::ASTFuzzerOraclePrewhereEquivalenceChecks, &QueryOracleChecker::checkPrewhereEquivalence);
 }
 
 const OracleRegistry & OracleRegistry::instance()
