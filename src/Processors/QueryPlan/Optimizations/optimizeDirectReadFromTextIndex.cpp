@@ -16,6 +16,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -345,6 +346,8 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             if (const auto * column_set = typeid_cast<const ColumnSet *>(&node.column->getDataColumn()))
             {
                 auto future_set = column_set->getData();
+                if (typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+                    return nullptr;
                 auto source_ast = future_set ? future_set->getSourceAST() : nullptr;
                 return source_ast ? source_ast->clone() : nullptr;
             }
