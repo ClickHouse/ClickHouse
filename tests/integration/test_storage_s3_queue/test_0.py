@@ -1418,6 +1418,71 @@ def test_move_after_processing_retry_recognizes_its_own_copy_azure(started_clust
     assert move_collisions() == collisions_before
 
 
+def test_move_after_processing_azure_preserves_source_metadata(started_cluster):
+    """A guarded same-container Azure move of a metadata-bearing blob: the provenance is seeded
+    from the source attributes, which used to gain a bogus empty-key entry from a bare
+    map::emplace() and fail or pollute the copy.
+    """
+    import io as _io
+
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_azure_meta_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = f"{token}_meta_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    container = started_cluster.azurite_container
+
+    data = b"1,2,3\n"
+    blob = started_cluster.blob_service_client.get_blob_client(
+        container, f"{files_path}/{file_name}"
+    )
+    blob.upload_blob(_io.BytesIO(data), "BlockBlob", len(data), metadata={"srckey": "srcval"})
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="AzureQueue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    for _ in range(1000):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(0.1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    for _ in range(100):
+        if (
+            count_azurite_blobs(started_cluster, container, processed_prefix) == 1
+            and count_azurite_blobs(started_cluster, container, files_path) == 0
+        ):
+            break
+        time.sleep(0.1)
+    assert count_azurite_blobs(started_cluster, container, processed_prefix) == 1
+    assert count_azurite_blobs(started_cluster, container, files_path) == 0
+
+    dest_meta = (
+        started_cluster.blob_service_client.get_blob_client(
+            container, f"{processed_prefix}/{file_name}"
+        )
+        .get_blob_properties()
+        .metadata
+    )
+    # Source metadata survives beside the provenance, and no empty key sneaks in.
+    assert dest_meta.get("srckey") == "srcval"
+    assert any(k.lower() == "clickhouse_move_source_path" for k in dest_meta)
+    assert "" not in dest_meta
+
+
 def test_move_after_processing_recognizes_own_copy_across_attempts(started_cluster):
     """The own-committed-copy proof must outlive a single attempt's memory: whatever died between
     committing the guarded copy and removing the source - server restart, task cancellation - left no

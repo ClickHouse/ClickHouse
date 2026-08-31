@@ -598,12 +598,9 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
     result.etag = properties.ETag.ToString();
-    if (!properties.Metadata.empty())
-    {
-        result.attributes.emplace();
-        for (const auto & [key, value] : properties.Metadata)
-            result.attributes[key] = value;
-    }
+    /// A bare map::emplace() inserted a {"", ""} entry - a leftover from the optional<> era.
+    for (const auto & [key, value] : properties.Metadata)
+        result.attributes[key] = value;
     result.last_modified = static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count();
     return result;
 }
