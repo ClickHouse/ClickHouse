@@ -157,11 +157,12 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
         query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
 
     /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
-    /// check this setting here and decide if we need to change the function to get.
-    /// The query context takes priority; without one — the metadata loader at startup, which replays
-    /// definitions persisted when the legacy meaning was the default — the passed context decides, so
-    /// that `use_legacy_to_time` in the server default profile heals loading such definitions.
-    if (Poco::toLower(name) == "totime")
+    /// check this setting here and decide if we need to change the function to get. The check is on the
+    /// name as the user spelled it: the `toTimeWithoutDate` alias must denote the conversion regardless
+    /// of the setting. The query context takes priority; without one — the metadata loader at startup,
+    /// which replays definitions persisted when the legacy meaning was the default — the passed context
+    /// decides, so that `use_legacy_to_time` in the server default profile heals loading such definitions.
+    if (Poco::toLower(name_param) == "totime")
     {
         const ContextPtr & settings_context = query_context ? query_context : context;
         if (settings_context && settings_context->getSettingsRef()[Setting::use_legacy_to_time])

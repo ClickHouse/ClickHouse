@@ -71,3 +71,20 @@ def test_legacy_totime_metadata_load(started_cluster):
     assert node.query("SELECT count() FROM default.t_ttl").strip() == "2"
 
     node.query("DROP TABLE default.t_ttl")
+
+    # A table created under an explicit session `use_legacy_to_time = 0` persists the unambiguous
+    # `toTimeWithoutDate` spelling, so the legacy default profile cannot flip it on restart.
+    node.query(
+        "CREATE TABLE default.t_new (c0 DateTime('UTC')) ENGINE = MergeTree ORDER BY toTime(c0)",
+        settings={"use_legacy_to_time": 0},
+    )
+    node.query("INSERT INTO default.t_new VALUES ('2024-01-01 12:34:56')")
+    assert "toTimeWithoutDate(c0)" in node.query("SHOW CREATE TABLE default.t_new")
+
+    node.restart_clickhouse()
+
+    assert "toTimeWithoutDate(c0)" in node.query("SHOW CREATE TABLE default.t_new")
+    node.query("INSERT INTO default.t_new VALUES ('2024-01-01 12:34:56')")
+    assert node.query("SELECT count() FROM default.t_new").strip() == "2"
+
+    node.query("DROP TABLE default.t_new")

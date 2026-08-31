@@ -73,11 +73,11 @@ BlockIO InterpreterDeleteQuery::execute()
     /// The spelling must be canonical before the query is enqueued for a Replicated database or
     /// lowered into an UPDATE / ALTER text: the replaying host may not carry this session's settings.
     /// SQL UDF bodies are inlined first, so a `toTime` hidden in one is canonicalized too.
-    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+    if (const auto to_time_replacement = legacyToTimeReplacement(getContext()->getSettingsRef()); !to_time_replacement.empty())
     {
-        if (!UserDefinedSQLFunctionFactory::instance().empty())
+        if (getContext()->getSettingsRef()[Setting::use_legacy_to_time] && !UserDefinedSQLFunctionFactory::instance().empty())
             UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
-        replaceLegacyToTime(*query_ptr);
+        replaceLegacyToTime(*query_ptr, to_time_replacement);
     }
 
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();

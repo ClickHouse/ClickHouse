@@ -88,7 +88,7 @@ namespace ErrorCodes
 namespace
 {
 
-void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
+void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter, std::string_view to_time_replacement)
 {
     for (const auto & child : alter.command_list->children)
     {
@@ -112,7 +112,7 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
                                command->partition})
         {
             if (payload)
-                replaceLegacyToTime(*payload);
+                replaceLegacyToTime(*payload, to_time_replacement);
         }
     }
 }
@@ -451,8 +451,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
-    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
+    if (const auto to_time_replacement = legacyToTimeReplacement(getContext()->getSettingsRef()); !to_time_replacement.empty())
+        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>(), to_time_replacement);
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
