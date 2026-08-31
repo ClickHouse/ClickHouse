@@ -1165,6 +1165,26 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 SELECT name, status FROM system.dictionaries;
 ```
 
+## SYSTEM STOP RELOAD DICTIONARIES {#stop-reload-dictionaries}
+
+Prevents any reloading or initial loading of dictionaries.
+
+**Syntax**
+
+```sql
+SYSTEM STOP RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
+## SYSTEM START RELOAD DICTIONARIES {#start-reload-dictionaries}
+
+Reverses the effect of `SYSTEM STOP RELOAD DICTIONARIES`, allowing dictionaries to be reloaded.
+
+**Syntax**
+
+```sql
+SYSTEM START RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
 ## SYSTEM UNLOAD DICTIONARY {#unload-dictionary}
 
 Unloads a dictionary `dictionary_name` to release its memory, if the dictionary status is `LOADED`.
@@ -1186,31 +1206,6 @@ The `SYSTEM UNLOAD DICTIONARIES` query unloads all dictionaries with a `LOADED` 
 
 ```sql
 SYSTEM UNLOAD DICTIONARIES
-```
-
-## SYSTEM RELOAD MODELS {#reload-models}
-
-<Note>
-This statement and `SYSTEM RELOAD MODEL` merely unload catboost models from the clickhouse-library-bridge. The function `catboostEvaluate()`
-loads a model upon first access if it is not loaded yet.
-</Note>
-
-Unloads all CatBoost models.
-
-**Syntax**
-
-```sql
-SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
-```
-
-## SYSTEM RELOAD MODEL {#reload-model}
-
-Unloads a CatBoost model at `model_path`.
-
-**Syntax**
-
-```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 ```
 
 ## SYSTEM RELOAD FUNCTIONS {#reload-functions}

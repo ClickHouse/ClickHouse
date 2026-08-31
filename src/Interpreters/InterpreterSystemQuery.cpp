@@ -360,6 +360,9 @@ void InterpreterSystemQuery::startStopReloadDictionaries(bool start)
     {
         manager->remove(ActionLocks::ReloadExternalDictionaries);
         manager->remove(ActionLocks::ReloadEmbeddedDictionaries);
+        /// Requeue config-driven reloads and eager initial loads that were skipped while stopped
+        /// they won't be retried on their own since the periodic updater only reacts to a changed config.
+        getContext()->getExternalDictionariesLoader().reloadBlockedObjects();
         return;
     }
 
