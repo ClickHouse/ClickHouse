@@ -315,10 +315,12 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
         && decrease == nullptr
         && !allocation_to_kill)
     {
-        suspended_growth->allocation.queue.retrySuction(suspended_growth->allocation);
-        suction_growth = suspended_growth;
-        suspended_growth = nullptr;
-        promoted_to_suction = true;
+        if (suspended_growth->allocation.queue.retrySuction(suspended_growth->allocation))
+        {
+            suction_growth = suspended_growth;
+            suspended_growth = nullptr;
+            promoted_to_suction = true;
+        }
     }
 
     if (!promoted_to_suction && !new_increase && suction_growth && decrease == nullptr && !allocation_to_kill)

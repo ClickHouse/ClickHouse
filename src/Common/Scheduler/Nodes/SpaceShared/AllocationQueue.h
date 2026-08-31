@@ -31,7 +31,7 @@ public:
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
     bool trySuspendIncrease(ResourceAllocation & allocation) override;
     void notifyRecoveryProgress(ResourceAllocation & allocation) override;
-    void retrySuction(ResourceAllocation & allocation) override;
+    bool retrySuction(ResourceAllocation & allocation) override;
     void retrySuspendedIncreases() override;
     bool hasSuspendedIncrease() const override;
     ResourceAllocation * getSuctionAllocation() const override;

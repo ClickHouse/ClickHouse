@@ -49,7 +49,7 @@ public:
 
     /// Make exactly one suctioned request visible after a local release. Other force-spilling
     /// requests remain parked and cannot capture the release.
-    virtual void retrySuction(ResourceAllocation & allocation) = 0;
+    virtual bool retrySuction(ResourceAllocation & allocation) = 0;
 
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.

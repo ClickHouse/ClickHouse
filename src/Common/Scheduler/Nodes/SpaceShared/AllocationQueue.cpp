@@ -176,15 +176,17 @@ void AllocationQueue::notifyRecoveryProgress(ResourceAllocation & allocation)
     scheduleActivation();
 }
 
-void AllocationQueue::retrySuction(ResourceAllocation & allocation)
+bool AllocationQueue::retrySuction(ResourceAllocation & allocation)
 {
     /// May be called while this queue is propagating a decrease with `mutex` held. All touched
     /// fields are scheduler-thread state, matching `trySuspendIncrease`.
     if (is_not_usable || !allocation.increasing_hook.is_linked())
-        return;
+        return false;
     chassert(allocation.memory_growth_recovery_pending || allocation.memory_growth_suction_priority);
     if (allocation.memory_growth_recovery_pending)
     {
+        if (!canEnterSuction(allocation))
+            return false;
         allocation.memory_growth_suction_priority = true;
         if (suspended_growth == &allocation)
             suspended_growth = nullptr;
@@ -192,6 +194,7 @@ void AllocationQueue::retrySuction(ResourceAllocation & allocation)
     allocation.memory_growth_suspended = false;
     memory_growth_suspension_changed = true;
     scheduleActivation();
+    return true;
 }
 
 bool AllocationQueue::canEnterSuction(const ResourceAllocation & allocation) const
