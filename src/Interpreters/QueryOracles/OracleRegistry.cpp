@@ -40,6 +40,7 @@ extern const Event ASTFuzzerOracleRowPolicyChecks;
 extern const Event ASTFuzzerOracleFinalMergeChecks;
 extern const Event ASTFuzzerOracleWithFillChecks;
 extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
+extern const Event ASTFuzzerOracleDictGetChecks;
 }
 
 namespace DB
@@ -123,6 +124,7 @@ OracleRegistry::OracleRegistry()
     add("FINAL-merge dedup", ProfileEvents::ASTFuzzerOracleFinalMergeChecks, &QueryOracleChecker::checkFinalMergeReplacing);
     add("WITH FILL grid", ProfileEvents::ASTFuzzerOracleWithFillChecks, &QueryOracleChecker::checkWithFillGrid);
     add("pipe equivalence", ProfileEvents::ASTFuzzerOraclePipeEquivalenceChecks, &QueryOracleChecker::checkPipeEquivalence);
+    add("dictGet vs JOIN", ProfileEvents::ASTFuzzerOracleDictGetChecks, &QueryOracleChecker::checkDictGetVsJoin);
 }
 
 const OracleRegistry & OracleRegistry::instance()

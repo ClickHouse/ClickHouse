@@ -187,6 +187,10 @@ public:
     /// (FROM t |> WHERE p |> SELECT ...) must return the same multiset (pipe is pure syntax).
     bool checkPipeEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Dictionary oracle (self-seeded): dictGet/dictHas against a hashed dictionary must equal the
+    /// equivalent LEFT JOIN / IN lookup against the dictionary's own source table.
+    bool checkDictGetVsJoin(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
