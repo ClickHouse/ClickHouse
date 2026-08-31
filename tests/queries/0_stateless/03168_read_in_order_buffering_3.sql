@@ -14,8 +14,15 @@ SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8;
 -- Keep two parts per partition so the per-partition `FINAL` merge is a real merge.
 SYSTEM STOP MERGES t_read_in_order_3;
 
-INSERT INTO t_read_in_order_3 SELECT number % 4, number, 1, if(number >= 3000, [], [toUInt32(number)]) FROM numbers(4000);
-INSERT INTO t_read_in_order_3 SELECT number % 4, number, 2, if(number >= 3000, [], [toUInt32(number)]) FROM numbers(4000);
+INSERT INTO t_read_in_order_3 SELECT number % 4, number, 1, if(number >= 300, [], [toUInt32(number)]) FROM numbers(400);
+INSERT INTO t_read_in_order_3 SELECT number % 4, number, 2, if(number >= 300, [], [toUInt32(number)]) FROM numbers(400);
+
+-- The row count and the threshold are both multiples of the partition count, so every partition holds
+-- the same number of rows with values and the same number without. An uneven split staggers where the
+-- partitions run out of values, and the empty final chunk stops coinciding with the port finishing.
+SELECT uniqExact(with_values) = 1, uniqExact(without_values) = 1
+FROM (SELECT p, countIf(notEmpty(vals)) AS with_values, countIf(empty(vals)) AS without_values
+      FROM t_read_in_order_3 FINAL GROUP BY p);
 
 -- Consuming the rowless chunk is `Logical error: 'max_rows > 0'` in debug and sanitizer builds. Every
 -- setting below is load-bearing, and the query must run bare: an enclosing aggregate lets
