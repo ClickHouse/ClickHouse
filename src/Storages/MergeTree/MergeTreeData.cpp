@@ -940,9 +940,14 @@ static void updateHashWithString(SipHash & hash, const String & value)
     hash.update(value);
 }
 
-/// Estimators are cached per (table, ordered part set, requested column set). Parts are
-/// immutable, so an equal key implies an equal estimator. The column names are sorted
-/// because call sites pass the same columns in different orders.
+/// Estimators are cached per (table, ordered part set with content checksums, requested
+/// column set). Parts are immutable, so an equal key implies an equal estimator. The column
+/// names are sorted because call sites pass the same columns in different orders.
+/// The table schema is deliberately not part of the key: estimators are built purely from
+/// part contents (covered by the checksums), and statistics whose stored type no longer
+/// matches the table's current column type are excluded at estimation time by
+/// `isCompatibleStatistics` against the caller's metadata snapshot, exactly as on the
+/// uncached path.
 static UInt128 selectivityEstimatorCacheKey(const StorageID & table_id, const RangesInDataParts & parts, const Names & required_columns)
 {
     SipHash hash;
