@@ -95,6 +95,8 @@ public:
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
+    bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
+
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");

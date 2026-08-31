@@ -1,0 +1,6 @@
+-- /query?query=... is the query endpoint, not a table named 'query'
+1
+-- /?query=... is the root query endpoint
+2
+-- POST body to the root query endpoint still works
+3

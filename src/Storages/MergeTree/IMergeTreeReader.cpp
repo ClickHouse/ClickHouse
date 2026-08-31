@@ -9,11 +9,13 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Databases/enableAllExperimentalSettings.h>
@@ -59,6 +61,7 @@ IMergeTreeReader::IMergeTreeReader(
     , storage_settings(storage_settings_)
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
+    , last_mark_to_read(getLastMark(all_mark_ranges_))
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
     , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
@@ -104,6 +107,11 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
 
     bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
+}
+
+bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
+{
+    return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
@@ -152,7 +160,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     }
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
+void IMergeTreeReader::fillMissingColumns(
+    Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+    const NameSet & previous_step_columns) const
 {
     try
     {
@@ -187,7 +197,8 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                 : available_columns,
                 partially_read_columns,
                 storage_snapshot,
-                share_nested);
+                share_nested,
+                previous_step_columns);
 
             should_evaluate_missing_defaults
                 = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -292,12 +303,17 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             }
 
             auto name_in_storage = it->getNameInStorage();
-            res_columns[pos] = additional_columns.getByName(name_in_storage).column;
 
             if (it->isSubcolumn())
             {
-                const auto & type_in_storage = it->getTypeInStorage();
-                res_columns[pos] = type_in_storage->getSubcolumn(it->getSubcolumnName(), res_columns[pos]);
+                /// The parent may still be in its pre-`ALTER MODIFY` type here (an earlier on-fly step
+                /// is not converted by performRequiredConversions); tryGetSubcolumnFromBlock casts it
+                /// to the storage type before extracting.
+                res_columns[pos] = tryGetSubcolumnFromBlock(additional_columns, it->getTypeInStorage(), *it);
+            }
+            else
+            {
+                res_columns[pos] = additional_columns.getByName(name_in_storage).column;
             }
         }
     }
@@ -386,6 +402,24 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     }
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
+
+    /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
+    /// `pq_codebook`) which the part's plain columns list (columns.txt) cannot represent - they round-trip to the bare
+    /// type name and are lost. Honor that serialization directly: rebuilding it from the part's `SerializationInfo` via
+    /// `IDataType::getSerialization(info)` would re-wrap it with the recorded kind stack and discard the companion
+    /// streams, so the subcolumn read would fall back to recomputing it and fail. This is restricted to that specific
+    /// serialization (a Quantize column is always dense) so it does not interfere with the Default/Sparse kind stack of
+    /// ordinary columns.
+    const auto & type_in_storage = required_column.getTypeInStorage();
+    if (const auto * custom = type_in_storage->getCustomSerialization();
+        custom && typeid(*custom) == typeid(SerializationQuantizedVector))
+    {
+        auto serialization = type_in_storage->getDefaultSerialization();
+        if (required_column.isSubcolumn())
+            return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
+        return serialization;
+    }
+
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 
@@ -413,7 +447,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
-            auto column_in_part = getColumnInPart(*name_and_type);
+            const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
@@ -442,6 +476,12 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
+}
+
+void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
+{
+    all_mark_ranges = ranges;
+    last_mark_to_read = getLastMark(all_mark_ranges);
 }
 
 std::optional<IMergeTreeReader::ColumnForOffsets>
@@ -515,18 +555,17 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
             num_columns_to_read);
 }
 
-String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const
+String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
 {
     const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
     return fmt::format(
-        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {}, offset = {})",
+        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
         data_part_storage->getFullPath(),
         data_part_info_for_read->getTableName(),
         data_part_storage->getDiskName(),
         data_part_storage->getDiskType(),
         from_mark,
-        max_rows_to_read,
-        offset);
+        max_rows_to_read);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderCompact(

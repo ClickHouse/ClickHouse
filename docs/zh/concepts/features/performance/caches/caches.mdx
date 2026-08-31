@@ -1,0 +1,36 @@
+---
+description: '执行查询时，ClickHouse 会使用不同的缓存。'
+sidebarTitle: '缓存'
+slug: /operations/caches
+title: '缓存类型'
+keywords: ['缓存']
+doc_type: 'reference'
+---
+
+执行查询时，ClickHouse 会使用不同的缓存来加速查询，
+并减少对磁盘读写的需求。
+
+主要的缓存类型有：
+
+* `mark_cache` — [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族表引擎使用的[标记](/zh/resources/develop-contribute/introduction/architecture#merge-tree)缓存。
+* `uncompressed_cache` — [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族表引擎使用的未压缩数据缓存。
+* 操作系统页缓存 (间接使用，用于存放实际数据的文件) 。
+
+此外，还有许多其他类型的缓存：
+
+* DNS 缓存。
+* [Regexp](/zh/reference/formats/Regexp) 缓存。
+* 已编译表达式缓存。
+* [向量相似度索引](/zh/reference/engines/table-engines/mergetree-family/annindexes)缓存。
+* [文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes#caching)缓存。
+* [Avro 格式](/zh/reference/formats/Avro/Avro) schema 缓存。
+* [字典](/zh/reference/statements/create/dictionary)数据缓存。
+* schema 推断缓存。
+* 用于 S3、Azure、Local 及其他磁盘的[文件系统缓存](/zh/concepts/features/configuration/server-config/storing-data)。
+* [用户态页缓存](/zh/concepts/features/performance/caches/userspace-page-cache)
+* [查询缓存](/zh/concepts/features/performance/caches/query-cache)。
+* [查询条件缓存](/zh/concepts/features/performance/caches/query-condition-cache)。
+* 格式 schema 缓存。
+
+如果你因性能调优、故障排查或数据一致性等原因需要清除某个缓存，
+可以使用 [`SYSTEM CLEAR ... CACHE`](/zh/reference/statements/system) 语句。

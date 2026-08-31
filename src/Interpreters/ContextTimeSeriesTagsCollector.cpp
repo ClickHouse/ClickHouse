@@ -1,15 +1,28 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
+#include <Common/PODArray.h>
+
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/re2.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
+#include <base/unaligned.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <algorithm>
+#include <utility>
 #include <boost/container_hash/hash.hpp>
 #include <city.h>
 
@@ -20,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -38,20 +52,158 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No groups exist");
     }
 
-    template <typename IDType>
-    [[noreturn]] void throwIDWasAddedWithOtherTags(const IDType & id, const TagNamesAndValuesPtr & tags, const TagNamesAndValuesPtr & existing_tags)
+    [[noreturn]] void throwIDWasAddedWithOtherTags(const IColumn & id_column, size_t row, const TagNamesAndValuesPtr & tags, const TagNamesAndValuesPtr & existing_tags)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Cannot add identifier {} with tags {} because it was added before with tags {}",
-                        toString(id),
+                        applyVisitor(FieldVisitorToString{}, id_column[row]),
                         ContextTimeSeriesTagsCollector::toString(*tags),
                         ContextTimeSeriesTagsCollector::toString(*existing_tags));
     }
 
-    template <typename IDType>
-    [[noreturn]] void throwUnknownID(const IDType & id)
+    [[noreturn]] void throwUnknownID(const IColumn & id_column, size_t row)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown identifier {}", toString(id));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown identifier {}", applyVisitor(FieldVisitorToString{}, id_column[row]));
+    }
+
+    /// Represents an identifier column with Const/Sparse/LowCardinality/Nullable wrappers removed.
+    struct UnwrappedIDColumn
+    {
+        ColumnPtr column;                   /// The full column, it keeps `data` and `null_map` alive.
+        const IColumn * data = nullptr;     /// The column containing values of identifiers (not Nullable).
+        const NullMap * null_map = nullptr; /// The null map if the original column was Nullable.
+    };
+
+    UnwrappedIDColumn unwrapIDColumn(const ColumnPtr & id_column)
+    {
+        UnwrappedIDColumn res;
+        res.column = id_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        res.data = res.column.get();
+        res.null_map = nullptr;
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(res.data))
+        {
+            res.null_map = &nullable_column->getNullMapData();
+            res.data = &nullable_column->getNestedColumn();
+        }
+        return res;
+    }
+
+    /// Converts an element of an identifier column to its representation in a typed map.
+    UInt64 toIDComponent(UInt64 x) { return x; }
+    UInt128 toIDComponent(const UInt128 & x) { return x; }
+    UInt128 toIDComponent(const UUID & x) { return x.toUnderType(); }
+
+    /// Gets identifiers stored in a single column.
+    template <typename Type>
+    struct OneComponentID
+    {
+        using IDType = decltype(toIDComponent(Type{}));
+        const Type * data;
+        IDType get(size_t i) const { return toIDComponent(data[i]); }
+    };
+
+    /// Gets identifiers stored in a `FixedString(16)` column, which holds them as raw bytes
+    /// without a separate element type, so they are read with the same representation as UInt128.
+    struct FixedString16ID
+    {
+        using IDType = UInt128;
+        const UInt8 * data;
+        IDType get(size_t i) const { return unalignedLoad<UInt128>(data + sizeof(UInt128) * i); }
+    };
+
+    /// Gets identifiers stored in a two-element tuple column by combining two component getters.
+    template <typename FirstGetter, typename SecondGetter>
+    struct TwoComponentID
+    {
+        using IDType = std::pair<typename FirstGetter::IDType, typename SecondGetter::IDType>;
+        FirstGetter first;
+        SecondGetter second;
+        IDType get(size_t i) const { return {first.get(i), second.get(i)}; }
+    };
+
+    /// Calls `func` with the typed id getter matching the column's layout and returns true,
+    /// or returns false if there is no typed map for this column's layout (the generic map must be used).
+    template <typename F>
+    bool dispatchIDType(const IColumn & id_data, F && func)
+    {
+        if (const auto * column_uint64 = typeid_cast<const ColumnUInt64 *>(&id_data))
+        {
+            func(OneComponentID<UInt64>{column_uint64->getData().data()});
+            return true;
+        }
+        if (const auto * column_uint128 = typeid_cast<const ColumnUInt128 *>(&id_data))
+        {
+            func(OneComponentID<UInt128>{column_uint128->getData().data()});
+            return true;
+        }
+        if (const auto * column_uuid = typeid_cast<const ColumnUUID *>(&id_data))
+        {
+            func(OneComponentID<UUID>{column_uuid->getData().data()});
+            return true;
+        }
+        if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(&id_data))
+        {
+            if (column_fixed_string->getN() == sizeof(UInt128))
+            {
+                func(FixedString16ID{column_fixed_string->getChars().data()});
+                return true;
+            }
+            return false;
+        }
+
+        const auto * column_tuple = typeid_cast<const ColumnTuple *>(&id_data);
+        if (!column_tuple || (column_tuple->tupleSize() != 2))
+            return false;
+
+        const auto * first = typeid_cast<const ColumnUInt64 *>(&column_tuple->getColumn(0));
+        if (!first)
+            return false;
+        OneComponentID<UInt64> first_getter{first->getData().data()};
+
+        const IColumn & second_column = column_tuple->getColumn(1);
+        if (const auto * second_uint64 = typeid_cast<const ColumnUInt64 *>(&second_column))
+        {
+            func(TwoComponentID{first_getter, OneComponentID<UInt64>{second_uint64->getData().data()}});
+            return true;
+        }
+        if (const auto * second_uint128 = typeid_cast<const ColumnUInt128 *>(&second_column))
+        {
+            func(TwoComponentID{first_getter, OneComponentID<UInt128>{second_uint128->getData().data()}});
+            return true;
+        }
+        if (const auto * second_uuid = typeid_cast<const ColumnUUID *>(&second_column))
+        {
+            func(TwoComponentID{first_getter, OneComponentID<UUID>{second_uuid->getData().data()}});
+            return true;
+        }
+        if (const auto * second_fixed_string = typeid_cast<const ColumnFixedString *>(&second_column))
+        {
+            if (second_fixed_string->getN() == sizeof(UInt128))
+            {
+                func(TwoComponentID{first_getter, FixedString16ID{second_fixed_string->getChars().data()}});
+                return true;
+            }
+            return false;
+        }
+
+        return false;
+    }
+
+    /// Serializes identifiers from a column to be used as keys in the mapping.
+    /// Identifiers which are NULLs are skipped (their keys are left empty).
+    VectorWithMemoryTracking<std::string_view> serializeIDs(const IColumn & id_data, const UInt8 * null_map, Arena & arena)
+    {
+        size_t num_rows = id_data.size();
+        VectorWithMemoryTracking<std::string_view> keys;
+        keys.resize(num_rows);
+        for (size_t i = 0; i != num_rows; ++i)
+        {
+            if (null_map && null_map[i])
+                continue;
+            const char * begin = nullptr;
+            keys[i] = id_data.serializeValueIntoArena(i, arena, begin, /* settings = */ nullptr);
+        }
+        return keys;
     }
 
     template <typename TransformFunc2>
@@ -887,156 +1039,351 @@ void ContextTimeSeriesTagsCollector::extractTag(const VectorWithMemoryTracking<G
 
 
 template <typename IDType>
-void ContextTimeSeriesTagsCollector::storeTags(const IDType & id, const TagNamesAndValuesPtr & tags)
+ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsCollector::getTypedIDMap()
 {
+    if constexpr (std::is_same_v<IDType, UInt64>)
+        return id_map_uint64;
+    else if constexpr (std::is_same_v<IDType, UInt128>)
+        return id_map_uint128;
+    else if constexpr (std::is_same_v<IDType, std::pair<UInt64, UInt64>>)
+        return id_map_pair_uint64_uint64;
+    else
     {
-        SharedLockGuard lock{mutex};
-
-        const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
-        auto it = groups_by_id.find(id);
-
-        if (it != groups_by_id.end())
-        {
-            Group existing_group = it->second;
-            if (*tags != *groups.at(existing_group))
-                throwIDWasAddedWithOtherTags(id, tags, groups.at(existing_group));
-            return;
-        }
-    }
-
-    {
-        std::lock_guard lock{mutex};
-
-        Group group = tryAddGroupUnlocked(tags);
-        auto & groups_by_id = getIDMap<IDType>().groups_by_id;
-        auto it = groups_by_id.try_emplace(id, group).first;
-
-        if (it->second != group)
-            throwIDWasAddedWithOtherTags(id, tags, groups.at(it->second));
+        static_assert(std::is_same_v<IDType, std::pair<UInt64, UInt128>>);
+        return id_map_pair_uint64_uint128;
     }
 }
 
 
 template <typename IDType>
-void ContextTimeSeriesTagsCollector::storeTags(const VectorWithMemoryTracking<IDType> & ids, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
+const ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsCollector::getTypedIDMap() const
 {
-    chassert(ids.size() == tags_vector.size());
+    if constexpr (std::is_same_v<IDType, UInt64>)
+        return id_map_uint64;
+    else if constexpr (std::is_same_v<IDType, UInt128>)
+        return id_map_uint128;
+    else if constexpr (std::is_same_v<IDType, std::pair<UInt64, UInt64>>)
+        return id_map_pair_uint64_uint64;
+    else
+    {
+        static_assert(std::is_same_v<IDType, std::pair<UInt64, UInt128>>);
+        return id_map_pair_uint64_uint128;
+    }
+}
+
+
+void ContextTimeSeriesTagsCollector::storeTags(const ColumnPtr & id_column, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
+{
+    auto unwrapped = unwrapIDColumn(id_column);
+    const NullMap * null_map = unwrapped.null_map;
+    size_t num_rows = unwrapped.data->size();
+    chassert(num_rows == tags_vector.size());
+
+    size_t num_rows_to_store = num_rows;
+    if (null_map)
+        num_rows_to_store -= countBytesInFilter(*null_map);
+    if (!num_rows_to_store)
+        return;
+
+    const UInt8 * null_map_data = null_map ? null_map->data() : nullptr;
+
+    bool dispatched = dispatchIDType(*unwrapped.data, [&](const auto & id_getter)
+    {
+        storeTagsTyped(id_getter, *unwrapped.data, null_map_data, num_rows_to_store, tags_vector);
+    });
+    if (dispatched)
+        return;
+
+    storeTagsGeneric(*unwrapped.data, null_map_data, num_rows_to_store, tags_vector);
+}
+
+
+template <typename IDGetter>
+void ContextTimeSeriesTagsCollector::storeTagsTyped(
+    const IDGetter & id_getter,
+    const IColumn & id_data,
+    const UInt8 * null_map,
+    size_t num_rows_to_store,
+    const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
+{
+    using IDType = typename IDGetter::IDType;
+
+    size_t num_rows = tags_vector.size();
 
     VectorWithMemoryTracking<Group> found_groups;
-    found_groups.resize(tags_vector.size(), INVALID_GROUP);
+    found_groups.resize(num_rows, INVALID_GROUP);
     size_t num_found_groups = 0;
 
+    /// Look up the ids which are already stored, under a shared lock.
     {
         SharedLockGuard lock{mutex};
-        const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
+        /// The cast selects the const overload of getTypedIDMap, which requires only a shared lock.
+        const auto & id_map = const_cast<const ContextTimeSeriesTagsCollector *>(this)->getTypedIDMap<IDType>().map;
 
-        for (size_t i = 0; i != tags_vector.size(); ++i)
+        for (size_t i = 0; i != num_rows; ++i)
         {
-            const auto & id = ids[i];
-            const auto & tags = tags_vector[i];
-            auto it = groups_by_id.find(id);
-            if (it != groups_by_id.end())
+            if (null_map && null_map[i])
+                continue;
+
+            if (const auto * it = id_map.find(id_getter.get(i)))
             {
-                Group existing_group = it->second;
-                if (*tags != *groups.at(existing_group))
-                    throwIDWasAddedWithOtherTags(id, tags, groups.at(existing_group));
+                Group existing_group = it->getMapped();
+                if (*tags_vector[i] != *groups.at(existing_group))
+                    throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(existing_group));
                 found_groups[i] = existing_group;
                 ++num_found_groups;
             }
         }
     }
 
-    if (num_found_groups == tags_vector.size())
+    if (num_found_groups == num_rows_to_store)
         return;
 
     {
         std::lock_guard lock{mutex};
-        auto & groups_by_id = getIDMap<IDType>().groups_by_id;
+        auto & id_map = getTypedIDMap<IDType>().map;
 
-        for (size_t i = 0; i != tags_vector.size(); ++i)
+        for (size_t i = 0; i != num_rows; ++i)
         {
+            if (null_map && null_map[i])
+                continue;
+
             if (found_groups[i] != INVALID_GROUP)
                 continue;
-            const auto & id = ids[i];
-            const auto & tags = tags_vector[i];
 
-            Group group = tryAddGroupUnlocked(tags);
-            auto it = groups_by_id.try_emplace(id, group).first;
+            Group group = tryAddGroupUnlocked(tags_vector[i]);
 
-            if (it->second != group)
-                throwIDWasAddedWithOtherTags(id, tags, groups.at(it->second));
+            typename HashMap<IDType, Group, IDMapHash>::LookupResult it = nullptr;
+            bool inserted = false;
+            id_map.emplace(id_getter.get(i), it, inserted);
 
-            found_groups[i] = group;
-            if (++num_found_groups == tags_vector.size())
-                break;
+            if (inserted)
+                it->getMapped() = group;
+            else if (it->getMapped() != group)
+                throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(it->getMapped()));
         }
     }
 }
 
 
-template <typename IDType>
-Group ContextTimeSeriesTagsCollector::getGroupByID(const IDType & id) const
+void ContextTimeSeriesTagsCollector::storeTagsGeneric(
+    const IColumn & id_data,
+    const UInt8 * null_map,
+    size_t num_rows_to_store,
+    const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
 {
-    SharedLockGuard lock{mutex};
-    const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
+    size_t num_rows = tags_vector.size();
 
-    auto it = groups_by_id.find(id);
-    if (it == groups_by_id.end())
-        throwUnknownID(id);
+    Arena temp_arena;
+    auto ids = serializeIDs(id_data, null_map, temp_arena);
 
-    return it->second;
+    VectorWithMemoryTracking<Group> found_groups;
+    found_groups.resize(num_rows, INVALID_GROUP);
+    size_t num_found_groups = 0;
+
+    /// Look up the ids which are already stored, under a shared lock.
+    {
+        SharedLockGuard lock{mutex};
+
+        for (size_t i = 0; i != num_rows; ++i)
+        {
+            const auto & id = ids[i];
+            if (!id.empty())
+            {
+                if (const auto * it = generic_id_map.map.find(id))
+                {
+                    Group existing_group = it->getMapped();
+                    if (*tags_vector[i] != *groups.at(existing_group))
+                        throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(existing_group));
+                    found_groups[i] = existing_group;
+                    ++num_found_groups;
+                }
+            }
+        }
+    }
+
+    if (num_found_groups == num_rows_to_store)
+        return;
+
+    {
+        std::lock_guard lock{mutex};
+
+        for (size_t i = 0; i != num_rows; ++i)
+        {
+            const auto id = ids[i];
+            if (id.empty())
+                continue;
+
+            if (found_groups[i] != INVALID_GROUP)
+                continue;
+
+            Group group = tryAddGroupUnlocked(tags_vector[i]);
+
+            GenericIDMap::Map::LookupResult it = nullptr;
+            bool inserted = false;
+            generic_id_map.map.emplace(ArenaKeyHolder{id, generic_id_map.arena}, it, inserted);
+
+            if (inserted)
+                it->getMapped() = group;
+            else if (it->getMapped() != group)
+                throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(it->getMapped()));
+        }
+    }
 }
 
 
-template <typename IDType>
-VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(const VectorWithMemoryTracking<IDType> & ids) const
+void ContextTimeSeriesTagsCollector::getGroupByID(const ColumnPtr & id_column, PaddedPODArray<Group> & res) const
 {
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(ids.size());
+    auto unwrapped = unwrapIDColumn(id_column);
+    if (unwrapped.null_map)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column->getName());
+    size_t num_rows = unwrapped.data->size();
+
+    bool dispatched = dispatchIDType(*unwrapped.data, [&](const auto & id_getter)
+    {
+        getGroupByIDTyped(id_getter, *unwrapped.data, num_rows, res);
+    });
+    if (dispatched)
+        return;
+
+    getGroupByIDGeneric(*unwrapped.data, num_rows, res);
+}
+
+
+template <typename IDGetter>
+void ContextTimeSeriesTagsCollector::getGroupByIDTyped(
+    const IDGetter & id_getter, const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const
+{
+    using IDType = typename IDGetter::IDType;
+
+    res.resize(num_rows);
+    Group * __restrict out = res.data();
 
     SharedLockGuard lock{mutex};
-    const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
+    const auto & id_map = getTypedIDMap<IDType>().map;
 
-    for (const auto & id : ids)
+    /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's group.
+    IDType prev_id{};
+    Group prev_group = INVALID_GROUP;
+    for (size_t i = 0; i != num_rows; ++i)
     {
-        auto it = groups_by_id.find(id);
-        if (it == groups_by_id.end())
-            throwUnknownID(id);
-        res.push_back(it->second);
+        IDType id = id_getter.get(i);
+        if ((id == prev_id) && (prev_group != INVALID_GROUP))
+        {
+            out[i] = prev_group;
+            continue;
+        }
+        const auto * it = id_map.find(id);
+        if (!it)
+            throwUnknownID(id_data, i);
+        prev_id = id;
+        prev_group = it->getMapped();
+        out[i] = prev_group;
+    }
+}
+
+
+void ContextTimeSeriesTagsCollector::getGroupByIDGeneric(const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const
+{
+    Arena temp_arena;
+
+    res.resize(num_rows);
+    Group * __restrict out = res.data();
+
+    SharedLockGuard lock{mutex};
+
+    /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's group.
+    Group prev_group = INVALID_GROUP;
+    for (size_t i = 0; i != num_rows; ++i)
+    {
+        if ((i > 0) && id_data.compareAt(i, i - 1, id_data, /* nan_direction_hint = */ 1) == 0)
+        {
+            chassert(prev_group != INVALID_GROUP);
+            out[i] = prev_group;
+            continue;
+        }
+        const char * begin = nullptr;
+        auto id = id_data.serializeValueIntoArena(i, temp_arena, begin, /* settings = */ nullptr);
+        const auto * it = generic_id_map.map.find(id);
+        if (!it)
+            throwUnknownID(id_data, i);
+        prev_group = it->getMapped();
+        out[i] = prev_group;
+    }
+}
+
+
+VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID(const ColumnPtr & id_column) const
+{
+    auto unwrapped = unwrapIDColumn(id_column);
+    if (unwrapped.null_map)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column->getName());
+    size_t num_rows = unwrapped.data->size();
+
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> res;
+    bool dispatched = dispatchIDType(*unwrapped.data, [&](const auto & id_getter)
+    {
+        res = getTagsByIDTyped(id_getter, *unwrapped.data, num_rows);
+    });
+    if (dispatched)
+        return res;
+
+    return getTagsByIDGeneric(*unwrapped.data, num_rows);
+}
+
+
+template <typename IDGetter>
+VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByIDTyped(
+    const IDGetter & id_getter, const IColumn & id_data, size_t num_rows) const
+{
+    using IDType = typename IDGetter::IDType;
+
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> res;
+    res.reserve(num_rows);
+
+    SharedLockGuard lock{mutex};
+    const auto & id_map = getTypedIDMap<IDType>().map;
+
+    /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's tags.
+    IDType prev_id{};
+    TagNamesAndValuesPtr prev_tags;
+    for (size_t i = 0; i != num_rows; ++i)
+    {
+        IDType id = id_getter.get(i);
+        if ((id == prev_id) && prev_tags)
+        {
+            res.push_back(prev_tags);
+            continue;
+        }
+        const auto * it = id_map.find(id);
+        if (!it)
+            throwUnknownID(id_data, i);
+        prev_id = id;
+        prev_tags = groups[it->getMapped()];
+        res.push_back(prev_tags);
     }
 
     return res;
 }
 
 
-template <typename IDType>
-TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByID(const IDType & id) const
+VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByIDGeneric(
+    const IColumn & id_data, size_t num_rows) const
 {
-    SharedLockGuard lock{mutex};
-    const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
+    Arena temp_arena;
+    auto keys = serializeIDs(id_data, nullptr, temp_arena);
 
-    auto it = groups_by_id.find(id);
-    if (it == groups_by_id.end())
-        throwUnknownID(id);
-
-    return groups[it->second];
-}
-
-template <typename IDType>
-VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID(const VectorWithMemoryTracking<IDType> & ids) const
-{
     VectorWithMemoryTracking<TagNamesAndValuesPtr> res;
-    res.reserve(ids.size());
+    res.reserve(num_rows);
 
     SharedLockGuard lock{mutex};
-    const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
 
-    for (const auto & id : ids)
+    for (size_t i = 0; i != num_rows; ++i)
     {
-        auto it = groups_by_id.find(id);
-        if (it == groups_by_id.end())
-            throwUnknownID(id);
-        res.push_back(groups[it->second]);
+        const auto * it = generic_id_map.map.find(keys[i]);
+        if (!it)
+            throwUnknownID(id_data, i);
+        res.push_back(groups[it->getMapped()]);
     }
 
     return res;
@@ -1057,22 +1404,54 @@ Group ContextTimeSeriesTagsCollector::transformTags(Group group, TransformFunc &
 template <typename TransformFunc>
 VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(const VectorWithMemoryTracking<Group> & groups_, TransformFunc && transform_func)
 {
+    if (groups_.empty())
+        return {};
+
     auto tags_vector = getTagsByGroup(groups_);
     chassert(tags_vector.size() == groups_.size());
 
-    std::unordered_map<Group, size_t> indices_in_result_vector;
+    VectorWithMemoryTracking<Group> res;
+    res.resize(groups_.size());
+
     size_t num_new_tags = 0;
 
-    for (size_t i = 0; i != groups_.size(); ++i)
+    auto [min_group_it, max_group_it] = std::minmax_element(groups_.begin(), groups_.end());
+    Group min_group = *min_group_it;
+    Group group_range = *max_group_it - min_group;
+
+    /// Groups are dense integer indices, and a block usually contains a compact range of them.
+    /// Avoid a large lookup array when a block contains only a sparse subset of all known groups.
+    constexpr size_t max_dense_range_to_input_size_ratio = 4;
+    bool use_dense_mapping = group_range / groups_.size() < max_dense_range_to_input_size_ratio;
+
+    if (use_dense_mapping)
     {
-        Group group = groups_[i];
-        auto it = indices_in_result_vector.find(group);
-        if (it == indices_in_result_vector.end())
+        const size_t not_found = groups_.size();
+        VectorWithMemoryTracking<size_t> indices_by_group;
+        indices_by_group.resize(static_cast<size_t>(group_range) + 1, not_found);
+
+        for (size_t i = 0; i != groups_.size(); ++i)
         {
-            const auto & old_tags = tags_vector[i];
-            auto new_tags = transform_func(old_tags);
-            indices_in_result_vector[group] = num_new_tags;
-            tags_vector[num_new_tags++] = new_tags;
+            size_t & index = indices_by_group[groups_[i] - min_group];
+            if (index == not_found)
+            {
+                index = num_new_tags;
+                tags_vector[num_new_tags++] = transform_func(tags_vector[i]);
+            }
+            res[i] = index;
+        }
+    }
+    else
+    {
+        std::unordered_map<Group, size_t> indices_by_group;
+
+        for (size_t i = 0; i != groups_.size(); ++i)
+        {
+            Group group = groups_[i];
+            auto [it, inserted] = indices_by_group.try_emplace(group, num_new_tags);
+            if (inserted)
+                tags_vector[num_new_tags++] = transform_func(tags_vector[i]);
+            res[i] = it->second;
         }
     }
 
@@ -1080,14 +1459,8 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
 
     auto new_groups = getGroupForTags(tags_vector);
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(groups_.size());
-
-    for (auto old_group : groups_)
-    {
-        auto new_group = new_groups.at(indices_in_result_vector.at(old_group));
-        res.push_back(new_group);
-    }
+    for (auto & index : res)
+        index = new_groups.at(index);
 
     return res;
 }
@@ -1287,39 +1660,5 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::replaceTag(const
     return transformTags(groups_, ReplaceTagTransformFunc{dest_tag, replacement, src_tag, regex});
 }
 
-
-template <typename IDType>
-ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsCollector::getIDMap()
-{
-    if constexpr (std::is_same_v<IDType, UInt64>)
-    {
-        return uint64_id_map;
-    }
-    else
-    {
-        static_assert(std::is_same_v<IDType, UInt128>);
-        return uint128_id_map;
-    }
-}
-
-template <typename IDType>
-const ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsCollector::getConstIDMap() const
-{
-    return TSA_SUPPRESS_WARNING_FOR_READ(const_cast<ContextTimeSeriesTagsCollector *>(this)->getIDMap<IDType>());
-}
-
-
-#define TIME_SERIES_ID_TO_TAGS_MAP_INSTANTIATE(IDType) \
-    template void ContextTimeSeriesTagsCollector::storeTags<IDType>(const IDType & id, const TagNamesAndValuesPtr & tags); \
-    template void ContextTimeSeriesTagsCollector::storeTags<IDType>(const VectorWithMemoryTracking<IDType> & ids, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector); \
-    template Group ContextTimeSeriesTagsCollector::getGroupByID<IDType>(const IDType & id) const; \
-    template VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID<IDType>(const VectorWithMemoryTracking<IDType> & ids) const; \
-    template ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByID<IDType>(const IDType & id) const; \
-    template VectorWithMemoryTracking<ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID<IDType>(const VectorWithMemoryTracking<IDType> & ids) const; \
-
-TIME_SERIES_ID_TO_TAGS_MAP_INSTANTIATE(UInt64)
-TIME_SERIES_ID_TO_TAGS_MAP_INSTANTIATE(UInt128)
-
-#undef TIME_SERIES_ID_TO_TAGS_MAP_INSTANTIATE
 
 }

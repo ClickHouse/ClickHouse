@@ -1,0 +1,28 @@
+wide, filter id=2, subcolumns=0	FIRST
+wide, filter id=2, subcolumns=1	FIRST
+wide, no filter, subcolumns=0	1	prime
+wide, no filter, subcolumns=0	2	FIRST
+wide, no filter, subcolumns=1	1	prime
+wide, no filter, subcolumns=1	2	FIRST
+wide, count first value, subcolumns=0	1
+wide, count first value, subcolumns=1	1
+compact, filter id=2, subcolumns=0	FIRST
+compact, filter id=2, subcolumns=1	FIRST
+compact, no filter, subcolumns=0	1	prime
+compact, no filter, subcolumns=0	2	FIRST
+compact, no filter, subcolumns=1	1	prime
+compact, no filter, subcolumns=1	2	FIRST
+Nullable(String) subcolumns=0	FIRST
+Nullable(String) subcolumns=1	FIRST
+LowCardinality(String) subcolumns=0	FIRST
+LowCardinality(String) subcolumns=1	FIRST
+LowCardinality(Nullable(String)) subcolumns=0	FIRST
+LowCardinality(Nullable(String)) subcolumns=1	FIRST
+UInt64 subcolumns=0	111
+UInt64 subcolumns=1	111
+Array(String) subcolumns=0	['FIRST']
+Array(String) subcolumns=1	['FIRST']
+LowCardinality(String) key subcolumns=0	FIRST
+LowCardinality(String) key subcolumns=1	FIRST
+UInt64 key subcolumns=0	FIRST
+UInt64 key subcolumns=1	FIRST

@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -342,12 +343,17 @@ public:
                 readBinaryLittleEndian(element, buf);
         }
 
-        if constexpr (Trait::last)
+        if constexpr (Trait::last || Trait::sampler == Sampler::RNG)
+        {
             readBinaryLittleEndian(this->data(place).total_values, buf);
+            if (static_cast<UInt64>(this->data(place).value.size()) != std::min<UInt64>(max_elems, this->data(place).total_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed {} state: {} stored elements, but total_values = {} with max_elems = {}",
+                    getName(), this->data(place).value.size(), this->data(place).total_values, max_elems);
+        }
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(this->data(place).total_values, buf);
             std::string rng_string;
             readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
@@ -691,12 +697,17 @@ public:
                 value[i] = Node::read(buf, arena);
         }
 
-        if constexpr (Trait::last)
+        if constexpr (Trait::last || Trait::sampler == Sampler::RNG)
+        {
             readBinaryLittleEndian(data(place).total_values, buf);
+            if (static_cast<UInt64>(data(place).value.size()) != std::min<UInt64>(max_elems, data(place).total_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed {} state: {} stored elements, but total_values = {} with max_elems = {}",
+                    getName(), data(place).value.size(), data(place).total_values, max_elems);
+        }
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(data(place).total_values, buf);
             std::string rng_string;
             readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
@@ -874,7 +885,10 @@ groupArray(max_size)(x)
     {
         "Basic usage",
         R"(
-SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
+INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
+
+SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
         )",
         R"(
 ┌─id─┬─groupArray(10)(name)─┐
@@ -918,19 +932,19 @@ groupArraySample(max_size[, seed])(x)
     {
          "Usage example",
          R"(
-CREATE TABLE default.colors (
+CREATE TABLE colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES
+INSERT INTO colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
 (4, 'white'),
 (5, 'orange');
 
-SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(color) as newcolors FROM colors;
          )",
          R"(
 ┌─newcolors──────────────────┐
@@ -942,19 +956,19 @@ SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
          "Example using a seed",
          R"(
 -- Query with column name and different seed
-SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
         )",
         R"(
-┌─newcolors──────────────────┐
-│ ['red','orange','green']   │
-└────────────────────────────┘
+┌─newcolors────────────────┐
+│ ['red','orange','green'] │
+└──────────────────────────┘
         )"
     },
     {
          "Using an expression as an argument",
          R"(
 -- Query with expression as argument
-SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
         )",
         R"(
 ┌─newcolors───────────────────────────────────┐

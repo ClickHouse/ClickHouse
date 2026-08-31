@@ -2,6 +2,7 @@
     <settings>
         <allow_suspicious_codecs>1</allow_suspicious_codecs>
         <allow_experimental_codecs>1</allow_experimental_codecs>
+        <enable_alp_codec>1</enable_alp_codec>
     </settings>
 
     <substitutions>
@@ -43,7 +44,7 @@
     <create_query>
         CREATE TABLE codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec}))
         ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
-        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000, auto_statistics_types='';
     </create_query>
     <create_query>system stop merges</create_query>
 

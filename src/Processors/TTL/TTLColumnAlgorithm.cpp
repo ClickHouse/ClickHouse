@@ -76,13 +76,17 @@ void TTLColumnAlgorithm::execute(Block & block)
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
+    const size_t rows = block.rows();
+    PaddedPODArray<Int64> timestamps;
+    extractTimestamps(ttl_column.get(), timestamps);
+
     const IColumn * values_column = column_with_type.column.get();
     MutableColumnPtr result_column = values_column->cloneEmpty();
-    result_column->reserve(block.rows());
+    result_column->reserve(rows);
 
-    for (size_t i = 0; i < block.rows(); ++i)
+    for (size_t i = 0; i < rows; ++i)
     {
-        Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+        Int64 cur_ttl = timestamps[i];
         if (isTTLExpired(cur_ttl))
         {
             if (default_column)
@@ -104,7 +108,7 @@ void TTLColumnAlgorithm::execute(Block & block)
 void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
     data_part->ttl_infos.columns_ttl[column_name] = new_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
     if (is_fully_empty)
         data_part->expired_columns.insert(column_name);
 }

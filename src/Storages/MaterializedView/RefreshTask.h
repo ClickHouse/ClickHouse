@@ -137,7 +137,7 @@ public:
     };
 
     /// Never call it manually, public for shared_ptr construction only
-    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
+    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool start_paused_, bool is_restore_from_backup);
 
     /// If !attach, creates coordination znodes if needed.
     static OwnedRefreshTask create(
@@ -147,6 +147,7 @@ public:
         bool attach,
         bool coordinated,
         bool empty,
+        bool start_paused,
         bool is_restore_from_backup);
 
     /// Called at most once.
@@ -289,7 +290,7 @@ private:
         std::atomic_bool interrupt_execution {false};
         PipelineExecutor * executor = nullptr;
         /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
-        /// killed. Set/cleared together with `executor`.
+        /// killed. Set as soon as the query enters the process list, before it is interpreted.
         std::shared_ptr<QueryStatus> executing_query_status;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;
@@ -343,6 +344,9 @@ private:
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
     const bool refresh_append;
+    /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
+    /// resumed after the rename so it cannot refresh the target before the replacement is committed.
+    const bool start_paused;
 
     RefreshSet::Handle set_handle;
 
@@ -425,6 +429,11 @@ private:
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
+
+    /// Enter the permanent, non-resumable "coordination unavailable" state (sets
+    /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
+    /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
+    void markCoordinationUnavailable();
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);

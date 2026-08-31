@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Functions/FunctionSpaceFillingCurve.h>
-#include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
 #if defined(__BMI2__)
@@ -282,8 +281,8 @@ Accepts up to 8 unsigned integers as arguments and produces a `UInt64` code.
 
 **Expanded mode**
 
-Accepts a range mask ([Tuple](../data-types/tuple.md)) as the first argument and
-up to 8 [unsigned integers](../data-types/int-uint.md) as other arguments.
+Accepts a range mask ([Tuple](/reference/data-types/tuple)) as the first argument and
+up to 8 [unsigned integers](/reference/data-types/int-uint) as other arguments.
 
 Each number in the mask configures the amount of range expansion:
 * 1 - no expansion

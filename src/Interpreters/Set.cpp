@@ -116,9 +116,8 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 {
     for (auto & type : types)
     {
-        /// Strip LowCardinality recursively to match what setHeader/insertFromColumns do:
-        /// insertFromColumns calls convertToFullIfNeeded which recursively strips LC from
-        /// compound types like Tuple(LowCardinality(T), ...).
+        /// Strip LowCardinality recursively to match what insertFromColumns does:
+        /// it calls recursiveRemoveLowCardinality on the column side.
         type = recursiveRemoveLowCardinality(type);
 
         if (!transform_null_in)
@@ -162,9 +161,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         }
 
         /// Strip LowCardinality recursively from set_elements_types so they match what
-        /// convertToFullIfNeeded (which is recursive) does to columns in insertFromColumns.
-        /// Without this, compound types like Tuple(LowCardinality(T), ...) keep LowCardinality
-        /// in the type while the column has it stripped, causing type/column mismatches later.
+        /// recursiveRemoveLowCardinality does to columns in insertFromColumns.
         set_elements_types.back() = recursiveRemoveLowCardinality(set_elements_types.back());
     }
 
@@ -242,7 +239,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        holder.materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
+        holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
@@ -591,9 +588,11 @@ void NO_INLINE Set::executeImplCase(
     Arena pool;
     typename Method::State state(key_columns, key_sizes, nullptr);
 
-    /// NOTE Optimization is not used for consecutive identical strings.
-
-    /// For all rows
+    /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
+    /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
+    /// the last-element cache compares the key with the previous row's before probing the hash
+    /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
+    /// calculating the hash.
     for (size_t i = 0; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])

@@ -1,0 +1,56 @@
+---
+sidebarTitle: 'Erathos'
+keywords: ['clickhouse', 'Erathos', 'اتصال', 'تكامل', 'ELT', 'etl', 'تكامل البيانات', 'الوقت الفعلي', 'مزامنة']
+description: 'زامن البيانات في ClickHouse باستخدام Erathos، منصة ELT للتحكم والرصد'
+title: 'ربط Erathos بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://erathos.com'
+---
+
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx'; import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://erathos.com/" target="_blank">Erathos</a> منصة ELT مصممة لتوفير التحكم دون أعباء إضافية، وتتيح للفرق إدارة جميع مهام المزامنة من أدوات SaaS وقواعد البيانات إلى مستودع البيانات.
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يمنح Erathos الفرق رؤية وتحكّمًا في كل مهمة مزامنة أثناء انتقال البيانات من أدوات SaaS وERP وCRM إلى ClickHouse. وبدلًا من إدارة مسارات البيانات باعتبارها مهام مجدولة غير واضحة، يتيح Erathos مراقبة عمليات المزامنة والتحكّم فيها في الوقت الفعلي، مما يسهّل اكتشاف المشكلات مبكرًا والحفاظ على مستودع البيانات محدّثًا.
+
+<div id="connecting-erathos-to-clickhouse">
+  ## توصيل Erathos بـ ClickHouse
+</div>
+
+<Steps>
+  <Step title="العثور على بيانات اعتماد ClickHouse" id="1-find-your-clickhouse-credentials">
+    بعد إنشاء خدمة في ClickHouse Cloud، ابحث عن الإعدادات المطلوبة التالية:
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="تهيئة الوجهة في Erathos" id="2-configure-the-destination-in-erathos">
+    في Erathos، انتقل إلى **الإعدادات &gt; الوجهة**، واختر **ClickHouse**، ثم أدخل ما يلي:
+
+    * **المضيف** — عنوان URL لخدمة ClickHouse لديك (تنتهي عناوين URL الخاصة بـ ClickHouse Cloud عادةً بـ `.clickhouse.cloud`)
+    * **المنفذ** — عادةً `8443` لاتصالات HTTPS
+    * **اسم المستخدم** — غالبًا `default`
+    * **كلمة المرور** — كلمة مرور الحساب المذكور أعلاه
+
+    احفظ التهيئة لإكمال الاتصال.
+
+    <Note>
+      إذا كنت تتصل بمثيل ClickHouse مستضاف ذاتيًا، فتأكد من إضافة عنوان IP الخاص بـ Erathos (`35.212.87.86`) إلى القائمة المسموح بها في جدار الحماية لديك.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+لمزيد من التفاصيل، راجع <a href="https://docs.erathos.com/destinations/what-is-a-destination/clickhouse" target="_blank">وثائق وجهة ClickHouse من Erathos</a>، أو تواصل مع <a href="mailto:support@erathos.com">support@erathos.com</a>.
