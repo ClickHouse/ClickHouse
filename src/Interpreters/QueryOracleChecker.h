@@ -117,6 +117,10 @@ public:
     /// Compares the -If combinator against a DIFFERENT computation path; a divergence is a real bug.
     bool checkAggregateIfIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// NULL-identity oracle (self-seeded): sound NULL-handling equivalences (ifNull/coalesce/
+    /// nullIf/isNull) must hold row-for-row over Nullable data; a violation is a real bug.
+    bool checkNullIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

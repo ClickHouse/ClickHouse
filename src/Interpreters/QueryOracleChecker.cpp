@@ -70,6 +70,7 @@ extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
 extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
 extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
 extern const Event ASTFuzzerOracleAggregateIfIdentityChecks;
+extern const Event ASTFuzzerOracleNullIdentityChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3050,6 +3051,73 @@ bool QueryOracleChecker::checkAggregateIfIdentity(const ASTSelectQuery &, const 
     }
 
     LOG_TRACE(logger, "aggregate-If identity oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkNullIdentity(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: sound NULL-handling equivalences that must hold for every row over
+    /// Nullable data (each verified with IS NOT DISTINCT FROM so NULL==NULL counts as equal):
+    ///   ifNull(a, b)   == if(isNull(a), b, a)
+    ///   coalesce(a, b) == ifNull(a, b)
+    ///   nullIf(a, b)   == if(a = b, NULL, a)
+    ///   isNull(a)      == (a IS NULL)
+    ///   isNotNull(a)   == (a IS NOT NULL)
+    /// The probe counts violating rows across all identities; a non-zero count is a real bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("nullid", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, a Nullable(Int64), b Nullable(Int64)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    /// Mix of NULL/non-NULL, and rows where a=b, a!=b, either NULL.
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number,"
+            " if(number % 4 = 0, NULL, toInt64(number % 20)),"
+            " if(number % 5 = 0, NULL, toInt64(number % 20)) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "NULL-identity oracle: {}", tbl);
+
+    const String probe =
+        "SELECT countIf(NOT (ifNull(a, b) IS NOT DISTINCT FROM if(isNull(a), b, a)))"
+        " + countIf(NOT (coalesce(a, b) IS NOT DISTINCT FROM ifNull(a, b)))"
+        " + countIf(NOT (nullIf(a, b) IS NOT DISTINCT FROM if(a = b, NULL, a)))"
+        " + countIf(isNull(a) != (a IS NULL))"
+        " + countIf(isNotNull(a) != (a IS NOT NULL))"
+        " FROM " + tbl;
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false;
+
+    UInt64 violations = 0;
+    try
+    {
+        violations = value->safeGet<UInt64>();
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    if (violations != 0)
+    {
+        fixture.preserve();
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "NULL-identity oracle mismatch!\n"
+            "{} rows violate a NULL-handling identity (ifNull/coalesce/nullIf/isNull) on table {}.\n"
+            "Probe: {}",
+            violations, tbl, probe);
+    }
+
+    LOG_TRACE(logger, "NULL-identity oracle passed");
     return true;
 }
 
