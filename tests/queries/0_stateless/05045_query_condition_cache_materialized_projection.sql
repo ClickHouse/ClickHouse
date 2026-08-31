@@ -24,13 +24,28 @@ SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_qcc_proj;
 
-CREATE TABLE t_qcc_proj (pk UInt64, a UInt32, b UInt32)
+-- Both projections are declared here rather than added and materialized afterwards, so the `INSERT`
+-- below builds their parts and no mutation is involved. What the test needs is projection data in
+-- the part, which either route produces; the difference is the cost. `MATERIALIZE PROJECTION` waits
+-- for a background mutation that shares its pool with everything else the server has queued, and in
+-- the flaky check - where this test is the only one running, repeatedly, on a server still merging
+-- the `test.hits` dataset and its own growing `system.*_log` tables - each of the two mutations took
+-- ~70s of the ~196s run, in the release build as much as in the debug one. Neither the read path
+-- under test nor the shape of the parts depends on how the projection got its data.
+--
+-- `a` is only here to make `b` a non-leading key of each projection's sort order, which is the
+-- realistic shape: a projection built for one access pattern, filtered on a column that is not its
+-- leading key. The projection's own primary key then cannot prune `b = 19999`, so what is left over
+-- is exactly what the condition cache is supposed to eliminate.
+CREATE TABLE t_qcc_proj (pk UInt64, a UInt32, b UInt32,
+    PROJECTION p (SELECT a, b, count() GROUP BY a, b),
+    PROJECTION pn (SELECT pk, a, b ORDER BY a))
 ENGINE = MergeTree ORDER BY pk
 SETTINGS index_granularity = 64, add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '';
 
 -- `b` holds only even values, so the odd needle used below sits inside [min, max] but matches no
 -- row: neither the base table's primary key nor the projection's own key can prune it away.
-INSERT INTO t_qcc_proj SELECT number, number % 1000, (number % 100000) * 2 FROM numbers(100000);
+INSERT INTO t_qcc_proj SELECT number, number % 1000, number * 2 FROM numbers(20000);
 
 -- With a `count()` the filter is not moved into PREWHERE, so the cache is written from the
 -- `FilterTransform` above the read, which can only record a chunk that was filtered out *entirely*.
@@ -42,31 +57,15 @@ SELECT '--- baseline: no projection, prime reads everything, reuse prunes';
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
-SELECT count() FROM t_qcc_proj WHERE b = 99999
-SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0, log_comment = '05045_base_prime';
-SELECT count() FROM t_qcc_proj WHERE b = 99999
-SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0, log_comment = '05045_base_reuse';
+-- `optimize_use_projections = 0` is what makes this section the baseline: the projections exist from
+-- the start, and `p` would otherwise serve this `count()` exactly as in the next section.
+SELECT count() FROM t_qcc_proj WHERE b = 19999
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
+    optimize_use_projections = 0, log_comment = '05045_assert_base_prime';
+SELECT count() FROM t_qcc_proj WHERE b = 19999
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
+    optimize_use_projections = 0, log_comment = '05045_assert_base_reuse';
 
-SYSTEM FLUSH LOGS query_log;
-
--- Columns: (any cache hit), (read no marks at all). Expected: prime = 0 0, reuse = 1 1.
-SELECT
-    log_comment,
-    ProfileEvents['QueryConditionCacheHits'] > 0,
-    ProfileEvents['SelectedMarks'] = 0
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    AND log_comment IN ('05045_base_prime', '05045_base_reuse')
-ORDER BY event_time_microseconds;
-
--- `a` is only here to make `b` a non-leading key of the projection's sort order, which is the
--- realistic shape: a projection built for one access pattern, filtered on a column that is not its
--- leading key. The projection's own primary key then cannot prune `b = 99999`, so what is left over
--- is exactly what the condition cache is supposed to eliminate.
-ALTER TABLE t_qcc_proj ADD PROJECTION p (SELECT a, b, count() GROUP BY a, b);
-ALTER TABLE t_qcc_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 
 SELECT '--- served from the materialized projection, prime reads everything, reuse prunes';
 
@@ -74,67 +73,31 @@ SYSTEM DROP QUERY CONDITION CACHE;
 
 -- `force_optimize_projection_name` makes the test fail loudly if the read ever stops being served
 -- by the projection, instead of silently degrading into a copy of the baseline above.
-SELECT count() FROM t_qcc_proj WHERE b = 99999
+SELECT count() FROM t_qcc_proj WHERE b = 19999
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
-    force_optimize_projection_name = 'p', log_comment = '05045_proj_prime';
-SELECT count() FROM t_qcc_proj WHERE b = 99999
+    force_optimize_projection_name = 'p', log_comment = '05045_assert_proj_prime';
+SELECT count() FROM t_qcc_proj WHERE b = 19999
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
-    force_optimize_projection_name = 'p', log_comment = '05045_proj_reuse';
+    force_optimize_projection_name = 'p', log_comment = '05045_assert_proj_reuse';
 
-SYSTEM FLUSH LOGS query_log;
-
--- This is what regressed: before the fix all runs reported 0 hits and the same non-zero mark count.
-SELECT
-    log_comment,
-    ProfileEvents['QueryConditionCacheHits'] > 0,
-    ProfileEvents['SelectedMarks'] = 0
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    AND log_comment IN ('05045_proj_prime', '05045_proj_reuse')
-ORDER BY event_time_microseconds;
 
 SELECT '--- a needle that does match: fewer marks on reuse, but not zero';
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
-SELECT count() FROM t_qcc_proj WHERE b = 99998
+SELECT count() FROM t_qcc_proj WHERE b = 19998
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
-    force_optimize_projection_name = 'p', log_comment = '05045_proj_match_prime';
-SELECT count() FROM t_qcc_proj WHERE b = 99998
+    force_optimize_projection_name = 'p', log_comment = '05045_assert_proj_match_prime';
+SELECT count() FROM t_qcc_proj WHERE b = 19998
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
-    force_optimize_projection_name = 'p', log_comment = '05045_proj_match_reuse';
+    force_optimize_projection_name = 'p', log_comment = '05045_assert_proj_match_reuse';
 
-SYSTEM FLUSH LOGS query_log;
-
--- Only "fewer", not "zero": the chunk holding the matching row is not fully filtered, and the
--- `FilterTransform` write path has no per-mark information inside a partially matching chunk, so
--- that chunk's marks stay unrecorded. Tightening this to zero needs the filter to reach PREWHERE.
--- Columns: (reuse read fewer marks than prime), (reuse hit the cache). Expected: 1 1.
-SELECT
-    maxIf(marks, log_comment = '05045_proj_match_prime') > maxIf(marks, log_comment = '05045_proj_match_reuse'),
-    minIf(hits, log_comment = '05045_proj_match_reuse') > 0
-FROM
-(
-    SELECT
-        log_comment,
-        ProfileEvents['SelectedMarks'] AS marks,
-        ProfileEvents['QueryConditionCacheHits'] AS hits
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-        AND type = 'QueryFinish'
-        AND current_database = currentDatabase()
-        AND log_comment IN ('05045_proj_match_prime', '05045_proj_match_reuse')
-);
 
 -- The non-aggregating counterpart, on the same fixture: `pn` is sorted by `a`, so - just like `p` -
 -- its own primary key cannot prune the `b` predicate and every projection granule has to be read.
 -- Unlike the `count()` shape above, this filter does reach PREWHERE, so the cache is written from
--- the reader with per-mark granularity. `p` stays on the table: only `Type::Normal` projections are
--- candidates here, so the aggregate one is not competing, and leaving it in place pins that.
-ALTER TABLE t_qcc_proj ADD PROJECTION pn (SELECT pk, a, b ORDER BY a);
-ALTER TABLE t_qcc_proj MATERIALIZE PROJECTION pn SETTINGS mutations_sync = 2;
+-- the reader with per-mark granularity. `p` is on the table throughout: only `Type::Normal`
+-- projections are candidates here, so the aggregate one is not competing, and its presence pins that.
 
 SELECT '--- served from a materialized normal projection, prime reads everything, reuse prunes';
 
@@ -148,33 +111,16 @@ SYSTEM DROP QUERY CONDITION CACHE;
 -- prunes its parts to zero marks during candidate analysis. That consult is the path that used to
 -- probe the bare projection part name while the write side keyed on `<parent_part>:<projection>`,
 -- so it could never hit.
-SELECT pk FROM t_qcc_proj WHERE b = 99999 FORMAT Null
+SELECT pk FROM t_qcc_proj WHERE b = 19999 FORMAT Null
 SETTINGS max_threads = 1, max_block_size = 8192, force_optimize_projection = 1,
-    force_optimize_projection_name = 'pn', log_comment = '05045_norm_prime';
-SELECT pk FROM t_qcc_proj WHERE b = 99999 FORMAT Null
+    force_optimize_projection_name = 'pn', log_comment = '05045_assert_norm_prime';
+SELECT pk FROM t_qcc_proj WHERE b = 19999 FORMAT Null
 SETTINGS max_threads = 1, max_block_size = 8192, force_optimize_projection = 1,
-    force_optimize_projection_name = 'pn', log_comment = '05045_norm_reuse';
+    force_optimize_projection_name = 'pn', log_comment = '05045_assert_norm_reuse';
 
-SYSTEM FLUSH LOGS query_log;
-
--- Columns: (any cache hit), (read no marks at all), (the projection was used). Expected:
--- prime = 0 0 1, reuse = 1 1 1. No existing test asserts the middle column for a projection read:
--- `04658_query_condition_cache_topk_normal_projection` only checks that entries get written, and
--- `03460_query_condition_cache_with_projections` only checks part names and results.
-SELECT
-    log_comment,
-    ProfileEvents['QueryConditionCacheHits'] > 0,
-    ProfileEvents['SelectedMarks'] = 0,
-    arrayExists(x -> x LIKE '%.pn', projections)
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    AND log_comment IN ('05045_norm_prime', '05045_norm_reuse')
-ORDER BY event_time_microseconds;
 
 SELECT '--- the normal projection still returns the planted row with the cache warm';
-SELECT pk FROM t_qcc_proj WHERE b = 99998
+SELECT pk FROM t_qcc_proj WHERE b = 19998
 SETTINGS max_threads = 1, force_optimize_projection = 1, force_optimize_projection_name = 'pn';
 
 SELECT '--- a TopK read served by the projection primes and reuses the cache';
@@ -193,32 +139,19 @@ SYSTEM DROP QUERY CONDITION CACHE;
 --     determinism check rejects the write and nothing is cached at all.
 --   * `force_optimize_projection` - `pn` costs the same as the base table here, and equal-cost
 --     projections are declined without it.
-SELECT pk FROM t_qcc_proj WHERE b = 99999 ORDER BY a LIMIT 5 FORMAT Null
+SELECT pk FROM t_qcc_proj WHERE b = 19999 ORDER BY a LIMIT 5 FORMAT Null
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_move_to_prewhere = 0,
     use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1,
     query_plan_max_limit_for_top_k_optimization = 1000,
     force_optimize_projection = 1, force_optimize_projection_name = 'pn',
-    log_comment = '05045_topk_idx_prime';
-SELECT pk FROM t_qcc_proj WHERE b = 99999 ORDER BY a LIMIT 5 FORMAT Null
+    log_comment = '05045_assert_topk_idx_prime';
+SELECT pk FROM t_qcc_proj WHERE b = 19999 ORDER BY a LIMIT 5 FORMAT Null
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_move_to_prewhere = 0,
     use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1,
     query_plan_max_limit_for_top_k_optimization = 1000,
     force_optimize_projection = 1, force_optimize_projection_name = 'pn',
-    log_comment = '05045_topk_idx_reuse';
+    log_comment = '05045_assert_topk_idx_reuse';
 
-SYSTEM FLUSH LOGS query_log;
-
-SELECT
-    log_comment,
-    ProfileEvents['QueryConditionCacheHits'] > 0,
-    ProfileEvents['SelectedMarks'] = 0,
-    arrayExists(x -> x LIKE '%.pn', projections)
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    AND log_comment IN ('05045_topk_idx_prime', '05045_topk_idx_reuse')
-ORDER BY event_time_microseconds;
 
 SELECT '--- correctness: a plain read must not lose rows to entries a TopK read left behind';
 
@@ -234,7 +167,7 @@ SETTINGS max_threads = 1, max_block_size = 8192, optimize_move_to_prewhere = 0,
     use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1,
     query_plan_max_limit_for_top_k_optimization = 1000,
     force_optimize_projection = 1, force_optimize_projection_name = 'pn',
-    log_comment = '05045_poison_topk';
+    log_comment = '05045_assert_poison_topk';
 
 -- Both must return 500: through the projection, whose parts carry the entries just written, and
 -- through the base table as a control. The `LIMIT` (far above the 500 matching rows, so it changes
@@ -243,10 +176,10 @@ SETTINGS max_threads = 1, max_block_size = 8192, optimize_move_to_prewhere = 0,
 -- `count()` - which is what it would otherwise do, exactly as in the sections above.
 SELECT count() FROM (SELECT pk FROM t_qcc_proj WHERE b < 1000 LIMIT 1000000)
 SETTINGS max_threads = 1, force_optimize_projection = 1, force_optimize_projection_name = 'pn',
-    log_comment = '05045_poison_check_projection';
+    log_comment = '05045_assert_poison_check_projection';
 SELECT count() FROM (SELECT pk FROM t_qcc_proj WHERE b < 1000 LIMIT 1000000)
 SETTINGS max_threads = 1, optimize_use_projections = 0,
-    log_comment = '05045_poison_check_base';
+    log_comment = '05045_assert_poison_check_base';
 
 SELECT '--- an aliased condition shares its cache entry with the unaliased spelling';
 
@@ -256,36 +189,62 @@ SELECT '--- an aliased condition shares its cache entry with the unaliased spell
 -- the user-visible spelling, on the base table (`optimize_use_projections = 0`).
 SYSTEM DROP QUERY CONDITION CACHE;
 
-SELECT count() FROM t_qcc_proj WHERE b = 99999
+SELECT count() FROM t_qcc_proj WHERE b = 19999
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_use_projections = 0,
-    log_comment = '05045_alias_plain_prime';
-SELECT count() FROM t_qcc_proj WHERE (b = 99999) AS cond
+    log_comment = '05045_assert_alias_plain_prime';
+SELECT count() FROM t_qcc_proj WHERE (b = 19999) AS cond
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_use_projections = 0,
-    log_comment = '05045_alias_aliased_reuse';
+    log_comment = '05045_assert_alias_aliased_reuse';
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
 -- ... and the same in the other direction.
-SELECT count() FROM t_qcc_proj WHERE (b = 99999) AS cond
+SELECT count() FROM t_qcc_proj WHERE (b = 19999) AS cond
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_use_projections = 0,
-    log_comment = '05045_alias_aliased_prime';
-SELECT count() FROM t_qcc_proj WHERE b = 99999
+    log_comment = '05045_assert_alias_aliased_prime';
+SELECT count() FROM t_qcc_proj WHERE b = 19999
 SETTINGS max_threads = 1, max_block_size = 8192, optimize_use_projections = 0,
-    log_comment = '05045_alias_plain_reuse';
+    log_comment = '05045_assert_alias_plain_reuse';
 
+
+-- All assertions are collected here, behind a single `SYSTEM FLUSH LOGS`. Reading `system.query_log`
+-- costs the whole time window, not just this test's rows - and `ProfileEvents` is a `Map` column - so
+-- a scan per section makes the test's runtime scale with how busy the server has been rather than
+-- with what the test does. That is what pushed it past the flaky-check 180s limit.
 SYSTEM FLUSH LOGS query_log;
 
--- Columns: (any cache hit), (read no marks at all). Expected: both primes = 0 0, both reuses = 1 1.
+-- Columns: (any cache hit), (read no marks at all), (a projection served the read). A prime run is
+-- 0 0, a reuse run that hit the cache and pruned everything is 1 1.
 SELECT
     log_comment,
     ProfileEvents['QueryConditionCacheHits'] > 0,
-    ProfileEvents['SelectedMarks'] = 0
+    ProfileEvents['SelectedMarks'] = 0,
+    arrayExists(x -> x LIKE '%.p' OR x LIKE '%.pn', projections)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
+WHERE event_date >= yesterday() AND event_time >= now() - 300
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND log_comment IN ('05045_alias_plain_prime', '05045_alias_aliased_reuse',
-                        '05045_alias_aliased_prime', '05045_alias_plain_reuse')
+    AND log_comment LIKE '05045_assert_%'
+    AND log_comment NOT IN ('05045_assert_proj_match_prime', '05045_assert_proj_match_reuse')
 ORDER BY event_time_microseconds;
+
+-- The matching needle is the one case that cannot assert "no marks at all": the chunk holding the
+-- match is not fully filtered, and the `FilterTransform` write path has no per-mark information
+-- inside a partially matching chunk. Columns: (reuse read fewer marks), (reuse hit the cache).
+SELECT
+    maxIf(marks, log_comment = '05045_assert_proj_match_prime') > maxIf(marks, log_comment = '05045_assert_proj_match_reuse'),
+    minIf(hits, log_comment = '05045_assert_proj_match_reuse') > 0
+FROM
+(
+    SELECT
+        log_comment,
+        ProfileEvents['SelectedMarks'] AS marks,
+        ProfileEvents['QueryConditionCacheHits'] AS hits
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 300
+        AND type = 'QueryFinish'
+        AND current_database = currentDatabase()
+        AND log_comment IN ('05045_assert_proj_match_prime', '05045_assert_proj_match_reuse')
+);
 
 DROP TABLE t_qcc_proj;

@@ -1,25 +1,16 @@
 --- baseline: no projection, prime reads everything, reuse prunes
 0
 0
-05045_base_prime	0	0
-05045_base_reuse	1	1
 --- served from the materialized projection, prime reads everything, reuse prunes
 0
 0
-05045_proj_prime	0	0
-05045_proj_reuse	1	1
 --- a needle that does match: fewer marks on reuse, but not zero
 1
 1
-1	1
 --- served from a materialized normal projection, prime reads everything, reuse prunes
-05045_norm_prime	0	0	1
-05045_norm_reuse	1	1	1
 --- the normal projection still returns the planted row with the cache warm
-49999
+9999
 --- a TopK read served by the projection primes and reuses the cache
-05045_topk_idx_prime	0	0	1
-05045_topk_idx_reuse	1	1	1
 --- correctness: a plain read must not lose rows to entries a TopK read left behind
 500
 500
@@ -28,7 +19,19 @@
 0
 0
 0
-05045_alias_plain_prime	0	0
-05045_alias_aliased_reuse	1	1
-05045_alias_aliased_prime	0	0
-05045_alias_plain_reuse	1	1
+05045_assert_base_prime	0	0	0
+05045_assert_base_reuse	1	1	0
+05045_assert_proj_prime	0	0	1
+05045_assert_proj_reuse	1	1	1
+05045_assert_norm_prime	0	0	1
+05045_assert_norm_reuse	1	1	1
+05045_assert_topk_idx_prime	0	0	1
+05045_assert_topk_idx_reuse	1	1	1
+05045_assert_poison_topk	0	0	1
+05045_assert_poison_check_projection	0	0	1
+05045_assert_poison_check_base	0	0	0
+05045_assert_alias_plain_prime	0	0	0
+05045_assert_alias_aliased_reuse	1	1	0
+05045_assert_alias_aliased_prime	0	0	0
+05045_assert_alias_plain_reuse	1	1	0
+1	1
