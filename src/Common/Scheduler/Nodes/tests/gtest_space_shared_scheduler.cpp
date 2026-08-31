@@ -799,6 +799,7 @@ TEST(SchedulerSpaceShared, PendingAllocationsRunWhileBlockedGrowthIsSuspended)
     r.registerResource();
 
     ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.protectAfterPressureRounds(2);
 
     /// Park the scheduler so both requests are visible in the queue at once. `AllocationQueue` normally
     /// presents running-query increases before pending new allocations, so `heavy` is head-of-line.
@@ -813,9 +814,10 @@ TEST(SchedulerSpaceShared, PendingAllocationsRunWhileBlockedGrowthIsSuspended)
     release.set_value();
 
     /// Admission proves both smaller reservations bypassed the blocked growth. They remain beneficiaries
-    /// until removal, so merely admitting them must not cause `heavy` to be killed.
+    /// during the active spill pass, so merely admitting them must not cause `heavy` to be killed.
     small->waitSynced();
     next_small->waitSynced();
+    heavy.waitPressureCount(1);
     EXPECT_EQ(heavy.size(), 8000);
     EXPECT_EQ(small->size(), 1000);
     EXPECT_EQ(next_small->size(), 1000);
@@ -826,8 +828,9 @@ TEST(SchedulerSpaceShared, PendingAllocationsRunWhileBlockedGrowthIsSuspended)
     EXPECT_EQ(heavy.killCount(), 0u);
 
     /// Once the last beneficiary finishes, the blocked +5000 growth is reconsidered. It still cannot fit
-    /// with `heavy` holding 8000, so suspension has exhausted its useful work and the existing kill path runs.
+    /// with `heavy` holding 8000, so completing spill advances through suction to the existing kill path.
     next_small.reset();
+    heavy.recoveryCheckpoint();
     heavy.waitKills(1);
     EXPECT_EQ(heavy.killCount(), 1u);
 }
