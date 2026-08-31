@@ -20,6 +20,7 @@ OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
 DEFAULT_INPUT_TIMEOUT = 1200 # libFuzzer default value for '-timeout' option
 SKIP_MERGE = int(os.getenv("SKIP_MERGE", "0"))
+MINIMIZE_ONLY = int(os.getenv("MINIMIZE_ONLY", "0"))
 
 INPUT_TIMEOUT = 0 # for debugging, set 0 when not debugging
 
@@ -349,6 +350,10 @@ def run_fuzzer(fuzzer: str, timeout: int):
         else:
             logging.info("Not running corpus minimization for fuzzer %s - persistent corpus is empty", fuzzer)
 
+
+    if MINIMIZE_ONLY:
+        logging.info("Not running fuzzer %s - MINIMIZE_ONLY is set", fuzzer)
+        return
 
     # Fuzzing
     logging.info(
