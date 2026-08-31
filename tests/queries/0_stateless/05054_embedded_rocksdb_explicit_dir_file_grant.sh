@@ -12,8 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # well for a writable table. The argument-less form touches only the table's own data directory and
 # stays free, and a definition replayed from stored metadata is not re-checked.
 
-# A user, a database and two user_files directories are global names, and the flaky check runs many
-# copies of one test at once, so they carry the pid as well: two live copies never share one.
+# A user, a database, three user_files directories and a backup destination are global names, and the
+# flaky check runs many copies of one test at once, so they carry the pid as well: two live copies never
+# share one. The unique name alone is stable across runs, and a backup may not be written twice to one
+# destination.
 NAME="${CLICKHOUSE_TEST_UNIQUE_NAME}_$$"
 USER="low_${NAME}"
 POC="${CLICKHOUSE_DATABASE}_poc_$$"
@@ -22,6 +24,8 @@ POC="${CLICKHOUSE_DATABASE}_poc_$$"
 VICTIM="${CLICKHOUSE_DATABASE}.victim_${NAME}"
 SECRET_DIR="${NAME}_secret"
 RW_DIR="${NAME}_rw"
+RESTORE_DIR="${NAME}_restore"
+BACKUP="Disk('backups', '05054_${NAME}')"
 
 # The denial assertions match the privilege sentence rather than the grant name: the client echoes the
 # failing query back, and this test's own object names contain both "file" and "grant", so a looser
@@ -106,11 +110,27 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${POC}.attached UUID '${U
     | denied_read && echo "full-attach-denied" || echo "NOT DENIED"
 created attached && echo "CREATED ANYWAY (unexpected)" || echo "not-created"
 
+echo "--- a RESTORE carries a fresh definition and is checked like CREATE ---"
+# A RESTORE supplies a definition under whoever is restoring, not one this server stored, so it is
+# checked rather than replayed.
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON FILE TO ${USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${POC}.restore_src (k String, v String) ENGINE = EmbeddedRocksDB(0, '${RESTORE_DIR}') PRIMARY KEY k"
+${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${POC}.restore_src TO ${BACKUP} FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${POC}.restore_src SYNC"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "RESTORE TABLE ${POC}.restore_src FROM ${BACKUP} FORMAT Null" 2>&1 \
+    | denied_write && echo "restore-denied" || echo "NOT DENIED"
+created restore_src && echo "CREATED ANYWAY (unexpected)" || echo "not-created"
+${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO ${USER}"
+out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "RESTORE TABLE ${POC}.restore_src FROM ${BACKUP} FORMAT Null" 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ] && created restore_src; then echo "restore-allowed"; else echo "restore-FAILED (unexpected): rc=$rc $out"; fi
+
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${POC} SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${VICTIM} SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 
-# Dropping such a table closes its handle but leaves the directory, so remove the two this test made.
+# Dropping such a table closes its handle but leaves the directory, so remove the three this test made.
 if [ -n "${CLICKHOUSE_USER_FILES}" ]; then
-    rm -rf "${CLICKHOUSE_USER_FILES:?}/${SECRET_DIR}" "${CLICKHOUSE_USER_FILES:?}/${RW_DIR}"
+    rm -rf "${CLICKHOUSE_USER_FILES:?}/${SECRET_DIR}" "${CLICKHOUSE_USER_FILES:?}/${RW_DIR}" \
+        "${CLICKHOUSE_USER_FILES:?}/${RESTORE_DIR}"
 fi

@@ -18,3 +18,7 @@ short-attach-allowed
 --- an ATTACH carrying a full definition is checked like CREATE ---
 full-attach-denied
 not-created
+--- a RESTORE carries a fresh definition and is checked like CREATE ---
+restore-denied
+not-created
+restore-allowed
