@@ -1,0 +1,15 @@
+ground truth
+1	0
+2	1
+3	0
+lowerUTF8 preprocessor
+[2]
+[2]
+[2]
+upperUTF8 preprocessor
+[2]
+[2]
+ascii lower preprocessor keeps the optimization
+[1,2]
+[1,2]
+1

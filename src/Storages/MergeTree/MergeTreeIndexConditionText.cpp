@@ -1356,7 +1356,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
-        if (has_preprocessor && !preprocessor->isLowerOrUpper())
+        if (has_preprocessor && !preprocessor->isAsciiLowerOrUpper())
             return false;
         if (has_postprocessor)
             return false;
