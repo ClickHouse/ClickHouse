@@ -49,12 +49,11 @@ Without an estimate the right side cannot be ruled small, so a large value of th
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Applies to RIGHT\/FULL hash joins, not specifically `parallel_hash`. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "New setting to enable parallel processing of non-joined rows in RIGHT\/FULL parallel_hash joins."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Applies to RIGHT\/FULL hash joins, not specifically `parallel_hash`. The default is unchanged. Setting it to 0 does not restore serial unmatched-row order; use `ORDER BY`."}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "New setting to enable parallel processing of non-joined rows in RIGHT\/FULL parallel_hash joins."}]}]}/>
 
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
 This can speed up the non-joined phase of hash joins with large right tables.
-When enabled, unmatched right rows may be emitted in a different order than the serial path; use `ORDER BY` when the query needs a stable order.
-When disabled, non-joined rows are processed by a single thread.
+This setting only controls unmatched-row emission. Setting it to 0 runs that phase on one thread; it does not restore the serial right-table order of the old `hash` algorithm. Use `ORDER BY` when the query needs a stable order.
 
 ## parallel_replica_offset {#parallel_replica_offset}
 
