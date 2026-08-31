@@ -185,8 +185,7 @@
             "ko/reference/statements/truncate",
             "ko/reference/statements/undrop",
             "ko/reference/statements/update",
-            "ko/reference/statements/use",
-            "ko/reference/statements/watch"
+            "ko/reference/statements/use"
           ]
         },
         {
