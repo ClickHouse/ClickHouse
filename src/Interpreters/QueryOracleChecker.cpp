@@ -73,6 +73,7 @@ extern const Event ASTFuzzerOracleAggregateIfIdentityChecks;
 extern const Event ASTFuzzerOracleNullIdentityChecks;
 extern const Event ASTFuzzerOracleCastRoundtripChecks;
 extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
+extern const Event ASTFuzzerOracleTupleSummingChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3234,6 +3235,69 @@ bool QueryOracleChecker::checkAggregateStateColumn(const ASTSelectQuery &, const
     }
 
     LOG_TRACE(logger, "aggregate-state-column oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkTupleSumming(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_38): a SummingMergeTree collapses rows sharing the ORDER BY key by
+    /// summing each non-key column, including per-element for a Tuple value column (under the table
+    /// setting allow_tuple_element_aggregation). A FINAL (query-time merged) read must equal an
+    /// element-wise sum over the same rows flattened into a plain MergeTree. Integer elements only
+    /// (exact). The FINAL here is in the oracle's OWN query, not the fuzzed query, so the global
+    /// FINAL gate does not apply.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("tuplesum", context);
+    if (!fixture.valid())
+        return false;
+
+    const String smt = fixture.allocName("smt");
+    const String raw = fixture.allocName("raw");
+    if (!fixture.execute(
+            "CREATE TABLE " + smt + " (k UInt16, t Tuple(a Int64, b Int64), v Int64) ENGINE = SummingMergeTree"
+            " ORDER BY k SETTINGS allow_tuple_element_aggregation = 1"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + raw + " (k UInt16, t1 Int64, t2 Int64, v Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+
+    /// Three INSERT blocks -> three parts each side, forcing SummingMergeTree to collapse on FINAL.
+    for (int block = 0; block < 3; ++block)
+    {
+        const String off = std::to_string(block * 300);
+        const String smt_seed =
+            "INSERT INTO " + smt + " SELECT number % 15, (toInt64(number % 7) - 3, toInt64(number % 5)), toInt64(number % 3)"
+            " FROM numbers(" + off + ", 300)";
+        const String raw_seed =
+            "INSERT INTO " + raw + " SELECT number % 15, toInt64(number % 7) - 3, toInt64(number % 5), toInt64(number % 3)"
+            " FROM numbers(" + off + ", 300)";
+        if (!fixture.execute(smt_seed) || !fixture.execute(raw_seed))
+            return false;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "tuple-summing oracle: {} FINAL vs recomputed from {}", smt, raw);
+
+    auto smt_rows_opt = OracleExec::executeRows(
+        "SELECT k, t.a, t.b, v FROM " + smt + " FINAL", context, ResultShape::SortedBag);
+    auto raw_rows_opt = OracleExec::executeRows(
+        "SELECT k, sum(t1), sum(t2), sum(v) FROM " + raw + " GROUP BY k", context, ResultShape::SortedBag);
+    if (!smt_rows_opt || !raw_rows_opt)
+        return false;
+
+    if (!OracleCompare::equal(*smt_rows_opt, *raw_rows_opt))
+    {
+        fixture.preserve();
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "tuple-summing oracle mismatch!\n"
+            "SummingMergeTree {} FINAL ({} rows) vs recomputed sum over {} ({} rows)\n{}",
+            smt, smt_rows_opt->size(), raw, raw_rows_opt->size(),
+            OracleCompare::diffSummary(*smt_rows_opt, *raw_rows_opt));
+    }
+
+    LOG_TRACE(logger, "tuple-summing oracle passed");
     return true;
 }
 
