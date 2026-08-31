@@ -731,6 +731,7 @@ void ReadFromRemote::addLazyPipe(
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
         remote_query_executor->setShardScope({my_cluster_name, my_shard.shard_info.shard_num});
+        remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
@@ -826,6 +827,7 @@ void ReadFromRemote::addPipe(
                 priority_func);
             remote_query_executor->setLogger(log);
             remote_query_executor->setShardScope({cluster_name, shard.shard_info.shard_num});
+            remote_query_executor->setQueryPlanFallbackStage(stage);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
             remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
@@ -858,6 +860,7 @@ void ReadFromRemote::addPipe(
             shard.query_plan);
         remote_query_executor->setLogger(log);
         remote_query_executor->setShardScope({cluster_name, shard.shard_info.shard_num});
+        remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 

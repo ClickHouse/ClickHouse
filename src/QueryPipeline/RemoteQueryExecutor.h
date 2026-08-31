@@ -139,6 +139,9 @@ public:
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
     void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {}) TSA_REQUIRES(was_cancelled_mutex);
 
+    /// Stage used when a remote replica is too old to receive the query plan and the executor sends SQL instead.
+    void setQueryPlanFallbackStage(QueryProcessingStage::Enum stage_) { query_plan_fallback_stage = stage_; }
+
     int sendQueryAsync();
 
     struct ReadResult
@@ -285,6 +288,7 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum query_plan_fallback_stage = QueryProcessingStage::Complete;
 
     /// Shard identification for the OpenTelemetry span covering this executor.
     ShardScope shard_scope;

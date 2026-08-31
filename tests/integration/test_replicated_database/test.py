@@ -83,11 +83,13 @@ bad_settings_node = cluster.add_instance(
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
-def assert_create_query(nodes, table_name, expected):
+def assert_create_query(nodes, table_name, expected, retry_count=20):
     replace_uuid = lambda x: re.sub(uuid_regex, "uuid", x)
     query = "show create table {}".format(table_name)
     for node in nodes:
-        assert_eq_with_retry(node, query, expected, get_result=replace_uuid)
+        assert_eq_with_retry(
+            node, query, expected, retry_count=retry_count, get_result=replace_uuid
+        )
 
 
 def zk_rmr_with_retries(zk, path):
@@ -283,14 +285,23 @@ def test_simple_alter_table(started_cluster, engine):
         "SETTINGS index_granularity = 8192".format(name, full_engine)
     )
 
-    # Ensure all replicas are synchronized before asserting schema equality
+    # Ensure all replicas are synchronized before asserting schema equality.
+    # Waiting for the database DDL log is cheap and cannot block on table data.
+    # For the table itself only pull the log entries into the replication queue: a
+    # plain `SYSTEM SYNC REPLICA` waits for the whole queue to drain and, when the
+    # replica is slow to catch up, spends the full `receive_timeout` (300s by
+    # default) before failing the test with `TIMEOUT_EXCEEDED`. `LIGHTWEIGHT` is not
+    # an option here, because it skips exactly the `ALTER_METADATA` entries this test
+    # asserts on. Convergence is instead awaited by retrying the assertion below.
     dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
     competing_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
     if "Replicated" in engine:
-        dummy_node.query(f"SYSTEM SYNC REPLICA {name}")
-        competing_node.query(f"SYSTEM SYNC REPLICA {name}")
+        dummy_node.query(f"SYSTEM SYNC REPLICA {name} PULL")
+        competing_node.query(f"SYSTEM SYNC REPLICA {name} PULL")
 
-    assert_create_query([main_node, dummy_node, competing_node], name, expected)
+    assert_create_query(
+        [main_node, dummy_node, competing_node], name, expected, retry_count=120
+    )
     main_node.query(f"DROP DATABASE {database} SYNC")
     dummy_node.query(f"DROP DATABASE {database} SYNC")
     competing_node.query(f"DROP DATABASE {database} SYNC")

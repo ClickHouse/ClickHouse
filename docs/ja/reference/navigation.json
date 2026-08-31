@@ -185,8 +185,7 @@
             "ja/reference/statements/truncate",
             "ja/reference/statements/undrop",
             "ja/reference/statements/update",
-            "ja/reference/statements/use",
-            "ja/reference/statements/watch"
+            "ja/reference/statements/use"
           ]
         },
         {
