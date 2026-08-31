@@ -88,7 +88,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 
   <Step title="BYOC インフラストラクチャをセットアップする" id="setup-byoc-infrastructure">
-    ClickHouse Cloud console で、オブジェクトストレージバケット、VPC/VNet、Kubernetes クラスターを含むインフラストラクチャを設定します。一部の設定は後から変更できないため、この段階で決定する必要があります。具体的には次のとおりです。
+    ClickHouse Cloud コンソールから、オブジェクトストレージバケット、VPC/VNet、Kubernetes クラスターを含むインフラストラクチャのセットアップを求められます。一部の設定は後から変更できないため、この段階で決定する必要があります。具体的には次のとおりです。
 
     * **リージョン**: BYOC デプロイメントでは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)のドキュメントに記載されているすべての**パブリックリージョン**を利用できます。現在、Private Region はサポートされていません。
 
@@ -103,6 +103,38 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     * **アベイラビリティゾーン**: VPC peering を予定している場合は、ソースアカウントと BYOC アカウントのアベイラビリティゾーンを揃えることで、AZ 間トラフィックのコスト削減につながる場合があります。たとえば AWS では、アベイラビリティゾーンの接尾辞 (`a`、`b`、`c`) が、アカウントごとに異なる物理ゾーン ID を表すことがあります。詳細については、[AWS ガイド](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)を参照してください。
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC インフラストラクチャの設定" background="black" />
+
+    #### 事前検証
+
+    **Set up Infrastructure** をクリックすると、ClickHouse Cloud はリソースを作成する前に、アカウントに対して一連の**読み取り専用**のプリフライトチェックを実行します。すべてのチェックに合格すると、プロビジョニングが続行されます。チェックに失敗した場合、セットアップは一時停止され、問題の内容が console に正確に表示されるため、リソースが作成される前に修正できます。
+
+    チェックでは次の点が確認されます。
+
+    * **権限** — 管理ID (IAM role / service account / service principal) に、ClickHouse Cloudがデプロイメントをプロビジョニングおよび運用するために必要な権限が付与されています。
+    * **有効化されたサービス** *(GCP)* — 必要なGoogle Cloud API (Compute Engine、Kubernetes Engine、Cloud Storage、Network Connectivity、IAM) がプロジェクトで有効になっています。
+    * **ネットワーク** *(AWS の既存VPC使用)* — VPCとサブネットが、サブネットサイズ、必要なタグ、アベイラビリティゾーンの分散、アウトバウンド接続、利用可能なIPアドレスに関する[ネットワーク要件](/ja/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)を満たしています。
+    * **クォータとガードレール** *(AWS)* — アカウントに十分なサービスクォータ (VPC、NAT ゲートウェイ、Elastic IP、EKS クラスター、vCPUs) があり、必要なアクションを妨げる組織ポリシー (SCP) が設定されていません。
+
+    チェックが失敗した場合、各チェックには対応するアクションと失敗理由が併記されて一覧表示されます (例: `iam:CreateRole · explicitDeny`)。成功したチェックをすべて確認するには、**Show passed checks** を展開してください。
+
+    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="失敗した cloud-setup チェックを報告する BYOC 事前検証" background="black" />
+
+    これらの失敗を解消するには、最新のClickHouse CloudFormationまたはTerraform stackを再実行するか、報告されたactionsを管理用のidentity (IAM role / service account / service principal) に付与したうえで、次のいずれかを選択してください。
+
+    * **再検証** — 事前チェックを再実行します。報告された問題を修正した後、プロビジョニング前にセットアップの準備が整っていることを確認するために使用してください。
+    * **それでも続行** — チェックがFailedでもプロビジョニングを続行します。報告された失敗が誤検知であると確信できる場合にのみ使用してください。そうでない場合、プロビジョニングが途中で失敗する可能性があります。
+
+    よくある障害の解決には、以下の表を参照してください。
+
+    | 検証エラー                                                                                                                       | 考えられる原因                                                                                        | 解決方法                                                                                                                     |
+    | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+    | **管理ロールを引き受けられない** *(AWS)*                                                                                                  | オンボーディングスタックが完了していないか、ロールまたは外部 ID が一致していません                                                    | 最新のオンボーディングスタックを再実行し、consoleに表示される[外部ID](#aws-external-id)がtrust policyのものと一致することを確認してください                               |
+    | **管理用service accountを偽装できません** *(GCP)*                                                                                      | オンボーディング用Terraformが完了していないか、`clickhouse-management`サービスアカウントが存在しないか、ClickHouseによる権限借用を許可していません | 最新のオンボーディング用Terraformを再実行し、`clickhouse-management` サービスアカウントが存在し、ClickHouseにそのサービスアカウントを偽装する権限が付与されていることを確認してください        |
+    | **必要な権限がない** (例: VPCの作成、IAMロールの作成、Kubernetesクラスターの作成)                                                                       | 管理アイデンティティに必要な権限がありません。多くの場合、カスタマイズされたスタックまたは古いスタックが原因です                                       | すべての権限セットを付与する最新のオンボーディングスタックを再実行します。意図的に権限を制限している場合は、報告された権限を追加します                                                      |
+    | **必要な API が有効になっていません** *(GCP)*                                                                                             | プロジェクトで必要な Google Cloud サービス API が無効になっている                                                     | たとえば、`gcloud services enable compute.googleapis.com --project <your-project>`を実行して有効にします                                 |
+    | **サブネットまたはVPCの設定に関する問題** *(AWS bring-your-own-VPC)* — CIDRが小さすぎる、タグがない、アベイラビリティゾーンが少なすぎる、アウトバウンドegressがない、または空きIPアドレスが少なすぎる | 指定された VPC が BYOC のネットワーク要件を満たしていない                                                             | VPCを調整して、[ネットワーク要件](/ja/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)を満たしてください         |
+    | **サービスクォータが不足しています** *(AWS)*                                                                                                | 必要なリソースに対するアカウントのクォータが不足しています                                                                  | クラウドプロバイダーにクォータの引き上げを依頼してください。詳細については、[AWS サービス制限](/ja/products/bring-your-own-cloud/reference/aws-service-limits)を参照してください |
+    | **組織ポリシー / SCP によってブロック** *(AWS)*                                                                                           | 組織のガードレールにより、アカウントに必要なアクションが拒否されています                                                           | クラウド管理者と連携し、BYOCアカウントでそのアクションを許可してください                                                                                   |
   </Step>
 </Steps>
 

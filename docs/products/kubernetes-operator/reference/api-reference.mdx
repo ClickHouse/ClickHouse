@@ -84,6 +84,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
 | `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
 | `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for each shard.<br />When unset, the operator defaults to maxUnavailable=1 for single-replica<br />shards and minAvailable=1 for multi-replica shards. | false |  |
+| `networkPolicy` | [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec) | NetworkPolicy configures the NetworkPolicy managed for the cluster. | false |  |
 | `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false | \{  \} |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
@@ -112,6 +113,21 @@ ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
+
+## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
+
+ClickHouseNetworkPolicySpec configures the NetworkPolicy managed for the ClickHouse cluster.
+The managed policy covers cluster-internal traffic:
+- Inter replica connectivity
+- Access from the operator to the cluster
+Any other ingress, including client connections and metrics scraping, requires user-defined NetworkPolicies.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | Policy controls whether the operator manages a NetworkPolicy restricting ingress to the cluster Pods.<br />Defaults to "Disabled" when unset. | false | Disabled |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
 
 ## ClickHouseSettings {#clickhousesettings}
 
@@ -298,6 +314,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 | `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
 | `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
 | `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for the Keeper cluster.<br />When unset, the operator defaults to maxUnavailable=replicas/2<br />(preserving quorum for a 2F+1 cluster); single-replica clusters use maxUnavailable=1. | false |  |
+| `networkPolicy` | [KeeperNetworkPolicySpec](#keepernetworkpolicyspec) | NetworkPolicy configures the NetworkPolicy managed for the Keeper cluster. | false |  |
 | `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
@@ -324,6 +341,22 @@ KeeperClusterStatus defines the observed state of KeeperCluster.
 
 Appears in:
 - [KeeperCluster](#keepercluster)
+
+## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
+
+KeeperNetworkPolicySpec configures the NetworkPolicy managed for the Keeper cluster.
+The managed policy covers cluster-internal traffic:
+- Inter replica connectivity
+- Access from the operator to the cluster
+- Access from ClickHouse clusters referencing this Keeper cluster
+Any other ingress, including metrics scraping, requires user-defined NetworkPolicies.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | Policy controls whether the operator manages a NetworkPolicy restricting ingress to the Keeper Pods.<br />Defaults to "Disabled" when unset. | false | Disabled |
+
+Appears in:
+- [KeeperClusterSpec](#keeperclusterspec)
 
 ## KeeperSettings {#keepersettings}
 
@@ -366,6 +399,19 @@ NamedTemplateMeta defines supported metadata settings for template objects that 
 
 Appears in:
 - [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+## NetworkPolicyPolicy {#networkpolicypolicy}
+
+NetworkPolicyPolicy controls whether the operator manages a NetworkPolicy for the cluster.
+
+| Field | Description |
+|-------|-------------|
+| `Enabled` | NetworkPolicyEnabled makes the operator manage a NetworkPolicy restricting ingress to the cluster Pods.<br /> |
+| `Disabled` | NetworkPolicyDisabled disables the managed NetworkPolicy, the operator deletes it if present.<br /> |
+
+Appears in:
+- [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
+- [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
 ## PDBPolicy {#pdbpolicy}
 
