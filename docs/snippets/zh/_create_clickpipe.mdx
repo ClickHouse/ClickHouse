@@ -2,102 +2,82 @@
 title: 创建 ClickPipe
 ---
 
-import S3DataSource from '/snippets/es/clickpipes/object-storage/amazon-s3/_1-data-source.mdx';
-import GCSSDataSource from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_1-data-source.mdx';
+<Step title="选择数据格式" id="3-select-data-format">
+  界面将显示指定 bucket 中的文件列表。
+  选择数据格式 (目前支持部分 ClickHouse 格式) ，并决定是否启用持续摄取。
+  更多详细信息，请参阅概览页面中的“持续摄取”部分。
 
-import S3Connection from '/snippets/es/clickpipes/object-storage/amazon-s3/_2-connection.mdx';
-import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="设置数据格式和 topic" />
+  </Frame>
+</Step>
 
-<Steps>
-  <Step>
-    ## 选择数据源
+<Step title="配置表、schema 和设置" id="5-configure-table-schema-settings">
+  在下一步中，您可以选择将数据摄取到新的 ClickHouse 表中，或复用现有表。
+  按照界面上的说明修改表名、schema 和设置。
+  您可以在顶部的样本表中实时预览这些更改。
 
-    **1.** 在 ClickHouse Cloud 中，先在主导航菜单中选择 **数据源**，然后点击 **Create ClickPipe**。
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="设置表、schema 和设置" />
+  </Frame>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入源" size="lg" border />
+  您还可以使用提供的控件自定义高级设置。
 
-    {props.provider === 's3' && <S3DataSource />}
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="设置高级控件" />
+  </Frame>
 
-    {props.provider === 'gcs' && <GCSSDataSource />}
-  </Step>
+  或者，您也可以选择将数据摄取到现有的 ClickHouse 表中。
+  在这种情况下，界面会允许您将源字段映射到所选目标表中的 ClickHouse 字段。
 
-  <Step>
-    ## 设置您的 ClickPipe 连接
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="使用现有表" />
+  </Frame>
 
-    **1.** 要设置新的 ClickPipe，您需要提供连接到对象存储服务并进行身份验证的相关信息。
+  <Info>
+    您还可以将[虚拟列](/zh/reference/functions/table-functions/s3#virtual-columns) (如 `_path` 或 `_size`) 映射到字段。
+  </Info>
+</Step>
 
-    {props.provider === 's3' && <S3Connection />}
+<Step title="配置权限" id="6-configure-permissions">
+  最后，您可以为内部 ClickPipes 用户配置权限。
 
-    {props.provider === 'gcs' && <GCSConnection />}
+  **权限：** ClickPipes 会创建一个专用用户，用于将数据写入目标表。您可以为该内部用户选择角色，可使用自定义角色或预定义角色之一：
 
-    **2.** 点击 **Incoming data**。ClickPipes 将从您的存储桶中拉取元数据，用于下一步。
-  </Step>
+  * `Full access`：拥有整个 cluster 的完全访问权限。如果目标表使用了 materialized view 或 字典，则需要选择此项。
+  * `Only destination table`：仅拥有目标表的 `INSERT` 权限。
 
-  <Step>
-    ## 选择数据格式
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="权限" />
+  </Frame>
+</Step>
 
-    UI 将显示指定存储桶中的文件列表。
-    选择数据格式 (当前支持部分 ClickHouse 格式) ，以及是否启用持续摄取。
-    更多详情请参阅概览页面中的“持续摄取”部分。
+<Step title="完成设置" id="7-complete-setup">
+  点击“Complete Setup”后，系统将注册您的 ClickPipe，随后您可以在摘要表中看到它。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="设置数据格式和 topic" size="lg" border />
-  </Step>
+  <div className="ch-image-sm">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功提示" />
+    </Frame>
+  </div>
 
-  <Step>
-    ## 配置表、schema 和设置
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="删除提示" />
+  </Frame>
 
-    在下一步中，您可以选择将数据摄取到新的 ClickHouse 表中，或复用现有表。
-    按照界面提示修改表名、schema 和设置。
-    您可以在顶部的样本表中实时预览这些更改。
+  摘要表提供了相关控件，可用于显示源中的样本数据，或显示 ClickHouse 中目标表的数据。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="设置表、schema 和设置" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="查看目标端" />
+  </Frame>
 
-    您还可以使用提供的控件自定义高级设置。
+  以及用于删除 ClickPipe 并显示摄取作业摘要的控件。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="设置高级选项" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="查看概览" />
+  </Frame>
 
-    或者，您也可以选择将数据摄取到现有的 ClickHouse 表中。
-    在这种情况下，UI 将允许您把源字段映射到所选目标表中的 ClickHouse 字段。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="使用现有表" size="lg" border />
-
-    <Info>
-      您还可以将[虚拟列](/zh/reference/functions/table-functions/s3#virtual-columns) (例如 `_path` 或 `_size`) 映射到字段。
-    </Info>
-  </Step>
-
-  <Step>
-    ## 配置权限
-
-    最后，您可以为 ClickPipes 的内部用户配置权限。
-
-    **权限：** ClickPipes 会创建一个专用用户，用于向目标表写入数据。您可以为该内部用户选择自定义角色，或使用以下预定义角色之一：
-
-    * `Full access`：拥有对集群的完全访问权限。如果目标表使用了 materialized view 或 字典，则需要此权限。
-    * `Only destination table`：仅拥有对目标表的 `INSERT` 权限。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="权限" size="lg" border />
-  </Step>
-
-  <Step>
-    ## 完成设置
-
-    点击“Complete Setup”后，系统将注册您的 ClickPipe，您随后即可在汇总表中看到它。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功提示" size="sm" border />
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="移除提示" size="lg" border />
-
-    汇总表提供了用于查看源端或 ClickHouse 中目标表样本数据的控件。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="查看目标端" size="lg" border />
-
-    以及用于删除 ClickPipe 和查看摄取任务摘要的控件。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="查看概览" size="lg" border />
-
-    **恭喜！** 您已成功设置第一个 ClickPipe。
-    如果这是一个配置为持续摄取的 ClickPipe，它将持续运行，并从远程数据源实时摄取数据。
-    否则，它会完成该批次的摄取后结束运行。
-  </Step>
-</Steps>
+  **恭喜！** 您已成功设置第一个 ClickPipe。
+  如果这是一个配置为持续摄取的 ClickPipe，它将持续运行，并从远程数据源实时摄取数据。
+  否则，它会摄取该批次数据后完成。
+</Step>

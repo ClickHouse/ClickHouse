@@ -15,8 +15,18 @@ set -e
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 
 EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
-echo "EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:?}"
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
+
+# The server to export the logs from. The performance comparison runs two
+# servers side by side (see ci/jobs/performance_tests.py), so every query to the
+# exporting server must be able to target one of them; empty means the default
+# port. The `xargs` lines below run in another process and cannot take the
+# array, they expand ${LOG_EXPORT_SERVER_PORT:+...} instead.
+LOG_EXPORT_SERVER_PORT=${LOG_EXPORT_SERVER_PORT:-}
+LOCAL_ARGS=()
+if [[ -n "$LOG_EXPORT_SERVER_PORT" ]]; then
+    LOCAL_ARGS=(--port "$LOG_EXPORT_SERVER_PORT")
+fi
 
 function __set_connection_args()
 {
@@ -49,29 +59,31 @@ function check_logs_credentials()
     __set_connection_args
     __shadow_credentials
     local code
-    # The remote CI logs cluster occasionally resets the connection, which is
-    # transient and unrelated to the credentials. Retry only that specific
-    # case. We match it on the stderr message "Connection reset by peer" rather
-    # than the exit status: the shell keeps only the low 8 bits of the client's
-    # exit code, so unrelated errors (e.g. 466/722) alias to 210, and the
-    # client also raises NETWORK_ERROR for permanent cases (protocol mismatch,
-    # generic NetException). A short --connect_timeout (instead of the 10s
-    # default) is applied to the probe only, so a real outage or a
-    # non-recoverable error (auth, config, DNS) fails fast: this probe is
-    # best-effort and must not slow every CI job. Export queries keep the
-    # default timeouts.
+    # The remote CI logs cluster occasionally fails a probe for reasons that are
+    # transient and unrelated to our credentials: it resets the connection, or
+    # it is momentarily over its memory limit and rejects the query with
+    # MEMORY_LIMIT_EXCEEDED (its RSS crosses the cap for a few seconds under
+    # load from other CI jobs). Retry only those transient cases. We match on
+    # the stderr message rather than the exit status: the shell keeps only the
+    # low 8 bits of the client's exit code, so unrelated errors (e.g. 466/722)
+    # alias to 210, and the client also raises NETWORK_ERROR for permanent
+    # cases (protocol mismatch, generic NetException). A short --connect_timeout
+    # (instead of the 10s default) is applied to the probe only, so a real
+    # outage or a non-recoverable error (auth, config, DNS) fails fast: this
+    # probe is best-effort and must not slow every CI job. Export queries keep
+    # the default timeouts.
     local attempt err
     # BEGIN: logs-cluster connectivity probe loop
     for attempt in 1 2 3; do
         # Catch both success and error to not fail on `set -e`. Capture stderr
-        # so we can distinguish the transient reset from other failures.
+        # so we can distinguish transient failures from permanent ones.
         err=$(clickhouse-client "${CONNECTION_ARGS[@]:?}" --connect_timeout 3 -q 'SELECT 1 FORMAT Null' 2>&1) && return 0 || code=$?
-        # Only a "Connection reset by peer" is worth retrying; anything else
-        # will not recover on retry, so stop immediately.
-        if [[ "$err" != *"Connection reset by peer"* ]]; then
+        # Only transient failures are worth retrying; anything else will not
+        # recover on retry, so stop immediately.
+        if [[ "$err" != *"Connection reset by peer"* && "$err" != *"MEMORY_LIMIT_EXCEEDED"* ]]; then
             break
         fi
-        echo "Attempt ${attempt}/3 to connect to CI Logs cluster failed (connection reset by peer)"
+        echo "Attempt ${attempt}/3 to connect to CI Logs cluster failed (transient error), retrying"
         [ "$attempt" -lt 3 ] && sleep "$((attempt + 1))"
     done
     # END: logs-cluster connectivity probe loop
@@ -86,6 +98,8 @@ function setup_logs_replication()
     # exported values
     set +x
 
+    echo "EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:?}"
+
     if [[ -n "$CLICKHOUSE_CI_LOGS_HOST" ]]; then
         check_logs_credentials
     else
@@ -95,20 +109,23 @@ function setup_logs_replication()
     echo "My hostname is ${HOSTNAME}"
 
     echo 'Create all configured system logs'
-    clickhouse-client --query "SYSTEM FLUSH LOGS"
+    clickhouse-client "${LOCAL_ARGS[@]}" --query "SYSTEM FLUSH LOGS"
 
-    debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
+    debug_or_sanitizer_build=$(clickhouse-client "${LOCAL_ARGS[@]}" -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
     # For each system log table:
     echo 'Create %_log tables'
-    clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
+    # Filter by engine to exclude virtual system tables that merely match the
+    # name pattern (e.g. `user_query_log`) - their engines cannot be created
+    # on the remote cluster.
+    clickhouse-client "${LOCAL_ARGS[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND name LIKE '%\\_log' AND engine LIKE '%MergeTree'" | while read -r table
     do
         EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
         EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
 
         # Calculate hash of its structure according to the columns and their types, including extra columns
-        hash=$(clickhouse-client --query "
+        hash=$(clickhouse-client "${LOCAL_ARGS[@]}" --query "
             SELECT sipHash64(groupArray((SELECT columns FROM external)), groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
@@ -117,7 +134,7 @@ function setup_logs_replication()
         )
 
         # Create the destination table with adapted name and structure:
-        statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
+        statement=$(clickhouse-client "${LOCAL_ARGS[@]}" --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
             s/^\($/('"$EXTRA_COLUMNS_FOR_TABLE"'/;
             s/^ORDER BY (([^\(].+?)|\((.+?)\))$/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \2\3)/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
@@ -152,7 +169,7 @@ function setup_logs_replication()
         echo "Creating table system.${table}_sender" >&2
 
         # Create Distributed table and materialized view to watch on the original table:
-        clickhouse-client --query "
+        clickhouse-client "${LOCAL_ARGS[@]}" --query "
             CREATE TABLE system.${table}_sender
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
             SETTINGS flush_on_detach=0
@@ -163,7 +180,7 @@ function setup_logs_replication()
 
         echo "Creating materialized view system.${table}_watcher" >&2
 
-        clickhouse-client --query "
+        clickhouse-client "${LOCAL_ARGS[@]}" --query "
             CREATE MATERIALIZED VIEW system.${table}_watcher
             TO system.${table}_sender
             DEFINER = ci_logs_sender
@@ -175,11 +192,27 @@ function setup_logs_replication()
 
 function stop_logs_replication()
 {
-    echo "Detach all logs replication"
-    clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+    # The `_sender` tables are `Distributed` engine with `flush_on_detach=0`
+    # (set so a slow/unreachable remote cluster can't hang server shutdown),
+    # and inserts into them via the `_watcher` materialized views are batched
+    # and sent to the remote cluster in the background. Without an explicit
+    # `SYSTEM FLUSH DISTRIBUTED` here, whatever is still queued locally - e.g.
+    # the just-flushed rows from the caller's preceding `SYSTEM FLUSH LOGS` -
+    # is silently discarded when the table below is dropped. Bound it with the
+    # same `timeout` pattern as the drop step so an unreachable cluster cannot
+    # block teardown indefinitely.
+    echo "Flush pending log records to the remote cluster"
+    ( clickhouse-client "${LOCAL_ARGS[@]}" --query "select database||'.'||table from system.tables where database = 'system' and table like '%_sender'" | {
         tee /dev/stderr
     } | {
-        timeout --verbose --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
+        timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m xargs -n1 -P10 -r -i clickhouse-client ${LOG_EXPORT_SERVER_PORT:+--port $LOG_EXPORT_SERVER_PORT} --query "SYSTEM FLUSH DISTRIBUTED {}"
+    } ) || echo "WARNING: failed to flush pending log records, some rows may be lost"
+
+    echo "Detach all logs replication"
+    clickhouse-client "${LOCAL_ARGS[@]}" --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+        tee /dev/stderr
+    } | {
+        timeout --verbose --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client ${LOG_EXPORT_SERVER_PORT:+--port $LOG_EXPORT_SERVER_PORT} --query "drop table {}"
     }
 }
 

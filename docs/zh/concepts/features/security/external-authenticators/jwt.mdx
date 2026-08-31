@@ -6,13 +6,16 @@ title: 'JWT 身份验证'
 doc_type: 'reference'
 ---
 
-import CloudOnlyBadge from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { VersionBadge } from "/snippets/zh/components/VersionBadge/VersionBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <CloudOnlyBadge />
 
-ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与其他外部身份验证器 (如 [LDAP](/zh/concepts/features/security/external-authenticators/ldap) 或 [Kerberos](/zh/concepts/features/security/external-authenticators/kerberos)) 不同，JWT 身份验证不会验证预先存在用户的身份。相反，它会根据嵌入在每个令牌中的声明动态创建**临时用户**。这些用户仅存在于内存中，其访问权限由令牌声明派生，并会在令牌过期后自动移除。
+ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与其他外部身份验证器 (如 [LDAP](/zh/concepts/features/security/external-authenticators/ldap) 或 [Kerberos](/zh/concepts/features/security/external-authenticators/kerberos)) 不同，JWT 身份验证不会验证预先存在用户的身份。相反，它会根据嵌入在每个标记中的声明动态创建**临时用户**。这些用户仅存在于内存中，其访问权限由标记声明派生，并会在标记过期后自动移除。
 
-这使得 JWT 身份验证与基于密码或证书的方法有本质区别：不存在 `CREATE USER ... IDENTIFIED WITH jwt` 语句，尝试这样做会引发异常。JWT 用户完全由令牌的生命周期管理。
+这使得 JWT 身份验证与基于密码或证书的方法有本质区别：不存在 `CREATE USER ... IDENTIFIED WITH jwt` 语句，尝试这样做会引发异常。JWT 用户完全由标记的生命周期管理。
 
 <div id="overview">
   ## 概览
@@ -105,13 +108,15 @@ JWT 用户与常规 ClickHouse 用户在几个重要方面有所不同。
   ### 身份与命名
 </div>
 
-每个 JWT 用户都会获得一个根据 `iss`、`sub` 和 `aud` claims 计算出的确定性 UUID。该 UUID 在不同登录之间是**稳定的**。同一用户即使用不同的令牌多次登录 (只要签发方、主体和受众相同) ，获得的 UUID 也始终相同。
+每个 JWT 用户都会获得一个根据 `iss`、`sub` 和 `aud` 声明 计算出的确定性 UUID。该 UUID 在不同登录之间是**稳定的**。同一用户即使用不同的令牌多次登录 (只要签发方、主体和受众相同) ，获得的 UUID 也始终相同。
 
 不过，用户名是**易变的**。其构造方式如下：
 
 ```text
-JWT::<issuer>::<audience>::<subject>::<claims_hash>
+JWT::<subject>::<claims_hash>
 ```
+
+`<claims_hash>` 是一个根据 `iss`、`sub` 和 `aud` 声明，以及 `clickhouse:roles` 和 `clickhouse:grants` 声明 共同计算得出的哈希值。`iss` 和 `aud` 声明 **仅**通过这个哈希参与；它们不再内联到可见的用户名前缀中。当 `iss`/`aud` 是较长且不透明的 IdP URL (例如 Microsoft Entra 或 Okta) 时，这样既能让名称保持紧凑、易读，又仍可确保不同的 `(iss, sub, aud)` Tuple，以及不同的 `clickhouse:roles` / `clickhouse:grants` 集合，会映射到不同且稳定的名称。不参与该哈希计算的 声明 (例如 `iat`、`exp`、`nbf` 或无关的自定义 声明) 不会改变用户名。
 
 `<claims_hash>` 部分会在 `clickhouse:roles` 或 `clickhouse:grants` 声明发生变化时相应变化。这意味着，即使是同一身份，具有不同角色或授权集合的令牌也会生成不同的用户名。
 
@@ -150,7 +155,7 @@ ClickHouse 会跟踪每个稳定身份最近一次通过身份验证的令牌的
 通过用户当前的用户名引用该用户：
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 ```
 
 <Note>
@@ -249,6 +254,29 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 此内置身份验证器的权限上限设置为 `default_role` 角色和 `default` 用户。这意味着，任何 JWT 用户的实际权限都会与这两个实体所拥有的授权取交集，因此令牌的权限绝不会提升到超出 `default_role` 和 `default` 允许范围的级别。
 
 使用此身份验证器无需进行任何配置。服务创建时会自动为其预配。
+
+<div id="enabling-jwt-authentication-for-your-service">
+  ## 为服务启用 JWT 身份验证
+</div>
+
+<BetaBadge />
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" support="true" />
+
+除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。这是一项 Beta 功能，适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 方案服务。要启用此功能，请创建[支持工单](https://clickhouse.com/support/program)，并提供以下配置信息：
+
+| 参数       | 说明                                                                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 服务 ID    | 要启用 JWT 身份验证的 ClickHouse Cloud 服务的 UUID。打开该服务后，可在 Cloud 控制台的 URL 中找到该 ID。                                                                                                       |
+| 签发方      | 身份提供商签发的标记中 `iss` 声明的值，通常为提供商的 URL (例如 `https://your-tenant.okta.com`) 。ClickHouse 会拒绝签发方与此值不匹配的标记。                                                                             |
+| 受众       | 身份提供商在为此服务签发的标记中设置的 `aud` 声明值。ClickHouse 会拒绝面向其他受众签发的标记。                                                                                                                        |
+| JWKS URL | 身份提供商发布 JSON Web Key Set 的 HTTPS 端点 (例如 `https://idp.example.com/.well-known/jwks.json`) 。ClickHouse 会从此端点拉取公钥以验证标记签名。如[必需声明](#required-claims)所述，JWKS 验证仅支持 RSA 密钥 (`RS256`) 。 |
+| 角色声明     | 包含临时用户 ClickHouse roles 的标记声明名称 (默认为 `clickhouse:roles`) 。该声明必须包含角色名称的 JSON 数组，例如 `["analyst", "reader"]`。                                                                      |
+| 授权声明     | 包含临时用户 SQL `GRANT` 片段的标记声明名称 (默认为 `clickhouse:grants`) 。该声明必须包含授权片段的 JSON 数组，例如 `["SELECT ON analytics.*", "INSERT ON analytics.events"]`。                                      |
+
+角色声明中指定的角色必须已在服务中存在 (使用 `CREATE ROLE` 创建) 。如[访问权限](#access-rights)中所述，权限上限会对角色声明和授权声明产生的有效访问权限设定上限。
 
 <div id="interserver-communication">
   ## 服务器间通信

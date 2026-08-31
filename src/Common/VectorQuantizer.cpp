@@ -58,12 +58,23 @@ size_t projectionPaddedSize(size_t n)
     return p;
 }
 
+/// The codec's structured projection uses only +-1 (sign-flip) Hadamard small factors. The order-9
+/// Hartley factor that `HadamardTransform::kroneckerFactorFor` also supports is deliberately not used
+/// here: stored codes for the affected dimensions (e.g. 1152) must stay stable across releases.
+HadamardTransform::KroneckerFactor hadamardFactorFor(size_t dimensions)
+{
+    const auto factor = HadamardTransform::kroneckerFactorFor(dimensions);
+    if (factor.kind != HadamardTransform::SmallFactorKind::Hadamard)
+        return {};
+    return factor;
+}
+
 /// Working dimension of the structured transform: the input dimension itself when it admits an exact Hadamard matrix
 /// (`dimensions = 2^k * m`, m in {12, 20} - e.g. 384/768/1536/3072/2560), otherwise the input zero-padded to the next
 /// power of two. Using the exact dimension avoids both the padding work and the geometry distortion of padding.
 size_t projectionWorkingDim(size_t dimensions)
 {
-    return HadamardTransform::hadamardOrderFor(dimensions).m ? dimensions : projectionPaddedSize(dimensions);
+    return hadamardFactorFor(dimensions).m ? dimensions : projectionPaddedSize(dimensions);
 }
 
 /// A fast structured random projection: PROJECTION_ROUNDS blocks of (random ±1 diagonal) * Hadamard transform,
@@ -100,7 +111,9 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
     for (size_t i = dimensions; i < working_dim; ++i)
         work[i] = 0.0f;
 
-    const auto [kron_m, kron_blocks] = HadamardTransform::hadamardOrderFor(dimensions);
+    const auto kron = hadamardFactorFor(dimensions);
+    const size_t kron_m = kron.m;
+    const size_t kron_blocks = kron.blocks;
     HadamardTransform::HmMasks<float> hm;
     if (kron_m)
         HadamardTransform::buildHmMasks<float>(hm, kron_m);

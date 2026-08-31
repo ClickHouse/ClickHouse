@@ -8,7 +8,11 @@ title: 迁移指南
 
 [Amazon Redshift](https://aws.amazon.com/redshift/) 是 Amazon Web Services 提供的一种广受欢迎的云数据仓库解决方案。本指南介绍了将数据从 Redshift 实例迁移到 ClickHouse 的不同方法。我们将介绍三种方案：
 
-<Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="从 Redshift 到 ClickHouse 的迁移方案" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" alt="从 Redshift 到 ClickHouse 的迁移方案" />
+  </Frame>
+</div>
 
 从 ClickHouse 实例的角度来看，你可以选择：
 
@@ -28,7 +32,11 @@ title: 迁移指南
 
 在推送场景中，通常会借助第三方工具或服务 (无论是自定义代码，还是 [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) 将数据发送到 ClickHouse 实例。例如，你可以使用 [Airbyte](https://www.airbyte.com/) 之类的软件，在 Redshift 实例 (作为源端) 和 ClickHouse (作为目标端) 之间迁移数据 ([请参阅我们的 Airbyte 集成指南](/zh/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
-<Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="将 Redshift 推送到 ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/integrations/data-ingestion/redshift/push.webp" alt="将 Redshift 推送到 ClickHouse" />
+  </Frame>
+</div>
 
 <div id="pros">
   ### 优点
@@ -51,7 +59,11 @@ title: 迁移指南
 
 在拉取场景中，基本思路是利用 ClickHouse JDBC Bridge，让 ClickHouse 实例直接连接到 Redshift 集群，并执行 `INSERT INTO ... SELECT` 查询：
 
-<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="从 Redshift 到 ClickHouse 的 PULL" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/integrations/data-ingestion/redshift/pull.webp" alt="从 Redshift 到 ClickHouse 的 PULL" />
+  </Frame>
+</div>
 
 <div id="pros">
   ### 优点
@@ -77,9 +89,7 @@ title: 迁移指南
 要使用此选项，您需要部署 ClickHouse JDBC Bridge。ClickHouse JDBC Bridge 是一个独立的 Java 应用程序，负责处理 JDBC 连接，并充当 ClickHouse 实例与数据源之间的代理。在本教程中，我们使用了一个预填充的 Redshift 实例和一个[示例数据库](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html)。
 
 <Steps>
-  <Step>
-    #### 部署 ClickHouse JDBC Bridge
-
+  <Step title="部署 ClickHouse JDBC Bridge" id="deploy-clickhouse-jdbc-bridge">
     部署 ClickHouse JDBC Bridge。更多信息请参阅我们的用户指南：[外部数据源 JDBC](/zh/integrations/connectors/data-ingestion/jdbc-with-clickhouse)
 
     <Note>
@@ -87,9 +97,7 @@ title: 迁移指南
     </Note>
   </Step>
 
-  <Step>
-    #### 配置您的 Redshift 数据源
-
+  <Step title="配置您的 Redshift 数据源" id="configure-your-redshift-datasource">
     为 ClickHouse JDBC Bridge 配置 Redshift 数据源。例如，`/etc/clickhouse-jdbc-bridge/config/datasources/redshift.json `
 
     ```json
@@ -111,9 +119,7 @@ title: 迁移指南
     ```
   </Step>
 
-  <Step>
-    #### 从 ClickHouse 查询您的 Redshift 实例
-
+  <Step title="从 ClickHouse 查询您的 Redshift 实例" id="query-your-redshift-instance-from-clickhouse">
     在 ClickHouse JDBC Bridge 部署完成并运行后，您就可以开始从 ClickHouse 查询 Redshift 实例
 
     ```sql
@@ -151,9 +157,7 @@ title: 迁移指南
     ```
   </Step>
 
-  <Step>
-    #### 将数据从 Redshift 导入 ClickHouse
-
+  <Step title="将数据从 Redshift 导入 ClickHouse" id="import-data-from-redshift-to-clickhouse">
     下面演示如何使用 `INSERT INTO ... SELECT` 语句导入数据
 
     ```sql
@@ -197,7 +201,11 @@ title: 迁移指南
 
 在这种场景中，我们先以中转格式将数据导出到 S3，然后在第二步再将数据从 S3 加载到 ClickHouse。
 
-<Image img="/images/integrations/data-ingestion/redshift/pivot.webp" size="md" alt="使用 S3 从 Redshift 中转" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/integrations/data-ingestion/redshift/pivot.webp" alt="使用 S3 从 Redshift 中转" />
+  </Frame>
+</div>
 
 <div id="pros">
   ### 优点
@@ -219,21 +227,25 @@ title: 迁移指南
 </div>
 
 <Steps>
-  <Step>
-    #### 使用 UNLOAD 将数据导出到 S3 存储桶
-
+  <Step title="使用 UNLOAD 将数据导出到 S3 存储桶" id="export-data-into-an-s3-bucket-using-unload">
     使用 Redshift 的 [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) 功能，将数据导出到现有的私有 S3 存储桶中：
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="从 Redshift 通过 UNLOAD 导出到 S3" background="white" />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/integrations/data-ingestion/redshift/s3-1.webp" alt="从 Redshift 通过 UNLOAD 导出到 S3" style={{ backgroundColor: "white" }} />
+      </Frame>
+    </div>
 
     这会在 S3 中生成包含原始数据的分片文件
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="S3 中的数据" background="white" />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/integrations/data-ingestion/redshift/s3-2.webp" alt="S3 中的数据" style={{ backgroundColor: "white" }} />
+      </Frame>
+    </div>
   </Step>
 
-  <Step>
-    #### 在 ClickHouse 中创建表
-
+  <Step title="在 ClickHouse 中创建表" id="create-the-table-in-clickhouse">
     在 ClickHouse 中创建表：
 
     ```sql
@@ -259,9 +271,7 @@ title: 迁移指南
     当数据采用包含数据类型信息的格式 (如 Parquet) 时，这种方式尤其有效。
   </Step>
 
-  <Step>
-    #### 将 S3 文件加载到 ClickHouse 中
-
+  <Step title="将 S3 文件加载到 ClickHouse 中" id="load-s3-files-into-clickhouse">
     使用 `INSERT INTO ... SELECT` 语句将 S3 文件加载到 ClickHouse 中：
 
     ```sql

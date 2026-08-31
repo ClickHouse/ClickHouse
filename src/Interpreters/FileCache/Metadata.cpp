@@ -7,6 +7,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <filesystem>
 #include <unordered_set>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
@@ -22,8 +23,6 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-    extern const Event FilesystemCacheLockKeyMicroseconds;
-    extern const Event FilesystemCacheLockMetadataMicroseconds;
     extern const Event FilesystemCacheLockOriginPoolMicroseconds;
     extern const Event FilesystemCacheCreatedKeyDirectories;
 }
@@ -152,7 +151,6 @@ LockedKeyPtr KeyMetadata::tryLock()
 
 LockedKeyPtr KeyMetadata::lockNoStateCheck()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
     return std::make_unique<LockedKey>(shared_from_this());
 }
 
@@ -194,7 +192,18 @@ std::string KeyMetadata::getPath() const
 
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
-    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), *origin);
+    /// A fully downloaded regular segment carries its size in the file name; until then
+    /// (while downloading) the file is named just by its offset. `hasSizeInFileName` tells
+    /// which of the two names the file currently has on disk.
+    std::optional<size_t> size;
+    if (file_segment.hasSizeInFileName())
+        size = file_segment.range().size();
+    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), *origin, size);
+}
+
+std::string KeyMetadata::getFileSegmentPath(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size) const
+{
+    return cache_metadata->getFileSegmentPath(key, offset, segment_kind, *origin, size);
 }
 
 LoggerPtr KeyMetadata::logger() const
@@ -219,27 +228,31 @@ CacheMetadata::CacheMetadata(
 
 CacheMetadata::~CacheMetadata() = default;
 
-String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
+String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size)
 {
-    String file_suffix;
     switch (segment_kind)
     {
         case FileSegmentKind::Ephemeral:
-            file_suffix = "_temporary";
-            break;
+            /// Temporary (ephemeral) segments are removed on startup, so there is no point
+            /// in encoding their size; keep the historic "_temporary" marker instead.
+            return std::to_string(offset) + "_temporary";
         case FileSegmentKind::Regular:
-            break;
+            /// `<offset>_<size>` once the segment is fully downloaded, just `<offset>` while
+            /// it is still being written (final size not yet known).
+            if (size.has_value())
+                return std::to_string(offset) + "_" + std::to_string(*size);
+            return std::to_string(offset);
     }
-    return std::to_string(offset) + file_suffix;
 }
 
 String CacheMetadata::getFileSegmentPath(
     const Key & key,
     size_t offset,
     FileSegmentKind segment_kind,
-    const OriginInfo & origin) const
+    const OriginInfo & origin,
+    std::optional<size_t> size) const
 {
-    return  fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind);
+    return fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size);
 }
 
 String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -247,14 +260,18 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
     const auto key_str = key.toString();
     const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
+    {
+        /// The id is a single path component: every carrier of a non-internal id rejects a NUL and
+        /// a '/' up front via `DistributedCache::getClientIDRejectionReason`.
+        chassert(!origin.user_id.contains('\0') && !origin.user_id.contains('/'));
         return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
+    }
 
     return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
     return guard.lock();
 }
 
@@ -339,8 +356,9 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
 
     /// Refresh idle-client TTL after releasing the bucket lock: prevents
     /// lock-order inversion with the eviction task. Skip internal/common ids
-    /// and probe-only lookups (result == nullptr).
-    if (result && on_client_access)
+    /// and probe-only lookups (result == nullptr). The startup load is not a client
+    /// access, so it must not pass for one (the TTL counts from the load regardless).
+    if (result && on_client_access && !is_initial_load)
     {
         const auto & user_id = origin.user_id;
         if (!user_id.empty()
@@ -547,10 +565,11 @@ CacheMetadata::IteratorPtr CacheMetadata::getIterator(const UserID & user_id)
     return std::make_unique<Iterator>(user_id, metadata_buckets);
 }
 
-bool CacheMetadata::removeAllKeys(const UserID & user_id)
+bool CacheMetadata::removeAllKeys(const UserID & user_id, ThreadPool * pool)
 {
-    bool fully_removed = true;
-    for (auto & bucket : metadata_buckets)
+    std::atomic<bool> fully_removed = true;
+
+    auto process_bucket = [&](MetadataBucket & bucket)
     {
         auto lock = bucket.lock();
         for (auto it = bucket.begin(); it != bucket.end();)
@@ -575,6 +594,33 @@ bool CacheMetadata::removeAllKeys(const UserID & user_id)
             }
             ++it;
         }
+    };
+
+    if (pool)
+    {
+        std::atomic<size_t> next_bucket_index = 0;
+        auto worker = [&]
+        {
+            for (size_t i = next_bucket_index.fetch_add(1, std::memory_order_relaxed);
+                 i < metadata_buckets.size();
+                 i = next_bucket_index.fetch_add(1, std::memory_order_relaxed))
+            {
+                process_bucket(metadata_buckets[i]);
+            }
+        };
+
+        ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::FILESYSTEM_CACHE_DROP);
+        /// The calling thread participates, so schedule one fewer worker.
+        const size_t extra_workers = std::min(pool->getMaxThreads(), metadata_buckets.size()) - 1;
+        for (size_t i = 0; i < extra_workers; ++i)
+            runner.enqueueAndKeepTrack(worker);
+        worker();
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+    else
+    {
+        for (auto & bucket : metadata_buckets)
+            process_bucket(bucket);
     }
 
     /// With all of this client's keys gone, the origins deduplicated for it in the pool are no

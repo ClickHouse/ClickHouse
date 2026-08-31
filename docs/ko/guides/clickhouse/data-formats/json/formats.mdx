@@ -165,7 +165,7 @@ FROM INFILE 'list.json'
 FORMAT JSONEachRow
 ```
 
-로컬 파일의 데이터를 불러오기 위해 [FROM INFILE](/ko/reference/statements/insert-into#inserting-data-from-a-file) 절을 사용했으며, 가져오기가 성공한 것을 확인할 수 있습니다:
+로컬 파일에서 데이터를 불러오기 위해 [FROM INFILE](/ko/reference/statements/insert-into#inserting-data-from-a-file) 절을 사용했으며, 가져오기가 성공했음을 확인할 수 있습니다:
 
 ```sql
 SELECT *
@@ -225,7 +225,7 @@ SELECT * FROM sometable;
   ### 상위 객체 키 값 지정
 </div>
 
-상위 객체 키의 값도 테이블에 저장하려는 경우를 가정해 보겠습니다. 이 경우, 키 값을 저장할 컬럼 이름을 지정하려면 [다음 옵션](/ko/reference/settings/formats#format_json_object_each_row_column_for_object_name)을 사용할 수 있습니다:
+상위 객체 키의 값도 테이블에 저장하려는 경우를 가정해 보겠습니다. 이 경우, 키 값을 저장할 컬럼 이름을 지정하려면 [다음 옵션](/ko/reference/settings/formats/format#format_json_object_each_row_column_for_object_name)을 사용할 수 있습니다:
 
 ```sql
 SET format_json_object_each_row_column_for_object_name = 'id'
@@ -401,7 +401,7 @@ LIMIT 1
   ## 중첩된 JSON 객체에 접근하기
 </div>
 
-[다음 설정 옵션](/ko/reference/settings/formats#input_format_import_nested_json)을 활성화하면 [중첩된 JSON 키](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json)를 참조할 수 있습니다:
+[다음 설정 옵션](/ko/reference/settings/formats/input-format#input_format_import_nested_json)을 활성화하면 [중첩된 JSON 키](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json)를 참조할 수 있습니다:
 
 ```sql
 SET input_format_import_nested_json = 1
@@ -454,7 +454,7 @@ SELECT * FROM shorttable
 └───────────────────────────┴──────┘
 ```
 
-ClickHouse는 가져오는 과정에서 알 수 없는 컬럼을 무시합니다. 이 동작은 [input&#95;format&#95;skip&#95;unknown&#95;fields](/ko/reference/settings/formats#input_format_skip_unknown_fields) 설정 옵션을 사용하여 비활성화할 수 있습니다:
+ClickHouse는 가져오는 과정에서 알 수 없는 컬럼을 무시합니다. 이 동작은 [input&#95;format&#95;skip&#95;unknown&#95;fields](/ko/reference/settings/formats/input-format#input_format_skip_unknown_fields) 설정 옵션을 사용하여 비활성화할 수 있습니다:
 
 ```sql
 SET input_format_skip_unknown_fields = 0;

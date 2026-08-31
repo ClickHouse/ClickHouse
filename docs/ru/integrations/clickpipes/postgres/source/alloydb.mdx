@@ -99,25 +99,25 @@ SHOW  wal_level;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-Публикация `clickpipes` будет содержать набор событий изменения, сгенерированных указанными таблицами, и позднее будет использоваться для приёма потока репликации.
+Публикация `clickpipes` определяет набор таблиц, события изменений из которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не планируете реплицировать каждую таблицу, поскольку включение ненужных таблиц увеличивает объём WAL-трафика из Postgres в ClickPipes и снижает общую эффективность репликации.
 
 <div id="configure-network-access">
   ## Настройка сетевого доступа
 </div>
 
-<Note>
-  ClickPipes не поддерживает подключения Private Service Connect (PSC). Если вы не открываете публичный доступ к экземпляру AlloyDB, можно [использовать SSH-туннель](#configure-network-access) для безопасного подключения. Поддержка PSC появится в будущем.
-</Note>
-
-Теперь нужно разрешить подключения к экземпляру AlloyDB из ClickPipes.
+Затем выберите способ подключения ClickPipes к экземпляру AlloyDB.
 
 <Tabs>
+  <Tab title="Использовать Private Service Connect">
+    Для частного подключения из сервиса ClickHouse Cloud, размещённого в GCP, следуйте [руководству по GCP Private Service Connect](/ru/integrations/clickpipes/networking/gcp-psc), чтобы настроить обратную частную конечную точку для экземпляра AlloyDB.
+  </Tab>
+
   <Tab title="Разрешить IP-адреса ClickPipes">
     1. В консоли Google Cloud перейдите на страницу AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters). Выберите основной экземпляр, чтобы открыть страницу **Overview**.
 
     2. Прокрутите вниз до раздела **Instances in your cluster** и нажмите **Edit primary**.
 
-    3. Установите флажок **Enable Public IP**, чтобы разрешить подключения к экземпляру через общедоступный интернет. В разделе **Authorized external networks** укажите [список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) для региона, в котором развёрнут ваш сервис.
+    3. Установите флажок **Enable Public IP**, чтобы разрешить подключения к экземпляру через общедоступный интернет. В разделе **Authorized external networks** укажите [список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона, в котором развёрнут ваш сервис.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="Настройка сети для публичного доступа со списком разрешённых IP-адресов" size="lg" border />
 
@@ -137,7 +137,7 @@ SHOW  wal_level;
        * Убедитесь, что экземпляр GCE находится в той же Virtual Private Cloud (VPC), что и экземпляр AlloyDB.
        * Убедитесь, что у экземпляра GCE есть [статический публичный IP-адрес](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address). Этот IP-адрес будет использоваться при подключении ClickPipes к SSH-бастиону.
 
-    2. Обновите правила брандмауэра SSH-бастиона, чтобы разрешить трафик из [списка статических IP-адресов ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) для региона, в котором развёрнут ваш сервис.
+    2. Обновите правила брандмауэра SSH-бастиона, чтобы разрешить трафик из [списка статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона, в котором развёрнут ваш сервис.
 
     3. Обновите правила брандмауэра AlloyDB, чтобы разрешить трафик от SSH-бастиона.
   </Tab>

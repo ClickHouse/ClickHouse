@@ -34,7 +34,11 @@ ClickHouse で処理されるデータは通常、ClickHouse server が稼働し
 </div>
 
 [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) および [`Log`](/ja/reference/engines/table-engines/log-family/log)
-ファミリーに属するテーブルエンジンでは、型がそれぞれ `s3`、`azure_blob_storage`、`hdfs` (未サポート) のディスクを使用して、データを `S3`、`AzureBlobStorage`、`HDFS` (未サポート) に保存できます。
+ファミリーのテーブルエンジンでは、型がそれぞれ `s3`、`azure_blob_storage`、`hdfs` (未サポート) のディスクを使用して、データを `S3`、`AzureBlobStorage`、`HDFS` (未サポート) に保存できます。
+
+<Note>
+  `s3` ディスクタイプは、Alibaba Cloud Object Storage Service などの S3 互換オブジェクトストレージプロバイダでも使用できます。`endpoint` にはプロバイダの S3 互換エンドポイントを設定し、プロバイダ固有の互換性要件がある場合はそれも考慮してください。
+</Note>
 
 ディスクの設定には、次のものが必要です。
 
@@ -1090,8 +1094,8 @@ SETTINGS storage_policy='web';
 | `type`     | `web`。それ以外の場合、ディスクは作成されません。                                                  |
 | `endpoint` | `path` 形式のエンドポイント URL。エンドポイント URL には、アップロードされたデータの保存先となるルートパスが含まれている必要があります。 |
 
-<div id="optional-parameters-s3">
-  #### オプションパラメータ
+<div id="static-web-storage-required-parameters">
+  #### パラメータ
 </div>
 
 | Parameter                           | Description                      | Default Value |
@@ -1100,7 +1104,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | リモートディスク上のデータ読み取りを試みる際の最大待機時間    | `10000` 秒     |
 | `remote_fs_read_backoff_max_tries`  | バックオフを伴う読み取りの最大試行回数              | `5`           |
 
-クエリが例外 `DB:Exception Unreachable URL` で失敗する場合は、設定 [http&#95;connection&#95;timeout](/ja/reference/settings/session-settings#http_connection_timeout)、[http&#95;receive&#95;timeout](/ja/reference/settings/session-settings#http_receive_timeout)、[keep&#95;alive&#95;timeout](/ja/reference/settings/server-settings/settings#keep_alive_timeout) の調整を試してください。
+クエリが例外 `DB:Exception Unreachable URL` で失敗する場合は、設定 [http&#95;connection&#95;timeout](/ja/reference/settings/session-settings/http#http_connection_timeout)、[http&#95;receive&#95;timeout](/ja/reference/settings/session-settings/http#http_receive_timeout)、[keep&#95;alive&#95;timeout](/ja/reference/settings/server-settings/settings/other#keep_alive_timeout) の調整を試してください。
 
 アップロード用のファイルを取得するには、次を実行します:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` はクエリ `SELECT data_paths FROM system.tables WHERE name = 'table_name'` で確認できます) 。

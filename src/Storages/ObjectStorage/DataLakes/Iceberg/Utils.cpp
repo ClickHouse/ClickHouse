@@ -37,11 +37,14 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
+#include <Poco/String.h>
 
 #if USE_AVRO
 
@@ -74,6 +77,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -118,13 +122,13 @@ using namespace DB;
 /// reporting metrics, not deletion safety.
 FileCategory inspectFileCategory(const String & relative_path)
 {
-    if (relative_path.find("/metadata/") != String::npos || relative_path.starts_with("metadata/"))
+    if (relative_path.contains("/metadata/") || relative_path.starts_with("metadata/"))
     {
-        if (relative_path.find(".metadata.json") != String::npos)
+        if (relative_path.contains(".metadata.json"))
             return FileCategory::METADATA_JSON;
         if (relative_path.ends_with(".avro"))
         {
-            if (relative_path.find("snap-") != String::npos)
+            if (relative_path.contains("snap-"))
                 return FileCategory::MANIFEST_LIST;
             return FileCategory::MANIFEST_FILE;
         }
@@ -132,10 +136,10 @@ FileCategory inspectFileCategory(const String & relative_path)
             return FileCategory::STATISTICS_FILE;
     }
 
-    if (relative_path.find("eq-del") != String::npos)
+    if (relative_path.contains("eq-del"))
         return FileCategory::EQUALITY_DELETE_FILE;
 
-    if (relative_path.find("-deletes.parquet") != String::npos || relative_path.find("-delete-") != String::npos)
+    if (relative_path.contains("-deletes.parquet") || relative_path.contains("-delete-"))
         return FileCategory::POSITION_DELETE_FILE;
 
     return FileCategory::DATA_FILE;
@@ -267,11 +271,15 @@ static std::optional<String> resolveMetadataFilenameFromVersionHint(
     }
     if (compression_method != CompressionMethod::None)
     {
-        auto suffix = toContentEncodingName(compression_method);
-        String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
-        auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
-        if (object_storage->exists(StoredObject(compressed_path)))
-            return compressed_candidate;
+        /// Try the Iceberg spec extension first (gzip -> "gz"), then the legacy
+        /// Content-Encoding token ("gzip") that older ClickHouse versions wrote.
+        for (const auto & suffix : {toIcebergMetadataCompressionExtension(compression_method), toContentEncodingName(compression_method)})
+        {
+            String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
+            auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
+            if (object_storage->exists(StoredObject(compressed_path)))
+                return compressed_candidate;
+        }
     }
 
     /// Nothing found via direct checks.
@@ -296,7 +304,17 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
+        /// independent of the session `snappy_mode`. The wire format is not encoded in the
+        /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
+        /// always decodes basic, see `getMetadataJSONObject`) to round-trip its own metadata and
+        /// stay interoperable with other Iceberg engines.
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
+            std::move(buffer_metadata),
+            compression_method,
+            static_cast<int>(settings[Setting::output_format_compression_level]),
+            /*zstd_window_log=*/ 0,
+            SnappyMode::Basic);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
@@ -331,6 +349,16 @@ bool writeMetadataFileAndVersionHint(
             /* write-if-none-match */ "*",
             "",
             metadata_file_info.compression_method);
+    }
+    catch (const Exception & e)
+    {
+        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
+        /// reporting a lost race would make the caller retry an operation that can never succeed.
+        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
+        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+            throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
     }
     catch (...)
     {
@@ -507,7 +535,10 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
-            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method);
+            /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`); the
+            /// write path in `writeMessageToFile` pins the same mode. The wire format cannot be
+            /// inferred from the `.snappy.metadata.json` suffix, so both sides must agree statically.
+            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
         else
             buf = std::move(source_buf);
 
@@ -526,6 +557,22 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(metadata_json_str);
     return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+/// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
+/// minimum number of bytes that can hold every value of the declared precision. One bit of that
+/// space is taken by the sign, hence `8 * bytes - 1`.
+static size_t icebergDecimalRequiredBytes(UInt32 precision)
+{
+    UInt256 max_value = 1;
+    for (UInt32 i = 0; i < precision; ++i)
+        max_value *= 10;
+    max_value -= 1;
+
+    size_t bytes = 1;
+    while (bytes < sizeof(UInt256) && (max_value >> (8 * bytes - 1)) != 0)
+        ++bytes;
+    return bytes;
 }
 
 /// Returns type and required
@@ -555,6 +602,11 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"string", true};
         case TypeIndex::UUID:
             return {"uuid", true};
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return {fmt::format("decimal({}, {})", getDecimalPrecision(*type), getDecimalScale(*type)), true};
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
@@ -569,7 +621,9 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
                 field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
-                auto child_type = getIcebergType(element->getNormalizedType(), iter);
+                /// Recurse on the element itself: `getNormalizedType` would rename a nested
+                /// tuple's elements to "1", "2", ... (`DataTypeTuple::getNormalizedType`).
+                auto child_type = getIcebergType(element, iter);
                 field->set(Iceberg::f_required, child_type.second);
                 field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
@@ -622,7 +676,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type)
+Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 {
     switch (type->getTypeId())
     {
@@ -658,6 +712,25 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::String:
         case TypeIndex::UUID:
             return "string";
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        {
+            const UInt32 precision = getDecimalPrecision(*type);
+            const UInt32 scale = getDecimalScale(*type);
+
+            Poco::JSON::Object::Ptr decimal_type = new Poco::JSON::Object;
+            decimal_type->set("type", "fixed");
+            decimal_type->set("size", icebergDecimalRequiredBytes(precision));
+            /// `fixed` is a named Avro type, so the name must be unique within the manifest schema:
+            /// two partition fields of the same decimal shape must not both define `decimal_P_S`.
+            decimal_type->set("name", fmt::format("decimal_{}_{}_{}", precision, scale, field_id));
+            decimal_type->set("logicalType", "decimal");
+            decimal_type->set("precision", precision);
+            decimal_type->set("scale", scale);
+            return decimal_type;
+        }
         case TypeIndex::Nullable:
         {
             /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
@@ -666,7 +739,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
             union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType()));
+            union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
             return union_array;
         }
         default:
@@ -750,12 +823,12 @@ static Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "toRelativeDayNum")
     {
-        result->set(Iceberg::f_transform, "days");
+        result->set(Iceberg::f_transform, "day");
         return result;
     }
     else if (partition_function->name == "toRelativeHourNum")
     {
-        result->set(Iceberg::f_transform, "hours");
+        result->set(Iceberg::f_transform, "hour");
         return result;
     }
     else if (partition_function->name == "icebergTruncate")
@@ -990,7 +1063,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     new_metadata_file_content->set(Iceberg::f_last_updated_ms, ms.count());
-    new_metadata_file_content->set(Iceberg::f_last_column_id, columns.size());
     new_metadata_file_content->set(Iceberg::f_current_schema_id, 0);
 
     Poco::JSON::Object::Ptr schema_representation = new Poco::JSON::Object;
@@ -998,6 +1070,10 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     schema_representation->set(Iceberg::f_schema_id, 0);
 
     Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
+    /// Top-level columns get ids 1..N; nested tuple/array/map children get ids
+    /// N+1.. via the shared `iter`. After the loop `iter` is the max assigned
+    /// field id, which is what last-column-id must record (not the top-level
+    /// column count) so a later ADD COLUMN does not reuse a nested field id.
     Int32 iter = static_cast<Int32>(columns.size());
     Int32 iter_for_initial_columns = 0;
     for (const auto & column : columns)
@@ -1011,6 +1087,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }
+    new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
     schema_representation->set(Iceberg::f_fields, schema_fields);
     Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
     schema_array->add(schema_representation);
@@ -1247,7 +1324,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-        if (explicit_metadata_path.find('\0') != String::npos)
+        if (explicit_metadata_path.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata file path contains a null byte");
         LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
         std::filesystem::path p(explicit_metadata_path);
@@ -1444,6 +1521,9 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
+            /// produce a parseable ORDER BY clause.
+            auto quoted_column_name = backQuoteIfNeed(column_name);
             String full_argument;
             if (clickhouse_transform_name->transform_name != "identity")
             {
@@ -1452,11 +1532,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 {
                     full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
                 }
-                full_argument += column_name + ")";
+                full_argument += quoted_column_name + ")";
             }
             else
             {
-                full_argument = column_name;
+                full_argument = quoted_column_name;
             }
             if (direction == 1)
                 order_by_str += fmt::format("{} ASC,", full_argument);
@@ -1533,6 +1613,37 @@ void forEachAvroEntry(
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))
         callback(datum);
+}
+
+PartitionColumnValues getIdentityPartitionColumnValues(
+    const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor)
+{
+    const auto & partition_key_value = manifest_file_entry.parsed_entry->partition_key_value;
+    if (partition_key_value.empty())
+        return {};
+
+    PartitionColumnValues result;
+    for (const auto & partition_field : *manifest_file_entry.common_partition_specification)
+    {
+        if (Poco::toLower(partition_field.transform_name) != "identity")
+            continue;
+
+        if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= partition_key_value.size())
+            continue;
+
+        const auto name_and_type
+            = schema_processor.tryGetFieldCharacteristics(manifest_file_entry.resolved_schema_id, partition_field.source_id);
+        if (!name_and_type.has_value())
+            continue;
+
+        Field value = convertFieldToTypeOrThrow(partition_key_value[partition_field.tuple_index], *name_and_type->type);
+        if (value.isNull())
+            continue;
+
+        result.emplace_back(name_and_type->name, std::move(value));
+    }
+
+    return result;
 }
 
 }
