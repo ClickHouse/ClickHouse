@@ -179,6 +179,10 @@ public:
     /// the hand-written per-key max-version dedup argMax(v, ver) GROUP BY key.
     bool checkFinalMergeReplacing(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// WITH FILL oracle (self-seeded): with all real values on the fill grid and inside [FROM, TO),
+    /// ORDER BY x WITH FILL FROM f TO t STEP s must produce exactly the grid {f, f+s, ...} positionally.
+    bool checkWithFillGrid(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
