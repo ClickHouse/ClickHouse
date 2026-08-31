@@ -10,7 +10,7 @@ workflow = Workflow.Config(
         Job.Config(
             name="Sync silk submodule",
             command="python3 ./ci/jobs/update_silk_submodule.py",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
     ],

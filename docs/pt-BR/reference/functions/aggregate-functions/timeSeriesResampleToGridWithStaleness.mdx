@@ -17,6 +17,8 @@ Função de agregação que recebe dados de séries temporais como pares de time
 
 Alias: `timeSeriesLastToGrid`.
 
+Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto, um valor NaN é usado somente se todas as amostras nesse timestamp forem NaN.
+
 <Warning>
   Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
