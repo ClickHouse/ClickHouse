@@ -48,6 +48,13 @@ SELECT normalizedQueryHashUnordered('SELECT 1 INTERSECT SELECT 2') = normalizedQ
 SELECT normalizedQueryHashUnordered('SELECT a, b FROM t') = normalizedQueryHashUnordered('SELECT a, c FROM t');
 SELECT normalizedQueryHashUnordered('SELECT a FROM t') = normalizedQueryHashUnordered('SELECT a FROM u');
 
+-- an INSERT is hashed from its header: the payload is data, the column list sorts like any other list
+SELECT normalizedQueryHashUnordered('INSERT INTO t VALUES (1)') = normalizedQueryHashUnordered('INSERT INTO t VALUES (1, 2)');
+SELECT normalizedQueryHashUnordered('INSERT INTO t (a, b) VALUES (1)') = normalizedQueryHashUnordered('INSERT INTO t (b, a) VALUES (1)');
+SELECT normalizedQueryHashUnordered('INSERT INTO t (a, b) VALUES (1)') = normalizedQueryHashUnordered('INSERT INTO t (a, c) VALUES (1)');
+-- and a truncated payload is not a parse error, the header still parses
+SELECT normalizedQueryHashUnorderedOrNull('INSERT INTO t VALUES (') IS NULL;
+
 -- unparseable input
 SELECT normalizedQueryHashUnordered('SELECT * FROM'); -- { serverError SYNTAX_ERROR }
 SELECT normalizedQueryHashUnorderedOrNull('SELECT * FROM');

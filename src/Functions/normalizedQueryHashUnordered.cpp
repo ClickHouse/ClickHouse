@@ -163,6 +163,10 @@ shape, for example over `system.query_log`, and never to decide that two queries
 Only expression lists reachable through the AST children are sorted. Where the parser keeps a sub-expression in a node member instead, as it
 does for the lambda of an `APPLY` column transformer, that list is hashed in the order it was written.
 
+An `INSERT` with inline data is hashed from its header, because the payload is data rather than SQL and is not part of the parsed query:
+`INSERT INTO t VALUES (1)` and `INSERT INTO t VALUES (1, 2)` get the same hash, while `normalizedQueryHash` separates them. The column list in
+the header is sorted like any other expression list.
+
 The argument is parsed as ClickHouse SQL under the current session's [`max_query_size`](/operations/settings/settings#max_query_size),
 [`max_parser_depth`](/operations/settings/settings#max_parser_depth), [`max_parser_backtracks`](/operations/settings/settings#max_parser_backtracks)
 [`implicit_select`](/operations/settings/settings#implicit_select) and
