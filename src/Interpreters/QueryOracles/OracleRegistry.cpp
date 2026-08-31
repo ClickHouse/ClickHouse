@@ -31,6 +31,7 @@ extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
 extern const Event ASTFuzzerOracleTupleSummingChecks;
 extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
 extern const Event ASTFuzzerOracleDeleteMutationChecks;
+extern const Event ASTFuzzerOracleUpdateMutationChecks;
 }
 
 namespace DB
@@ -105,6 +106,7 @@ OracleRegistry::OracleRegistry()
     add("tuple summing", ProfileEvents::ASTFuzzerOracleTupleSummingChecks, &QueryOracleChecker::checkTupleSumming);
     add("schema round-trip", ProfileEvents::ASTFuzzerOracleSchemaRoundtripChecks, &QueryOracleChecker::checkSchemaRoundtrip);
     add("DELETE mutation", ProfileEvents::ASTFuzzerOracleDeleteMutationChecks, &QueryOracleChecker::checkDeleteMutation);
+    add("UPDATE mutation", ProfileEvents::ASTFuzzerOracleUpdateMutationChecks, &QueryOracleChecker::checkUpdateMutation);
 }
 
 const OracleRegistry & OracleRegistry::instance()
