@@ -29,6 +29,8 @@ struct ObjectInfo
     bool is_size_known = true;
     time_t last_modification_time = 0;
     String etag;
+    /// Set only on buckets with versioning enabled; empty otherwise.
+    String version_id;
     ObjectAttributes tags; // Set only if getObjectInfo() is called with `with_tags = true`
     ObjectAttributes metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
     ObjectHeaders headers; /// Always read from the HEAD response; empty for whatever the object does not set.

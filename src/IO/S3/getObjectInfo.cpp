@@ -76,6 +76,7 @@ namespace
         object_info.is_size_known = result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
+        object_info.version_id = result.GetVersionId();
 
         object_info.headers.content_type = result.GetContentType();
         object_info.headers.content_encoding = result.GetContentEncoding();

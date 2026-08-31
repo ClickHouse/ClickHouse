@@ -90,6 +90,9 @@ bool isDestinationAlreadyExistsError(const Exception & e)
 constexpr auto move_source_path_attribute = "clickhouse_move_source_path";
 constexpr auto move_source_etag_attribute = "clickhouse_move_source_etag";
 constexpr auto move_source_last_modified_attribute = "clickhouse_move_source_last_modified";
+/// Unique per upload on S3 buckets with versioning: the one identifier a same-second identical
+/// re-upload cannot alias. Stamped and compared only when the storage reports one.
+constexpr auto move_source_version_id_attribute = "clickhouse_move_source_version_id";
 
 /// The copy replaces the destination's metadata wholesale, so the source's own user metadata is
 /// carried along with the provenance keys rather than being dropped by the move. The times are
@@ -99,13 +102,16 @@ std::optional<ObjectAttributes> makeMoveProvenance(
     ObjectAttributes source_attributes,
     const String & source_path,
     const String & source_etag,
-    time_t source_last_modified)
+    time_t source_last_modified,
+    const String & source_version_id = {})
 {
     if (source_etag.empty())
         return std::nullopt;
     source_attributes[move_source_path_attribute] = source_path;
     source_attributes[move_source_etag_attribute] = source_etag;
     source_attributes[move_source_last_modified_attribute] = toString(size_t(source_last_modified));
+    if (!source_version_id.empty())
+        source_attributes[move_source_version_id_attribute] = source_version_id;
     return source_attributes;
 }
 
@@ -125,6 +131,13 @@ bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & prove
         if (expected == provenance->end() || actual == destination_attributes.end() || actual->second != expected->second)
             return false;
     }
+    /// Compared only when both sides carry one, so a destination stamped before this field existed
+    /// still completes its interrupted move after an upgrade.
+    auto expected_version = provenance->find(move_source_version_id_attribute);
+    auto actual_version = destination_attributes.find(move_source_version_id_attribute);
+    if (expected_version != provenance->end() && actual_version != destination_attributes.end()
+        && actual_version->second != expected_version->second)
+        return false;
     return true;
 }
 
@@ -369,7 +382,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                                         source_metadata->attributes,
                                         object_from.remote_path,
                                         source_metadata->etag,
-                                        source_metadata->last_modified.epochTime());
+                                        source_metadata->last_modified.epochTime(),
+                                        source_metadata->version_id);
                             try
                             {
                                 object_storage->copyObject(
@@ -561,7 +575,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                     source_info.metadata,
                                     object_from.remote_path,
                                     source_info.etag,
-                                    source_info.last_modification_time);
+                                    source_info.last_modification_time,
+                                    source_info.version_id);
 
                             LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, source_info.size, dst_uri.bucket);
                             try

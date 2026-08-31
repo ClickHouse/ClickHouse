@@ -198,6 +198,7 @@ private:
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
                     .etag = object.GetETag(),
+                    .version_id = {},
                     .tags = {},
                     .attributes = {},
                 };
@@ -384,6 +385,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
                     .etag = object.GetETag(),
+                    .version_id = {},
                     .tags = {},
                     .attributes = {},
                 }));
@@ -532,6 +534,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
+    result.version_id = object_info.version_id;
     result.tags = object_info.tags;
     result.attributes = object_info.metadata;
 
@@ -571,6 +574,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
+    result.version_id = object_info.version_id;
     result.tags = std::move(object_info.tags);
     result.attributes = object_info.metadata;
 
