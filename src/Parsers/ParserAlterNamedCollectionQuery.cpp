@@ -5,6 +5,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -94,6 +96,54 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 
     node = query;
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementAlterNamedCollection(StatementFactory & factory)
+{
+    factory.registerStatement("ALTER NAMED COLLECTION",
+    {
+        .description = R"DOCS_MD(
+This query intends to modify already existing named collections.
+
+<Note>
+DDL-created named collections can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability.
+</Note>
+
+**Syntax**
+
+```sql
+ALTER NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
+[ SET
+key_name1 = 'some value' [[NOT] OVERRIDABLE],
+key_name2 = 'some value' [[NOT] OVERRIDABLE],
+key_name3 = 'some value' [[NOT] OVERRIDABLE],
+... ] |
+[ DELETE key_name4, key_name5, ... ]
+```
+
+**Example**
+
+```sql
+CREATE NAMED COLLECTION foobar AS a = '1' NOT OVERRIDABLE, b = '2';
+
+ALTER NAMED COLLECTION foobar SET a = '2' OVERRIDABLE, c = '3';
+
+ALTER NAMED COLLECTION foobar DELETE b;
+```
+)DOCS_MD",
+        .syntax = R"(
+ALTER NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
+[ SET key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT] OVERRIDABLE], ... ] |
+[ DELETE key_name3, key_name4, ... ]
+)",
+        .parent = "ALTER",
+        .related = {"CREATE NAMED COLLECTION", "ALTER", "DROP"},
+    });
 }
 
 }

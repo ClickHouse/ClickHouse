@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 drop table if exists test;
 -- this queries does not have to pass, but they works historically
 -- let's support this while can, see #31687
