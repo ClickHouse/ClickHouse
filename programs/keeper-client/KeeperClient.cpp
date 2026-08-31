@@ -169,7 +169,8 @@ UInt128 fingerprintTLSMaterial(const Poco::Util::AbstractConfiguration & config)
             {
                 hash.update(name);
                 hash.update('\0');
-                std::error_code sz_ec, mt_ec;
+                std::error_code sz_ec;
+                std::error_code mt_ec;
                 const auto size = fs::file_size(entry_path, sz_ec);
                 const auto mtime = fs::last_write_time(entry_path, mt_ec);
                 if (!sz_ec)
