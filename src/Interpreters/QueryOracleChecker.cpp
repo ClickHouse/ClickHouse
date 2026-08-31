@@ -96,6 +96,7 @@ extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
 extern const Event ASTFuzzerOracleSequenceFunnelChecks;
 extern const Event ASTFuzzerOracleSubcolumnChecks;
 extern const Event ASTFuzzerOracleViewTtlChecks;
+extern const Event ASTFuzzerOracleCorrelatedSubqueryChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -4419,6 +4420,62 @@ bool QueryOracleChecker::checkViewTtlConsistency(const ASTSelectQuery &, const C
             context, &fixture);
 
     LOG_TRACE(logger, "view/TTL consistency oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkCorrelatedSubquery(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_17): a correlated scalar subquery must equal its decorrelated JOIN form.
+    ///   correlated:   SELECT id, (SELECT count() FROM u WHERE u.k = t.k) FROM t
+    ///   decorrelated: SELECT t.id, cnt.c FROM t INNER JOIN (SELECT k, count() c FROM u GROUP BY k) cnt
+    ///                 ON cnt.k = t.k
+    /// The fixture seeds every t.k with matching u rows, so the INNER JOIN is total and the two forms
+    /// are exactly equal. The correlated side runs under allow_experimental_correlated_subqueries=1;
+    /// if the feature is unsupported the read returns nullopt and the oracle skips (fail-close). A
+    /// divergence is a real decorrelation bug.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("corrsub", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName("t");
+    const String u = fixture.allocName("u");
+    if (!fixture.execute("CREATE TABLE " + t + " (id UInt32, k UInt8) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + u + " (k UInt8, w Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    /// t.k and u.k both span [0, 7], so every t row has matching u rows (INNER JOIN is total).
+    if (!fixture.execute("INSERT INTO " + t + " SELECT number, number % 8 FROM numbers(200)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + u + " SELECT number % 8, toInt64(number) FROM numbers(160)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "correlated subquery oracle: {} / {}", t, u);
+
+    auto corr_opt = OracleExec::executeRows(
+        "SELECT id, (SELECT count() FROM " + u + " WHERE " + u + ".k = " + t + ".k) AS c FROM " + t,
+        context, ResultShape::SortedBag,
+        {{"allow_experimental_correlated_subqueries", Field(UInt64(1))}});
+    auto deco_opt = OracleExec::executeRows(
+        "SELECT " + t + ".id, cnt.c FROM " + t
+        + " INNER JOIN (SELECT k, count() AS c FROM " + u + " GROUP BY k) AS cnt ON cnt.k = " + t + ".k",
+        context, ResultShape::SortedBag);
+    if (!corr_opt || !deco_opt)
+        return false;
+
+    if (!OracleCompare::equal(*corr_opt, *deco_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "correlated subquery oracle mismatch!\n"
+                "correlated ({} rows) vs decorrelated JOIN ({} rows) on {}/{}\n{}",
+                corr_opt->size(), deco_opt->size(), t, u,
+                OracleCompare::diffSummary(*corr_opt, *deco_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "correlated subquery oracle passed");
     return true;
 }
 
