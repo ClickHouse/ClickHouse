@@ -852,7 +852,8 @@ public:
     /// May read source statistics to make structure decisions (e.g. which paths/variants to keep).
     /// Unlike `takeExactDynamicStructureFrom`, this method actively selects the best structure.
     /// Does NOT update statistics in the result — use `takeOrCalculateStatisticsFrom` for that.
-    virtual void chooseDynamicStructureForMerge(const ColumnsView & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {
+    virtual void chooseDynamicStructureForMerge(const ColumnsView & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/)
+    {
     }
 
     /// For columns with dynamic structure fix current dynamic structure so later inserts into this column won't change it.

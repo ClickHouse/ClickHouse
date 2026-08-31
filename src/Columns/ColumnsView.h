@@ -29,21 +29,21 @@ class ColumnsView
 public:
     using Mapper = const IColumn * (*)(const IColumn *, const void *);
 
-    ColumnsView(const Columns & columns_)
+    ColumnsView(const Columns & columns_) // NOLINT(google-explicit-constructor)
         : storage(ColumnPtrRange{columns_.data(), columns_.size()})
     {
     }
 
     ColumnsView(Columns &&) = delete;
 
-    ColumnsView(const ColumnPtr & column_)
+    ColumnsView(const ColumnPtr & column_) // NOLINT(google-explicit-constructor)
         : storage(ColumnPtrRange{&column_, 1})
     {
     }
 
     ColumnsView(ColumnPtr &&) = delete;
 
-    ColumnsView(const VectorWithMemoryTracking<ColumnPtr> & columns_)
+    ColumnsView(const VectorWithMemoryTracking<ColumnPtr> & columns_) // NOLINT(google-explicit-constructor)
         : storage(ColumnPtrRange{columns_.data(), columns_.size()})
     {
     }
@@ -55,7 +55,7 @@ public:
     {
     }
 
-    ColumnsView(const ColumnRawPtrs & columns_)
+    ColumnsView(const ColumnRawPtrs & columns_) // NOLINT(google-explicit-constructor)
         : storage(RawPtrRange{columns_.data(), columns_.size()})
     {
     }
@@ -67,7 +67,7 @@ public:
     {
     }
 
-    ColumnsView(const IColumn * column_)
+    ColumnsView(const IColumn * column_) // NOLINT(google-explicit-constructor)
         : storage(SingleRawPtr{column_})
     {
     }
