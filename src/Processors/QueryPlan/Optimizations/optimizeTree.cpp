@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -280,20 +281,38 @@ void optimizeTreeSecondPass(
             optimizeUnusedCommonSubplans(frame_node);
         });
 
-        /// A single builder above the root dominates every copy of a materialized subplan, so each set
-        /// is ready before any copy's `in()` is evaluated, regardless of join kind, join algorithm or
+        /// A single builder that dominates every copy of a materialized subplan makes each set ready
+        /// before any copy's `in()` is evaluated, regardless of join kind, join algorithm or
         /// scheduling. Every extracted set must be re-attached: a set with no builder left in the plan
         /// stays unbuilt, and `FunctionIn` then reports it as not ready.
         if (!materialized_sets.empty())
         {
+            /// Below every `DelayedMaterializingCTEsStep` on the spine, where
+            /// `addBuildSubqueriesForSetsStepIfNeeded` already puts the plan's own builder: a set whose
+            /// source reads a materialized CTE has to be built after it. Only single-child nodes are
+            /// descended, so every copy stays below the insertion point.
+            QueryPlan::Node * parent = nullptr;
+            QueryPlan::Node * child = &root;
+            for (auto * spine = &root; spine->children.size() == 1; spine = spine->children.front())
+                if (typeid_cast<DelayedMaterializingCTEsStep *>(spine->step.get()))
+                {
+                    parent = spine;
+                    child = spine->children.front();
+                }
+
             auto step = std::make_unique<DelayedCreatingSetsStep>(
-                root.step->getOutputHeader(),
+                child->step->getOutputHeader(),
                 std::move(materialized_sets),
                 optimization_settings.network_transfer_limits,
                 optimization_settings.prepared_sets_cache);
 
-            auto * child = &nodes.emplace_back(std::move(root));
-            root = QueryPlan::Node{std::move(step), {child}};
+            if (parent)
+                parent->children.front() = &nodes.emplace_back(QueryPlan::Node{std::move(step), {child}});
+            else
+            {
+                auto * old_root = &nodes.emplace_back(std::move(root));
+                root = QueryPlan::Node{std::move(step), {old_root}};
+            }
         }
     }
 
