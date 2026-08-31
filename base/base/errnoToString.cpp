@@ -9,7 +9,6 @@
 namespace
 {
 
-
 [[maybe_unused]] const char * getErrorMessage(int rc, char * buf, size_t buf_size, int the_errno)
 {
 #ifdef OS_DARWIN
