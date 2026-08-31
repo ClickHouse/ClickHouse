@@ -170,10 +170,7 @@ private:
     /// Pre-unification behavior of `max_rows_in_join` / `max_bytes_in_join`: a spill trigger rather than a hard cap.
     const bool legacy_join_size_limits_trigger_spilling = false;
     const size_t max_bytes_before_external_join = 0;
-    /// The `max_bytes_before_external_join` setting as the user wrote it, before combining it with
-    /// `max_bytes_ratio_before_external_join`. Only used to diagnose a hard cap that contradicts an
-    /// explicitly configured spill threshold; the ratio-derived threshold depends on the available
-    /// memory of the machine, so it must not take part in that check.
+    /// `max_bytes_before_external_join` as the user wrote it, before the ratio is folded in; diagnostics only.
     const size_t explicit_max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;

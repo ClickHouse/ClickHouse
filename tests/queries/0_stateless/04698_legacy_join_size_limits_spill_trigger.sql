@@ -1,5 +1,5 @@
--- `legacy_join_size_limits_trigger_spilling` restores the pre-unification meaning of
--- `max_rows_in_join` / `max_bytes_in_join` on the spilling path, and is what `compatibility` turns on.
+-- `legacy_join_size_limits_trigger_spilling` makes `max_rows_in_join` / `max_bytes_in_join` spill
+-- triggers again, as before unification; `compatibility` turns it on.
 
 SELECT 'compatibility restores the legacy behavior';
 SELECT value FROM system.settings WHERE name = 'legacy_join_size_limits_trigger_spilling' SETTINGS compatibility = '26.7';

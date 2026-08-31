@@ -5,8 +5,7 @@ SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_before_external_join = '1M';
 SET grace_hash_join_initial_buckets = 1;
 
--- `grace_hash` is external from the first block, so every one of these caps is checked by the
--- spilling join rather than by the in-memory phase that the adaptive path starts with.
+-- `grace_hash` is external from the first block, so the spilling join itself checks every cap.
 SELECT 'grace_hash: max_bytes_in_join stops the join';
 SET join_algorithm = 'grace_hash';
 SET max_bytes_in_join = '4M';
@@ -38,8 +37,7 @@ FROM (SELECT number AS k FROM numbers(2000000)) AS t1
 INNER JOIN (SELECT number AS k FROM numbers(2000000)) AS t2
 USING (k);
 
--- On the adaptive path the cap is above what the in-memory phase can hold (it switches at half of
--- the 1Mi threshold), so this exception can only come from the join after it has spilled.
+-- The cap is above what the in-memory phase holds (it switches at half of 1M), so this fires after the spill.
 SELECT 'hash: max_bytes_in_join stops the join after it spilled';
 SET join_algorithm = 'hash';
 SET max_bytes_in_join = '4M';

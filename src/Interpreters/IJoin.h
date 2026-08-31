@@ -196,13 +196,12 @@ public:
     /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
     virtual void keepLeftPipelineInOrder() {}
 
-    /// Query-level memory-pressure spilling, driven by `MemorySpillScheduler` through
-    /// `FillingRightJoinSideTransform`. `canSpillToDisk` is queried once while the pipeline is
+    /// Memory-pressure spilling, driven by `MemorySpillScheduler`. Queried once while the pipeline is
     /// built, so it must not depend on runtime state.
     virtual bool canSpillToDisk() const { return false; }
-    /// How much of the right-side data currently held in memory can still be moved to disk.
+    /// Right-side bytes held in memory that can still be moved to disk.
     virtual size_t getSpillableBytes() const { return 0; }
-    /// Ask the join to move its in-memory right-side data to disk at the next opportunity.
+    /// Move the in-memory right side to disk at the next opportunity.
     virtual void requestSpill() { }
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.

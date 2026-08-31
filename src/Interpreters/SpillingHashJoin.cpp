@@ -234,8 +234,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
         return;
     }
 
-    /// Single-thread mode has only one build thread, but `requestSpill` is a second entry point,
-    /// so re-check the state before rebuilding.
+    /// `requestSpill` is a second entry point into this, so re-check the state before rebuilding.
     if (state.load(std::memory_order_relaxed) != State::COLLECTING)
         return;
 
@@ -310,12 +309,12 @@ size_t SpillingHashJoin::getSpillableBytes() const
     switch (state.load(std::memory_order_acquire))
     {
         case State::COLLECTING:
-            /// Everything collected so far can be moved to disk by switching to GraceHashJoin.
+            /// Switching to GraceHashJoin moves everything collected so far to disk.
             return concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
         case State::GRACE_HASH_JOIN:
             return chosen_join->getSpillableBytes();
         case State::IN_MEMORY_JOIN:
-            /// The build phase finished with everything in memory, there is nothing left to spill.
+            /// The build phase finished in memory, nothing left to spill.
             return 0;
     }
 }
