@@ -2114,12 +2114,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
 
-        /// A preliminary merge consumes its members' virtual rows as cursors; forwarding each
-        /// one downstream keeps the whole group deferrable by the top-level merge (and, with
-        /// `read_in_order_use_virtual_row_per_block`, keeps the per-block boundaries flowing).
-        /// Pointless for a single group (nothing to defer it against, and the boundary hop
-        /// lets the free-running read race one extra block), and not for the partition-wise
-        /// output: that one feeds aggregation, not a merge.
+        /// Let the top-level merge defer whole groups behind their virtual rows; useless
+        /// for a single group and wrong for the partition-wise output (it feeds aggregation).
         bool emit_boundary_virtual_rows = virtual_row_conversion && pipes.size() > 1 && !output_each_partition_through_separate_port;
 
         auto merge_streams = [&](Pipe & pipe)

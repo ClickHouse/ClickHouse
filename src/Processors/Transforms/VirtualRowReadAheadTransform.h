@@ -109,7 +109,9 @@ private:
     ssize_t first_miss_lane = -1;
     bool cross_lane_read_ahead = false;
 
-    /// State of the partial `prepare`: lane lookup by port, dedup of touched lanes per call.
+    /// Lanes are positionally aligned with the ports, but the ports live in std::lists and
+    /// the partial `prepare` receives pointers, so this is the O(1) reverse index
+    /// (`getInputPortNumber` would walk the list on every event).
     std::unordered_map<const Port *, size_t> port_to_lane;
     std::vector<UInt64> lane_touch_epoch;
     std::vector<size_t> touched_lanes;

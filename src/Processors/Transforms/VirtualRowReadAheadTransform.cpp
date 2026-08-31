@@ -207,12 +207,9 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
             if (!is_virtual_row)
                 lane.speculative = false;
 
-            /// Refill: keep a lane that demonstrably feeds the merge reading ahead, so its
-            /// next read overlaps with the merge of the data just delivered. A virtual row
-            /// is an announcement, not fed data — refilling on it would read a block from
-            /// every source the merge only glanced at. An announcement still waiting in the
-            /// buffer blocks the refill too: the merge has not crossed that boundary yet, so
-            /// reading past it is `topUpReadAhead`'s (gated) call, not the refill's.
+            /// Refill: keep the lane feeding the merge one read ahead — but not on a virtual
+            /// row, and not past one still waiting in the buffer: reading beyond an announced
+            /// boundary is the gated window's decision, not the refill's.
             if (!is_virtual_row && speculationAllowed() && lane.credit == 0 && underBufferCaps(lane)
                 && !lane.boundary.empty() && !input.isFinished()
                 && (lane.buffer.empty() || !isVirtualRow(lane.buffer.front())))
