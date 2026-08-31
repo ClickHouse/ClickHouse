@@ -104,11 +104,10 @@ Returns the year component of a `Date` or `DateTime` value.
 
 When called without arguments, returns the current year at the moment of query analysis.
     )";
-    FunctionDocumentation::Syntax syntax = "year([datetime[, timezone]])";
+    FunctionDocumentation::Syntax syntax = "year([datetime])";
     FunctionDocumentation::Arguments arguments =
     {
-        {"datetime", "Optional. Date or date with time to get the year from.", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
+        {"datetime", "Optional. Date or date with time to get the year from.", {"Date", "Date32", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the year of the given (or current) Date or DateTime", {"UInt16"}};
     FunctionDocumentation::Examples examples = {
@@ -121,17 +120,6 @@ SELECT year(toDateTime('2023-04-21 10:20:30'))
 ┌─year(toDateTime('2023-04-21 10:20:30'))─┐
 │                                    2023 │
 └─────────────────────────────────────────┘
-        )"
-    },
-    {
-        "Year in a specific timezone",
-        R"(
-SELECT year(toDateTime('2023-12-31 23:00:00', 'UTC'), 'Asia/Yekaterinburg')
-        )",
-        R"(
-┌─year(toDateTime('2023-12-31 23:00:00', 'UTC'), 'Asia/Yekaterinburg')─┐
-│                                                                 2024 │
-└──────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
