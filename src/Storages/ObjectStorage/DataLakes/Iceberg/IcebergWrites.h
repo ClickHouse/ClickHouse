@@ -190,6 +190,11 @@ private:
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
+    /// The incarnation of the table this write was validated for. An external writer may drop and
+    /// recreate the table at the same root while the write is running, and the reread below
+    /// resolves the metadata through the shared trusted `table-uuid`, so the write would silently
+    /// continue into the replacement.
+    UInt64 pinned_incarnation;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
 

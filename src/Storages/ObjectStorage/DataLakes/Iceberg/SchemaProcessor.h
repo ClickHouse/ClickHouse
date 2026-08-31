@@ -14,6 +14,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
@@ -117,13 +118,6 @@ public:
 
     ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
-    /// Drop everything derived from the metadata of one table. An Iceberg table that an external
-    /// writer recreated at the same root restarts its own `schema-id` numbering, so its schemas
-    /// would otherwise collide with the previous table's under the same ids. Called from
-    /// `IcebergMetadata::update` when a change of `table-uuid` proves the table was replaced;
-    /// the processor is shared between all copies of `PersistentTableComponents` for the table.
-    void reset();
-
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
@@ -153,4 +147,40 @@ private:
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;
+
+/// The schema processor of one table, replaceable when that table is replaced.
+///
+/// Everything a processor holds is derived from the metadata of a single Iceberg table, and an
+/// external writer that recreates a table at the same root restarts its own `schema-id`
+/// numbering, so the two tables bind the same ids to different fields - which
+/// `addIcebergTableSchema` rejects. When `IcebergMetadata::update` proves such a replacement it
+/// installs a fresh processor here; a query that already took the previous one keeps it alive
+/// through its own `shared_ptr` and finishes against the incarnation it was planned for.
+class SharedSchemaProcessor
+{
+public:
+    explicit SharedSchemaProcessor(bool allow_geo_parser_)
+        : allow_geo_parser(allow_geo_parser_), processor(std::make_shared<IcebergSchemaProcessor>(allow_geo_parser_))
+    {
+    }
+
+    IcebergSchemaProcessorPtr get() const
+    {
+        SharedLockGuard lock(mutex);
+        return processor;
+    }
+
+    void replaceWithFreshInstance()
+    {
+        std::lock_guard lock(mutex);
+        processor = std::make_shared<IcebergSchemaProcessor>(allow_geo_parser);
+    }
+
+private:
+    const bool allow_geo_parser;
+    mutable SharedMutex mutex;
+    IcebergSchemaProcessorPtr processor TSA_GUARDED_BY(mutex);
+};
+
+using SharedSchemaProcessorPtr = std::shared_ptr<SharedSchemaProcessor>;
 }

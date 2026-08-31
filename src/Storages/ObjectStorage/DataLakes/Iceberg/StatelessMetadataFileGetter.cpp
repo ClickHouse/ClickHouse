@@ -134,7 +134,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         cacheable_info.deserializer,
         cache_key.manifest_file_path,
         persistent_table_components.path_resolver,
-        *persistent_table_components.schema_processor,
+        *persistent_table_components.getSchemaProcessor(),
         cache_key.added_sequence_number,
         cache_key.added_snapshot_id,
         cache_key.first_row_id,

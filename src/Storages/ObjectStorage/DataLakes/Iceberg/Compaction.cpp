@@ -273,7 +273,7 @@ static Plan getPlan(
                     data_file,
                     persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
                     0,
-                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
+                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.getSchemaProcessor()));
                 /// One DataFilePlan per source *data file*, keyed by the data file's own path.
                 /// Keying by the manifest path made every data file after the first in a
                 /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
@@ -542,12 +542,12 @@ static bool writeConsolidatedManifestFile(
 
         /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
         for (UInt32 i = 0; i < schemas->size(); ++i)
-            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
+            persistent_table_components.getSchemaProcessor()->addIcebergTableSchema(schemas->getObject(i));
 
         auto build_sample_block = [&](Int32 schema_id) -> std::optional<Block>
         {
             auto fields_characteristics
-                = persistent_table_components.schema_processor->tryGetFieldsCharacteristics(schema_id, source_ids);
+                = persistent_table_components.getSchemaProcessor()->tryGetFieldsCharacteristics(schema_id, source_ids);
             /// A short result means this schema does not define every partition source column.
             if (fields_characteristics.size() != source_ids.size())
                 return std::nullopt;
@@ -580,7 +580,7 @@ static bool writeConsolidatedManifestFile(
                 "No Iceberg schema defines all source columns referenced by partition spec {}",
                 spec_id);
 
-        auto schema_for_spec = persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id_for_spec);
+        auto schema_for_spec = persistent_table_components.getSchemaProcessor()->getIcebergTableSchemaById(schema_id_for_spec);
         auto shared_sample_block = std::make_shared<const Block>(std::move(*spec_sample_block));
         resolved.partition_types
             = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();

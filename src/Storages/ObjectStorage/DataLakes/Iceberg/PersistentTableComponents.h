@@ -18,7 +18,9 @@ namespace DB::Iceberg
 // so an external upgrade (e.g. Spark v1 -> v2) between queries does not corrupt this cache.
 struct PersistentTableComponents
 {
-    IcebergSchemaProcessorPtr schema_processor;
+    /// Shared, not copied, between all copies of this struct describing the same table, so that
+    /// a replacement observed by one query installs a fresh processor for the ones that follow.
+    const SharedSchemaProcessorPtr shared_schema_processor;
     IcebergMetadataFilesCachePtr metadata_cache;
     const Int32 format_version;
     const String table_location;
@@ -32,6 +34,11 @@ struct PersistentTableComponents
     /// The `table-uuid` currently trusted as a metadata content cache key. Always read it
     /// through this accessor - the value can be refreshed by `IcebergMetadata::update`.
     std::optional<String> getTableUuid() const { return trusted_table_uuid->get(); }
+
+    /// The schema processor of the current incarnation of the table. Hold on to the returned
+    /// pointer for as long as the schemas are used: `IcebergMetadata::update` installs a fresh
+    /// processor when the table is replaced, and the previous one stays alive for its holders.
+    IcebergSchemaProcessorPtr getSchemaProcessor() const { return shared_schema_processor->get(); }
 
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).

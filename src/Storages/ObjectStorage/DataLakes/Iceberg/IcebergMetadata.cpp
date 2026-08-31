@@ -211,7 +211,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     auto trusted_table_uuid = std::make_shared<TrustedTableUuid>(table_uuid);
     trusted_table_uuid->markValidated(metadata_version, metadata_file_path, metadata_file_identity);
     return PersistentTableComponents{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
+        .shared_schema_processor = std::make_shared<SharedSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
@@ -300,9 +300,10 @@ void IcebergMetadata::update(const ContextPtr & local_context)
         /// Everything the schema processor holds describes the previous table. The replacement
         /// restarts its own `schema-id` numbering, so its schemas would be rejected as a
         /// rebinding of an existing id, and its snapshot ids would resolve through the previous
-        /// table's mapping. The processor is shared between all copies of
-        /// `PersistentTableComponents` for this table, so clearing it here clears it for all.
-        persistent_components.schema_processor->reset();
+        /// table's mapping. Install a fresh processor for the queries that follow; a query that
+        /// is already running keeps the previous one alive and finishes against the incarnation
+        /// it was planned for.
+        persistent_components.shared_schema_processor->replaceWithFreshInstance();
 
         /// The content cells keyed by the previous UUID are unreachable once the trusted UUID
         /// moves, but the latest-version cells under the previous UUID and under the table path
@@ -522,7 +523,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 IcebergDataSnapshotPtr
 IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
 {
-    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.schema_processor);
+    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.getSchemaProcessor());
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
@@ -659,7 +660,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
     }
     else
     {
-        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log);
+        auto schema_id = parseTableSchema(metadata_object, *persistent_components.getSchemaProcessor(), log);
         if (!metadata_object->has(f_current_snapshot_id))
         {
             return {nullptr, schema_id};
@@ -712,7 +713,7 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator
             || (!iceberg_object_info->info.equality_deletes_objects.empty()))
-        ? persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
+        ? persistent_components.getSchemaProcessor()->getClickHouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
         : nullptr;
 }
 
@@ -722,7 +723,7 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
     if (!iceberg_object_info)
         return nullptr;
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator)
-        ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
+        ? persistent_components.getSchemaProcessor()->getSchemaTransformationDagByIds(
               iceberg_object_info->info.underlying_format_read_schema_id, iceberg_object_info->info.schema_id_relevant_to_iterator)
         : nullptr;
 }
@@ -994,7 +995,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
-        metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
+        metadata_object, *table_state_snapshot.snapshot_id, persistent_components.getSchemaProcessor());
 
     return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
@@ -1413,7 +1414,7 @@ ObjectIterator IcebergMetadata::iterate(
 NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    return *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
+    return *persistent_components.getSchemaProcessor()->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
 std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -1430,7 +1431,7 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
     result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
+        ColumnsDescription{*persistent_components.getSchemaProcessor()->getClickHouseTableSchemaById(iceberg_state.schema_id)});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
@@ -1493,7 +1494,7 @@ void IcebergMetadata::addDeleteTransformers(
             for (Int32 col_id : equality_ids)
             {
                 NameAndTypePair name_and_type
-                    = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
+                    = persistent_components.getSchemaProcessor()->getFieldCharacteristics(delete_file.schema_id, col_id);
                 size_t position_in_delete_file = delete_file_header.getPositionByName(name_and_type.name);
                 /// Take the type from the delete file header rather than from the table schema:
                 /// the nullability of a column in the delete file may differ from its nullability
@@ -1548,7 +1549,7 @@ void IcebergMetadata::addDeleteTransformers(
             /// select columns to use in 'notIn' function
             for (Int32 col_id : equality_ids)
             {
-                NameAndTypePair name_and_type = persistent_components.schema_processor->getFieldCharacteristics(
+                NameAndTypePair name_and_type = persistent_components.getSchemaProcessor()->getFieldCharacteristics(
                     iceberg_object_info->info.underlying_format_read_schema_id, col_id);
                 auto it = outputs.find(name_and_type.name);
                 if (it == outputs.end())
@@ -1619,7 +1620,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
         return nullptr;
 
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
+    return persistent_components.getSchemaProcessor()->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
 }
 
 // (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occurred during supporting concurrent SELECTs).
@@ -1634,7 +1635,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
         auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
         iceberg_table_state = std::make_shared<TableStateSnapshot>(actual_table_state_snapshot);
     }
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
+    return persistent_components.getSchemaProcessor()->getColumnMapperById(iceberg_table_state->schema_id);
 }
 
 KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
@@ -1652,7 +1653,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.trusted_table_uuid->getForPinnedIncarnation(actual_table_state_snapshot.trusted_uuid_incarnation));
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
+    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.getSchemaProcessor()->getClickHouseTableSchemaById(current_schema_id), local_context);
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     result.sort_order_id = sort_order_id;
     return result;
@@ -1683,9 +1684,8 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
     auto standard_persistent_components
         = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
-    auto schema_processor = standard_persistent_components.schema_processor;
     auto deserialized_persistent_components = Iceberg::PersistentTableComponents{
-        .schema_processor = schema_processor,
+        .shared_schema_processor = standard_persistent_components.shared_schema_processor,
         .metadata_cache = standard_persistent_components.metadata_cache,
         .format_version = format_version,
         .table_location = table_location,

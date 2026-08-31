@@ -226,7 +226,7 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             manifest_file_cacheable_part.deserializer,
             manifest_list_entry.manifest_file_path,
             persistent_components.path_resolver,
-            *persistent_components.schema_processor,
+            *persistent_components.getSchemaProcessor(),
             manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id,
             manifest_list_entry.first_row_id,
@@ -423,7 +423,7 @@ void IcebergIterator::decodeDeleteManifests()
                     manifest_file_cacheable_part.deserializer,
                     manifest_list_entry.manifest_file_path,
                     persistent_components.path_resolver,
-                    *persistent_components.schema_processor,
+                    *persistent_components.getSchemaProcessor(),
                     manifest_list_entry.added_sequence_number,
                     manifest_list_entry.added_snapshot_id,
                     manifest_list_entry.first_row_id,
@@ -473,7 +473,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 manifest_file_entry,
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
                 table_state_snapshot->schema_id,
-                Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
+                Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.getSchemaProcessor()));
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {

@@ -810,18 +810,6 @@ Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 
     return it->second;
 }
 
-void IcebergSchemaProcessor::reset()
-{
-    std::lock_guard lock(mutex);
-    iceberg_table_schemas_by_ids.clear();
-    clickhouse_table_schemas_by_ids.clear();
-    transform_dags_by_ids.clear();
-    clickhouse_types_by_source_ids.clear();
-    clickhouse_ids_by_source_names.clear();
-    current_schema_id = 0;
-    schema_id_by_snapshot.clear();
-}
-
 void IcebergSchemaProcessor::registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id)
 {
     std::lock_guard lock(mutex);
