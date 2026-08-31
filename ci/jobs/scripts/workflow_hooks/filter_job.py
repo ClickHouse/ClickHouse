@@ -61,6 +61,11 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Stateless tests (amd_binary, flaky check)",
 ]
 
+# The Darwin (macOS) "Fast test" jobs, resolved to their parametrized names
+# (e.g. "Fast test (arm_darwin)"). They run on scarce self-hosted macOS runners,
+# so in PRs they are skipped unless the PR carries the `ci-macos` label.
+DARWIN_FAST_TEST_JOBS = [j.name for j in JobConfigs.darwin_fast_test_jobs]
+
 # Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
 KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
 
@@ -170,6 +175,10 @@ _PIPELINE_NOTES = {
     Labels.CI_NO_COVERAGE: (
         "Label `ci-no-coverage` skips coverage jobs and the `LLVM Coverage` merge job."
     ),
+    Labels.CI_MACOS: (
+        "Label `ci-macos` runs the Darwin (macOS) `Fast test` job, which is "
+        "skipped by default in PRs."
+    ),
 }
 
 
@@ -265,6 +274,16 @@ def should_skip_job(job_name):
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
         return False, ""
+
+    # The Darwin (macOS) fast test runs on scarce self-hosted macOS runners, so
+    # in PRs it runs only when explicitly requested via the `ci-macos` label.
+    # Master has no such job, so this gate is a no-op there.
+    if (
+        job_name in DARWIN_FAST_TEST_JOBS
+        and _info_cache.pr_number
+        and Labels.CI_MACOS not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
 
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
