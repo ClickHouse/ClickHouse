@@ -416,10 +416,12 @@ public:
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
     /// Update state of hash function with values in range [begin, end).
-    /// Used for deduplication: the hash must be the same for the same INSERT data producing
-    /// the same in-memory representation. It does NOT guarantee the same hash for logically
-    /// equivalent data stored differently in memory (e.g. different dynamic/shared path layout
-    /// in ColumnObject, or different variant layout in ColumnDynamic).
+    /// Used for deduplication, which works per query: only a retry of the same query has to land on
+    /// the same hash. So the hash may depend on the in-memory representation (e.g. the dynamic/shared
+    /// path layout in ColumnObject, or the variant layout in ColumnDynamic) as long as the same query
+    /// rebuilds the same one.
+    /// ColumnSparse is the exception: sparseness is chosen by the storage, and a merge flips it under
+    /// an unchanged query, so insert deduplication removes it before hashing.
     /// Default implementation calls updateHashWithValue for each element.
     virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
 
