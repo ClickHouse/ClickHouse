@@ -78,6 +78,7 @@ extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
 extern const Event ASTFuzzerOracleTupleSummingChecks;
 extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
 extern const Event ASTFuzzerOracleDeleteMutationChecks;
+extern const Event ASTFuzzerOracleUpdateMutationChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3372,6 +3373,56 @@ bool QueryOracleChecker::checkDeleteMutation(const ASTSelectQuery &, const Conte
             context, &fixture);
 
     LOG_TRACE(logger, "DELETE-mutation oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkUpdateMutation(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded mutation oracle (task_41/42): ALTER UPDATE x = e WHERE p sets x to e on rows where
+    /// p is true and leaves x unchanged elsewhere. Against a never-mutated snapshot, the mutated table
+    /// must equal the snapshot with the same transform applied: if(p, e, x). Deterministic integer
+    /// expression (v + 10) so both the mutation and the expected side share identical arithmetic
+    /// (incl. any overflow). Non-null p (g = 1).
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("upd", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName("t");
+    const String snap = fixture.allocName("snap");
+    const String cols = " (k UInt64, g UInt8, v Int64) ENGINE = MergeTree ORDER BY k";
+    if (!fixture.execute("CREATE TABLE " + t + cols) || !fixture.execute("CREATE TABLE " + snap + cols))
+        return false;
+    const String seed = " SELECT number, number % 8, toInt64(number) - 500 FROM numbers(1000)";
+    if (!fixture.execute("INSERT INTO " + t + seed) || !fixture.execute("INSERT INTO " + snap + seed))
+        return false;
+
+    const std::vector<std::pair<String, Field>> sync{
+        {"mutations_sync", Field(UInt64(2))}, {"alter_sync", Field(UInt64(2))}};
+    if (!fixture.execute("ALTER TABLE " + t + " UPDATE v = v + 10 WHERE g = 1", sync))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "UPDATE-mutation oracle: {} vs transformed snapshot {}", t, snap);
+
+    auto actual_opt = OracleExec::executeRows("SELECT k, g, v FROM " + t, context, ResultShape::SortedBag);
+    auto expected_opt = OracleExec::executeRows(
+        "SELECT k, g, if(g = 1, v + 10, v) FROM " + snap, context, ResultShape::SortedBag);
+    if (!actual_opt || !expected_opt)
+        return false;
+
+    if (!OracleCompare::equal(*actual_opt, *expected_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "UPDATE-mutation oracle mismatch!\n"
+                "after ALTER UPDATE v=v+10 WHERE g=1 on {} ({} rows) vs transformed snapshot ({} rows)\n{}",
+                t, actual_opt->size(), expected_opt->size(),
+                OracleCompare::diffSummary(*actual_opt, *expected_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "UPDATE-mutation oracle passed");
     return true;
 }
 
