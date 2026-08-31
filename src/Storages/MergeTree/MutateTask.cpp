@@ -1894,6 +1894,19 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
         mutating_pipeline.reset();
     }
 
+    /// The hook installed in `setPipelineCancelHook` captures the `PipelineCancelState` by value
+    /// (so it can outlive the merge list entry and be invoked from another thread); because the hook
+    /// is stored inside that very state, it forms a reference cycle. On the success path the cycle is
+    /// broken by `finalize()` clearing the hook, but on the cancel/kill/shutdown paths it is not, and
+    /// the whole object graph (state, merge list entry, this context) leaks. The entry
+    /// (`MergeListEntry * mutate_entry`) always outlives this context, so it is safe to release the
+    /// hook and the pipeline here, on every teardown path.
+    ~MutationContext()
+    {
+        clearPipelineCancelHook();
+        resetMutatingPipeline();
+    }
+
     /// Whether we need to count lightweight delete rows in this mutation
     bool count_lightweight_deleted_rows{};
     UInt64 execute_elapsed_ns = 0;
@@ -3447,6 +3460,13 @@ bool MutateTask::execute()
 
             if (task->executeStep())
                 return true;
+
+            // Re-check after the final `executeStep()`: a `KILL MUTATION` can race in
+            // during that step (for example after the pipeline hook is cleared on
+            // finalize), so a cancelled mutation must not hand its completed temporary
+            // part over to be committed. The thrown exception propagates up to the
+            // caller, which reports the mutation as failed and removes the temp part.
+            ctx->checkOperationIsNotCanceled();
 
             // The `new_data_part` is a shared pointer and must be moved to allow
             // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
