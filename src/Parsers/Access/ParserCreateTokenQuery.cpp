@@ -131,6 +131,9 @@ Examples:
 - `CREATE TOKEN GRANTS (SELECT ON db.table)`
 - `CREATE TOKEN VALID FOR INTERVAL 90 DAY GRANTS (SELECT ON db.table, INSERT ON db.table)`
 
+Neither this limit nor the time limit applies to what the sessions of the token leave behind - see
+[Security considerations](#security-considerations).
+
 ## Managing Tokens {#managing-tokens}
 
 A token is an authentication method of the user, so it is listed by
@@ -147,6 +150,37 @@ number of authentication methods a user may have at once is limited by the
 `CREATE TOKEN` does not support the `ON CLUSTER` clause. Use a replicated access storage (or run the query on
 every node with the equivalent `ALTER USER ... ADD IDENTIFIED WITH sha256_hash` statement) to make a token work
 across a cluster whose access entities are stored locally.
+
+## Security Considerations {#security-considerations}
+
+`VALID UNTIL` and `GRANTS` constrain the sessions which authenticate with the token. They do not constrain
+what those sessions leave behind:
+
+- The deadline is checked when a session authenticates with the token. A session which is already open, and a
+  query which is already running, are not interrupted when the token expires.
+- Everything a session creates outlives the token, and an object which does work on its own keeps doing it: a
+  [refreshable materialized view](/reference/statements/create/view#refreshable-materialized-view) keeps
+  refreshing, a materialized view attached to a streaming table engine such as
+  [`Kafka`](/reference/engines/table-engines/integrations/kafka),
+  [`RabbitMQ`](/reference/engines/table-engines/integrations/rabbitmq),
+  [`NATS`](/reference/engines/table-engines/integrations/nats) or
+  [`S3Queue`](/reference/engines/table-engines/integrations/s3queue) keeps consuming, and a dictionary with a
+  [`LIFETIME`](/reference/statements/create/dictionary/lifetime) keeps reloading, long after the token has
+  expired. A view does this work with the rights of its
+  [`DEFINER`](/reference/statements/create/view#sql_security), which is by default the user which created the
+  view - the full rights of the user, not the rights which the `GRANTS` clause of the token left it with.
+
+A token which is allowed to create tables, views or dictionaries can therefore extend both of its limits in
+practice: it can leave a persistent job behind which keeps running after the deadline and does, with the
+rights of the user, what the token itself was not allowed to do. Grant a token only what the application
+needs - usually `SELECT` and `INSERT` on named tables - and keep `CREATE TABLE`, `CREATE VIEW`,
+`CREATE DICTIONARY` and the `ACCESS MANAGEMENT` privileges out of its `GRANTS` clause when the limits are
+meant to hold.
+
+A session which authenticated with a token that has a `GRANTS` clause cannot issue tokens at all: adding an
+authentication method to an existing user is denied for such a session. The `GRANTS` clause of a new
+authentication method is intersected at login with the access rights of the user, not with those of the
+session which created the method, so it would otherwise be a way to widen the limit.
 )DOCS_MD",
         .syntax = R"(
 CREATE TOKEN
