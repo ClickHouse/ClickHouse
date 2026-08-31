@@ -701,10 +701,10 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             /// Charge after clipping: a token an earlier predicate ruled out is never read, so it
             /// must not spend the budget that bounds the work remaining after that pruning.
             const auto reachable_blocks = analyzer->addTokenInfo(token, infos[i]);
-            /// Charge non-embedded postings by rows (real read work), not just by count - and only
-            /// the blocks the surviving rows can reach, which is what readPostingsBlocksForToken
-            /// goes on to read. Blocks are fixed size, so their share of the token is proportional.
-            if (reachable_blocks && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
+            /// Charge only the blocks the surviving rows reach, which is what readPostingsBlocksForToken
+            /// reads; blocks are fixed size, so zero of them costs nothing and must move neither budget.
+            if (reachable_blocks && *reachable_blocks > 0
+                && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
             {
                 ++postings_to_read;
                 const size_t total_blocks = infos[i]->ranges.size();
