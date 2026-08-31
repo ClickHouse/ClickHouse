@@ -1,27 +1,32 @@
 ---
-sidebarTitle: 'Architecture'
-slug: /cloud/reference/architecture
-title: 'ClickHouse Cloud architecture'
-description: 'This page describes the architecture of ClickHouse Cloud'
-keywords: ['ClickHouse Cloud', 'cloud architecture', 'separation of storage and compute']
-doc_type: 'reference'
+title: "ClickHouse Cloud architecture"
+sidebarTitle: "Architecture"
+slug: "/cloud/reference/architecture"
+description: "This page describes the architecture of ClickHouse Cloud"
+keywords:
+  - "ClickHouse Cloud"
+  - "cloud architecture"
+  - "separation of storage and compute"
+doc_type: "reference"
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
-
-<Image img="/images/cloud/reference/architecture.webp" size='lg' alt='Cloud architecture'/>
+import { PrivatPreviewBadge } from "/snippets/components"
 
 ## Storage backed by object store {#storage-backed-by-object-store}
+
 - Virtually unlimited storage
 - No need to manually shard data
 - Significantly lower price point for storing data, especially data that is accessed less frequently
 
 ## Compute {#compute}
+
 - Automatic scaling and idling: No need to size up front, and no need to over-provision for peak use
 - Automatic idling and resume: No need to have unused compute running while no one is using it
 - Secure and HA by default
 
 ## Administration {#administration}
+
 - Setup, monitoring, backups, and billing are performed for you.
 - Cost controls are enabled by default, and can be adjusted by you through the Cloud console.
 
@@ -44,7 +49,16 @@ For AWS, access to storage is controlled via AWS IAM, and each IAM role is uniqu
 For GCP and Azure, services have object storage isolation (all services have their own buckets or storage container).
 
 ## Compute-compute separation {#compute-compute-separation}
+
 [Compute-compute separation](/products/cloud/features/infrastructure/warehouses) lets you create multiple compute node groups, each with their own service URL, that all use the same shared object storage. This allows for compute isolation of different use cases such as reads from writes, that share the same data. It also leads to more efficient resource utilization by allowing for independent scaling of the compute groups as needed.
+
+## On-demand compute {#on-demand-compute}
+
+<PrivatePreview />
+
+On-Demand Compute temporarily assigns **workers** from a ClickHouse-managed pool to supported workloads through your existing ClickHouse Cloud service. Your service authenticates and coordinates the query, while assigned workers perform the bulk of eligible scan, join, and aggregation work outside the service’s compute. The pool is shared across ClickHouse Cloud services, but each worker serves only one service at a time.
+
+During the private preview, On-Demand Compute supports eligible select queries only. Availability is best effort, performance varies, and ClickHouse Cloud SLOs and SLAs do not apply.
 
 ## Concurrency limits {#concurrency-limits}
 
