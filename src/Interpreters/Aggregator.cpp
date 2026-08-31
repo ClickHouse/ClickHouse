@@ -4481,7 +4481,11 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     auto & dst = getDataVariant<Method>(*res).data;
-    constexpr bool can_reserve = requires { dst.reserve(size_t{}); };
+    /// A string table (`StringHashTable`, detected by its `emptyStringSlot`) is excluded even
+    /// though it has a `reserve`: the hint is split evenly over its four size-class sub-maps,
+    /// while a real key set concentrates in one of them, so reserving would force-grow the
+    /// cold sub-maps and still leave the hot one undersized.
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
     size_t first_src_size = 0;
     size_t remaining_src_sizes = 0;
     size_t dst_size_before = 0;
@@ -4593,22 +4597,33 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
-    const size_t first_src_size = data.size() > 1 ? getDataVariant<Method>(*data[1]).data.impls[bucket].size() : 0;
+    /// String tables are excluded for the reason given in `mergeSingleLevelDataImpl`.
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
+    size_t first_src_size = 0;
     size_t remaining_src_sizes = 0;
-    for (size_t result_num = 2, size = data.size(); result_num < size; ++result_num)
-        remaining_src_sizes += getDataVariant<Method>(*data[result_num]).data.impls[bucket].size();
-    const size_t dst_size_before = dst.size();
-    const size_t input_keys = dst_size_before + first_src_size + remaining_src_sizes;
+    size_t dst_size_before = 0;
+    size_t input_keys = 0;
+    UInt64 seen_input_keys = 0;
+    if constexpr (can_reserve)
+    {
+        first_src_size = data.size() > 1 ? getDataVariant<Method>(*data[1]).data.impls[bucket].size() : 0;
+        for (size_t result_num = 2, size = data.size(); result_num < size; ++result_num)
+            remaining_src_sizes += getDataVariant<Method>(*data[result_num]).data.impls[bucket].size();
+        dst_size_before = dst.size();
+        input_keys = dst_size_before + first_src_size + remaining_src_sizes;
 
-    /// Reserve up front from the completed buckets' ratio (see `merged_buckets_input_keys`);
-    /// the first buckets, merged while nothing has completed yet, use the in-loop estimate.
-    /// Loading the produced total first makes a torn read only lower the observed ratio, and
-    /// a merge never produces more keys than it consumes, so the reservation is also capped
-    /// by this bucket's input.
-    const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_relaxed));
-    const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
-    if (seen_input_keys)
-        dst.reserve(std::min(input_keys, static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+        /// Reserve up front from the completed buckets' ratio (see `merged_buckets_input_keys`);
+        /// the first buckets, merged while nothing has completed yet, use the in-loop estimate.
+        /// The counters are published input-first with the result released, and read here
+        /// result-first with an acquire, so every result contribution this thread observes
+        /// comes with its input contribution; extra input contributions only lower the ratio.
+        /// A merge never produces more keys than it consumes, so the reservation is also
+        /// capped by this bucket's input.
+        const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
+        seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
+        if (seen_input_keys)
+            dst.reserve(std::min(input_keys, static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+    }
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
@@ -4634,12 +4649,18 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 is_cancelled);
         }
 
-        if (!seen_input_keys && result_num == 1 && remaining_src_sizes)
-            dst.reserve(reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes));
+        if constexpr (can_reserve)
+        {
+            if (!seen_input_keys && result_num == 1 && remaining_src_sizes)
+                dst.reserve(reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes));
+        }
     }
 
-    res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
-    res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_relaxed);
+    if constexpr (can_reserve)
+    {
+        res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
+        res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_release);
+    }
 }
 
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
