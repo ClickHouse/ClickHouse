@@ -115,12 +115,11 @@ SELECT 'residue was there to leave alone', sumIf(value, event = 'AdaptiveAggrega
 SELECT 'thawed onto the baseline path', sumIf(value, event = 'AdaptiveAggregationThaws') > 0 FROM system.events;
 "
 
-# The scenarios above aggregate keys only, so none of their assertions can observe an aggregate state
-# travelling through the release. This one carries a live aggregate and asserts the exact totals in
-# place of the file-to-sweep ratio, which stays above where it was measured: a lost or corrupted state
-# contribution moves sum(c), and the ratio oracle is not perturbed because it is in another scenario.
-# The memory limit is deliberately not pinned here - a live aggregate raises the spilled volume, and
-# this scenario checks results, not the limit.
+# The scenarios above aggregate keys only, so no aggregate state travels through the release. A lone
+# count() is staged as an inline counter rather than as an aggregate state, so this scenario carries a
+# second aggregate: with two of them the records stage real states, and both exact totals move if a
+# state contribution is lost or corrupted. The memory limit is deliberately not pinned here - live
+# states raise the spilled volume, and this scenario checks results, not the limit.
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET max_block_size = 8192;
@@ -133,9 +132,9 @@ SET max_bytes_before_external_group_by = 80000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET collect_hash_table_stats_during_aggregation = 0;
 
-SELECT count(), sum(c) FROM
+SELECT count(), sum(s), sum(c) FROM
 (
-    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k, count() AS c
+    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k, sum(number) AS s, count() AS c
     FROM numbers_mt(6000000)
     GROUP BY k
 );
