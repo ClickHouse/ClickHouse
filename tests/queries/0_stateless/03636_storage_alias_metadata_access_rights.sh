@@ -187,7 +187,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
-echo "Test table metadata with target permission"
+echo "Test table metadata with column-scoped target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT
         notEmpty(partition_key),
@@ -200,12 +200,15 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
-echo "Test persisted table metadata with target permission"
+echo "Test persisted table metadata with column-scoped target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT notEmpty(create_table_query), notEmpty(engine_full)
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
+# The same user is refused the same DDL through the interpreter, so system.tables
+# withholding it above is the two surfaces agreeing rather than a lost feature.
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access" 2>&1 | grep -o -m1 ACCESS_DENIED
 
 echo "Test column statistics with column-scoped target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "

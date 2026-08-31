@@ -34,10 +34,11 @@ Test direct and Alias count with column-scoped target SELECT permission using th
 2	2
 Test table statistics with target permission
 2	1	1	1	1
-Test table metadata with target permission
-1	1	1	1	1	1
-Test persisted table metadata with target permission
-1	1
+Test table metadata with column-scoped target permission
+0	0	0	0	0	1
+Test persisted table metadata with column-scoped target permission
+0	0
+ACCESS_DENIED
 Test column statistics with column-scoped target permission
 value	1
 Test other metadata tables with target permission
