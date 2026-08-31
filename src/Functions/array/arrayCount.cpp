@@ -63,7 +63,11 @@ struct ArrayCountImpl
 
                 return out_column;
             }
-            return DataTypeNumber<ResultType>().createColumnConst(array.size(), ResultType(0));
+            /// A full column of zeros, and not a constant one: `arrayCount` must return a column of the
+            /// same constness for a constant and for a non-constant predicate, otherwise the result of
+            /// `arrayCount` becomes observably different (`isConstant`) depending on the predicate.
+            /// Constant folding for a constant array argument is done by the function wrapper anyway.
+            return ColumnVector<ResultType>::create(array.size(), ResultType(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();

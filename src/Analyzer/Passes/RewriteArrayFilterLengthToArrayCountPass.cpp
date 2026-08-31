@@ -54,7 +54,9 @@ public:
         array_count_function_node->resolveAsFunction(array_count_function->build(array_count_function_node->getArgumentColumns()));
 
         /// Both `length` and `arrayCount` return UInt64, so the rewrite changes neither the type nor
-        /// the value of the column, for arrays of any size.
+        /// the value of the column, for arrays of any size. The constness of the result is also the
+        /// same: `arrayCount` returns a full column for a constant predicate as well, in the same way
+        /// as `length(arrayFilter(...))` does.
         if (!array_count_function_node->getResultType()->equals(*length_function_node->getResultType()))
             return;
 

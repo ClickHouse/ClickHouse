@@ -34,3 +34,11 @@ UInt64
 -- length of something that is not arrayFilter is left alone
 3	2	1
 3
+-- the constness of the result is preserved as well: a constant predicate over a non-constant array
+0	0
+0	0
+-- and over a constant array
+1	1
+1	1
+-- `arrayCount` itself does not return a constant for a non-constant array either
+0	0

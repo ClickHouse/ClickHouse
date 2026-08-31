@@ -59,3 +59,18 @@ FROM (EXPLAIN QUERY TREE SELECT length(arrayFilter(x -> (x > 1), range(number)))
 SELECT '-- length of something that is not arrayFilter is left alone';
 SELECT length(materialize('abc')), length(materialize([1, 2])), length(materialize(map(1, 2)));
 SELECT length(arrayMap(x -> (x + 1), materialize([1, 2, 3])));
+
+SELECT '-- the constness of the result is preserved as well: a constant predicate over a non-constant array';
+SELECT isConstant(length(arrayFilter(x -> 0, materialize([1, 2, 3])))), isConstant(length(arrayFilter(x -> NULL, materialize([1, 2, 3]))))
+SETTINGS optimize_rewrite_array_filter_length_to_array_count = 1;
+SELECT isConstant(length(arrayFilter(x -> 0, materialize([1, 2, 3])))), isConstant(length(arrayFilter(x -> NULL, materialize([1, 2, 3]))))
+SETTINGS optimize_rewrite_array_filter_length_to_array_count = 0;
+
+SELECT '-- and over a constant array';
+SELECT isConstant(length(arrayFilter(x -> 0, [1, 2, 3]))), isConstant(length(arrayFilter(x -> 1, [1, 2, 3])))
+SETTINGS optimize_rewrite_array_filter_length_to_array_count = 1;
+SELECT isConstant(length(arrayFilter(x -> 0, [1, 2, 3]))), isConstant(length(arrayFilter(x -> 1, [1, 2, 3])))
+SETTINGS optimize_rewrite_array_filter_length_to_array_count = 0;
+
+SELECT '-- `arrayCount` itself does not return a constant for a non-constant array either';
+SELECT isConstant(arrayCount(x -> 0, materialize([1, 2, 3]))), isConstant(arrayCount(x -> 1, materialize([1, 2, 3])));
