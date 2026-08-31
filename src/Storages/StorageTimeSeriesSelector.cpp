@@ -13,8 +13,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Access/Common/AccessFlags.h>
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
-#include <Access/Common/RowPolicyDefs.h>
-#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -49,7 +47,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
