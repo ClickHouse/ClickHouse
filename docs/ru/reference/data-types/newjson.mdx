@@ -964,7 +964,7 @@ ORDER BY _part ASC
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPaths(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 ```
 
 ```text title="Response"
@@ -1024,7 +1024,7 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPathsAndTypes(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
 
