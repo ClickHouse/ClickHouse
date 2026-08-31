@@ -226,6 +226,11 @@ public:
     /// every row (delete-TTL, which is not result-invariant, is intentionally out of scope).
     bool checkViewTtlConsistency(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Correlated-subquery oracle (self-seeded, experimental-gated): a correlated scalar subquery
+    /// equals its decorrelated JOIN form. Runs the correlated side under
+    /// allow_experimental_correlated_subqueries=1 and skips (fail-close) if unsupported.
+    bool checkCorrelatedSubquery(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

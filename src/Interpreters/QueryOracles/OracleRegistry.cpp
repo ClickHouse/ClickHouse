@@ -49,6 +49,7 @@ extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
 extern const Event ASTFuzzerOracleSequenceFunnelChecks;
 extern const Event ASTFuzzerOracleSubcolumnChecks;
 extern const Event ASTFuzzerOracleViewTtlChecks;
+extern const Event ASTFuzzerOracleCorrelatedSubqueryChecks;
 }
 
 namespace DB
@@ -141,6 +142,7 @@ OracleRegistry::OracleRegistry()
     add("sequence funnel", ProfileEvents::ASTFuzzerOracleSequenceFunnelChecks, &QueryOracleChecker::checkSequenceFunnel);
     add("composite subcolumn", ProfileEvents::ASTFuzzerOracleSubcolumnChecks, &QueryOracleChecker::checkDynamicSubcolumn);
     add("view/TTL consistency", ProfileEvents::ASTFuzzerOracleViewTtlChecks, &QueryOracleChecker::checkViewTtlConsistency);
+    add("correlated subquery", ProfileEvents::ASTFuzzerOracleCorrelatedSubqueryChecks, &QueryOracleChecker::checkCorrelatedSubquery);
 }
 
 const OracleRegistry & OracleRegistry::instance()
