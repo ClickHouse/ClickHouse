@@ -896,7 +896,12 @@ void StorageMaterializedView::updateExternalDynamicMetadataIfExists(ContextPtr l
     /// The interpreter refreshes the external metadata of the outermost storage, which for a
     /// materialized view is the view itself. Forward it to the target table, so that a datalake
     /// target is validated and executed against the same incarnation, as for a plain table.
-    getTargetTable()->updateExternalDynamicMetadataIfExists(local_context);
+    ///
+    /// A view whose target does not exist has no external metadata to refresh. Resolving the
+    /// target here would report it as missing from a statement that never touches it, such as the
+    /// `DROP` of the view itself.
+    if (auto target_table = tryGetTargetTable())
+        target_table->updateExternalDynamicMetadataIfExists(local_context);
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)

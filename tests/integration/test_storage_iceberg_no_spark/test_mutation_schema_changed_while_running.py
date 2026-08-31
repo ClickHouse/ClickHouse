@@ -57,7 +57,7 @@ def test_mutation_schema_changed_while_running(started_cluster_iceberg_no_spark)
 
         # The mutation is now parked right after its validation and before it re-reads the
         # metadata, so the schema it committed to is the one it was validated against.
-        instance.query(f"ALTER TABLE {table_name} ADD COLUMN z String;")
+        instance.query(f"ALTER TABLE {table_name} ADD COLUMN z Nullable(String);")
     finally:
         instance.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
         mutation.join()
@@ -66,4 +66,7 @@ def test_mutation_schema_changed_while_running(started_cluster_iceberg_no_spark)
     assert "changed from" in error[0], error[0]
 
     # The table is intact: the mutation committed nothing.
-    assert instance.query(f"SELECT x, y, z FROM {table_name} ORDER BY y").strip() == "a\t1\t\nb\t2\t"
+    assert (
+        instance.query(f"SELECT x, y, z FROM {table_name} ORDER BY y").strip()
+        == "a\t1\t\\N\nb\t2\t\\N"
+    )

@@ -14,7 +14,7 @@ def test_materialized_view_table_replaced_in_place(started_cluster_iceberg_no_sp
 
     The interpreters refresh the external metadata of the outermost storage, which for a
     `TO` materialized view is the view itself. `StorageMaterializedView` used to inherit the
-    no-op hook, so `OPTIMIZE TABLE <mv>` and `ALTER TABLE <mv> DELETE` still planned and
+    no-op hook, so an `INSERT` that the view pushes into its target was still planned and
     validated against the previous incarnation of a target that an external writer had dropped
     and recreated at the same root.
     """
@@ -49,15 +49,14 @@ def test_materialized_view_table_replaced_in_place(started_cluster_iceberg_no_sp
 
     relocate_iceberg_table_in_place(instance, root, second_table, first_table)
 
-    # Both statements go through the view, so only the forwarded refresh can bring the target
-    # up to the incarnation that is in storage now.
+    # The insert goes through the view, so only the forwarded refresh can bring the target up
+    # to the incarnation that is in storage now.
     instance.query(
-        f"OPTIMIZE TABLE {view};",
-        settings={"allow_experimental_iceberg_compaction": 1},
-    )
-    instance.query(
-        f"ALTER TABLE {view} DELETE WHERE y = 2;",
-        settings={"mutations_sync": 2, "allow_insert_into_iceberg": 1},
+        f"INSERT INTO {source_table} VALUES ('newer', 4);",
+        settings={"allow_insert_into_iceberg": 1},
     )
 
-    assert instance.query(f"SELECT x, y FROM {view} ORDER BY y").strip() == "new\t3"
+    assert (
+        instance.query(f"SELECT x, y FROM {view} ORDER BY y").strip()
+        == "new\t2\nnew\t3\nnewer\t4"
+    )

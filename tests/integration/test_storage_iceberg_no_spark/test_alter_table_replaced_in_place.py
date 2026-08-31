@@ -44,8 +44,11 @@ def test_alter_table_replaced_in_place(started_cluster_iceberg_no_spark):
 
     # The very first statement touching the replaced table is the `ALTER`, so nothing else can
     # have refreshed the metadata on its behalf.
-    instance.query(f"ALTER TABLE {first_table} ADD COLUMN z String;")
+    instance.query(f"ALTER TABLE {first_table} ADD COLUMN z Nullable(String);")
 
     # The alter was applied on top of the replacement, so the rows it commits are the
-    # replacement's rows and the new column reads as its default.
-    assert instance.query(f"SELECT x, y, z FROM {first_table} ORDER BY y").strip() == "new\t2\t\nnew\t3\t"
+    # replacement's rows and the new column reads as null.
+    assert (
+        instance.query(f"SELECT x, y, z FROM {first_table} ORDER BY y").strip()
+        == "new\t2\t\\N\nnew\t3\t\\N"
+    )
