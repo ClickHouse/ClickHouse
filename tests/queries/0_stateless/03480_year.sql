@@ -1,7 +1,5 @@
--- Zero-argument year() returns the current year, mirroring now()/today().
--- Implemented as a proper SQL function (src/Functions/year.cpp): with arguments it
--- delegates to toYear, without arguments it returns the current year (non-deterministic,
--- like today()).
+-- Tags: no-parallel
+-- Tag no-parallel: uses the query result cache, which is a global singleton.
 
 SELECT '-- year() equals toYear(today()), toYear(now()) and year(today())';
 SELECT year() = toYear(today()) AS eq_today,
@@ -41,3 +39,25 @@ SELECT
     (SELECT rows FROM (EXPLAIN ESTIMATE SELECT count() FROM 03480_year_tbl WHERE year(d) = 2005))
   = (SELECT rows FROM (EXPLAIN ESTIMATE SELECT count() FROM 03480_year_tbl WHERE toYear(d) = 2005)) AS same_index_scan;
 DROP TABLE 03480_year_tbl;
+
+-- The determinism check matches by function name before overload resolution, so the argument form
+-- year(<date>) counts as non-deterministic too; use toYear(<date>) where determinism is required.
+SELECT '-- query result cache: year(<date>) is non-deterministic (not cached), unlike toYear(<date>)';
+SYSTEM DROP QUERY CACHE;
+
+DROP TABLE IF EXISTS 03480_qc;
+CREATE TABLE 03480_qc (ts DateTime) ENGINE = MergeTree ORDER BY ts;
+INSERT INTO 03480_qc VALUES ('2024-06-01 00:00:00'), ('2023-01-01 00:00:00');
+
+-- The check runs on the initiator, so pin enable_parallel_replicas = 0.
+SELECT '-- toYear(<date>) is deterministic and caches';
+SELECT count() FROM 03480_qc WHERE toYear(ts) = 2024 SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'throw', enable_parallel_replicas = 0;
+SELECT '-- year(<date>) is rejected from the query cache';
+SELECT count() FROM 03480_qc WHERE year(ts) = 2024 SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'throw', enable_parallel_replicas = 0; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT '-- niladic year() is rejected from the query cache too';
+SELECT year() SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT '-- only the deterministic toYear(<date>) query is cached';
+SELECT count() FROM system.query_cache WHERE query LIKE '%03480_qc%';
+
+DROP TABLE 03480_qc;
+SYSTEM DROP QUERY CACHE;

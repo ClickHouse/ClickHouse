@@ -61,17 +61,6 @@ private:
     DataTypePtr return_type;
 };
 
-/// `year([datetime[, timezone]])`.
-///   * With arguments it is identical to `toYear`: the resolver forwards to the `toYear`
-///     overload resolver, so `year(<date>)` keeps `toYear`'s result type, monotonicity,
-///     preimage and index analysis.
-///   * Without arguments it returns the current year, analogous to `now()`/`today()`.
-///
-/// The whole function is reported as non-deterministic. Pre-build checks that inspect the
-/// unresolved AST by function name (query result cache, mutation determinism checks) cannot tell
-/// the niladic form apart from `year(<date>)`, so every form is treated conservatively as
-/// non-deterministic. Consequently `year(<date>)` is excluded from the query result cache and
-/// rejected in Replicated mutations; use `toYear(<date>)` where determinism is required.
 class FunctionYearOverloadResolver final : public IFunctionOverloadResolver
 {
 public:

@@ -17,3 +17,10 @@ year	0
 -- year(<key>) keeps toYear index/monotonicity analysis (same granule pruning)
 1
 1
+-- query result cache: year(<date>) is non-deterministic (not cached), unlike toYear(<date>)
+-- toYear(<date>) is deterministic and caches
+1
+-- year(<date>) is rejected from the query cache
+-- niladic year() is rejected from the query cache too
+-- only the deterministic toYear(<date>) query is cached
+1
