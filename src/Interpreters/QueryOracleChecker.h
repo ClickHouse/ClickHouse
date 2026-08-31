@@ -195,6 +195,10 @@ public:
     /// equal recomputing its defining expression.
     bool checkMaterializedColumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// ALTER MODIFY COLUMN oracle (self-seeded): a value-preserving column widening must equal an
+    /// element-wise CAST of the pre-ALTER snapshot.
+    bool checkAlterModifyWiden(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

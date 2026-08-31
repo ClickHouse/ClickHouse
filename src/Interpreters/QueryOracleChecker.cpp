@@ -89,6 +89,7 @@ extern const Event ASTFuzzerOracleWithFillChecks;
 extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
 extern const Event ASTFuzzerOracleDictGetChecks;
 extern const Event ASTFuzzerOracleMaterializedColumnChecks;
+extern const Event ASTFuzzerOracleAlterModifyChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3937,6 +3938,56 @@ bool QueryOracleChecker::checkMaterializedColumn(const ASTSelectQuery &, const C
             context, &fixture);
 
     LOG_TRACE(logger, "materialized column oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkAlterModifyWiden(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_41): a value-preserving `ALTER TABLE t MODIFY COLUMN c NewType` must
+    /// equal an element-wise CAST of the pre-ALTER snapshot. We snapshot toInt64(c) BEFORE the ALTER,
+    /// widen Int32 -> Int64 (lossless), then read c back — the two must be identical. A divergence is a
+    /// real ALTER-MODIFY conversion bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("altermod", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (id UInt32, c Int32) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number, toInt32(number) - 500 FROM numbers(400)"))
+        return false;
+
+    /// Reference: the element-wise CAST to the widened type, computed on the pre-ALTER snapshot.
+    auto ref_opt = OracleExec::executeRows("SELECT id, toInt64(c) FROM " + tbl, context, ResultShape::SortedBag);
+    if (!ref_opt)
+        return false;
+
+    /// Value-preserving widening (Int32 -> Int64). Synchronous so the read below sees the converted data.
+    if (!fixture.execute(
+            "ALTER TABLE " + tbl + " MODIFY COLUMN c Int64",
+            {{"alter_sync", Field(UInt64(2))}, {"mutations_sync", Field(UInt64(2))}}))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "ALTER MODIFY widen oracle: {}", tbl);
+
+    auto after_opt = OracleExec::executeRows("SELECT id, c FROM " + tbl, context, ResultShape::SortedBag);
+    if (!after_opt)
+        return false;
+
+    if (!OracleCompare::equal(*ref_opt, *after_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "ALTER MODIFY widen oracle mismatch!\n"
+                "toInt64(c) before ALTER ({} rows) vs c after MODIFY COLUMN c Int64 ({} rows) on {}\n{}",
+                ref_opt->size(), after_opt->size(), tbl,
+                OracleCompare::diffSummary(*ref_opt, *after_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "ALTER MODIFY widen oracle passed");
     return true;
 }
 
