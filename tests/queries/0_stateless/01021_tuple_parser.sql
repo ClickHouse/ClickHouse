@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 SELECT toTypeName((1,)), (1,);
 
 EXPLAIN SYNTAX SELECT (1,);
