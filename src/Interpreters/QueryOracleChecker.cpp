@@ -2371,10 +2371,18 @@ bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, 
     if (select.prewhere() || select.qualify())
         return false;
 
-    /// A bare/qualified `*` becomes a context-sensitive GROUP BY `*` after the rewrite (the
-    /// global gate rejects asterisks in GROUP BY); keep them out.
+    /// The rewrite below clones each SELECT expression into a GROUP BY key and calls setAlias("") on
+    /// it. Only ASTWithAlias nodes accept an alias; calling setAlias on an asterisk, a `COLUMNS(...)`
+    /// matcher, or a column transformer (APPLY/EXCEPT/REPLACE) hits the base IAST::setAlias, which
+    /// throws LOGICAL_ERROR. That is harmlessly caught on release but ABORTS the server on
+    /// debug/sanitizer builds, so we must never reach it. Such nodes also become a context-sensitive
+    /// GROUP BY `*`/matcher that the global gate rejects anyway. Skip the oracle unless every SELECT
+    /// expression is a plain aliasable expression.
+    /// NOTE: use dynamic_cast, not as<ASTWithAlias>(): IAST::as is an exact-typeid cast and returns
+    /// null for every concrete node against the ASTWithAlias base, which would disable the oracle
+    /// entirely.
     for (const auto & expr : select.select()->children)
-        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+        if (!dynamic_cast<const ASTWithAlias *>(expr.get()))
             return false;
 
     if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
