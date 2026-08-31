@@ -725,7 +725,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     }
 
     if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
-        plan_profiler->renderWithStats(query_pipeline);
+        plan_profiler->render(&query_pipeline);
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();

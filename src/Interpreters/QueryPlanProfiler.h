@@ -24,20 +24,23 @@ public:
 
     bool hasQueryPlan() const { return query_plan.has_value(); }
 
+    /// Renders the plan and keeps the result, so that a later getRenderedPlan returns it.
+    /// With a pipeline the plan carries per-step runtime statistics, and the call must happen
+    /// while the pipeline is alive: AnalyzeStepsStats reads the processors, and their reports are
+    /// only reachable before the pipeline is reset. Pass nullptr to render without statistics.
+    /// Everything the rendering allocates, the statistics included, happens under a memory-tracker
+    /// blocker, and no exception escapes.
+    void render(const QueryPipeline * pipeline);
+
     /// The plan rendered for the log. Prefers the version produced at pipeline-finalize time,
     /// which carries per-step statistics; queries that never reached that point (failures during
     /// or before execution) are rendered here without them.
-    String getRenderedPlan() const
+    const String & getRenderedPlan()
     {
-        if (rendered_plan)
-            return *rendered_plan;
-        return render(nullptr);
+        if (!rendered_plan)
+            render(/*pipeline=*/ nullptr);
+        return *rendered_plan;
     }
-
-    /// Renders the plan with per-step runtime statistics and keeps the result. Must be called
-    /// while the pipeline is alive: AnalyzeStepsStats reads the processors, and their reports
-    /// are only reachable before the pipeline is reset.
-    void renderWithStats(const QueryPipeline & pipeline);
 
     void setMaxDescriptionLength(size_t max_length) { max_description_length = max_length; }
 
@@ -50,9 +53,6 @@ public:
 private:
 
     bool canRender() const { return query_plan && query_plan->isInitialized() && pretty_names.has_value(); }
-
-    /// `stats` may be null: explainPlan then renders the plan without runtime numbers.
-    String render(AnalyzeStepsStats * stats) const;
 
     size_t max_description_length {0};
     std::optional<QueryPlan> query_plan;
