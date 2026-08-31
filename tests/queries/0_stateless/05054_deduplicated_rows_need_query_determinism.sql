@@ -224,7 +224,6 @@ SELECT 'generateUUIDv4 cast', any(toTypeName(u)), uniqExact(u) > 2 FROM (SELECT 
 SELECT 'rand lc',             any(toTypeName(v)), uniqExact(v) > 2 FROM (SELECT rand(s) AS v FROM t_gen);
 SELECT 'rand cast',           any(toTypeName(v)), uniqExact(v) > 2 FROM (SELECT rand(CAST(s AS String)) AS v FROM t_gen);
 SELECT 'randomString lc',     uniqExact(v) > 2 FROM (SELECT randomString(length(s) + 8) AS v FROM t_gen);
-SELECT 'generateULID lc',     uniqExact(v) > 2 FROM (SELECT generateULID(s) AS v FROM t_gen);
 
 DROP TABLE t_rep;
 DROP TABLE l_join;

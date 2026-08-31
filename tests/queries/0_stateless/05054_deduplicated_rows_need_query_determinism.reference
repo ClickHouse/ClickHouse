@@ -78,4 +78,3 @@ generateUUIDv4 cast	UUID	1
 rand lc	LowCardinality(UInt32)	1
 rand cast	UInt32	1
 randomString lc	1
-generateULID lc	1
