@@ -57,6 +57,7 @@ private:
     bool setDecrease();
     void ensureUsable() const;
     void clearMemoryGrowthSuspension();
+    void consumeSuctionClaim(ResourceAllocation & allocation);
     bool canEnterSuction(const ResourceAllocation & allocation) const;
 
     /// Protects all the following fields

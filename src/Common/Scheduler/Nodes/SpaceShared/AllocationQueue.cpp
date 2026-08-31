@@ -188,7 +188,6 @@ bool AllocationQueue::retrySuction(ResourceAllocation & allocation)
     {
         if (!canEnterSuction(allocation))
             return false;
-        allocation.memory_growth_recovery_pending = false;
         allocation.memory_growth_suction_priority = true;
         allocation.memory_growth_eviction_order = 0;
         if (suspended_growth == &allocation)
@@ -211,6 +210,39 @@ bool AllocationQueue::canEnterSuction(const ResourceAllocation & allocation) con
             return false;
     }
     return true;
+}
+
+void AllocationQueue::consumeSuctionClaim(ResourceAllocation & recovering)
+{
+    chassert(recovering.increasing_hook.is_linked());
+    chassert(recovering.memory_growth_recovery_pending);
+    chassert(recovering.memory_growth_suction_priority);
+
+    recovering.memory_growth_recovery_pending = false;
+    recovering.memory_growth_eviction_order = 0;
+    recovering.memory_growth_suspended = false;
+    if (suspended_growth == &recovering)
+        suspended_growth = nullptr;
+
+    const ResourceCost old_size = recovering.increase.size;
+    const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
+    if (reconciled_size != old_size)
+    {
+        increasing_allocations.erase(increasing_allocations.iterator_to(recovering));
+        running_allocations.erase(running_allocations.iterator_to(recovering));
+        recovering.increase.size = reconciled_size;
+        recovering.fair_key = recovering.allocated + reconciled_size;
+        running_allocations.insert(recovering);
+        if (reconciled_size > 0)
+            increasing_allocations.insert(recovering);
+        else
+        {
+            recovering.memory_growth_suction_priority = false;
+            recovering.onGrowthPressureResolved();
+            recovering.increaseCancelled();
+        }
+    }
+    memory_growth_suspension_changed = true;
 }
 
 void AllocationQueue::retrySuspendedIncreases()
@@ -614,6 +646,19 @@ void AllocationQueue::processActivation()
             }
         }
 
+        /// A limit claims suction without taking this queue mutex. Consume that claim here, where
+        /// the parked request can be reconciled and re-keyed atomically before it becomes visible.
+        auto claimed_suction = std::find_if(
+            increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
+            {
+                return allocation.memory_growth_suction_priority && allocation.memory_growth_recovery_pending;
+            });
+        if (claimed_suction != increasing_allocations.end())
+        {
+            consumeSuctionClaim(*claimed_suction);
+            suction_changed = true;
+        }
+
         /// The eviction queue is represented by nomination order on the existing increase
         /// requests. Re-establish its head only after the previous suction has been consumed.
         if (!suspended_growth && !getSuctionAllocation())
@@ -655,34 +700,9 @@ void AllocationQueue::processActivation()
                 && canEnterSuction(*ready_for_suction))
             {
                 ResourceAllocation & recovering = *ready_for_suction;
-                recovering.memory_growth_recovery_pending = false;
                 recovering.memory_growth_suction_priority = true;
-                recovering.memory_growth_eviction_order = 0;
                 suction_changed = true;
-                recovering.memory_growth_suspended = false;
-                if (suspended_growth == &recovering)
-                    suspended_growth = nullptr; // Pop the eviction-queue head into suction.
-
-                const ResourceCost old_size = recovering.increase.size;
-                const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
-                if (reconciled_size != old_size)
-                {
-                    increasing_allocations.erase(increasing_allocations.iterator_to(recovering));
-                    running_allocations.erase(running_allocations.iterator_to(recovering));
-                    recovering.increase.size = reconciled_size;
-                    recovering.fair_key = recovering.allocated + reconciled_size;
-                    running_allocations.insert(recovering);
-                    if (reconciled_size > 0)
-                        increasing_allocations.insert(recovering);
-                    else
-                    {
-                        recovering.memory_growth_suction_priority = false;
-                        suction_changed = true;
-                        recovering.onGrowthPressureResolved();
-                        recovering.increaseCancelled();
-                    }
-                }
-                memory_growth_suspension_changed = true;
+                consumeSuctionClaim(recovering);
                 increase_changed = setIncrease() || increase_changed;
             }
         }

@@ -1364,14 +1364,12 @@ TEST(SchedulerSpaceShared, NestedLimitsConsumeSuctionIndependently)
 
     EXPECT_EQ(outer_heavy.killCount(), 0u);
 
-    ASSERT_TRUE(shared_beneficiary->waitKillsFor(1, std::chrono::seconds(5)));
-    shared_beneficiary.reset();
-
-    /// The outer level owns a separate suction slot and reaches its own final fallback after its
-    /// first existing-policy victim releases.
+    /// The outer level owns a separate suction slot. Its existing hierarchy policy may select the
+    /// outer owner directly; suction does not replace that victim order with a leaf-local rule.
     EXPECT_TRUE(outer_heavy.waitKillsFor(1, std::chrono::seconds(5)))
         << "outer limit lost its last-resort suction decision; outer kills="
         << outer_heavy.killCount();
+    EXPECT_EQ(shared_beneficiary->killCount(), 0u);
 }
 
 
