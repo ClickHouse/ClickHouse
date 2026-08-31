@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
@@ -1074,6 +1075,31 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         DataTypePtr left_argument_type;
         if (auto name_and_type = getNameAndTypeFromAST(node.arguments->children.at(0), data))
             left_argument_type = name_and_type->type;
+
+        /// The rewrites and set building below recognize tuple semantics only via Tuple,
+        /// so a Row left-hand side is lowered to its named Tuple equivalent, like in the
+        /// query-tree analyzer.
+        if (const auto * left_row_type = typeid_cast<const DataTypeRow *>(left_argument_type.get()))
+        {
+            if (!data.only_consts)
+            {
+                auto lowered_type = std::make_shared<DataTypeTuple>(left_row_type->getElements(), left_row_type->getElementNames());
+                ASTPtr replacement = makeASTFunction(
+                    node.name,
+                    makeASTFunction(
+                        "CAST",
+                        node.arguments->children.at(0)->clone(),
+                        make_intrusive<ASTLiteral>(lowered_type->getName())),
+                    node.arguments->children.at(1)->clone());
+                visit(replacement, data);
+
+                auto replacement_name = replacement->getColumnName();
+                if (replacement_name != column_name)
+                    data.addAlias(replacement_name, column_name);
+            }
+            return;
+        }
+
         const bool left_argument_is_tuple = isTupleType(left_argument_type) || isTupleFunction(node.arguments->children.at(0));
 
         const auto & right_argument = node.arguments->children.at(1);
