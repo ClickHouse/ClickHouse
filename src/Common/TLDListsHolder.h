@@ -1,12 +1,12 @@
 #pragma once
 
-#include <mutex>
-#include <string>
-#include <unordered_map>
 #include <base/PackedStringRef.h>
 #include <base/defines.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/HashTable/HashMap.h>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 
 namespace DB
 {

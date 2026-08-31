@@ -8,9 +8,9 @@
 #include <memory>
 #include <span>
 #include <vector>
-#include <base/PackedStringRef.h>
 #include <base/defines.h>
 #include <base/sort.h>
+#include <base/PackedStringRef.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>

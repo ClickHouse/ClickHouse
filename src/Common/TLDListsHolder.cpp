@@ -1,17 +1,17 @@
-#include <string_view>
+#include <Common/TLDListsHolder.h>
+#include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Common/StringUtils.h>
-#include <Common/TLDListsHolder.h>
-#include <Common/logger_useful.h>
+#include <string_view>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int TLD_LIST_NOT_FOUND;
-extern const int LOGICAL_ERROR;
+    extern const int TLD_LIST_NOT_FOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 /// TLDList
