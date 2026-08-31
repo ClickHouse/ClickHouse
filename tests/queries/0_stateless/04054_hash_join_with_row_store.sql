@@ -147,6 +147,50 @@ ORDER BY log_comment;
 DROP TABLE right_wide_ph;
 DROP TABLE right_wide;
 
+SELECT '--- Hash table matches counted per matched row, not per matched key ---';
+
+-- A key carrying several right rows separates the number of matched rows from the number of matched
+-- keys, so these arms also pin which of the two is recorded. The right table holds 500 keys of 40
+-- rows over a 20000 row build side, and 5000 probe rows match 200000 right rows, so at ratio 2 the
+-- row store needs 40000 matches: a per-row count reaches it and a per-key count of 5000 does not.
+
+CREATE TABLE right_dup (k UInt64, v1 Int64, v2 UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO right_dup SELECT number % 500, number, number FROM numbers(20000);
+
+-- Separate table for `parallel_hash`: `join_algorithm` is not part of the match stats cache key.
+CREATE TABLE right_dup_ph (k UInt64, v1 Int64, v2 UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO right_dup_ph SELECT number % 500, number, number FROM numbers(20000);
+
+SELECT r.v1, r.v2 FROM (SELECT number % 500 AS k FROM numbers(5000)) p JOIN right_dup r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 0, log_comment = 'rs_dup_hash_1_warm';
+
+SELECT count() FROM (SELECT number % 500 AS k FROM numbers(5000)) p JOIN right_dup r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_dup_hash_2_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 500 AS k FROM numbers(5000)) p JOIN right_dup r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_dup_hash_3_after_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 500 AS k FROM numbers(5000)) p JOIN right_dup_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 0, log_comment = 'rs_dup_par_1_warm';
+
+SELECT count() FROM (SELECT number % 500 AS k FROM numbers(5000)) p JOIN right_dup_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_dup_par_2_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 500 AS k FROM numbers(5000)) p JOIN right_dup_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_dup_par_3_after_no_emit_probe';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT log_comment, ProfileEvents['JoinBuildRowStoreMicroseconds'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+  AND log_comment IN ('rs_dup_hash_1_warm', 'rs_dup_hash_2_no_emit_probe', 'rs_dup_hash_3_after_no_emit_probe',
+                      'rs_dup_par_1_warm', 'rs_dup_par_2_no_emit_probe', 'rs_dup_par_3_after_no_emit_probe')
+ORDER BY log_comment;
+
+DROP TABLE right_dup_ph;
+DROP TABLE right_dup;
+
 -- Keep the row store enabled regardless of cardinality estimates.
 SET min_rows_ratio_for_hash_join_row_store = 0;
 
