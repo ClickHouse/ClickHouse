@@ -320,10 +320,8 @@ class Runner:
             "NOTE: job truncated by a docker daemon failure - "
             "labeling as infrastructure error for auto-retry"
         )
-        # Append the bare label string, not the dict set_label() would store:
-        # retry_infra_failures.yml matches with `any(. == "infra")`, which only
-        # sees a plain string. The other readers (_label_name, json.html
-        # normalizeLabels, gh.py) already accept the string form.
+        # Append the bare label string rather than the dict `set_label` stores:
+        # every reader of `ext["labels"]` accepts the string form.
         labels = result.ext.setdefault("labels", [])
         if Result.Label.INFRA not in labels:
             labels.append(Result.Label.INFRA)
