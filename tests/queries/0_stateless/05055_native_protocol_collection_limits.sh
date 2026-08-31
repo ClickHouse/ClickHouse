@@ -7,4 +7,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-python3 "$CUR_DIR"/05053_native_protocol_collection_limits.python
+python3 "$CUR_DIR"/05055_native_protocol_collection_limits.python

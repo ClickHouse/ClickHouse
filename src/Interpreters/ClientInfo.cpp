@@ -345,7 +345,8 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
   * name, a quota key, a user agent, a URL, a token. The value comes from the peer and the string is
   * resized to the declared size before the value arrives, and in interserver mode `ClientInfo` is
   * read before the secret hash of the query is checked, so bound them. The `Hello` packet bounds its
-  * fields the same way. The same holds for the number of current roles.
+  * fields the same way. The same holds for the number of current roles and for the name of each of
+  * them, which is an identifier.
   */
 static constexpr size_t MAX_CLIENT_INFO_STRING_SIZE = 64 * 1024;
 static constexpr size_t MAX_CLIENT_INFO_ROLES = 65536;
@@ -486,7 +487,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         if (have_current_roles)
         {
             std::vector<String> roles;
-            readVectorBinary(roles, in, MAX_CLIENT_INFO_ROLES);
+            readVectorBinary(roles, in, MAX_CLIENT_INFO_ROLES, MAX_CLIENT_INFO_STRING_SIZE);
             current_roles = std::move(roles);
         }
         else

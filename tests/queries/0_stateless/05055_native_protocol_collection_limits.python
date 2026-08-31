@@ -12,7 +12,7 @@ import uuid
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
-CLIENT_NAME = "05053 native protocol"
+CLIENT_NAME = "05055 native protocol"
 CLIENT_REVISION = 54449
 
 
@@ -145,6 +145,15 @@ def sendQuery(s, query, num_settings=0, os_user_declared_size=None):
     s.sendall(ba)
 
 
+def sendTablesStatusRequest(s, num_tables, database_declared_size=None):
+    ba = bytearray()
+    writeVarUInt(5, ba)  # TablesStatusRequest
+    writeVarUInt(num_tables, ba)
+    if database_declared_size is not None:
+        writeVarUInt(database_declared_size, ba)  # a database name whose value never follows
+    s.sendall(ba)
+
+
 def sendEmptyBlock(s):
     ba = bytearray()
     writeVarUInt(2, ba)  # Data
@@ -165,7 +174,11 @@ def readException(s):
     message = readStringBinary(s)
     readStringBinary(s)  # stack trace
     readUInt(s)  # has_nested
-    for known in ("Too many settings received", "Too large string size"):
+    for known in (
+        "Too many settings received",
+        "Too large string size",
+        "Too large collection size",
+    ):
         if known in message:
             return known
     return "UNEXPECTED " + message[:120]
@@ -191,6 +204,16 @@ def outcome(s):
         return "closed"
 
 
+def rejected(s):
+    """A `TablesStatusRequest` is read before there is a query state to attach an exception to, so
+    the server may either answer with one or simply close the connection; either way it stops
+    reading instead of waiting for data that never comes."""
+    result = outcome(s)
+    if result in ("closed", "Too large collection size", "Too large string size"):
+        return "rejected"
+    return result
+
+
 def main():
     # A settings sequence longer than any real query.
     s = connect()
@@ -202,6 +225,18 @@ def main():
     s = connect()
     sendQuery(s, "SELECT 1", os_user_declared_size=1 << 30)
     print("client info string of a gigabyte:", outcome(s))
+    s.close()
+
+    # A `TablesStatusRequest` about more tables than a server can hold.
+    s = connect()
+    sendTablesStatusRequest(s, 1 << 30)
+    print("too many tables in a tables status request:", rejected(s))
+    s.close()
+
+    # A `TablesStatusRequest` whose database name declares a gigabyte and never sends it.
+    s = connect()
+    sendTablesStatusRequest(s, 1, database_declared_size=1 << 30)
+    print("table status identifier of a gigabyte:", rejected(s))
     s.close()
 
     # A well-formed query still works.

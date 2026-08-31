@@ -2088,6 +2088,8 @@ static constexpr size_t MAX_HELLO_STRING_SIZE = 64 * 1024;
 static constexpr size_t MAX_EXTRA_ROLES_SIZE = 1024 * 1024;
 /// Only read on the interserver path, which is compiled out without SSL.
 [[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLES = 65536;
+/// A role name is an identifier, and it is resized to its declared size before its value arrives.
+[[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLE_NAME_SIZE = 64 * 1024;
 
 void TCPHandler::receiveHello()
 {
@@ -2699,7 +2701,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             {
                 ReadBufferFromString buffer(received_extra_roles);
 
-                readVectorBinary(external_roles, buffer, MAX_EXTRA_ROLES);
+                readVectorBinary(external_roles, buffer, MAX_EXTRA_ROLES, MAX_EXTRA_ROLE_NAME_SIZE);
                 LOG_DEBUG(log, "Parsed extra roles [{}]", fmt::join(external_roles, ", "));
             }
 
