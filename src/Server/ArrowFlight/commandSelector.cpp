@@ -325,7 +325,6 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"View", "VIEW"},
     {"LiveView", "VIEW"},
     {"MaterializedView", "MATERIALIZED VIEW"},
-    {"WindowView", "VIEW"},
 
     // Dictionary
     {"Dictionary", "DICTIONARY"},
