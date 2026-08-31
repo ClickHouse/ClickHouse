@@ -188,6 +188,8 @@ void WriteTransaction::create(const DB::Names & partition_columns, const DB::Nam
     }
 
     /// The reader resolves every committed `add.path` against `getDataPath`, so write under it too.
+    /// `ffi::get_write_path` would add nothing here: it returns the table root the transaction
+    /// was opened with (i.e. `getTableLocation`), and exists only for the unpartitioned context.
     path_prefix = kernel_helper->getDataPath();
     /// `add.path` is the written file path with the prefix cut off, which needs the separator.
     if (!path_prefix.empty() && !path_prefix.ends_with('/'))
