@@ -26,7 +26,6 @@ void registerStorageObfuscate(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
-void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
@@ -140,7 +139,6 @@ void registerStorages()
     registerStorageMaterializedView(factory);
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
-    registerStorageWindowView(factory);
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);

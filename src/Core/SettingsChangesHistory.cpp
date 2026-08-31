@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"enable_sharding_aggregator", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."},
@@ -69,6 +70,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"obfuscate_markov_frequency_add", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."},
             {"obfuscate_markov_frequency_desaturate", 0.0, 0.0, "New setting: frequency desaturation factor in [0,1] for the obfuscate table function's Markov model."},
             {"obfuscate_markov_determinator_sliding_window_size", 8, 8, "New setting: sliding-window size used to seed the RNG in the obfuscate table function's Markov model."},
+            {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -1459,6 +1461,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
+            {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
+            {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
+            {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
