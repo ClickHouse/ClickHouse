@@ -213,6 +213,10 @@ public:
     /// the join-order optimizer and the physical join algorithm.
     bool checkJoinOrderSweep(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Sequence/funnel oracle (self-seeded): windowFunnel is monotonic non-decreasing in its window,
+    /// its result lies in [0,k], and sequenceMatch(p) == (sequenceCount(p) >= 1).
+    bool checkSequenceFunnel(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
