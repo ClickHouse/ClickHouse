@@ -1,0 +1,17 @@
+<clickhouse>
+    <remote_servers>
+        <external_roles_cluster>
+            <secret>external_roles_test_secret</secret>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </external_roles_cluster>
+    </remote_servers>
+</clickhouse>

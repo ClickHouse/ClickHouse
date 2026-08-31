@@ -2282,7 +2282,8 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
 
 void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
 {
-    // External roles are roles received from another node; current roles is a collection of roles that were assigned locally.
+    // External roles are attached by an external authenticator or received from another node;
+    // current roles is a collection of roles that were assigned locally.
     // Replace them unconditionally (rather than append) so that switching the principal via `setUser` clears any external
     // roles carried over from a previous principal on the same or a copied context. `ContextData`'s copy constructor now
     // preserves `external_roles`, so without this reset a context authenticated with pushed roles would keep them after
@@ -2293,6 +2294,12 @@ void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_ro
     else
         external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
     need_recalculate_access = true;
+}
+
+void Context::setExternalRoles(const std::vector<UUID> & external_roles_)
+{
+    std::lock_guard lock(mutex);
+    setExternalRolesWithLock(external_roles_, lock);
 }
 
 void Context::setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> &)

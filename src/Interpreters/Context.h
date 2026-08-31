@@ -939,6 +939,9 @@ public:
     void setAuthenticationValidUntil(time_t authentication_valid_until_);
     time_t getAuthenticationValidUntil() const;
 
+    /// Replaces external roles attached to the current authenticated session.
+    void setExternalRoles(const std::vector<UUID> & external_roles_);
+
     std::optional<UUID> getUserID() const;
     String getUserName() const;
 
@@ -947,7 +950,8 @@ public:
     void setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants = true);
     void setCurrentRolesDefault();
     std::vector<UUID> getCurrentRoles() const;
-    /// The external (pushed) roles received from another node over the interserver protocol.
+    /// Roles attached externally to the authenticated session, including roles returned by an
+    /// external authenticator and roles pushed from another node over the interserver protocol.
     /// Deferred executors that re-create a context for the same session (asynchronous insert flush,
     /// the `QueryRunner` invoker) must carry these over and re-apply them via `setUser`, otherwise a
     /// role that exists only as an external role fails revalidation with `SET_NON_GRANTED_ROLE`.

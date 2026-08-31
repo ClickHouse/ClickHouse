@@ -1,6 +1,8 @@
 import json
 import os
+import shlex
 import typing
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -10,21 +12,28 @@ from helpers.test_tools import wait_condition
 from .http_auth_server import GOOD_PASSWORD, USER_RESPONSES
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance(
-    "node",
-    main_configs=["configs/config.xml"],
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/config.xml", "configs/cluster.xml"],
     user_configs=["configs/users.xml"],
 )
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/config.xml", "configs/cluster.xml"],
+    user_configs=["configs/users.xml"],
+)
+instance = node1
+nodes = [node1, node2]
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def run_echo_server():
-    instance.copy_file_to_container(
+def run_echo_server(node):
+    node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "http_auth_server.py"),
         "/http_auth_server.py",
     )
 
-    instance.exec_in_container(
+    node.exec_in_container(
         [
             "bash",
             "-c",
@@ -35,7 +44,7 @@ def run_echo_server():
     )
 
     def check_server() -> str:
-        return instance.exec_in_container(
+        return node.exec_in_container(
             ["curl", "-s", "http://localhost:8000/health"],
             nothrow=True,
         )
@@ -52,7 +61,8 @@ def run_echo_server():
 def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
     try:
         cluster.start()
-        run_echo_server()
+        for node in nodes:
+            run_echo_server(node)
         yield cluster
     finally:
         cluster.shutdown()
@@ -116,7 +126,8 @@ def test_header_failed(started_cluster: ClickHouseCluster):
 
 
 def test_session_settings_from_auth_response(started_cluster: ClickHouseCluster):
-    for user, response in USER_RESPONSES.items():
+    for user in ["test_user_1", "test_user_2", "test_user_3", "test_user_4"]:
+        response = USER_RESPONSES[user]
         query_id = f"test_query_{user}"
         assert (
             instance.query(
@@ -139,3 +150,244 @@ def test_session_settings_from_auth_response(started_cluster: ClickHouseCluster)
         if isinstance(response, dict):
             for key, value in response.get("settings", {}).items():
                 assert query_settings.get(key) == value
+
+
+def create_http_user(node, user, valid_until=None):
+    node.query(f"DROP USER IF EXISTS {user}")
+    query = (
+        f"CREATE USER {user} IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'BASIC'"
+    )
+    if valid_until is not None:
+        query += f" VALID UNTIL '{valid_until}'"
+    node.query(query)
+
+
+def query_as(user, query):
+    return node1.query(query, user=user, password=GOOD_PASSWORD)
+
+
+def query_error_as(user, query):
+    return node1.query_and_get_error(query, user=user, password=GOOD_PASSWORD)
+
+
+def ensure_http_reader_objects():
+    node1.query("CREATE TABLE IF NOT EXISTS http_auth_role_test (x UInt8) ENGINE=Memory")
+    node1.query("CREATE ROLE IF NOT EXISTS http_reader")
+    node1.query("GRANT SELECT ON http_auth_role_test TO http_reader")
+
+
+def test_roles_grant_session_access_and_are_not_persisted(started_cluster):
+    node1.query("DROP TABLE IF EXISTS http_auth_role_test")
+    node1.query("DROP ROLE IF EXISTS http_reader")
+    node1.query("CREATE TABLE http_auth_role_test (x UInt8) ENGINE=Memory")
+    node1.query("INSERT INTO http_auth_role_test VALUES (42)")
+    node1.query("CREATE ROLE http_reader")
+    node1.query("GRANT SELECT ON http_auth_role_test TO http_reader")
+    create_http_user(node1, "role_user")
+
+    assert query_as("role_user", "SELECT x FROM http_auth_role_test") == "42\n"
+    assert "http_reader" not in node1.query("SHOW GRANTS FOR role_user")
+
+
+def test_multiple_and_unknown_roles(started_cluster):
+    ensure_http_reader_objects()
+    node1.query("DROP TABLE IF EXISTS role_a_test")
+    node1.query("DROP TABLE IF EXISTS role_b_test")
+    node1.query("DROP ROLE IF EXISTS role_a")
+    node1.query("DROP ROLE IF EXISTS role_b")
+    node1.query("CREATE TABLE role_a_test (x UInt8) ENGINE=Memory")
+    node1.query("CREATE TABLE role_b_test (x UInt8) ENGINE=Memory")
+    node1.query("CREATE ROLE role_a")
+    node1.query("CREATE ROLE role_b")
+    node1.query("GRANT SELECT ON role_a_test TO role_a")
+    node1.query("GRANT SELECT ON role_b_test TO role_b")
+    create_http_user(node1, "multi_role_user")
+
+    assert query_as("multi_role_user", "SELECT count() FROM role_a_test") == "0\n"
+    assert query_as("multi_role_user", "SELECT count() FROM role_b_test") == "0\n"
+
+    create_http_user(node1, "unknown_role_user")
+    query_as("unknown_role_user", "SELECT count() FROM http_auth_role_test")
+    assert (
+        node1.query(
+            "SELECT count() FROM system.roles WHERE name = 'role_that_does_not_exist'"
+        )
+        == "0\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        "malformed_roles_type_user",
+        "malformed_roles_number_user",
+        "malformed_roles_bool_user",
+    ],
+)
+def test_malformed_roles_keep_settings_and_apply_no_partial_roles(started_cluster, user):
+    ensure_http_reader_objects()
+    create_http_user(node1, user)
+    assert query_as(user, "SELECT getSetting('auth_num')") == "15\n"
+    assert "Not enough privileges" in query_error_as(user, "SELECT x FROM http_auth_role_test")
+    assert node1.contains_in_log(
+        "Failed to parse roles from authentication response. Skip them."
+    )
+
+
+def test_partial_settings_and_roles_are_independent(started_cluster):
+    ensure_http_reader_objects()
+    create_http_user(node1, "partial_settings_user")
+    assert query_as("partial_settings_user", "SELECT getSetting('auth_a_valid')") == "15\n"
+    query_as("partial_settings_user", "SELECT count() FROM http_auth_role_test")
+
+    create_http_user(node1, "malformed_settings_user")
+    query_as("malformed_settings_user", "SELECT count() FROM http_auth_role_test")
+    assert node1.contains_in_log(
+        "Failed to parse settings from authentication response. Skip them."
+    )
+
+
+def test_http_interface_receives_roles_and_named_session_refreshes_them(started_cluster):
+    node1.query("DROP TABLE IF EXISTS named_session_test")
+    node1.query("DROP ROLE IF EXISTS named_session_reader")
+    node1.query("CREATE TABLE named_session_test (x UInt8) ENGINE=Memory")
+    node1.query("INSERT INTO named_session_test VALUES (7)")
+    node1.query("CREATE ROLE named_session_reader")
+    node1.query("GRANT SELECT ON named_session_test TO named_session_reader")
+    create_http_user(node1, "named_session_user")
+
+    url = "http://localhost:8123/?session_id=external-roles-refresh"
+    first = node1.exec_in_container(
+        [
+            "curl",
+            "-sS",
+            "-u",
+            f"named_session_user:{GOOD_PASSWORD}",
+            "-H",
+            "Custom-Header: roles-reader",
+            "--data-binary",
+            "SELECT x FROM named_session_test",
+            url,
+        ]
+    )
+    assert first == "7\n"
+
+    second = node1.exec_in_container(
+        [
+            "curl",
+            "-sS",
+            "-u",
+            f"named_session_user:{GOOD_PASSWORD}",
+            "-H",
+            "Custom-Header: roles-none",
+            "--data-binary",
+            "SELECT x FROM named_session_test",
+            url,
+        ],
+        nothrow=True,
+    )
+    assert "Not enough privileges" in second
+
+
+def test_expired_and_zero_deadlines_reject_authentication(started_cluster):
+    for user in ["expiry_past_user", "expiry_zero_user"]:
+        create_http_user(node1, user)
+        assert "Authentication failed" in query_error_as(user, "SELECT 1")
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        "expiry_string_user",
+        "expiry_bool_user",
+        "expiry_fraction_user",
+        "expiry_out_of_range_user",
+    ],
+)
+def test_malformed_deadlines_do_not_discard_roles_or_settings(started_cluster, user):
+    ensure_http_reader_objects()
+    create_http_user(node1, user)
+    query_as(user, "SELECT count() FROM http_auth_role_test")
+    if user == "expiry_string_user":
+        assert query_as(user, "SELECT getSetting('auth_num')") == "15\n"
+    assert node1.contains_in_log(
+        "Failed to parse valid_until from authentication response. Skip it."
+    )
+
+
+def run_expiring_native_session(user):
+    command = (
+        "/usr/bin/clickhouse client --user "
+        + shlex.quote(user)
+        + " --password "
+        + shlex.quote(GOOD_PASSWORD)
+        + " --multiquery --query "
+        + shlex.quote(
+            "SELECT 1; "
+            "SELECT sleep(17) SETTINGS function_sleep_max_microseconds_per_block = 17000000; "
+            "SELECT 2;"
+        )
+        + " 2>&1"
+    )
+    return node1.exec_in_container(["bash", "-c", command], nothrow=True)
+
+
+def test_helper_deadline_expires_a_persistent_native_session(started_cluster):
+    create_http_user(node1, "expiry_future_user", "2099-01-01 00:00:00")
+    output = run_expiring_native_session("expiry_future_user")
+    assert output.startswith("1\n0\n")
+    assert "Authentication method used has expired" in output
+
+
+def test_local_deadline_cannot_be_extended_by_helper(started_cluster):
+    local_deadline = datetime.now(timezone.utc) + timedelta(seconds=15)
+    create_http_user(
+        node1,
+        "expiry_later_user",
+        local_deadline.strftime("%Y-%m-%d %H:%M:%S UTC"),
+    )
+    output = run_expiring_native_session("expiry_later_user")
+    assert output.startswith("1\n0\n")
+    assert "Authentication method used has expired" in output
+
+
+def test_external_roles_are_forwarded_with_other_current_roles(started_cluster):
+    for node in nodes:
+        node.query("DROP TABLE IF EXISTS interserver_roles_test")
+        node.query("DROP ROLE IF EXISTS helper_reader")
+        node.query("DROP ROLE IF EXISTS initiator_reader")
+        node.query("CREATE TABLE interserver_roles_test (a UInt8, b UInt8) ENGINE=Memory")
+        node.query("INSERT INTO interserver_roles_test VALUES (1, 2)")
+        node.query("CREATE ROLE helper_reader")
+        node.query("CREATE ROLE initiator_reader")
+        node.query("GRANT SELECT ON interserver_roles_test TO helper_reader")
+        node.query("GRANT SHOW COLUMNS ON interserver_roles_test TO initiator_reader")
+        create_http_user(node, "interserver_user")
+
+    node1.query("GRANT initiator_reader TO interserver_user")
+    node1.query("ALTER USER interserver_user DEFAULT ROLE initiator_reader")
+    node1.query("GRANT READ ON REMOTE TO interserver_user")
+    assert query_as(
+        "interserver_user",
+        "SELECT sum(a), sum(b) FROM clusterAllReplicas("
+        "'external_roles_cluster', default.interserver_roles_test) "
+        "SETTINGS push_external_roles_in_interserver_queries=1",
+    ) == "2\t4\n"
+
+
+def test_unknown_forwarded_role_fails_closed(started_cluster):
+    node1.query("DROP ROLE IF EXISTS initiator_only_role")
+    node2.query("DROP ROLE IF EXISTS initiator_only_role")
+    node1.query("CREATE ROLE initiator_only_role")
+    node1.query("GRANT SELECT ON system.one TO initiator_only_role")
+    for node in nodes:
+        create_http_user(node, "interserver_unknown_user")
+    node1.query("GRANT READ ON REMOTE TO interserver_unknown_user")
+
+    error = query_error_as(
+        "interserver_unknown_user",
+        "SELECT count() FROM clusterAllReplicas("
+        "'external_roles_cluster', system.one) "
+        "SETTINGS push_external_roles_in_interserver_queries=1",
+    )
+    assert "Not all of the initiator's current roles are known on this node" in error

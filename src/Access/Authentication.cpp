@@ -179,7 +179,9 @@ namespace
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
         const ClientInfo & client_info,
-        SettingsChanges & settings)
+        SettingsChanges & settings,
+        Strings & external_role_names,
+        std::optional<time_t> & valid_until)
     {
         const auto & provided_password = basic_credentials->getPassword();
         const auto & otp_secret = authentication_method.getOneTimePassword();
@@ -253,7 +255,12 @@ namespace
                 if (authentication_method.getHTTPAuthenticationScheme() == HTTPAuthenticationScheme::BASIC)
                 {
                     return external_authenticators.checkHTTPBasicCredentials(
-                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, client_info, settings) ?
+                        authentication_method.getHTTPAuthenticationServerName(),
+                        *basic_credentials,
+                        client_info,
+                        settings,
+                        external_role_names,
+                        valid_until) ?
                         on_success : Authentication::CredentialsCheckResult::Fail;
                 }
                 break;
@@ -360,7 +367,9 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
     const AuthenticationData & authentication_method,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings)
+    SettingsChanges & settings,
+    Strings & external_role_names,
+    std::optional<time_t> & valid_until)
 {
     if (!credentials.isReady())
         return CredentialsCheckResult::Fail;
@@ -379,7 +388,14 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
 
     if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
     {
-        return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
+        return checkBasicAuthentication(
+            basic_credentials,
+            authentication_method,
+            external_authenticators,
+            client_info,
+            settings,
+            external_role_names,
+            valid_until);
     }
 
     if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))

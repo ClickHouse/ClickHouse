@@ -5,6 +5,9 @@
 #include <Interpreters/ClientInfo.h>
 #include <base/types.h>
 
+#include <ctime>
+#include <optional>
+
 
 namespace DB
 {
@@ -29,14 +32,16 @@ struct Authentication
     };
 
     /// Checks the credentials (passwords, readiness, etc.)
-    /// If necessary, makes a request to external authenticators and fills in the session settings if they were
-    /// returned by the authentication server
+    /// If necessary, makes a request to external authenticators and fills in the session settings, external role names,
+    /// and authentication expiry if they were returned by the authentication server.
     static CredentialsCheckResult areCredentialsValid(
         const Credentials & credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
         const ClientInfo & client_info,
-        SettingsChanges & settings);
+        SettingsChanges & settings,
+        Strings & external_role_names,
+        std::optional<time_t> & valid_until);
 
     // A signaling class used to communicate requirements for credentials.
     template <typename CredentialsType>

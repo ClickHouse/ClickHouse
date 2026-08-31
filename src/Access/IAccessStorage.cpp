@@ -641,6 +641,8 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
     SettingsChanges & settings,
+    Strings & external_role_names,
+    std::optional<time_t> & external_valid_until,
     bool check_valid_until = true);
 
 /// A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method is ignored entirely when the corresponding server setting disables it
@@ -677,6 +679,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
 
             bool need_second_factor = false;
             const AuthenticationData * matched_authentication_method = nullptr;
+            std::optional<time_t> matched_external_valid_until;
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
@@ -686,10 +689,24 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     continue;
                 }
 
-                auto cred_check_result = areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings);
+                SettingsChanges attempt_settings;
+                Strings attempt_external_role_names;
+                std::optional<time_t> attempt_external_valid_until;
+                auto cred_check_result = areCredentialsValid(
+                    user->getName(),
+                    auth_method,
+                    credentials,
+                    external_authenticators,
+                    client_info,
+                    attempt_settings,
+                    attempt_external_role_names,
+                    attempt_external_valid_until);
                 if (cred_check_result == Authentication::CredentialsCheckResult::Success)
                 {
                     matched_authentication_method = &auth_method;
+                    auth_result.settings = std::move(attempt_settings);
+                    auth_result.external_role_names = std::move(attempt_external_role_names);
+                    matched_external_valid_until = attempt_external_valid_until;
                     break;
                 }
                 if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)
@@ -707,6 +724,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     auth_result.authentication_data = *matched_authentication_method;
                     auth_result.authentication_data.setGrants({});
                     auth_result.authentication_data.setValidUntil(0);
+                    auth_result.settings.clear();
+                    auth_result.external_role_names.clear();
                     return auth_result;
                 }
 
@@ -734,6 +753,9 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     combined_grants.emplace(matched_authentication_method->getGrants());
                 bool another_method_restricts_grants = false;
                 time_t combined_valid_until = matched_authentication_method->getValidUntil();
+                if (matched_external_valid_until
+                    && (combined_valid_until == 0 || *matched_external_valid_until < combined_valid_until))
+                    combined_valid_until = *matched_external_valid_until;
 
                 for (const auto & other_method : user->authentication_methods)
                 {
@@ -753,7 +775,18 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                         continue;
 
                     SettingsChanges discarded_settings;
-                    if (areCredentialsValid(user->getName(), other_method, credentials, external_authenticators, client_info, discarded_settings, /* check_valid_until = */ false)
+                    Strings discarded_external_role_names;
+                    std::optional<time_t> discarded_external_valid_until;
+                    if (areCredentialsValid(
+                            user->getName(),
+                            other_method,
+                            credentials,
+                            external_authenticators,
+                            client_info,
+                            discarded_settings,
+                            discarded_external_role_names,
+                            discarded_external_valid_until,
+                            /* check_valid_until = */ false)
                         != Authentication::CredentialsCheckResult::Success)
                         continue;
 
@@ -819,6 +852,8 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
     SettingsChanges & settings,
+    Strings & external_role_names,
+    std::optional<time_t> & external_valid_until,
     bool check_valid_until)
 {
     if (!credentials.isReady())
@@ -839,7 +874,14 @@ Authentication::CredentialsCheckResult areCredentialsValid(
         }
     }
 
-    return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, client_info, settings);
+    return Authentication::areCredentialsValid(
+        credentials,
+        authentication_method,
+        external_authenticators,
+        client_info,
+        settings,
+        external_role_names,
+        external_valid_until);
 }
 
 bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const

@@ -43,7 +43,13 @@ public:
     bool checkLDAPCredentials(const String & server, const BasicCredentials & credentials,
         const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
     bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
-    bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const;
+    bool checkHTTPBasicCredentials(
+        const String & server,
+        const BasicCredentials & credentials,
+        const ClientInfo & client_info,
+        SettingsChanges & settings,
+        Strings & external_role_names,
+        std::optional<time_t> & valid_until) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
 

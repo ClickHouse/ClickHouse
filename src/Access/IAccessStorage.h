@@ -33,6 +33,8 @@ struct AuthResult
     UUID user_id;
     /// Session settings received from authentication server (if any)
     SettingsChanges settings{};
+    /// Role names returned by an external authentication server for this authentication.
+    Strings external_role_names{};
     AuthenticationData authentication_data {};
     /// Username determined by the access storage during authentication,
     /// should be treated as the authenticated user name

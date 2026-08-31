@@ -389,12 +389,15 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
+        auto & access_control = global_context->getAccessControl();
+        external_roles = access_control.find<Role>(auth_result.external_role_names);
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
 
         if (!external_roles_.empty() && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
         {
-            external_roles = global_context->getAccessControl().find<Role>(external_roles_);
+            auto pushed_external_roles = access_control.find<Role>(external_roles_);
+            external_roles.insert(external_roles.end(), pushed_external_roles.begin(), pushed_external_roles.end());
 
             LOG_DEBUG(log, "User {} has external_roles applied: [{}] ({})",
                       toString(*user_id), fmt::join(external_roles_, ", "), external_roles_.size());
@@ -666,6 +669,9 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         /// The per-method expiry follows the same reasoning: the reused context must fail closed on the
         /// expiry of the method used by this connection, not the one that originally created the session.
         new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
+        /// Returned roles are authentication-specific too, and an empty set must clear roles returned
+        /// by the authentication that previously attached to this named session.
+        new_session_context->setExternalRoles(external_roles);
 
         // Always get setting from profile
         // profile can be changed by ALTER PROFILE during single session

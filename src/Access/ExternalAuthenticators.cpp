@@ -562,16 +562,32 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
 }
 
 bool ExternalAuthenticators::checkHTTPBasicCredentials(
-    const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const
+    const String & server,
+    const BasicCredentials & credentials,
+    const ClientInfo & client_info,
+    SettingsChanges & settings,
+    Strings & external_role_names,
+    std::optional<time_t> & valid_until) const
 {
     auto params = getHTTPAuthenticationParams(server);
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 
-    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
+    auto [is_ok, settings_from_auth_server, roles_from_auth_server, valid_until_from_auth_server]
+        = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
 
-    if (is_ok)
-        std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
+    if (!is_ok)
+        return false;
 
-    return is_ok;
+    if (valid_until_from_auth_server)
+    {
+        const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        if (now > *valid_until_from_auth_server)
+            return false;
+    }
+
+    std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
+    std::ranges::move(roles_from_auth_server, std::back_inserter(external_role_names));
+    valid_until = valid_until_from_auth_server;
+    return true;
 }
 }

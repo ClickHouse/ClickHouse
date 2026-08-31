@@ -98,6 +98,35 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'Basic'
 CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
-### Passing session settings {#passing-session-settings}
+### Returning session metadata {#returning-session-metadata}
 
-If a response body from HTTP authentication server has JSON format and contains `settings` sub-object, ClickHouse will try parse its key: value pairs as string values and set them as session settings for authenticated user's current session. If parsing is failed, a response body from server will be ignored.
+An HTTP authentication server can return optional session settings, roles, and an authentication expiry in a JSON response body:
+
+```json
+{
+  "settings": {
+    "max_threads": 4
+  },
+  "roles": [
+    "reader",
+    "analyst"
+  ],
+  "valid_until": 1788192000
+}
+```
+
+Each field is optional and is parsed independently. If the response body is not a valid JSON object, ClickHouse ignores all optional response metadata. A malformed field does not prevent ClickHouse from keeping metadata parsed successfully from the other fields.
+
+#### Session settings {#passing-session-settings}
+
+The `settings` object contains key-value pairs that ClickHouse applies as session settings for the authenticated user's current session.
+
+#### Roles {#roles}
+
+The `roles` array contains local ClickHouse role names. ClickHouse ignores names that do not identify an existing role. Returned roles are attached only to the authenticated session and are not persisted as grants for the user. Each successful authentication replaces the roles returned by the previous authentication, including when reauthenticating a named HTTP session.
+
+#### `valid_until` {#valid-until}
+
+The optional `valid_until` value is an absolute Unix timestamp in seconds. If it is absent, the authentication server adds no expiry deadline. A supplied deadline that has already expired rejects authentication. If the user's ClickHouse authentication method also has `VALID UNTIL`, the earlier deadline applies.
+
+ClickHouse checks the deadline before subsequent queries. A query that starts before the deadline is not canceled solely because the deadline passes while it is running.
