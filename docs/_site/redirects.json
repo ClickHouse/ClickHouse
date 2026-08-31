@@ -54520,6 +54520,406 @@
     "source": "/pt-BR/sql-reference/table-functions/prometheusQueryRange"
   },
   {
+    "destination": "/ar/concepts/best-practices/partitioning-keys",
+    "source": "/ar/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/choosing-a-primary-key",
+    "source": "/ar/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/select-data-type",
+    "source": "/ar/best-practices/select-data-types"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/using-data-skipping-indices",
+    "source": "/ar/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/use-materialized-views",
+    "source": "/ar/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/ar/guides/clickhouse/data-modelling/denormalization",
+    "source": "/ar/data-modeling/denormalization"
+  },
+  {
+    "destination": "/ar/concepts/features/projections/projections",
+    "source": "/ar/data-modeling/projections"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/ar/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/ar/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/ar/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/ar/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/ar/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/ar/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/ar/concepts/features/interfaces/client",
+    "source": "/ar/interfaces/client"
+  },
+  {
+    "destination": "/ar/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/ar/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/ar/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/ar/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/ar/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/ar/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/ar/concepts/features/performance/caches/query-condition-cache",
+    "source": "/ar/operations/query-condition-cache"
+  },
+  {
+    "destination": "/ar/concepts/core-concepts/parts",
+    "source": "/ar/parts"
+  },
+  {
+    "destination": "/ar/concepts/core-concepts/primary-indexes",
+    "source": "/ar/primary-indexes"
+  },
+  {
+    "destination": "/es/concepts/best-practices/partitioning-keys",
+    "source": "/es/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/es/concepts/best-practices/choosing-a-primary-key",
+    "source": "/es/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/es/concepts/best-practices/select-data-type",
+    "source": "/es/best-practices/select-data-types"
+  },
+  {
+    "destination": "/es/concepts/best-practices/using-data-skipping-indices",
+    "source": "/es/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/es/concepts/best-practices/use-materialized-views",
+    "source": "/es/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/es/guides/clickhouse/data-modelling/denormalization",
+    "source": "/es/data-modeling/denormalization"
+  },
+  {
+    "destination": "/es/concepts/features/projections/projections",
+    "source": "/es/data-modeling/projections"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/es/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/es/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/es/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/es/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/es/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/es/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/es/concepts/features/interfaces/client",
+    "source": "/es/interfaces/client"
+  },
+  {
+    "destination": "/es/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/es/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/es/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/es/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/es/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/es/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/es/concepts/features/performance/caches/query-condition-cache",
+    "source": "/es/operations/query-condition-cache"
+  },
+  {
+    "destination": "/es/concepts/core-concepts/parts",
+    "source": "/es/parts"
+  },
+  {
+    "destination": "/es/concepts/core-concepts/primary-indexes",
+    "source": "/es/primary-indexes"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/partitioning-keys",
+    "source": "/fr/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/choosing-a-primary-key",
+    "source": "/fr/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/select-data-type",
+    "source": "/fr/best-practices/select-data-types"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/using-data-skipping-indices",
+    "source": "/fr/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/use-materialized-views",
+    "source": "/fr/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/fr/guides/clickhouse/data-modelling/denormalization",
+    "source": "/fr/data-modeling/denormalization"
+  },
+  {
+    "destination": "/fr/concepts/features/projections/projections",
+    "source": "/fr/data-modeling/projections"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/fr/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/fr/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/fr/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/fr/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/fr/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/fr/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/fr/concepts/features/interfaces/client",
+    "source": "/fr/interfaces/client"
+  },
+  {
+    "destination": "/fr/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/fr/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/fr/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/fr/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/fr/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/fr/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/fr/concepts/features/performance/caches/query-condition-cache",
+    "source": "/fr/operations/query-condition-cache"
+  },
+  {
+    "destination": "/fr/concepts/core-concepts/parts",
+    "source": "/fr/parts"
+  },
+  {
+    "destination": "/fr/concepts/core-concepts/primary-indexes",
+    "source": "/fr/primary-indexes"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/partitioning-keys",
+    "source": "/ja/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/choosing-a-primary-key",
+    "source": "/ja/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/select-data-type",
+    "source": "/ja/best-practices/select-data-types"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/using-data-skipping-indices",
+    "source": "/ja/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/use-materialized-views",
+    "source": "/ja/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/ja/guides/clickhouse/data-modelling/denormalization",
+    "source": "/ja/data-modeling/denormalization"
+  },
+  {
+    "destination": "/ja/concepts/features/projections/projections",
+    "source": "/ja/data-modeling/projections"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/ja/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/ja/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/ja/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/ja/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/ja/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/ja/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/client",
+    "source": "/ja/interfaces/client"
+  },
+  {
+    "destination": "/ja/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/ja/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/ja/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/ja/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/ja/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/ja/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/ja/concepts/features/performance/caches/query-condition-cache",
+    "source": "/ja/operations/query-condition-cache"
+  },
+  {
+    "destination": "/ja/concepts/core-concepts/parts",
+    "source": "/ja/parts"
+  },
+  {
+    "destination": "/ja/concepts/core-concepts/primary-indexes",
+    "source": "/ja/primary-indexes"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/partitioning-keys",
+    "source": "/pt-BR/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/choosing-a-primary-key",
+    "source": "/pt-BR/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/select-data-type",
+    "source": "/pt-BR/best-practices/select-data-types"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/using-data-skipping-indices",
+    "source": "/pt-BR/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/use-materialized-views",
+    "source": "/pt-BR/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/pt-BR/guides/clickhouse/data-modelling/denormalization",
+    "source": "/pt-BR/data-modeling/denormalization"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/projections/projections",
+    "source": "/pt-BR/data-modeling/projections"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/pt-BR/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/pt-BR/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/pt-BR/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/pt-BR/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/pt-BR/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/pt-BR/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/interfaces/client",
+    "source": "/pt-BR/interfaces/client"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/pt-BR/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/pt-BR/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/pt-BR/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/performance/caches/query-condition-cache",
+    "source": "/pt-BR/operations/query-condition-cache"
+  },
+  {
+    "destination": "/pt-BR/concepts/core-concepts/parts",
+    "source": "/pt-BR/parts"
+  },
+  {
+    "destination": "/pt-BR/concepts/core-concepts/primary-indexes",
+    "source": "/pt-BR/primary-indexes"
+  },
+  {
     "destination": "/reference/statements/create/view",
     "source": "/reference/statements/watch"
   },

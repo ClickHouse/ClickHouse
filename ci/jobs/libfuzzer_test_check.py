@@ -121,7 +121,7 @@ def download_corpus(path):
 
     try:
         S3.copy_file_from_s3(
-            s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus",
+            s3_path=f"{Settings.S3_ARTIFACT_BUCKET}/fuzzer/corpus",
             local_path=str(corpus_path),
             include_pattern="*.zip",
             recursive=True,
@@ -166,7 +166,7 @@ def upload_corpus(path):
             with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 zipdir(fuzzer_dir, zipf)
             S3.copy_file_to_s3(
-                s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus/{fuzzer_dir.name}.zip",
+                s3_path=f"{Settings.S3_ARTIFACT_BUCKET}/fuzzer/corpus/{fuzzer_dir.name}.zip",
                 local_path=str(zip_file_path),
             )
 

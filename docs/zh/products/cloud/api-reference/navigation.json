@@ -1,33 +1,33 @@
 [
   {
-    "group": "组织",
+    "group": "Organization",
     "pages": [
       {
-        "group": "组织",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
           "PATCH /v1/organizations/{organizationId}",
-          "products/cloud/api-reference/organization/organization-quotas-get-list",
-          "products/cloud/api-reference/organization/organization-quota-get",
+          "zh/products/cloud/api-reference/organization/organization-quotas-get-list",
+          "zh/products/cloud/api-reference/organization/organization-quota-get",
           "GET /v1/organizations/{organizationId}/activities",
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
-          "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
+          "zh/products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
         ]
       },
       {
-        "group": "计费",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
-          "products/cloud/api-reference/billing/active-balances-get",
-          "products/cloud/api-reference/billing/credit-balances-get"
+          "zh/products/cloud/api-reference/billing/active-balances-get",
+          "zh/products/cloud/api-reference/billing/credit-balances-get"
         ]
       },
       {
-        "group": "用户管理",
+        "group": "User management",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +40,7 @@
         ]
       },
       {
-        "group": "角色管理",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -52,27 +52,27 @@
       {
         "group": "UDF",
         "pages": [
-          "products/cloud/api-reference/udf/udf-attach",
-          "products/cloud/api-reference/udf/udf-attachment-get",
-          "products/cloud/api-reference/udf/udf-detach",
-          "products/cloud/api-reference/udf/udf-attachment-list",
-          "products/cloud/api-reference/udf/udf-create",
-          "products/cloud/api-reference/udf/udf-list",
-          "products/cloud/api-reference/udf/udf-delete",
-          "products/cloud/api-reference/udf/udf-get",
-          "products/cloud/api-reference/udf/udf-upload-session-create",
-          "products/cloud/api-reference/udf/udf-version-create",
-          "products/cloud/api-reference/udf/udf-version-list",
-          "products/cloud/api-reference/udf/udf-version-delete"
+          "zh/products/cloud/api-reference/udf/udf-attach",
+          "zh/products/cloud/api-reference/udf/udf-attachment-get",
+          "zh/products/cloud/api-reference/udf/udf-detach",
+          "zh/products/cloud/api-reference/udf/udf-attachment-list",
+          "zh/products/cloud/api-reference/udf/udf-create",
+          "zh/products/cloud/api-reference/udf/udf-list",
+          "zh/products/cloud/api-reference/udf/udf-delete",
+          "zh/products/cloud/api-reference/udf/udf-get",
+          "zh/products/cloud/api-reference/udf/udf-upload-session-create",
+          "zh/products/cloud/api-reference/udf/udf-version-create",
+          "zh/products/cloud/api-reference/udf/udf-version-list",
+          "zh/products/cloud/api-reference/udf/udf-version-delete"
         ]
       }
     ]
   },
   {
-    "group": "服务",
+    "group": "Service",
     "pages": [
       {
-        "group": "服务",
+        "group": "Service",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -85,21 +85,21 @@
           "DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
-          "products/cloud/api-reference/service/instance-scaling-update",
+          "zh/products/cloud/api-reference/service/instance-scaling-update",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
-          "products/cloud/api-reference/service/scaling-schedule-get",
-          "products/cloud/api-reference/service/scaling-schedule-upsert",
-          "products/cloud/api-reference/service/scaling-schedule-delete",
+          "zh/products/cloud/api-reference/service/scaling-schedule-get",
+          "zh/products/cloud/api-reference/service/scaling-schedule-upsert",
+          "zh/products/cloud/api-reference/service/scaling-schedule-delete",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
-          "products/cloud/api-reference/service/service-clickhouse-settings-list-get",
-          "products/cloud/api-reference/service/service-clickhouse-settings-update",
-          "products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
-          "products/cloud/api-reference/service/service-clickhouse-setting-get",
-          "products/cloud/api-reference/service/service-clickhouse-setting-delete"
+          "zh/products/cloud/api-reference/service/service-clickhouse-settings-list-get",
+          "zh/products/cloud/api-reference/service/service-clickhouse-settings-update",
+          "zh/products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
+          "zh/products/cloud/api-reference/service/service-clickhouse-setting-get",
+          "zh/products/cloud/api-reference/service/service-clickhouse-setting-delete"
         ]
       },
       {
@@ -109,16 +109,16 @@
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
-          "products/cloud/api-reference/backup/backup-bucket-get",
-          "products/cloud/api-reference/backup/backup-bucket-create",
-          "products/cloud/api-reference/backup/backup-bucket-update",
-          "products/cloud/api-reference/backup/backup-bucket-delete"
+          "zh/products/cloud/api-reference/backup/backup-bucket-get",
+          "zh/products/cloud/api-reference/backup/backup-bucket-create",
+          "zh/products/cloud/api-reference/backup/backup-bucket-update",
+          "zh/products/cloud/api-reference/backup/backup-bucket-delete"
         ]
       }
     ]
   },
   {
-    "group": "OpenAPI",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
@@ -130,11 +130,11 @@
   {
     "group": "Prometheus",
     "pages": [
-      "products/cloud/api-reference/prometheus/organization-prometheus-get",
-      "products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+      "zh/products/cloud/api-reference/prometheus/organization-prometheus-get",
+      "zh/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
-      "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
-      "products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
+      "zh/products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
+      "zh/products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
     ]
   },
   {
@@ -147,7 +147,7 @@
       "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
       "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
-      "products/cloud/api-reference/clickpipes/click-pipe-schema-discovery",
+      "zh/products/cloud/api-reference/clickpipes/click-pipe-schema-discovery",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
@@ -162,58 +162,58 @@
   {
     "group": "ClickStack",
     "pages": [
-      "products/cloud/api-reference/clickstack/click-stack-list-dashboards",
-      "products/cloud/api-reference/clickstack/click-stack-create-dashboard",
-      "products/cloud/api-reference/clickstack/click-stack-get-dashboard",
-      "products/cloud/api-reference/clickstack/click-stack-update-dashboard",
-      "products/cloud/api-reference/clickstack/click-stack-delete-dashboard",
-      "products/cloud/api-reference/clickstack/click-stack-validate-dashboard",
-      "products/cloud/api-reference/clickstack/click-stack-list-alerts",
-      "products/cloud/api-reference/clickstack/click-stack-create-alert",
-      "products/cloud/api-reference/clickstack/click-stack-list-sources",
-      "products/cloud/api-reference/clickstack/click-stack-create-source",
-      "products/cloud/api-reference/clickstack/click-stack-get-source",
-      "products/cloud/api-reference/clickstack/click-stack-update-source",
-      "products/cloud/api-reference/clickstack/click-stack-delete-source",
-      "products/cloud/api-reference/clickstack/click-stack-get-alert",
-      "products/cloud/api-reference/clickstack/click-stack-update-alert",
-      "products/cloud/api-reference/clickstack/click-stack-delete-alert",
-      "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
-      "products/cloud/api-reference/clickstack/click-stack-create-webhook",
-      "products/cloud/api-reference/clickstack/click-stack-update-webhook",
-      "products/cloud/api-reference/clickstack/click-stack-delete-webhook",
-      "products/cloud/api-reference/clickstack/click-stack-list-roles",
-      "products/cloud/api-reference/clickstack/click-stack-create-role",
-      "products/cloud/api-reference/clickstack/click-stack-get-role",
-      "products/cloud/api-reference/clickstack/click-stack-update-role",
-      "products/cloud/api-reference/clickstack/click-stack-delete-role",
-      "products/cloud/api-reference/clickstack/click-stack-list-saved-searches",
-      "products/cloud/api-reference/clickstack/click-stack-create-saved-search",
-      "products/cloud/api-reference/clickstack/click-stack-get-saved-search",
-      "products/cloud/api-reference/clickstack/click-stack-update-saved-search",
-      "products/cloud/api-reference/clickstack/click-stack-delete-saved-search"
+      "zh/products/cloud/api-reference/clickstack/click-stack-list-dashboards",
+      "zh/products/cloud/api-reference/clickstack/click-stack-create-dashboard",
+      "zh/products/cloud/api-reference/clickstack/click-stack-get-dashboard",
+      "zh/products/cloud/api-reference/clickstack/click-stack-update-dashboard",
+      "zh/products/cloud/api-reference/clickstack/click-stack-delete-dashboard",
+      "zh/products/cloud/api-reference/clickstack/click-stack-validate-dashboard",
+      "zh/products/cloud/api-reference/clickstack/click-stack-list-alerts",
+      "zh/products/cloud/api-reference/clickstack/click-stack-create-alert",
+      "zh/products/cloud/api-reference/clickstack/click-stack-list-sources",
+      "zh/products/cloud/api-reference/clickstack/click-stack-create-source",
+      "zh/products/cloud/api-reference/clickstack/click-stack-get-source",
+      "zh/products/cloud/api-reference/clickstack/click-stack-update-source",
+      "zh/products/cloud/api-reference/clickstack/click-stack-delete-source",
+      "zh/products/cloud/api-reference/clickstack/click-stack-get-alert",
+      "zh/products/cloud/api-reference/clickstack/click-stack-update-alert",
+      "zh/products/cloud/api-reference/clickstack/click-stack-delete-alert",
+      "zh/products/cloud/api-reference/clickstack/click-stack-list-webhooks",
+      "zh/products/cloud/api-reference/clickstack/click-stack-create-webhook",
+      "zh/products/cloud/api-reference/clickstack/click-stack-update-webhook",
+      "zh/products/cloud/api-reference/clickstack/click-stack-delete-webhook",
+      "zh/products/cloud/api-reference/clickstack/click-stack-list-roles",
+      "zh/products/cloud/api-reference/clickstack/click-stack-create-role",
+      "zh/products/cloud/api-reference/clickstack/click-stack-get-role",
+      "zh/products/cloud/api-reference/clickstack/click-stack-update-role",
+      "zh/products/cloud/api-reference/clickstack/click-stack-delete-role",
+      "zh/products/cloud/api-reference/clickstack/click-stack-list-saved-searches",
+      "zh/products/cloud/api-reference/clickstack/click-stack-create-saved-search",
+      "zh/products/cloud/api-reference/clickstack/click-stack-get-saved-search",
+      "zh/products/cloud/api-reference/clickstack/click-stack-update-saved-search",
+      "zh/products/cloud/api-reference/clickstack/click-stack-delete-saved-search"
     ]
   },
   {
     "group": "Postgres",
     "pages": [
-      "products/cloud/api-reference/postgres/postgres-service-create",
-      "products/cloud/api-reference/postgres/postgres-service-get-list",
-      "products/cloud/api-reference/postgres/postgres-service-get",
-      "products/cloud/api-reference/postgres/postgres-service-delete",
-      "products/cloud/api-reference/postgres/postgres-service-patch",
-      "products/cloud/api-reference/postgres/postgres-service-certs-get",
-      "products/cloud/api-reference/postgres/postgres-instance-restore",
-      "products/cloud/api-reference/postgres/postgres-service-set-password",
-      "products/cloud/api-reference/postgres/postgres-service-patch-state",
-      "products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
-      "products/cloud/api-reference/postgres/postgres-instance-config-get",
-      "products/cloud/api-reference/postgres/postgres-instance-config-post",
-      "products/cloud/api-reference/postgres/postgres-instance-config-patch",
-      "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
-      "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
-      "products/cloud/api-reference/postgres/slow-query-pattern-get",
-      "products/cloud/api-reference/postgres/postgres-logs-get-list"
+      "zh/products/cloud/api-reference/postgres/postgres-service-create",
+      "zh/products/cloud/api-reference/postgres/postgres-service-get-list",
+      "zh/products/cloud/api-reference/postgres/postgres-service-get",
+      "zh/products/cloud/api-reference/postgres/postgres-service-delete",
+      "zh/products/cloud/api-reference/postgres/postgres-service-patch",
+      "zh/products/cloud/api-reference/postgres/postgres-service-certs-get",
+      "zh/products/cloud/api-reference/postgres/postgres-instance-restore",
+      "zh/products/cloud/api-reference/postgres/postgres-service-set-password",
+      "zh/products/cloud/api-reference/postgres/postgres-service-patch-state",
+      "zh/products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
+      "zh/products/cloud/api-reference/postgres/postgres-instance-config-get",
+      "zh/products/cloud/api-reference/postgres/postgres-instance-config-post",
+      "zh/products/cloud/api-reference/postgres/postgres-instance-config-patch",
+      "zh/products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+      "zh/products/cloud/api-reference/postgres/slow-query-patterns-get-list",
+      "zh/products/cloud/api-reference/postgres/slow-query-pattern-get",
+      "zh/products/cloud/api-reference/postgres/postgres-logs-get-list"
     ]
   }
 ]

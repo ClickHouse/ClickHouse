@@ -10,7 +10,6 @@
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET query_plan_join_swap_table = 'false';

@@ -157,6 +157,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
+#include <base/hex.h>
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
@@ -10266,6 +10267,26 @@ void MergeTreeData::optimizeDryRun(
         future_part,
         task_context);
 
+    /// `DRY RUN` takes no merge guard, so a concurrent real merge on the same parts would otherwise
+    /// reserve the same temporary directory. See `MergeTask::buildTempPartBasename`. Random rather than
+    /// a counter, because the directory can live on storage shared with other servers, where a
+    /// process-local counter restarts and repeats itself.
+    ///
+    /// A dry run cannot simply reuse the directory name of the merge it simulates: the two would then
+    /// claim the same name, which is the very `LOGICAL_ERROR` this fixes, only raised by the real
+    /// merge instead. The name therefore has to be distinct, and the only cost that can be minimized
+    /// is by how much it exceeds the budget of the merge being simulated.
+    ///
+    /// 48 random bits, written as 12 hexadecimal digits, are kept out of the generated UUID, so the
+    /// whole basename is a fixed `tmp_merge_dr_<12 hex>`: 25 bytes of the filename limit, 36 once
+    /// `IMergeTreeDataPart::remove` prepends `delete_tmp_`, which is 6 bytes more than the merge of
+    /// the shortest possible pair of parts takes and no more than the merge of any part whose name
+    /// is 15 characters or longer. The temporary directory of a dry run lives only for that one query, and
+    /// there are at most a handful of them at a time, so 48 bits leave the collision probability at
+    /// nothing.
+    const String dry_run_suffix = String(MergeTask::DRY_RUN_TEMP_INFIX)
+        + getHexUIntLowercase(UUIDHelpers::getLowBytes(UUIDHelpers::generateV4())).substr(4);
+
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
@@ -10279,7 +10300,10 @@ void MergeTreeData::optimizeDryRun(
         deduplicate_by_columns,
         cleanup,
         merging_params,
-        nullptr /* txn */);
+        nullptr /* txn */,
+        /*projection=*/ nullptr,
+        /*parent_part=*/ nullptr,
+        dry_run_suffix);
 
     auto new_part = executeHere(merge_task);
 

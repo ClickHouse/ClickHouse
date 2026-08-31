@@ -86,6 +86,11 @@ public:
 #else
     void doInsertFrom(const IColumn & src, size_t n) override;
 #endif
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#else
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

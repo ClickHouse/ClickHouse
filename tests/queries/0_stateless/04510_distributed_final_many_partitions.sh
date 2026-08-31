@@ -32,7 +32,7 @@ INSERT INTO t_final_many_partitions SELECT number % 100, intDiv(number, 100), nu
 INSERT INTO t_final_many_partitions SELECT number % 100, intDiv(number, 100), number + 5, 2 FROM numbers(15000);
 "
 
-SETTINGS="enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
+SETTINGS="enable_parallel_replicas = 0, max_rows_to_group_by = 0,
     distributed_plan_default_reader_bucket_count = 4, do_not_merge_across_partitions_select_final = 1"
 
 echo -n "split groups all partitions into the target tasks "

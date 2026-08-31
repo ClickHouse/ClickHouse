@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas, no-fasttest
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: Messes with internal cache.
 -- Tag no-fasttest: COLLATE requires ICU, which is not available in the Fast test build.
 --
@@ -12,8 +12,6 @@ SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET optimize_move_to_prewhere = 0;
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 -- Variable-length sort column (`String`) goes through `tryOptimizeTopK`'s dynamic-filtering
 -- branch only when this opt-in is set; the `COLLATE` assertions below rely on it.
