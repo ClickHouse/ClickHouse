@@ -43,26 +43,20 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 克隆代码仓库
-
+  <Step title="克隆代码仓库" id="clone-repository">
     ```shell
     git clone https://github.com/ClickHouse/clickstack-session-replay-demo
     cd clickstack-session-replay-demo
     ```
   </Step>
 
-  <Step>
-    ### 启动 ClickStack
-
+  <Step title="启动 ClickStack" id="start-clickstack">
     ```shell
     docker-compose up -d clickstack
     ```
   </Step>
 
-  <Step>
-    ### 获取 API key
-
+  <Step title="获取 API key" id="get-api-key">
     1. 在 [http://localhost:8080](http://localhost:8080) 打开 HyperDX
     2. 创建账号，或根据需要登录
     3. 前往 **Team Settings → API Keys**
@@ -77,9 +71,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### 启动演示应用
-
+  <Step title="启动演示应用" id="start-demo-app">
     ```shell
     docker-compose --profile demo up demo-app
     ```
@@ -95,10 +87,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     所有交互都会由 ClickStack Browser SDK 自动记录。
   </Step>
 
-  <Step>
-    ### 查看你的会话回放
-
-    返回 HyperDX ([http://localhost:8080](http://localhost:8080)) ，然后在左侧边栏中前往 **Client Sessions**。
+  <Step title="查看你的会话回放" id="view-session-replay">
+    返回 [http://localhost:8080](http://localhost:8080) 中的 HyperDX，然后在左侧边栏中前往 **Client Sessions**。
 
     <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="会话回放搜索" />
 
@@ -192,7 +182,7 @@ docker-compose down -v
   ## 了解更多
 </div>
 
-* [会话回放](/zh/clickstack/features/session-replay) — 功能概览、SDK 选项及隐私控制
-* [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser) — 完整的 SDK 选项和高级配置
-* [ClickStack 入门](/zh/clickstack/getting-started/index) — 部署 ClickStack 并摄取您的第一批数据
-* [所有示例数据集](/zh/clickstack/example-datasets/index) — 其他示例数据集及相关指南
+* [会话回放](/zh/clickstack/features/session-replay) — 功能概览、SDK 选项和隐私控制
+* [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser) — 完整的 SDK 选项及高级配置
+* [ClickStack 快速开始](/zh/clickstack/getting-started/index) — 部署 ClickStack 并摄取您的第一批数据
+* [所有示例数据集](/zh/clickstack/example-datasets/index) — 其他示例数据集和相关指南

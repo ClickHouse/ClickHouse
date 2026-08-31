@@ -82,7 +82,18 @@ Internal coordination settings are located in the `<keeper_server>.<coordination
 | `startup_timeout`                  | If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms).                                                                                                              | `30000`                                                                                                      |
 | `async_replication`                | Enable async replication. All write and read guarantees are preserved while better performance is achieved. Settings is disabled by default to not break backwards compatibility                                         | `false`                                                                                                      |
 | `latest_logs_cache_size_threshold` | Maximum total size of in-memory cache of latest log entries                                                                                                                                                              | `1GiB`                                                                                                       |
-| `commit_logs_cache_size_threshold` | Maximum total size of in-memory cache of log entries needed next for commit                                                                                                                                              | `500MiB`                                                                                                     |
+| `commit_logs_cache_size_threshold` | Deprecated. Used for `log_readahead_commit_window_bytes` if that setting is not itself set.                                                                                                              | -                                                                                                            |
+| `commit_logs_cache_entry_count_threshold` | Deprecated, has no effect. Use `log_readahead_commit_window_bytes` instead.                                                                                                                       | -                                                                                                            |
+| `log_readahead_enabled`            | Enable per-peer decoded read-ahead for changelog catch-up reads (follower replication).                                                                                                                  | `false`                                                                                                      |
+| `log_readahead_window_bytes`       | Maximum bytes of decoded entries buffered per peer reader. Should be at least as large as a typical append-entries batch.                                                                                | `64MiB`                                                                                                      |
+| `log_readahead_max_peer_readers`   | Maximum number of concurrent per-peer read-ahead readers.                                                                                                                                                | `8`                                                                                                          |
+| `log_readahead_eviction_timeout_ms`| Idle timeout after which an inactive per-peer read-ahead reader, or the commit reader, is evicted (a subsequent miss recreates it).                                                                      | `30000`                                                                                                      |
+| `log_readahead_pool_threads`       | Number of threads in the dedicated read-ahead thread pool. `0` derives the value from `log_readahead_max_peer_readers`.                                                                                  | `0`                                                                                                          |
+| `log_readahead_serve_wait_timeout_ms` | Maximum time to wait for the background read-ahead fill before falling back to a direct read.                                                                                                         | `200`                                                                                                        |
+| `log_readahead_chunk_size`         | Number of log entries decoded per chunk in the read-ahead fill task.                                                                                                                                      | `16`                                                                                                         |
+| `log_readahead_commit_window_bytes`| Maximum total size of decoded log entries buffered ahead of the commit thread. `0` disables commit read-ahead (commit reads entries from disk one by one).                                              | `500MiB`                                                                                                     |
+| `log_startup_read_max_streams`     | Maximum number of changelog files read concurrently during Keeper startup. `0` = automatically use the number of CPU cores. `1` = use the serial (pre-parallel) startup read. Effective parallelism is capped by the number of changelog files that need to be read; consider lowering on seek-bound storage (HDD, IOPS-capped volumes). | `0`                                                                                                         |
+| `log_startup_read_buffer_size`     | Per-stream read buffer size (bytes) used while reading changelogs at Keeper startup. Must be greater than `0`. The buffer is additionally clamped to the file size.                                     | `8MiB`                                                                                                       |
 | `disk_move_retries_wait_ms`        | How long to wait between retries after a failure which happened while a file was being moved between disks                                                                                                               | `1000`                                                                                                       |
 | `disk_move_retries_during_init`    | The amount of retries after a failure which happened while a file was being moved between disks during initialization                                                                                                    | `100`                                                                                                        |
 | `experimental_use_rocksdb`         | Use rocksdb as backend storage                                                                                                    | `0`                                                                                                        |
@@ -195,9 +206,20 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
+zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time`, `zk_cnt_leader_unavailable_time`, `zk_sum_election_time`, and `zk_cnt_election_time` are cumulative leader-only metrics. They are per-server observations, not cluster-wide availability measurements: tracking starts when that server stops observing a live leader. During a network partition, this can include time while an old leader remains live in another partition. The election metrics record only a successful election that follows such a locally observed no-leader window; a leadership transfer that does not expose a sampled no-leader state is intentionally not counted.
+
+Keeper samples its local NuRaft leader state once per `heart_beat_interval_ms`, but never more frequently than every 100 milliseconds. Each boundary can differ from that local state transition by up to the effective interval, and windows shorter than that interval can be missed. Keeper records local election completion at NuRaft `BecomeLeader`. `srst` resets all four values.
+
+The duration of the most recent locally observed window of each kind is also exported to `system.asynchronous_metrics` as `KeeperLastLeaderElectionTime` and `KeeperLastLeaderUnavailableTime`, in milliseconds. `KeeperLastLeaderElectionTime` follows the same no-leader-window definition as `zk_sum_election_time`. Both are leader-only as well: a node that is not the active leader, or that has not completed a window yet, reports `0`. `srst` resets them together with the cumulative counters.
 
 - `srvr`: Lists full details for the server.
 
@@ -680,11 +702,21 @@ Also, all the snapshot files will be moved from `snapshot_local` and `snapshot_s
 
 To minimize the amount of data read from disk, Keeper caches log entries in memory.
 If requests are large, log entries will take too much memory so the amount of cached logs is capped.
-The limit is controlled with these two configs:
+The limit for the latest logs cache is controlled by:
 - `latest_logs_cache_size_threshold` - total size of latest logs stored in cache
-- `commit_logs_cache_size_threshold` - total size of subsequent logs that need to be committed next
 
-If the default values are too big, you can reduce the memory usage by reducing these two configs.
+If the default value is too big, you can reduce the memory usage by reducing this config.
+
+Log entries needed next for committing are served by a decoded read-ahead reader, sized by
+`log_readahead_commit_window_bytes` (`0` disables commit read-ahead). This setting replaces the
+deprecated `commit_logs_cache_size_threshold` and `commit_logs_cache_entry_count_threshold` settings,
+kept only for config compatibility (the former still maps onto `log_readahead_commit_window_bytes` if
+that's unset; the latter has no effect). The same read-ahead mechanism also serves follower
+replication catch-up reads when `log_readahead_enabled` is `true`; see
+`log_readahead_window_bytes`, `log_readahead_max_peer_readers`, `log_readahead_eviction_timeout_ms`,
+`log_readahead_pool_threads`, `log_readahead_serve_wait_timeout_ms`, and `log_readahead_chunk_size`
+in the [internal coordination settings](#internal-coordination-settings) for the peer-side tuning
+knobs.
 
 <Note>
 You can use `pfev` command to check amount of logs read from each cache and from a file.
@@ -731,7 +763,8 @@ See also the ClickHouse Cloud [Prometheus integration](/products/cloud/features/
 
 This guide provides simple and minimal settings to configure ClickHouse Keeper with an example on how to test distributed operations. This example is performed using 3 nodes on Linux.
 
-### 1. Configure nodes with Keeper settings {#1-configure-nodes-with-keeper-settings}
+<Steps>
+<Step title="Configure nodes with Keeper settings" id="1-configure-nodes-with-keeper-settings">
 
 1. Install 3 ClickHouse instances on 3 hosts (`chnode1`, `chnode2`, `chnode3`). (View the [Quick Start](/get-started/setup/install) for details on installing ClickHouse.)
 
@@ -835,7 +868,8 @@ This guide provides simple and minimal settings to configure ClickHouse Keeper w
     └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
     ```
 
-### 2.  Configure a cluster in ClickHouse {#2--configure-a-cluster-in-clickhouse}
+</Step>
+<Step title="Configure a cluster in ClickHouse" id="2--configure-a-cluster-in-clickhouse">
 
 1. Let's configure a simple cluster with 2 shards and only one replica on 2 of the nodes. The third node will be used to achieve a quorum for the requirement in ClickHouse Keeper. Update the configuration on `chnode1` and `chnode2`. The following cluster defines 1 shard on each node for a total of 2 shards with no replication. In this example, some of the data will be on node and some will be on the other node:
     ```xml
@@ -882,7 +916,8 @@ This guide provides simple and minimal settings to configure ClickHouse Keeper w
     └───────────────┘
     ```
 
-### 3. Create and test distributed table {#3-create-and-test-distributed-table}
+</Step>
+<Step title="Create and test distributed table" id="3-create-and-test-distributed-table">
 
 1.  Create a new database on the new cluster using ClickHouse client on `chnode1`. The `ON CLUSTER` clause automatically creates the database on both nodes.
     ```sql
@@ -980,6 +1015,9 @@ This guide provides simple and minimal settings to configure ClickHouse Keeper w
 
     4 rows in set. Elapsed: 0.018 sec.
     ```
+
+</Step>
+</Steps>
 
 ### Summary {#summary}
 

@@ -104,10 +104,12 @@ spec:
 يغطي الدليل المخصّص
 [للتخزين ووحدات التخزين](/ar/products/kubernetes-operator/guides/storage)
 إرفاق أقراص إضافية ضمن تهيئة متعددة الأقراص (JBOD)، والتشغيل من دون
-وحدة تخزين دائمة، وتوسيع السعة، وسياسات التخزين المخصّصة، والقواعد التي تحدد ما لا يمكن
+وحدة تخزين دائمة، وتوسيع السعة، وسياسات التخزين المخصّصة، وتشفير البيانات المخزّنة، والقواعد التي تحدد ما لا يمكن
 تغييره بعد الإنشاء.
 
-## نطاق العنقود
+<div id="cluster-domain">
+  ## نطاق العنقود
+</div>
 
 يحدِّد `spec.clusterDomain` لاحقة DNS في Kubernetes التي يستخدمها المشغِّل عند إنشاء
 أسماء المضيفين المؤهلة بالكامل للكبسولات التي يكتبها في
@@ -182,12 +184,12 @@ spec:
 </Note>
 
 <div id="cluster-domain">
-  ## نطاق DNS للعنقود
+  ## نطاق العنقود
 </div>
 
-يضبط `spec.clusterDomain` لاحقة DNS في Kubernetes التي يستخدمها المشغّل عند إنشاء
-أسماء المضيفات المؤهلة بالكامل للبودات التي يكتبها في تهيئة خادم ClickHouse.
-وتكون القيمة الافتراضية هي `cluster.local`، وهو متاح في كلٍّ من
+يحدِّد `spec.clusterDomain` لاحقة DNS في Kubernetes التي يستخدمها المشغِّل عند إنشاء
+أسماء المضيفين المؤهلة بالكامل للكبسولات التي يكتبها في
+إعدادات خادم ClickHouse. وتكون القيمة الافتراضية هي `cluster.local`، وهو موجود في كلٍّ من
 `ClickHouseCluster` و`KeeperCluster`.
 
 ```yaml
@@ -195,20 +197,20 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-يصل المشغّل إلى كل حاوية عبر خدمة عديمة الرأس بالشكل التالي:
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. وينعكس هذا اللاحقة على
-جزأين من الإعدادات المُولَّدة:
+يصل المُشغِّل إلى كل جراب عبر الخدمة عديمة الرأس بالصيغة التالية:
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. وينتقل هذا اللاحقة إلى
+جزأين من التهيئة المُولَّدة:
 
-* في `ClickHouseCluster`، تُستخدم قيمته في أسماء مضيفات النسخ المتماثلة ضمن
-  `remote_servers` (بين النسخ المتماثلة واستعلامات `Distributed`).
-* في `KeeperCluster`، تُستخدم قيمته لتكوين أسماء مضيفات عقد Keeper التي
-  يستخدمها ClickHouse للتنسيق.
+* في `ClickHouseCluster`، تُستخدم قيمتها في أسماء مضيفات النسخ المتماثلة ضمن
+  `remote_servers` (للاستعلامات بين النسخ المتماثلة واستعلامات `Distributed`).
+* في `KeeperCluster`، تُستخدَم قيمتها لبناء أسماء مضيفات عقد Keeper التي
+  يستخدمها ClickHouse لأغراض التنسيق.
 
 <Note>
   لا تُجرِ override لهذا إلا إذا كان `kubelet` في عنقودك يعمل باستخدام `--cluster-domain`
   مختلف عن `cluster.local`. إذا لم تتطابق القيمة مع نطاق العنقود الفعلي،
-  فلن يتمكن ClickHouse من استيفاء أسماء مضيفات Keeper والنسخ المتماثلة — وسيفشل التنسيق
-  واستعلامات `Distributed` بسبب أخطاء في استيفاء DNS. اضبط **القيمة نفسها** على
+  فلن يتمكن ClickHouse من حل أسماء مضيفات Keeper والنسخ المتماثلة، مما يؤدي إلى فشل التنسيق
+  واستعلامات `Distributed` مع ظهور أخطاء في حل أسماء DNS. اضبط **القيمة نفسها** على
   `ClickHouseCluster` و`KeeperCluster` الذي يشير إليه.
 </Note>
 
@@ -518,13 +520,14 @@ spec:
 
 يجب أن يحتوي Secret على المفاتيح التالية:
 
-| المفتاح                 | التنسيق                                                             | متى يكون مطلوبًا             |
-| ----------------------- | ------------------------------------------------------------------- | ---------------------------- |
-| `interserver-password`  | كلمة مرور بنص واضح                                                  | دائمًا                       |
-| `management-password`   | كلمة مرور بنص واضح                                                  | دائمًا                       |
-| `keeper-identity`       | `clickhouse:<password>`                                             | دائمًا                       |
-| `cluster-secret`        | كلمة مرور بنص واضح                                                  | دائمًا                       |
-| `named-collections-key` | مفتاح AES بترميز سداسي عشري بطول 16 بايت (32 محرفًا سداسيًا عشريًا) | فقط في ClickHouse `>= 25.12` |
+| المفتاح                 | التنسيق                                                             | متى يكون مطلوبًا                    |
+| ----------------------- | ------------------------------------------------------------------- | ----------------------------------- |
+| `interserver-password`  | كلمة مرور بنص صريح                                                  | دائمًا                              |
+| `management-password`   | كلمة مرور بنص صريح                                                  | دائمًا                              |
+| `keeper-identity`       | `clickhouse:<password>`                                             | دائمًا                              |
+| `cluster-secret`        | كلمة مرور بنص صريح                                                  | دائمًا                              |
+| `named-collections-key` | مفتاح AES بترميز سداسي عشري بطول 16 بايت (32 محرفًا سداسيًا عشريًا) | فقط في ClickHouse `>= 25.12`        |
+| `disk-encryption-key`   | مفتاح AES بترميز سداسي عشري بطول 16 بايت (32 محرفًا سداسيًا عشريًا) | فقط عند تعيين `settings.encryption` |
 
 يكون Secret الكامل كما يلي:
 
@@ -541,6 +544,7 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 <div id="external-secret-policy">
@@ -588,14 +592,14 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 يعيد المشغّل إدراج عملية التسوية في قائمة الانتظار ما دام كائن Secret غير صالح، لذا بمجرد إضافة المفاتيح المفقودة ستلتقطها عملية التسوية التالية تلقائيًا — ولا حاجة إلى إعادة تشغيل الـ pods.
 
 <Note>
-  تعتمد مجموعة المفاتيح المطلوبة على إصدار ClickHouse المستخدم حاليًا. لا يتم التحقق من `named-collections-key` إلا بعد أن يكتشف فحص الإصدار الخاص بالمشغّل ClickHouse `25.12` أو أحدث. في الإصدارات الأقدم، قد لا يكون هذا المفتاح موجودًا في كائن Secret.
+  تعتمد مجموعة المفاتيح المطلوبة على إصدار ClickHouse المستخدم حاليًا. لا يتم التحقق من `named-collections-key` إلا بعد أن يكتشف فحص الإصدار الخاص بالمشغّل ClickHouse `25.12` أو أحدث. في الإصدارات الأقدم، قد لا يكون هذا المفتاح موجودًا في كائن Secret. ويكون `disk-encryption-key` مطلوبًا فقط عند تعيين `spec.settings.encryption`.
 </Note>
 
 <div id="additional-ports">
   ## منافذ إضافية
 </div>
 
-يكشف المشغّل مجموعة ثابتة من المنافذ على كل Pod لـ ClickHouse وعلى الخدمة عديمة الرأس الخاصة به: `8123` لـ HTTP، و`9000` لـ native، و`9009` للاتصال بين الخوادم، و`9001` للإدارة، و`9363` لمقاييس Prometheus، بالإضافة إلى منافذ TLS البديلة `8443`/`9440` عند تمكين TLS. لجعل ClickHouse يستمع إلى بروتوكولات إضافية — مثل MySQL أو PostgreSQL أو gRPC أو أي منفذ مخصّص — عرِّفها في `spec.additionalPorts`:
+يكشف المشغّل مجموعة ثابتة من المنافذ على كل Pod لـ ClickHouse وعلى الخدمة عديمة الرأس العامة الخاصة به: `8123` لـ HTTP، و`9000` لـ أصلي، و`9009` للاتصال بين الخوادم، و`9001`/`9002` للإدارة، و`9363` لمقاييس Prometheus، بالإضافة إلى منافذ TLS البديلة `8443`/`9440` عند تمكين TLS. كما تُكشف منافذ `interserver` والإدارة عبر الخدمات الداخلية لكل نسخة متماثلة، بحيث تتمكن النسخ المتماثلة والمشغّل من التواصل قبل أن تصبح النسخة المتماثلة جاهزة. لجعل ClickHouse يستمع إلى بروتوكولات إضافية — مثل MySQL أو PostgreSQL أو gRPC أو أي منفذ مخصّص — عرِّفها في `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -608,7 +612,8 @@ spec:
       port: 9100
 ```
 
-يضيف المشغّل هذه المنافذ إلى `containerPorts` الخاصة بالـ Pod وإلى الخدمة عديمة الرأس. ويمكن العثور على المثال الكامل في [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+يضيف المشغّل هذه المنافذ إلى `containerPorts` الخاصة بالـ Pod وإلى الخدمة عديمة الرأس العامة.
+ويمكن العثور على المثال الكامل في [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   يفتح `additionalPorts` المنافذ على مستوى Kubernetes فقط. لكنه **لا** يهيّئ خادم ClickHouse للاستماع عليها. ويجب أيضًا تمكين البروتوكول المقابل في `spec.settings.extraConfig.protocols`. وبدون ذلك، سيكون المنفذ مفتوحًا على الـ Service، لكن لن يستجيب أي شيء داخل الـ Pod.
@@ -634,7 +639,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -930,7 +935,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -976,6 +982,12 @@ spec:
 ```
 
 عند التفعيل، يزامن المُشغِّل جداول Replicated وجداول التكامل مع النسخ المتماثلة الجديدة.
+
+تحمل كل Pod للنسخة المتماثلة بوابة الجاهزية `clickhouse.com/ReplicaInitialized`، لذلك لا تُنشر النسخة المتماثلة الجديدة عبر الخدمة عديمة الرأس العامة إلا بعد أن يُكمل المُشغِّل تهيئتها: إذ تُحوَّل قاعدة البيانات `default` إلى محرك Replicated ويُزامَن المخطط. وحتى ذلك الحين، يصل إليها المُشغِّل والنسخ المتماثلة الأخرى عبر خدمتها الداخلية. عند استخدام `enableDatabaseSync: false`، يضع المُشغِّل علامة التهيئة على النسخ المتماثلة فورًا، لذا تعتمد الجاهزية على فحوصات الحاوية وحدها.
+
+لا يحذف المُشغِّل مطلقًا قاعدة بيانات `default` غير Replicated والمملوءة بالبيانات. تبدأ هذه النسخة المتماثلة مع ذلك في خدمة حركة مرور العملاء بعد إعداد المخطط، لكن العنقود يبلّغ عن `SchemaInSync=False` بالسبب `DefaultDatabaseNotReplicated` إلى أن تعالج قاعدة البيانات تلك بنفسك.
+
+قبل إزالة نسخة متماثلة عند التخفيض التدريجي، يُفرِّغ المُشغِّل أولًا حركة مرور العملاء منها، وينتظر حتى تتوقف عن النشر، ويُكرِّر بياناتها المتبقية إلى النسخ المتماثلة الباقية، ثم يحذفها فقط بعد ذلك.
 
 <div id="server-logging">
   ### تسجيل الخادم

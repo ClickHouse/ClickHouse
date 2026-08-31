@@ -137,7 +137,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   وهو ما يعادل URL الخاص بـ JDBC التالي:
 
   ```sql
-  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
@@ -276,7 +276,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **الأنواع المتداخلة**
 
-  | نوع ClickHouse | نوع JDBC | صنف Java                  |
+  | نوع ClickHouse | نوع JDBC | فئة Java                  |
   | -------------- | -------- | ------------------------- |
   | Array          | ARRAY    | java.sql.Array            |
   | Tuple          | OTHER    | com.clickhouse.data.Tuple |
@@ -286,7 +286,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * يُعيَّن `Array` إلى `java.sql.Array` افتراضيًا لضمان التوافق مع JDBC. ويُجرى ذلك أيضًا لتوفير مزيد من المعلومات عن قيمة المصفوفة المُعادة. وهذا مفيد في استدلال النوع.
   * يوفّر `Array` التابع `getResultSet()` لإرجاع `java.sql.ResultSet` بالمحتوى نفسه الموجود في المصفوفة الأصلية.
   * لا ينبغي قراءة أنواع المجموعات باعتبارها `java.lang.String` لأن هذه ليست طريقة صالحة لتمثيل البيانات (على سبيل المثال: لا تُوضَع قيم السلاسل النصية بين علامتَي اقتباس في المصفوفة).
-  * يُعيَّن `Map` إلى `OTHER` لأن القيمة لا يمكن قراءتها إلا باستخدام الطريقة `getObject(columnIndex, Class<T>)`.
+  * `Map` يُعيَّن إلى `OTHER` لأن القيمة لا يمكن قراءتها إلا باستخدام الطريقة `getObject(columnIndex, Class<T>)`.
     * لا يُعَدّ `Map` من نوع `java.sql.Struct` لأنه لا يحتوي على أعمدة مُسمّاة.
   * يتم تمثيل `Tuple` على شكل `Object[]` لأنه قد يحتوي على أنواع مختلفة، كما أن استخدام `List` غير صالح.
   * يمكن قراءة `Tuple` باعتباره `Array` باستخدام الطريقة `getObject(columnIndex, Array.class)`. في هذه الحالة، ستُعيد `Array#baseTypeName` تعريف العمود `Tuple`.
@@ -300,9 +300,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   | نوع ClickHouse                             | `getBaseTypeName()`                           | `getBaseType()`                    |
   | ------------------------------------------ | --------------------------------------------- | ---------------------------------- |
-  | `Array(<نوع بدائي>)`                       | `<النوع الأوّلي>`                             | `<نوع JDBC البدائي>`               |
+  | `Array(<نوع بدائي>)`                       | `<نوع بدائي>`                                 | `<نوع JDBC البدائي>`               |
   | `Array(<Parameterized Type>(<N>))`         | `<نوع ذو معلمات>(<N>)`                        | `<نوع JDBC للنوع الأساسي>`         |
-  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                            | `<نوع JDBC لـ Type الداخلي>`       |
+  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                            | `<نوع JDBC الخاص بـ Type الداخلي>` |
   | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`                      | `<نوع JDBC لـ Type الداخلي>`       |
   | `Array(Array(...(<Type>)))`                | `<Type>` (العنصر الداخلي الأعمق)              | `<نوع JDBC للعنصر الداخلي الأعمق>` |
   | `Array(Tuple(...))`                        | `Tuple(...)` (التعريف الكامل)                 | `OTHER`                            |
@@ -348,7 +348,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * تستخدم مصفوفات `UUID` القيمة `OTHER (1111)` في V2، بما يتوافق مع تعيين `UUID` القياسي.
   * تُعيَّن قيم `Enum` إلى `VARCHAR` — إذ تُحدَّد عناصر enum باسمها النصي بغضّ النظر عن ترميزها الرقمي الأساسي.
 
-  **كتابة Arrays**
+  **كتابة المصفوفات**
 
   استخدم `java.sql.Connection#createArrayOf` لإنشاء كائن `java.sql.Array`. صُمِّم هذا الكائن لتوحيد التعامل مع المصفوفات عبر قواعد البيانات المختلفة.
   يُعدّ الاتصال ضروريًا لتمرير الإعدادات إلى أسلوب المصنع الخاص بـ Array.
@@ -398,7 +398,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
                   }
               }
           }
-      } 
+      }
   }
   ```
 
@@ -493,7 +493,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   استخدم `java.sql.Connection#createStruct` لإنشاء كائن `java.sql.Struct`. صُمِّم هذا الكائن لتوحيد التعامل مع البنى المتداخلة عبر قواعد البيانات المختلفة.
   يلزم توفر الاتصال لتمرير الإعدادات إلى دالة المصنع الخاصة بـ Struct.
 
-  تقبل الدالة وسيطَين:
+  تقبل الطريقة وسيطَين:
 
   * `typeName` - اسم نوع العناصر المتداخلة. على سبيل المثال `Nested(Tuple(Int32, String))` -&gt; `"Nested(Tuple(Int32, String))"`.
   * `elements` - العناصر المتداخلة نفسها. على سبيل المثال `[1, 'test']` -&gt; `new Object[] {1, 'test'}`.
@@ -541,12 +541,12 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **أنواع Geo**
 
-  | نوع بيانات ClickHouse | نوع JDBC | فئة Java                                       |
-  | --------------------- | -------- | ---------------------------------------------- |
-  | Point                 | OTHER    | double[]                               |
-  | Ring                  | OTHER    | double[][]                     |
-  | Polygon               | OTHER    | double[][][]           |
-  | MultiPolygon          | OTHER    | double[][][][] |
+  | نوع ClickHouse | نوع JDBC | فئة Java                                       |
+  | -------------- | -------- | ---------------------------------------------- |
+  | Point          | OTHER    | double[]                               |
+  | Ring           | OTHER    | double[][]                     |
+  | Polygon        | OTHER    | double[][][]           |
+  | MultiPolygon   | OTHER    | double[][][][] |
 
   **أنواع Nullable وLowCardinality**
 
@@ -555,14 +555,14 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **الأنواع الخاصة**
 
-  | نوع ClickHouse          | نوع JDBC        | صنف Java              |
-  | ----------------------- | --------------- | --------------------- |
-  | UUID                    | OTHER           | java.util.UUID        |
-  | IPv4                    | OTHER           | java.net.Inet4Address |
-  | IPv6                    | OTHER           | java.net.Inet6Address |
-  | JSON                    | OTHER           | java.lang.String      |
-  | AggregateFunction       | OTHER           | (التمثيل الثنائي)     |
-  | SimpleAggregateFunction | (النوع المغلّف) | (الصنف المُغلِّف)     |
+  | نوع ClickHouse          | نوع JDBC          | فئة Java              |
+  | ----------------------- | ----------------- | --------------------- |
+  | UUID                    | OTHER             | java.util.UUID        |
+  | IPv4                    | OTHER             | java.net.Inet4Address |
+  | IPv6                    | OTHER             | java.net.Inet6Address |
+  | JSON                    | OTHER             | java.lang.String      |
+  | AggregateFunction       | OTHER             | (التمثيل الثنائي)     |
+  | SimpleAggregateFunction | (النوع المُغلَّف) | (الفئة المُغلَّفة)    |
 
   * لا يُعد `UUID` نوعًا قياسيًا في JDBC. لكنه جزء من JDK. بشكل افتراضي، يُعاد `java.util.UUID` من الطريقة `getObject()`.
   * يمكن قراءة `UUID` وكتابته على هيئة `String` باستخدام الطريقة `getObject(columnIndex, String.class)`.
@@ -817,36 +817,36 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **الأنواع الرقمية**
 
-  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)       | نوع JDBC ‏(V1) | فئة Java ‏(V1)                            |
-  | -------------- | -------------------- | -------------- | -------------------- | -------------- | ----------------------------------------- |
-  | Int8           | ✅                    | TINYINT        | java.lang.Byte       | TINYINT        | java.lang.Byte                            |
-  | Int16          | ✅                    | SMALLINT       | java.lang.Short      | SMALLINT       | java.lang.Short                           |
-  | Int32          | ✅                    | INTEGER        | java.lang.Integer    | INTEGER        | java.lang.Integer                         |
-  | Int64          | ✅                    | BIGINT         | java.lang.Long       | BIGINT         | java.lang.Long                            |
-  | Int128         | ✅                    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
-  | Int256         | ✅                    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
-  | UInt8          | ❌                    | SMALLINT       | java.lang.Short      | SMALLINT       | com.clickhouse.data.value.UnsignedByte    |
-  | UInt16         | ❌                    | INTEGER        | java.lang.Integer    | INTEGER        | com.clickhouse.data.value.UnsignedShort   |
-  | UInt32         | ❌                    | BIGINT         | java.lang.Long       | BIGINT         | com.clickhouse.data.value.UnsignedInteger |
-  | UInt64         | ❌                    | NUMERIC        | java.math.BigInteger | NUMERIC        | com.clickhouse.data.value.UnsignedLong    |
-  | UInt128        | ✅                    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
-  | UInt256        | ✅                    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
-  | Float32        | ✅                    | FLOAT          | java.lang.Float      | FLOAT          | java.lang.Float                           |
-  | Float64        | ✅                    | DOUBLE         | java.lang.Double     | DOUBLE         | java.lang.Double                          |
-  | Decimal32      | ✅                    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
-  | Decimal64      | ✅                    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
-  | Decimal128     | ✅                    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
-  | Decimal256     | ✅                    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
-  | Bool           | ✅                    | BOOLEAN        | java.lang.Boolean    | BOOLEAN        | java.lang.Boolean                         |
+  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)       | نوع JDBC ‏(V1) | فئة Java ‏(V1)                            |
+  | -------------- | ------------ | -------------- | -------------------- | -------------- | ----------------------------------------- |
+  | Int8           | ✅            | TINYINT        | java.lang.Byte       | TINYINT        | java.lang.Byte                            |
+  | Int16          | ✅            | SMALLINT       | java.lang.Short      | SMALLINT       | java.lang.Short                           |
+  | Int32          | ✅            | INTEGER        | java.lang.Integer    | INTEGER        | java.lang.Integer                         |
+  | Int64          | ✅            | BIGINT         | java.lang.Long       | BIGINT         | java.lang.Long                            |
+  | Int128         | ✅            | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | Int256         | ✅            | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | UInt8          | ❌            | SMALLINT       | java.lang.Short      | SMALLINT       | com.clickhouse.data.value.UnsignedByte    |
+  | UInt16         | ❌            | INTEGER        | java.lang.Integer    | INTEGER        | com.clickhouse.data.value.UnsignedShort   |
+  | UInt32         | ❌            | BIGINT         | java.lang.Long       | BIGINT         | com.clickhouse.data.value.UnsignedInteger |
+  | UInt64         | ❌            | NUMERIC        | java.math.BigInteger | NUMERIC        | com.clickhouse.data.value.UnsignedLong    |
+  | UInt128        | ✅            | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | UInt256        | ✅            | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | Float32        | ✅            | FLOAT          | java.lang.Float      | FLOAT          | java.lang.Float                           |
+  | Float64        | ✅            | DOUBLE         | java.lang.Double     | DOUBLE         | java.lang.Double                          |
+  | Decimal32      | ✅            | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal64      | ✅            | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal128     | ✅            | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal256     | ✅            | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Bool           | ✅            | BOOLEAN        | java.lang.Boolean    | BOOLEAN        | java.lang.Boolean                         |
 
   * أكبر اختلاف هو أن الأنواع غير الموقَّعة تُحوَّل إلى أنواع Java لتحسين قابلية النقل.
 
-  **أنواع السلاسل النصية**
+  **أنواع String**
 
-  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | صنف Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)   |
-  | -------------- | ------------ | -------------- | ---------------- | -------------- | ---------------- |
-  | String         | ✅            | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
-  | FixedString    | ✅            | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)   |
+  | -------------- | -------------------- | -------------- | ---------------- | -------------- | ---------------- |
+  | String         | ✅                    | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | FixedString    | ✅                    | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
 
   * تتم قراءة `FixedString` كما هي في كلا الإصدارين. على سبيل المثال، ستُقرأ `FixedString(10)` للقيمة `'John'` على أنها `'John\0\0\0\0\0\0\0\0\0'`.
   * عند استخدام `PreparedStatement#setBytes`، سيتم تحويله إلى `unhex('<hex_string>')` ثم تُقرأ القيمة كنوع `String`.
@@ -854,14 +854,14 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **أنواع التاريخ/الوقت**
 
-  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)     | نوع JDBC ‏(V1)                  | صنف Java ‏(V1)           |
-  | -------------- | ------------ | -------------- | ------------------ | ------------------------------- | ------------------------ |
-  | Date           | ❌            | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
-  | Date32         | ❌            | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
-  | DateTime       | ❌            | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
-  | DateTime64     | ❌            | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
-  | Time           | ✅            | TIME           | java.sql.Time      | نوع جديد/غير مدعوم              | نوع جديد/غير مدعوم       |
-  | Time64         | ✅            | TIME           | java.sql.Time      | نوع جديد/غير مدعوم              | نوع جديد/غير مدعوم       |
+  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)     | نوع JDBC ‏(V1)                  | فئة Java ‏(V1)           |
+  | -------------- | -------------------- | -------------- | ------------------ | ------------------------------- | ------------------------ |
+  | Date           | ❌                    | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | Date32         | ❌                    | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | DateTime       | ❌                    | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | DateTime64     | ❌                    | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | Time           | ✅                    | TIME           | java.sql.Time      | نوع جديد/غير مدعوم              | نوع جديد/غير مدعوم       |
+  | Time64         | ✅                    | TIME           | java.sql.Time      | نوع جديد/غير مدعوم              | نوع جديد/غير مدعوم       |
 
   * يقتصر دعم `Time` و`Time64` في V2 على كونهما نوعين جديدين.
   * يُحوَّل `DateTime` و`DateTime64` إلى `java.sql.Timestamp` لتحقيق توافق أفضل مع JDBC.
@@ -876,12 +876,12 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **الأنواع المتداخلة**
 
-  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2)  | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)                             |
-  | -------------- | ------------ | --------------- | ---------------- | -------------- | ------------------------------------------ |
-  | مصفوفة         | ❌            | ARRAY           | java.sql.Array   | ARRAY          | Object[] أو مصفوفة من أنواع بدائية |
-  | Tuple          | ❌            | OTHER           | Object[] | STRUCT         | java.sql.Struct                            |
-  | Map            | ❌            | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                              |
-  | Nested         | ❌            | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                            |
+  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2)  | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)                             |
+  | -------------- | -------------------- | --------------- | ---------------- | -------------- | ------------------------------------------ |
+  | مصفوفة         | ❌                    | ARRAY           | java.sql.Array   | ARRAY          | Object[] أو مصفوفة من أنواع بدائية |
+  | Tuple          | ❌                    | OTHER           | Object[] | STRUCT         | java.sql.Struct                            |
+  | Map            | ❌                    | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                              |
+  | Nested         | ❌                    | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                            |
 
   * في V2، يُعيَّن `Array` إلى `java.sql.Array` افتراضيًا لضمان التوافق مع JDBC. ويُجرى ذلك أيضًا لتوفير معلومات إضافية عن قيمة المصفوفة المُعادة. وهذا مفيد في type inference.
   * في V2، يطبّق `Array` الطريقة `getResultSet()` لإرجاع `java.sql.ResultSet` بالمحتوى نفسه الموجود في المصفوفة الأصلية.
@@ -895,7 +895,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **أنواع Geo**
 
-  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)                                 | نوع JDBC ‏(V1) | فئة Java (V1)                                  |
+  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)                                 | نوع JDBC ‏(V1) | فئة Java ‏(V1)                                 |
   | -------------- | -------------------- | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
   | Point          | ✅                    | OTHER          | double[]                               | OTHER          | double[]                               |
   | Ring           | ✅                    | OTHER          | double[][]                     | OTHER          | double[][]                     |
@@ -909,16 +909,16 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **الأنواع الخاصة**
 
-  | نوع ClickHouse          | متوافق مع V1 | نوع JDBC ‏(V2)    | فئة Java ‏(V2)        | نوع JDBC ‏(V1)    | فئة Java ‏(V1)        |
-  | ----------------------- | ------------ | ----------------- | --------------------- | ----------------- | --------------------- |
-  | JSON                    | ❌            | OTHER             | java.lang.String      | غير مدعوم         | غير مدعوم             |
-  | AggregateFunction       | ✅            | OTHER             | (التمثيل الثنائي)     | OTHER             | (التمثيل الثنائي)     |
-  | SimpleAggregateFunction | ✅            | (النوع المُغلَّف) | (الفئة المُغلَّفة)    | (النوع المُغلَّف) | (الفئة المُغلَّفة)    |
-  | UUID                    | ✅            | OTHER             | java.util.UUID        | VARCHAR           | java.util.UUID        |
-  | IPv4                    | ✅            | OTHER             | java.net.Inet4Address | VARCHAR           | java.net.Inet4Address |
-  | IPv6                    | ✅            | OTHER             | java.net.Inet6Address | VARCHAR           | java.net.Inet6Address |
-  | Dynamic                 | ❌            | OTHER             | java.Object           | غير مدعوم         | غير مدعوم             |
-  | Variant                 | ❌            | OTHER             | java.Object           | غير مدعوم         | غير مدعوم             |
+  | نوع ClickHouse          | متوافق مع الإصدار V1 | نوع JDBC ‏(V2)    | فئة Java ‏(V2)        | نوع JDBC ‏(V1)    | فئة Java ‏(V1)        |
+  | ----------------------- | -------------------- | ----------------- | --------------------- | ----------------- | --------------------- |
+  | JSON                    | ❌                    | OTHER             | java.lang.String      | غير مدعوم         | غير مدعوم             |
+  | AggregateFunction       | ✅                    | OTHER             | (التمثيل الثنائي)     | OTHER             | (التمثيل الثنائي)     |
+  | SimpleAggregateFunction | ✅                    | (النوع المُغلَّف) | (الفئة المُغلَّفة)    | (النوع المُغلَّف) | (الفئة المُغلَّفة)    |
+  | UUID                    | ✅                    | OTHER             | java.util.UUID        | VARCHAR           | java.util.UUID        |
+  | IPv4                    | ✅                    | OTHER             | java.net.Inet4Address | VARCHAR           | java.net.Inet4Address |
+  | IPv6                    | ✅                    | OTHER             | java.net.Inet6Address | VARCHAR           | java.net.Inet6Address |
+  | Dynamic                 | ❌                    | OTHER             | java.Object           | غير مدعوم         | غير مدعوم             |
+  | Variant                 | ❌                    | OTHER             | java.Object           | غير مدعوم         | غير مدعوم             |
 
   * يستخدم V1 النوع `VARCHAR` مع `UUID`، لكنه يعيد دائمًا الكائن `java.util.UUID`. ويعالج V2 هذا الأمر من خلال تعيين `UUID` إلى `OTHER`، ثم يعيد الكائن `java.util.UUID`.
   * يستخدم V1 النوع `VARCHAR` مع `IPv4` و`IPv6`، لكنه يعيد دائمًا الكائنين `java.net.Inet4Address` و`java.net.Inet6Address`. ويعالج V2 هذا الأمر من خلال تعيين `IPv4` و`IPv6` إلى `OTHER`، ثم يعيد الكائنين `java.net.Inet4Address` و`java.net.Inet6Address`.

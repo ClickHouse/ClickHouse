@@ -28,9 +28,7 @@ Dans ce guide, vous apprendrez à créer un [Agno](https://github.com/agno-agi/a
 Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit à l&#39;aide d&#39;un script.
 
 <Steps>
-  <Step>
-    ## Installer des bibliothèques
-
+  <Step title="Installer des bibliothèques" id="install-libraries">
     Installez la bibliothèque Agno à l’aide des commandes suivantes :
 
     ```python
@@ -40,9 +38,7 @@ Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit 
     ```
   </Step>
 
-  <Step>
-    ## Configurer les identifiants
-
+  <Step title="Configurer les identifiants" id="setup-credentials">
     Ensuite, vous devrez indiquer votre clé API Anthropic :
 
     ```python
@@ -58,7 +54,7 @@ Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit 
       **Utiliser un autre fournisseur de LLM**
 
       Si vous n&#39;avez pas de clé API Anthropic et souhaitez utiliser un autre fournisseur de LLM,
-      vous trouverez dans la [documentation Agno](https://docs.agno.com/concepts/models/introduction) les instructions pour configurer vos identifiants.
+      vous trouverez dans la [documentation Agno](https://docs.agno.com/models/overview) les instructions pour configurer vos identifiants.
     </Info>
 
     Ensuite, définissez les identifiants nécessaires pour vous connecter au ClickHouse SQL playground :
@@ -74,9 +70,7 @@ Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit 
     ```
   </Step>
 
-  <Step>
-    ## Initialiser le serveur MCP et l’agent Agno
-
+  <Step title="Initialiser le serveur MCP et l’agent Agno" id="initialize-mcp-and-agent">
     Configurez maintenant le serveur MCP ClickHouse pour qu’il utilise le ClickHouse SQL playground,
     puis initialisez également notre agent Agno et posez-lui une question :
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
@@ -61,7 +62,8 @@ public:
         bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
-        Priority::IteratorPtr queue_iterator_ = nullptr);
+        Priority::IteratorPtr queue_iterator_ = nullptr,
+        bool size_in_filename_ = false);
 
     ~FileSegment();
 
@@ -108,6 +110,11 @@ public:
 
     bool isUnbound() const { return is_unbound; }
 
+    /// Whether the segment's file on disk currently has its size encoded in the name
+    /// (`<offset>_<size>`). True once a regular segment is fully downloaded (or was loaded
+    /// from such a file on startup); false while still downloading or for legacy files.
+    bool hasSizeInFileName() const { return size_in_filename; }
+
     String getPath() const;
 
     int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
@@ -122,8 +129,7 @@ public:
 
     DownloaderId getDownloader() const;
 
-    /// Wait for the change of state from DOWNLOADING to any other.
-    State wait(size_t offset);
+    State wait(size_t offset, size_t timeout_ms);
 
     bool isDownloaded() const;
 
@@ -195,6 +201,10 @@ public:
 
     void completePartAndResetDownloader();
 
+    /// Wake the `wait`ers after the downloader moves the write offset forward. Keep the downloader role
+    /// and the state unchanged. Example waiter: a reader that streams a partially-downloaded prefix.
+    void notifyDownloadProgress();
+
     void resetDownloader();
 
     /**
@@ -261,6 +271,11 @@ private:
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
+
+    /// Rename a fully downloaded regular segment's file from `<offset>` to `<offset>_<size>`,
+    /// so that startup metadata loading can read the size from the name instead of `stat`-ing
+    /// each file. No-op for ephemeral segments or if the size is already encoded.
+    void renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &);
     void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &, bool force_shrink_to_downloaded_size);
 
     void assertNotDetached() const;
@@ -282,6 +297,11 @@ private:
     /// is_unbound == true for temporary data in cache.
     const bool is_unbound;
     const bool background_download_enabled;
+
+    /// Whether the on-disk file is named `<offset>_<size>` (size encoded) rather than `<offset>`.
+    /// Only ever transitions false -> true, under `segment_guard`, when the segment becomes
+    /// fully downloaded; reads in `getPath` are lock-free and safe because of this.
+    std::atomic<bool> size_in_filename;
 
     std::atomic<State> download_state;
     time_t download_finished_time = 0;
@@ -358,6 +378,11 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     void reset();
 
+    /// Move the first segment into its own new holder and return it, leaving the rest in this one.
+    /// The hold gauge is unchanged (ownership transfers); the returned holder completes its segment
+    /// on destruction. Used by the ReaderExecutor cache to hand one segment to each reader/writer.
+    std::shared_ptr<FileSegmentsHolder> popHolder();
+
 private:
     FileSegments file_segments{};
 
@@ -365,6 +390,7 @@ private:
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
+using FileSegmentsHolderSharedPtr = std::shared_ptr<FileSegmentsHolder>;
 
 String toString(const FileSegments & file_segments, bool with_state = false);
 

@@ -2,26 +2,34 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NullableUtils.h>
+#include <DataTypes/getMostSubtype.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 
 #include <IO/WriteHelpers.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemoryTracker.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/BlockNameMap.h>
 
 #include <base/FnTraits.h>
 #include <algorithm>
 #include <ranges>
+#include <unordered_map>
 
 namespace DB
 {
@@ -100,6 +108,64 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
 namespace JoinCommon
 {
 
+Int64 getCurrentQueryMemoryUsage()
+{
+    /// Use query-level memory tracker.
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
+            return memory_tracker->get();
+    return 0;
+}
+
+Block materializeColumnsFromRightBlock(Block block, const Block & sample_block)
+{
+    std::unordered_map<std::string_view, std::vector<ColumnWithTypeAndName *>> block_index;
+    for (auto & column : block)
+        block_index[column.name].push_back(&column);
+
+    for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
+    {
+        for (auto * column_ptr : block_index[sample_column.name])
+        {
+            auto & column = *column_ptr;
+
+            /// There's no optimization for right side const columns. Remove constness if any.
+            column.column = column.column->convertToFullColumnIfConst();
+            auto actual_column = column.column;
+
+            /// We support replicated columns on the right side.
+            const auto * replicated_column = typeid_cast<const ColumnReplicated *>(actual_column.get());
+            /// Keep an owning reference: `column.column` is reassigned below, which can drop the last
+            /// reference to this `ColumnReplicated` and free the indexes it owns.
+            ColumnPtr replicated_indexes;
+            if (replicated_column)
+            {
+                replicated_indexes = replicated_column->getIndexesColumn();
+                actual_column = replicated_column->getNestedColumn();
+            }
+
+            /// Sparse columns are not supported on the right side.
+            actual_column = recursiveRemoveSparse(actual_column);
+
+            if (actual_column->lowCardinality() && !sample_column.column->lowCardinality())
+            {
+                actual_column = actual_column->convertToFullColumnIfLowCardinality();
+                column.type = removeLowCardinality(column.type);
+            }
+
+            column.column = actual_column;
+
+            if (sample_column.column->isNullable())
+                JoinCommon::convertColumnToNullable(column);
+
+            if (replicated_indexes)
+                column.column = ColumnReplicated::create(column.column, replicated_indexes);
+        }
+    }
+
+    return block;
+}
+
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
 {
     if (column.type->lowCardinality())
@@ -114,6 +180,58 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
         typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column.column, 0, column.column->size());
         column.column = std::move(lc);
     }
+}
+
+/// Mirrors `validateNestedTypesForAccurateCastOrNull` in CastOverloadResolver.cpp: `accurateCastOrNull`
+/// reports an inexact conversion of a Tuple element by a NULL in place of that element, so every element
+/// of the outermost Tuple has to be able to hold it. `Tuple(Array(UInt64))` is an example of a type that cannot.
+static bool isSupportedByAccurateCastOrNull(const DataTypePtr & type, bool is_nested_tuple = false)
+{
+    /// `getMostSubtype` reports the absence of a common subtype for a Tuple element by `Nothing` in its place.
+    if (isNothing(type))
+        return false;
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        /// The join null-key map only extracts nullable elements of the outermost Tuple.
+        /// A NULL in a nested Tuple would otherwise remain a regular hash key and match another NULL.
+        if (is_nested_tuple)
+            return false;
+
+        const auto & elements = tuple_type->getElements();
+        return std::ranges::all_of(elements, [](const auto & element) { return isSupportedByAccurateCastOrNull(element, true); });
+    }
+    if (type->isNullable())
+        return isSupportedByAccurateCastOrNull(removeNullable(type), is_nested_tuple);
+    return type->canBeInsideNullable() || canContainNull(*type);
+}
+
+static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        return std::ranges::all_of(tuple_type->getElements(), hasOnlyIntegerLeaves);
+    }
+
+    return isInteger(removeNullable(type));
+}
+
+DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    DataTypes types{
+        removeNullable(recursiveRemoveLowCardinality(left_type)),
+        removeNullable(recursiveRemoveLowCardinality(right_type))};
+
+    /// Only integer keys need this fallback: a floating-point common subtype can change equality semantics.
+    if (!std::ranges::all_of(types, hasOnlyIntegerLeaves))
+        return nullptr;
+
+    auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false);
+    /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be
+    /// allowed inside Nullable, and the same holds for the elements of a Tuple, recursively.
+    if (isNothing(subtype) || !subtype->canBeInsideNullable() || !isSupportedByAccurateCastOrNull(subtype))
+        return nullptr;
+
+    return subtype;
 }
 
 bool canBecomeNullable(const DataTypePtr & type)
@@ -234,7 +352,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
-            column.column = column.column->convertToFullIfNeeded();
+            column.column = column.column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
             const auto * nullable_col = checkAndGetColumn<ColumnNullable>(column.column.get());
             if (!nullable_col)
             {
@@ -660,8 +778,7 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & 
 
 bool hasNonJoinedBlocks(const TableJoin & table_join)
 {
-    return table_join.strictness() != JoinStrictness::Asof && table_join.strictness() != JoinStrictness::Semi
-        && isRightOrFull(table_join.kind());
+    return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)

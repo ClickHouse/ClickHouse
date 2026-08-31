@@ -46,7 +46,7 @@ namespace Setting
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
 {
@@ -159,8 +159,8 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     if (union_mode > SelectUnionMode::UNION_DISTINCT)
         return;
 
-    auto & query_nodes = getQueries().getNodes();
-    for (auto & query_node : query_nodes)
+    const auto & query_nodes = getQueries().getNodes();
+    for (const auto & query_node : query_nodes)
     {
         if (auto * query_node_typed = query_node->as<QueryNode>())
             query_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);

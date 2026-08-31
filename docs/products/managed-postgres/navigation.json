@@ -1,6 +1,4 @@
 {
-  "item": "Managed Postgres",
-  "icon": "/images/icons/icon-postgres.svg",
   "groups": [
     {
       "group": "Get started",
@@ -21,11 +19,12 @@
         "products/managed-postgres/high-availability",
         "products/managed-postgres/read-replicas",
         "products/managed-postgres/backup-and-restore",
+        "products/managed-postgres/branching",
         "products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
-          "root": "products/managed-postgres/extensions/pg_clickhouse/introduction",
           "pages": [
+            "products/managed-postgres/extensions/pg_clickhouse/introduction",
             "products/managed-postgres/extensions/pg_clickhouse/reference",
             "products/managed-postgres/extensions/pg_clickhouse/tutorial"
           ]
@@ -33,12 +32,6 @@
         "products/managed-postgres/upgrades",
         "products/managed-postgres/openapi",
         "products/managed-postgres/terraform"
-      ]
-    },
-    {
-      "group": "Benchmarks",
-      "pages": [
-        "products/managed-postgres/benchmarks"
       ]
     },
     {
@@ -62,7 +55,6 @@
         "products/managed-postgres/migrations/peerdb",
         "products/managed-postgres/migrations/clickpipes",
         "products/managed-postgres/migrations/data-validation",
-        "products/managed-postgres/migrations/clickhouse-cloud",
         "products/managed-postgres/migrations/faq"
       ]
     },
@@ -73,7 +65,8 @@
         "products/managed-postgres/monitoring/dashboard",
         "products/managed-postgres/monitoring/metrics",
         "products/managed-postgres/monitoring/prometheus",
-        "products/managed-postgres/monitoring/query-insights"
+        "products/managed-postgres/monitoring/query-insights",
+        "products/managed-postgres/monitoring/notifications"
       ]
     },
     {
@@ -82,5 +75,7 @@
         "products/managed-postgres/faq"
       ]
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-postgres.svg",
+  "item": "ClickHouse Managed Postgres"
 }

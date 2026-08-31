@@ -53,7 +53,7 @@ sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm y
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 22
 ```
 
 对于其他 Linux 发行版，请确认是否可以安装 LLVM 的任一[预编译软件包](https://releases.llvm.org/download.html)。
@@ -98,12 +98,12 @@ cd build
 可选：如果安装了多个版本的编译器，也可以指定要使用的具体编译器。
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-22
+export CXX=clang++-22
 ```
 
 出于开发用途，建议使用调试构建。
-与发布构建相比，调试构建的编译器优化级别 (`-O`) 更低，因此能提供更好的调试体验。
+与 release 构建相比，调试构建的编译器优化级别 (`-O`) 更低，因此能提供更好的调试体验。
 此外，类型为 `LOGICAL_ERROR` 的内部异常会立即导致程序崩溃，而不是以更平缓的方式失败。
 
 ```sh
@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   `clickhouse-server`、`clickhouse-client` 以及类似的二进制文件，在构建完成后都是 `programs/` 目录中指向 `clickhouse` 可执行文件的符号链接。
+</Note>
 
-  :::tip
+<Tip>
   CMake 为上述命令提供了简写方式：
 
   ```sh
   cmake -S . -B build  # 配置构建，在仓库顶层目录中运行
   cmake --build build  # 编译
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## 运行 ClickHouse 可执行文件

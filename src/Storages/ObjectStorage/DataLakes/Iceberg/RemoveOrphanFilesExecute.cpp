@@ -96,7 +96,7 @@ String resolveScanPath(const String & table_path, const RemoveOrphanFilesParams 
     if (params.location.has_value())
     {
         String loc = *params.location;
-        if (loc.find("..") != String::npos || loc.starts_with('/'))
+        if (loc.contains("..") || loc.starts_with('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "location must be a relative path under the table root, got '{}'", loc);
 
         while (loc.starts_with("./"))

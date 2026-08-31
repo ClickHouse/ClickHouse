@@ -30,28 +30,7 @@ Todo lo que transporta filas a través del wire es un **Block**: un fragmento au
 
 El `data` de una columna se organiza según la *familia* a la que pertenece su tipo. Las familias, en orden creciente de complejidad del decodificador, son:
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
-
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="Estructura de un bloque columnar transmitido y sus familias de disposición de datos" width="1568" height="976" loading="lazy" />
 
 * Los tipos de **ancho fijo** disponen `data` como `bytes_per_value × num_rows` bytes sin procesar, sin ningún encapsulado por fila.
 * Los tipos **compuestos** (`Nullable`, `Array`, `Tuple`, `Map`, `Nested`) tienen una estructura recursiva completamente derivable de la cadena de tipo, sin prefijo de versión ni estado entre bloques.
@@ -145,7 +124,7 @@ Un único byte. `0x00` es falso; cualquier valor distinto de cero es verdadero (
 </div>
 
 <div id="block-wire-layout">
-  ### disposición en formato wire del bloque
+  ### disposición en formato wire del Block
 </div>
 
 ```text
@@ -155,10 +134,10 @@ Un único byte. `0x00` es falso; cualquier valor distinto de cero es verdadero (
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-La presencia del prefijo `BlockInfo` depende del canal, porque el escritor está parametrizado por una *revisión*:
+La presencia del prefijo `BlockInfo` depende del canal, porque el escritor está parametrizado por una *revisión* (consulta [Revisión del protocolo y el formato Native](#protocol-revision) para conocer el tratamiento completo, incluida la naturaleza exclusivamente de salida de `client_protocol_version`):
 
-* En el **protocolo TCP nativo**, el servidor escribe bloques con la revisión negociada de la conexión (un valor grande: `DBMS_TCP_PROTOCOL_VERSION` es `54485` en esta versión). `BlockInfo` se escribe siempre que esa revisión sea mayor que cero, lo que siempre ocurre en una conexión real. El byte `has_custom_serialization` de cada columna (consulta la [disposición en formato wire de la columna](#column-wire-layout)) se escribe a partir de la revisión `54454`.
-* El *formato de salida* `Native` — `SELECT ... FORMAT Native` sobre HTTP, `INTO OUTFILE ... FORMAT Native` y el formato `Native` generado por `clickhouse-client` — serializa con la revisión `0` *de forma predeterminada*. En la revisión `0`, tanto el prefijo `BlockInfo` como el byte `has_custom_serialization` se omiten, de modo que un bloque contiene solo `num_columns`, `num_rows` y las columnas.
+* En el **native TCP protocol**, el servidor escribe Blocks con la revisión negociada de la conexión (un valor grande — `DBMS_TCP_PROTOCOL_VERSION`, consulta `src/Core/ProtocolDefines.h`). `BlockInfo` se escribe siempre que esa revisión sea mayor que cero, lo que siempre ocurre en una conexión real. El byte `has_custom_serialization` de cada columna (consulta la [disposición en formato wire de la columna](#column-wire-layout)) se escribe a partir de la revisión `54454`.
+* El *formato de salida* `Native` — `SELECT ... FORMAT Native` sobre HTTP, `INTO OUTFILE ... FORMAT Native` y el formato `Native` generado por `clickhouse-client` — serializa con la revisión `0` *de forma predeterminada*. En la revisión `0`, tanto el prefijo `BlockInfo` como el byte `has_custom_serialization` se omiten, de modo que un Block contiene solo `num_columns`, `num_rows` y las columnas.
 
   En HTTP, esta revisión no es fija: un client puede elevarla con el parámetro de consulta `?client_protocol_version=<n>`, y el servidor usa ese valor como revisión de serialización para la respuesta.
 
@@ -209,16 +188,7 @@ Un decodificador decide cómo procesar según la cadena `type`. Las cadenas de t
   El campo `type` es un `String` textual solo en el modo predeterminado. Cuando se establece el ajuste de la consulta `output_format_native_encode_types_in_binary_format = 1`, este campo pasa a ser una **codificación binaria de tipo** —la misma codificación basada en etiquetas documentada en [data type binary encoding](/es/reference/data-types/data-types-binary-encoding)— y las listas aplanadas de tipos `Dynamic` usan la misma codificación binaria para sus nombres de tipo individuales. Un decodificador que siempre lea el campo 2 como una cadena con prefijo de longitud interpretaría la primera etiqueta de tipo binario como una longitud de cadena y se desincronizaría, por lo que debe saber qué modo usa el stream.
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="Enrutamiento del decodificador desde una descripción de tipo hasta su familia de codificación" width="1568" height="854" loading="lazy" />
 
 <div id="kind-stack-and-sparse-encoding">
   #### kind_stack y codificación dispersa
@@ -350,18 +320,105 @@ A través de `FORMAT Native` (revisión `0`), el mismo bloque de resultados no i
 
 (Un resultado de cero filas, como un bloque que solo contiene el encabezado, no produce ningún byte con `FORMAT Native`: el formato de salida no emite bloques vacíos.)
 
+<div id="protocol-revision">
+  ## Revisión del protocolo y el formato Native
+</div>
+
+Un flujo de bytes Native está determinado, sobre todo, por la **revisión del protocolo** con la que operan su escritor y su lector. La revisión no aparece en ninguna parte de los propios bytes — no hay ningún campo de revisión en los datos transmitidos —, pero aun así determina si ciertas funcionalidades están presentes o no. Por eso, un decodificador tiene que saber con qué revisión se escribió un payload antes de poder interpretarlo. Como la revisión no está en el flujo, el lector y el escritor deben ponerse de acuerdo sobre ella por algún otro medio.
+
+Es un único `UInt64`, y tanto `NativeWriter` como `NativeReader` lo reciben como argumento del constructor. El escritor lo llama `client_revision` y el lector lo llama `server_revision`, pero es el mismo número. La revisión más reciente que conoce esta release es `DBMS_TCP_PROTOCOL_VERSION` (véase `src/Core/ProtocolDefines.h`).
+
+<div id="what-the-revision-gates">
+  ### Qué controla la revisión
+</div>
+
+Cada funcionalidad está condicionada por un umbral `DBMS_MIN_REVISION_WITH_*`. El escritor solo escribe la funcionalidad cuando su revisión alcanza ese umbral, y el lector la busca siguiendo exactamente la misma regla, para que ambos avancen en sincronía; si la revisión es incorrecta en cualquiera de los dos extremos, se desincronizan. Los controles que importan para el formato Native son:
+
+| Funcionalidad                                         | Constante de umbral                                                | Revisión | Efecto cuando está por debajo del umbral                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Prefijo `BlockInfo`                                   | (cualquier valor `> 0`)                                            | `1`      | El prefijo [`BlockInfo`](#blockinfo) se omite por completo; un bloque es solo `num_columns`, `num_rows`, columnas.                                                                                                                                                                         |
+| Byte `has_custom_serialization`                       | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | Se omite el byte [`has_custom_serialization`](#column-wire-layout) por columna; todas las columnas usan la serialización predeterminada (sin formas dispersas, replicadas ni detached).                                                                                                    |
+| `LowCardinality` en el wire                           | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | Caso especial: **no** sigue la regla simple de “por debajo del umbral”. `LowCardinality(T)` se reduce al tipo base `T` solo cuando la revisión es *distinta de cero* y menor que `54405`, o cuando la reducción se fuerza por separado. La revisión `0` lo conserva. Vea la nota de abajo. |
+| Serialización V2 de `Dynamic` / `JSON`                | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` y `JSON`/`Object` usan serialización V1 (con el parámetro `max_dynamic_*`) en lugar de V2.                                                                                                                                                                                       |
+| Versionado de funciones de agregación                 | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | El estado de `AggregateFunction` se escribe sin una versión embebida.                                                                                                                                                                                                                      |
+| `skip_degree` en el estado de `quantileDeterministic` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491`  | Los estados de `AggregateFunction(quantileDeterministic, ...)` (y las denominaciones `quantiles`/`median` de la misma función) se escriben con la versión de estado `0`, sin el `UInt8 skip_degree` final. Consulte la nota en [alias de tipos](#type-aliases).                            |
+| `out_of_order_buckets` en `BlockInfo`                 | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | El campo `3` de `BlockInfo` no se escribe (consulte [BlockInfo](#blockinfo)).                                                                                                                                                                                                              |
+| Marshalling paralelo de bloques (`DETACHED`)          | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | Las columnas nunca se envuelven en un `ColumnBLOB`; no aparecen tipos `DETACHED` / `DETACHED_OVER_SPARSE` (consulte [kind&#95;stack](#kind-stack-and-sparse-encoding)).                                                                                                                    |
+| Parámetro de tipo `DateTime(tz)`                      | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | El parámetro de timezone se elimina de la cadena `type`: `DateTime('UTC')` se anuncia como un `DateTime` sin más.                                                                                                                                                                          |
+
+Eso convierte a la revisión `0` en la codificación más conservadora para casi todo: el flujo no lleva `BlockInfo`, ni el byte `has_custom_serialization`, usa `Dynamic`/`JSON` V1, no incluye versión de función de agregación y anuncia un `DateTime` sin el parámetro de timezone. Las versiones de *estado* de funciones de agregación son la excepción en la revisión `0`: no hay un par del que derivar una versión —el flujo lo escribe y vuelve a leer quien lo produjo (un archivo de datos `StripeLog`, un backup `Set`/`Join`, un archivo de formato `Native`)—, por lo que el escritor conserva una versión fijada en el tipo (indicándola en la cadena de tipo como de costumbre) en lugar de reducir el estado a la versión `0`, y solo un tipo que no fija ninguna versión se escribe con la versión `0`.
+
+`LowCardinality` es la única excepción, y es importante. La comprobación del escritor es `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`. La clave está en el prefijo `client_revision &&`: cuando la revisión es exactamente `0`, toda la condición hace short-circuit y da false.
+
+Así que, en la revisión `0` —el valor predeterminado para `FORMAT Native`— `LowCardinality(T)` **no** se elimina. Su cadena de tipo y su prefijo de estado por bloque permanecen en el flujo, y el lector con revisión `0` los vuelve a leer tal cual. La reducción solo se activa con una revisión distinta de cero por debajo de `54405`, o cuando se fuerza independientemente de la revisión.
+
+Ese forzado es el indicador `remove_low_cardinality`. La salida de `FORMAT Native` nunca lo activa, pero la ruta del protocolo TCP nativo sí, cuando `low_cardinality_allow_in_native_format = 0` (el valor predeterminado es `1`). En otras palabras, esa configuración cambia la salida de native TCP, pero no hace nada en `FORMAT Native`.
+
+La conclusión práctica: un flujo `FORMAT Native` predeterminado puede contener legítimamente `LowCardinality`, así que no lo trate como una funcionalidad ausente en la revisión `0`.
+
+<div id="revision-per-channel">
+  ### De dónde proviene la revisión, según por dónde viajan los datos
+</div>
+
+Los mismos bytes de Native pueden desplazarse por distintas rutas: el protocolo TCP nativo, una solicitud HTTP o un archivo en disco. Cada ruta establece la revisión a su manera. Un detalle a tener en cuenta: el lado de lectura y el lado de escritura se configuran por separado, por lo que pueden acabar con revisiones diferentes.
+
+<div id="revision-tcp">
+  #### Protocolo TCP nativo — negociado en ambas direcciones
+</div>
+
+En el [protocolo TCP nativo](/es/reference/interfaces/specs/NativeProtocol), la revisión se obtiene del handshake Hello. El client envía `DBMS_TCP_PROTOCOL_VERSION`, el server devuelve la suya y, a partir de ese momento, cada lado serializa con la **revisión que anunció el otro**: el server construye su `NativeReader`/`NativeWriter` a partir de `client_tcp_protocol_version`, mientras que el client usa la `server_revision` que recibió. No hay un `min` explícito, pero ninguna de las partes puede emitir una funcionalidad que no haya implementado, así que, en la práctica, cada dirección queda limitada por el más antiguo de los dos pares.
+
+Cuando ambos pares usan la misma compilación moderna, las dos direcciones acaban en la misma revisión (`DBMS_TCP_PROTOCOL_VERSION`, véase `src/Core/ProtocolDefines.h`) y todas las comprobaciones quedan habilitadas. Ese es el caso habitual, pero no está garantizado. Con pares de versiones mixtas o de terceros, las dos direcciones pueden quedar en revisiones distintas, así que las comprobaciones deben interpretarse por dirección: `BlockInfo` está presente para cualquier revisión distinta de cero, pero el resto —incluido `has_custom_serialization`— solo aparece una vez que la revisión efectiva de esa dirección alcanza sus umbrales. Un par que anuncia una revisión inferior a `54454`, por ejemplo, no envía ni recibe el byte `has_custom_serialization`.
+
+<div id="revision-output">
+  #### salida de `FORMAT Native`: revisión `0` de forma predeterminada, elevable por HTTP
+</div>
+
+El formato de *salida* `Native` usa la revisión **`0`** de forma predeterminada. Esto abarca `SELECT ... FORMAT Native` por HTTP, `INTO OUTFILE ... FORMAT Native` y la salida `Native` que escribe `clickhouse-client`; en cada caso, la factoría de salida pasa `FormatSettings::client_protocol_version` directamente a `NativeWriter`.
+
+En HTTP, ese valor predeterminado no lo explica todo. Un client puede elevarlo con el parámetro de consulta `?client_protocol_version=<n>`, que el handler HTTP trata como un parámetro reservado en lugar de un ajuste SQL: llega al contexto de la consulta y la capa de formato lo copia en `FormatSettings`. Si se establece en un valor lo bastante alto, la salida HTTP de `FORMAT Native` empieza a incluir el prefijo `BlockInfo` y el byte `has_custom_serialization`, igual que en la ruta TCP; por tanto, no asuma que un payload HTTP de `FORMAT Native` es siempre de revisión `0`. Las exportaciones a archivo y la salida local de `clickhouse-client` no tienen ese ajuste y se mantienen en `0`.
+
+<div id="revision-input">
+  #### `FORMAT Native` de entrada: siempre revisión 0
+</div>
+
+El formato `Native` de *entrada* funciona al revés: está **fijado de forma rígida a la revisión `0`** y no presta ninguna atención a `client_protocol_version`. Tanto si analiza el cuerpo de un `INSERT ... FORMAT Native` como si lee un archivo `Native`, construye su `NativeReader` con un `0` literal, por lo que nunca espera un prefijo `BlockInfo`, nunca lee el byte `has_custom_serialization` y siempre asume la serialización predeterminada.
+
+Por tanto, `client_protocol_version` solo se aplica a la salida. Establecer un valor alto de `?client_protocol_version=` (por ejemplo, `DBMS_TCP_PROTOCOL_VERSION`) en una solicitud `INSERT ... FORMAT Native` no cambia en nada cómo se lee el cuerpo: el cuerpo sigue teniendo que ser de revisión `0`. Si se envía un cuerpo que sí incluye un prefijo `BlockInfo` o un byte `has_custom_serialization`, el lector pierde la sincronización, lo que se devuelve como un error de análisis (`INCORRECT_DATA` o `CANNOT_READ_ALL_DATA`) en lugar de una inserción correcta.
+
+<div id="revision-round-trip">
+  ### Implicaciones del recorrido de ida y vuelta
+</div>
+
+Para `FORMAT Native`, la opción segura es usar la revisión `0` en ambos extremos, que es la que se usa de forma predeterminada. Los datos escritos por `SELECT ... FORMAT Native` con revisión `0` se pueden volver a leer directamente en `INSERT ... FORMAT Native` sin sorpresas.
+
+Los problemas solo empiezan si aumentas deliberadamente la revisión de salida. Un `SELECT ... FORMAT Native` realizado con `?client_protocol_version=<large>` produce un flujo que incluye bytes `BlockInfo` y `has_custom_serialization`, y la ruta de entrada con revisión `0` no puede volver a leerlos. Si necesitas que esos datos completen el recorrido de ida y vuelta, no incluyas `client_protocol_version` en el `SELECT` que los genera, o transfiere los datos mediante el protocolo TCP nativo —donde cada dirección usa la revisión negociada en el `handshake`— en lugar de `FORMAT Native`.
+
+| Canal                                                          | Revisión de escritura                                | Revisión de lectura                           | `BlockInfo` / serialización personalizada                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Paquete `Data` de Native TCP                                   | Revisión anunciada por el par (por dirección)        | Revisión anunciada por el par (por dirección) | `BlockInfo` siempre que la revisión sea `> 0`; `has_custom_serialization` en `≥ 54454` |
+| `SELECT ... FORMAT Native` sobre HTTP                          | `client_protocol_version` (valor predeterminado `0`) | n/a                                           | Solo si se aumenta `client_protocol_version`                                           |
+| `INSERT ... FORMAT Native` sobre HTTP                          | n/a                                                  | `0` (fija, ignora `client_protocol_version`)  | Nunca se lee                                                                           |
+| `INTO OUTFILE` / archivo / `clickhouse-client` `FORMAT Native` | `0`                                                  | `0`                                           | Ausente (pero `LowCardinality` se conserva; consulta la nota anterior)                 |
+
+<Info>
+  **Revisión del protocolo vs. versión de serialización**
+
+  No confundas la revisión del protocolo con la [versión de serialización](#serialization-version-concept). La revisión aquí se aplica a toda la conexión o solicitud y nunca aparece en los bytes. La versión de serialización es por columna, la incluyen los [tipos versionados](#versioned-types) y se escribe en cada bloque no vacío. La revisión decide si una funcionalidad está presente o no; la versión de serialización, una vez dentro de una columna versionada, determina qué variante de la codificación de ese tipo concreto viene a continuación.
+</Info>
+
 <div id="data-types">
   ## Tipos de datos
 </div>
 
-Esta sección documenta la codificación en el wire de los tipos que el formato Native puede transportar dentro del `data` de una columna, agrupados en cuatro familias de complejidad creciente de decodificación. Dos tipos — `AggregateFunction(func, ...)` y `QBit(T, N)` — son tipos de columna `Native` válidos, pero tienen payloads específicos de la función o del tipo que quedan fuera del alcance de esta sección; se indican más abajo en los casos en que, de otro modo, podrían confundirse con alias.
+Esta sección documenta la codificación wire de los tipos que el formato Native puede transportar dentro del `data` de una columna, agrupados en cuatro familias de complejidad creciente de decodificación. Dos tipos — `AggregateFunction(func, ...)` y `QBit(T, N[, stride])` — son tipos de columna `Native` válidos, pero tienen payloads específicos de la función o del tipo que quedan fuera del alcance de esta sección; se indican más abajo en los casos en que, de otro modo, podrían confundirse con alias.
 
 | Familia                  | Sección                                              | Flujos por columna | Estado entre bloques                                                              |
-| ------------------------ | ---------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------- |
-| Ancho fijo               | [Tipos de ancho fijo](#fixed-width-types)            | Uno                 | Ninguno                                                                           |
-| Longitud variable        | [Tipos de longitud variable](#variable-length-types) | Uno                 | Ninguno                                                                           |
-| Compuestos (forma fija)  | [Tipos compuestos](#composite-types)                 | Múltiples           | Ninguno                                                                           |
-| Versionados / con estado | [Tipos versionados](#versioned-types)                | Múltiples           | Ninguno en el wire de Native — prefijo de estado por bloque, nuevo en cada bloque |
+| ------------------------ | ---------------------------------------------------- | ------------------ | --------------------------------------------------------------------------------- |
+| Ancho fijo               | [Tipos de ancho fijo](#fixed-width-types)            | Uno                | Ninguno                                                                           |
+| Longitud variable        | [Tipos de longitud variable](#variable-length-types) | Uno                | Ninguno                                                                           |
+| Compuestos (forma fija)  | [Tipos compuestos](#composite-types)                 | Múltiples          | Ninguno                                                                           |
+| Versionados / con estado | [Tipos versionados](#versioned-types)                | Múltiples          | Ninguno en el wire de Native — prefijo de estado por bloque, nuevo en cada bloque |
 
 <div id="fixed-width-types">
   ### Tipos de ancho fijo
@@ -824,7 +881,7 @@ Un `Nullable(String)` de tres filas: `["hello", NULL, "world"]` (15 bytes en tot
 
 Cadena de tipo: `Array(InnerType)`. Ejemplos: `Array(UInt32)`, `Array(String)`, `Array(Nullable(UInt32))`, `Array(Array(UInt8))`.
 
-La representación wire consiste en la [fase de prefijo interna](#composite-types) (vacía, a menos que el tipo interno esté versionado), seguida de dos streams concatenados, primero los desplazamientos:
+La disposición en formato wire consiste en la [fase de prefijo interna](#composite-types) (vacía, a menos que el tipo interno esté versionado), seguida de dos flujos concatenados, primero los desplazamientos:
 
 ```text
 [inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
@@ -860,16 +917,7 @@ Values (5 × UInt32 LE = 20 bytes):
 
 Cada desplazamiento es el *final* acumulado del segmento de una fila en el flujo compartido de valores; el inicio es el desplazamiento anterior (o `0` para la fila 0). Los desplazamientos consecutivos iguales corresponden a una fila vacía:
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="Desplazamientos que asignan filas a un flujo de valores compartido" width="1568" height="388" loading="lazy" />
 
 `Array(String)` con filas `[["a", "bb"], []]` (20 bytes en total):
 
@@ -889,7 +937,7 @@ Values (2 strings, 4 bytes total):
 * El `Array(UInt32)` intermedio decodifica 3 filas con desplazamientos `[2, 3, 5]`.
 * El `UInt32` más interno decodifica 5 valores: `[1, 2, 3, 4, 5]`.
 
-Eso da un total de 24 (desplazamientos externos) + 24 (desplazamientos intermedios) + 20 (valores) = 68 bytes.
+Esto suma 24 (desplazamientos externos) + 24 (desplazamientos intermedios) + 20 (valores) = 68 bytes.
 
 <div id="tuple">
   #### Tuple(T1, T2, ...)
@@ -993,13 +1041,7 @@ Values (2 × UInt32 LE = 8 bytes):
 
 La representación wire de `Nested` depende de la configuración `flatten_nested` del servidor, lo que da lugar a dos casos distintos.
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="Diseño de columna compuesta con y sin aplanamiento" width="1172" height="1068" loading="lazy" />
 
 **Caso A: `flatten_nested = 1` (valor predeterminado del servidor).** Cuando la tabla se creó con la configuración predeterminada, `Nested` **no es un tipo de wire**. El servidor almacena y presenta la columna como N columnas paralelas `Array(T_i)` con **nombres con puntos** (`outer.field1`, `outer.field2`, etc.). En la capa de formato no hay nada nuevo: cada columna con puntos es un [Array](#array) normal:
 
@@ -1028,7 +1070,7 @@ Array(Tuple(a UInt8, b String)) bytes (after type string):
 
 La única diferencia está en el texto de la cadena de tipo: `Nested` conserva los nombres de los campos (`a`, `b`), mientras que `Array(Tuple)` no los mantiene como posiciones con nombre.
 
-La cadena de tipo del Caso B es una lista de pares (nombre, tipo) separados por comas. El primer espacio en blanco separa un nombre de su tipo; el propio tipo puede contener espacios en blanco adicionales, comas y paréntesis, por lo que el análisis requiere el mismo separador con reconocimiento de profundidad que se usa para `Tuple`. La disposición en wire:
+La cadena de tipo del Caso B es una lista de pares (nombre, tipo) separados por comas. El primer espacio en blanco separa un nombre de su tipo; el propio tipo puede contener espacios en blanco adicionales, comas y paréntesis, por lo que el análisis requiere el mismo separador con reconocimiento de profundidad que se usa para `Tuple`. La disposición en formato wire:
 
 ```text
 [offsets stream]    num_rows × UInt64 LE                       ← from Array
@@ -1058,28 +1100,28 @@ Field 'b' stream (3 strings, 6 bytes):
   ### Alias de tipos
 </div>
 
-Varios tipos son alias puros: el server envía el nombre del alias en el encabezado de la columna, pero los bytes que siguen son los de un tipo subyacente. Un decodificador asigna el alias a ese tipo y reutiliza su codec; no interviene ningún formato wire nuevo.
+Varios tipos son alias puros: el servidor envía el nombre del alias en el encabezado de la columna, pero los bytes que siguen son los de un tipo subyacente. Un decodificador asigna el alias a ese tipo y reutiliza su codec; no interviene ningún formato wire nuevo.
 
 Los tipos geográficos son alias de arrays y tuples anidados:
 
-| Cadena de tipo               | Tipo wire subyacente      |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| Cadena de tipo                     | Tipo wire subyacente      |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 Así, una columna `Point` se decodifica exactamente como `Tuple(Float64, Float64)` (mostrándose como `(1,2)`), un `Ring` como `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`) y así sucesivamente en la jerarquía.
 
-`Geometry` también es un alias, pero de un [`Variant`](#variant) en lugar de un array anidado: su payload es el `Variant` de los seis tipos geo anteriores. El encabezado de la columna solo contiene la cadena de tipo `Geometry`; **no** detalla el variant, por lo que un decodificador debe expandirlo por su cuenta. Como con cualquier `Variant`, los discriminadores siguen el orden canónico de los alias geo ordenados por nombre: `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`. Luego, cada valor seleccionado se decodifica mediante su alias geo correspondiente (`NULL` usa el discriminador `NULL` de `Variant`, `255`).
+`Geometry` también es un alias, pero de un [`Variant`](#variant) en lugar de un array anidado: su payload es el `Variant` de los siete tipos geo anteriores. El encabezado de la columna solo contiene la cadena de tipo `Geometry`; **no** detalla el variant, por lo que un decodificador debe expandirlo por su cuenta. A diferencia de un `Variant` especificado por el usuario, los discriminadores de `Geometry` **no** siguen el orden ordenado por nombre: son fijos por compatibilidad, y los nuevos tipos geo solo se agregan al final. La correspondencia es `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint` (agregado en 26.7; los streams de servidores anteriores simplemente nunca contienen el discriminador `6`). Luego, cada valor seleccionado se decodifica mediante su alias geo correspondiente (`NULL` usa el discriminador `NULL` de `Variant`, `255`).
 
 `SimpleAggregateFunction(func, T)` es un alias de su tipo de valor `T`. Almacena un valor de agregación ya finalizado, por lo que su forma wire y su representación son exactamente las de `T` (`SimpleAggregateFunction(sum, UInt64)` se decodifica como `UInt64`). Solo la forma de tipo de valor único es un alias de este modo; el tipo subyacente puede ser a su vez compuesto.
 
 <Note>
-  Dos tipos relacionados **no** son alias. Son tipos de columna `Native` válidos —un client puede recibir una columna `AggregateFunction` desde un combinador `-State` o una agregación distribuida, por ejemplo—, pero cada uno lleva su propio payload especializado, que queda fuera del alcance de esta página:
+  Dos tipos relacionados **no** son alias. Son tipos de columna `Native` válidos —por ejemplo, un Client puede recibir una columna `AggregateFunction` de un combinador `-State` o de una agregación distribuida—, pero cada uno contiene su propia carga útil especializada, que queda fuera del ámbito de esta página:
 
-  * `AggregateFunction(func, ...)` contiene un estado de agregación *intermedio* (no un valor finalizado); su disposición binaria es específica de la función de agregación y de la versión.
-  * `QBit(T, N)` almacena un vector con sus bit planes transpuestos para workloads de búsqueda vectorial.
+  * `AggregateFunction(func, ...)` contiene un estado de agregación *intermedio* (no un valor finalizado); su formato binario es específico de la función de agregación y de la versión. Una función de agregación versionada especifica una versión de estado distinta de cero como primer argumento de la cadena de tipo — `AggregateFunction(1, quantileDeterministic, UInt64, UInt64)` —, mientras que la versión `0` no se muestra, por lo que la cadena de tipo permanece como `AggregateFunction(quantileDeterministic, UInt64, UInt64)`. En una conexión negociada (revisión superior a `0`), el escritor elige la versión únicamente a partir de la revisión del protocolo —nunca de una versión que pueda estar fijada en su tipo local, porque la versión `0` es indistinguible en el wire de «ninguna versión anunciada»—, de modo que la misma función puede anunciar versiones distintas en conexiones diferentes, y un lector debe obtener la versión de la cadena de tipo en lugar de asumir la más reciente. En la revisión `0` no hay ningún par del que derivar una versión —el stream se autodescribe y lo lee quien lo escribió—, por lo que una versión fijada en el tipo se conserva en el stream (y en la cadena de tipo anunciada) en lugar de degradarse a `0`. `quantileDeterministic` (junto con las variantes `quantilesDeterministic` y `medianDeterministic`) está versionada desde la revisión `54491`: la versión `1` añade al final del estado un `UInt8 skip_degree`, y su prefijo es idéntico byte a byte al de la versión `0`. Por debajo de esa revisión, el escritor emite estados de versión `0`, por lo que los pares más antiguos no se ven afectados. Todo esto se aplica igualmente a un estado anidado dentro de un tipo contenedor — `Array`, `Tuple`, `Map`, `Nullable`, `Variant` (donde la versión especificada de la alternativa cambia la cadena de tipo sin cambiar el orden del discriminador), o un envoltorio `Nested` / `SimpleAggregateFunction`. Un caso particular de `Variant` no tiene representación en la transmisión: cuando dos alternativas difieren solo en una versión de estado especificada (algo válido como tipo de columna, ya que las cadenas de tipo difieren), volver a versionar ambas para la revisión negociada las convertiría en la misma alternativa, por lo que el emisor debe rechazar la transferencia en lugar de anunciar versiones con las que no se escribió la carga útil. `Dynamic` es la excepción deliberada al versionado derivado de la revisión: una columna `Dynamic` anuncia por sí misma sus tipos anidados —mediante sus propias listas de tipos y mediante la [codificación binaria de tipos](/es/reference/data-types/data-types-binary-encoding), cuyo campo de versión explícito contiene una versión de estado especificada (los valores de su variante compartida incorporan su tipo de esa forma incluso en reposo)—, y esos anuncios forman parte de los datos de la propia columna, son idénticos para todos los pares y medios, por lo que nunca se reescriben para una revisión negociada. Por tanto, un estado anidado dentro de un valor `Dynamic` se escribe con la versión especificada en su tipo (que incluye un estado recién creado, ya que el resultado de una consulta `-State` especifica su versión) y con la versión `0` cuando el tipo no especifica ninguna, en todas las conexiones y medios por igual.
+  * `QBit(T, N[, stride])` almacena un vector con sus planos de bits transpuestos para cargas de trabajo de búsqueda vectorial; su formato de stream en wire (streams de planos de bits `FixedString` organizados por grupo, `element_size * (N / stride)` de ellos con un `stride` explícito) y su codificación binaria de tipos (etiqueta `0x36`, o `0x37` `QBitWithStride` cuando `stride != N`) se documentan en la [página del tipo de datos `QBit`](/es/reference/data-types/qbit) y en la referencia de [codificación binaria de tipos](/es/reference/data-types/data-types-binary-encoding), por lo que un lector `Native` no tiene que recuperarlos del código fuente de C++.
 </Note>
 
 <div id="versioned-types">
@@ -1107,25 +1149,13 @@ Es distinta de la versión del protocolo:
 
 La mayoría de los tipos versionados escriben la versión como un UInt64 little-endian inmediatamente antes de cualquier otro dato del prefijo de estado; algunos usan VarUInt o UInt8. Un decodificador lee primero la versión y rechaza los valores desconocidos: una versión superior implica un formato del remitente más reciente que el decodificador no entiende, e interpretarlo mal corrompe todos los bytes posteriores.
 
-El prefijo de estado se emite al inicio de **cada block cuyo número de filas es mayor que cero**, inmediatamente antes del payload de ese block.
+El prefijo de estado se emite al inicio de **cada block cuyo número de filas es mayor que cero**, inmediatamente antes de la carga útil de ese block.
 
 El escritor y el lector de Native **no** conservan el estado de serialización entre blocks: `NativeWriter` crea un estado de serialización nuevo y escribe un prefijo de estado para cada block de columna no vacío que escribe, y `NativeReader` crea un estado de deserialización nuevo y lo lee para cada block no vacío que lee (ambos omiten por completo el prefijo cuando `rows == 0`).
 
-Por lo tanto, los header blocks (rows = 0) y los blocks vacíos no emiten nada, y un decodificador debe volver a leer el prefijo de estado al inicio de cada block no vacío. Un decodificador que lea el prefijo solo una vez y trate los blocks posteriores como si solo fueran payload leerá el prefijo del siguiente block como datos y se desincronizará:
+Por lo tanto, los header blocks (rows = 0) y los blocks vacíos no emiten nada, y un decodificador debe volver a leer el prefijo de estado al inicio de cada block no vacío. Un decodificador que lea el prefijo solo una vez y trate los blocks posteriores como si solo fueran carga útil leerá el prefijo del siguiente block como datos y se desincronizará:
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="Prefijo de estado repetido para cada block no vacío" width="1226" height="1162" loading="lazy" />
 
 <div id="serialization-version-reference">
   #### Referencia de la versión de serialización
@@ -1264,7 +1294,7 @@ El valor se emite como texto JSON compacto — `{"a":1}`—, manteniendo el ente
   #### Variant(T1, T2, ...)
 </div>
 
-Una unión discriminada: cada fila contiene un valor de exactamente uno de los tipos de variante, o NULL. Cada fila lleva un **discriminador global** de un byte que selecciona su tipo, y los valores de cada tipo se almacenan después de forma densa, en un bloque contiguo por cada tipo de variante.
+Una unión discriminada: cada fila contiene un valor de exactamente uno de los tipos de variante, o NULL. Cada fila lleva un **discriminador global** de un byte que selecciona su tipo, y los valores de cada tipo se almacenan después de forma densa, en una secuencia contigua por cada tipo de variante.
 
 Cadena de tipo: `Variant(T1, T2, ...)`. El servidor establece un orden canónico (los tipos de variante se ordenan por nombre), por lo que la cadena de tipo recibida ya enumera los tipos en **orden de discriminador global**: el discriminador `0` selecciona el primer tipo de la lista, `1` el segundo, y así sucesivamente. `255` (`NULL_DISCRIMINATOR`) significa que la fila es NULL. Los elementos de Variant nunca son `Nullable`: de NULL se encarga el discriminador. Ejemplos: `Variant(String, UInt64)`, `Variant(Array(UInt8), String)`.
 
@@ -1282,7 +1312,7 @@ El prefijo de estado contiene un modo de discriminadores `UInt64 LE`: `0` = BASI
 
 Para reconstruirlo, recorra los discriminadores de izquierda a derecha manteniendo un contador acumulado por tipo. La fila `r` con discriminador `d` (≠ 255) toma el valor en el índice `counter[d]` de la secuencia de valores del tipo Variant `d`; después, `counter[d]` se incrementa. Las filas con discriminador `255` son NULL y no consumen ningún valor de ninguna secuencia, por lo que la suma de los contadores por tipo es igual al número de filas no NULL.
 
-El prefijo de estado (el modo `UInt64`) se lee al inicio de cada bloque con filas &gt; 0; el encabezado y los bloques vacíos no emiten nada. Cada discriminador no NULL es menor que el número de tipos Variant, y el tipo Variant `i` se decodifica para exactamente `count[i]` filas.
+El prefijo de estado (el modo `UInt64`) se lee al inicio de cada bloque con filas &gt; 0; la cabecera y los bloques vacíos no emiten nada. Cada discriminador no NULL es menor que el número de tipos Variant, y el tipo Variant `i` se decodifica para exactamente `count[i]` filas.
 
 <Note>
   Los elementos de Variant que a su vez tienen estado (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) emiten su propio prefijo de estado en la fase de prefijo de estado por elemento, después del modo `UInt64`. Los tipos hoja y los compuestos simples (`Array`, `Tuple`, `Map` de tipos hoja) tienen prefijos de estado vacíos y se componen libremente.
@@ -1297,28 +1327,11 @@ El prefijo de estado (el modo `UInt64`) se lee al inicio de cada bloque con fila
 2A 00 00 00 00 00 00 00      UInt64 run (1 value): 42
 ```
 
-Reconstruido: fila 0 = UInt64 run[0] = `42`; fila 1 = String run[0] = `"hi"`; fila 2 = NULL.
+Reconstruido: fila 0 = UInt64 secuencia[0] = `42`; fila 1 = String secuencia[0] = `"hi"`; fila 2 = NULL.
 
 La secuencia de discriminadores es el índice; cada discriminador no NULL extrae el siguiente valor de la secuencia densa de su tipo, mientras que `255` (NULL) no consume nada. Este mismo recorrido reconstruye [Dynamic](#dynamic), que solo difiere en cómo se codifica NULL:
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="Discriminadores que seleccionan valores de secuencias densas específicas de cada tipo" width="1568" height="624" loading="lazy" />
 
 <div id="dynamic">
   #### Dynamic
@@ -1359,8 +1372,16 @@ El ancho del discriminador es el entero sin signo más pequeño que puede indexa
 
 El prefijo de estado (versión + lista de tipos) se lee al inicio de cada bloque con filas &gt; 0; el encabezado y los bloques vacíos no emiten nada.
 
+<Info>
+  **Recuentos malformados**
+
+  `num_types` se lee del flujo antes de cualquier nombre de tipo. Un decodificador debe tratarlo como no confiable y no debe usarlo para dimensionar una asignación directamente: ni un recuento cercano a `SIZE_MAX` (que puede provocar un overflow en la aritmética intermedia o lanzar una excepción distinta de `DB::Exception`) ni un recuento grande pero representable como `100000000` (que está muy por debajo de `max_size()` de un vector, pero aun así asignaría gigabytes antes de leer un solo nombre de tipo). ClickHouse lee la lista de tipos una entrada cada vez con solo una sugerencia de preasignación limitada, por lo que un `num_types` corrupto se rechaza ya sea como `INCORRECT_DATA` (&quot;la columna `Dynamic` tiene demasiados tipos&quot;, cuando el recuento supera lo que el contenedor puede almacenar) o como un error de lectura normal una vez que el flujo se queda sin entradas de tipo; nunca como un fallo por falta de memoria.
+
+  Sin embargo, **no** se debe limitar `num_types` **aplanado** por `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (`254` en ClickHouse): la lista de tipos aplanada contiene *todos* los tipos distintos en tiempo de ejecución, incluidos aquellos que habían desbordado a la variant compartida, por lo que un block aplanado válido puede legítimamente enumerar muchos más que eso. El límite `MAX_DYNAMIC_TYPES_LIMIT` se aplica solo al recuento `num_dynamic_types` en los prefijos `V1`/`V2`/`V3` no aplanados, que cuenta los slots de variant normales y está limitado por ese tope (ClickHouse lo valida allí antes del `+ 1` para la variant compartida).
+</Info>
+
 <Note>
-  Los tipos de tiempo de ejecución cuya serialización es con estado (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) llevan prefijos de estado anidados después de la lista de nombres de tipo.
+  Los tipos en tiempo de ejecución cuya serialización es con estado (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) incluyen prefijos de estado anidados después de la lista de nombres de tipo.
 </Note>
 
 La lista de tipos en runtime normalmente sigue la canonicalización de `Variant`: los slots de variant normales se escriben en el orden de `DataTypeVariant` (nombre de tipo), por lo que el orden en el wire no sigue el orden de inserción. Sin embargo, **no siempre** está ordenada globalmente: los tipos que desbordaron a la variant compartida (por ejemplo, con `Dynamic(max_types=N)`) se agregan después de los slots normales en el orden en que aparecieron por primera vez, por lo que la cola de la lista puede romper el orden por nombre de tipo. Por lo tanto, un decodificador debe tratar la lista de tipos transmitida como la referencia autoritativa para la asignación de discriminadores y no debe reordenarla por su cuenta. Para las filas `[42::UInt64, "hi", NULL]`, los dos tipos son `String` y `UInt64`, y `"String"` va antes que `"UInt64"`, por lo que los discriminadores son `0` = String, `1` = UInt64, `2` = NULL:
@@ -1404,6 +1425,14 @@ En modo FLATTENED **no hay columna de datos compartidos** (ese almacenamiento de
 ```
 
 Observe la estructura en dos fases: **todos** los prefijos de estado de las rutas van primero y luego **todos** los datos de las rutas. Por tanto, el prefijo `Dynamic` de una ruta dinámica (en la fase de prefijos) queda separado de sus datos (en la fase de datos). El prefijo de estado se lee al inicio de cada bloque con filas &gt; 0, y cada columna de ruta (tipada o dinámica) contiene exactamente `num_rows` valores. El objeto de la fila `r` se reconstruye leyendo el valor de cada ruta en el índice `r`; una ruta dinámica cuyo discriminador `Dynamic` es NULL para esa fila no aporta ninguna clave.
+
+<Info>
+  **Recuentos malformados**
+
+  `num_dynamic_paths` en el diseño FLATTENED documentado aquí — y el recuento de rutas dinámicas en las codificaciones no planas `V1`/`V2`/`V3` — se lee del flujo antes de los nombres de ruta. (No hay un campo separado de rutas aplanadas en los prefijos no planos: `V1`/`V2`/`V3` solo llevan el recuento de rutas dinámicas, además de un valor `max_dynamic_paths` en `V1` que se lee y se descarta, y los metadatos de datos compartidos de `V3` que aparecen más abajo). Al igual que con [`Dynamic`](#dynamic), un decodificador debe tratar estos recuentos como no confiables y no debe dimensionar una reserva de memoria directamente a partir de ellos, ni para un recuento de la familia `SIZE_MAX` ni para uno grande pero representable. ClickHouse lee los nombres de ruta una entrada cada vez con solo una sugerencia de preasignación limitada, por lo que un recuento corrupto se rechaza ya sea como `INCORRECT_DATA` (&quot;JSON/Object column has too many paths&quot;, cuando supera lo que el contenedor puede alojar) o como un error de lectura normal una vez que el flujo se queda sin nombres de ruta.
+
+  El prefijo no plano `V3` además lleva un recuento `shared_data_buckets` (presente cuando la versión de serialización de datos compartidos es `MAP_WITH_BUCKETS` o `ADVANCED`). Dimensiona directamente el estado del lector por bucket y los vectores de columnas (no mediante un bucle de crecimiento bajo demanda), por lo que un decodificador debe rechazar de antemano un recuento de buckets inverosímil. A diferencia de los recuentos de rutas y tipos, este recuento tiene un invariante estricto del lado de escritura: el número de buckets se elige a partir de pequeños MergeTree settings (`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`) que son distintos de cero y están limitados a `256`, por lo que el único rango válido on-wire es `1 … 256`. ClickHouse rechaza cualquier valor fuera de ese rango — incluido un recuento grande pero representable como `100000`, que está muy por debajo de `max_size()` del contenedor — con `INCORRECT_DATA` (&quot;JSON/Object column has an invalid number of shared data buckets&quot;).
+</Info>
 
 Valor `JSON` `{"a": 42, "b": "hi"}` (una fila, ambas rutas dinámicas). Un entero de JSON se infiere como `Int64`:
 
@@ -1449,29 +1478,41 @@ Por lo tanto, un client que solo haya implementado la estructura sin comprimir d
 
 El tamaño total de la trama es `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`. Tenga en cuenta estos dos tramos: la suma de comprobación cubre la cabecera de 9 bytes más el cuerpo, mientras que `compressed_size` incluye la cabecera más el cuerpo, pero **no** la propia suma de comprobación:
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="Campos de la trama de compresión y límite de tamaño comprimido" width="1568" height="206" loading="lazy" />
 
 <div id="method-byte-values">
   ### Valores de byte del método
 </div>
 
-| Byte   | Método | Codificación del cuerpo                                                                                                            |
-| ------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `0x02` | NONE   | El cuerpo contiene bytes sin procesar (sin compresión). La trama se sigue emitiendo; el receptor verifica la suma de comprobación. |
-| `0x82` | LZ4    | El cuerpo está en el **formato de bloque LZ4** — *no* en el formato de trama LZ4. No incluye número mágico.                        |
-| `0x90` | ZSTD   | El cuerpo es un flujo zstd sin procesar de una sola trama (el número mágico estándar de zstd forma parte del cuerpo).              |
+Estos tres códecs son los que produce el servidor para el framing `Native` de flujo completo: la salida HTTP `compress=1` siempre usa `LZ4`, y el protocolo TCP nativo usa `LZ4`, `ZSTD` o `NONE` según `network_compression_method`. Un client `Native` genérico solo necesita producir y consumir estos.
+
+| Byte   | Método | Codificación del cuerpo                                                                                                           |
+| ------ | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `0x02` | NONE   | El cuerpo son los bytes sin procesar (sin compresión). La trama se sigue emitiendo; el receiver verifica la suma de comprobación. |
+| `0x82` | LZ4    | El cuerpo está en el **formato de block LZ4** — *no* en el formato de trama LZ4. Sin número mágico.                               |
+| `0x90` | ZSTD   | El cuerpo es un flujo zstd sin procesar de una sola trama (el número mágico estándar de zstd forma parte del cuerpo).             |
+
+El byte de método también codifica los [códecs a nivel de columna](/es/reference/statements/create/table/codec). Estos se aplican por columna en las rutas en disco de MergeTree, en lugar de al framing de flujo completo, pero la ruta de entrada HTTP `decompress=1` toma el códec del byte de método de cada trama, por lo que cualquiera de estos bytes puede aparecer legítimamente en la entrada. Por lo tanto, un decodificador compatible debe reconocer todo el espacio asignado y rechazar cualquier byte que no implemente, en lugar de interpretar mal el cuerpo. Sus cuerpos son específicos de cada códec y quedan fuera de este contrato genérico de trama:
+
+| Byte   | Método                                                                        |
+| ------ | ----------------------------------------------------------------------------- |
+| `0x91` | `Multiple` (un códec compuesto que envuelve una secuencia de códecs anidados) |
+| `0x92` | `Delta`                                                                       |
+| `0x93` | `T64`                                                                         |
+| `0x94` | `DoubleDelta`                                                                 |
+| `0x95` | `Gorilla`                                                                     |
+| `0x96` | `AES_128_GCM_SIV` (cifrado)                                                   |
+| `0x97` | `AES_256_GCM_SIV` (cifrado)                                                   |
+| `0x98` | `FPC`                                                                         |
+| `0x9a` | `GCD`                                                                         |
+| `0x9c` | `ALP`                                                                         |
+| `0x9d` | `SZ3`                                                                         |
+| `0x9e` | `Quantized`                                                                   |
+| `0x9f` | `ZXC`                                                                         |
+
+`0x9d` (`SZ3`) es un códec *lossy* **experimental**, con error acotado, para `Float32`, `Float64` y `Array` de esos tipos. Una tabla solo puede crearse con `CODEC(SZ3)` cuando `allow_experimental_codecs` está habilitado, pero el byte de método siempre se acepta durante la descompresión para que los datos escritos previamente sigan siendo legibles. `0x9f` (`ZXC`) es un códec LZ asimétrico **experimental**: lento al comprimir, pero muy rápido al descomprimir, con una ratio entre `LZ4` y `ZSTD`. Una tabla solo puede crearse con `CODEC(ZXC)` cuando `allow_experimental_codecs` está habilitado, pero el byte de método siempre se acepta durante la descompresión para que los datos escritos previamente sigan siendo legibles. Los bytes `0x99` (`DeflateQpl`) y `0x9b` (`ZSTD_QPL`) se asignaron a códecs que desde entonces se han eliminado; están reservados y no se reutilizan.
+
+`0x9e` (`Quantized`) es un códec de columna **experimental** para columnas de vectores densos (`Array(Float32)` y similares). Al igual que `NONE`, es passthrough: el cuerpo con full-precision se almacena literalmente, pero su presencia adjunta una serialización que escribe un flujo complementario cuantizado compacto usado para acelerar la vector search. Una tabla solo puede crearse con `CODEC(Quantized(...))` cuando `allow_experimental_codecs` está habilitado, y el byte de método siempre se acepta durante la descompresión.
 
 <div id="checksum">
   ### Suma de comprobación

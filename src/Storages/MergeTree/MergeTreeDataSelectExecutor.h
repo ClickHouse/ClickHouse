@@ -65,15 +65,38 @@ public:
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
+    /// `top_k_filter_info` is the TopK stamp of the read this analysis is performed for (if any):
+    /// the query condition cache consult inside must observe the same TopK gating and key salting
+    /// as the read itself, otherwise a projection candidate would be analyzed as an apparent plain
+    /// read and could reuse plain `SELECT ... WHERE` entries that
+    /// `use_query_condition_cache_for_top_k = 0` is supposed to gate off.
+    /// A caller which cannot know the TopK stamp of the read - because the estimate runs before
+    /// `tryOptimizeTopK` - must pass `use_query_condition_cache = false` instead, so that the estimate
+    /// neither consults nor populates the cache under the plain condition hash.
     ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
         RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         ContextPtr context,
         size_t num_streams,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr) const;
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
+        bool use_query_condition_cache = true) const;
+
+    static MarkRanges markRangesFromPKRange(
+        const MergeTreeData::DataPartPtr & part,
+        const MarkRanges & part_ranges,
+        size_t part_starting_offset_in_query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const KeyCondition * part_offset_condition,
+        const KeyCondition * total_offset_condition,
+        MarkRanges * exact_ranges,
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
+        const Settings & settings,
+        LoggerPtr log);
 
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
@@ -90,7 +113,7 @@ public:
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         const std::optional<KeyCondition> & key_condition_rpn_template,
-        MergeTreeData::DataPartPtr part,
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
         const MergeTreeReaderSettings & reader_settings,
@@ -102,7 +125,7 @@ public:
         LoggerPtr log);
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
-        MergeTreeData::DataPartPtr part,
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
         MergeTreeIndexPtr skip_index_minmax,
         const MarkRanges & ranges,
         int direction,
@@ -230,6 +253,7 @@ public:
         bool find_exact_ranges;
         bool is_parallel_reading_from_replicas;
         bool has_projections;
+        bool check_row_limits;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
@@ -244,8 +268,20 @@ public:
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const std::optional<TopKFilterInfo> & top_k_filter_info,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ReadFromMergeTree::Indexes & indexes,
         const ContextPtr & context,
         LoggerPtr log);
+
+    /// Salt a WHERE/PREWHERE condition hash with the effective skip-index profile that index
+    /// analysis actually ran: the set of useful skip indexes (their names and types, after
+    /// use_skip_indexes / ignore_data_skipping_indices / metadata have been applied) and the
+    /// effective use_skip_indexes_for_disjunctions mode. Skip-index-derived query condition
+    /// cache exclusions are stored under this profiled hash so a query that ran a different
+    /// set of indexes (e.g. use_skip_indexes = 0, an index dropped/ignored, or a different
+    /// disjunction mode) never consults a verdict produced by an index it did not run.
+    /// Both the write side (ReadFromMergeTree) and the read side (filterPartsByQueryConditionCache)
+    /// pass the same Indexes, so the salt is identical on both.
+    static UInt64 getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.
@@ -271,7 +307,7 @@ public:
     static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
 
     static MarkRanges mergePartialResultsForDisjunctions(
-        MergeTreeData::DataPartPtr part,
+        const IMergeTreeDataPartInfoForReader & part_info,
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
         const PartialDisjunctionResult & partial_eval_results,

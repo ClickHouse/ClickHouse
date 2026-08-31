@@ -28,28 +28,7 @@ Everything that carries rows on the wire is a **Block**: a self-describing chunk
 
 A column's `data` is laid out according to the *family* its type belongs to. The families, in increasing decoder complexity, are:
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
-
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="Structure of a columnar wire block and its data layout families" width="1568" height="976" loading="lazy" />
 
 - **Fixed-width** types lay `data` out as `bytes_per_value × num_rows` raw bytes, with no per-row framing.
 - **Composite** types (`Nullable`, `Array`, `Tuple`, `Map`, `Nested`) have a recursive shape fully derivable from the type string, with no version prefix and no cross-block state.
@@ -63,7 +42,7 @@ The Native format builds on four primitive encodings.
 |-----------------|----------|-------------|
 | VarUInt         | 1–10 B   | LEB-128 variable-length unsigned integer |
 | Fixed-width int | 1, 2, 4, 8, 16, 32 B | Little-endian, two's complement for signed |
-| String          | variable | VarUInt length prefix + raw bytes |
+| String          | variable | VarUInt length prefix + raw bytes per value; a separate [offsets stream](#string-type) at revision `54492`+ |
 | Bool            | 1 B      | `0x00` = false, non-zero = true |
 
 ### VarUInt {#varuint}
@@ -141,7 +120,7 @@ A single byte. `0x00` is false; any non-zero value is true (canonically `0x01`).
 
 Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision* (see [Protocol revision and the Native format](#protocol-revision) for the full treatment, including the output-only nature of `client_protocol_version`):
 
-- On the **native TCP protocol**, the server writes blocks at the connection's negotiated revision (a large value — `DBMS_TCP_PROTOCOL_VERSION` is `54485` in this release). `BlockInfo` is written whenever that revision is greater than zero, which is always the case for a real connection. The `has_custom_serialization` byte in each column (see [column wire layout](#column-wire-layout)) is written at revision `54454` and above.
+- On the **native TCP protocol**, the server writes blocks at the connection's negotiated revision (a large value — `DBMS_TCP_PROTOCOL_VERSION`, see `src/Core/ProtocolDefines.h`). `BlockInfo` is written whenever that revision is greater than zero, which is always the case for a real connection. The `has_custom_serialization` byte in each column (see [column wire layout](#column-wire-layout)) is written at revision `54454` and above.
 - The `Native` *output format* — `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` format produced by `clickhouse-client` — serializes at revision `0` *by default*. At revision `0` the `BlockInfo` prefix and the `has_custom_serialization` byte are both omitted, so a block is just `num_columns`, `num_rows`, and the columns.
 
   Over HTTP this revision is not fixed: a client may raise it with the `?client_protocol_version=<n>` query parameter, and the server uses that value as the serialization revision for the response.
@@ -189,16 +168,7 @@ A decoder dispatches on the `type` string. Type strings often carry parameters i
 The `type` field is a textual `String` only in the default mode. When the query setting `output_format_native_encode_types_in_binary_format = 1` is set, this field is instead a **binary type encoding** — the same tag-based encoding documented in [data type binary encoding](/reference/data-types/data-types-binary-encoding) — and flattened `Dynamic` type lists use the same binary encoding for their per-type names. A decoder that always reads field 2 as a length-prefixed string would treat the first binary type tag as a string length and desynchronize, so it must know which mode the stream uses.
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="Decoder routing from a type description to its encoding family" width="1568" height="854" loading="lazy" />
 
 #### kind_stack and sparse encoding {#kind-stack-and-sparse-encoding}
 
@@ -328,7 +298,7 @@ Through `FORMAT Native` (revision `0`), the same result block has no `BlockInfo`
 
 A Native byte stream is shaped above all by the **protocol revision** its writer and reader run at. The revision is nowhere in the bytes themselves — there is no revision field on the wire — but it still decides whether several features show up at all. Because of that, a decoder has to know which revision a payload was written at before it can parse it. Since the revision is not in the stream, the reader and writer must settle on it some other way.
 
-It is a single `UInt64`, and both `NativeWriter` and `NativeReader` take it as a constructor argument. The writer calls it `client_revision` and the reader calls it `server_revision`, but it is the same number. The newest revision this release knows about is `DBMS_TCP_PROTOCOL_VERSION`, currently `54485`.
+It is a single `UInt64`, and both `NativeWriter` and `NativeReader` take it as a constructor argument. The writer calls it `client_revision` and the reader calls it `server_revision`, but it is the same number. The newest revision this release knows about is `DBMS_TCP_PROTOCOL_VERSION` (see `src/Core/ProtocolDefines.h`).
 
 ### What the revision gates {#what-the-revision-gates}
 
@@ -340,12 +310,14 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `has_custom_serialization` byte | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION` | `54454` | The per-column [`has_custom_serialization`](#column-wire-layout) byte is omitted; every column uses default serialization (no sparse, replicated, or detached forms). |
 | `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
 | V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
+| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54492` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). Gated purely on the revision, with no per-column wire marker. At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of a `LowCardinality` column: a `LowCardinality` dictionary is always written with the default nested serialization, so its `String` values keep the per-value layout (this includes `LowCardinality(String)` and `LowCardinality(Nullable(String))`). The `Buffers` format is not part of the protocol and always uses the per-value layout. |
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
+| `skip_degree` in `quantileDeterministic` state | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE` | `54491` | `AggregateFunction(quantileDeterministic, ...)` states (and the `quantiles`/`median` spellings of the same function) are written at state version `0`, without the trailing `UInt8 skip_degree`. See the note under [type aliases](#type-aliases). |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
 | `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
 
-That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped.
+That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped. Aggregate-function *state* versions are the exception at revision `0`: there is no peer to derive a version for — the stream is written and read back by whoever produced it (a `StripeLog` data file, a `Set`/`Join` backup, a `Native` format file) — so the writer keeps a version pinned on the type (spelling it out in the type string as usual) instead of downgrading the state to version `0`, and only a type that pins no version is written at version `0`.
 
 `LowCardinality` is the one exception, and an important one. The writer's check is `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`. The trick is the leading `client_revision &&`: when the revision is exactly `0`, the whole condition short-circuits to false.
 
@@ -363,32 +335,37 @@ The same Native bytes can move over different paths: the native TCP protocol, an
 
 On the [native TCP protocol](/reference/interfaces/specs/NativeProtocol) the revision comes out of the Hello handshake. The client sends `DBMS_TCP_PROTOCOL_VERSION`, the server sends its own back, and from then on each side serializes at the **revision the other side advertised**: the server builds its `NativeReader`/`NativeWriter` from `client_tcp_protocol_version`, while the client uses the `server_revision` it received. There is no explicit `min`, but neither side can emit a feature it has not implemented, so each direction is effectively capped by the older of the two peers.
 
-When both peers are the same modern build, the two directions land on the same revision (`54485` here) and every gate is on. That is the common case, but it is not guaranteed. With mixed-version or third-party peers the two directions can sit at different revisions, so the gates have to be read per direction: `BlockInfo` is present for any non-zero revision, but the rest — `has_custom_serialization` included — only show up once that direction's effective revision reaches their thresholds. A peer advertising a revision below `54454`, for example, neither sends nor receives the `has_custom_serialization` byte.
+When both peers are the same modern build, the two directions land on the same revision (`DBMS_TCP_PROTOCOL_VERSION`, see `src/Core/ProtocolDefines.h`) and every gate is on. That is the common case, but it is not guaranteed. With mixed-version or third-party peers the two directions can sit at different revisions, so the gates have to be read per direction: `BlockInfo` is present for any non-zero revision, but the rest — `has_custom_serialization` included — only show up once that direction's effective revision reaches their thresholds. A peer advertising a revision below `54454`, for example, neither sends nor receives the `has_custom_serialization` byte.
 
 #### `FORMAT Native` output — revision 0 by default, raisable over HTTP {#revision-output}
 
-The `Native` *output* format defaults to revision **`0`**. This covers `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` output `clickhouse-client` writes; in each case the output factory hands `FormatSettings::client_protocol_version` straight to the `NativeWriter`.
+The `Native` *output* format defaults to revision **`0`**. This covers `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` output `clickhouse-client` writes; in each case the output factory hands `FormatSettings::client_protocol_version` straight to the `NativeWriter`, which governs the `BlockInfo` / `has_custom_serialization` framing *and* the offsets `String` layout. So an HTTP `SELECT ... FORMAT Native` with a raised `client_protocol_version` (≥ `54492`) writes the offsets layout, while the default revision `0` keeps the portable per-value layout.
 
-Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`. File exports and local `clickhouse-client` output have no such knob and stay at `0`.
+Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`.
+
+Because the parameter lands on the whole query context, it reaches every `NativeWriter` built for that request, not only the result stream. In particular a server-side write such as `INSERT INTO FUNCTION file('x.native', 'Native', ...) SELECT ...` over HTTP with a raised `?client_protocol_version=` writes the file at that revision. This is long-standing behavior (it predates the String offsets serialization and applies to `BlockInfo` and `has_custom_serialization` too), and it is asymmetric: the read side (below) is not raised the same way, so such a file does not read back through `file(...)`. Leave `client_protocol_version` off a request that writes data meant to be read again. `INTO OUTFILE` and local `clickhouse-client` output have no such knob and stay at `0`.
 
 #### `FORMAT Native` input — always revision 0 {#revision-input}
 
-The `Native` *input* format goes the other way: it is **hardcoded to revision `0`** and pays no attention to `client_protocol_version` at all. Whether it is parsing the body of an `INSERT ... FORMAT Native` or reading a `Native` file, it builds its `NativeReader` with a literal `0`, so it never expects a `BlockInfo` prefix, never reads the `has_custom_serialization` byte, and always assumes default serialization.
+The `Native` *input* format always builds its `NativeReader` at revision **`0`**. It never expects a `BlockInfo` prefix, never reads the `has_custom_serialization` byte, and always assumes default serialization — whether it is parsing the body of an `INSERT ... FORMAT Native`, reading a `Native` file, or inferring a schema. `?client_protocol_version=<n>` does not raise the input revision (only the output side reads that parameter).
 
-So `client_protocol_version` is output-only. Putting `?client_protocol_version=54485` on an `INSERT ... FORMAT Native` request does nothing to how the body is read — the body still has to be revision `0`. Feed in a body that does carry a `BlockInfo` prefix or a `has_custom_serialization` byte and the reader loses sync, which comes back as a parse error (`INCORRECT_DATA` or `CANNOT_READ_ALL_DATA`) rather than a successful insert.
+Because the input revision is always `0`, the input format always reads the per-value `String` layout; a stream written with the offsets layout (over the native TCP protocol, or via a raised-`client_protocol_version` `SELECT ... FORMAT Native`) is not read back through `FORMAT Native` input — the same asymmetry as the `BlockInfo` framing.
 
 ### Round-trip implications {#revision-round-trip}
 
-For `FORMAT Native` the safe choice is revision `0` at both ends, which is what you get by default. Data written by `SELECT ... FORMAT Native` at revision `0` reads straight back into `INSERT ... FORMAT Native` with no surprises.
+For `FORMAT Native` the default is revision `0` at both ends. Data written by `SELECT ... FORMAT Native` at revision `0` reads straight back into `INSERT ... FORMAT Native` with no surprises.
 
-The trouble only starts if you raise the output revision on purpose. A `SELECT ... FORMAT Native` taken with `?client_protocol_version=<large>` produces a stream that carries `BlockInfo` and `has_custom_serialization` bytes, and the revision-`0` input path cannot read those back. If you need such data to round-trip, either leave `client_protocol_version` off the producing `SELECT`, or move the data over the native TCP protocol — where each direction uses the handshake-negotiated revision — instead of `FORMAT Native`.
+A stream produced at a raised output revision (`?client_protocol_version=<n>` on the `SELECT`) carries the `BlockInfo` and `has_custom_serialization` framing and the offsets `String` layout, none of which the input format — always at revision `0` — reads back. So raising `client_protocol_version` only makes sense for a consumer that speaks the native TCP protocol, not for a `FORMAT Native` round trip over HTTP.
+
+Files are the asymmetric case. A raised `?client_protocol_version=` on a server-side `INSERT INTO FUNCTION file(...)` (or `s3`, `url`) *writes* the file at that revision, but a `file(...)` *read* always parses at revision `0` — so such a file does not round-trip. Either leave `client_protocol_version` off the writing request so the file is plain revision `0`, or move the data over the native TCP protocol, where each direction uses the handshake-negotiated revision.
 
 | Channel | Write revision | Read revision | `BlockInfo` / custom serialization |
 |---|---|---|---|
 | Native TCP Data packet | Peer's advertised revision (per direction) | Peer's advertised revision (per direction) | `BlockInfo` whenever revision `> 0`; `has_custom_serialization` at `≥ 54454` |
 | `SELECT ... FORMAT Native` over HTTP | `client_protocol_version` (default `0`) | n/a | Only if `client_protocol_version` raised |
-| `INSERT ... FORMAT Native` over HTTP | n/a | `0` (fixed, ignores `client_protocol_version`) | Never read |
-| `INTO OUTFILE` / file / `clickhouse-client` `FORMAT Native` | `0` | `0` | Absent (but `LowCardinality` is kept — see note above) |
+| `INSERT ... FORMAT Native` over HTTP (body) | n/a | `0` (always) | Framing absent; `String` always per-value |
+| `INSERT INTO FUNCTION file`/`s3`/`url(..., 'Native')` over HTTP | `client_protocol_version` (default `0`) | `0` (reads always) | On write only if `client_protocol_version` raised — such a file does not read back |
+| `INTO OUTFILE` / local `clickhouse-client` `FORMAT Native` | `0` | `0` | Absent (but `LowCardinality` is kept — see note above) |
 
 <Info>
 **Protocol revision vs serialization version**
@@ -398,7 +375,7 @@ Do not confuse the protocol revision with the [serialization version](#serializa
 
 ## Data types {#data-types}
 
-This section documents the wire encoding of the types the Native format can carry within a column's `data`, grouped into four families of increasing decoder complexity. Two types — `AggregateFunction(func, ...)` and `QBit(T, N)` — are valid `Native` column types but have function- or type-specific payloads that are out of scope here; they are called out below where they would otherwise be mistaken for aliases.
+This section documents the wire encoding of the types the Native format can carry within a column's `data`, grouped into four families of increasing decoder complexity. Two types — `AggregateFunction(func, ...)` and `QBit(T, N[, stride])` — are valid `Native` column types but have function- or type-specific payloads that are out of scope here; they are called out below where they would otherwise be mistaken for aliases.
 
 | Family                           | Section | Streams per column | Cross-block state |
 |----------------------------------|---------|--------------------|-------------------|
@@ -711,7 +688,9 @@ Each value carries its own length on the wire.
 
 #### String {#string-type}
 
-Type string: `String`. A `String` column is a sequence of `num_rows` length-prefixed byte sequences:
+Type string: `String`. A `String` column has two wire layouts, selected by the protocol revision (see [What the revision gates](#what-the-revision-gates)). The revision is the negotiated revision on the native TCP protocol, and `client_protocol_version` for `FORMAT Native` output (default `0`); `FORMAT Native` input is always revision `0`, and the `Buffers` format always uses the per-value layout.
+
+**Per-value layout** — below `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54492`), which includes the revision-`0` default of `FORMAT Native`: a sequence of `num_rows` length-prefixed byte sequences:
 
 ```text
 [VarUInt: byte_length] [byte_length bytes: raw value]
@@ -719,7 +698,7 @@ Type string: `String`. A `String` column is a sequence of `num_rows` length-pref
 ...
 ```
 
-There are no separators between rows beyond the length prefixes, and no row-level state. An empty string is a single `0x00` byte. ClickHouse `String` is byte-oriented rather than text-oriented: UTF-8 validity is not enforced, and a value may contain any bytes including embedded NUL. A decoder that targets a UTF-8 string type either validates on read or exposes raw bytes to the caller. The total bytes consumed by the column is `Σ (varuint_size(len_i) + len_i)` over all rows.
+There are no separators between rows beyond the length prefixes, and no row-level state. An empty string is a single `0x00` byte. The total bytes consumed by the column is `Σ (varuint_size(len_i) + len_i)` over all rows.
 
 A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 
@@ -728,6 +707,28 @@ A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 00                       row 1: length 0, empty
 01 63                    row 2: length 1, "c"
 ```
+
+**Offsets layout** — at revision `54492` and above: two concatenated streams, the cumulative byte offsets first, then all data:
+
+```text
+[UInt64 × num_rows: cumulative byte offset (end of each value), little-endian]
+[last offset bytes: all values concatenated, no separators]
+```
+
+The offsets are sent as-is, the same way an `Array` sends its offsets over the native protocol. Offset `i` is the end position of value `i` in the data blob, so the size of value `i` is `offset[i] - offset[i-1]` (with `offset[-1] = 0`) and the last offset is the total size of the data blob. A decoder reads `8 × num_rows` bytes of offsets and then reads the whole data blob in one piece, using the last offset as its exact length — which permits exact buffer preallocation and bulk copying instead of per-row parsing, and needs no size-to-offset conversion. A column with `num_rows = 0` contributes no bytes in either stream.
+
+The same 3 strings `["ab", "", "c"]` (27 bytes total):
+
+```text
+02 00 00 00 00 00 00 00  row 0 offset: 2  (end of "ab")
+02 00 00 00 00 00 00 00  row 1 offset: 2  (end of "", so unchanged)
+03 00 00 00 00 00 00 00  row 2 offset: 3  (end of "c")
+61 62 63                 "ab" + "" + "c"
+```
+
+When the offsets layout is in effect it applies to every `String` in the block, including `String` nested inside composite types (`Array(String)`, `Nullable(String)`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`) — with one exception: the dictionary of a [`LowCardinality`](#lowcardinality) column is always written with the default nested serialization, so its `String` values keep the per-value layout at every revision. This covers `LowCardinality(String)`, `LowCardinality(Nullable(String))`, and any other String-bearing `LowCardinality` dictionary.
+
+In both layouts ClickHouse `String` is byte-oriented rather than text-oriented: UTF-8 validity is not enforced, and a value may contain any bytes including embedded NUL. A decoder that targets a UTF-8 string type either validates on read or exposes raw bytes to the caller.
 
 #### FixedString(N) {#fixedstring}
 
@@ -746,7 +747,7 @@ The two string types compared:
 
 | Property               | `String`              | `FixedString(N)`            |
 |------------------------|-----------------------|-----------------------------|
-| Per-row length prefix  | Yes (VarUInt)         | No                          |
+| Per-row length prefix  | Yes (VarUInt), or a separate offsets stream at revision `54492`+ | No |
 | Row size               | Variable              | Exactly `N` bytes           |
 | Total column bytes     | Variable              | `N × num_rows`              |
 | NUL-byte padding       | n/a                   | Right-padded by server      |
@@ -862,16 +863,7 @@ Values (5 × UInt32 LE = 20 bytes):
 
 Each offset is the cumulative *end* of a row's slice of the shared values stream; the start is the previous offset (or `0` for row 0). Equal consecutive offsets are an empty row:
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="Offsets mapping rows into a shared values stream" width="1568" height="388" loading="lazy" />
 
 `Array(String)` with rows `[["a", "bb"], []]` (20 bytes total):
 
@@ -989,13 +981,7 @@ Values (2 × UInt32 LE = 8 bytes):
 
 The on-wire representation of `Nested` depends on the server-side `flatten_nested` setting, which gives two distinct cases.
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="Composite column layout with and without flattening" width="1172" height="1068" loading="lazy" />
 
 **Case A: `flatten_nested = 1` (server default).** When the table was created under default settings, `Nested` is **not a wire type**. The server stores and presents the column as N parallel `Array(T_i)` columns with **dotted names** (`outer.field1`, `outer.field2`, and so on). For the format layer there is nothing new — every dotted column is a regular [Array](#array):
 
@@ -1059,21 +1045,21 @@ The geographic types alias to nested arrays and tuples:
 | Type string              | Underlying wire type        |
 |--------------------------|-----------------------------|
 | `Point`                  | `Tuple(Float64, Float64)`   |
-| `Ring`, `LineString`     | `Array(Point)`              |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`    |
 | `Polygon`, `MultiLineString` | `Array(Ring)`           |
 | `MultiPolygon`           | `Array(Polygon)`            |
 
 So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering as `(1,2)`), a `Ring` as `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`), and so on up the hierarchy.
 
-`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the six geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. As with any `Variant`, the discriminators follow the canonical name-sorted order of the geo aliases: `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`. Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
+`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the seven geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. Unlike a user-spelled `Variant`, the discriminators of `Geometry` do **not** follow the name-sorted order: they are fixed for compatibility, and new geo types are only ever appended. The mapping is `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint` (added in 26.7 — streams from older servers simply never contain discriminator `6`). Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
 
 `SimpleAggregateFunction(func, T)` is an alias for its value type `T`. It stores an already-finalized aggregate value, so its wire form and rendering are exactly those of `T` (`SimpleAggregateFunction(sum, UInt64)` is decoded as `UInt64`). Only the single-value-type form is an alias this way; the underlying type may itself be a composite.
 
 <Note>
 Two related types are **not** aliases. They are valid `Native` column types — a client can receive an `AggregateFunction` column from a `-State` combinator or distributed aggregation, for instance — but each carries its own specialized payload that is outside the scope of this page:
 
-- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version.
-- `QBit(T, N)` stores a vector with its bit planes transposed for vector-search workloads.
+- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version. A versioned aggregate function spells a non-zero state version out as the first argument of the type string — `AggregateFunction(1, quantileDeterministic, UInt64, UInt64)` — while version `0` is not printed, so the type string stays `AggregateFunction(quantileDeterministic, UInt64, UInt64)`. On a negotiated connection (revision above `0`) the writer picks the version from the protocol revision **alone** — never from a version that happens to be pinned on its local type, because version `0` is indistinguishable on the wire from "no version announced" — so the same function can announce different versions on different connections, and a reader must take the version from the type string rather than assume the newest one. At revision `0` there is no peer to derive a version for — the stream is self-describing and read back by whoever wrote it — so a version pinned on the type survives into the stream (and into the announced type string) rather than being downgraded to `0`. `quantileDeterministic` (with the `quantilesDeterministic` and `medianDeterministic` spellings) is versioned from revision `54491`: version `1` appends a trailing `UInt8 skip_degree` to the state, and its prefix is byte-identical to version `0`. Below that revision the writer emits version `0` states, so an older peer is unaffected. All of this applies equally to a state nested inside a container type — `Array`, `Tuple`, `Map`, `Nullable`, `Variant` (where the alternative's spelled-out version changes the type string without changing the discriminator order), or a `Nested` / `SimpleAggregateFunction` wrapper. A wrapper's custom name contains a second copy of its argument type, so the writer must rebuild that copy with the same negotiated aggregate-state version; otherwise its header can announce version `1` for a version-`0` payload. One `Variant` corner case has no wire representation at all: when two alternatives differ only in a spelled-out state version (legal as a column type, since the type strings differ), re-versioning both for the negotiated revision would collapse them into the same alternative, so the sender must fail the transfer rather than announce versions the payload is not written with. `Dynamic` is the deliberate exception to revision-derived versioning: a `Dynamic` column announces its nested types itself — through its own type lists and through the [binary type encoding](/reference/data-types/data-types-binary-encoding), whose explicit version field carries a spelled-out state version (the values of its shared variant embed their type that way even at rest) — and those announcements are part of the column's own data, identical for every peer and every medium, so they are never rewritten for a negotiated revision. A state nested inside a `Dynamic` value is therefore written at the version spelled in its type (which a fresh state carries, since a `-State` query result spells its version out), and at version `0` when the type spells none, on every connection and medium alike.
+- `QBit(T, N[, stride])` stores a vector with its bit planes transposed for vector-search workloads; its on-wire stream layout (group-major `FixedString` bit-plane streams, `element_size * (N / stride)` of them with an explicit `stride`) and its binary type encoding (tag `0x36`, or `0x37` `QBitWithStride` when `stride != N`) are documented on the [`QBit` data type page](/reference/data-types/qbit) and in the [binary type encoding](/reference/data-types/data-types-binary-encoding) reference, so a `Native` reader does not have to recover them from the C++ source.
 </Note>
 
 ### Versioned types {#versioned-types}
@@ -1103,19 +1089,7 @@ The Native writer and reader do **not** keep serialization state across blocks: 
 
 Header blocks (rows = 0) and empty blocks therefore emit nothing, and a decoder must read the state prefix again at the start of each non-empty block. A decoder that reads the prefix only once and treats later blocks as payload-only will read the next block's prefix as data and desynchronize:
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="State prefix repeated for every non-empty block" width="1226" height="1162" loading="lazy" />
 
 #### Serialization version reference {#serialization-version-reference}
 
@@ -1283,24 +1257,7 @@ Reconstructed: row 0 = UInt64 run[0] = `42`; row 1 = String run[0] = `"hi"`; row
 
 The discriminator stream is the index; each non-NULL discriminator pulls the next value from its type's dense run, while `255` (NULL) consumes nothing. This same walk reconstructs [Dynamic](#dynamic), which differs only in how NULL is encoded:
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="Discriminators selecting values from dense type-specific runs" width="1568" height="624" loading="lazy" />
 
 #### Dynamic {#dynamic}
 
@@ -1338,6 +1295,14 @@ The **FLATTENED (version 3)** layout selected by that setting:
 The discriminator width is the smallest unsigned integer that can index `num_types` types plus the NULL slot — `UInt8` for `num_types ≤ 255`, then `UInt16`, `UInt32`, `UInt64`. NULL is the discriminator value `num_types` itself, which differs from `Variant`, where NULL is the fixed value `255`. Reconstruction is the same dense walk as `Variant`: keep a per-type counter, and row `r` with discriminator `d` (≠ `num_types`) takes value `counter[d]` from type `d`'s run.
 
 The state prefix (version + type list) is read at the start of every block with rows > 0; header and empty blocks emit nothing.
+
+<Info>
+**Malformed counts**
+
+`num_types` is read from the stream before any type names. A decoder must treat it as untrusted and must not use it to size an allocation directly — neither a count close to `SIZE_MAX` (which can overflow intermediate arithmetic or throw a non-`DB::Exception`) nor a large-but-representable count such as `100000000` (which is far below a vector's `max_size()` yet would allocate gigabytes before a single type name is read). ClickHouse reads the type list one entry at a time with only a capped pre-allocation hint, so a corrupted `num_types` is rejected either as `INCORRECT_DATA` ("`Dynamic` column has too many types", when the count exceeds what the container can hold) or as an ordinary read error once the stream runs out of type entries — never as an out-of-memory failure.
+
+Do **not**, however, bound the **flattened** `num_types` by `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (`254` in ClickHouse): the flattened type list carries *every* distinct runtime type, including those that had overflowed into the shared variant, so a valid flattened block can legitimately list far more than that. The `MAX_DYNAMIC_TYPES_LIMIT` bound applies only to the `num_dynamic_types` count in the non-flat `V1`/`V2`/`V3` prefixes, which counts regular-variant slots and is capped by the limit (ClickHouse validates it there before the `+ 1` for the shared variant).
+</Info>
 
 <Note>
 Runtime types whose serialization is stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) carry nested state prefixes after the type-name list.
@@ -1383,6 +1348,14 @@ In FLATTENED mode there is **no shared-data column** (that overflow store belong
 
 Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key.
 
+<Info>
+**Malformed counts**
+
+`num_dynamic_paths` in the FLATTENED layout documented here — and the dynamic-paths count in the non-flat `V1`/`V2`/`V3` encodings — is read from the stream before the path names. (There is no separate flattened-paths field in the non-flat prefixes: `V1`/`V2`/`V3` carry only the dynamic-paths count, plus a `max_dynamic_paths` value in `V1` that is read and discarded, and the `V3` shared-data metadata below.) As with [`Dynamic`](#dynamic), a decoder must treat these counts as untrusted and must not size an allocation on them directly — neither a `SIZE_MAX`-family count nor a large-but-representable one. ClickHouse reads the path names one entry at a time with only a capped pre-allocation hint, so a corrupted count is rejected either as `INCORRECT_DATA` ("JSON/Object column has too many paths", when it exceeds what the container can hold) or as an ordinary read error once the stream runs out of path names.
+
+The non-flat `V3` prefix additionally carries a `shared_data_buckets` count (present when the shared-data serialization version is `MAP_WITH_BUCKETS` or `ADVANCED`). It sizes the per-bucket reader state and column vectors directly (not via a grow-on-demand loop), so a decoder must reject an implausible bucket count up front. Unlike the path and type counts, this count has a tight writer-side invariant: the number of buckets is chosen from small MergeTree settings (`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`) that are non-zero and capped at `256`, so the only valid on-wire range is `1 … 256`. ClickHouse rejects any value outside that range — including a large-but-representable count such as `100000`, which is far below the container's `max_size()` — with `INCORRECT_DATA` ("JSON/Object column has an invalid number of shared data buckets").
+</Info>
+
 `JSON` value `{"a": 42, "b": "hi"}` (one row, both paths dynamic). A JSON integer is inferred as `Int64`:
 
 ```text
@@ -1421,27 +1394,39 @@ So a client that implemented only the uncompressed `FORMAT Native` layout must s
 
 The total framed size is `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`. Note the two spans: the checksum covers the 9-byte header plus the body, while `compressed_size` counts the header plus body but **not** the checksum itself:
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="Compression frame fields and compressed-size boundary" width="1568" height="206" loading="lazy" />
 
 ### Method byte values {#method-byte-values}
+
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
 
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
 | `0x02` | NONE   | Body is the raw bytes (no compression). The frame is still emitted; the receiver verifies the checksum. |
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
+
+The method byte also encodes the [column-level codecs](/reference/statements/create/table/codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
+
+| Byte   | Method            |
+|--------|-------------------|
+| `0x91` | `Multiple` (a composite codec wrapping a sequence of nested codecs) |
+| `0x92` | `Delta`           |
+| `0x93` | `T64`             |
+| `0x94` | `DoubleDelta`     |
+| `0x95` | `Gorilla`         |
+| `0x96` | `AES_128_GCM_SIV` (encryption) |
+| `0x97` | `AES_256_GCM_SIV` (encryption) |
+| `0x98` | `FPC`             |
+| `0x9a` | `GCD`             |
+| `0x9c` | `ALP`             |
+| `0x9d` | `SZ3`             |
+| `0x9e` | `Quantized`       |
+| `0x9f` | `ZXC`             |
+
+`0x9c` (`ALP`) is a **beta** lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression). A table can be created with `CODEC(ALP)` only when the `enable_alp_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when the `enable_sz3_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
+
+`0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when the `enable_quantized_codec` setting is set, and the method byte is always accepted on decompression.
 
 ### Checksum {#checksum}
 

@@ -1,21 +1,21 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: 'OpenAPI لـ Managed Postgres'
-description: 'أدِر خدمات Managed Postgres لديك باستخدام OpenAPI الخاص بنا'
-keywords: ['Managed Postgres', 'OpenAPI', 'واجهة برمجة تطبيقات', 'curl', 'دليل عملي', 'سطر الأوامر', 'Query Insights', 'الاستعلامات البطيئة']
+title: 'OpenAPI لـ ClickHouse Managed Postgres'
+description: 'أدِر خدمات ClickHouse Managed Postgres لديك باستخدام OpenAPI الخاص بنا'
+keywords: ['Managed Postgres', 'OpenAPI', 'واجهة برمجة تطبيقات', 'curl', 'دليل عملي', 'سطر الأوامر', 'Query Insights', 'الاستعلامات البطيئة', 'سجلات الخادم', 'السجلات']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-استخدم [ClickHouse OpenAPI](/ar/products/cloud/features/admin-features/api/index) للتحكم برمجيًا
-في خدمات Managed Postgres لديك، تمامًا كما تفعل مع خدمات ClickHouse. كما تتيح
+استخدم [ClickHouse OpenAPI](/ar/products/cloud/features/admin-features/api/api-overview) للتحكم برمجيًا
+في خدمات ClickHouse Managed Postgres لديك، تمامًا كما تفعل مع خدمات ClickHouse. كما تتيح
 واجهة برمجة التطبيقات نفسها أيضًا [نقطة نهاية Prometheus] لاستخراج
 مقاييس الخدمة. هل أنت على دراية مسبقة بـ[OpenAPI]؟ احصل على [مفاتيح API] وانتقل مباشرةً إلى
-[مرجع API لـ Managed Postgres][pg-openapi]. وإن لم تكن كذلك، فتابع معنا
+[مرجع API لـ ClickHouse Managed Postgres][pg-openapi]. وإن لم تكن كذلك، فتابع معنا
 للاطلاع على شرح سريع.
 
 <div id="api-keys">
@@ -113,12 +113,15 @@ create_data='{
 ```
 
 استخدم الآن هذه البيانات لإنشاء مثيل جديد؛ لاحظ أن ذلك يتطلب ترويسة
-Content-Type:
+Content-Type. احفظ الاستجابة: فهي الوحيدة التي تتضمن بيانات اعتماد الخدمة
+(كما تُرجعها استجابة [إعادة تعيين كلمة المرور] أيضًا عندما لا يوفّر الطلب
+كلمة مرور):
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 عند نجاح العملية، سيُنشئ مثيلًا جديدًا ويُرجع معلومات عنه،
@@ -161,7 +164,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-ستكون المخرجات مشابهةً لـ JSON المُعاد عند الإنشاء، لكن راقب
+ستكون المخرجات مشابهةً لـ JSON المُعاد عند الإنشاء، من دون
+بيانات الاعتماد، لكن راقب
 `state`؛ فعندما تتغير إلى `running`، يكون الخادم جاهزًا:
 
 ```bash
@@ -174,15 +178,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-يمكنك الآن استخدام الخاصية `connectionString` للاتصال، على سبيل المثال عبر
-[psql]:
+يمكنك الآن استخدام الخاصية `connectionString` المحفوظة من استجابة الإنشاء
+للاتصال، على سبيل المثال عبر [psql]:
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -197,7 +197,7 @@ postgres=#
   ### تحديث
 </div>
 
-تدعم [واجهة برمجة تطبيقات patch] تحديث مجموعة فرعية من خصائص خدمة Postgres المُدارة
+تدعم [واجهة برمجة تطبيقات patch] تحديث مجموعة فرعية من خصائص خدمة Managed Postgres
 باستخدام [RFC 7396] JSON Merge Patch. وقد تكتسب الوسوم أهمية خاصة
 في عمليات النشر المعقدة؛ ما عليك سوى إرسالها وحدها ضمن الطلب:
 
@@ -226,16 +226,14 @@ curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' 
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"
 }
 ```
 
-يوفّر OpenAPI نقاط وصول إضافية لتحديث الخصائص غير المدعومة
+يوفّر OpenAPI نقاط نهاية إضافية لتحديث الخصائص غير المدعومة
 من خلال [واجهة برمجة تطبيقات patch]. على سبيل المثال، لتحديث [تهيئة Postgres]،
 استخدم [واجهة برمجة تطبيقات config]:
 
@@ -264,15 +262,15 @@ curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
 
 {/*
 
-  TODO: قم بإلغاء التعليق وإدراج مخرجات المثال الصحيحة عند طرح واجهة برمجة التطبيقات.
+    TODO: أزل التعليق وأدرج ناتج المثال الصحيح عند إتاحة واجهة برمجة التطبيقات.
 
-  تشمل واجهات برمجة التطبيقات الإضافية الخاصة بالتحديث ما يلي:
+    تشمل واجهات برمجة التطبيقات الإضافية للتحديث ما يلي:
 
-  * إعادة تعيين كلمة مرور المستخدم الخارق
-  * إعادة تسمية خدمة Postgres (يؤدي ذلك إلى تغيير اسم المضيف)
-  * الترقية إلى الإصدار الرئيسي التالي من Postgres
+    * إعادة تعيين كلمة مرور المستخدم الخارق
+    * إعادة تسمية خدمة Postgres (يؤدي ذلك إلى تغيير اسم المضيف)
+    * الترقية إلى الإصدار الرئيسي التالي من Postgres
 
-  */}
+    */}
 
 <div id="delete">
   ### حذف
@@ -305,7 +303,7 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
   ## المراقبة
 </div>
 
-توفّر نقطتا نهاية متوافقتان مع Prometheus مقاييس CPU والذاكرة والإدخال/الإخراج والاتصالات والمعاملات لخدمات Managed Postgres: تُرجع إحداهما المقاييس لكل خدمة في المؤسسة، بينما تُرجع الأخرى المقاييس لخدمة واحدة. راجع صفحة [نقطة نهاية Prometheus] لمعرفة كيفية الإعداد، و[مرجع المقاييس] للاطلاع على القائمة الكاملة للمقاييس.
+توفّر نقطتا نهاية متوافقتان مع Prometheus مقاييس CPU والذاكرة والإدخال/الإخراج والاتصالات والمعاملات لخدمات ClickHouse Managed Postgres: تُرجع إحداهما المقاييس لكل خدمة في المؤسسة، بينما تُرجع الأخرى المقاييس لخدمة واحدة. راجع صفحة [نقطة نهاية Prometheus] لمعرفة كيفية الإعداد، و[مرجع المقاييس] للاطلاع على القائمة الكاملة للمقاييس.
 
 <div id="query-insights">
   ## Query insights
@@ -438,40 +436,95 @@ CPU للمستخدم والنظام، والعمّال المتوازيون، و
 يختصر المثال كلا الكائنين مراعاةً للإيجاز؛ وتُرجع واجهة برمجة تطبيقات
 مجموعة العدادات الكاملة الموثقة ضمن [per-execution counters].
 
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+<div id="server-logs">
+  ## سجلات الخادم
+</div>
+
+تتوفر سجلات خادم PostgreSQL المعروضة في عارض السجلات ضمن الكونسول السحابي أيضًا برمجيًا. تُرجع [واجهة برمجة تطبيقات السجلات] إدخالات سجل فردية لخدمة
+خلال نافذة زمنية. وكما هو الحال مع Query Insights، يلزم تحديد النافذة، لذا
+مرّر `from_date` و`to_date` كطوابع زمنية بتنسيق RFC 3339. يجب ألا يتجاوز النطاق
+30 يومًا، ويجب أن يكون `to_date` بعد `from_date`:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+تُعاد الإدخالات بحيث يكون الأحدث أولًا؛ اعكس الترتيب باستخدام `sort_order` (`asc` أو
+`desc`). رشّح حسب مستوى خطورة واحد باستخدام `severity` (مثل `ERROR` أو
+`WARNING` أو `LOG`)، وطابِق سلسلة فرعية حساسة لحالة الأحرف في متن السجل باستخدام
+`body_contains`، وتصفّح النتائج باستخدام `limit` و`offset`.
+
+يتضمن كل إدخال `timestamp` و`severity` و`body` الخام. ويكون المتن
+دائمًا سلسلة نصية: تُعاد أسطر السجل المهيكلة بتنسيق JSON، بينما تُعاد الأسطر العادية
+كما هي:
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+تقسّم نقطة النهاية النتائج إلى صفحات باستخدام `limit` و`offset` بدلاً من إرجاع
+عدد إجمالي؛ زِد `offset` حتى تُرجع الصفحة عددًا من الإدخالات أقل من `limit`.
+
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "مبادرة OpenAPI"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "إدارة مفاتيح API"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "مواصفة OpenAPI لـ ClickHouse Cloud: ‏Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "مرجع واجهة برمجة تطبيقات ClickHouse Cloud: ‏Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "جلب قائمة بخدمات Postgres التابعة لمؤسسة"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "جلب قائمة بخدمات Postgres التابعة لمؤسسة"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "إنشاء خدمة Postgres جديدة"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "إنشاء خدمة Postgres جديدة"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "وثائق PostgreSQL: ‏psql — الطرفية التفاعلية لـ PostgreSQL"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "تحديث خدمة PostgreSQL"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "تحديث خدمة PostgreSQL"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: ‏JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "وثائق PostgreSQL: تهيئة الخادم"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "تحديث تهيئة خدمة Postgres"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "استبدال تهيئة خدمة Postgres"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "حذف خدمة PostgreSQL"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "حذف خدمة PostgreSQL"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "نقطة نهاية Prometheus لـ Managed Postgres"
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "إعادة تعيين كلمة مرور المستخدم الفائق لخدمة Postgres"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "مرجع مقاييس Managed Postgres"
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "نقطة نهاية Prometheus لـ ClickHouse Managed Postgres"
+
+[metrics reference]: /products/managed-postgres/monitoring/metrics "مرجع مقاييس ClickHouse Managed Postgres"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights لاستعلامات Postgres"
 
-[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "اللوحة الجانبية التفصيلية في Query Insights"
+[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "اللوحة الجانبية للتفاصيل في Query Insights"
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "عدادات Query Insights لكل تنفيذ"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "سرد أنماط الاستعلامات البطيئة في Postgres"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "إدراج أنماط الاستعلامات البطيئة لـ Postgres"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "الحصول على نمط استعلام بطيء في Postgres مع عمليات التنفيذ الأخيرة"
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "الحصول على نمط استعلام بطيء لـ Postgres مع أحدث عمليات التنفيذ"
+
+[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "سرد سجلات خادم Postgres"

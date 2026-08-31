@@ -77,10 +77,11 @@ def write_text_atomic(path: Path, text: str) -> None:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
 # Exit code returned by `clickhouse-test` when the run was aborted early via
-# `stop_testing` (typically: server died / health check failed). Distinct from
-# the generic failure code 1 so the job side can populate the synthetic
-# "Server died" leaf without fragile log-line matching. Kept in sync with
-# `STOP_TESTING_EXIT_CODE` in `ci/jobs/scripts/functional_tests_results.py`.
+# `stop_testing` and no more specific cause was claimed - an observed server death
+# or a generic catastrophic abort; a failed liveness probe uses
+# `HUNG_CHECK_EXIT_CODE` instead. Distinct from the generic failure code 1 so the
+# job side can populate the synthetic "Server died" leaf without fragile log-line
+# matching. Kept in sync with `ci/jobs/scripts/functional_tests_results.py`.
 STOP_TESTING_EXIT_CODE = 2
 
 # Exit code returned when the run stopped *gracefully* because the global time
@@ -99,6 +100,14 @@ GLOBAL_TIME_LIMIT_EXIT_CODE = 3
 # per-test attribution). Kept in sync with `MAX_FAILURES_EXIT_CODE` in
 # `ci/jobs/scripts/functional_tests_results.py`.
 MAX_FAILURES_EXIT_CODE = 4
+
+# Exit code returned when the run stopped because a `check_server_liveness`
+# probe failed. The probe establishes only that the check failed - it also fails
+# on a non-200 *response* - so this must NOT be conflated with
+# `STOP_TESTING_EXIT_CODE`, which the job side reports as "Server died". Kept in
+# sync with `HUNG_CHECK_EXIT_CODE` in
+# `ci/jobs/scripts/functional_tests_results.py`.
+HUNG_CHECK_EXIT_CODE = 5
 
 USE_JINJA = True
 try:
@@ -120,6 +129,12 @@ MESSAGES_TO_RETRY = [
     # Transient Keeper errors that happen under heavy load (e.g. ARM ASan builds)
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Session expired",
+    # Server-global (total) memory tracker firing under heavy parallel co-scheduling
+    # on ASan shards: the OvercommitTracker kills queries across all co-scheduled
+    # tests once total RSS nears the shared server cap. Emitted only by the global
+    # tracker (programs/server/Server.cpp: setDescription("(total)")), never by a
+    # per-query/per-user limit, so retrying cannot mask a real per-query assertion.
+    "(total) memory limit exceeded",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
@@ -134,6 +149,54 @@ IGNORED_SANITIZER_ERRORS = [
     # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
     # "LLVM ERROR: IO failure on output stream: Broken pipe",
 ]
+
+LSAN_PTRACE_WARNING = "WARNING: ptrace appears to be blocked (is seccomp enabled?)"
+LSAN_PTRACE_CHILD_EXIT_RE = re.compile(r"Child exited with signal (\d+)\.")
+
+# Tag for a test that signals every process it finds by grepping /proc/*/cmdline for its own mark.
+# Such a test also hits sanitizer-internal forks, which inherit the client's argv.
+KILLS_PROCESSES_BY_CMDLINE_TAG = "kills-processes-by-cmdline"
+
+
+def find_benign_lsan_ptrace_probe_lines(lines, kills_processes_by_cmdline):
+    """Return indexes of LSan `TestPTrace` lines that are safe to drop from a sanitizer log.
+
+    `TestPTrace` forks a short-lived child that issues one throwaway `ptrace` call to find out
+    whether `ptrace` is blocked, and prints these two lines back to back if that child dies from a
+    signal. Neither line can be whitelisted on its own, because the same pair also reports a real
+    seccomp `ptrace` block, so two conditions must hold together.
+
+    First, only a test that signals processes it found in `/proc/*/cmdline` can produce the benign
+    case: the probe child inherits the client's argv, so it matches such a test's own mark. That is
+    what the `kills-processes-by-cmdline` tag marks, and it keeps every other test's diagnostics
+    untouched.
+
+    Second, the reported signal must not be `SIGSYS`, which is how seccomp kills the child when it
+    really denies the `ptrace` call. It cannot be narrowed further than that: `WTERMSIG` reports
+    whatever signal reaped the child, not what the test sent, and in CI this pair has carried
+    signal 42 and signal 36.
+
+    The signal is not a reliable discriminator on its own, which is why the tag is required too.
+    `TestPTrace` ignores the result of its `internal_waitpid` and reads a possibly untouched
+    `wstatus`, so a wait interrupted by `EINTR` reports a stale signal number: measured on a
+    seccomp-blocked probe raced with `SIGINT`, 812 of 2000 real blocks were reported with a stale
+    non-`SIGSYS` signal, versus 0 of 2000 without the race. The guarantee this gives is therefore
+    scoped, not absolute - outside the tagged test nothing is ever dropped, so a real block is
+    always reported, while inside it a real block that the upstream bug misreports can be dropped.
+    That is the trade the tag exists to bound.
+    """
+    if not kills_processes_by_cmdline:
+        return set()
+
+    benign = set()
+    for index, line in enumerate(lines):
+        if LSAN_PTRACE_WARNING not in line or index + 1 >= len(lines):
+            continue
+        match = LSAN_PTRACE_CHILD_EXIT_RE.search(lines[index + 1])
+        if match and int(match.group(1)) != signal.SIGSYS:
+            benign.update((index, index + 1))
+    return benign
+
 
 MAX_RETRIES = 3
 
@@ -156,7 +219,9 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
-def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
+def shell_get_output(
+    cmd: str, timeout: Optional[float] = None, keep_output_on_error: bool = False
+) -> str:
     try:
         res = subprocess.run(
             cmd,
@@ -171,6 +236,20 @@ def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
             timeout=timeout,
         )
         return res.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        # stdout here is the merged stdout+stderr captured above. With
+        # keep_output_on_error the caller persists it itself (e.g. lldb exited
+        # non-zero but still printed backtraces worth saving to a file), so
+        # return it untouched. Otherwise print the failure reason — which lives
+        # in that output — bounded with trim_for_log so a command that prints
+        # many lines and only then exits non-zero cannot flood job.log.
+        if keep_output_on_error:
+            return (e.output or "").strip()
+        print(
+            f"Error running command {cmd!r}: {e}\n{trim_for_log(e.output)}",
+            file=sys.stderr,
+        )
+        return ""
     except Exception as e:
         print(f"Error running command {cmd!r}: {e}", file=sys.stderr)
         return ""
@@ -512,8 +591,10 @@ def trim_for_log(s, limit=10000):
     lines = s.splitlines()
     if len(lines) > limit:
         separator = "-" * 40 + str(len(lines) - limit) + " lines are hidden" + "-" * 40
-        return "\n".join(lines[:limit//2] + [] + [separator] + [] + lines[-limit//2:])
-    return "\n".join(lines)
+        lines = lines[:limit//2] + [separator] + lines[-limit//2:]
+    # Newline-terminate so callers do not each re-add the trailing newline that
+    # splitlines() drops (the dumps this trims are always whole-line blocks).
+    return "\n".join(lines) + "\n"
 
 
 def is_valid_utf_8(fname):
@@ -697,7 +778,11 @@ def kill_process_group(pgid, fatal_log):
             if not client_printed_stacktrace:
                 processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
                 for child in processes:
-                    print(get_stacktraces_from_lldb(child))
+                    # trim_for_log: with keep_output_on_error the lldb call
+                    # returns its full output even on a non-zero exit (e.g. a
+                    # later detach/quit fails after many frames were printed),
+                    # so bound it here to keep it from flooding job.log.
+                    print(trim_for_log(get_stacktraces_from_lldb(child)))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -839,44 +924,49 @@ def need_retry(args, stdout, stderr, total_time):
 
 
 def get_processlist_size(args):
+    # The rows are counted client-side: aggregation performs a memory limit check
+    # that a server over its per-user limit cannot pass, and this query has to
+    # answer in exactly that state.
     if args.replicated_database:
-        return int(
+        return len(
             clickhouse_execute(
                 args,
                 """
-                SELECT
-                    count()
+                SELECT 1
                 FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
                 """,
-            ).strip()
+            ).splitlines()
         )
     if args.shared_catalog:
-        return int(
+        return len(
             clickhouse_execute(
                 args,
                 """
-                SELECT
-                    count()
+                SELECT 1
                 FROM clusterAllReplicas('test_cluster_shared_catalog', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
                 """,
-            ).strip()
+            ).splitlines()
         )
-    return int(
+    return len(
         clickhouse_execute(
             args,
             """
-                SELECT
-                    count()
+                SELECT 1
                 FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
                 AND query NOT LIKE '%system.minio_%_logs%'
             """,
-        ).strip()
+        ).splitlines()
     )
+
+
+# The stacktrace query below is the one hung-check query that cannot avoid
+# aggregating, so it is the only one that needs the per-user limit lifted.
+HUNG_CHECK_QUERY_SETTINGS = {"max_memory_usage_for_user": 0}
 
 
 def get_processlist_with_stacktraces(args):
@@ -902,6 +992,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
             settings={
+                **HUNG_CHECK_QUERY_SETTINGS,
                 "allow_introspection_functions": 1,
             },
             timeout=120,
@@ -928,6 +1019,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
             settings={
+                **HUNG_CHECK_QUERY_SETTINGS,
                 "allow_introspection_functions": 1,
             },
             timeout=120,
@@ -949,6 +1041,7 @@ def get_processlist_with_stacktraces(args):
         ORDER BY elapsed DESC FORMAT Vertical
         """,
         settings={
+            **HUNG_CHECK_QUERY_SETTINGS,
             "allow_introspection_functions": 1,
         },
         timeout=120,
@@ -974,61 +1067,28 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-_LLDB_INSTALL_ATTEMPTED = False
-
-
-def _ensure_lldb_installed():
-    """Make sure `lldb` is on PATH, installing it on the fly if not.
-
-    TEMPORARY scaffolding: the CI base images currently ship `gdb` (from the
-    `clickhouse/cctools` layer), not `lldb`. While the switch to `lldb` is in
-    flight, install it at runtime so `print_c_stacktraces` keeps working.
-    Once `ci/docker/cctools/Dockerfile` (and the images that copy from it)
-    install `lldb` permanently, this helper and its single call site below
-    should be removed.
-
-    Never raise: `print_c_stacktraces` is a best-effort diagnostic. If the
-    install fails (no sudo, no network, no `brew`, ...), let
-    `shell_get_output` return "" so the surrounding diagnostic flow keeps
-    going instead of crashing during an already-broken run.
-
-    Bounded and idempotent: each subprocess call has a hard timeout so a
-    stalled package mirror cannot wedge stacktrace collection for minutes,
-    and a process-wide flag ensures only the first call attempts the
-    install — `print_c_stacktraces` iterates over every server PID, and we
-    must not pay the install cost (or timeout) for each one if the first
-    attempt already failed.
-    """
-    global _LLDB_INSTALL_ATTEMPTED
-    if shutil.which("lldb"):
-        return
-    if _LLDB_INSTALL_ATTEMPTED:
-        return
-    _LLDB_INSTALL_ATTEMPTED = True
-    try:
-        if platform.system() == "Darwin":
-            subprocess.run(["brew", "install", "llvm"], check=True, timeout=180)
-        else:
-            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
-            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
-            subprocess.run(
-                ["apt-get", "install", "-y", "lldb"],
-                check=True, env=env, timeout=120,
-            )
-    except Exception as e:
-        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
-
-
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid):
     # 30s ceiling: `thread backtrace all` should finish in seconds even on a
     # debug build with many threads; anything beyond that means lldb itself
     # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
     # leaves the server process untouched.
-    _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
+    # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
+    # attach to the server on a CI runner (the user is not in the _developer
+    # group and there is no interactive authorization), so it exits 1. The
+    # runner grants passwordless sudo and root holds task_for_pid rights, so
+    # attach as root there. Linux ptrace of a same-uid process needs none of
+    # this. shutil.which resolves the absolute path because sudo resets PATH.
+    lldb = shutil.which("lldb") or "lldb"
+    sudo = "sudo " if platform.system() == "Darwin" else ""
+    # keep_output_on_error: even when lldb exits non-zero it may have printed
+    # backtraces (or an attach error) worth keeping. Returning the output lets
+    # print_c_stacktraces save the full dump to c_stacktraces.log and preview
+    # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
-        f"lldb --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
+        f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=30,
+        keep_output_on_error=True,
     )
 
 
@@ -1037,6 +1097,11 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
+            # The options above can repeat: they come from both the environment
+            # and `--client-option`. `add_effective_settings` adds this flag only
+            # while a test runs, and this collector runs from the hung check and
+            # the per-test timeout handler, where it may not be set.
+            "--allow_repeated_settings",
             "--allow_introspection_functions=1",
             "--skip_unavailable_shards=1",
         ]
@@ -1093,7 +1158,46 @@ def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[
         ps = [p for p in ps if command in p[3]]
     return ps
 
-def get_all_server_pids():
+def _is_server_cmdline(cmdline: str, binary: str = "clickhouse") -> bool:
+    """True when argv IS the server, not a process that merely mentions it.
+
+    Accepts both shapes find_clickhouse_command() can pick: the `-server`
+    symlink, else the multicall selector, bare or `--`-prefixed.
+    """
+    parts = cmdline.split()
+    if not parts:
+        return False
+    argv0 = os.path.basename(parts[0])
+    base = os.path.basename(binary)
+    if argv0 in ("clickhouse-server", base + "-server"):
+        return True
+    if argv0 not in ("clickhouse", base):
+        return False
+    return len(parts) > 1 and parts[1] in ("server", "--server")
+
+
+# src/Common/setThreadName.h maps ThreadName::CLICKHOUSE_WATCH to this literal,
+# and src/Daemon/BaseDaemon.cpp applies it to the watchdog parent.  15 bytes, so
+# the kernel's 16-byte comm limit does not truncate it.
+WATCHDOG_COMM = "ClickHouseWatch"
+
+
+def _process_comm(pid: int) -> str:
+    """Short process name from /proc/<pid>/comm, or "" when unreadable.
+
+    Never raises: the process can exit between the `ps` scan and this read, and
+    on non-Linux there is no /proc at all.  Both cases mean "no watchdog
+    evidence", which keeps the pid helpers usable on the abort path where an
+    exception would replace the diagnostics we came to collect.
+    """
+    try:
+        with open(f"/proc/{pid}/comm", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def get_all_server_pids(args):
     """Get PIDs of all clickhouse-server processes visible to the current user.
 
     No pgid scoping: in every real scenario where this helper is useful the
@@ -1101,21 +1205,77 @@ def get_all_server_pids():
     Docker, systemd, and the `ClickHouseService` test fixture all spawn the
     server with `start_new_session=True` or equivalent).  A pgid filter
     silently filters out everything we are meant to find.
+
+    Two watchdog tests, because a watchdog can present a server argv:
+
+    1. It parents another match.  Not "drop the lowest pid": sibling replicas
+       share a ppid and both must survive.
+    2. Its comm is the watchdog's AND no watchdog is above it.  The comm half is
+       only sound for a survivor with no watchdog parent, since comm is
+       inherited across fork: a server restarted by its own watchdog carries
+       WATCHDOG_COMM.  A watchdog parent is recognised by comm, not by argv,
+       because it renames itself to `clickhouse-watchdog` and so stops matching.
+       Tie-breaker only: if it leaves nothing, keep the matches.
     """
-    return [p[0] for p in pgrep(command="clickhouse-server")]
+    binary = getattr(args, "binary", "clickhouse")
+    matches = [p for p in pgrep() if _is_server_cmdline(p[3], binary)]
+    match_pids = {p[0] for p in matches}
+    parents = {p[1] for p in matches}
+    survivors = [p for p in matches if p[0] not in parents]
+    serving = [
+        p[0]
+        for p in survivors
+        if p[1] in match_pids
+        or _process_comm(p[1]) == WATCHDOG_COMM
+        or _process_comm(p[0]) != WATCHDOG_COMM
+    ]
+    return serving or [p[0] for p in survivors]
 
 
 def is_asan_build(args):
-    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections."""
+    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections.
+
+    Use the build flags collected at startup rather than a live query. This function gates
+    `print_c_stacktraces`, which runs precisely when the server is hung or dead, so a live
+    query would throw. If the flags were never collected (server never started), read the bit
+    from the binary via `clickhouse local` instead of trusting `ASAN_OPTIONS`, which is
+    exported on some runners (e.g. macOS) even for non-ASan builds and would wrongly report
+    ASan and suppress the lldb backtraces.
+    """
+    build_flags = getattr(args, "build_flags", None)
+    if build_flags is not None:
+        return BuildFlags.ADDRESS in build_flags
+    # Build flags not collected yet (server never started, e.g. the startup-failure
+    # hung-check path). Read the ASan bit straight from the binary via `clickhouse
+    # local`, which is independent of server state. ASAN_OPTIONS is not a usable
+    # signal here: the fast macOS runners export it even for non-ASan builds.
+    binary = getattr(args, "binary", "clickhouse")
+    local = find_clickhouse_command(binary, "local")
+    out = shell_get_output(
+        f"{local} --query \"SELECT count() FROM system.build_options "
+        f"WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)\"",
+        timeout=60,
+    )
+    return out.strip() not in ("", "0")
+
+
+# Full server stacktraces are written here — one file per collector, not per
+# test: print_*_stacktraces also run from the end-of-run hung check, where no
+# single test owns the dump. The CI job runs clickhouse-test from its output
+# dir and attaches these files to the report, while stdout keeps only a
+# trimmed preview. Append with a per-block header so successive dumps stay
+# separated; two --jobs workers timing out at once may still interleave (a
+# large write is not atomic), but the headers keep the result readable.
+SQL_STACKTRACES_LOG = "sql_stacktraces.log"
+C_STACKTRACES_LOG = "c_stacktraces.log"
+
+
+def _append_stacktrace_log(filename: str, block: str) -> None:
     try:
-        result = clickhouse_execute(
-            args,
-            "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)",
-        )
-        return result != b"0"
-    except Exception:
-        # If we can't query the server, check environment variable as fallback.
-        return bool(os.environ.get("ASAN_OPTIONS"))
+        with open(filename, "a", encoding="utf-8") as f:
+            f.write(block if block.endswith("\n") else block + "\n")
+    except OSError as e:
+        print(f"Could not write {filename}: {e}", file=sys.stderr)
 
 
 def print_c_stacktraces(args) -> None:
@@ -1123,10 +1283,10 @@ def print_c_stacktraces(args) -> None:
     exists and is debuggable, independent of whether SQL is reachable.
 
     Every call site is one of two situations: we're aborting the whole
-    run (SERVER_DIED, hung-check, check_server_started) or terminating
-    the one wedged test (timeout_handler).  lldb's "thread backtrace all"
-    pause is on the order of seconds — acceptable in both cases against
-    the diagnostic value.
+    run (SERVER_DIED, liveness check, hung-check, check_server_started)
+    or terminating the one wedged test (timeout_handler).  lldb's "thread
+    backtrace all" pause is on the order of seconds - acceptable in both
+    cases against the diagnostic value.
 
     Skipped under ASan, where attaching a debugger disables
     LeakSanitizer detections.
@@ -1142,8 +1302,11 @@ def print_c_stacktraces(args) -> None:
         )
         return
 
-    server_pid = get_server_pid()
-    all_pids = get_all_server_pids()
+    # One process-table snapshot for both values.  Calling get_server_pid()
+    # here would run a second, independent `ps`; on a changing table the two
+    # could disagree and then no pid gets the "main server" label at all.
+    all_pids = get_all_server_pids(args)
+    server_pid = all_pids[0] if all_pids else None
     if not all_pids:
         print(
             colored(
@@ -1161,7 +1324,10 @@ def print_c_stacktraces(args) -> None:
         print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
         bt = get_stacktraces_from_lldb(pid)
         if bt and len(bt) >= 1000:
-            print(f"=== PID {pid} ({label}) ===\n{bt}")
+            block = f"=== PID {pid} ({label}) ===\n{bt}"
+            _append_stacktrace_log(C_STACKTRACES_LOG, block)
+            print(trim_for_log(block, 100))
+            print(f"(full lldb backtrace saved to {C_STACKTRACES_LOG})")
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
 
@@ -1172,31 +1338,30 @@ def print_sql_stacktraces(args) -> None:
     Adds thread_name and query_id to the C-side picture, which is the
     only way to map a stuck thread to the query it was running.
 
-    Self-skips when the server is not answering queries — the SQL dump
-    would hit the same dead socket as the liveness check.  This keeps
-    callers honest: they can invoke this from any context (per-test
-    timeout, end-of-run hung-check) without first checking whether the
-    server still responds.
+    No liveness pre-check: this dump goes over native TCP while
+    `check_server_liveness` probes HTTP, and a failed probe does not
+    establish that the server is gone. `get_stacktraces_from_clickhouse` is
+    bounded and never raises, so callers can invoke this from any context.
     """
-    if not check_server_liveness(args, max_retries=1):
-        print("Skipping system.stack_trace query: server is unreachable.")
-        return
     print("\nCollecting stacktraces from system.stack_trace table:")
     bt = get_stacktraces_from_clickhouse(args)
     if bt:
-        print(bt)
+        _append_stacktrace_log(SQL_STACKTRACES_LOG, bt)
+        print(trim_for_log(bt, 100))
+        print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
+    else:
+        # Distinguish "tried and got nothing" from "never tried".
+        print("Collected no stacks from system.stack_trace.")
 
 
-def get_server_pid():
-    # Use the portable pgrep helper (built on `ps -eo pid,ppid,pgid,command`)
-    # so this works on both Linux and macOS — `pidof` does not exist on
-    # macOS, and `lsof -i tcp:PORT` would require knowing the port (only
-    # available on `args`, which is undefined in multiprocessing children
-    # spawned with the `spawn` start method).
-    procs = pgrep(command="clickhouse-server")
-    if not procs:
+def get_server_pid(args):
+    # Delegate to get_all_server_pids so the two helpers cannot disagree about
+    # which process is the server. They did, which is how a shell wrapper got
+    # labelled "main server" while the real server was labelled "replica".
+    pids = get_all_server_pids(args)
+    if not pids:
         return None  # most likely server is dead
-    return procs[0][0]
+    return pids[0]
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -1217,6 +1382,9 @@ class FailureReason(enum.Enum):
     # FAIL reasons
     TIMEOUT = "Timeout!"
     SERVER_DIED = "server died"
+    # Names the observation, not a diagnosis: `check_server_liveness` also fails
+    # on a non-200 response, so neither "died" nor "unresponsive" is established.
+    LIVENESS_CHECK_FAILED = "liveness check failed"
     EXIT_CODE = "return code: "
     STDERR = "having stderror: "
     EXCEPTION = "having exception in stdout: "
@@ -1294,7 +1462,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'basic']
+        all_statistic_types = ["uniq", "uniq_v2", "tdigest", 'countmin', 'basic']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1334,6 +1502,9 @@ class SettingsRandomizer:
         "max_insert_threads": lambda: (
             12 if random.random() < 0.03 else random.randint(1, 3)
         ),
+        # Exercise both the legacy "client converts inline data to native blocks" path
+        # and the new "server parses inline data" path (added in PR #101034).
+        "send_table_structure_on_insert_with_inline_data": lambda: random.randint(0, 1),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -1342,6 +1513,12 @@ class SettingsRandomizer:
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
+        # Exercise the disabled path (0), a small limit that only applies to tiny dictionaries, and
+        # the default limit for the Parquet v3 dictionary-based row group filter. Tests that depend
+        # on a fixed pruning behaviour set this setting explicitly (per query or per session).
+        "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
+            [0, 256, 1048576], weights=[1, 1, 3]
+        )[0],
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
@@ -1385,9 +1562,6 @@ class SettingsRandomizer:
         "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "distributed_cache_discard_connection_if_unread_data": lambda: random.randint(
-            0, 1
-        ),
-        "distributed_cache_use_clients_cache_for_write": lambda: random.randint(
             0, 1
         ),
         "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
@@ -1515,6 +1689,8 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        "use_indexes_refiner_in_read_pools": lambda: random.randint(0, 1),
+        "enable_join_runtime_filters_index_analysis": lambda: random.randint(0, 1),
         "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
@@ -1532,7 +1708,7 @@ class SettingsRandomizer:
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
-        "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
+        "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
         "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
         # Default 16 MiB; randomize across small/large to exercise both the coalescing
         # path and the cap that splits long miss runs into multiple reads.
@@ -1542,6 +1718,7 @@ class SettingsRandomizer:
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
+        "join_runtime_filter_min_probe_rows": lambda: 0 if random.random() < 0.1 else random.randint(1, 10000),
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
         # Default-false query_plan_* toggles: enable with 0.3 probability
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
@@ -1579,6 +1756,13 @@ class SettingsRandomizer:
         "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
+        # Independent DISTINCT per MergeTree partition
+        "allow_distinct_partitions_independently": lambda: random.random() > 0.05,
+        "force_distinct_partitions_independently": lambda: random.random() < 0.3,
+        "max_number_of_partitions_for_independent_distinct": threshold_generator(
+            0.2, 0.2, 1, 128
+        ),
+        "enable_parallel_single_level_merge": lambda: random.random() > 0.05,
     }
 
     dependent_settings = {
@@ -1596,6 +1780,8 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
+        # forcing independent DISTINCT is a no-op when the optimization is not allowed
+        "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
     }
 
     stress_test_only_settings = {
@@ -1671,6 +1857,7 @@ class MergeTreeSettingsRandomizer:
         ),
         "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
         "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
+        "merge_use_batch_sorting_queue": lambda: random.randint(0, 1),
         "index_granularity": lambda: random.randint(1, 65536),
         "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
         "compress_marks": lambda: random.randint(0, 1),
@@ -1697,6 +1884,7 @@ class MergeTreeSettingsRandomizer:
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
         "enable_block_number_column": lambda: random.randint(0, 1),
         "enable_block_offset_column": lambda: random.randint(0, 1),
+        "patch_parts_version": lambda: random.choice(["v1", "v2"]),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -1757,6 +1945,15 @@ class MergeTreeSettingsRandomizer:
                 value = random.randint(100 * 1024, 30 * 1024 * 1024)
             else:
                 value = generator()
+
+            # `countmin` is unavailable when ClickHouse is built without DataSketches.
+            if setting == "auto_statistics_types" and "use_datasketches" not in args.build_flags:
+                value = ",".join(
+                    statistic_type
+                    for statistic_type in value.split(",")
+                    if statistic_type != "countmin"
+                )
+
             if type(value) == str and value == "":
                 continue
 
@@ -1774,6 +1971,51 @@ def replace_in_file(filename, what, with_what):
 
 def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
+
+
+# The three messages ever observed for this failure (InstrProfilingFile.c:469, :522, :623).
+# Nothing delimits the trailing strerror(errno) from the test's own output, so where one
+# strerror value extends another the two readings are the very same bytes.
+_STRERROR = {os.strerror(e) for e in range(256)}
+# e.g. `No such device` -> [` or address`]: the tails that would extend it into another.
+_STRERROR_EXTENSIONS = {
+    s: sorted(o[len(s) :] for o in _STRERROR if o != s and o.startswith(s))
+    for s in _STRERROR
+    if not any(s != o and s.startswith(o) for o in _STRERROR)
+}
+_LLVM_PROFILE_ERROR = (
+    rb"LLVM Profile Error: (?:Invalid profile data to merge"
+    rb"|(?:Profile Merging of file [^\n]*? failed"
+    rb'|Failed to write file "[^"\n]*"): (?:'
+    + rb"|".join(
+        re.escape(s.encode())
+        + (
+            rb"(?!" + rb"|".join(re.escape(e.encode()) for e in exts) + rb")"
+            if exts
+            else rb""
+        )
+        for s, exts in sorted(_STRERROR_EXTENSIONS.items())
+    )
+    + rb"))"
+)
+# A line holding nothing else goes away with its newline, but a message glued
+# onto real output (which happens) must lose only the message. An unmatched
+# message is left whole, so a miss shows up in the diff instead of hiding output.
+_LLVM_PROFILE_ERROR_LINE_RE = re.compile(
+    rb"(?m)^(?:" + _LLVM_PROFILE_ERROR + rb")+(?:\n|\Z)"
+)
+_LLVM_PROFILE_ERROR_RE = re.compile(_LLVM_PROFILE_ERROR)
+
+
+def strip_llvm_profile_errors_in_file(filename):
+    with open(filename, "rb") as f:
+        data = f.read()
+    if b"LLVM Profile Error: " not in data:
+        return
+    data = _LLVM_PROFILE_ERROR_LINE_RE.sub(b"", data)
+    with open(filename, "wb") as f:
+        f.write(_LLVM_PROFILE_ERROR_RE.sub(b"", data))
+
 
 def str_to_numeric(v: str):
     vl = v.lower()
@@ -2029,8 +2271,6 @@ class TestCase:
         name = removesuffix(name, ".gen")
 
         file_extentions = [".reference", ".gen.reference"]
-        if is_old_analyzer_used(args):
-            file_extentions = [".oldanalyzer.reference", *file_extentions]
 
         for ext in file_extentions:
             reference_file = os.path.join(suite_dir, name) + ext
@@ -2068,11 +2308,17 @@ class TestCase:
         else:
             # If --database is not specified, we will create temporary database with
             # unique name and we will recreate and drop it for each test
-            def random_str(length=8):
-                alphabet = string.ascii_lowercase + string.digits
+            def random_str(length=12):
+                # Alternate letters and digits so no two consecutive characters share a class,
+                # hence no word can appear in the name. It is embedded into DDL, paths and table
+                # names, and tests assert substring absence over those (e.g. NOT ILIKE '%auto%');
+                # an 8-char [a-z0-9] name spelled "auto" once in ~340k runs (CI: test_q2autogn).
+                # 26^6 * 10^6 is ~110x the namespace of the previous 36^8, so collisions get rarer.
                 # NOTE: it is important not to use default random generator, since it shares state.
+                rng = random.SystemRandom()
                 return "".join(
-                    random.SystemRandom().choice(alphabet) for _ in range(length)
+                    rng.choice(string.ascii_lowercase if i % 2 == 0 else string.digits)
+                    for i in range(length)
                 )
 
             database = f"test_{random_str()}"
@@ -2104,6 +2350,13 @@ class TestCase:
         testcase_args.debug_log_file = (
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
         )
+        # The bash xtrace (`BASH_XTRACEFD`, see `shell_config.sh`) gets its OWN file. Sharing the
+        # expect trace's path is what lost records: `shell_config.sh` used to open that path with
+        # O_TRUNC on every `source`, i.e. once per `spawn`, discarding what expect had appended.
+        # With separate files each writer owns its artifact and appends to it.
+        testcase_args.bash_tracing_file = (
+            os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".bashlog"
+        )
 
         testcase_args.testcase_client = (
             f"{testcase_args.client} --log_comment '{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
@@ -2121,6 +2374,23 @@ class TestCase:
     @staticmethod
     def http_format_settings(settings_list) -> str:
         return urllib.parse.urlencode(settings_list)
+
+    # A `no-<feature>` tag means the test does not work with that feature, so the feature
+    # must be off unless the test itself turns it on.
+    FEATURE_TAG_OVERRIDES = {
+        "no-parallel-replicas": "enable_parallel_replicas",
+        "no-async-insert": "async_insert",
+    }
+
+    def feature_tag_overrides(self) -> str:
+        tags = self.tags or set()
+        return self.cli_format_settings(
+            {
+                setting: 0
+                for tag, setting in self.FEATURE_TAG_OVERRIDES.items()
+                if tag in tags
+            }
+        )
 
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
@@ -2171,6 +2441,14 @@ class TestCase:
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+
+        # Last, so that it beats an externally supplied --client-option that enabled the
+        # feature: with --allow_repeated_settings the last occurrence takes effect. A SET
+        # or SETTINGS clause inside the test still wins over any command line value.
+        overrides = self.feature_tag_overrides()
+        if overrides:
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {overrides}"
+            return f"{new_options} {client_options} {overrides}"
 
         return new_options + " " + client_options
 
@@ -2566,6 +2844,8 @@ class TestCase:
 
         self.testcase_args = None
         self.runs_count = 0
+        # Set by `process_result_impl`; read by `retry_matcher_input`.
+        self.debug_log_retry_substitution = None
 
         has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
         has_no_random_merge_tree_settings_tag = (
@@ -2997,6 +3277,24 @@ class TestCase:
 
         return None, ""
 
+    def retry_matcher_input(self, description):
+        """`description` with each diagnostic dump reduced to the retry matcher's window.
+
+        `check_if_need_retry` is handed a failure's description as both stdout and stderr, so
+        every line of a dump that is only meant for a human reader is matched against
+        `MESSAGES_TO_RETRY`, whose entries are as generic as `No such file or directory`.  The
+        dumps are therefore reported at full width and matched at the historical bound.
+
+        Narrowed rather than removed: for an `.expect` test the trace is the only place the
+        spawned client's output lands (they all run with `log_user 0`), so dropping it would
+        lose the transient-error retries this matcher exists to catch.
+        """
+        substitution = self.debug_log_retry_substitution
+        if not substitution:
+            return description
+        shown, matched = substitution
+        return description.replace(shown, matched)
+
     def process_result_impl(self, proc, total_time: float) -> TestResult:
         args = self.args
         kill_output = ""
@@ -3011,12 +3309,68 @@ class TestCase:
 
         description = ""
 
+        # The two diagnostic blocks are trimmed SEPARATELY, with different limits: the expect
+        # trace uses the shared default (its verdict sequence is what makes a timeout readable,
+        # and one progress-table redraw is one very long line), while the bash xtrace keeps the
+        # historical 100-line bound because `set -x` emits ~2 lines per loop iteration and some
+        # .sh tests loop millions of times.
+        #
+        # That wider REPORT must not widen retry matching: `run` feeds the description to
+        # `check_if_need_retry` as both stdout and stderr, and `MESSAGES_TO_RETRY` holds
+        # substrings as generic as `No such file or directory`, so every diagnostic line the
+        # matcher sees can retry a deterministic failure. The matcher's copy is therefore ONE
+        # trim over the untrimmed dumps - the window this code has always had, rather than one
+        # such window per artifact.
         debug_log = ""
+        expect_body = ""
+        bash_body = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
-                debug_log += self.testcase_args.debug_log_file + ":\n"
-                debug_log += str(stream.read(), errors="replace", encoding="utf-8")
-                debug_log += "\n"
+                expect_body = str(stream.read(), errors="replace", encoding="utf-8")
+            debug_log += trim_for_log(
+                self.testcase_args.debug_log_file + ":\n" + expect_body + "\n"
+            )
+        # Emptiness is tolerated here, unlike for the expect trace above: `shell_config.sh` opens
+        # this file the moment it is sourced and only writes once a traced command runs, so a
+        # zero-length one carries no diagnostics - and reporting its name would add a bare header
+        # with an empty body to every consumer of `debug_log` below.
+        bash_tracing_file = self.testcase_args.bash_tracing_file
+        if os.path.exists(bash_tracing_file) and os.path.getsize(bash_tracing_file) > 0:
+            with open(bash_tracing_file, "rb") as stream:
+                bash_body = str(stream.read(), errors="replace", encoding="utf-8")
+            debug_log += trim_for_log(bash_tracing_file + ":\n" + bash_body + "\n", 100)
+        # Read by `run` through `retry_matcher_input`: the reported dumps are replaced by this
+        # single historically-bounded trim before the description reaches the retry matcher.
+        #
+        # Assembled to be line-for-line what the one shared file used to hold, because that file
+        # is what set this window's contract. So the raw BODIES are joined under a single
+        # header and trailer - decorating each dump first would add a header and a trailer per
+        # artifact, and those extra lines shift the window's own boundary, hiding markers near it
+        # that the pre-split shape kept.
+        #
+        # And the xtrace body goes FIRST, opposite to the report order above: bash owns fd 3 from
+        # the moment `shell_config.sh` is sourced and writes while the test runs, whereas expect's
+        # trace is dominated by the verdict lines it emits once the spawned program has produced
+        # its output. Joining in report order instead puts the xtrace behind however long the
+        # expect trace is, which pushes an early xtrace line out of this window's visible head.
+        # Either departure silently drops retries the single-file code would have made.
+        #
+        # Only assembled when there is a reported block to substitute FOR. `str.replace` treats an
+        # empty needle as matching between every character, so pairing an empty `debug_log` with a
+        # non-empty payload would splice that payload through the whole description and break the
+        # very phrases the matcher looks for. A test with no diagnostics at all - every ordinary
+        # `.sql` one - is exactly the case that arrives here with `debug_log` empty.
+        debug_log_for_retry = ""
+        if debug_log:
+            retry_header = (
+                bash_tracing_file if bash_body else self.testcase_args.debug_log_file
+            )
+            debug_log_for_retry = trim_for_log(
+                retry_header + ":\n" + bash_body + expect_body + "\n", 100
+            )
+        self.debug_log_retry_substitution = (
+            (debug_log, debug_log_for_retry) if debug_log != debug_log_for_retry else None
+        )
 
         stdout = ""
         if os.path.exists(self.stdout_file):
@@ -3028,7 +3382,14 @@ class TestCase:
             with open(path, "rb") as stream:
                 content = str(stream.read(), errors="replace", encoding="utf-8")
 
-                def ignore_sanitizer_line(line):
+                lines = content.splitlines()
+                benign_ptrace_probe_lines = find_benign_lsan_ptrace_probe_lines(
+                    lines, KILLS_PROCESSES_BY_CMDLINE_TAG in self.tags
+                )
+
+                def ignore_sanitizer_line(index, line):
+                    if index in benign_ptrace_probe_lines:
+                        return True
                     return any(
                         filter(
                             lambda exception: exception in line,
@@ -3037,10 +3398,9 @@ class TestCase:
                     )
 
                 content = "\n".join(
-                    filter(
-                        lambda line: not ignore_sanitizer_line(line),
-                        content.splitlines(),
-                    )
+                    line
+                    for index, line in enumerate(lines)
+                    if not ignore_sanitizer_line(index, line)
                 ).strip()
                 if content:
                     stderr += f"Path: {path}\n"
@@ -3060,9 +3420,6 @@ class TestCase:
                 for line in stderr.splitlines()
                 if not line.startswith("LLVM Profile Error:")
             ).strip()
-
-        if debug_log:
-            debug_log = trim_for_log(debug_log, 100)
 
         if proc:
             if proc.returncode is None:
@@ -3091,10 +3448,10 @@ class TestCase:
                     description += debug_log
 
                 # Stop on fatal errors like segmentation fault. They are sent to client via logs.
+                # Mutually exclusive: stderr carrying both signals keeps SERVER_DIED.
                 if " <Fatal> " in stderr:
                     reason = FailureReason.SERVER_DIED
-
-                if (
+                elif (
                     self.testcase_args.stop
                     and (
                         "Connection refused" in stderr
@@ -3103,7 +3460,7 @@ class TestCase:
                     and "Received exception from server" not in stderr
                     and not check_server_liveness(self.args)
                 ):
-                    reason = FailureReason.SERVER_DIED
+                    reason = FailureReason.LIVENESS_CHECK_FAILED
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
@@ -3174,12 +3531,9 @@ class TestCase:
                 import shutil
                 # Use the same logic as get_reference_file to determine the correct path
                 name = removesuffix(self.name, ".gen")
-                # Determine the appropriate extension based on analyzer mode
-                if is_old_analyzer_used(self.testcase_args):
-                    ext = ".oldanalyzer.reference"
-                else:
-                    ext = ".reference"
-                self.reference_file = os.path.join(self.suite.suite_path, name) + ext
+                self.reference_file = (
+                    os.path.join(self.suite.suite_path, name) + ".reference"
+                )
                 shutil.copy2(self.stdout_file, self.reference_file)
                 description += "\tReference file created\n"
                 return TestResult(
@@ -3299,6 +3653,8 @@ class TestCase:
             os.remove(path)
         if os.path.exists(self.testcase_args.debug_log_file):
             os.remove(self.testcase_args.debug_log_file)
+        if os.path.exists(self.testcase_args.bash_tracing_file):
+            os.remove(self.testcase_args.bash_tracing_file)
 
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
@@ -3345,6 +3701,19 @@ class TestCase:
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
+        # Same reason, for the expect trace: `exp_internal -f` opens for append, and since the
+        # bash xtrace no longer shares this path nothing else truncates it. Removing (not
+        # emptying) it matters - the report block above keys on existence alone, so an empty file
+        # would add a bare header to every failing test.
+        if os.path.exists(args.debug_log_file):
+            os.remove(args.debug_log_file)
+        # And the xtrace. Unconditionally, NOT under the `--trace` guard below that exports its
+        # path: the report block keys on the FILE, not on this run's flags, so a run without
+        # `--trace` would otherwise report whatever a previous traced run left behind in the same
+        # tmp dir. Removing rather than emptying, for the same reason as the expect trace above,
+        # and it is safe because `shell_config.sh`'s `3>>` creates the file when it is absent.
+        if os.path.exists(args.bash_tracing_file):
+            os.remove(args.bash_tracing_file)
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
@@ -3408,7 +3777,7 @@ class TestCase:
 
         tests_env = os.environ.copy()
         if args.trace:
-            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.bash_tracing_file
 
         if self.ext == ".sql":
             pattern = (
@@ -3533,6 +3902,11 @@ class TestCase:
                 r"\1(\4)",
             )
 
+        # A test that merges a client's stderr into its own stdout (2>&1) does so
+        # before the harness sees either stream, so the stderr-side filter above
+        # cannot reach it and the noise is diffed against .reference. See #97020.
+        strip_llvm_profile_errors_in_file(self.stdout_file)
+
         return proc, total_time
 
     def run(self, args, suite, client_options):
@@ -3562,9 +3936,9 @@ class TestCase:
                         return TestResult(
                             self.name,
                             TestStatus.FAIL,
-                            FailureReason.SERVER_DIED,
+                            FailureReason.LIVENESS_CHECK_FAILED,
                             0.0,
-                            "\nServer does not respond to health check\n",
+                            "\nServer liveness check failed\n",
                         )
 
             self.runs_count += 1
@@ -3595,8 +3969,9 @@ class TestCase:
                 )
 
                 result = self.process_result_impl(proc, total_time)
+                retry_input = self.retry_matcher_input(result.description)
                 result.check_if_need_retry(
-                    args, result.description, result.description, self.runs_count
+                    args, retry_input, retry_input, self.runs_count
                 )
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
@@ -3641,10 +4016,11 @@ class TestCase:
 
                     result = self.process_result_impl(proc, total_time)
 
+                    retry_input = self.retry_matcher_input(result.description)
                     result.check_if_need_retry(
                         args,
-                        result.description,
-                        result.description,
+                        retry_input,
+                        retry_input,
                         self.runs_count,
                     )
                     # to avoid breaking CSV parser
@@ -3703,7 +4079,7 @@ class TestCase:
                 return TestResult(
                     self.name,
                     TestStatus.FAIL,
-                    FailureReason.SERVER_DIED,
+                    FailureReason.LIVENESS_CHECK_FAILED,
                     total_time,
                     exc_description,
                 )
@@ -4019,6 +4395,11 @@ class TestSuite:
         self.cloud_skip_list: List[str] = []
         self.private_skip_list: List[str] = []
         self.cloud_skip_errors_list: List[str] = []
+        # Keep this separate from the final test list. A selected-test job may
+        # legitimately find a test and subsequently filter it out for its
+        # flavor, but every selector must match a test before the benign
+        # filtered-out result is allowed.
+        self.explicit_test_selectors_matched: Set[str] = set()
         # List of tests included in a blacklist.
         # They will be run, and if they succeed, the test status will be changed to FAIL
         # to notify PR author that the changes in PR fixes this test.
@@ -4173,12 +4554,22 @@ class TestSuite:
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
                 continue
-            if self.args.test and not any(
-                re.search(pattern, test_name) for pattern in self.args.test
-            ):
+            matching_selectors = (
+                {
+                    pattern
+                    for pattern in self.args.test
+                    if re.search(pattern, test_name)
+                }
+                if self.args.test
+                else set()
+            )
+            if self.args.test and not matching_selectors:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
+
+            if self.args.test:
+                self.explicit_test_selectors_matched.update(matching_selectors)
 
             if not filter_func(test_name):
                 continue
@@ -4237,9 +4628,10 @@ class StopTesting(Exception):
     `exit_code` so the job side can distinguish the cause: the default
     `STOP_TESTING_EXIT_CODE` means the run was catastrophically interrupted
     (reported as "Server died"), `GLOBAL_TIME_LIMIT_EXIT_CODE` means a
-    benign, expected stop after the time budget was reached, and
+    benign, expected stop after the time budget was reached,
     `MAX_FAILURES_EXIT_CODE` means too many tests failed (real failures, server
-    still alive) so the run stopped early.
+    still alive) so the run stopped early, and `HUNG_CHECK_EXIT_CODE` means a
+    `check_server_liveness` probe failed.
     """
 
     def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
@@ -4409,7 +4801,10 @@ def run_tests_array(
         stop_exit_code,
     ) = all_tests_with_params
 
-    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%2m.profraw"
+    # %c enables continuous mode so a client killed mid-write (query timeouts
+    # SIGKILL the whole process group) leaves a valid profile instead of a
+    # truncated one.
+    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%c%2m.profraw"
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])
@@ -4488,8 +4883,10 @@ def run_tests_array(
                 # could re-raise with the real cause's exit code.
                 break
             stop_tests()
+            # An unset carrier is 0, which is not a valid exit code.
             raise StopTesting(
-                "another component requested stop (see earlier output for the cause)"
+                "another component requested stop (see earlier output for the cause)",
+                exit_code=stop_exit_code.value or STOP_TESTING_EXIT_CODE,
             )
 
         if args.stop_time and time() > args.stop_time:
@@ -4566,7 +4963,11 @@ def run_tests_array(
             if (
                 test_result
                 and test_result.status == TestStatus.FAIL
-                and test_result.reason != FailureReason.SERVER_DIED
+                and test_result.reason
+                not in (
+                    FailureReason.SERVER_DIED,
+                    FailureReason.LIVENESS_CHECK_FAILED,
+                )
             ):
                 save_random_settings_artifact(
                     args,
@@ -4582,9 +4983,10 @@ def run_tests_array(
                 description += "\n"
 
             if cleanup_output.getvalue():
-                description += cleanup_output.getvalue()
-                if not cleanup_output.getvalue().endswith("\n"):
-                    description += "\n"
+                # Bound the timeout/cleanup diagnostic like every other dump in
+                # this file: lldb "thread backtrace all" over every server
+                # process is unbounded and otherwise floods the log/report.
+                description += trim_for_log(cleanup_output.getvalue(), 100)
 
             if is_concurrent:
                 description = (
@@ -4601,11 +5003,30 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    # Claim before collecting: the sweep below blocks up to 30s per
+                    # server process, and a cause claimed after it loses to any
+                    # cause claimed during it.
+                    try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
                     raise StopTesting(
                         f"ClickHouse server died during test '{test_case.name}'"
+                    )
+                if test_result.reason == FailureReason.LIVENESS_CHECK_FAILED:
+                    try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                    print_sql_stacktraces(args)
+                    print_c_stacktraces(args)
+                    if not is_concurrent:
+                        # Sequential runner owns the main process, so there is no
+                        # parent to kill. See the --max-failures branch below for
+                        # why a parallel worker must not broadcast SIGTERM.
+                        stop_tests()
+                    stop_testing.set()
+                    raise StopTesting(
+                        f"server liveness check failed during test '{test_case.name}'",
+                        exit_code=HUNG_CHECK_EXIT_CODE,
                     )
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
@@ -4618,7 +5039,9 @@ def run_tests_array(
                             # could re-raise with `MAX_FAILURES_EXIT_CODE`. Just
                             # signal the stop; the parent masks SIGTERM and then
                             # terminates the workers in an orderly way.
-                            stop_exit_code.value = MAX_FAILURES_EXIT_CODE
+                            try_claim_stop_cause(
+                                stop_exit_code, MAX_FAILURES_EXIT_CODE
+                            )
                             stop_testing.set()
                             raise StopTesting(
                                 f"reached --max-failures limit ({args.max_failures})",
@@ -4636,7 +5059,7 @@ def run_tests_array(
             # See the --max-failures branch above: skip `stop_tests()` so the
             # worker's SIGTERM broadcast does not kill the parent before it can
             # re-raise with `MAX_FAILURES_EXIT_CODE`.
-            stop_exit_code.value = MAX_FAILURES_EXIT_CODE
+            try_claim_stop_cause(stop_exit_code, MAX_FAILURES_EXIT_CODE)
             stop_testing.set()
             raise StopTesting(
                 f"reached --max-failures-chain limit ({args.max_failures_chain})",
@@ -4672,11 +5095,13 @@ def run_tests_array(
 
 
 def check_server_liveness(args, max_retries=10) -> bool:
-    """Check if server is responding, with retries and exponential back-off.
+    """Run a trivial query, with retries and exponential back-off.
 
-    Used to distinguish a real server death from a transient network failure
-    (e.g. the server being briefly unresponsive due to memory pressure).
-    Returns True if the server responds within the retry window, False otherwise.
+    True means the query completed within the retry window. False establishes
+    only that it did not: every exception counts, including a non-200 response,
+    so the server may be alive and refusing. Retrying is what keeps a transient
+    failure (e.g. brief unresponsiveness under memory pressure) out of the
+    False case.
     """
     for attempt in range(max_retries):
         try:
@@ -4690,20 +5115,34 @@ def check_server_liveness(args, max_retries=10) -> bool:
     return False
 
 
+def _read_process_rss(pid: Optional[int]) -> Optional[int]:
+    """Resident set size in bytes from /proc/<pid>/statm, or None when unreadable."""
+    if pid is None:
+        return None
+    try:
+        # fields: size resident shared text lib data dt, in pages
+        with open(f"/proc/{pid}/statm", encoding="utf-8") as f:
+            rss_pages = int(f.read().split()[1])
+    except (OSError, IndexError, ValueError):
+        return None
+    return rss_pages * os.sysconf("SC_PAGE_SIZE")
+
+
 def get_server_memory_fraction(args) -> Optional[float]:
-    """Return the fraction of max_server_memory_usage currently in use (0.0–1.0).
+    """Return the fraction of max_server_memory_usage currently in use (0.0-1.0).
 
     Reads the server process RSS from /proc/<pid>/statm, which is more reliable
-    than querying MemoryTracking from system.metrics — the latter can be far
+    than querying MemoryTracking from system.metrics: the latter can be far
     below actual RSS under sanitizer builds where jemalloc is disabled and the
     memory tracker is not corrected to match RSS.
 
     The max_server_memory_usage value is fetched once from the server and cached.
+    The server PID is cached as a hint and re-resolved whenever it stops reading.
 
-    Returns None when the server PID is unavailable, the limit is unconfigured
-    (0), or the query/read fails.
+    Returns None when no server PID reads, the limit is unconfigured (0), or the
+    query/read fails.
     """
-    # Cache the hard limit — it does not change at runtime.
+    # Cache the hard limit: it does not change at runtime.
     if not hasattr(get_server_memory_fraction, "_max_memory"):
         try:
             get_server_memory_fraction._max_memory = int(
@@ -4723,22 +5162,16 @@ def get_server_memory_fraction(args) -> Optional[float]:
     if maximum == 0:
         return None
 
-    # Cache the server PID — it does not change during a test run.
-    if not hasattr(get_server_memory_fraction, "_server_pid"):
-        get_server_memory_fraction._server_pid = get_server_pid()
-    pid = get_server_memory_fraction._server_pid
-    if pid is None:
+    # The cached pid is a hint, not an invariant: a watchdog restart replaces the
+    # server mid-run, and the first lookup can miss it entirely before it is up.
+    rss = _read_process_rss(getattr(get_server_memory_fraction, "_server_pid", None))
+    if rss is None:
+        get_server_memory_fraction._server_pid = get_server_pid(args)
+        rss = _read_process_rss(get_server_memory_fraction._server_pid)
+    if rss is None:
         return None
 
-    try:
-        # /proc/<pid>/statm fields: size resident shared text lib data dt (in pages)
-        with open(f"/proc/{pid}/statm", "r") as f:
-            parts = f.read().split()
-        rss_pages = int(parts[1])
-        rss_bytes = rss_pages * os.sysconf("SC_PAGE_SIZE")
-        return rss_bytes / maximum
-    except Exception:
-        return None
+    return rss / maximum
 
 
 def check_server_started(args):
@@ -4746,7 +5179,7 @@ def check_server_started(args):
 
     sys.stdout.flush()
     retry_count = args.server_check_retries
-    query = "SELECT version(), arrayStringConcat(groupArray(value), ' ') FROM system.build_options WHERE name IN ('GIT_HASH', 'GIT_BRANCH')"
+    query = "SELECT version(), (SELECT value FROM system.build_options WHERE name = 'GIT_HASH'), (SELECT value FROM system.build_options WHERE name = 'GIT_BRANCH')"
     while retry_count > 0:
         try:
             res = (
@@ -4950,6 +5383,34 @@ def extract_key(key: str) -> str:
     )[1]
 
 
+def try_claim_stop_cause(stop_exit_code, exit_code: int) -> bool:
+    """Record `exit_code` as the cause the run stops with, first writer wins.
+
+    Returns True if this caller's code was recorded. 0 means unset, so no cause
+    may use it. The read and the write are one locked transition: several workers
+    and the parent can detect different causes concurrently, and an unlocked
+    read-modify-write would let a later detector displace an earlier one.
+    """
+    assert exit_code != 0, "0 means 'no cause recorded'"
+    with stop_exit_code.get_lock():
+        if stop_exit_code.value == 0:
+            stop_exit_code.value = exit_code
+            return True
+        return False
+
+
+def raise_stop_from_carrier(stop_exit_code):
+    """Abort the run with the claimed cause, or the default when none was claimed.
+
+    A worker raises `StopTesting` inside its own process, so the parent has only
+    the carrier to go on. Always raises.
+    """
+    raise StopTesting(
+        "test run was stopped (see earlier output for the cause)",
+        exit_code=stop_exit_code.value or STOP_TESTING_EXIT_CODE,
+    )
+
+
 def run_tests_process(*args_, **kwargs):
     return run_tests_array(*args_, **kwargs)
 
@@ -4981,11 +5442,11 @@ def do_run_tests(
     )
     total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
     progress_counter = multiprocessing.Value('i', 0)
-    # Exit code a worker wants the whole run to stop with. A worker raises
-    # `StopTesting` inside its own process, so that exception never reaches the
-    # parent; the parent only sees `stop_testing`. The worker records its exit
-    # code here (before setting `stop_testing`) so the parent can re-raise with
-    # the same code instead of defaulting to "Server died". 0 means unset.
+    # Exit code the run stops with. A worker raises `StopTesting` inside its own
+    # process, so that exception never reaches the parent; the parent only sees
+    # `stop_testing`. Every detector claims its code here via
+    # `try_claim_stop_cause` before setting `stop_testing`, so the parent
+    # re-raises with the cause detected first. 0 means unset.
     stop_exit_code = multiprocessing.Value('i', 0)
 
     if test_suite.parallel_tests:
@@ -5064,11 +5525,6 @@ def do_run_tests(
         MEMORY_PRESSURE_THRESHOLD = 0.8
         last_memory_check = time()
 
-        # Set when the parent stops the run because the global time limit was
-        # reached, so the final `StopTesting` is raised with the benign
-        # `GLOBAL_TIME_LIMIT_EXIT_CODE` rather than the "Server died" code.
-        global_time_limit_reached = False
-
         while processes:
             sleep(0.1)
             sys.stdout.flush()
@@ -5101,31 +5557,34 @@ def do_run_tests(
             # Stop the whole run once the global time limit is reached. This is
             # the *expected* stop condition for the flaky and targeted checks,
             # which rerun the selected tests until the time budget is exhausted -
-            # distinct from a server death or a hung check below. Only claim the
-            # time limit if nothing else has already requested a stop, so a real
-            # server death or `--max-failures` abort keeps precedence.
-            if (
-                args.stop_time
-                and time() > args.stop_time
-                and not stop_testing.is_set()
-            ):
-                print("Global time limit reached - stopping all tests gracefully.")
-                # Ignore SIGTERM in the parent for the rest of the run: when we
-                # terminate the workers below, each worker's KeyboardInterrupt
-                # handler re-broadcasts SIGTERM to the whole process group via
-                # `stop_tests()` -> `killpg`. Without this guard that signal
-                # would hit the parent and exit it with 143 instead of the
-                # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
-                # timeout back into a "Server died" report).
-                signal.signal(signal.SIGTERM, signal.SIG_IGN)
-                global_time_limit_reached = True
-                stop_testing.set()
+            # distinct from a server death or a hung check below. It goes through
+            # the carrier like every other cause, so a worker that claimed while
+            # the event was still clear keeps precedence.
+            if args.stop_time and time() > args.stop_time:
+                if try_claim_stop_cause(
+                    stop_exit_code, GLOBAL_TIME_LIMIT_EXIT_CODE
+                ):
+                    print("Global time limit reached - stopping all tests gracefully.")
+                    # Ignore SIGTERM in the parent for the rest of the run: when we
+                    # terminate the workers below, each worker's KeyboardInterrupt
+                    # handler re-broadcasts SIGTERM to the whole process group via
+                    # `stop_tests()` -> `killpg`. Without this guard that signal
+                    # would hit the parent and exit it with 143 instead of the
+                    # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
+                    # timeout back into a "Server died" report).
+                    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                    stop_testing.set()
 
             # Periodically check the server for hangs
-            # and stop all processes in this case
-            if args.hung_check:
+            # and stop all processes in this case. The probe takes 65-165 s to
+            # conclude, so it is not started once a stop is already pending.
+            if args.hung_check and not stop_testing.is_set():
                 if not check_server_liveness(args):
-                    print("Hung check failed: server is not responding")
+                    print("Hung check failed: server liveness check failed")
+                    # Claim before collecting: the sweep below can block ~30s per
+                    # server process.
+                    try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_testing.set()
 
@@ -5158,24 +5617,7 @@ def do_run_tests(
                         p.join(timeout=5)
                 finally:
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
-                if global_time_limit_reached:
-                    raise StopTesting(
-                        "global time limit reached",
-                        exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
-                    )
-                # A worker that hit `--max-failures` or `--max-failures-chain`
-                # recorded its exit code in `stop_exit_code` before setting
-                # `stop_testing`. The server is alive and the failing tests are
-                # real (and already attributed), so report this with the worker's
-                # code, not "Server died".
-                if stop_exit_code.value != 0:
-                    raise StopTesting(
-                        "reached the --max-failures / --max-failures-chain limit",
-                        exit_code=stop_exit_code.value,
-                    )
-                raise StopTesting(
-                    "test run was stopped (see earlier output for the cause)"
-                )
+                raise_stop_from_carrier(stop_exit_code)
 
             for p in processes[:]:
                 if not p.is_alive():
@@ -5186,6 +5628,11 @@ def do_run_tests(
                         )
                         runner_process_killed.set()
                     processes.remove(p)
+
+        # The reap above is the loop's exit condition, so a cause claimed after
+        # the check at the top of the iteration is only observable here.
+        if stop_testing.is_set():
+            raise_stop_from_carrier(stop_exit_code)
 
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers
@@ -5477,9 +5924,11 @@ def main(args):
     tests_start_time = time()
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
+        msg = "Server is not responding. Cannot query the server version."
         if args.hung_check:
             print(msg)
+            # The probe that just failed is HTTP; this dump goes over TCP.
+            print_sql_stacktraces(args)
             print_c_stacktraces(args)
         raise TestException(msg)
 
@@ -5721,6 +6170,7 @@ ORDER BY (test_name, callee_offset)
         )
 
     total_tests_run = 0
+    explicit_test_selectors_matched = set()
     cloud_skip_list = try_get_skip_list(base_dir, "../queries-no-cloud-tests.txt")
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
     skip_list = []
@@ -5798,6 +6248,10 @@ ORDER BY (test_name, callee_offset)
             test_suite = TestSuite.read_test_suite(args, suite)
             if test_suite is None:
                 continue
+
+            explicit_test_selectors_matched.update(
+                test_suite.explicit_test_selectors_matched
+            )
 
             test_suite.skip_list = skip_list
             test_suite.cloud_skip_list = cloud_skip_list
@@ -5877,7 +6331,10 @@ ORDER BY (test_name, callee_offset)
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            # The processlist may contain arbitrary bytes: under the AST fuzzer, query
+            # texts (e.g. of KILL QUERY attempts) can carry invalid UTF-8 sequences,
+            # and a strict decode would crash the hung check instead of reporting it.
+            print(processlist.decode(errors="replace"))
             print(get_transactions_list(args))
 
             # `processlist` above already shows per-thread stacks for
@@ -5906,7 +6363,14 @@ ORDER BY (test_name, callee_offset)
             print(test_result.description)
 
     if total_tests_run == 0:
-        print("No tests were run.")
+        if runner_process_killed.is_set() or exit_code.value != 0:
+            print("No tests were run.")
+        elif args.test and set(args.test).issubset(explicit_test_selectors_matched):
+            print(
+                "No tests were run because every explicitly requested test was filtered out."
+            )
+        else:
+            print("No tests were run.")
         sys.exit(1)
     else:
         print("All tests have finished.")
@@ -6781,6 +7245,18 @@ if __name__ == "__main__":
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
+
+    if not args.secure:
+        # Tell the client which protocol this run uses instead of letting it choose. A client that is
+        # given neither a port nor a TLS mode probes both the plain and the secure port and uses the one
+        # that answers first, and the test server listens on both, so an unspecified TLS mode would
+        # silently run the suite over an arbitrary protocol - including the tests that assert on the
+        # plain port and on `is_secure`.
+        #
+        # This covers the `.sql` tests; the shell tests get it from `shell_config.sh`. It must not go into
+        # CLICKHOUSE_CLIENT_OPT, which ends up on the command line of a `.sql` test next to this, and
+        # `--no-secure` cannot be specified more than once.
+        args.client += " --no-secure"
 
     if args.cloud:
         enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")

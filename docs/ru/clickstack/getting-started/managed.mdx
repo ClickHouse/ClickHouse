@@ -9,54 +9,418 @@ keywords: ['Управляемый ClickStack', 'начало работы', 'Cl
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-import SetupManagedIngestion from '/snippets/ru/clickstack/_setup_managed_ingestion.mdx';
-import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
-import NavigateClickStackUI from '/snippets/ru/clickstack/_navigate_managed.mdx';
+import ExampleOTelConfig from '/snippets/ru/clickstack/_config_example_otel.mdx';
 
-Самый простой способ начать работу — развернуть **Управляемый ClickStack** в **ClickHouse Cloud**, который предоставляет полностью управляемый и защищённый backend, сохраняя при этом полный контроль над ингестией, схемой и процессами обсервабилити. Это избавляет от необходимости самостоятельно управлять ClickHouse и даёт ряд преимуществ:
+Разверните Управляемый ClickStack в ClickHouse Cloud, отправьте тестовое событие через конвейер ингестии и убедитесь, что оно доступно в интерфейсе ClickStack.
+
+ClickHouse Cloud управляет backend ClickHouse, а вы сохраняете контроль над конвейером ингестии и схемой. Управляемый ClickStack предоставляет:
 
 * Автоматическое масштабирование вычислительных ресурсов независимо от хранилища
 * Недорогое и практически неограниченное хранение на базе объектного хранилища
-* Возможность независимо изолировать рабочие нагрузки чтения и записи с помощью хранилищ
-* Встроенная аутентификация
+* Независимую изоляцию рабочих нагрузок чтения и записи с помощью [хранилищ](/ru/products/cloud/features/infrastructure/warehouses)
+* Встроенную аутентификацию
 * Автоматические резервные копии
 * Средства безопасности и соответствия требованиям
 * Бесшовные обновления
 
-<Steps>
-  <Step>
-    ## Регистрация в ClickHouse Cloud
+<div id="before-you-begin">
+  ## Перед началом работы
+</div>
 
-    Чтобы создать сервис Управляемого ClickStack в [ClickHouse Cloud](https://console.clickhouse.cloud), сначала выполните **первый шаг** из [краткого руководства по ClickHouse Cloud](/ru/get-started/setup/cloud).
+Вы также можете отправлять данные напрямую в ClickHouse, используя [поддерживаемую интеграцию](/ru/integrations/home) и собственную схему.
 
-    <ProviderSelection />
-  </Step>
+<div id="create-a-managed-clickstack-service">
+  ### Создайте сервис ClickHouse Cloud
+</div>
 
-  <Step>
-    ## Настройка ингестии
+Выполните шаг [«Создание сервиса ClickHouse»](/ru/get-started/setup/cloud#1-create-a-clickhouse-service) в руководстве по быстрому началу работы с ClickHouse Cloud. Прежде чем продолжить, убедитесь, что сервис запущен.
 
-    После создания сервиса убедитесь, что выбран нужный сервис, и нажмите &quot;ClickStack&quot; в левом меню.
+<View title="OpenTelemetry">
+  <Tip>
+    На этой странице показан вариант с **OpenTelemetry**. Используйте переключатель в верхней части руководства, чтобы выбрать **OpenTelemetry** (рекомендуется) или **Vector**.
+  </Tip>
 
-    <SetupManagedIngestion />
-  </Step>
+  ### Подготовьте среду для ингестии
 
-  <Step>
-    ## Переход в интерфейс ClickStack
+  * Чтобы запустить новый [OpenTelemetry Collector](/ru/clickstack/ingesting-data/collector), установите [Docker](https://docs.docker.com/get-docker/). В Kubernetes разверните коллектор с помощью [Helm](/ru/clickstack/ingesting-data/collector#configuring-the-collector).
+  * Чтобы использовать существующий коллектор, запустите его в [режиме шлюза](/ru/clickstack/ingesting-data/collector#collector-roles) и убедитесь, что его дистрибутив включает [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). В этом руководстве вы добавите необходимую конфигурацию.
 
-    <NavigateClickStackUI />
-  </Step>
+  ## Настройка управляемого ClickStack
 
-  <Step>
-    ## Следующие шаги
+  <Steps titleSize="h3">
+    <Step title="Выберите источник для ингестии и настройте коллектор" id="choose-an-ingestion-source">
+      В сервисе ClickHouse Cloud запустите ClickStack. На странице ClickStack **Начало работы** выберите **Начать ингестию**.
 
-    <Warning>
-      **Сохраните учетные данные по умолчанию**
+      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Начать ингестию" border />
 
-      Если вы не сохранили учетные данные по умолчанию во время выполнения описанных выше шагов, перейдите к сервису и выберите `Connect`, сохранив пароль и конечные точки HTTP/native. Храните эти учетные данные администратора в безопасном месте — их можно будет использовать в следующих руководствах.
-    </Warning>
+      На странице **Выберите источник ингестии** выберите [OpenTelemetry](https://opentelemetry.io/).
 
-    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Подключение к сервису" border />
+      <Info>
+        **Рекомендуется OpenTelemetry**
 
-    Чтобы выполнять такие задачи, как создание новых пользователей или добавление дополнительных источников данных, см. [руководство по развертыванию Управляемого ClickStack](/ru/clickstack/deployment/managed#additional-tasks).
-  </Step>
-</Steps>
+        OpenTelemetry предоставляет преднастроенные схемы для журналов, трассировок, метрик и сеансов.
+      </Info>
+
+      <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="Выберите OpenTelemetry в качестве источника ингестии" border />
+
+      <Tabs>
+        <Tab title="Запустить новый коллектор">
+          ClickStack генерирует команду запуска коллектора с учетными данными администратора `default`. Рекомендуется использовать отдельные учетные данные для ингестии, чтобы отделить доступ для ингестии от административного доступа и не зависеть от пароля администратора.
+
+          <Accordion title="Создать отдельные учетные данные для ингестии (рекомендуется)">
+            В ClickHouse Cloud откройте SQL-консоль сервиса и выполните:
+
+            ```sql
+            CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+            GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON default.* TO `clickstack-ingest`;
+            ```
+
+            В сгенерированной команде замените `CLICKHOUSE_USER="default"` на `CLICKHOUSE_USER="clickstack-ingest"` и укажите в `CLICKHOUSE_PASSWORD` пароль этого пользователя.
+          </Accordion>
+
+          Чтобы продолжить с учетными данными администратора `default`, скопируйте команду на вкладке **Запустить коллектор**. ClickStack автоматически подставляет конечную точку сервиса. Замените заполнитель пароля паролем сервиса. Если он у вас больше не сохранился, [получите или сбросьте сведения о подключении](/ru/products/cloud/guides/sql-console/connection-details).
+
+          Команда имеет следующий вид:
+
+          ```shell
+          docker run -e CLICKHOUSE_ENDPOINT="https://<host>:8443" \
+              -e CLICKHOUSE_USER="default" \
+              -e CLICKHOUSE_PASSWORD="<your_password_here>" \
+              -p 4317:4317 -p 4318:4318 \
+              clickhouse/clickstack-otel-collector:latest
+          ```
+
+          Замените `<host>` и `<your_password_here>` значениями для своего сервиса ClickHouse Cloud, затем выполните команду.
+
+          Коллектор запускается в интерактивном режиме. Оставьте этот терминал открытым, а для остальных команд из этого руководства используйте второй терминал.
+
+          <Note>
+            Эта команда открывает порты OTLP без аутентификации и предназначена для локальной оценки. Перед отправкой производственного трафика [защитите коллектор](/ru/clickstack/ingesting-data/collector#securing-the-collector).
+          </Note>
+        </Tab>
+
+        <Tab title="Использовать существующий коллектор">
+          Выберите **Настроить существующий коллектор**, затем адаптируйте конфигурацию коллектора.
+
+          Запустите коллектор как шлюз между приложениями и ClickHouse Cloud. Приведенная ниже конфигурация добавляет необходимые экспортеры ClickHouse и конвейеры обработки сигналов.
+
+          В примере используются учетные данные `default`, сгенерированные ClickStack. Чтобы использовать отдельные учетные данные для ингестии, выполните необязательную настройку на вкладке **Запустить новый коллектор**. В обоих блоках экспортера ClickHouse замените `username: default` на `username: clickstack-ingest` и укажите в `password` пароль этого пользователя.
+
+          Добавьте следующие компоненты в существующую конфигурацию, не заменяя несвязанные приёмники, процессоры, экспортеры или расширения.
+
+          <Info>
+            **Требуемые компоненты коллектора**
+
+            Дистрибутив коллектора должен включать [экспортер ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) и [коннектор маршрутизации](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/routingconnector). Дистрибутив OpenTelemetry Collector Contrib включает оба компонента.
+          </Info>
+
+          Пример добавляет приёмники OTLP, пакетную обработку и ограничение памяти, маршрутизацию воспроизведения сеансов и экспортеры ClickHouse.
+
+          <ExampleOTelConfig />
+
+          Используйте существующий приёмник OTLP и сохраните его настройки аутентификации и TLS. Если в конфигурации уже используются идентификаторы компонентов или конвейеров из примера, объедините или переименуйте их, а не создавайте дублирующиеся идентификаторы. Запуск двух приёмников на портах `4317` и `4318` приводит к конфликту портов.
+
+          После объединения конфигурации перезагрузите или перезапустите коллектор согласно используемому процессу развертывания.
+
+          Дополнительные сведения о настройке коллекторов OpenTelemetry см. в разделе [Ингестия с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+        </Tab>
+      </Tabs>
+    </Step>
+
+    <Step title="Отправьте тестовые данные" id="send-test-data">
+      Отправьте тестовую запись журнала с текущей временной меткой:
+
+      ```shell
+      NOW_NANO="$(date +%s)000000000"
+
+      curl -i "http://localhost:4318/v1/logs" \
+        -H "Content-Type: application/json" \
+        --data-binary @- <<EOF
+      {
+        "resourceLogs": [{
+          "resource": {
+            "attributes": [{
+              "key": "service.name",
+              "value": {"stringValue": "clickstack-docs-test"}
+            }]
+          },
+          "scopeLogs": [{
+            "scope": {"name": "clickstack-docs-test"},
+            "logRecords": [{
+              "timeUnixNano": "${NOW_NANO}",
+              "severityText": "INFO",
+              "body": {"stringValue": "ClickStack ingestion test"}
+            }]
+          }]
+        }]
+      }
+      EOF
+      ```
+
+      Если вы используете существующий коллектор, замените `http://localhost:4318` на его конечную точку OTLP HTTP. Если приёмник требует аутентификации, добавьте необходимый заголовок в команду `curl`.
+
+      При успешном запросе возвращается `HTTP/1.1 200 OK`.
+    </Step>
+
+    <Step title="Начните работу и подтвердите приём данных" id="open-clickstack-and-confirm-ingestion">
+      После того как ClickStack обнаружит источники данных OpenTelemetry, выберите **Начать изучение**, чтобы открыть представление **Search**. Найдите `ClickStack ingestion test`.
+
+      В результатах должно отображаться тестовое событие с именем сервиса `clickstack-docs-test`.
+
+      <Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="Представление журналов ClickStack с тестовым событием ингестии ClickStack" border />
+    </Step>
+  </Steps>
+</View>
+
+<View title="Vector">
+  ### Подготовьте окружение для приёма данных
+
+  Начните с [существующего конвейера Vector](/ru/clickstack/ingesting-data/vector), который умеет отправлять данные в ClickHouse.
+
+  ## Настройка управляемого ClickStack
+
+  <Steps titleSize="h3">
+    <Step title="Выберите Vector и настройте приём данных" id="choose-an-ingestion-source-vector">
+      В своём сервисе ClickHouse Cloud запустите ClickStack. На странице ClickStack **Getting Started** выберите **Start ingestion**.
+
+      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Начните приём данных" border />
+
+      На странице **Choose an ingestion source** выберите [Vector](https://vector.dev/).
+
+      <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="Выберите Vector в качестве источника для ингестии" border />
+
+      [Vector](https://vector.dev) — это высокопроизводительный, независимый от вендоров конвейер данных обсервабилити, особенно популярный для приёма логов благодаря своей гибкости и низкому потреблению ресурсов.
+
+      При использовании Vector вместе с ClickStack схему определяете вы. Она может соответствовать соглашениям OpenTelemetry либо содержать поля, специфичные для ваших событий.
+
+      <Info>
+        **Требуется существующий конвейер Vector**
+
+        Продолжайте работу с этим руководством, если у вас уже запущен Vector с входным конвейером. Данные, передаваемые через конвейер, должны содержать **столбец временной метки** или эквивалентное поле времени, которое вы выберете при настройке источника данных в интерфейсе ClickStack.
+
+        Выполните следующие шаги, чтобы добавить приёмник ClickHouse в существующий конвейер.
+      </Info>
+
+      #### Создайте базу данных и таблицу
+
+      Создайте базу данных и таблицу перед настройкой sink в Vector.
+
+      В ClickHouse Cloud откройте SQL Console вашего сервиса и создайте базу данных:
+
+      Например, создайте базу данных для журналов:
+
+      ```sql
+      CREATE DATABASE IF NOT EXISTS logs
+      ```
+
+      Затем создайте таблицу, схема которой соответствует структуре ваших логов. В приведённом ниже примере используется классический формат логов доступа Nginx:
+
+      ```sql
+      CREATE TABLE logs.nginx_logs
+      (
+          `time_local` DateTime,
+          `remote_addr` IPv4,
+          `remote_user` LowCardinality(String),
+          `request` String,
+          `status` UInt16,
+          `body_bytes_sent` UInt64,
+          `http_referer` String,
+          `http_user_agent` String,
+          `http_x_forwarded_for` LowCardinality(String),
+          `request_time` Float32,
+          `upstream_response_time` Float32,
+          `http_host` String
+      )
+      ENGINE = MergeTree
+      ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+      ```
+
+      Ваша таблица должна соответствовать выходной схеме, которую формирует Vector. При необходимости скорректируйте схему под свои данные, руководствуясь рекомендуемыми [лучшими практиками работы со схемами](/ru/concepts/best-practices/select-data-type).
+
+      Мы настоятельно рекомендуем разобраться, как в ClickHouse работают [первичные ключи](/ru/concepts/core-concepts/primary-indexes), и выбирать ключ сортировки с учётом характерных для вас шаблонов доступа к данным. См. [рекомендации для ClickStack](/ru/clickstack/managing/performance-tuning#choosing-a-primary-key) по выбору первичного ключа.
+
+      #### Настройте sink для ClickHouse
+
+      После создания таблицы добавьте sink ClickHouse в конфигурацию Vector:
+
+      ```yaml
+      sinks:
+        clickhouse:
+          type: clickhouse
+          inputs:
+            - your_input
+          endpoint: "https://<host>:8443"
+          database: logs
+          table: nginx_logs
+          format: json_each_row
+          skip_unknown_fields: true
+          auth:
+            strategy: basic
+            user: default
+            password: "<your_password_here>"
+      ```
+
+      Замените `your_input` на входные данные из вашего существующего конвейера. Замените `<host>` и `<your_password_here>` на значения вашего сервиса ClickHouse Cloud. При необходимости измените целевую базу данных или таблицу.
+
+      <Accordion title="Используйте отдельные учётные данные для ингестии (рекомендуется)">
+        Для продакшна создайте отдельного пользователя и предоставьте ему доступ к целевой таблице Vector. В ClickHouse Cloud откройте SQL-консоль вашего сервиса и выполните:
+
+        ```sql
+        CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+        GRANT SELECT, INSERT ON logs.nginx_logs TO `clickstack-ingest`;
+        ```
+
+        Замените `default` на `clickstack-ingest` в sink Vector и укажите в `password` пароль выделенного пользователя.
+      </Accordion>
+
+      Сохраните обновлённую конфигурацию, затем перезагрузите или перезапустите Vector с использованием вашего текущего процесса развертывания.
+
+      Дополнительные примеры ингестии данных с помощью Vector приведены в разделе [Ингестия с помощью Vector](/ru/clickstack/ingesting-data/vector), а расширенные параметры описаны в [документации по sink ClickHouse для Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/).
+
+      #### Создайте источник данных ClickStack
+
+      Создайте источник данных для таблицы, которую наполняет ваш конвейер Vector. ClickStack предложит создать его при первом входе в систему.
+
+      Форма предзаполняется выражениями для стандартной схемы OpenTelemetry. Для таблицы Nginx, созданной в этом руководстве, задайте для источника следующие значения:
+
+      | Настройка                                    | Значение                                                                                                        |
+      | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+      | **Название**                                 | `Журналы Nginx`                                                                                                 |
+      | **Тип исходных данных**                      | Log                                                                                                             |
+      | **Имя подключения к серверу**                | `По умолчанию`                                                                                                  |
+      | **База данных**                              | `журнал`                                                                                                        |
+      | **Таблица**                                  | `nginx_logs`                                                                                                    |
+      | **Столбец временной метки**                  | `time_local`                                                                                                    |
+      | **SELECT по умолчанию**                      | `time_local, remote_addr, status, request`                                                                      |
+      | **Выражение для имени сервиса**              | `'nginx'`                                                                                                       |
+      | **Выражение для уровня логирования**         | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')`                                                |
+      | **Выражение атрибутов журнала**              | `map('http.remote_addr', toString(remote_addr), 'http.status_code', toString(status), 'http.request', request)` |
+      | **Выражение атрибутов ресурса**              | `map('service.name', 'nginx')`                                                                                  |
+      | **Отображаемый столбец временной метки**     | `time_local`                                                                                                    |
+      | **Выражение для идентификатора трассировки** | `''`                                                                                                            |
+      | **Выражение для ID span**                    | `''`                                                                                                            |
+      | **Выражение неявного столбца**               | `request`                                                                                                       |
+
+      Таблица Nginx не содержит столбца `Body`. В поле **Body Expression** укажите:
+
+      ```sql
+      concat(
+        remote_addr, ' ',
+        remote_user, ' ',
+        '[', formatDateTime(time_local, '%d/%b/%Y:%H:%i:%S %z'), '] ',
+        '"', request, '" ',
+        toString(status), ' ',
+        toString(body_bytes_sent), ' ',
+        '"', http_referer, '" ',
+        '"', http_user_agent, '" ',
+        '"', http_x_forwarded_for, '" ',
+        toString(request_time), ' ',
+        toString(upstream_response_time), ' ',
+        '"', http_host, '"'
+      )
+      ```
+
+      Остальные настройки source описаны в [справочнике по конфигурации ClickStack](/ru/clickstack/managing/config).
+    </Step>
+
+    <Step title="Отправьте тестовые данные" id="send-test-data-vector">
+      Отправьте тестовое событие на вход существующего конвейера Vector.
+
+      Дополнительные примеры источников и преобразований Vector см. в разделе [Приём данных с помощью Vector](/ru/clickstack/ingesting-data/vector).
+    </Step>
+
+    <Step title="Начните работу и подтвердите приём данных" id="open-clickstack-and-confirm-ingestion-vector">
+      После создания источника данных выберите **Start exploring**, чтобы открыть представление **Search**. Выберите источник данных для своей таблицы и убедитесь, что в нём есть отправленное вами событие.
+
+      <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="Журналы в интерфейсе ClickStack" />
+    </Step>
+  </Steps>
+</View>
+
+Теперь у вас есть сервис Управляемый ClickStack, настроенный путь ингестии и тестовое событие, которое можно просмотреть в ClickStack.
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+Если для выполнения другого руководства требуются конечная точка ClickHouse Cloud или пароль, [получите или сбросьте сведения о подключении](/ru/products/cloud/guides/sql-console/connection-details), прежде чем продолжить.
+
+<div id="send-application-and-infrastructure-data">
+  ### Отправка данных приложений и инфраструктуры
+</div>
+
+Выберите руководство в зависимости от данных, которые хотите отправлять в ClickStack:
+
+<CardGroup cols={2}>
+  <Card title="Инструментирование приложения" icon="code" href="/ru/clickstack/ingesting-data/sdks/index">
+    Отправляйте трассировки и журналы приложения с помощью поддерживаемого SDK OpenTelemetry.
+  </Card>
+
+  <Card title="Сбор журналов хоста" icon="server" href="/ru/clickstack/integration-examples/host-logs">
+    Пересылайте журналы хоста из OpenTelemetry Collector, работающего в роли агента.
+  </Card>
+
+  <Card title="Мониторинг Kubernetes" icon="cubes" href="/ru/clickstack/integration-examples/kubernetes">
+    Собирайте журналы, метрики и трассировки из кластера Kubernetes.
+  </Card>
+
+  <Card title="Другие интеграции" icon="plug" href="/ru/clickstack/integration-examples/index">
+    Найдите руководства по дополнительным приложениям и источникам телеметрии.
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### Изучение демонстрационных данных
+</div>
+
+Используйте демонстрационный датасет, чтобы изучить возможности ClickStack на более насыщенных телеметрических данных:
+
+<CardGroup cols={2}>
+  <Card title="Демонстрационные журналы, трассировки и метрики" href="/ru/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    Загрузите данные из публичной демонстрационной среды и диагностируйте проблему. В этом руководстве предполагается, что вы запустили новый локальный OpenTelemetry Collector. Если вы настроили существующий коллектор, адаптируйте параметры конечной точки и аутентификации к вашему развертыванию.
+  </Card>
+
+  <Card title="Локальные журналы и метрики" href="/ru/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    Собирайте локальные файлы и системные метрики в macOS или Linux.
+  </Card>
+</CardGroup>
+
+<div id="generate-synthetic-data">
+  ### Генерация синтетических данных
+</div>
+
+Используйте генератор, чтобы протестировать ингестию без готового приложения или датасета:
+
+<CardGroup cols={2}>
+  <Card title="Генерация данных с помощью otelgen" icon="terminal" href="/ru/clickstack/example-datasets/otelgen">
+    Отправьте небольшой пакет синтетических журналов, трассировок и метрик OTLP.
+  </Card>
+
+  <Card title="Генерация данных с помощью telemetrygen" icon="terminal" href="/ru/clickstack/example-datasets/telemetrygen">
+    Генерируйте настраиваемые сигналы OpenTelemetry для нескольких сервисов.
+  </Card>
+</CardGroup>
+
+См. [все демонстрационные данные и демонстрации ClickStack](/ru/clickstack/example-datasets/index).
+
+<div id="prepare-for-production">
+  ### Подготовка к продакшну
+</div>
+
+Перед использованием ClickStack для постоянных рабочих нагрузок ознакомьтесь с рекомендациями по продакшну и сайзингу:
+
+<CardGroup cols={2}>
+  <Card title="Переход в продакшн" icon="shield" href="/ru/clickstack/managing/production">
+    Ознакомьтесь с рекомендациями по учётным данным для ингестии, безопасности, хранению данных и эксплуатации.
+  </Card>
+
+  <Card title="Оценка ресурсов" icon="chart-line" href="/ru/clickstack/managing/estimating-resources">
+    Определите необходимые вычислительные ресурсы исходя из ожидаемого объёма приёма данных.
+  </Card>
+</CardGroup>
+
+Сведения о задачах развертывания см. в [руководстве по развертыванию Управляемого ClickStack](/ru/clickstack/deployment/managed#additional-tasks).

@@ -38,12 +38,14 @@ Introduced in: v21.1.0
 
 Returns number of matches of a regular expression in a string.
 
-:::note Version dependent behavior
+<Info>
+**Version dependent behavior**
+
 The behavior of this function depends on the ClickHouse version:
 
 - in versions < v25.6, the function stops counting at the first empty match even if a pattern accepts.
 - in versions >= 25.6, the function continues execution when an empty match occurs. The legacy behavior can be restored using setting `count_matches_stop_at_empty_match = true`;
-:::
+</Info>
 
     
 
@@ -72,8 +74,8 @@ SELECT countMatches('hello 123 world 456 test', '[0-9]+')
 
 ```response title=Response
 ┌─countMatches('hello 123 world 456 test', '[0-9]+')─┐
-│                                                   2 │
-└─────────────────────────────────────────────────────┘
+│                                                  2 │
+└────────────────────────────────────────────────────┘
 ```
 
 ## countMatchesCaseInsensitive {#countMatchesCaseInsensitive}
@@ -189,9 +191,9 @@ SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
 ```
 
 ```response title=Response
-┌─countSubstri⋯AAA', 'aa')─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
 ```
 
 **With start_pos argument**
@@ -201,9 +203,9 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'abc', 4)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
@@ -238,9 +240,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯шка', 'КА')─┐
-│                        4 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **With start_pos argument**
@@ -250,9 +252,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'КА', 13)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## extract {#extract}
@@ -292,8 +294,8 @@ SELECT extract('test@clickhouse.com', '.*@(.*)$')
 
 ```response title=Response
 ┌─extract('test@clickhouse.com', '.*@(.*)$')─┐
-│ clickhouse.com                            │
-└───────────────────────────────────────────┘
+│ clickhouse.com                             │
+└────────────────────────────────────────────┘
 ```
 
 **No match returns empty string**
@@ -442,10 +444,10 @@ Introduced in: v25.10.0
 
 Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
-:::note
+<Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
@@ -459,26 +461,26 @@ If the text index has a [postprocessor](/reference/engines/table-engines/mergetr
 Duplicate tokens are ignored.
 For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
-:::note
+<Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAllTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
     
 
 **Syntax**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **Aliases**: `hasAllToken`
 
 **Arguments**
 
-- `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array)
+- `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable) or [`Nullable(FixedString)`](/reference/data-types/nullable) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array) or [`Array(Nullable(String))`](/reference/data-types/array) or [`Array(Nullable(FixedString))`](/reference/data-types/array)
 - `needles` — Tokens to be searched. [`String`](/reference/data-types/string) or [`Array(String)`](/reference/data-types/array)
-- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
+- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -489,6 +491,8 @@ Returns 1, if all needles match. 0, otherwise. [`UInt8`](/reference/data-types/i
 **Basic usage with a string needle**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -511,6 +515,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 **Specify needles to be searched for AS-IS (no tokenization) in an array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -533,6 +539,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 **Generate needles using the `tokens` function**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -559,14 +567,16 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
 ```
 
 **Usage examples for array and map columns**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -586,6 +596,8 @@ INSERT INTO log VALUES
 **Example with an array column**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -613,6 +625,8 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **Example with mapKeys**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -640,6 +654,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **Example with mapValues**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -670,10 +686,10 @@ Introduced in: v25.10.0
 
 Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
-:::note
+<Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
@@ -687,17 +703,17 @@ If the text index has a [postprocessor](/reference/engines/table-engines/mergetr
 Duplicate tokens are ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
-:::note
+<Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAnyTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
     
 
 **Syntax**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **Aliases**: `hasAnyToken`
@@ -706,7 +722,7 @@ hasAnyTokens(input, needles)
 
 - `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable) or [`Nullable(FixedString)`](/reference/data-types/nullable) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array) or [`Array(Nullable(String))`](/reference/data-types/array) or [`Array(Nullable(FixedString))`](/reference/data-types/array)
 - `needles` — Tokens to be searched. [`String`](/reference/data-types/string) or [`Array(String)`](/reference/data-types/array)
-- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
+- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -717,6 +733,8 @@ Returns `1`, if there was at least one match. `0`, otherwise. [`UInt8`](/referen
 **Basic usage with a string needle**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -739,6 +757,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 **Specify needles to be searched for AS-IS (no tokenization) in an array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -761,6 +781,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 **Generate needles using the `tokens` function**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -783,6 +805,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
 **Usage examples for array and map columns**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -802,6 +826,8 @@ INSERT INTO log VALUES
 **Example with an array column**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -829,6 +855,8 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **Example with mapKeys**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -856,6 +884,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **Example with mapValues**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -886,20 +916,21 @@ Introduced in: v26.4.0
 
 Checks if the `input` contains all tokens from the `phrase` in consecutive order.
 
-:::note
+<Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
 Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu`.
+Note that `splitByRegexp` is not supported for `hasPhrase` when the text index also defines a postprocessor.
 
-:::note
+<Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order
 and without any intervening tokens. For example, `hasPhrase('the quick brown fox', 'quick fox')` returns 0
@@ -934,8 +965,8 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick brown')
 
 ```response title=Response
 ┌─hasPhrase('the quick brown fox jumps', 'quick brown')─┐
-│                                                      1 │
-└────────────────────────────────────────────────────────┘
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
 ```
 
 **Non-consecutive tokens**
@@ -946,8 +977,8 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 
 ```response title=Response
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
-│                                                    0 │
-└──────────────────────────────────────────────────────┘
+│                                                   0 │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}
@@ -1064,9 +1095,9 @@ SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая си
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯ 'СИСТЕМА')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
+│                                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequenceUTF8 {#hasSubsequenceUTF8}
@@ -1100,9 +1131,9 @@ SELECT hasSubsequenceUTF8('картошка', 'кошка');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯', 'кошка')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
 ```
 
 **Non-matching subsequence**
@@ -1112,9 +1143,9 @@ SELECT hasSubsequenceUTF8('картошка', 'апельсин');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯'апельсин')─┐
-│                        0 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
+│                                          0 │
+└────────────────────────────────────────────┘
 ```
 
 ## hasToken {#hasToken}
@@ -1161,10 +1192,10 @@ Introduced in: v20.1.0
 
 Performs case insensitive lookup of needle in haystack using tokenbf_v1 index.
 
-:::note
+<Note>
 This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
-:::
+</Note>
             
 
 **Syntax**
@@ -1187,10 +1218,10 @@ Introduced in: v23.1.0
 
 Performs case insensitive lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed.
 
-:::note
+<Note>
 This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
-:::
+</Note>
             
 
 **Syntax**
@@ -1238,9 +1269,9 @@ SELECT hasTokenOrNull('apple banana cherry', 'ban ana');
 ```
 
 ```response title=Response
-┌─hasTokenOrNu⋯ 'ban ana')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
+│                                             ᴺᵁᴸᴸ │
+└──────────────────────────────────────────────────┘
 ```
 
 ## highlight {#highlight}
@@ -1353,9 +1384,9 @@ No automatic Unicode normalization is performed, you can use the `normalizeUTF8*
 To match against literal `%`, `_` and `\` (which are `LIKE` metacharacters), prepend them with a backslash: `\%`, `\_` and `\\`.
 The backslash loses its special meaning (i.e. is interpreted literally) if it prepends a character different than `%`, `_` or `\`.
 
-:::note
+<Note>
 ClickHouse requires backslashes in strings [to be quoted as well](/reference/syntax#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
-:::
+</Note>
 
 For `LIKE` expressions of the form `%needle%`, the function is as fast as the `position` function.
 All other LIKE expressions are internally converted to a regular expression and executed with a performance similar to function `match`.
@@ -1406,9 +1437,9 @@ SELECT like('ClickHouse', 'Click_ouse');
 ```
 
 ```response title=Response
-┌─like('ClickH⋯lick_ouse')─┐
-│                        1 │
-└──────────────────────────┘
+┌─like('ClickHouse', 'Click_ouse')─┐
+│                                1 │
+└──────────────────────────────────┘
 ```
 
 **Non-matching pattern**
@@ -1441,12 +1472,14 @@ Introduced in: v18.16.0
 
 Like [`position`](#position) but with arguments `haystack` and `locate` switched.
 
-:::note Version dependent behavior
+<Info>
+**Version dependent behavior**
+
 The behavior of this function depends on the ClickHouse version:
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - in versions >= 24.3, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`.
 The previous behavior can be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.
-:::
+</Info>
     
 
 **Syntax**
@@ -1497,7 +1530,7 @@ The pattern is not anchored. To match the entire string, anchor the pattern your
 
 If you just want to search for substrings, you can use functions [`like`](#like) or [`position`](#position) instead, which work much faster than this function.
 
-Alternative operator syntax: `haystack REGEXP pattern`.
+Alternative operator syntax: `haystack REGEXP pattern` or `haystack ~ pattern` (PostgreSQL-style).
     
 
 **Syntax**
@@ -1551,8 +1584,49 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 
 ```response title=Response
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
-│                       1 │                         0 │
-└─────────────────────────┴───────────────────────────┘
+│                      1 │                        0 │
+└────────────────────────┴──────────────────────────┘
+```
+
+## matchCaseInsensitive {#matchCaseInsensitive}
+
+Introduced in: v26.8.0
+
+Similar to [`match`](#match) but matches case-insensitively.
+
+This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+
+Alternative operator syntax: `haystack ~* pattern` (PostgreSQL-style).
+    
+
+**Syntax**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**Arguments**
+
+- `haystack` — String in which the pattern is searched. [`String`](/reference/data-types/string)
+- `pattern` — Regular expression pattern. Can be a constant or come from a column. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns `1` if the pattern matches case-insensitively, `0` otherwise. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseInsensitive('Hello World', 'hello.*')─┬─matchCaseInsensitive('Hello World', 'HELLO.*')─┐
+│                                              1 │                                              1 │
+└────────────────────────────────────────────────┴────────────────────────────────────────────────┘
 ```
 
 ## multiFuzzyMatchAllIndices {#multiFuzzyMatchAllIndices}
@@ -1586,9 +1660,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯, 'House'])─┐
-│ [3,1,4,2]                │
-└──────────────────────────┘
+┌─multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose', 'House'])─┐
+│ [3,1,4,2]                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiFuzzyMatchAny {#multiFuzzyMatchAny}
@@ -1599,9 +1673,9 @@ Like [`multiMatchAny`](#multiMatchAny) but returns 1 if any pattern matches the 
 This function relies on the experimental feature of [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) library, and can be slow for some edge cases.
 The performance depends on the edit distance value and patterns used, but it's always more expensive compared to non-fuzzy variants.
 
-:::note
+<Note>
 `multiFuzzyMatch*()` function family do not support UTF-8 regular expressions (it treats them as a sequence of bytes) due to restrictions of hyperscan.
-:::
+</Note>
     
 
 **Syntax**
@@ -1629,9 +1703,9 @@ SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHos
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯lickHose'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiFuzzyMatchAnyIndex {#multiFuzzyMatchAnyIndex}
@@ -1665,9 +1739,9 @@ SELECT multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'Clic
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯ickHouse'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse'])─┐
+│                                                                                  2 │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiMatchAllIndices {#multiMatchAllIndices}
@@ -1700,9 +1774,9 @@ SELECT multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse']);
 ```
 
 ```response title=Response
-┌─multiMatchAl⋯', 'ouse'])─┐
-│ [3, 2, 4]                │
-└──────────────────────────┘
+┌─multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse'])─┐
+│ [3,2,4]                                                                 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiMatchAny {#multiMatchAny}
@@ -1785,9 +1859,9 @@ SELECT multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click']);
 ```
 
 ```response title=Response
-┌─multiMatchAn⋯, 'Click'])─┐
-│                        3 │
-└──────────────────────────┘
+┌─multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click'])─┐
+│                                                             3 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchAllPositions {#multiSearchAllPositions}
@@ -1859,9 +1933,9 @@ SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯['c', 'h'])─┐
-│ [1,6]                    │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
+│ [1,6]                                                            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchAllPositionsCaseInsensitiveUTF8 {#multiSearchAllPositionsCaseInsensitiveUTF8}
@@ -1894,9 +1968,9 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!
 ```
 
 ```response title=Response
-┌─multiSearchA⋯й', 'МИР'])─┐
-│ [1, 13]                  │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
+│ [1,13]                                                                                │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
@@ -2040,9 +2114,9 @@ SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯те', ['з'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchAnyUTF8 {#multiSearchAnyUTF8}
@@ -2072,13 +2146,13 @@ Returns `1`, if there was at least one match, otherwise `0`, if there was not at
 **Given '你好，世界' ('Hello, world') as a UTF-8 string, check if there are any 你 or 界 characters in the string**
 
 ```sql title=Query
-SELECT multiSearchAnyUTF8('你好，世界', ['你', '界'])
+SELECT multiSearchAnyUTF8('你好，世界', ['你', '界']) AS result
 ```
 
 ```response title=Response
-┌─multiSearchA⋯你', '界'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─result─┐
+│      1 │
+└────────┘
 ```
 
 ## multiSearchFirstIndex {#multiSearchFirstIndex}
@@ -2111,9 +2185,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Case-sensitive behavior**
@@ -2123,9 +2197,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **No match found**
@@ -2135,9 +2209,9 @@ SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
+│                                                         0 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchFirstIndexCaseInsensitive {#multiSearchFirstIndexCaseInsensitive}
@@ -2172,9 +2246,9 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯, 'Hello'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello'])─┐
+│                                                                       1 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchFirstIndexCaseInsensitiveUTF8 {#multiSearchFirstIndexCaseInsensitiveUTF8}
@@ -2207,9 +2281,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK',
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server'])─┐
+│                                                                                            1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **UTF-8 case handling**
@@ -2219,9 +2293,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир'
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'ПРИВЕТ'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ'])─┐
+│                                                                         1 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 **No match found**
@@ -2231,9 +2305,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test'])─┐
+│                                                                            0 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchFirstIndexUTF8 {#multiSearchFirstIndexUTF8}
@@ -2268,9 +2342,9 @@ SELECT multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', '
 ```
 
 ```response title=Response
-┌─multiSearchF⋯вствуйте'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте'])─┐
+│                                                                      1 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchFirstPosition {#multiSearchFirstPosition}
@@ -2455,7 +2529,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 ```response title=Response
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                        0.1 │
+│                                 0.06666667 │
 └────────────────────────────────────────────┘
 ```
 
@@ -2492,9 +2566,9 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
-│                                                       0 │
-└─────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
+│                                                        0 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## ngramDistanceCaseInsensitiveUTF8 {#ngramDistanceCaseInsensitiveUTF8}
@@ -2531,9 +2605,9 @@ SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
-│                                             0.5 │
-└─────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
+│                                              0.5 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## ngramDistanceUTF8 {#ngramDistanceUTF8}
@@ -2570,7 +2644,7 @@ SELECT ngramDistanceUTF8('abcde','cde')
 ```
 
 ```response title=Response
-┌─ngramDistanceUTF8('abcde','cde')─┐
+┌─ngramDistanceUTF8('abcde', 'cde')─┐
 │                               0.5 │
 └───────────────────────────────────┘
 ```
@@ -2646,7 +2720,7 @@ SELECT ngramSearchCaseInsensitive('Hello World','hello')
 ```
 
 ```response title=Response
-┌─ngramSearchCaseInsensitive('Hello World','hello')─┐
+┌─ngramSearchCaseInsensitive('Hello World', 'hello')─┐
 │                                                  1 │
 └────────────────────────────────────────────────────┘
 ```
@@ -2685,7 +2759,7 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 ```response title=Response
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                                        1 │
+│                                               0.57142854 │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -2723,7 +2797,7 @@ SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')
 
 ```response title=Response
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                      1 │
+│                                    0.5 │
 └────────────────────────────────────────┘
 ```
 
@@ -2759,9 +2833,9 @@ SELECT notILike('ClickHouse', '%house%');
 ```
 
 ```response title=Response
-┌─notILike('Cl⋯ '%house%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notILike('ClickHouse', '%house%')─┐
+│                                 0 │
+└───────────────────────────────────┘
 ```
 
 ## notLike {#notLike}
@@ -2796,9 +2870,9 @@ SELECT notLike('ClickHouse', '%House%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯ '%House%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%House%')─┐
+│                                0 │
+└──────────────────────────────────┘
 ```
 
 **Non-matching pattern**
@@ -2808,9 +2882,91 @@ SELECT notLike('ClickHouse', '%SQL%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯', '%SQL%')─┐
-│                        1 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%SQL%')─┐
+│                              1 │
+└────────────────────────────────┘
+```
+
+## notMatch {#notMatch}
+
+Introduced in: v26.8.0
+
+Similar to [`match`](#match) but negates the result: checks that the string does not match the regular expression pattern.
+
+This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+
+Alternative operator syntax: `haystack !~ pattern` (PostgreSQL-style).
+    
+
+**Syntax**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**Arguments**
+
+- `haystack` — String in which the pattern is searched. [`String`](/reference/data-types/string)
+- `pattern` — Regular expression pattern. Can be a constant or come from a column. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns `0` if the pattern matches, `1` otherwise. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('Hello World', 'Hello.*')─┬─notMatch('Hello World', 'goodbye.*')─┐
+│                                  0 │                                    1 │
+└────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+## notMatchCaseInsensitive {#notMatchCaseInsensitive}
+
+Introduced in: v26.8.0
+
+Similar to [`matchCaseInsensitive`](#matchCaseInsensitive) but negates the result: checks that the string does not match the regular expression pattern case-insensitively.
+
+This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+
+Alternative operator syntax: `haystack !~* pattern` (PostgreSQL-style).
+    
+
+**Syntax**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**Arguments**
+
+- `haystack` — String in which the pattern is searched. [`String`](/reference/data-types/string)
+- `pattern` — Regular expression pattern. Can be a constant or come from a column. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns `0` if the pattern matches case-insensitively, `1` otherwise. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCaseInsensitive('Hello World', 'hello.*')─┬─notMatchCaseInsensitive('Hello World', 'GOODBYE.*')─┐
+│                                                 0 │                                                   1 │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 ## position {#position}
@@ -3002,9 +3158,9 @@ SELECT positionUTF8('Motörhead', 'r')
 ```
 
 ```response title=Response
-┌─position('Motörhead', 'r')─┐
-│                          5 │
-└────────────────────────────┘
+┌─positionUTF8('Motörhead', 'r')─┐
+│                              5 │
+└────────────────────────────────┘
 ```
 {/*AUTOGENERATED_END*/}
 

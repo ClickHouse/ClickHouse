@@ -5,6 +5,8 @@
 #include <Storages/NATS/INATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -18,7 +20,8 @@ public:
         ContextPtr context_,
         const Names & columns,
         size_t max_block_size_,
-        StreamingHandleErrorMode handle_error_mode_);
+        StreamingHandleErrorMode handle_error_mode_,
+        std::optional<UInt64> cancel_epoch_ = {});
 
     ~NATSSource() override;
 
@@ -31,7 +34,14 @@ public:
 
     void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
+    void setWaitForFlushInterval(bool value) { wait_for_flush_interval = value; }
+
+    void setCommitOnSelect(bool value) { commit_on_select = value; }
+
+    bool wasConsumptionAborted() const { return consumption_aborted; }
+
 private:
+    Chunk generateImpl();
     bool checkTimeLimit() const;
 
     StorageNATS & storage;
@@ -42,13 +52,19 @@ private:
     StreamingHandleErrorMode handle_error_mode;
 
     bool is_finished = false;
+    bool consumption_aborted = false;
     const Block non_virtual_header;
     const Block virtual_header;
+    /// Epoch snapshot taken when this source starts; a SYSTEM STOP/CANCEL that advances the storage's
+    /// cancel epoch past this value aborts this source's in-flight block (see StreamingBackgroundControl).
+    const UInt64 cancel_epoch;
 
     INATSConsumerPtr consumer;
     bool unsubscribe_on_destroy = false;
 
     Poco::Timespan max_execution_time = 0;
+    bool wait_for_flush_interval = false;
+    bool commit_on_select = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     NATSSource(
@@ -58,7 +74,8 @@ private:
         ContextPtr context_,
         const Names & columns,
         size_t max_block_size_,
-        StreamingHandleErrorMode handle_error_mode_);
+        StreamingHandleErrorMode handle_error_mode_,
+        std::optional<UInt64> cancel_epoch_ = {});
 };
 
 }

@@ -63,7 +63,14 @@ private:
     const String stream_id;
 };
 
-using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
+/// Per-part inputs for read-time skip-index filtering; the part itself comes from the read task.
+struct SkipIndexReadInput
+{
+    MarkRanges ranges;
+    RangesInDataPartReadHints read_hints;
+    size_t part_starting_offset_in_query = 0;
+};
+using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
 using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;

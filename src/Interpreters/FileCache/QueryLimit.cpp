@@ -19,32 +19,33 @@ static bool isQueryInitialized()
         && !CurrentThread::getQueryId().empty();
 }
 
-FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CacheStateGuard::Lock &)
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext()
 {
     if (!isQueryInitialized())
         return nullptr;
 
+    /// `getOrSetQueryContext` inserts into `query_map` under `mutex`, so this lookup
+    /// must take `mutex` as well.
+    Lock guard(mutex);
     auto query_iter = query_map.find(std::string(CurrentThread::getQueryId()));
     return (query_iter == query_map.end()) ? nullptr : query_iter->second;
 }
 
-void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &)
+void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const Lock &)
 {
-    auto query_iter = query_map.find(query_id);
-    if (query_iter == query_map.end())
+    if (query_map.erase(query_id) == 0)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Attempt to release query context that does not exist (query_id: {})",
             query_id);
     }
-    query_map.erase(query_iter);
 }
 
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     const std::string & query_id,
     const FilesystemCacheSettings & settings,
-    const CachePriorityGuard::WriteLock &)
+    const Lock &)
 {
     if (query_id.empty())
         return nullptr;
@@ -72,13 +73,14 @@ void FileCacheQueryLimit::QueryContext::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const CachePriorityGuard::WriteLock & lock)
+    const Lock &)
 {
-    auto it = getPriority().add(key_metadata, offset, size, lock, /* state_lock */nullptr);
+    /// The caller's `Lock` (`FileCacheQueryLimit::mutex`) protects the `records` map.
+    auto it = priority.add(key_metadata, offset, size, /* state_lock */nullptr);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
     if (!inserted)
     {
-        it->remove(lock);
+        it->remove();
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot add offset {} to query context under key {}, it already exists",
@@ -89,20 +91,20 @@ void FileCacheQueryLimit::QueryContext::add(
 void FileCacheQueryLimit::QueryContext::remove(
     const Key & key,
     size_t offset,
-    const CachePriorityGuard::WriteLock & lock)
+    const Lock &)
 {
     auto record = records.find({key, offset});
     if (record == records.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no {}:{} in query context", key, offset);
 
-    record->second->remove(lock);
+    record->second->remove();
     records.erase({key, offset});
 }
 
 IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
     const Key & key,
     size_t offset,
-    const CachePriorityGuard::WriteLock &)
+    const Lock &)
 {
     auto it = records.find({key, offset});
     if (it == records.end())
@@ -125,13 +127,18 @@ FileCacheQueryLimit::QueryContextHolder::QueryContextHolder(
 
 FileCacheQueryLimit::QueryContextHolder::~QueryContextHolder()
 {
-    /// If only the query_map and the current holder hold the context_query,
-    /// the query has been completed and the query_context is released.
-    if (context && context.use_count() == 2)
-    {
-        auto lock = cache->lockCache();
+    if (!context)
+        return;
+
+    /// Last-holder release: erase the `query_map` entry. Reading `use_count` under `query_limit->lock()`
+    /// stops a concurrent `tryGetQueryContext` from handing out a new reference between the check and
+    /// the erase (which would split per-query accounting); moving our reference into a local first stops
+    /// two concurrent last holders from each seeing the other's reference and both skipping the erase (a leak).
+    auto lock = query_limit->lock();
+    auto context_to_release = std::move(context);
+    /// `use_count` of 2 means the only references left are this local and the `query_map` entry.
+    if (context_to_release.use_count() == 2)
         query_limit->removeQueryContext(query_id, lock);
-    }
 }
 
 }

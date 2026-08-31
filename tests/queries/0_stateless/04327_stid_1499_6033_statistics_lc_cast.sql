@@ -15,14 +15,14 @@ DROP TABLE IF EXISTS stid_1499_6033;
 CREATE TABLE stid_1499_6033
 (
     id Nullable(UInt32),
-    b  LowCardinality(Bool) STATISTICS(minmax),
-    v  LowCardinality(UInt8) STATISTICS(minmax)
+    b  LowCardinality(Bool) STATISTICS(basic),
+    v  LowCardinality(UInt8) STATISTICS(basic)
 )
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 8, allow_nullable_key = 1;
 
--- Two non-overlapping parts so statistics minmax can prune one of them.
+-- Two non-overlapping parts so statistics basic can prune one of them.
 -- Part 1: b = true,  v in [1, 8]
 -- Part 2: b = false, v in [100, 107]
 INSERT INTO stid_1499_6033 SELECT number,     true,  number + 1   FROM numbers(8);

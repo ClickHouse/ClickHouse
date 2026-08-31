@@ -6,7 +6,7 @@ title: 'Instrução GRANT'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 * Concede [privilégios](#privileges) a contas de usuário ou funções do ClickHouse.
 * Atribui funções a contas de usuário ou a outros funções.
@@ -191,6 +191,7 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -267,6 +268,7 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
   * `SHOW FILESYSTEM CACHES`
   * [`SOURCES`](#sources)
     * `AZURE`
+    * `BIGQUERY`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -284,6 +286,9 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
     * `SQLITE`
     * `URL`
   * [`SYSTEM`](#system)
+    * `SYSTEM BACKGROUND`
+      * `SYSTEM STREAMING ENGINES`
+      * `SYSTEM VIEWS`
     * `SYSTEM CLEANUP`
     * `SYSTEM DROP CACHE`
       * `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -300,7 +305,6 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
       * `SYSTEM DROP S3 CLIENT CACHE`
       * `SYSTEM DROP SCHEMA CACHE`
       * `SYSTEM DROP UNCOMPRESSED CACHE`
-    * `SYSTEM DROP PRIMARY INDEX CACHE`
     * `SYSTEM DROP REPLICA`
     * `SYSTEM FAILPOINT`
     * `SYSTEM FETCHES`
@@ -308,8 +312,6 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
       * `SYSTEM FLUSH ASYNC INSERT QUEUE`
       * `SYSTEM FLUSH LOGS`
     * `SYSTEM JEMALLOC`
-    * `SYSTEM KILL QUERY`
-    * `SYSTEM KILL TRANSACTION`
     * `SYSTEM LISTEN`
     * `SYSTEM LOAD PRIMARY KEY`
     * `SYSTEM MERGES`
@@ -318,6 +320,7 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -342,7 +345,6 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
     * `SYSTEM TTL MERGES`
     * `SYSTEM UNFREEZE`
     * `SYSTEM UNLOAD PRIMARY KEY`
-    * `SYSTEM VIEWS`
     * `SYSTEM VIRTUAL PARTS UPDATE`
     * `SYSTEM WAIT LOADING PARTS`
   * [`MECANISMO DE TABELA`](#table-engine)
@@ -353,7 +355,7 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
 Exemplos de como essa hierarquia é tratada:
 
 * O privilégio `ALTER` inclui todos os outros privilégios `ALTER*`.
-* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT` e `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` e `ALTER MODIFY CONSTRAINT`.
 
 Os privilégios são aplicados em diferentes níveis. Saber em que nível um privilégio se aplica indica qual sintaxe está disponível para ele.
 
@@ -452,6 +454,7 @@ Permite executar consultas [ALTER](/pt-BR/reference/statements/alter/index) de a
   * `ALTER CONSTRAINT`. Nível: `GROUP`. Aliases: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. Nível: `TABLE`. Aliases: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. Nível: `TABLE`. Aliases: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. Nível: `TABLE`. Aliases: `MODIFY CONSTRAINT`
   * `ALTER TTL`. Nível: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. Nível: `TABLE`. Aliases: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. Nível: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,11 +470,11 @@ Permite executar consultas [ALTER](/pt-BR/reference/statements/alter/index) de a
 Exemplos de como essa hierarquia funciona:
 
 * O privilégio `ALTER` inclui todos os outros privilégios `ALTER*`.
-* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT` e `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` e `ALTER MODIFY CONSTRAINT`.
 
 **Observações**
 
-* O privilégio `MODIFY SETTING` permite modificar as configurações do mecanismo de tabela. Ele não afeta configurações nem parâmetros de configuração do servidor.
+* O privilégio `MODIFY SETTING` permite modificar as configurações do motor de tabela. Ele não afeta configurações nem parâmetros de configuração do servidor.
 * A operação `ATTACH` requer o privilégio [CREATE](#create).
 * A operação `DETACH` requer o privilégio [DROP](#drop).
 * Para interromper uma mutação com a consulta [KILL MUTATION](/pt-BR/reference/statements/kill#kill-mutation), você precisa ter um privilégio para iniciar essa mutação. Por exemplo, se quiser interromper a consulta `ALTER UPDATE`, precisará do privilégio `ALTER UPDATE`, `ALTER TABLE` ou `ALTER`.
@@ -619,7 +622,7 @@ O privilégio `ROLE ADMIN` permite que um usuário conceda e revogue quaisquer f
   ### SYSTEM
 </div>
 
-Permite que um usuário execute instruções [SYSTEM](/pt-BR/reference/statements/system) de acordo com a seguinte hierarquia de privilégios.
+Permite que um usuário execute consultas [SYSTEM](/pt-BR/reference/statements/system) de acordo com a seguinte hierarquia de privilégios.
 
 * `SYSTEM`. Nível: `GROUP`
   * `SYSTEM SHUTDOWN`. Nível: `GLOBAL`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
@@ -629,7 +632,7 @@ Permite que um usuário execute instruções [SYSTEM](/pt-BR/reference/statement
     * `SYSTEM DROP UNCOMPRESSED CACHE`. Nível: `GLOBAL`. Aliases: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`. Nível: `GROUP`
     * `SYSTEM RELOAD CONFIG`. Nível: `GLOBAL`. Aliases: `RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`. Nível: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`. Nível: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Nível: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`. Nível: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`. Nível: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -641,9 +644,14 @@ Permite que um usuário execute instruções [SYSTEM](/pt-BR/reference/statement
   * `SYSTEM REPLICATION QUEUES`. Nível: `TABLE`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   * `SYSTEM SYNC REPLICA`. Nível: `TABLE`. Aliases: `SYNC REPLICA`
   * `SYSTEM RESTART REPLICA`. Nível: `TABLE`. Aliases: `RESTART REPLICA`
+  * `SYSTEM BACKGROUND`. Nível: `GROUP`
+    * `SYSTEM STREAMING ENGINES`. Nível: `TABLE`
+    * `SYSTEM VIEWS`. Nível: `VIEW`. Aliases: `SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   * `SYSTEM FLUSH`. Nível: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. Nível: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. Nível: `GLOBAL`. Aliases: `FLUSH LOGS`
+
+Os comandos `SYSTEM UNLOAD DICTIONARY` e `SYSTEM UNLOAD DICTIONARIES` reutilizam o privilégio `SYSTEM RELOAD DICTIONARY`, portanto um usuário com `SYSTEM RELOAD DICTIONARY` também pode descarregar dicionários.
 
 O privilégio `SYSTEM RELOAD EMBEDDED DICTIONARIES` é concedido implicitamente pelo privilégio `SYSTEM RELOAD DICTIONARY ON *.*`.
 
@@ -663,7 +671,7 @@ Permite o uso de funções de [introspecção](/pt-BR/concepts/features/performa
   ### FONTES
 </div>
 
-Permite usar fontes externas de dados. Aplica-se a [motores de tabela](/pt-BR/reference/engines/table-engines/index) e [funções de tabela](/pt-BR/reference/functions/table-functions/index).
+Permite usar fontes de dados externas. Aplica-se a [motores de tabela](/pt-BR/reference/engines/table-engines/index) e [funções de tabela](/pt-BR/reference/functions/table-functions/index).
 
 * `READ`. Nível: `GLOBAL_WITH_PARAMETER`
 * `WRITE`. Nível: `GLOBAL_WITH_PARAMETER`
@@ -671,6 +679,7 @@ Permite usar fontes externas de dados. Aplica-se a [motores de tabela](/pt-BR/re
 Parâmetros possíveis:
 
 * `AZURE`
+* `BIGQUERY`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -775,9 +784,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+* `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-Permite ao usuário executar as funções [dictGet](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) e [dictIsIn](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
+Permite ao usuário executar as funções [dictGet](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictGetRoot](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetRoot), [dictGetChildren](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetChildren), [dictGetDescendants](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants) e [dictIsIn](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
 
 Nível de privilégio: `DICTIONARY`.
 
@@ -791,9 +800,9 @@ Nível de privilégio: `DICTIONARY`.
 </div>
 
 Permite que um usuário visualize segredos em consultas `SHOW` e `SELECT` se tanto a
-[`configuração do servidor` `display_secrets_in_show_and_select`](/pt-BR/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+[`configuração do servidor` `display_secrets_in_show_and_select`](/pt-BR/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 quanto a
-[`configuração de formato` `format_display_secrets_in_show_and_select`](/pt-BR/reference/settings/formats#format_display_secrets_in_show_and_select)
+[`configuração de formato` `format_display_secrets_in_show_and_select`](/pt-BR/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 estiverem ativadas.
 
 <div id="named-collection-admin">
@@ -821,6 +830,8 @@ Supondo que uma coleção nomeada se chame abc, concedemos o privilégio CREATE 
 <div id="table-engine">
   ### TABLE ENGINE
 </div>
+
+<CloudNotSupportedBadge />
 
 Permite usar um motor de tabela específico ao criar uma tabela. Aplica-se a [motores de tabela](/pt-BR/reference/engines/table-engines/index).
 

@@ -33,6 +33,35 @@ template <underlying_has_find_extreme_implementation T> struct NativeComparatorT
 template <class Comparator> using NativeComparator = typename NativeComparatorT<Comparator>::Type;
 }
 
+/// 128/256-bit values have no SIMD comparison, so the accumulator is updated behind a branch instead of a select,
+/// and is kept behind an opaque pointer (hence NO_INLINE) so that it is compared in place and written only on an
+/// update, rather than rotated through registers on every row.
+template <typename T, bool is_min, bool add_all_elements, bool add_if_cond_zero>
+static NO_INLINE void findExtremeWideImpl(
+    const T * __restrict ptr,
+    const UInt8 * __restrict condition_map [[maybe_unused]],
+    size_t i,
+    size_t count,
+    T * __restrict accumulator)
+{
+    for (; i < count; i++)
+    {
+        if (add_all_elements || !condition_map[i] == add_if_cond_zero)
+        {
+            if constexpr (is_min)
+            {
+                if (ptr[i] < *accumulator)
+                    *accumulator = ptr[i];
+            }
+            else
+            {
+                if (ptr[i] > *accumulator)
+                    *accumulator = ptr[i];
+            }
+        }
+    }
+}
+
 template <has_find_extreme_implementation T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
 static std::optional<T> findExtremeImpl(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
 {
@@ -102,6 +131,12 @@ static std::optional<T> findExtremeImpl(const T * __restrict ptr, const UInt8 * 
             if (add_all_elements || !condition_map[i] == add_if_cond_zero)
                 ret = ComparatorClass::cmp(ret, ptr[i]);
         }
+        return ret;
+    }
+    else if constexpr (is_big_int_v<T>)
+    {
+        constexpr bool is_min = std::same_as<ComparatorClass, MinComparator<T>>;
+        findExtremeWideImpl<T, is_min, add_all_elements, add_if_cond_zero>(ptr, condition_map, i, count, &ret);
         return ret;
     }
     else
@@ -202,7 +237,7 @@ std::optional<T> findExtremeMaxIf(const T * __restrict ptr, const UInt8 * __rest
 }
 
 template <typename T>
-requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+requires(has_find_extreme_index_implementation<T>)
 std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end)
 {
     /// This is implemented based on findNumericExtreme and not the other way around (or independently) because getting
@@ -236,7 +271,7 @@ std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start
 }
 
 template <typename T>
-requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+requires(has_find_extreme_index_implementation<T>)
 std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end)
 {
     std::optional<T> opt = findExtremeMax(ptr, start, end);
@@ -266,7 +301,7 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     return std::nullopt;
 }
 
-#define INSTANTIATION(T) \
+#define INSTANTIATION_VALUE(T) \
     template std::optional<T> findExtremeMin(const T * __restrict ptr, size_t start, size_t end); \
     template std::optional<T> findExtremeMinNotNull( \
         const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
@@ -276,7 +311,10 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     template std::optional<T> findExtremeMaxNotNull( \
         const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
     template std::optional<T> findExtremeMaxIf( \
-        const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
+        const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end);
+
+#define INSTANTIATION(T) \
+    INSTANTIATION_VALUE(T) \
     template std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end); \
     template std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end);
 
@@ -286,6 +324,13 @@ INSTANTIATION(Decimal32)
 INSTANTIATION(Decimal64)
 INSTANTIATION(DateTime64)
 
+INSTANTIATION_VALUE(Int128)
+INSTANTIATION_VALUE(Int256)
+INSTANTIATION_VALUE(UInt128)
+INSTANTIATION_VALUE(UInt256)
+INSTANTIATION_VALUE(Decimal128)
+INSTANTIATION_VALUE(Decimal256)
 
 #undef INSTANTIATION
+#undef INSTANTIATION_VALUE
 }
