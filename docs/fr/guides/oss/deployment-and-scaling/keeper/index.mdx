@@ -218,9 +218,20 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
+zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time`, `zk_cnt_leader_unavailable_time`, `zk_sum_election_time` et `zk_cnt_election_time` sont des métriques cumulatives réservées au leader. Elles constituent des observations par serveur, et non des mesures de disponibilité à l’échelle du cluster : le suivi commence lorsque ce serveur cesse d’observer un leader actif. Lors d’une partition réseau, cela peut inclure le temps pendant lequel un ancien leader reste actif dans une autre partition. Les métriques d’élection n’enregistrent qu’une élection réussie qui suit une fenêtre locale observée sans leader ; un transfert de leadership qui n’expose pas d’état sans leader échantillonné n’est intentionnellement pas comptabilisé.
+
+Keeper échantillonne son état local de leader NuRaft une fois par `heart_beat_interval_ms`, mais jamais à une fréquence supérieure à une fois toutes les 100 millisecondes. Chaque limite de fenêtre peut différer de cette transition d’état locale d’un maximum égal à l’intervalle effectif, et les fenêtres plus courtes que cet intervalle peuvent ne pas être détectées. Keeper enregistre la fin d’une élection locale lors de `BecomeLeader` de NuRaft. `srst` réinitialise les quatre valeurs.
+
+La durée de la fenêtre la plus récente de chaque type observée localement est également exportée vers `system.asynchronous_metrics` sous les noms `KeeperLastLeaderElectionTime` et `KeeperLastLeaderUnavailableTime`, en millisecondes. `KeeperLastLeaderElectionTime` suit la même définition de fenêtre sans leader que `zk_sum_election_time`. Les deux sont également réservées au leader : un nœud qui n’est pas le leader actif, ou qui n’a pas encore terminé de fenêtre, indique `0`. `srst` les réinitialise avec les compteurs cumulatifs.
 
 * `srvr` : affiche les informations détaillées du serveur.
 
@@ -253,13 +264,13 @@ Mode: leader
 Node count: 4
 ```
 
-* `srst` : Réinitialise les statistiques du serveur. Cette commande a une incidence sur le résultat de `srvr`, `mntr` et `stat`.
+* `srst` : Réinitialise les statistiques du serveur. La commande affecte le résultat de `srvr`, `mntr` et `stat`.
 
 ```response
 Server stats reset.
 ```
 
-* `conf` : Affiche des détails sur la configuration du service.
+* `conf` : Affiche les détails de la configuration de service.
 
 ```response
 server_id=1
@@ -366,13 +377,13 @@ Sessions with Ephemerals (1):
  /clickhouse/task_queue/ddl
 ```
 
-* `csnp` : planifie une tâche de création de snapshot. Renvoie le dernier index de journal validé du snapshot planifié en cas de succès, ou `Failed to schedule snapshot creation task.` en cas d’échec. La commande `lgif` peut vous aider à déterminer si le snapshot est terminé.
+* `csnp` : planifie une tâche de création de snapshot. Renvoie le dernier index de log validé du snapshot planifié en cas de succès, ou `Failed to schedule snapshot creation task.` en cas d’échec. La commande `lgif` peut vous aider à déterminer si le snapshot est terminé.
 
 ```response
 100
 ```
 
-* `lgif` : Informations sur le journal de Keeper. `first_log_idx` : mon premier index de journal dans le stockage de journaux ; `first_log_term` : mon premier terme de journal ; `last_log_idx` : mon dernier index de journal dans le stockage de journaux ; `last_log_term` : mon dernier terme de journal ; `last_committed_log_idx` : mon dernier index de journal validé dans la machine à états ; `leader_committed_log_idx` : l’index de journal validé du leader, de mon point de vue ; `target_committed_log_idx` : l’index de journal cible qui doit être validé ; `last_snapshot_idx` : le plus grand index de journal validé dans le dernier snapshot.
+* `lgif` : Informations sur le log de Keeper. `first_log_idx` : mon premier index de log dans le stockage de logs ; `first_log_term` : mon premier terme de log ; `last_log_idx` : mon dernier index de log dans le stockage de logs ; `last_log_term` : mon dernier terme de log ; `last_committed_log_idx` : mon dernier index de log validé dans la machine à états ; `leader_committed_log_idx` : l’index de log validé du leader, de mon point de vue ; `target_committed_log_idx` : l’index de log cible qui doit être validé ; `last_snapshot_idx` : le plus grand index de log validé dans le dernier snapshot.
 
 ```response
 first_log_idx   1
@@ -385,13 +396,13 @@ target_committed_log_idx    101
 last_snapshot_idx   50
 ```
 
-* `rqld` : Demande pour devenir le nouveau leader. Renvoie `Sent leadership request to leader.` si la demande est envoyée, ou `Failed to send leadership request to leader.` si l&#39;envoi de la demande échoue. Si le nœud est déjà leader, le résultat est le même que lorsque la demande est envoyée.
+* `rqld` : Demande à devenir le nouveau leader. Renvoie `Sent leadership request to leader.` si la demande est envoyée, ou `Failed to send leadership request to leader.` dans le cas contraire. Si le nœud est déjà leader, le résultat est le même que si la demande avait été envoyée.
 
 ```response
 Sent leadership request to leader.
 ```
 
-* `ftfl` : dresse la liste de tous les feature flags et indique s’ils sont activés pour l’instance Keeper.
+* `ftfl` : Répertorie tous les feature flags et indique s’ils sont enabled pour l’instance Keeper.
 
 ```response
 filtered_list   1
@@ -399,13 +410,13 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld` : requête visant à abandonner le rôle de leader pour devenir follower. Si le serveur qui reçoit la requête est leader, il suspend d’abord les opérations d’écriture, attend que le successeur (le leader actuel ne peut jamais être le successeur) ait terminé le rattrapage du journal le plus récent, puis se retire. Le successeur est choisi automatiquement. Renvoie `Sent yield leadership request to leader.` si la requête a été envoyée, ou `Failed to send yield leadership request to leader.` si elle ne l’a pas été. Si le nœud est déjà follower, le résultat est le même que si la requête avait été envoyée.
+* `ydld` : Demande de céder le leadership et de devenir follower. Si le serveur qui reçoit la requête est leader, il suspend d’abord les opérations d’écriture, attend que le successeur (le leader actuel ne peut jamais être le successeur) ait terminé le rattrapage du dernier log, puis renonce à son rôle. Le successeur est choisi automatiquement. Renvoie `Sent yield leadership request to leader.` si la requête est envoyée ou `Failed to send yield leadership request to leader.` dans le cas contraire. Si le nœud est déjà un follower, le résultat est le même que si la requête avait été envoyée.
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev` : renvoie les valeurs de tous les événements collectés. Pour chaque événement, la fonction renvoie son nom, sa valeur et sa description.
+* `pfev` : Renvoie les valeurs de tous les événements collectés. Pour chaque événement, renvoie son nom, sa valeur et sa description.
 
 ```response
 FileOpen        62      Number of files opened.

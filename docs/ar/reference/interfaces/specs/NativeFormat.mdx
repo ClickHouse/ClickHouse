@@ -30,30 +30,9 @@ keywords: ['تنسيق native', 'عمودي', 'كتلة', 'تنسيق wire', 'ا
 
 يُرتَّب `data` الخاص بالعمود وفقًا لـ *العائلة* التي ينتمي إليها نوعه. والعائلات، بترتيب تصاعدي من حيث تعقيد فك الترميز، هي:
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="بنية كتلة شبكية عمودية وعائلات تخطيط بياناتها" width="1568" height="976" loading="lazy" />
 
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
-
-* الأنواع **Fixed-width** ترتّب `data` على شكل بايتات خام بحجم `bytes_per_value × num_rows`، من دون أي تأطير لكل صف.
+* الأنواع **ثابت العرض** ترتّب `data` على شكل بايتات خام بحجم `bytes_per_value × num_rows`، من دون أي تأطير لكل صف.
 * الأنواع **المركّبة** (`Nullable`, `Array`, `Tuple`, `Map`, `Nested`) لها بنية متكررة يمكن اشتقاقها بالكامل من سلسلة النوع، من دون بادئة إصدار ومن دون حالة ممتدة عبر الكتل.
 * الأنواع **المُرقَّمة بالإصدار / ذات الحالة** (`LowCardinality`, `JSON`, `Variant`, `Dynamic`) تبدأ كل كتلة غير فارغة ببادئة إصدار/حالة للتسلسل. وعبر بنية `Native` على السلك، تكون هذه البادئة وأي قاموس **لكل block** — إذ لا تحمل الصيغة أي حالة *عبر* الكتل (تنشئ جهة الكتابة حالة تسلسل جديدة لكل block وتضبط `low_cardinality_max_dictionary_size = 0`). أما الحالة عبر الكتل فهي مسألة تخص تخزين MergeTree على القرص، وليست جزءًا من البنية على السلك في Native.
 
@@ -209,16 +188,7 @@ Byte 1: data = 0x02, continuation = 0 → accumulator = (0x02 << 7) | 0x2C = 300
   يكون الحقل `type` عبارة عن `String` نصية فقط في الوضع الافتراضي. وعند ضبط إعداد query `output_format_native_encode_types_in_binary_format = 1`، يصبح هذا الحقل بدلًا من ذلك **ترميز نوع ثنائي** — وهو الترميز نفسه القائم على الوسوم والمُوثَّق في [الترميز الثنائي لأنواع البيانات](/ar/reference/data-types/data-types-binary-encoding) — كما تستخدم قوائم نوع `Dynamic` المسطحة الترميز الثنائي نفسه لأسماء الأنواع الخاصة بها لكل نوع. وإذا كان مفكِّك الترميز يقرأ الحقل 2 دائمًا على أنه سلسلة مسبوقة بالطول، فسيتعامل مع أول وسم نوع ثنائي كما لو كان طول سلسلة، ويفقد التزامن؛ لذا يجب أن يعرف أي وضع يستخدمه stream.
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="توجيه مفكك الترميز من وصف النوع إلى عائلة الترميز الخاصة به" width="1568" height="854" loading="lazy" />
 
 <div id="kind-stack-and-sparse-encoding">
   #### kind_stack والترميز المتناثر
@@ -911,7 +881,7 @@ F1 FF FF FF FF FF FF FF  Int64 LE = -15
 
 سلسلة النوع: `Array(InnerType)`. أمثلة: `Array(UInt32)`, `Array(String)`, `Array(Nullable(UInt32))`, `Array(Array(UInt8))`.
 
-بنية wire هي [مرحلة البادئة](#composite-types) للنوع الداخلي (وتكون فارغة ما لم يكن النوع الداخلي ذا إصدار)، تليها سلسلتا تدفق متصلتان، مع الإزاحات أولًا:
+تخطيط wire هو [مرحلة البادئة](#composite-types) للنوع الداخلي (وتكون فارغة ما لم يكن النوع الداخلي ذا إصدار)، تليها سلسلتا تدفق متصلتان، مع الإزاحات أولًا:
 
 ```text
 [inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
@@ -947,16 +917,7 @@ Values (5 × UInt32 LE = 20 bytes):
 
 تمثل كل إزاحة *النهاية* التراكمية للجزء الخاص بصفٍ ما من دفق القيم المشتركة؛ أما البداية فهي الإزاحة السابقة (أو `0` للصف 0). وتدل الإزاحتان المتساويتان المتتاليتان على صف فارغ:
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="تربط الإزاحات الصفوف بدفق قيم مشترك" width="1568" height="388" loading="lazy" />
 
 `Array(String)` بالصفوف `[["a", "bb"], []]` (إجمالي 20 بايتًا):
 
@@ -976,7 +937,7 @@ Values (2 strings, 4 bytes total):
 * يفك `Array(UInt32)` الأوسط ترميز 3 صفوف بإزاحات `[2, 3, 5]`.
 * يفك `UInt32` الأعمق ترميز 5 قيم: `[1, 2, 3, 4, 5]`.
 
-وبذلك يصبح المجموع 24 (الإزاحات الخارجية) + 24 (الإزاحات الوسطى) + 20 (القيم) = 68 بايتًا.
+وبذلك يكون الإجمالي 24 (الإزاحات الخارجية) + 24 (الإزاحات الوسطى) + 20 (القيم) = 68 بايتًا.
 
 <div id="tuple">
   #### Tuple(T1, T2, ...)
@@ -1080,13 +1041,7 @@ Values (2 × UInt32 LE = 8 bytes):
 
 يعتمد التمثيل المنقول لـ `Nested` على إعداد `flatten_nested` على جهة الخادم، ما يؤدي إلى حالتين مختلفتين.
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="تخطيط الأعمدة المركبة مع التسطيح وبدونه" width="1172" height="1068" loading="lazy" />
 
 **الحالة A: `flatten_nested = 1` (إعداد الخادم `default`).** عندما يُنشأ الجدول بالإعدادات الافتراضية، فإن `Nested` **ليس نوعًا على مستوى wire**. يخزّن الخادم العمود ويعرضه على شكل N من الأعمدة المتوازية من النوع `Array(T_i)` ذات **الأسماء المنقوطة** (`outer.field1` و`outer.field2` وما إلى ذلك). وعلى مستوى طبقة format، لا يوجد ما هو جديد — فكل عمود منقوط ليس إلا [Array](#array) عاديًا:
 
@@ -1115,7 +1070,7 @@ Array(Tuple(a UInt8, b String)) bytes (after type string):
 
 الاختلاف الوحيد هو نص سلسلة النوع: إذ يحتفظ `Nested` بأسماء الحقول (`a`, `b`)، بينما لا يحتفظ `Array(Tuple)` بهذه الأسماء على شكل خانات مسماة.
 
-سلسلة النوع للحالة B هي قائمة من أزواج (الاسم، النوع) مفصولة بفواصل. ويفصل أول فراغ بين الاسم ونوعه؛ وقد يحتوي النوع نفسه على فراغات إضافية وفواصل وأقواس، لذا يحتاج التحليل إلى أداة التقسيم نفسها المراعية للعمق والمستخدمة مع `Tuple`. بنية wire:
+سلسلة النوع للحالة B هي قائمة من أزواج (الاسم، النوع) مفصولة بفواصل. ويفصل أول فراغ بين الاسم ونوعه؛ وقد يحتوي النوع نفسه على فراغات إضافية وفواصل وأقواس، لذا يحتاج التحليل إلى أداة التقسيم نفسها المراعية للعمق والمستخدمة مع `Tuple`. تخطيط wire:
 
 ```text
 [offsets stream]    num_rows × UInt64 LE                       ← from Array
@@ -1181,7 +1136,7 @@ Field 'b' stream (3 strings, 6 bytes):
   #### إصدار التسلسل: المفهوم
 </div>
 
-**إصدار التسلسل** هو رقم إصدار on-wire لكل نوع ولكل عمود، يحدد أي صيغة من ترميز النوع يستخدمها المُرسِل. وهو أول ما يظهر في state prefix الخاص بالعمود، لذلك يقرؤه decoder ثم يوجّه المعالجة إلى parser المناسب لبقية العمود.
+**إصدار التسلسل** هو رقم إصدار on-wire لكل نوع ولكل عمود، يحدد أي صيغة من ترميز النوع يستخدمها المُرسِل. وهو أول ما يظهر في بادئة الحالة الخاصة بالعمود، لذلك يقرؤه decoder ثم يوجّه المعالجة إلى parser المناسب لبقية العمود.
 
 وهو يختلف عن إصدار البروتوكول:
 
@@ -1192,27 +1147,15 @@ Field 'b' stream (3 strings, 6 bytes):
 | ما الذي يتحكم فيه | ميزات مستوى الحزمة المفعّلة | صيغة wire لنوع واحد                 |
 | إلزامية القراءة   | نعم                         | نعم، لكل عمود ذي إصدار              |
 
-تكتب معظم الأنواع ذات الإصدار هذا الإصدار بصيغة `UInt64` وبترتيب `little-endian` مباشرةً قبل أي بيانات أخرى في state prefix؛ فيما يستخدم عدد قليل منها `VarUInt` أو `UInt8`. يقرأ decoder الإصدار أولًا ويرفض القيم غير المعروفة — فالإصدار الأعلى يعني أن المُرسِل يستخدم تنسيقًا أحدث لا يفهمه decoder، وقراءته بصورة خاطئة تُفسد كل بايت لاحق.
+تكتب معظم الأنواع ذات الإصدار هذا الإصدار بصيغة `UInt64` وبترتيب `little-endian` مباشرةً قبل أي بيانات أخرى في بادئة الحالة؛ فيما يستخدم عدد قليل منها `VarUInt` أو `UInt8`. يقرأ decoder الإصدار أولًا ويرفض القيم غير المعروفة — فالإصدار الأعلى يعني أن المُرسِل يستخدم تنسيقًا أحدث لا يفهمه decoder، وقراءته بصورة خاطئة تُفسد كل بايت لاحق.
 
-يُصدَر state prefix في بداية **كل block يزيد عدد صفوفه على صفر**، مباشرةً قبل payload الخاص بذلك block.
+تُصدَر بادئة الحالة في بداية **كل block يزيد عدد صفوفه على صفر**، مباشرةً قبل payload الخاص بذلك block.
 
-لا يحتفظ `Native` writer وreader **بحالة التسلسل عبر الـ blocks**: إذ ينشئ `NativeWriter` حالة `serialize` جديدة ويكتب state prefix لكل block عمود غير فارغ يكتبه، كما ينشئ `NativeReader` حالة `deserialize` جديدة ويقرؤها لكل block غير فارغ يقرؤه (ويتجاوز كلاهما البادئة بالكامل عندما يكون `rows == 0`).
+لا يحتفظ `Native` writer وreader **بحالة التسلسل عبر الـ blocks**: إذ ينشئ `NativeWriter` حالة `serialize` جديدة ويكتب بادئة الحالة لكل block عمود غير فارغ يكتبه، كما ينشئ `NativeReader` حالة `deserialize` جديدة ويقرؤها لكل block غير فارغ يقرؤه (ويتجاوز كلاهما البادئة بالكامل عندما يكون `rows == 0`).
 
-لذلك، لا تُنتِج `header blocks` (rows = 0) والـ blocks الفارغة أي شيء، ويجب على decoder أن يقرأ state prefix مرة أخرى في بداية كل block غير فارغ. أما decoder الذي يقرأ البادئة مرة واحدة فقط ويتعامل مع الـ blocks اللاحقة على أنها payload فقط، فسيقرأ بادئة block التالي على أنها بيانات ويفقد التزامن:
+لذلك، لا تُنتِج `header blocks` (rows = 0) والـ blocks الفارغة أي شيء، ويجب على decoder أن يقرأ بادئة الحالة مرة أخرى في بداية كل block غير فارغ. أما decoder الذي يقرأ البادئة مرة واحدة فقط ويتعامل مع الـ blocks اللاحقة على أنها payload فقط، فسيقرأ بادئة block التالي على أنها بيانات ويفقد التزامن:
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="تتكرر بادئة الحالة لكل block غير فارغ" width="1226" height="1162" loading="lazy" />
 
 <div id="serialization-version-reference">
   #### مرجع إصدار التسلسل
@@ -1351,9 +1294,9 @@ sequenceDiagram
   #### Variant(T1, T2, ...)
 </div>
 
-اتحاد مميَّز: يحتوي كل صف على قيمة من نوع واحد فقط من الأنواع البديلة، أو `NULL`. ويحمل كل صف **مميِّزًا عامًا** بحجم بايت واحد يحدّد نوعه، ثم تُخزَّن القيم الخاصة بكل نوع بشكل متراص، في مقطع متصل واحد لكل نوع بديل.
+اتحاد مميَّز: يحتوي كل صف على قيمة من نوع واحد فقط من أنواع Variant، أو `NULL`. ويحمل كل صف **مميِّزًا عامًا** بحجم بايت واحد يحدّد نوعه، ثم تُخزَّن القيم الخاصة بكل نوع بشكل متراص، في مقطع متصل واحد لكل نوع Variant.
 
-سلسلة النوع: `Variant(T1, T2, ...)`. يوحِّد الخادم الترتيب إلى الصيغة القياسية (تُرتَّب الأنواع البديلة حسب الاسم)، لذا فإن سلسلة النوع كما تُستقبَل تسرد الأنواع بالفعل وفق **ترتيب المميِّز العام**: يختار المميِّز `0` أول نوع مُدرج، و`1` الثاني، وهكذا. وتعني `255` (`NULL_DISCRIMINATOR`) أن الصف هو `NULL`. ولا تكون عناصر Variant من النوع `Nullable` مطلقًا — فالمميِّز هو المسؤول عن `NULL`. أمثلة: `Variant(String, UInt64)`, `Variant(Array(UInt8), String)`.
+سلسلة النوع: `Variant(T1, T2, ...)`. يوحِّد الخادم الترتيب إلى الصيغة القياسية (تُرتَّب أنواع Variant حسب الاسم)، لذا فإن سلسلة النوع كما تُستقبَل تسرد الأنواع بالفعل وفق **ترتيب المميِّز العام**: يختار المميِّز `0` أول نوع مُدرج، و`1` الثاني، وهكذا. وتعني `255` (`NULL_DISCRIMINATOR`) أن الصف هو `NULL`. ولا تكون عناصر Variant من النوع `Nullable` مطلقًا — فالمميِّز هو المسؤول عن `NULL`. أمثلة: `Variant(String, UInt64)`, `Variant(Array(UInt8), String)`.
 
 تحمل بادئة الحالة وضع المميِّزات `UInt64 LE`: ‏`0` = BASIC (يُكتب مميِّز كل صف كقيمة حرفية)، و`1` = COMPACT (ترميز `granule` بأسلوب طول التشغيل). يستخدم الخادم BASIC عبر `native protocol` افتراضيًا (`use_compact_variant_discriminators_serialization = false`)؛ ولا يُحدَّد هنا إلا BASIC.
 
@@ -1367,12 +1310,12 @@ sequenceDiagram
     [values for the rows whose discriminator == i] ← dense encoding in type i; count = #rows selecting i
 ```
 
-لإعادة البناء، تتبَّع المميِّزات من اليسار إلى اليمين مع الاحتفاظ بعدّاد تراكمي لكل نوع. الصف `r` ذو المميِّز `d` (≠ 255) يأخذ القيمة عند الفهرس `counter[d]` من مسار قيم النوع المتغيّر `d`، ثم تُزاد `counter[d]`. أما الصفوف ذات المميِّز `255` فهي NULL ولا تستهلك أي قيمة من أي مسار، لذا فإن مجموع العدّادات لكل نوع يساوي عدد الصفوف غير NULL.
+لإعادة البناء، تتبَّع المميِّزات من اليسار إلى اليمين مع الاحتفاظ بعدّاد تراكمي لكل نوع. الصف `r` ذو المميِّز `d` (≠ 255) يأخذ القيمة عند الفهرس `counter[d]` من مسار قيم نوع Variant `d`، ثم تُزاد `counter[d]`. أما الصفوف ذات المميِّز `255` فهي NULL ولا تستهلك أي قيمة من أي مسار، لذا فإن مجموع العدّادات لكل نوع يساوي عدد الصفوف غير NULL.
 
-تُقرأ بادئة الحالة (النمط `UInt64`) في بداية كل كتلة تحتوي على صفوف &gt; 0؛ ولا تُخرج الترويسة والكتل الفارغة أي شيء. وكل مميِّز غير NULL يكون أصغر من عدد الأنواع المتغيّرة، ويُفك ترميز النوع المتغيّر `i` لعدد `count[i]` من الصفوف بالضبط.
+تُقرأ بادئة الحالة (النمط `UInt64`) في بداية كل كتلة تحتوي على صفوف &gt; 0؛ ولا تُخرج الترويسة والكتل الفارغة أي شيء. وكل مميِّز غير NULL يكون أصغر من عدد أنواع Variant، ويُفك ترميز نوع Variant `i` لعدد `count[i]` من الصفوف بالضبط.
 
 <Note>
-  عناصر Variant التي تكون Stateful بحد ذاتها (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) تُخرج بادئة الحالة الخاصة بها في مرحلة بادئة الحالة لكل عنصر، بعد النمط `UInt64`. أما الأنواع الورقية والتركيبات البسيطة (`Array`, `Tuple`, `Map` لأنواع ورقية) فبادئات حالتها فارغة ويمكن تركيبها بحرية.
+  عناصر Variant التي تكون ذو حالة بحد ذاتها (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) تُخرج بادئة الحالة الخاصة بها في مرحلة بادئة الحالة لكل عنصر، بعد النمط `UInt64`. أما الأنواع الورقية والتركيبات البسيطة (`Array`, `Tuple`, `Map` لأنواع ورقية) فبادئات حالتها فارغة ويمكن تركيبها بحرية.
 </Note>
 
 `Variant(String, UInt64)` بالقيم `[42, 'hi', NULL]` (يرتّب الترتيب canonical `String` قبل `UInt64`، لذا يكون المميِّز 0 = String و1 = UInt64):
@@ -1388,24 +1331,7 @@ sequenceDiagram
 
 يمثّل تدفّق discriminator الفهرس؛ إذ يسحب كل discriminator غير NULL القيمة التالية من التسلسل الكثيف الخاص بنوعه، بينما لا يستهلك `255` (NULL) شيئًا. ويُعيد هذا المرور نفسه أيضًا تكوين [Dynamic](#dynamic)، الذي يختلف فقط في كيفية ترميز NULL:
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="مميِّزات تختار قيَمًا من مسارات كثيفة خاصة بالنوع" width="1568" height="624" loading="lazy" />
 
 <div id="dynamic">
   #### Dynamic
@@ -1552,19 +1478,7 @@ flowchart LR
 
 الحجم الإجمالي للإطار هو `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`. لاحظ النطاقين: يشمل `checksum` الترويسة ذات الـ9 بايتات بالإضافة إلى المتن، بينما يحسب `compressed_size` الترويسة والمتن ولكن **لا** يشمل `checksum` نفسه:
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="حقول إطار الضغط وحدود الحجم المضغوط" width="1568" height="206" loading="lazy" />
 
 <div id="method-byte-values">
   ### قيم بايتات الطريقة

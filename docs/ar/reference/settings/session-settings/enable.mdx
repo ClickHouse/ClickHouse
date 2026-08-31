@@ -14,6 +14,18 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="enable_adaptive_aggregator">
+  ## enable_adaptive_aggregator
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لتمكين تجميع `GROUP BY` التكيفي، الذي يجمّد جدول التجزئة المحلي لكل خيط عند بلوغه `adaptive_aggregator_freeze_threshold` مفتاحًا، بحيث تستمر المفاتيح المتكررة في التجميع ضمن الجداول المحلية الصغيرة، بينما تُوجَّه المفاتيح النادرة وفق تجزئتها إلى قوائم انتظار لكل bucket وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket؛ وبذلك تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط."}]}]} />
+
+يُفعّل خوارزمية `GROUP BY` التكيفية: يُجمّع كل خيط البيانات في جدول التجزئة المحلي الخاص به حتى يبلغ `adaptive_aggregator_freeze_threshold` مفتاحًا، ثم يُجمَّد الجدول، بحيث تستمر صفوف المفاتيح المرصودة مسبقًا (المتكررة) في تحديثه مباشرةً، بينما تُوجَّه المفاتيح الجديدة (النادرة) وفق تجزئتها إلى قوائم انتظار لكل bucket وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket. تبقى المفاتيح المتكررة في جداول صغيرة مقيمة في ذاكرة التخزين المؤقت، بينما تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط.
+
+تُراعى إعدادات التجميع الخارجي (`max_bytes_before_external_group_by`، `max_bytes_ratio_before_external_group_by`): عند تجاوز العتبة، تُفرَّغ قوائم الانتظار مبكرًا في الجدول المشترك، وإذا لم يكن ذلك كافيًا للعودة إلى ما دون العتبة، يُرحَّل الجدول المشترك إلى القرص باستخدام التجميع الخارجي العادي.
+
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
 </div>
@@ -47,6 +59,19 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 إذا تم تعيينه، فسيُفعِّل ClickHouse هذا التحسين تلقائيًا عندما يكون تعبير مفتاح التقسيم حتميًا، وعندما تكون جميع الأعمدة المستخدمة في تعبير مفتاح التقسيم مُضمَّنة في المفتاح الأساسي.
 ويضمن هذا الاستنتاج التلقائي أن الصفوف ذات قيم المفتاح الأساسي نفسها ستنتمي دائمًا إلى القسم نفسه، مما يجعل تجنّب عمليات الدمج عبر الأقسام آمنًا.
+
+<div id="enable_cascades_optimizer">
+  ## enable_cascades_optimizer
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد تجريبي جديد."}]}]} />
+
+فعّل مُحسِّن Cascades المعتمد على التكلفة لخطط الاستعلامات الموزعة.
+لا يسري مفعوله إلا عند استخدام `make_distributed_plan = 1`: فهذا الإعداد وحده لا يغيّر تخطيط الاستعلامات على عقدة واحدة.
 
 <div id="enable_early_constant_folding">
   ## enable_early_constant_folding

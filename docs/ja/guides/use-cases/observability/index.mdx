@@ -7,6 +7,8 @@ keywords: ['オブザーバビリティ', 'ログ', 'トレース', 'メトリ�
 doc_type: 'guide'
 ---
 
+import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 ClickHouse は、オブザーバビリティ向けに圧倒的な速度、スケーラビリティ、コスト効率を提供します。このガイドでは、ニーズに応じて 2 つの選択肢を紹介します。
 
 <div id="clickstack">
@@ -43,3 +45,11 @@ ClickHouse オブザーバビリティ Stack は、ほとんどのユーザー�
 | [Integrating OpenTelemetry](/ja/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | ClickHouse で OpenTelemetry を使用してログとトレースを収集・エクスポートする方法を説明します。                                               |
 | [Using Visualization Tools](/ja/guides/use-cases/observability/build-your-own/grafana)                   | HyperDX や Grafana など、ClickHouse 向けのオブザーバビリティ可視化ツールの使い方を学べます。                                               |
 | [Demo Application](/ja/guides/use-cases/observability/build-your-own/demo-application)                   | ログとトレース向けに ClickHouse で動作するようフォークされた OpenTelemetry Demo Application を試してみましょう。                             |
+
+<div id="prometheus-metrics">
+  ## Prometheus メトリクス
+</div>
+
+<CloudNotSupportedBadge />
+
+ClickHouse では、Prometheus メトリクスを [`TimeSeries`](/ja/reference/engines/table-engines/integrations/time-series) テーブルに保存し、PromQL クエリを実行できます。インジェスト、クエリ、可視化の設定については、[Prometheus プロトコルと PromQL](/ja/concepts/features/interfaces/prometheus) を参照してください。

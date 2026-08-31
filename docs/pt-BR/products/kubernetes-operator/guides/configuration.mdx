@@ -598,7 +598,7 @@ O operador coloca a reconciliação de volta na fila enquanto o Secret é invál
   ## Portas adicionais
 </div>
 
-O operador expõe um conjunto fixo de portas em cada pod do Kubernetes do ClickHouse e em seu Service headless: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` métricas do Prometheus e as variantes TLS `8443`/`9440` quando o TLS estiver habilitado. Para fazer o ClickHouse aceitar conexões em protocolos adicionais — MySQL, PostgreSQL, gRPC ou qualquer porta personalizada — declare-as em `spec.additionalPorts`:
+O operador expõe um conjunto fixo de portas em cada pod do Kubernetes do ClickHouse e em seu Service headless público: `8123` HTTP, `9000` nativo, `9009` interserver, `9001`/`9002` gerenciamento, `9363` métricas do Prometheus e as variantes TLS `8443`/`9440` quando o TLS estiver habilitado. As portas interserver e de gerenciamento também são expostas por meio dos Services internos de cada réplica para que as réplicas e o operador possam se comunicar antes que uma réplica fique pronta. Para fazer o ClickHouse aceitar conexões em protocolos adicionais — MySQL, PostgreSQL, gRPC ou qualquer porta personalizada — declare-as em `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -611,7 +611,8 @@ spec:
       port: 9100
 ```
 
-O operador adiciona essas portas às `containerPorts` do pod do Kubernetes e ao Service headless. O exemplo completo está em [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+O operador adiciona essas portas às `containerPorts` do pod do Kubernetes e ao Service headless público.
+O exemplo completo está em [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   `additionalPorts` apenas abre as portas no lado do Kubernetes. Isso **não** configura o servidor ClickHouse para escutar nessas portas. Você também precisa habilitar o protocolo correspondente em `spec.settings.extraConfig.protocols`. Sem isso, a porta fica aberta no Service, mas nada dentro do pod do Kubernetes está respondendo.
@@ -637,7 +638,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -932,7 +933,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -974,10 +976,16 @@ Ative a sincronização automática do banco de dados para novas réplicas:
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # Padrão: true
+    enableDatabaseSync: true  # Default: true
 ```
 
-Quando ativado, o operator sincroniza as tabelas Replicated e de integração para novas réplicas.
+Quando ativado, o operador sincroniza as tabelas Replicated e de integração para novas réplicas.
+
+Cada pod do Kubernetes de réplica tem a gate de readiness `clickhouse.com/ReplicaInitialized`; portanto, uma nova réplica é publicada pelo Service headless público somente depois que o operador conclui sua inicialização: o banco de dados `default` é convertido para o engine Replicated e o schema é sincronizado. Até então, o operador e as outras réplicas a acessam por meio de seu Service interno. Com `enableDatabaseSync: false`, o operador marca as réplicas como inicializadas imediatamente; portanto, a readiness depende apenas das probes do contêiner.
+
+O operador nunca exclui um banco de dados `default` não Replicated que contém dados. Essa réplica ainda começa a atender ao tráfego de clientes após a preparação do schema, mas o cluster informa `SchemaInSync=False` com o motivo `DefaultDatabaseNotReplicated` até que você resolva esse banco de dados por conta própria.
+
+Antes de remover uma réplica durante a redução de escala, o operador primeiro remove o tráfego de clientes dela, aguarda até que ela deixe de ser publicada, replica os dados restantes para as réplicas sobreviventes e só então a exclui.
 
 <div id="server-logging">
   ### Logging do servidor

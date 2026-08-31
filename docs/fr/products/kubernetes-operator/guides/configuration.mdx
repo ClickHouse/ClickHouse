@@ -599,7 +599,7 @@ L&#39;opérateur remet la réconciliation en file d&#39;attente tant que le Secr
   ## Ports supplémentaires
 </div>
 
-L’opérateur expose un ensemble fixe de ports sur chaque pod ClickHouse et sur son Service headless : `8123` HTTP, `9000` natif, `9009` inter-serveur, `9001` gestion, `9363` métriques Prometheus, ainsi que les variantes TLS `8443`/`9440` lorsque TLS est activé. Pour que ClickHouse écoute sur des protocoles supplémentaires — MySQL, PostgreSQL, gRPC ou tout autre port personnalisé — déclarez-les dans `spec.additionalPorts` :
+L’opérateur expose un ensemble fixe de ports sur chaque pod ClickHouse et sur son Service headless public : `8123` HTTP, `9000` natif, `9009` inter-serveur, `9001`/`9002` gestion, `9363` métriques Prometheus, ainsi que les variantes TLS `8443`/`9440` lorsque TLS est activé. Les ports `interserveur` et de gestion sont également exposés via les Services internes de chaque réplique afin que les répliques et l’opérateur puissent communiquer avant qu’une réplique soit prête. Pour que ClickHouse écoute sur des protocoles supplémentaires — MySQL, PostgreSQL, gRPC ou tout autre port personnalisé — déclarez-les dans `spec.additionalPorts` :
 
 ```yaml
 spec:
@@ -612,7 +612,8 @@ spec:
       port: 9100
 ```
 
-L’opérateur ajoute ces ports aux `containerPorts` du pod ainsi qu’au Service headless. L’exemple complet se trouve dans [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+L’opérateur ajoute ces ports aux `containerPorts` du pod ainsi qu’au Service headless public.
+L’exemple complet se trouve dans [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   `additionalPorts` ouvre uniquement les ports côté Kubernetes. Cela **ne** configure **pas** le serveur ClickHouse pour écouter sur ces ports. Vous devez également activer le protocole correspondant dans `spec.settings.extraConfig.protocols`. Sans cela, le port est ouvert sur le Service, mais rien ne répond à l’intérieur du pod.
@@ -638,7 +639,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -933,7 +934,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -979,6 +981,12 @@ spec:
 ```
 
 Lorsqu’il est activé, l’opérateur synchronise les tables Replicated ainsi que les tables d’intégration sur les nouvelles répliques.
+
+Chaque pod de réplique comporte la barrière de disponibilité `clickhouse.com/ReplicaInitialized`. Une nouvelle réplique n’est donc publiée via le Service headless public qu’une fois son initialisation terminée par l’opérateur : la base de données `default` est convertie au moteur Replicated et le schéma est synchronisé. Jusque-là, l’opérateur et les autres répliques y accèdent via son Service interne. Avec `enableDatabaseSync: false`, l’opérateur marque immédiatement les répliques comme initialisées, de sorte que leur disponibilité ne dépend que des sondes de conteneur.
+
+L’opérateur ne supprime jamais une base de données `default` non-Replicated contenant des données. Une telle réplique commence tout de même à servir le trafic client après la préparation du schéma, mais le cluster signale `SchemaInSync=False` avec la raison `DefaultDatabaseNotReplicated` jusqu’à ce que vous résolviez vous-même ce problème de base de données.
+
+Avant qu’une réplique soit supprimée lors d’une réduction d’échelle, l’opérateur retire d’abord le trafic client de celle-ci, attend qu’elle cesse d’être publiée, réplique ses données restantes vers les répliques survivantes, puis la supprime.
 
 <div id="server-logging">
   ### Journalisation du serveur

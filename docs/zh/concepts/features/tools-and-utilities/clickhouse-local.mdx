@@ -405,10 +405,14 @@ clickhouse-local \
 
 `--listen_host`、`--tcp_port` 和 `--http_port` 选项用于配置绑定地址和端口。默认端口为：TCP 使用 `9000`，HTTP 使用 `8123`。
 
+HTTP 监听器会使用与默认 `clickhouse-server` 配置相同的宽松请求头响应 CORS 预检请求，因此 Web 应用程序无需额外配置即可从浏览器对其执行查询，包括从 `file://` URL 打开的 Web UI，其源为 `null`。要对此进行限制，请在通过 `--config-file` 传入的配置文件中定义自己的 `http_options_response` 部分；这将完全替换默认设置。
+
 <Warning>
   **安全**
 
   默认情况下，`clickhouse-local` 使用临时用户配置运行，因此它开启的任何监听都不进行身份验证。除非你已通过将 `users_config` 设置指向自定义 `users.xml` (例如通过 `--config-file`) 显式配置用户和访问控制，否则请绑定到回环地址 (`127.0.0.1` 或 `::1`) 。如果在未启用身份验证的情况下监听非回环地址，任何能够访问所选端口的人都可以访问本地实例的数据。
+
+  请注意，浏览器仍可访问回环地址：只要 HTTP 监听器处于打开状态，你访问的任何网页都可以查询本地实例，并且借助默认 CORS 请求头读取结果。
 </Warning>
 
 <div id="related-content-1">

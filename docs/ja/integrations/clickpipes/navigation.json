@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "ClickPipes for Object Storage",
+      "group": "オブジェクトストレージ向け ClickPipes",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
         "ja/integrations/clickpipes/home",
@@ -15,7 +15,7 @@
           ]
         },
         {
-          "group": "Google Cloud Storage",
+          "group": "Google Cloud ストレージ",
           "icon": "/images/integrations/logos/gcs.svg",
           "pages": [
             "ja/integrations/clickpipes/object-storage/google-cloud-storage/overview",
@@ -34,7 +34,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Postgres",
+      "group": "Postgres 向け ClickPipes",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
         "ja/integrations/clickpipes/postgres/index",
@@ -48,8 +48,9 @@
         "ja/integrations/clickpipes/postgres/postgres-generated-columns",
         "ja/integrations/clickpipes/postgres/parallel-initial-load",
         "ja/integrations/clickpipes/postgres/lifecycle",
+        "ja/integrations/clickpipes/postgres/auth",
         {
-          "group": "Operations",
+          "group": "操作",
           "pages": [
             "ja/integrations/clickpipes/postgres/add-table",
             "ja/integrations/clickpipes/postgres/pause-and-resume",
@@ -61,7 +62,7 @@
           ]
         },
         {
-          "group": "Source",
+          "group": "ログソース",
           "pages": [
             "ja/integrations/clickpipes/postgres/source/alloydb",
             "ja/integrations/clickpipes/postgres/source/rds",
@@ -79,7 +80,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Kafka",
+      "group": "Kafka 向け ClickPipes",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
         "ja/integrations/clickpipes/kafka/index",
@@ -91,7 +92,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Kinesis",
+      "group": "Kinesis 向け ClickPipes",
       "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
       "pages": [
         "ja/integrations/clickpipes/kinesis/overview",
@@ -99,7 +100,7 @@
       ]
     },
     {
-      "group": "ClickPipes for GCP Pub/Sub",
+      "group": "GCP Pub/Sub 向け ClickPipes",
       "icon": "/images/integrations/logos/google_pubsub.svg",
       "pages": [
         "ja/integrations/clickpipes/pubsub/overview",
@@ -107,7 +108,7 @@
       ]
     },
     {
-      "group": "ClickPipes for MySQL",
+      "group": "MySQL 向け ClickPipes",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
         "ja/integrations/clickpipes/mysql/index",
@@ -117,7 +118,7 @@
         "ja/integrations/clickpipes/mysql/schema-changes",
         "ja/integrations/clickpipes/mysql/lifecycle",
         {
-          "group": "Operations",
+          "group": "操作",
           "pages": [
             "ja/integrations/clickpipes/mysql/add-table",
             "ja/integrations/clickpipes/mysql/pause-and-resume",
@@ -129,7 +130,7 @@
           ]
         },
         {
-          "group": "Source",
+          "group": "ログソース",
           "pages": [
             "ja/integrations/clickpipes/mysql/source/rds",
             "ja/integrations/clickpipes/mysql/source/aurora",
@@ -143,7 +144,7 @@
       ]
     },
     {
-      "group": "ClickPipes for MongoDB",
+      "group": "MongoDB 向け ClickPipes",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
         "ja/integrations/clickpipes/mongodb/index",
@@ -152,7 +153,7 @@
         "ja/integrations/clickpipes/mongodb/lifecycle",
         "ja/integrations/clickpipes/mongodb/faq",
         {
-          "group": "Operations",
+          "group": "操作",
           "pages": [
             "ja/integrations/clickpipes/mongodb/add-table",
             "ja/integrations/clickpipes/mongodb/remove-table",
@@ -164,7 +165,7 @@
           ]
         },
         {
-          "group": "Source",
+          "group": "ログソース",
           "pages": [
             "ja/integrations/clickpipes/mongodb/source/atlas",
             "ja/integrations/clickpipes/mongodb/source/generic",
@@ -174,7 +175,7 @@
       ]
     },
     {
-      "group": "ClickPipes for BigQuery",
+      "group": "BigQuery 向け ClickPipes",
       "icon": "/images/logo-bigquery.svg",
       "pages": [
         "ja/integrations/clickpipes/bigquery/overview",
@@ -182,7 +183,7 @@
       ]
     },
     {
-      "group": "Programmatic access",
+      "group": "プログラムによるアクセス",
       "icon": "code",
       "pages": [
         "ja/integrations/clickpipes/programmatic-access/openapi",
@@ -190,7 +191,7 @@
       ]
     },
     {
-      "group": "Networking",
+      "group": "ネットワーキング",
       "icon": "network-wired",
       "pages": [
         "ja/integrations/clickpipes/networking/index",
@@ -201,7 +202,7 @@
       ]
     },
     {
-      "group": "Other",
+      "group": "その他",
       "icon": "ellipsis",
       "pages": [
         "ja/integrations/clickpipes/dynamodb",

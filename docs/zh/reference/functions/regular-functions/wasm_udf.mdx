@@ -337,7 +337,7 @@ WebAssembly 不区分有符号参数和无符号参数，而是通过不同的�
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickhouseBuffer;
+} ClickHouseBuffer;
 
 #define HEAP_SIZE (1 << 24)
 static _Alignas(16) uint8_t heap[HEAP_SIZE];
@@ -345,13 +345,13 @@ static uint32_t heap_pos = 0;
 static uint32_t live_buffers = 0;
 
 __attribute__((export_name("clickhouse_create_buffer")))
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
+ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
 {
-    uint32_t total = (sizeof(ClickhouseBuffer) + size + 15u) & ~15u;
+    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
     if (heap_pos + total > HEAP_SIZE)
         return 0; /* a zero handle makes the host fail the query with an error */
-    ClickhouseBuffer * buf = (ClickhouseBuffer *) &heap[heap_pos];
-    buf->data = &heap[heap_pos + sizeof(ClickhouseBuffer)];
+    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
     buf->size = size;
     heap_pos += total;
     ++live_buffers;
@@ -359,7 +359,7 @@ ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
 }
 
 __attribute__((export_name("clickhouse_destroy_buffer")))
-void clickhouse_destroy_buffer(ClickhouseBuffer * buf)
+void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
 {
     if (--live_buffers == 0)
         heap_pos = 0;
@@ -390,9 +390,9 @@ static void write_varint(uint8_t ** pp, uint64_t value)
 
 /* Reverses the bytes of each input string */
 __attribute__((export_name("str_reverse")))
-ClickhouseBuffer * str_reverse(ClickhouseBuffer * input, uint32_t num_rows)
+ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
 {
-    ClickhouseBuffer * out = clickhouse_create_buffer(input->size);
+    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
     if (!out)
         return 0;
     const uint8_t * in = input->data;

@@ -809,6 +809,18 @@ ClickHouse Keeper におけるキー用メモリアリーナのサイズをバ�
 
 ClickHouse Keeper における最後にコミット済みのログの索引。
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+この ClickHouse Keeper インスタンスがリーダーになった時点で終了した、ローカルで最後に観測されたリーダー不在期間 (ミリ秒) 。サンプリングされたリーダー不在状態が観測されないリーダー移行は記録されません。このインスタンスがアクティブなリーダーでない場合、または完了した期間が記録されていない場合は`0`。
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+このClickHouse Keeperリーダーがローカルで観測した、直近で完了したリーダー不在期間の継続時間 (ミリ秒) 。このインスタンスがアクティブなリーダーでない場合、または完了したリーダー不在期間が記録されていない場合は`0`。
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>
@@ -1467,7 +1479,7 @@ Prometheus エンドポイントのサーバー内のスレッド数。注: Prom
   ### ReaderExecutorModeledCostMsPerRequestedMiB
 </div>
 
-Experimental ReaderExecutor の読み取りパス効率: 直近の更新間隔における、リクエストされたバイト数 MiB あたりの推定コスト (ms) 。インスタンス全体での ProfileEvents ReaderExecutorModeledCostMicroseconds と ReaderExecutorRequestedBytes の差分の比です。低いほど良好です。帯域幅の下限は約 20 (正常なソースからの読み取り) で、cache ヒットでは 0 に近づき、過剰フェッチや不完全な connections により値が増加します。0 は、その間隔に executor による読み取りがなかったことを示します。
+Experimental ReaderExecutor の読み取りパス効率: 直近の更新間隔における、リクエストされたバイト数 MiB あたりの推定コスト (ms) 。インスタンス全体での ProfileEvents ReaderExecutorModeledCostMicroseconds と ReaderExecutorDeliveredBytes の差分の比です。低いほど良好です。帯域幅の下限は約 20 (正常なソースからの読み取り) で、cache ヒットでは 0 に近づき、過剰フェッチや不完全な connections により値が増加します。0 は、その間隔に executor による読み取りがなかったことを示します。
 
 <div id="replicasmaxabsolutedelay">
   ### ReplicasMaxAbsoluteDelay

@@ -810,6 +810,18 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 فهرس آخر سجلّ مُعتمَد في ClickHouse Keeper.
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+المدة، بالمللي ثانية، لأحدث فترة محلية دون قائد انتهت بتولي مثيل ClickHouse Keeper هذا دور القائد. لا تُسجَّل عمليات انتقال القيادة التي لا تُظهر حالة دون قائد مأخوذة كعينة. تكون القيمة `0` إذا لم يكن هذا المثيل هو القائد النشط أو لم تُسجَّل له فترة مكتملة.
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+المدة، بالميلي ثانية، لأحدث فترة دون قائد محلية مرصودة، والتي اكتملت لدى قائد ClickHouse Keeper هذا. تكون `0` إذا لم يكن هذا المثيل هو القائد النشط أو إذا لم تُسجَّل لديه أي فترة مكتملة دون قائد.
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>
@@ -1468,7 +1480,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
   ### ReaderExecutorModeledCostMsPerRequestedMiB
 </div>
 
-مقياس تجريبي لكفاءة مسار القراءة في ReaderExecutor: التكلفة المُنمذجة (مللي ثانية) لكل MiB من البايتات المطلوبة خلال آخر فترة تحديث، على مستوى المثيل بالكامل -- وهي نسبة التغير في ProfileEvents ReaderExecutorModeledCostMicroseconds إلى ReaderExecutorRequestedBytes. كلما انخفضت القيمة كان ذلك أفضل: يبلغ الحد الأدنى لعرض النطاق ~20 (قراءة مباشرة ونظيفة من المصدر)، وتميل إصابات ذاكرة التخزين المؤقت إلى 0، بينما يؤدي الجلب الزائد والاتصالات غير المكتملة إلى رفع القيمة. تعني القيمة 0 عدم وجود عمليات قراءة بواسطة المنفّذ خلال الفترة.
+مقياس تجريبي لكفاءة مسار القراءة في ReaderExecutor: التكلفة المُنمذجة (مللي ثانية) لكل MiB من البايتات المطلوبة خلال آخر فترة تحديث، على مستوى المثيل بالكامل -- وهي نسبة التغير في ProfileEvents ReaderExecutorModeledCostMicroseconds إلى ReaderExecutorDeliveredBytes. كلما انخفضت القيمة كان ذلك أفضل: يبلغ الحد الأدنى لعرض النطاق ~20 (قراءة مباشرة ونظيفة من المصدر)، وتميل إصابات ذاكرة التخزين المؤقت إلى 0، بينما يؤدي الجلب الزائد والاتصالات غير المكتملة إلى رفع القيمة. تعني القيمة 0 عدم وجود عمليات قراءة بواسطة المنفّذ خلال الفترة.
 
 <div id="replicasmaxabsolutedelay">
   ### ReplicasMaxAbsoluteDelay

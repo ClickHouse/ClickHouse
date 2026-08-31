@@ -14,6 +14,18 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+<div id="enable_adaptive_aggregator">
+  ## enable_adaptive_aggregator
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "各スレッドのローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達した時点で固定するアダプティブ `GROUP BY` 集計を有効にする新しい設定です。頻出キーは小さなローカルテーブルで集計を継続し、まれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集計されます。これにより、まれなキーはスレッドごとではなく1回だけ保存・処理されます。"}]}]} />
+
+アダプティブ `GROUP BY` アルゴリズムを有効にします。各スレッドは、ローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達するまで集計を行い、その後テーブルは固定されます。すでに出現した頻出キーの行はそのテーブル内で更新され続ける一方、新しいまれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集計されます。頻出キーはキャッシュに収まる小さなテーブルに保持され、まれなキーはスレッドごとではなく1回だけ保存・処理されます。
+
+外部集計の設定 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) も考慮されます。しきい値を超えると、バックログは早期に共有テーブルへ排出されます。それでも使用量をしきい値未満に戻せない場合は、通常の外部集計により共有テーブルがディスクにスピルされます。
+
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
 </div>
@@ -47,6 +59,19 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 有効にすると、パーティションキー式が決定論的であり、かつその式で使用されるすべてのカラムが主キーに含まれている場合、ClickHouse はこの最適化を自動的に有効にします。
 この自動判定により、同じ主キー値を持つ行は常に同じパーティションに属することが保証されるため、パーティションをまたぐマージを回避しても安全です。
+
+<div id="enable_cascades_optimizer">
+  ## enable_cascades_optimizer
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新しい実験的な設定"}]}]} />
+
+分散クエリプランに対して、Cascades のコストベースオプティマイザを有効にします。
+`make_distributed_plan = 1` と併用した場合にのみ有効になります。この設定だけでは、単一ノードのクエリプランニングは変更されません。
 
 <div id="enable_early_constant_folding">
   ## enable_early_constant_folding

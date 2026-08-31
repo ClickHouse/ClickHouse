@@ -12,9 +12,12 @@ ClickHouse는 쿼리 파싱 단계에서 연산자의 우선순위, precedence, 
   ## 접근 연산자
 </div>
 
-`a[N]` – 배열 요소에 접근합니다. `arrayElement(a, N)` 함수입니다.
+`a[N]` – 배열 원소에 접근합니다. `arrayElement(a, N)` 함수와 같습니다.
+`N`은 정수 배열일 수도 있으며, 이 경우 `arrayMap(i -> a[i], N)`과 마찬가지로 해당 위치의 모든 원소가 배열로 반환됩니다.
+위치는 널 허용일 수 있습니다. 원소 타입을 `Nullable`로 감쌀 수 있는 경우 `NULL` 위치는 `NULL`을 반환합니다. `Nullable` 내부에 포함될 수 없는 원소 타입(`Array`, `Map` 등)의 경우에는
+스칼라 `NULL` 인덱스와 마찬가지로 원소 타입의 기본값을 반환합니다.
 
-`a.N` – 튜플 요소에 접근합니다. `tupleElement(a, N)` 함수입니다.
+`a.N` – 튜플 원소에 접근합니다. `tupleElement(a, N)` 함수와 같습니다.
 
 <div id="numeric-negation-operator">
   ## 숫자 부호 반전 연산자

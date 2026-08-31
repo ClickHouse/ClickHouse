@@ -550,7 +550,7 @@ ClickHouse admite una gran cantidad de tipos de datos. Asegúrate de elegir el t
 Para los números, puedes consultar el valor mínimo y máximo de tu conjunto de datos para verificar si la precisión actual se ajusta a los valores reales de tu conjunto de datos. 
 
 ```sql
--- Encontrar los valores mínimo/máximo para el campo payment_type
+-- Find min/max values for the payment_type field
 SELECT
     min(payment_type),max(payment_type),
     min(passenger_count), max(passenger_count)

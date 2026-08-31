@@ -20,6 +20,9 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
+#include <Access/EnabledRowPolicies.h>
+
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -75,6 +78,8 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_function_early_short_circuit;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool transform_null_in;
@@ -85,6 +90,7 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace
@@ -97,6 +103,512 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             "Function with name {} cannot use {} NULLS",
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
+}
+
+/** Finds a decisive constant in the direct prefix of an AND/OR expression before its
+  * arguments are analyzed. Nested calls are resolved independently so scoped lambdas and UDFs
+  * cannot be mistaken for builtin logical functions. False decides AND, true decides OR.
+  */
+std::optional<bool> getEarlyShortCircuitResultForAndOr(
+    const QueryTreeNodePtr & node,
+    const String & function_name_to_fold)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node
+        || function_node->getFunctionName() != function_name_to_fold
+        || !function_node->getParameters().getNodes().empty()
+        || function_node->getNullsAction() != NullsAction::EMPTY
+        || function_node->isWindowFunction())
+        return {};
+
+    const bool decisive_value = function_name_to_fold == "or";
+    for (const auto & argument : function_node->getArguments().getNodes())
+    {
+        std::optional<bool> argument_value;
+        if (const auto * constant_node = argument->as<ConstantNode>())
+        {
+            const auto & type = constant_node->getResultType();
+            const auto value = constant_node->getValue();
+            if (isNativeNumber(removeNullable(type)) && !value.isNull())
+                argument_value = applyVisitor(FieldVisitorConvertToNumber<bool>(), value);
+        }
+
+        /// Short-circuiting is prefix-based. An unresolved argument before the decisive constant
+        /// is live and must be analyzed/executed, so this optimization cannot cross it.
+        if (!argument_value)
+            return {};
+
+        if (*argument_value == decisive_value)
+            return decisive_value;
+    }
+
+    return {};
+}
+
+bool hasNestedQueryOrUnion(const IQueryTreeNode & node)
+{
+    for (const auto & child : node.getChildren())
+    {
+        if (!child)
+            continue;
+
+        const auto child_type = child->getNodeType();
+        if (child_type == QueryTreeNodeType::QUERY || child_type == QueryTreeNodeType::UNION)
+            return true;
+
+        if (hasNestedQueryOrUnion(*child))
+            return true;
+    }
+
+    return false;
+}
+
+bool isFunctionAliasInScope(const String & name, const IdentifierResolveScope & scope)
+{
+    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        if (current_scope->aliases.alias_name_to_lambda_node.contains(name)
+            || current_scope->global_with_aliases.alias_name_to_lambda_node.contains(name))
+            return true;
+    }
+
+    return false;
+}
+
+bool isSafeCountScalarSubqueryForEarlyShortCircuit(
+    const QueryNode & query,
+    const IdentifierResolveScope & scope);
+
+bool hasUnsafeFunctionForEarlyShortCircuit(
+    const QueryTreeNodePtr & node,
+    const ContextPtr & context,
+    const IdentifierResolveScope & scope,
+    bool inside_safe_count_scalar_subquery = false)
+{
+    if (const auto * query = node->as<QueryNode>())
+        inside_safe_count_scalar_subquery = isSafeCountScalarSubqueryForEarlyShortCircuit(*query, scope);
+
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        if (isFunctionAliasInScope(function->getFunctionName(), scope))
+            return true;
+
+        /// throwIf is eligible for runtime lazy execution itself, but when it is inside a
+        /// non-lazy comparison the comparison evaluates it eagerly. Never erase it speculatively.
+        if (function->getFunctionName() == "throwIf")
+            return true;
+
+        auto resolver = FunctionFactory::instance().tryGet(function->getFunctionName(), context);
+        if (!resolver)
+        {
+            /// An aggregate count is only safe inside a scalar subquery that has already passed
+            /// the strict count-subquery preflight. Any other unknown name may be a
+            /// SQL/executable UDF whose body is not visible here.
+            if (function->getFunctionName() != "count" || !inside_safe_count_scalar_subquery)
+                return true;
+        }
+        else if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && hasUnsafeFunctionForEarlyShortCircuit(child, context, scope, inside_safe_count_scalar_subquery))
+            return true;
+
+    return false;
+}
+
+bool isEarlyShortCircuitScalarPlaceholder(const QueryTreeNodePtr & node)
+{
+    const auto * column = node->as<ColumnNode>();
+    return column && column->getColumnName().starts_with("_subquery_");
+}
+
+bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function)
+{
+    const auto & name = function.getFunctionName();
+    const bool is_comparison = name == "equals" || name == "notEquals"
+        || name == "less" || name == "greater"
+        || name == "lessOrEquals" || name == "greaterOrEquals";
+    if (!is_comparison)
+        return false;
+
+    const auto & arguments = function.getArguments().getNodes();
+    if (arguments.size() != 2)
+        return false;
+
+    const bool first_is_scalar = isEarlyShortCircuitScalarPlaceholder(arguments[0]);
+    const bool second_is_scalar = isEarlyShortCircuitScalarPlaceholder(arguments[1]);
+    if (first_is_scalar == second_is_scalar)
+        return false;
+
+    const auto & other_argument = arguments[first_is_scalar ? 1 : 0];
+    const auto * other_constant = other_argument->as<ConstantNode>();
+    return other_constant && other_constant->isDeterministic() && !other_constant->hasSourceExpression();
+}
+
+bool hasUnsafeEarlyShortCircuitScalarUsage(const QueryTreeNodePtr & node, bool placeholder_is_allowed = false)
+{
+    if (isEarlyShortCircuitScalarPlaceholder(node))
+        return !placeholder_is_allowed;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        return hasUnsafeEarlyShortCircuitScalarUsage(constant->getSourceExpression());
+
+    const auto * function = node->as<FunctionNode>();
+    const bool is_safe_comparison = function && isComparisonOfEarlyShortCircuitScalar(*function);
+    for (const auto & child : node->getChildren())
+        if (child && hasUnsafeEarlyShortCircuitScalarUsage(child, is_safe_comparison))
+            return true;
+
+    return false;
+}
+
+bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, bool is_root = true)
+{
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        return hasFunctionNotSuitableForEarlyShortCircuit(constant->getSourceExpression(), is_root);
+
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        /// The root is the logical function being folded. It is short-circuit by definition,
+        /// although it deliberately reports false for lazy execution of itself.
+        const auto & function_name = function->getFunctionName();
+        const bool is_nested_logical = function_name == "and" || function_name == "or";
+        if (!is_root && !is_nested_logical)
+        {
+            if (auto function_base = function->getFunction())
+            {
+                DataTypesWithConstInfo arguments;
+                const auto & argument_nodes = function->getArguments().getNodes();
+                arguments.reserve(argument_nodes.size());
+
+                for (const auto & argument : argument_nodes)
+                    arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
+
+                if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
+                    && !isComparisonOfEarlyShortCircuitScalar(*function))
+                    return true;
+            }
+        }
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && hasFunctionNotSuitableForEarlyShortCircuit(child, false))
+            return true;
+
+    return false;
+}
+
+void copySecretMasksByPosition(
+    QueryTreeNodePtr resolved_node,
+    const QueryTreeNodePtr & source_node,
+    std::map<IQueryTreeNode::Hash, size_t> & projection_mask_map)
+{
+    const auto mask_source_subtree = [&projection_mask_map](const auto & self, const QueryTreeNodePtr & node) -> void
+    {
+        if (auto * constant = node->as<ConstantNode>())
+        {
+            const auto hash = constant->getTreeHash();
+            const auto mask = projection_mask_map.insert({hash, projection_mask_map.size() + 1}).first->second;
+            constant->setMaskId(mask);
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                self(self, child);
+    };
+
+    while (resolved_node->getNodeType() != source_node->getNodeType())
+    {
+        const auto * resolved_constant = resolved_node->as<ConstantNode>();
+        if (!resolved_constant || !resolved_constant->hasSourceExpression())
+            return;
+
+        if (resolved_constant->isMasked())
+        {
+            /// A folded masked constant can keep a non-constant source expression. Once it is
+            /// unwrapped to align the node types, all constants in that source expression must
+            /// stay hidden as well.
+            mask_source_subtree(mask_source_subtree, source_node);
+            return;
+        }
+
+        resolved_node = resolved_constant->getSourceExpression();
+    }
+
+    if (const auto * resolved_constant = resolved_node->as<ConstantNode>(); resolved_constant && resolved_constant->isMasked())
+    {
+        if (auto * source_constant = source_node->as<ConstantNode>())
+        {
+            const auto hash = source_constant->getTreeHash();
+            const auto mask = projection_mask_map.insert({hash, projection_mask_map.size() + 1}).first->second;
+            source_constant->setMaskId(mask);
+        }
+    }
+
+    const auto & resolved_children = resolved_node->getChildren();
+    const auto & source_children = source_node->getChildren();
+    if (resolved_children.size() != source_children.size())
+        return;
+
+    for (size_t i = 0; i < resolved_children.size(); ++i)
+        if (resolved_children[i] && source_children[i])
+            copySecretMasksByPosition(resolved_children[i], source_children[i], projection_mask_map);
+}
+
+bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, const IdentifierResolveScope & scope)
+{
+    const auto & identifier = identifier_node.getIdentifier();
+    const auto & full_name = identifier.getFullName();
+    const auto & first_name = identifier.front();
+
+    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        if (current_scope->cte_name_to_query_node.contains(full_name)
+            || current_scope->cte_name_to_query_node.contains(first_name)
+            || current_scope->aliases.alias_name_to_table_expression_node.contains(full_name)
+            || current_scope->aliases.alias_name_to_table_expression_node.contains(first_name)
+            || current_scope->global_with_aliases.alias_name_to_table_expression_node.contains(full_name)
+            || current_scope->global_with_aliases.alias_name_to_table_expression_node.contains(first_name))
+            return true;
+    }
+
+    return false;
+}
+
+bool isUnsafeCountScalarSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
+{
+    QueryTreeNodePtr resolved_table = join_tree;
+    if (const auto * identifier = join_tree->as<IdentifierNode>())
+    {
+        auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+            identifier->getIdentifier(), scope.context);
+        resolved_table = std::move(resolve_result.resolved_identifier);
+    }
+
+    const auto * table = resolved_table ? resolved_table->as<TableNode>() : nullptr;
+    if (!table || !table->getStorage())
+        return true;
+
+    const auto & storage = table->getStorage();
+    /// The speculative pass cannot inspect fan-out or forwarding storage children. In particular,
+    /// Merge applies each matching child's view and row-policy behavior later, while Alias does
+    /// not forward isView() and evaluates policies on its target. Remote storages can likewise
+    /// apply shard-local policies and filters not visible in initiator-side metadata.
+    ///
+    /// Keep the opt-in fast path limited to local physical tables: Memory and MergeTree-family
+    /// engines. All other storages fail closed rather than requiring per-engine semantic proofs.
+    const bool is_local_physical_table = storage->getName() == "Memory" || storage->isMergeTree();
+    return !is_local_physical_table || storage->isView() || storage->isRemote() || storage->getName() == "Alias";
+}
+
+bool hasLateAttachedTableFilter(
+    const QueryTreeNodePtr & join_tree,
+    const ContextPtr & query_context,
+    const IdentifierResolveScope & scope)
+{
+    /// Additional filters are parsed only by the planner, after the speculative type-only
+    /// analysis. They can be configured by either the outer query or the scalar subquery.
+    /// Any configured filter may affect the selected table, so fail closed.
+    if (!scope.context->getSettingsRef()[Setting::additional_table_filters].value.empty()
+        || !query_context->getSettingsRef()[Setting::additional_table_filters].value.empty())
+        return true;
+
+    QueryTreeNodePtr resolved_table = join_tree;
+    if (const auto * identifier = join_tree->as<IdentifierNode>())
+    {
+        auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+            identifier->getIdentifier(), scope.context);
+        resolved_table = std::move(resolve_result.resolved_identifier);
+    }
+
+    const auto * table = resolved_table ? resolved_table->as<TableNode>() : nullptr;
+    if (!table || !table->getStorage())
+        return true;
+
+    const auto & storage_id = table->getStorage()->getStorageID();
+    if (!storage_id.hasDatabase())
+        return true;
+
+    const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
+    {
+        const auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    };
+
+    /// A scalar query can have its own context. Check both contexts even though they normally
+    /// share access rights, because an inherited setting/profile can change the effective policy.
+    return has_nontrivial_row_policy(scope.context)
+        || (query_context != scope.context && has_nontrivial_row_policy(query_context));
+}
+
+bool isSafeCountScalarSubqueryForEarlyShortCircuit(
+    const QueryNode & query,
+    const IdentifierResolveScope & scope)
+{
+    const auto & join_tree = query.getJoinTreeNode();
+    if (!join_tree
+        || (join_tree->getNodeType() != QueryTreeNodeType::TABLE
+            && join_tree->getNodeType() != QueryTreeNodeType::IDENTIFIER)
+        || (join_tree->getNodeType() == QueryTreeNodeType::IDENTIFIER
+            && isTableIdentifierShadowedInScope(join_tree->as<IdentifierNode &>(), scope))
+        || isUnsafeCountScalarSource(join_tree, scope)
+        || hasLateAttachedTableFilter(join_tree, query.getContext(), scope)
+        || hasNestedQueryOrUnion(query)
+        || query.hasWith()
+        || query.hasPrewhere()
+        || query.hasWhere()
+        || query.hasGroupBy()
+        || query.hasHaving()
+        || query.hasWindow()
+        || query.hasQualify()
+        || query.hasOrderBy()
+        || query.hasLimitBy()
+        || query.hasLimit()
+        || query.hasOffset())
+        return false;
+
+    const auto & projection = query.getProjection().getNodes();
+    if (projection.size() != 1)
+        return false;
+
+    const auto * function = projection.front()->as<FunctionNode>();
+    if (!function
+        || function->getFunctionName() != "count"
+        || !function->getParameters().getNodes().empty())
+        return false;
+
+    const auto & arguments = function->getArguments().getNodes();
+    if (arguments.empty())
+        return true;
+
+    if (arguments.size() != 1)
+        return false;
+
+    const auto * matcher = arguments.front()->as<MatcherNode>();
+    return matcher && matcher->isUnqualified();
+}
+
+bool containsQueryOrUnion(const QueryTreeNodePtr & node)
+{
+    const auto type = node->getNodeType();
+    if (type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::UNION)
+        return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && containsQueryOrUnion(child))
+            return true;
+
+    return false;
+}
+
+bool containsCountFunction(const QueryTreeNodePtr & node)
+{
+    if (const auto * function = node->as<FunctionNode>(); function && function->getFunctionName() == "count")
+        return true;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        if (containsCountFunction(constant->getSourceExpression()))
+            return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && containsCountFunction(child))
+            return true;
+
+    return false;
+}
+
+bool comparisonWithScalarHasNonLiteralOtherSide(const FunctionNode & function)
+{
+    const auto & name = function.getFunctionName();
+    const bool is_comparison = name == "equals" || name == "notEquals"
+        || name == "less" || name == "greater"
+        || name == "lessOrEquals" || name == "greaterOrEquals";
+    if (!is_comparison)
+        return false;
+
+    const auto & arguments = function.getArguments().getNodes();
+    if (arguments.size() != 2)
+        return false;
+
+    const bool first_is_scalar = containsQueryOrUnion(arguments[0]) || containsCountFunction(arguments[0]);
+    const bool second_is_scalar = containsQueryOrUnion(arguments[1]) || containsCountFunction(arguments[1]);
+    if (first_is_scalar == second_is_scalar)
+        return false;
+
+    const auto * other_constant = arguments[first_is_scalar ? 1 : 0]->as<ConstantNode>();
+    return !other_constant || !other_constant->isDeterministic() || other_constant->hasSourceExpression();
+}
+
+bool isStrictSafeLogicalTree(
+    const QueryTreeNodePtr & node,
+    const IdentifierResolveScope & scope)
+{
+    if (const auto * constant = node->as<ConstantNode>())
+        return constant->isDeterministic() && !constant->hasSourceExpression()
+            && isNativeNumber(removeNullable(constant->getResultType()));
+
+    const auto * function = node->as<FunctionNode>();
+    if (!function)
+        return false;
+
+    const auto & name = function->getFunctionName();
+    if (name == "and" || name == "or")
+    {
+        for (const auto & argument : function->getArguments().getNodes())
+            if (!isStrictSafeLogicalTree(argument, scope))
+                return false;
+        return true;
+    }
+
+    const bool is_comparison = name == "equals" || name == "notEquals"
+        || name == "less" || name == "greater"
+        || name == "lessOrEquals" || name == "greaterOrEquals";
+    if (!is_comparison)
+        return false;
+
+    const auto & arguments = function->getArguments().getNodes();
+    if (arguments.size() != 2)
+        return false;
+
+    const auto * first_query = arguments[0]->as<QueryNode>();
+    const auto * second_query = arguments[1]->as<QueryNode>();
+    if ((first_query != nullptr) == (second_query != nullptr))
+        return false;
+
+    const auto * scalar_query = first_query ? first_query : second_query;
+    const auto & other_argument = arguments[first_query ? 1 : 0];
+    const auto * other_constant = other_argument->as<ConstantNode>();
+    return isSafeCountScalarSubqueryForEarlyShortCircuit(*scalar_query, scope)
+        && other_constant && other_constant->isDeterministic() && !other_constant->hasSourceExpression();
+}
+
+bool hasScopeDependentNodesForEarlyShortCircuit(
+    const QueryTreeNodePtr & node,
+    const IdentifierResolveScope & scope)
+{
+    const auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY)
+        return !isSafeCountScalarSubqueryForEarlyShortCircuit(node->as<QueryNode &>(), scope);
+    if (node_type == QueryTreeNodeType::UNION)
+        return true;
+
+    if (node_type != QueryTreeNodeType::FUNCTION
+        && node_type != QueryTreeNodeType::CONSTANT
+        && node_type != QueryTreeNodeType::LIST)
+        return true;
+
+    if (const auto * function = node->as<FunctionNode>();
+        function && comparisonWithScalarHasNonLiteralOtherSide(*function))
+        return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && hasScopeDependentNodesForEarlyShortCircuit(child, scope))
+            return true;
+
+    return false;
 }
 }
 
@@ -596,6 +1108,99 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
+    /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
+      * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
+      * user-defined function with the same name.
+      */
+    if (!early_short_circuit_type_inference_in_process
+        && scope.context->getSettingsRef()[Setting::enable_function_early_short_circuit]
+        && scope.context->getSettingsRef()[Setting::short_circuit_function_evaluation] != ShortCircuitFunctionEvaluation::DISABLE
+        && (function_name == "and" || function_name == "or")
+        && parameters.empty()
+        && function_node_ptr->getNullsAction() == NullsAction::EMPTY
+        && !function_node_ptr->isWindowFunction()
+        /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
+        /// the regular path so a preserved scalar-subquery source is never sent to the planner.
+        && !scope.resolving_join_on_expression
+        && !lambda_expression_untyped
+        && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
+        && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)
+    {
+        auto short_circuit_result = getEarlyShortCircuitResultForAndOr(node, function_name);
+        const bool is_strict_safe_logical_tree = isStrictSafeLogicalTree(node, scope);
+        if (short_circuit_result
+            && !hasScopeDependentNodesForEarlyShortCircuit(node, scope)
+            && !hasUnsafeFunctionForEarlyShortCircuit(node, scope.context, scope))
+        {
+            /// Resolve a clone in type-only mode. Scalar subqueries are analyzed but not executed,
+            /// which gives the logical expression its real Nullable/Bool result type. It also
+            /// discovers aggregates and arrayJoin before they can be erased by the early fold.
+            auto source_expression = node->clone();
+            auto node_for_type_inference = node->clone();
+
+            /// Speculative resolution must not cache placeholders or leave in-progress stack
+            /// entries in the live analyzer when it falls back. Use a dedicated QueryAnalyzer and
+            /// an isolated cache-disabled scope; parent-scope dependencies fall back immediately.
+            IdentifierResolveScope type_inference_scope = scope;
+            type_inference_scope.parent_scope = nullptr;
+            type_inference_scope.identifier_in_lookup_process.clear();
+            type_inference_scope.clearIdentifierCache();
+            type_inference_scope.disableIdentifierCachePermanently();
+            type_inference_scope.expression_argument_name_to_node.clear();
+            type_inference_scope.aliases = {};
+            type_inference_scope.global_with_aliases = {};
+            type_inference_scope.cte_name_to_query_node.clear();
+            type_inference_scope.table_expression_data_for_alias_resolution = nullptr;
+            type_inference_scope.join_using_columns.clear();
+            type_inference_scope.table_expression_node_to_data.clear();
+            type_inference_scope.registered_table_expression_nodes.clear();
+            type_inference_scope.expression_join_tree_node.reset();
+            type_inference_scope.projection_mask_map
+                = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
+
+            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
+            type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
+            type_inference_analyzer.subquery_counter = subquery_counter;
+
+            bool type_inference_succeeded = false;
+            ProjectionNames type_inference_projection_names;
+            try
+            {
+                type_inference_projection_names = type_inference_analyzer.resolveExpressionNode(
+                    node_for_type_inference,
+                    type_inference_scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/,
+                    false /*ignore_alias*/,
+                    allow_niladic_functions);
+                type_inference_succeeded = !type_inference_analyzer.early_short_circuit_type_inference_failed;
+            }
+            catch (...)
+            {
+                /// Ok. Some functions require the value of a constant argument to infer or validate
+                /// their result (for example, tupleElement's index). A type-only scalar placeholder
+                /// cannot provide it, so fall back to the regular path which evaluates the scalar.
+                type_inference_succeeded = false;
+            }
+
+            const bool post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
+                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
+            if (type_inference_succeeded && (is_strict_safe_logical_tree || post_resolution_is_safe))
+            {
+                auto result_type = node_for_type_inference->getResultType();
+                auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
+                copySecretMasksByPosition(node_for_type_inference, source_expression, *scope.projection_mask_map);
+
+                ConstantValue constant_value{ std::move(result_column), std::move(result_type) };
+                node = std::make_shared<ConstantNode>(
+                    std::move(constant_value), std::move(source_expression), true /*is_deterministic*/);
+                subquery_counter = type_inference_analyzer.subquery_counter;
+                return type_inference_projection_names;
+            }
+        }
+    }
+
     bool is_special_function_in = false;
     bool is_special_function_dict_get = false;
     bool is_special_function_join_get = false;
@@ -929,11 +1534,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         !scope.context->getSettingsRef()[Setting::transform_null_in] &&
         !scope.in_prewhere)
     {
-        if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
-
         const bool is_function_not_in = function_name == "notIn";
 
         auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
@@ -966,6 +1566,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>())
             {
+                /// The rewrite below produces a correlated subquery, so it requires the setting.
+                /// Checked here (not at the gate) so constant/tuple `IN` is never rejected.
+                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
                 /// An array subquery on the right of IN is the set of its elements (see
                 /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
                 /// EXISTS rewrite, so the comparison below is `x = <element>` rather than `x = <array>`.
@@ -1235,14 +1842,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
 
                         ASTPtr sql_udf_ast;
+                        ASTPtr wasm_udf_ast;
                         if (!inner_resolver)
                         {
-                            sql_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(identifier_name);
-                            if (!sql_udf_ast || !sql_udf_ast->as<ASTCreateSQLFunctionQuery>())
-                                sql_udf_ast.reset();
+                            auto stored_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(identifier_name);
+                            if (stored_udf_ast && stored_udf_ast->as<ASTCreateSQLFunctionQuery>())
+                                sql_udf_ast = std::move(stored_udf_ast);
+                            /// A `CREATE FUNCTION ... LANGUAGE WASM` definition is kept in the same storage and
+                            /// outlives the engine that runs it: after a restart with
+                            /// `allow_experimental_webassembly_udf` turned off, or on a build without a
+                            /// WebAssembly engine at all, the definition is still stored while the registry
+                            /// probed above is empty. Rewrite the reference from the stored definition anyway,
+                            /// so that resolving the rewritten call reports that WebAssembly support is
+                            /// unavailable instead of failing as an unknown identifier.
+                            else if (stored_udf_ast && stored_udf_ast->as<ASTCreateWasmFunctionQuery>())
+                                wasm_udf_ast = std::move(stored_udf_ast);
                         }
 
-                        if (inner_resolver || sql_udf_ast)
+                        if (inner_resolver || sql_udf_ast || wasm_udf_ast)
                         {
                             /// Determine arity from the inner function itself. This handles
                             /// cases like `arrayMap(plus, arr1, arr2)` where `plus` has a
@@ -1273,6 +1890,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                     }
                                 }
                             }
+
+                            /// A WebAssembly UDF declares its arguments in the `CREATE FUNCTION` statement,
+                            /// so the stored definition carries the arity even when nothing can run it.
+                            if (const auto * wasm_udf = wasm_udf_ast ? wasm_udf_ast->as<ASTCreateWasmFunctionQuery>() : nullptr)
+                                inner_arity = wasm_udf->getNumberOfArguments();
 
                             /// Determine the lambda arity:
                             /// - Inner function with fixed arity: use it directly.
@@ -1392,6 +2014,41 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     else if (mask_secret_constants(secret_node))
                         arguments_projection_names[n] = "[HIDDEN]";
                 });
+        }
+    }
+
+    /** Bind an unqualified dictionary name to the current database.
+      *
+      * The dictionary name of `dictGet` and its variations is resolved against the current database of
+      * the server that evaluates the function. A shard of a `Distributed` table evaluates it in a session
+      * whose current database comes from the cluster configuration - `default` unless `<default_database>`
+      * is set - and not from the initiator, so an unqualified name shipped to a shard either fails to
+      * resolve or, worse, silently resolves to a different dictionary that happens to have the same name.
+      * Bind the name here, while the current database of the initiator is still known. The old analyzer
+      * does the same in `AddDefaultDatabaseVisitor` for the query it sends to the shards.
+      *
+      * `arguments_projection_names` is already calculated at this point, so the column name of the
+      * expression stays exactly as it was written by the user.
+      *
+      * `qualifyDictionaryNameWithDatabase` leaves the name alone when it is already qualified, when it
+      * belongs to an XML dictionary, and when no such dictionary exists in the current database - in the
+      * last case the name may still be meant for a dictionary that only exists on the shards.
+      */
+    if (is_special_function_dict_get)
+    {
+        auto & dict_get_arguments = function_node_ptr->getArguments().getNodes();
+        if (!dict_get_arguments.empty())
+        {
+            const auto * dictionary_name_node = dict_get_arguments[0]->as<ConstantNode>();
+            if (dictionary_name_node && dictionary_name_node->getValue().getType() == Field::Types::String)
+            {
+                const auto & dictionary_name = dictionary_name_node->getValue().safeGet<String>();
+                auto qualified_dictionary_name = scope.context->getExternalDictionariesLoader()
+                    .qualifyDictionaryNameWithDatabase(dictionary_name, scope.context).getFullName();
+
+                if (qualified_dictionary_name != dictionary_name)
+                    dict_get_arguments[0] = std::make_shared<ConstantNode>(qualified_dictionary_name);
+            }
         }
     }
 
@@ -2044,9 +2701,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist. In scope {}{}",
-                            function_name, scope.scope_node->formatASTForErrorMessage(),
-                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist{}. In scope {}",
+                            function_name,
+                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)),
+                            scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -2101,6 +2759,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
         {
             UNUSED(create_function_query);
+            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
     }
@@ -2121,12 +2780,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `getTreeHash` walks the whole argument subtree, dominating analysis of deeply nested expressions.
         /// So the hash and the cache are computed only for non-deterministic functions.
         ///
-        /// `getSetting` and `rowNumberInAllBlocks` are non-deterministic but must NOT be shared: the cache
-        /// is global across scopes, and e.g. `SETTINGS` can change `getSetting`'s result for every scope.
-        if (function && !function->isDeterministic()
-            && function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
+        /// The cache is global across the whole query, so only a function that is stable inside a query
+        /// may be shared. A function that is not deterministic in the scope of a query (`getSetting`,
+        /// `getSettingOrDefault`, `blockNumber`, `rowNumberInAllBlocks`, ...) must NOT be shared: its
+        /// result depends on the scope it is evaluated in - e.g. `SETTINGS` can change what `getSetting`
+        /// returns for every scope - and a stateful function keeps counting inside the single instance
+        /// the cache hands out.
+        ///
+        /// The hash ignores aliases. An alias renames an expression and never changes the value the
+        /// `FunctionBase` captures, so `randConstant() AS x, randConstant() AS y` must share what
+        /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
+        /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
+        /// is the documented way to ask for two different constants in one query.
+        if (function && !function->isDeterministic() && !function->isStateful()
+            && function->isDeterministicInScopeOfQuery())
         {
-            auto hash = function_node_ptr->getTreeHash();
+            auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
             function_base_cache = &functions_cache[hash];
         }
     }
@@ -2162,10 +2831,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name {} does not exist. In scope {}{}",
+                "Function with name {} does not exist{}. In scope {}",
                 backQuote(function_name),
-                scope.scope_node->formatASTForErrorMessage(),
-                getHintsErrorMessageSuffix(hints));
+                getHintsErrorMessageSuffix(hints),
+                scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())

@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "세션 설정",
   "pages": [
     "ko/reference/settings/session-settings/additional",
     "ko/reference/settings/session-settings/aggregate",
@@ -223,6 +223,7 @@
     "ko/reference/settings/session-settings/shared-merge",
     "ko/reference/settings/session-settings/short-circuit-function-evaluation",
     "ko/reference/settings/session-settings/show",
+    "ko/reference/settings/session-settings/shrink-over",
     "ko/reference/settings/session-settings/skip-unavailable-shards",
     "ko/reference/settings/session-settings/sleep-in",
     "ko/reference/settings/session-settings/split",
@@ -256,7 +257,6 @@
     "ko/reference/settings/session-settings/vector-search",
     "ko/reference/settings/session-settings/wait-for",
     "ko/reference/settings/session-settings/webassembly-udf",
-    "ko/reference/settings/session-settings/window-view",
     "ko/reference/settings/session-settings/write-through-distributed-cache",
     "ko/reference/settings/session-settings/other"
   ],

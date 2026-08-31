@@ -501,6 +501,22 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 الحفاظ على القراءة بالترتيب من الجدول الأيسر في عمليات JOIN، بحيث يمكن للخطوات اللاحقة الاستفادة من ذلك.
 
+<div id="query_plan_read_in_order_through_spilling_join">
+  ## query_plan_read_in_order_through_spilling_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد يتيح تمرير القراءة بالترتيب عبر hash join مُهيأ بحد تلقائي للانسكاب إلى القرص، وذلك بإبقاء هذا الربط في الذاكرة للحفاظ على الترتيب الذي يضمنه. تكون previous_value=false لكي يعيد `compatibility` مع الإصدارات الأقدم من 26.8 السلوك التحفظي السابق، حيث لا يُستخدم هذا الربط مطلقًا للقراءة بالترتيب، لكنه يظل قادرًا دائمًا على الانسكاب إلى القرص."}]}]} />
+
+يسمح لـ [`query_plan_read_in_order_through_join`](/ar/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) بالتطبيق أيضًا على hash join مُهيأ بحد تلقائي للانسكاب إلى القرص باستخدام [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) أو [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
+
+لا يمكن لهذا الربط ضمان الحفاظ على ترتيب الجدول الأيسر إلا إذا لم ينسكب إلى القرص مطلقًا، لأن الانسكاب يوزع الصفوف على حاويات بحسب التجزئة. لذلك، عند تطبيق التحسين، يُحتفَظ بالربط في الذاكرة ولا يعود حد الانسكاب مُفعّلًا؛ ويُقيَّد الجدول في الجانب الأيمن بمتتبع الذاكرة بدلًا من ذلك، كما لو لم يُهيَّأ انسكاب تلقائي.
+
+اضبط القيمة على `0` للإبقاء على السلوك التحفظي المتمثل في عدم تمرير القراءة بالترتيب مطلقًا عبر ربط قد ينسكب إلى القرص. وتظل الاستعلامات التي تعتمد على الانسكاب للبقاء ضمن حد الذاكرة، والتي كانت ستصبح مؤهلة للتحسين لولا ذلك، تعمل كما كانت سابقًا.
+
+لا يعتمد تحسين `ORDER BY ... LIMIT` المنفصل عبر `JOIN`، الذي يدفع `Sort` و`Limit` إلى الجانب المحفوظ من الربط، على احتفاظ الربط بأي ترتيب، ويظل متاحًا للربوط القادرة على الانسكاب إلى القرص بغض النظر عن هذا الإعداد. لكنه يفسح المجال للقراءة بالترتيب عندما تكون ممكنة؛ لذا، عند تمكين هذا الإعداد، يستخدم `ORDER BY ... LIMIT` فوق ربط قادر على الانسكاب إلى القرص، ويمكن لِجانبه المحفوظ بث الصفوف بالترتيب المطلوب، مخطط القراءة بالترتيب بدلًا من دفع `Sort` و`Limit` إلى الأسفل. ويحافظ هذا التحويل على شروطه السابقة، وأبرزها أن [`query_plan_join_swap_table`](/ar/reference/settings/session-settings/query-plan#query_plan_join_swap_table) مضبوط صراحةً على `false`: ففي الوضع الافتراضي `auto`، قد يبدّل تحسين لاحق جانبي الربط، مما يُبطل مخطط القراءة بالترتيب؛ لذلك لا يُعتمد هذا التحويل مطلقًا، وتحتفظ هذه الاستعلامات بـ `Sort` و`Limit` المدفوعين إلى الأسفل.
+
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct
 </div>

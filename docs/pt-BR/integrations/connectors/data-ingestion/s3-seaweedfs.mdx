@@ -1,0 +1,162 @@
+---
+sidebarTitle: 'SeaweedFS'
+slug: /integrations/seaweedfs
+description: 'Use o armazenamento de objetos SeaweedFS compatível com S3 com o ClickHouse'
+title: 'Usando o SeaweedFS'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+keywords: ['s3', 'seaweedfs', 'armazenamento de objetos', 'carregamento de dados', 'armazenamento compatível']
+---
+
+import SelfManaged from '/snippets/pt-BR/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+A função de tabela `s3` e o tipo de disco `S3` do ClickHouse são compatíveis com o [SeaweedFS](https://github.com/seaweedfs/seaweedfs), um armazenamento distribuído de objetos de código aberto com um gateway compatível com S3. O SeaweedFS atende nativamente a solicitações no estilo path; portanto, uma instalação self-hosted funciona sem DNS wildcard. O SeaweedFS também oferece suporte a tabelas Iceberg: seus buckets de tabela armazenam os dados em arquivos Parquet, e o catálogo REST Iceberg integrado fornece os metadados das tabelas — consulte o [guia do catálogo do SeaweedFS](/pt-BR/guides/use-cases/data-warehousing/seaweedfs-catalog) para consultá-las pelo mesmo endpoint.
+
+Use o [SeaweedFS 4.42](https://github.com/seaweedfs/seaweedfs/releases/tag/4.42) ou uma versão mais recente. Versões anteriores podem excluir um objeto cuja gravação é confirmada enquanto a pasta pai é removida por estar vazia, o que resulta em `Object ... suddenly disappeared` logo após uma gravação bem-sucedida.
+
+<div id="running-seaweedfs-locally">
+  ## Executando o SeaweedFS localmente
+</div>
+
+Para um ambiente de teste local, crie um arquivo `s3config.json` com as credenciais do S3:
+
+```json
+{
+  "identities": [
+    {
+      "name": "analyst",
+      "credentials": [
+        {
+          "accessKey": "your_access_key_id",
+          "secretKey": "your_secret_access_key"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
+```
+
+Em seguida, inicie toda a stack do SeaweedFS em um único contêiner — a flag `-bucket` cria o bucket na inicialização:
+
+```bash
+docker run -d --name seaweedfs -p 8333:8333 \
+  -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
+  chrislusf/seaweedfs:latest \
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+```
+
+O endpoint do S3 está disponível na porta 8333; aguarde até que ele responda antes de continuar:
+
+```bash
+until curl -s -o /dev/null http://localhost:8333; do sleep 1; done
+```
+
+Mais buckets podem ser criados a qualquer momento com `echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell`.
+
+Por padrão, uma gravação é confirmada assim que é passada ao sistema operacional. Para executar o fsync de cada gravação no disk antes de confirmá-la, habilite o fsync no bucket:
+
+```bash
+echo "fs.configure -locationPrefix=/buckets/clickhouse/ -fsync -apply" | \
+  docker exec -i seaweedfs weed shell
+```
+
+<div id="s3-backed-mergetree">
+  ## MergeTree com suporte a S3
+</div>
+
+A configuração do MergeTree com suporte a S3 é compatível com pequenas alterações:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://seaweedfs:8333/clickhouse/tables/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  O endpoint contém o nome do bucket (`clickhouse`), seguido de um prefixo de caminho (`tables/`) para os dados da tabela. O SeaweedFS não exige uma Region, portanto a tag pode permanecer vazia. Substitua `seaweedfs` pelo host que executa o gateway S3.
+</Tip>
+
+As tabelas armazenam seus dados no SeaweedFS por meio da política de armazenamento:
+
+```sql
+CREATE TABLE trips (id UInt64, rider String, fare Float64)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main';
+```
+
+Para manter um cache local dos dados acessados com frequência, crie a tabela usando `SETTINGS disk = 's3_cache'` — o disco de cache definido acima envolve o disco S3.
+
+<div id="the-s3-table-function">
+  ## A função de tabela s3
+</div>
+
+A função de tabela `s3` lê e grava objetos no mesmo endpoint:
+
+```sql
+INSERT INTO FUNCTION s3(
+    'http://seaweedfs:8333/clickhouse/sample/trips.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+)
+SELECT number AS id, concat('rider_', toString(number % 10)) AS rider, number * 1.5 AS fare
+FROM numbers(1000);
+
+SELECT count()
+FROM s3(
+    'http://seaweedfs:8333/clickhouse/sample/*.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+);
+```
+
+Os padrões glob permitem ler vários objetos.
+
+<div id="backup-and-restore">
+  ## Backup e restauração
+</div>
+
+`BACKUP` e `RESTORE` aceitam um endpoint do SeaweedFS como destino do S3:
+
+```sql
+BACKUP TABLE trips
+TO S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+
+--- DROP TABLE trips;
+
+RESTORE TABLE trips
+FROM S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+```
