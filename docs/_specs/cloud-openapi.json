@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1077744",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1078296",
       "email": "support@clickhouse.com"
     }
   },
@@ -39,7 +39,7 @@
       "name": "Backup"
     },
     {
-      "name": "OpenAPI"
+      "name": "API keys"
     },
     {
       "name": "Prometheus"
@@ -5595,7 +5595,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Returns a list of all keys in the organization."
@@ -5706,7 +5706,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Creates new API key."
@@ -5820,7 +5820,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Returns a single key details."
@@ -5941,7 +5941,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Updates API key properties."
@@ -6050,7 +6050,7 @@
           }
         },
         "tags": [
-          "OpenAPI"
+          "API keys"
         ],
         "x-mint": {
           "content": "Deletes API key. Only a key not used to authenticate the active request can be deleted."
@@ -22589,6 +22589,11 @@
             "description": "Custom partitioning column used for parallel snapshotting. Must be an indexed column of an integer, date, datetime or timestamp type. Unrelated to ClickHouse partitioning.",
             "type": "string",
             "example": "id"
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": "string",
+            "example": "toYYYYMM(created_at)"
           }
         },
         "required": [
@@ -22643,6 +22648,14 @@
               "null"
             ],
             "example": "id"
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "toYYYYMM(created_at)"
           }
         },
         "required": [
@@ -35250,9 +35263,9 @@
       ]
     },
     {
-      "name": "OpenAPI",
+      "name": "API keys",
       "tags": [
-        "OpenAPI"
+        "API keys"
       ]
     },
     {
