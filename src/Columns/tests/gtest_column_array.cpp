@@ -173,7 +173,7 @@ TEST(ColumnArray, InsertManyFromSelfString)
     data->insert(value);
 
     auto offsets = ColumnArray::ColumnOffsets::create();
-    offsets->getData().push_back(data->getOffsets().back());
+    offsets->getData().push_back(data->size());
     auto column = ColumnArray::create(std::move(data), std::move(offsets));
 
     column->insertManyFrom(*column, 0, 2);
