@@ -379,6 +379,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       globally, exactly like the `Code: 236 ... Cancelled mutating parts` message that the same cancelled test
 #       mutations emit above. Matching the message rather than the task type also covers the wrapping
 #       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
+# `Unexpected const virtual column: _table` (`NO_SUCH_COLUMN_IN_TABLE`, Code: 16) is the same class, from
+#       `04510_mutation_query_plan_only_virtual_columns`, whose `DELETE WHERE _table != ''` mutation is asserted to
+#       fail. Only a mutation command naming `_table` reaches that throw, since a query read fills it from the
+#       storage id, so the column name and the `MergeTreeSequentialSource` read path are matched together below.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
@@ -549,6 +553,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
            -e "Cannot parse string 'fail' as Int8" \
+           -e "Unexpected const virtual column: _table: While executing MergeTreeSequentialSource." \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
