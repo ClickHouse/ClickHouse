@@ -3639,12 +3639,10 @@ def test_writes(started_cluster, storage_type):
 
 
 def test_writes_azure_blob_path_with_leading_slash(started_cluster):
-    """A `blob_path` with a leading slash (which `fromDisk` always produces as
-    `"/" + path_suffix`, and connection-string URL parsing keeps as well) is
-    normalized to the table location `az://container/path` for delta-kernel,
-    so the committed `add.path` entries are relative to `path/`. The written
-    data files must land there too, not under a literal `/path/` blob name,
-    which Azure preserves as a distinct key (unlike S3, which strips it).
+    """Azure keeps a leading slash as a part of the blob name, while the Delta log
+    commits paths relative to the normalized table root `az://container/path`.
+    Data files written through a leading-slash blob path (e.g. produced by a
+    disk-based configuration) must land under `path/`, not a literal `/path/`.
     """
     instance = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_writes_leading_slash")
@@ -3658,8 +3656,8 @@ def test_writes_azure_blob_path_with_leading_slash(started_cluster):
         f"INSERT INTO TABLE FUNCTION {table_function_slash} SELECT toInt32(number) AS id, toString(number) AS name FROM numbers(10)"
     )
 
-    # An external reader resolves `add.path` against the committed table root
-    # `az://container/{path}/`, so the data file must exist under `{path}/`.
+    # External readers resolve `add.path` against the committed table root,
+    # so the data file must exist under `{path}/`.
     data_files = list_delta_data_files(started_cluster, "azure", path)
     stray_files = [
         blob.name

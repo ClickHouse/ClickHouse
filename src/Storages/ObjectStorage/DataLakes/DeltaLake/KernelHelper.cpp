@@ -390,12 +390,9 @@ private:
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
 
-    /// `blob_path` may carry a leading slash (e.g. a disk-based configuration builds it
-    /// as "/" + path_suffix). `buildTableLocation` strips it for the kernel table location,
-    /// and `data_path` must agree: `add.path` entries committed to the Delta log are
-    /// relative to the table location, while reads and writes resolve them against
-    /// `getDataPath`. Azure preserves a leading slash as a part of the blob name (unlike
-    /// S3), so an unnormalized `data_path` would make writes land outside the table root.
+    /// `blob_path` may carry a leading slash (e.g. from a disk-based configuration),
+    /// which Azure would keep as a part of the blob name. Strip it so that the data
+    /// path agrees with the normalized table location committed to the Delta log.
     static std::string normalizeBlobPath(const std::string & blob_path)
     {
         if (!blob_path.empty() && blob_path.front() == '/')
