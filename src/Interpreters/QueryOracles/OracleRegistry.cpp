@@ -29,6 +29,7 @@ extern const Event ASTFuzzerOracleNullIdentityChecks;
 extern const Event ASTFuzzerOracleCastRoundtripChecks;
 extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
 extern const Event ASTFuzzerOracleTupleSummingChecks;
+extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
 }
 
 namespace DB
@@ -101,6 +102,7 @@ OracleRegistry::OracleRegistry()
     add("CAST round-trip", ProfileEvents::ASTFuzzerOracleCastRoundtripChecks, &QueryOracleChecker::checkCastRoundtrip);
     add("aggregate-state column", ProfileEvents::ASTFuzzerOracleAggregateStateColumnChecks, &QueryOracleChecker::checkAggregateStateColumn);
     add("tuple summing", ProfileEvents::ASTFuzzerOracleTupleSummingChecks, &QueryOracleChecker::checkTupleSumming);
+    add("schema round-trip", ProfileEvents::ASTFuzzerOracleSchemaRoundtripChecks, &QueryOracleChecker::checkSchemaRoundtrip);
 }
 
 const OracleRegistry & OracleRegistry::instance()
