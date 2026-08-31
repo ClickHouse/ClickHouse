@@ -1,0 +1,6 @@
+compat_26_8_default_list
+direct,parallel_hash,hash,ie_join
+explicit_parallel_hash
+parallel_hash
+explicit_parallel_hash_join
+10
