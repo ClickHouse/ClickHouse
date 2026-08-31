@@ -4,8 +4,8 @@
 
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
-#include <Common/FiberStack.h>
-#include <Common/Fiber.h>
+#include <Common/CoroutineStack.h>
+#include <Common/StackfulCoroutine.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <unordered_map>
@@ -81,6 +81,19 @@ public:
 
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
+
+    /// Whether a future hedge could select a replica whose capabilities are not yet known.
+    bool maySelectUnverifiedReplica() const
+    {
+        return hasEventsInProcess() || entries_count + replicas_in_process_count + failed_pools_count < shuffled_pools.size();
+    }
+
+    /// Whether a future hedge could select a replica that does not support the given query-plan
+    /// serialization version. Besides the pools that were never dialled (whose version cannot be
+    /// known here), this also accounts for the already-established usable but not up-to-date
+    /// replicas: they are kept inside the factory, never handed out as READY, and `setBestUsableReplica`
+    /// can still pick one of them later when `fallback_to_stale_replicas_for_distributed_queries` is on.
+    bool maySelectReplicaBelowQueryPlanSerializationVersion(UInt64 version) const;
 
     size_t getFailedPoolsCount() const { return failed_pools_count; }
 

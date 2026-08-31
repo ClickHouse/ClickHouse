@@ -186,7 +186,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-range-query endpointを使用して、指定した時間範囲で式を評価します。
+range-query エンドポイントを使用して、指定した時間範囲で式を評価します。
 
 ```bash
 curl --user default:<password> --get \
@@ -199,7 +199,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-HTTP API、`promql` 方言、およびテーブル関数で使用される関数と集約演算子の一覧については、[サポートされている PromQL 機能](/ja/sql-reference/table-functions/prometheusQueryRange#supported-promql-features)を参照してください。
+HTTP API、`promql` 方言、およびテーブル関数で使用される関数と集約演算子の一覧については、[サポートされている PromQL 機能](/ja/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)を参照してください。
 
 <div id="grafana">
   #### Grafana
@@ -233,7 +233,7 @@ Grafana は、このベース URL に `/api/v1/query` または `/api/v1/query_r
   #### SQL エントリポイント
 </div>
 
-ClickHouse では、HTTP API、`promql` 方言、および [`prometheusQuery`](/ja/sql-reference/table-functions/prometheusQuery) と [`prometheusQueryRange`](/ja/sql-reference/table-functions/prometheusQueryRange) のテーブル関数で、同じ PromQL コンバーターを使用します。
+ClickHouse では、HTTP API、`promql` 方言、および [`prometheusQuery`](/ja/reference/functions/table-functions/prometheusQuery) と [`prometheusQueryRange`](/ja/reference/functions/table-functions/prometheusQueryRange) のテーブル関数で、同じ PromQL コンバーターを使用します。
 
 `clickhouse-client` で PromQL を直接実行します。
 

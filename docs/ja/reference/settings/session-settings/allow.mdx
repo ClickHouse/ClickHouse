@@ -271,6 +271,17 @@ Iceberg に対する `insert` クエリの実行を許可します。
 
 存在しないテーブルまたはカラムを参照する SELECT query を含む CREATE MATERIALIZED VIEW を許可します。ただし、構文的には有効である必要があります。refreshable MVs には適用されません。また、MV のスキーマを SELECT query から推論する必要がある場合にも適用されません (つまり、CREATE にカラムリストがなく、TO table もない場合です) 。ソーステーブルより前に MV を作成する際に使用できます。
 
+<div id="allow_metadata_only_named_tuple_alter">
+  ## allow_metadata_only_named_tuple_alter
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "名前付き Tuple へのサブフィールド追加に対するメタデータのみの ALTER を制御する新しい設定。"}]}]} />
+
+true の場合、名前付き Tuple に新しいサブフィールドを追加するだけの ALTER MODIFY COLUMN は、メタデータのみを変更します (データ mutation は実行されません) 。
+false に設定すると、従来の完全 mutation の動作を強制します。
+
 <div id="allow_minmax_index_for_json">
   ## allow_minmax_index_for_json
 </div>

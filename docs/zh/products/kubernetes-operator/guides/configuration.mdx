@@ -594,7 +594,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
   ## 附加端口
 </div>
 
-该 Operator 会在每个 ClickHouse pod (容器组) 及其公共无头 Service 上暴露一组固定端口：`8123` HTTP、`9000` native、`9009` interserver、`9001`/`9002` management、`9363` Prometheus 指标，以及启用 TLS 时对应的 `8443`/`9440` TLS 端口变体。`interserver` 和 management 端口还会通过每个副本的内部 Service 额外暴露，以便副本和 operator 可以在副本变为就绪之前相互通信。若要让 ClickHouse 监听更多协议 (如 MySQL、PostgreSQL、gRPC 或其他自定义端口) ，请在 `spec.additionalPorts` 中声明：
+该 Operator 会在每个 ClickHouse pod (容器组) 及其公网无头 Service 上暴露一组固定端口：`8123` HTTP、`9000` native、`9009` interserver、`9001`/`9002` management、`9363` Prometheus 指标，以及启用 TLS 时对应的 `8443`/`9440` TLS 端口变体。`interserver` 和 management 端口还会通过每个副本的内部 Service 暴露，以便副本和 operator 能够在副本就绪前进行通信。若要让 ClickHouse 监听更多协议 (如 MySQL、PostgreSQL、gRPC 或其他自定义端口) ，请在 `spec.additionalPorts` 中声明：
 
 ```yaml
 spec:
@@ -607,7 +607,7 @@ spec:
       port: 9100
 ```
 
-operator 会将这些端口添加到 Pod 的 `containerPorts` 和公共无头 Service 中。
+operator 会将这些端口添加到 Pod 的 `containerPorts` 和公网无头 Service 中。
 完整示例见 [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml)。
 
 <Warning>
@@ -634,7 +634,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -928,7 +928,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -970,16 +971,16 @@ spec:
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # 默认值：true
+    enableDatabaseSync: true  # Default: true
 ```
 
 启用后，该 Operator 会将 Replicated 表和集成表同步到新副本。
 
-每个副本 Pod 都带有 `clickhouse.com/ReplicaInitialized` readiness gate，因此只有在 operator 完成初始化——将 `default` 数据库转换为 Replicated 引擎并同步 schema 之后，新副本才会通过公共无头 Service 对外发布。在此之前，operator 和其他副本通过该副本的内部 Service 与其通信。当 `enableDatabaseSync: false` 时，operator 会立即将副本标记为已初始化，因此就绪状态将仅由容器探针决定。
+每个副本 pod (容器组) 都带有 `clickhouse.com/ReplicaInitialized` 就绪门控，因此只有在 Operator 完成初始化后，新副本才会通过公网无头 Service 对外发布：`default` 数据库会转换为 Replicated 引擎，并同步 schema。在此之前，Operator 和其他副本会通过其内部 Service 访问该副本。使用 `enableDatabaseSync: false` 时，Operator 会立即将副本标记为已初始化，因此就绪状态仅取决于容器探针。
 
-operator 绝不会删除已有数据的非 Replicated `default` 数据库。此类副本在 schema 准备完成后仍会开始处理客户端流量，但在你自行解决该数据库之前，集群会以 `DefaultDatabaseNotReplicated` 为原因报告 `SchemaInSync=False`。
+Operator 绝不会删除已填充数据的非 Replicated `default` 数据库。此类副本在完成 schema 准备后仍会开始处理客户端流量，但在您自行解决该数据库的问题之前，集群会报告 `SchemaInSync=False`，原因为 `DefaultDatabaseNotReplicated`。
 
-在缩容删除副本之前，operator 会先将客户端流量从该副本上卸载，等待其不再对外发布，将其剩余数据复制到存活的副本，然后才将其删除。
+在缩容移除副本之前，Operator 会先将客户端流量从该副本卸载，等待其停止对外发布，将其剩余数据复制到存活副本，然后才将其删除。
 
 <div id="server-logging">
   ### 服务器日志

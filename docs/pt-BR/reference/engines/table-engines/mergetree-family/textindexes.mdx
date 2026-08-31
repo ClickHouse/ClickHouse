@@ -84,6 +84,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -160,6 +162,8 @@ ALTER TABLE table DROP INDEX text_idx;
   Observe que cada string pode ser composta por vários caracteres (`', '` no exemplo).
   A lista padrão de separadores, se não for especificada explicitamente (por exemplo, `tokenizer = splitByString`), é um único espaço em branco `[' ']`.
 * `asciiCJK` divide strings em tokens usando regras de limite de palavras do Unicode (semelhantes a [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). Caracteres ASCII alfanuméricos e sublinhados formam tokens com conectores (ASCII `:` para letras, `.` e `'` para caracteres do mesmo tipo). Caracteres Unicode não ASCII, incluindo caracteres [CJK](https://en.wikipedia.org/wiki/CJK_characters), tornam-se tokens de um único caractere.
+* `chinese[(granularity)]` segmenta texto chinês em palavras usando um dicionário e um modelo oculto de Markov (o algoritmo segue [jieba](https://github.com/fxsjy/jieba); o dicionário e os dados do modelo embutidos são derivados de [cppjieba](https://github.com/yanyiwu/cppjieba)). Diferentemente de `asciiCJK`, que trata cada caractere não ASCII como um token de um único caractere, `chinese` agrupa caracteres chineses consecutivos em palavras (por exemplo, `北京大学` se torna um token `北京大学`, em vez de quatro tokens de um único caractere). Isso gera tokens mais significativos para texto chinês e maior qualidade de busca. Para texto geral/misto, use `asciiCJK`; para texto somente em chinês, use `chinese`. O argumento opcional `granularity` é `'coarse_grained'` (o padrão, se não for especificado) ou `'fine_grained'`. Este último também enumera subpalavras sobrepostas; por exemplo, `北京邮电大学` também gera `北京`, `邮电`, `大学`. A tokenização granular melhora o recall, ao custo de um índice maior.
+  Pesquise um índice de texto `chinese` com [hasAnyTokens](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAllTokens) (que tokenizam o termo buscado com o tokenizador `chinese`), e não com `hasToken` (que divide apenas em separadores ASCII).
 * `icu(locale)` divide strings em tokens de palavras usando a segmentação de palavras Unicode (UAX #29) da biblioteca [ICU](https://icu.unicode.org/). Para sistemas de escrita que não usam espaços em branco entre palavras (por exemplo, chinês, japonês e tailandês), a ICU aplica segmentação baseada em dicionário; portanto — diferentemente de `asciiCJK` — esse texto é dividido em palavras significativas com vários caracteres, em vez de caracteres únicos. Aqui, &quot;dicionário&quot; refere-se às listas de palavras incluídas na ICU para esses sistemas de escrita (consulte [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)); a ICU escolhe a divisão mais provável entre essas palavras.
   `locale` é a localidade da ICU passada ao segmentador; a segmentação é orientada principalmente pelo sistema de escrita e pelo dicionário, e a localidade seleciona as personalizações específicas da localidade na ICU. É um parâmetro obrigatório; por exemplo, `tokenizer = icu('ja')` ou `tokenizer = icu('zh')`.
   As localidades disponíveis podem ser listadas com `SELECT * FROM system.collations`.
@@ -266,6 +270,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 Para texto não ASCII, recomenda-se o tokenizador `asciiCJK`, pois ele lida corretamente com os limites de palavras Unicode, incluindo caracteres CJK.
 Para idiomas que não separam palavras por espaços em branco (por exemplo, chinês, japonês ou tailandês), o tokenizador `icu(locale)` produz tokens de palavras significativos com vários caracteres por meio da segmentação de palavras baseada em dicionário do ICU.
 Especificamente para o japonês, o tokenizador `japanese` (MeCab) segmenta o texto em palavras, em vez de caracteres individuais, e geralmente fornece melhores resultados de busca.
+Especificamente para o chinês, o tokenizador `chinese` (jieba) segmenta o texto em palavras, em vez de caracteres individuais, e geralmente fornece melhores resultados de busca.
 
 <a id="preprocessor-argument-optional" />**Argumento do preprocessador (opcional)**. O preprocessador refere-se a uma expressão aplicada à string de entrada antes da tokenização.
 
@@ -275,8 +280,8 @@ Casos de uso típicos para o argumento do preprocessador incluem
 2. Normalização UTF-8, por exemplo, [normalizeUTF8NFC](/pt-BR/reference/functions/regular-functions/string-functions#normalizeUTF8NFC), [normalizeUTF8NFD](/pt-BR/reference/functions/regular-functions/string-functions#normalizeUTF8NFD), [normalizeUTF8NFKC](/pt-BR/reference/functions/regular-functions/string-functions#normalizeUTF8NFKC), [normalizeUTF8NFKD](/pt-BR/reference/functions/regular-functions/string-functions#normalizeUTF8NFKD), [normalizeUTF8NFKCCasefold](/pt-BR/reference/functions/regular-functions/string-functions#normalizeUTF8NFKCCasefold), [toValidUTF8](/pt-BR/reference/functions/regular-functions/string-functions#toValidUTF8).
 3. Remoção ou transformação de caracteres ou substrings indesejados, como acentos, por exemplo, [extractTextFromHTML](/pt-BR/reference/functions/regular-functions/string-functions#extractTextFromHTML), [substring](/pt-BR/reference/functions/regular-functions/string-functions#substring), [idnaEncode](/pt-BR/reference/functions/regular-functions/string-functions#idnaEncode), [translate](/pt-BR/reference/functions/regular-functions/string-replace-functions#translate), [removeDiacriticsUTF8](/pt-BR/reference/functions/regular-functions/string-functions#removeDiacriticsUTF8).
 
-A expressão do preprocessador deve transformar um valor de entrada do tipo [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring) em um valor do mesmo tipo.
-Se o índice de texto foi criado em uma coluna do tipo `Nullable(T)` ou `LowCardinality(T)`, então a expressão do preprocessador deve aceitar valores anuláveis ou de baixa cardinalidade (ou seja, sem lançar uma exceção).
+A expressão do pré-processador deve transformar um valor de entrada do tipo [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring) em um valor do mesmo tipo.
+Se o índice de texto foi criado em uma coluna do tipo `Nullable(T)` ou `LowCardinality(T)`, então a expressão do pré-processador deve aceitar valores anuláveis ou de baixa cardinalidade (ou seja, sem lançar uma exceção).
 
 Exemplos:
 
@@ -285,7 +290,7 @@ Exemplos:
 * `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col)))`
 * `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = removeDiacriticsUTF8(caseFoldUTF8(col)))`
 
-Além disso, a expressão do preprocessador deve referenciar apenas a coluna ou expressão sobre a qual o índice de texto está definido.
+Além disso, a expressão do pré-processador deve referenciar apenas a coluna ou expressão sobre a qual o índice de texto está definido.
 
 Exemplos:
 
@@ -296,11 +301,11 @@ Exemplos:
 O uso de funções não determinísticas não é permitido.
 
 <Note>
-  Em princípio, os preprocessadores são equivalentes a envolver a coluna ou expressão do índice com a expressão do preprocessador.
+  Em princípio, os preprocessadores são equivalentes a envolver a coluna ou expressão do índice com a expressão do pré-processador.
   Por exemplo, o preprocessador `lower` em `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))` pode ser emulado por `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha')`.
   Esta última forma tem a desvantagem de que o preprocessador emulado só é aplicado se corresponder à condição de filtro na cláusula WHERE.
   Por exemplo, `WHERE hasAllTokens(lower(col), [...])` corresponde, enquanto `WHERE hasAllTokens(col, [...])` não.
-  Portanto, para uma experiência ideal do usuário, recomendamos usar expressões de preprocessador.
+  Portanto, para uma experiência ideal do usuário, recomendamos usar expressões do pré-processador.
 </Note>
 
 As funções [hasToken](/pt-BR/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAnyTokens) e [hasPhrase](/pt-BR/reference/functions/regular-functions/string-search-functions#hasPhrase) usam o preprocessador para transformar primeiro o termo de busca antes de tokenizá-lo.
@@ -1462,6 +1467,40 @@ O mecanismo de fallback é controlado por duas configurações:
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/pt-BR/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Essa otimização é compatível apenas com as funções `like` e `ilike`.
+
+<div id="count-queries-perf">
+  ### Consultas triviais de contagem
+</div>
+
+Uma consulta que apenas conta as linhas que correspondem a um predicado de busca textual
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+é respondida pelo índice de texto, sem ler as linhas correspondentes.
+O ClickHouse obtém a contagem a partir das cardinalidades das listas de postings no índice, ignorando a coluna virtual que marca as linhas correspondentes e a agregação sobre ela. Um único token precisa apenas da cardinalidade do dicionário, portanto nenhuma lista de postings é lida; predicados com vários tokens leem os postings apenas para uni-los (`hasAnyTokens`) ou intersectá-los (`hasAllTokens`). Como um índice de texto abrange toda a parte, a contagem é exata e continua rápida mesmo em partes muito grandes.
+
+A otimização se aplica a um `count()` simples filtrado por um único predicado `hasToken`, `hasAnyTokens` ou `hasAllTokens` (ou um equivalente de `Array`/`Map`). Predicados combinados com `AND`/`OR`/`NOT`, um filtro adicional (por exemplo, `... AND id > 10`), um predicado no modo de indicação, como `m['key'] = 'value'`, selecionar qualquer coisa além da contagem ou uma busca por frase, `LIKE` ou padrão fazem com que a consulta leia as linhas. Partes sem um índice materializado ainda são contadas corretamente mediante a leitura de suas linhas.
+
+Para confirmar que a otimização está sendo aplicada, verifique se há `ReadFromTextIndexCount` no plano de consulta:
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+A otimização é controlada por [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/pt-BR/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (ativada por padrão). Ela se baseia na [leitura direta](#direct-read); portanto, [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/pt-BR/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use&#95;skip&#95;indexes](/pt-BR/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) e [optimize&#95;trivial&#95;count&#95;query](/pt-BR/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) também devem estar ativadas (todas ativadas por padrão).
 
 <div id="caching">
   ### Cache

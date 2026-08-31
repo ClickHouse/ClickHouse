@@ -1633,6 +1633,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
 
+        /// The CREATE queries below come from metadata this database already stored, so they must be
+        /// accepted as they are: they re-derive tables that exist.
+        query_context->setRecoveryFromStoredMetadata(true);
+
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         enableAllExperimentalSettings(query_context);
@@ -1737,7 +1741,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
             table->flushAndShutdown(/*is_drop=*/true);
 
-            if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "TimeSeries")
+            if (table->getName() == "MaterializedView" || table->getName() == "TimeSeries")
             {
                 /// These storages own inner tables. Drop them here, while the recovery metadata transaction is
                 /// available: the deferred drop runs without one, so the inner DROP would be re-routed into the
@@ -2510,7 +2514,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     auto table = tryGetTable(table_name, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
-    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin"
+    if (table->getName() == "MaterializedView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin"
         || table->getName() == "TimeSeries")
     {
         /// Drop inner tables here while the metadata transaction is available, so the background
@@ -2923,7 +2927,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
         if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || alter->isFreezeAlter()
-            || alter->isUnlockSnapshot())
+            || alter->isUnlockSnapshot() || alter->isReplacePartitionAlter())
             return false;
 
         // Allowed ALTER operation on KeeperMap still should be replicated

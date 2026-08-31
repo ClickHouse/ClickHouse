@@ -1674,7 +1674,8 @@ static bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    else if (!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+    else if ((!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+             || !canBeAccurateCastOrNullTarget(in_argument_type))
     {
         /// We cannot apply castColumnAccurateOrNull() because it will throw exception
         return false;
@@ -2177,7 +2178,10 @@ static bool applyDeterministicDagToColumn(
         /// transform DAG still receives the type it was built against.
         const DataTypePtr probe_type = removeLowCardinality(target_type);
 
-        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in the cast below.
+        if ((!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+            || !canBeAccurateCastOrNullTarget(probe_type))
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
@@ -2589,7 +2593,9 @@ static bool tryPrepareSetColumnsForIndex(
             continue;
         }
 
-        if (!key_column_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in `castColumnAccurateOrNull` below.
+        if (!key_column_type->canBeInsideNullable() || !canBeAccurateCastOrNullTarget(key_column_type))
             return false;
 
         /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
@@ -6630,6 +6636,15 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
                 {
                     continue;
                 }
+
+                /// Sort and deduplicate the probe hashes once, here, instead of leaving that to every
+                /// lookup on every granule/row group: a filter can then intersect them with its own
+                /// sorted value set in one merge pass (see the Parquet `DictionaryLookup`), and the
+                /// duplicates that an `IN` set can produce - different values whose hashes collide, or
+                /// a tuple element repeated across set rows - are probed once instead of many times.
+                std::sort(hashes_for_column.begin(), hashes_for_column.end());
+                hashes_for_column.erase(
+                    std::unique(hashes_for_column.begin(), hashes_for_column.end()), hashes_for_column.end());
 
                 hashes.emplace_back(hashes_for_column);
 

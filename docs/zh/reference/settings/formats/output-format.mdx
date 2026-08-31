@@ -902,6 +902,16 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 对 String 列使用 Parquet String 类型，而非 Binary。
 
+<div id="output_format_parquet_wide_integer_as_decimal">
+  ## output_format_parquet_wide_integer_as_decimal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置：将 `Int128`、`UInt128`、`Int256` 和 `UInt256` 值写入为标准 Parquet `DECIMAL` 值。原有值保留旧版小端序 `FIXED_LEN_BYTE_ARRAY` 表示形式。"}]}]} />
+
+以大端字节序将 `Int128`、`UInt128`、`Int256` 和 `UInt256` 值写入为符合标准的 Parquet `DECIMAL` 值。默认情况下，为兼容旧版 ClickHouse，保留未标注的旧版小端序 `FIXED_LEN_BYTE_ARRAY` 表示形式。十进制表示形式支持可互操作的数值统计信息，但部分 Parquet reader 不支持精度超过 38 或 76 的值。
+
 <div id="output_format_parquet_write_bloom_filter">
   ## output_format_parquet_write_bloom_filter
 </div>
