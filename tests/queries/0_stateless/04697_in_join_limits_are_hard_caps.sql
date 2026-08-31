@@ -94,3 +94,11 @@ SETTINGS join_algorithm = 'hash'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 SELECT count() FROM (SELECT number AS k FROM numbers(10)) AS t1
 INNER JOIN (SELECT number % 10 AS k FROM numbers(400000)) AS t2 USING (k)
 SETTINGS join_algorithm = 'grace_hash'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
+-- Buckets still on disk hold no hash table, so a spilled join reaches the cap as they are loaded.
+SELECT 'the cap also fires after the right side was partitioned';
+SET max_rows_in_join = 150000;
+SET grace_hash_join_initial_buckets = 4;
+SELECT count() FROM (SELECT number AS k FROM numbers(400000)) AS t1
+INNER JOIN (SELECT number AS k FROM numbers(400000)) AS t2 USING (k)
+SETTINGS join_algorithm = 'grace_hash'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }

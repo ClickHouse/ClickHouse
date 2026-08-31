@@ -134,7 +134,9 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
-    void switchToGraceHashJoin();
+    /// `spill_immediately` is for the memory-pressure path: the new GraceHashJoin repartitions as it
+    /// takes the data over, instead of holding all of it in bucket 0 until the next spill request.
+    void switchToGraceHashJoin(bool spill_immediately = false);
     void tryConvertSlots();
 
     LoggerPtr log;

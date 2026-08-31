@@ -23,7 +23,15 @@ set enable_adaptive_memory_spill_scheduler=false;
 select t1.k, t2.x, t3.x from spill_scheduler_04695_1 as t1 left join spill_scheduler_04695_2 as t2 on t1.k = t2.k left join spill_scheduler_04695_3 as t3 on t1.k = t3.k Format Null; --{serverError MEMORY_LIMIT_EXCEEDED}
 
 set enable_adaptive_memory_spill_scheduler=true;
-select t1.k, t2.x, t3.x from spill_scheduler_04695_1 as t1 left join spill_scheduler_04695_2 as t2 on t1.k = t2.k left join spill_scheduler_04695_3 as t3 on t1.k = t3.k Format Null;
+select t1.k, t2.x, t3.x from spill_scheduler_04695_1 as t1 left join spill_scheduler_04695_2 as t2 on t1.k = t2.k left join spill_scheduler_04695_3 as t3 on t1.k = t3.k Format Null
+settings log_comment = '04695_scheduler_spill';
+
+-- The threshold above is out of reach, so any temporary file here was written because the scheduler
+-- asked for it: moving the data into an unpartitioned GraceHashJoin alone would free nothing.
+system flush logs query_log;
+select ProfileEvents['ExternalJoinWritePart'] > 0 from system.query_log
+where current_database = currentDatabase() and log_comment = '04695_scheduler_spill'
+    and type = 'QueryFinish' and event_date >= yesterday();
 
 drop table if exists spill_scheduler_04695_1;
 drop table if exists spill_scheduler_04695_2;

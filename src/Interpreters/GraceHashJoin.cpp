@@ -391,7 +391,8 @@ bool GraceHashJoin::checkSizeLimits() const
 {
     /// Count what the hash tables hold, exactly as `HashJoin` does when it checks the same limits: the
     /// buckets built so far plus the one in memory now. Rows a bucket drops (NULL keys) or collapses
-    /// behind one key are not counted, and the map overhead is.
+    /// behind one key are not counted, and the map overhead is. A bucket still on disk has no hash table
+    /// yet, so a spilled join reaches the cap only once that bucket is loaded in `getDelayedBlocks`.
     return table_join->sizeLimits().check(
         accounted_right_rows + getTotalRowCount(),
         accounted_right_bytes + getTotalByteCount(),

@@ -160,7 +160,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     return hash_join->addBlockToJoin(block, check_limits);
 }
 
-void SpillingHashJoin::switchToGraceHashJoin()
+void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
 {
     const auto print_threshold_reached_log = [this](const JoinPtr & join, std::string_view join_name)
     {
@@ -197,6 +197,11 @@ void SpillingHashJoin::switchToGraceHashJoin()
                 any_take_last_row,
                 max_bytes_before_external_join);
             grace_join->initialize(*left_sample_block);
+            /// Moving the data into bucket 0 frees nothing on its own. Asking the grace join to spill
+            /// before it is fed doubles the bucket count on the first block, so half of what we hand
+            /// over goes to disk right away - even if this is the last block of the build phase.
+            if (spill_immediately)
+                grace_join->requestSpill();
             chosen_join = grace_join;
 
             /// Set state BEFORE releasing the lock so new `addBlockToJoin` calls
@@ -229,6 +234,8 @@ void SpillingHashJoin::switchToGraceHashJoin()
         max_bytes_before_external_join);
 
     chosen_join->initialize(*left_sample_block);
+    if (spill_immediately)
+        chosen_join->requestSpill();
 
     /// Drain extracted blocks into GraceHashJoin one by one,
     /// freeing each after insertion to limit peak memory.
@@ -300,7 +307,7 @@ void SpillingHashJoin::requestSpill()
     {
         case State::COLLECTING:
             /// `switchToGraceHashJoin` re-checks the state, so a concurrent switch is harmless.
-            switchToGraceHashJoin();
+            switchToGraceHashJoin(/*spill_immediately=*/true);
             return;
         case State::GRACE_HASH_JOIN:
             chosen_join->requestSpill();

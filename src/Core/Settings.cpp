@@ -3719,6 +3719,10 @@ Because it is a cap rather than a trigger, setting it at or below an explicitly
 set `max_bytes_before_external_join` makes the query fail before the join can
 spill at all; ClickHouse logs a warning for that combination.
 
+The limit counts what the hash tables hold, so a join that spilled reaches it as
+each bucket is loaded rather than while the right side is read: it can read more
+of the right side before stopping than an in-memory hash join would.
+
 Possible values:
 
 - Positive integer.
