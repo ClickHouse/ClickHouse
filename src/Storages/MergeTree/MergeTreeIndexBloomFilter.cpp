@@ -580,7 +580,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+            index_type, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size), /*match_all=*/ false)));
 
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
@@ -697,7 +698,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                array_nested_type, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size), /*match_all=*/ false)));
         }
         else
         {
@@ -739,8 +741,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    out.predicate.emplace_back(
-        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
+    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+        array_nested_type, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size()), /*match_all=*/ false)));
     out.function = RPNElement::FUNCTION_HAS_ANY;
     return true;
 }
@@ -1007,7 +1009,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
 
                 out.function = RPNElement::FUNCTION_HAS_ANY;
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
+                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                    actual_type, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size()), /*match_all=*/ false)));
             }
         }
         else if (function_name == "hasAny" || function_name == "hasAll")
@@ -1024,7 +1027,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             out.function = function_name == "hasAny" ?
                 RPNElement::FUNCTION_HAS_ANY :
                 RPNElement::FUNCTION_HAS_ALL;
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                actual_type, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size()), out.function == RPNElement::FUNCTION_HAS_ALL)));
         }
         else
         {

@@ -87,33 +87,19 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
-    const char * vec;
+    const char * vec = nullptr;
+    /// Owns the key column with negative zeros replaced by positive zeros, if there were any.
+    ColumnPtr canonicalized_column;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        if constexpr (nullable)
-        {
-            const auto & null_column = checkAndGetColumn<ColumnNullable>(*key_columns[0]);
-            vec = null_column.getNestedColumnPtr()->getRawData().data();
-        }
-        else
-        {
-            vec = key_columns[0]->getRawData().data();
-        }
+        init(key_columns[0]);
     }
 
     explicit HashMethodOneNumber(const IColumn * column) : Base(column)
     {
-        if constexpr (nullable)
-        {
-            const auto & null_column = checkAndGetColumn<ColumnNullable>(*column);
-            vec = null_column.getNestedColumnPtr()->getRawData().data();
-        }
-        else
-        {
-            vec = column->getRawData().data();
-        }
+        init(column);
     }
 
     /// Creates context. Method is called once and result context is used in all threads.
@@ -134,6 +120,21 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
 
     const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
+
+private:
+    void init(const IColumn * column)
+    {
+        if constexpr (nullable)
+            column = checkAndGetColumn<ColumnNullable>(*column).getNestedColumnPtr().get();
+
+        /// `FieldType` is an unsigned integer even for floating point columns, so the canonicalization
+        /// of negative zeros has to be done on the column - see `canonicalizeNegativeZero`.
+        canonicalized_column = canonicalizeNegativeZero(*column);
+        if (canonicalized_column)
+            column = canonicalized_column.get();
+
+        vec = column->getRawData().data();
+    }
 };
 
 
@@ -156,9 +157,11 @@ struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
     /// An unaligned load from the column's own memory.
     static constexpr bool has_cheap_key_holder = true;
 
-    const char * vec;
+    const char * vec = nullptr;
     FieldType min_key{};
     FieldType range_size{};
+    /// Owns the key column with negative zeros replaced by positive zeros, if there were any.
+    ColumnPtr canonicalized_column;
 
     HashMethodOneNumberInRange(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : HashMethodOneNumberInRange(key_columns[0])
@@ -168,9 +171,14 @@ struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
     explicit HashMethodOneNumberInRange(const IColumn * column) : Base(column)
     {
         if constexpr (nullable)
-            vec = checkAndGetColumn<ColumnNullable>(*column).getNestedColumnPtr()->getRawData().data();
-        else
-            vec = column->getRawData().data();
+            column = checkAndGetColumn<ColumnNullable>(*column).getNestedColumnPtr().get();
+
+        /// See the comment in `HashMethodOneNumber`.
+        canonicalized_column = canonicalizeNegativeZero(*column);
+        if (canonicalized_column)
+            column = canonicalized_column.get();
+
+        vec = column->getRawData().data();
     }
 
     using Base::createContext;
@@ -462,6 +470,8 @@ struct HashMethodKeysFixed
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
     size_t keys_size;
+    /// Owns the low cardinality dictionaries with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
 
     /// SSSE3 shuffle method can be used. Shuffle masks will be calculated and stored here.
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -502,6 +512,8 @@ struct HashMethodKeysFixed
                 else
                     low_cardinality_keys.nested_columns[i] = key_columns[i];
             }
+
+            canonicalizeNegativeZeroInKeyColumns(low_cardinality_keys.nested_columns, canonicalized_columns);
         }
 
         if (usePreparedKeys(key_sizes))
@@ -623,9 +635,10 @@ struct HashMethodKeysFixed
 
 /// Bitwise comparator of rows over fixed-width contiguous key columns, flattening tuples
 /// element-wise. Bitwise equality of all collected slices implies key equality; the converse
-/// does not hold (e.g. `-0.` and `0.` are equal values with different bytes), but a false
-/// negative only costs falling back to the full key calculation. Unusable (and empty) if some
-/// key column has no such raw representation.
+/// does not hold in general, but a false negative only costs falling back to the full key
+/// calculation. Negative zero used to be such a case, but the key columns are canonicalized
+/// before this comparator is built over them - see `canonicalizeNegativeZero`. Unusable (and
+/// empty) if some key column has no such raw representation.
 class FixedSizeKeySlices
 {
 public:
@@ -697,6 +710,8 @@ struct HashMethodHashed
     static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;
+    /// Owns the key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
 
     /// The consecutive-keys cache alone cannot skip the key calculation for this method: its
     /// check needs the key, and here the key is the hash itself. Clustered inputs (e.g. sorted
@@ -710,6 +725,10 @@ struct HashMethodHashed
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns_))
     {
+        /// The keys are hashed by their binary representation, so negative zeros
+        /// have to be canonicalized in advance, before `key_slices` is built over the same columns.
+        canonicalizeNegativeZeroInKeyColumns(key_columns, canonicalized_columns);
+
         if constexpr (use_cache)
             key_slices = FixedSizeKeySlices(key_columns);
     }

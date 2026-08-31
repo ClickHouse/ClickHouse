@@ -240,11 +240,15 @@ public:
             for (size_t i = 0; i < arr_size; ++i)
             {
                 if constexpr (is_plain_column)
-                    set.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
+                    withKeyHolder<true>(*data_column, offset + i, *arena, [&](auto && key_holder)
+                    {
+                        set.emplace(key_holder, it, inserted);
+                    });
                 else
                 {
                     const char * begin = nullptr;
-                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    /// The serialized value is used as a key in a hash table - see `getKeyHolder`.
+                    static constexpr auto settings = IColumn::SerializationSettings::createForAggregationStateKey();
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
                     chassert(!serialized.empty());
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
@@ -258,14 +262,20 @@ public:
             {
                 if constexpr (is_plain_column)
                 {
-                    it = set.find(data_column->getDataAt(offset + i));
-                    if (it != nullptr)
-                        new_set.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
+                    withKeyHolder<true>(*data_column, offset + i, *arena, [&](auto && key_holder)
+                    {
+                        it = set.find(keyHolderGetKey(key_holder));
+                        if (it != nullptr)
+                            new_set.emplace(key_holder, it, inserted);
+                        else
+                            keyHolderDiscardKey(key_holder);
+                    });
                 }
                 else
                 {
                     const char * begin = nullptr;
-                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    /// The serialized value is used as a key in a hash table - see `getKeyHolder`.
+                    static constexpr auto settings = IColumn::SerializationSettings::createForAggregationStateKey();
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
                     chassert(!serialized.empty());
                     it = set.find(serialized);

@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <base/bit_cast.h>
+#include <base/normalizeNegativeZero.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
 #include <base/unaligned.h>
@@ -72,7 +73,11 @@ void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    hash.update(data[n]);
+    /// Negative zero is equal to positive zero, but has a different binary representation.
+    /// This is the generic way to hash a single value of a column, and it is used to deduplicate
+    /// or group equal values (`arrayEnumerateUniq`, `uniqExact` of composite values, `transform`),
+    /// so it has to agree with the `equals` function. For non-floating point types this is a no-op.
+    hash.update(normalizeNegativeZero(data[n]));
 }
 
 template <typename T>
@@ -86,8 +91,9 @@ template <typename T>
 static inline UInt32 weakHashValue32(T v) noexcept
 {
     /// `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type; hash its raw bits.
+    /// Negative zero has to be normalized explicitly here, because `hashCRC32` sees an integer.
     if constexpr (std::is_same_v<T, BFloat16>)
-        return static_cast<UInt32>(hashCRC32(v.raw(), WEAK_HASH32_INITIAL_VALUE));
+        return static_cast<UInt32>(hashCRC32(normalizeNegativeZero(v).raw(), WEAK_HASH32_INITIAL_VALUE));
     else
         return static_cast<UInt32>(hashCRC32(v, WEAK_HASH32_INITIAL_VALUE));
 }

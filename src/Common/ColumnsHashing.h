@@ -395,6 +395,8 @@ struct HashMethodSerialized
     static constexpr bool has_pre_computed_hashes = prealloc;
 
     ColumnRawPtrs key_columns;
+    /// Owns the key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
     size_t keys_size;
     std::vector<const UInt8 *> null_maps;
 
@@ -458,6 +460,9 @@ struct HashMethodSerialized
                 }
             }
         }
+
+        /// The keys are serialized as raw bytes, so negative zeros have to be canonicalized in advance.
+        canonicalizeNegativeZeroInKeyColumns(key_columns, canonicalized_columns);
 
         if constexpr (prealloc)
         {

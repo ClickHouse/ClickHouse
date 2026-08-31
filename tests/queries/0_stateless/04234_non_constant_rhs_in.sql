@@ -7,10 +7,9 @@ SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDE
 SELECT number FROM numbers(10) WHERE number % 2 IN [number % 3, number % 5] ORDER BY number;
 SELECT number FROM numbers(3) WHERE number IN (number + 1) ORDER BY number;
 SELECT number, number % 3 IN (number % 2, 1), number % 3 NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
--- Signed zeros. A constant right-hand side is evaluated as a Set keyed on raw float bits, so `-0.0 IN (0.0)` is 0.
--- A row-dependent right-hand side lowers to row-wise comparisons that use ordinary float equality, so there `-0.0`
--- matches `0.0`. This divergence is pre-existing behavior: the row-wise results below are exactly what these
--- queries already return on default settings in master, and changing either side would be an incompatibility.
+-- Signed zeros. A constant right-hand side is evaluated as a `Set`, which canonicalizes negative zero, and a
+-- row-dependent right-hand side lowers to row-wise comparisons that use ordinary float equality, so both agree
+-- that `-0.0` matches `0.0`.
 SELECT toFloat64(-0.0) IN (toFloat64(0.0)), toFloat64(-0.0) NOT IN (toFloat64(0.0)), toFloat64(-0.0) IN (toFloat64(number * 0)), toFloat64(-0.0) NOT IN (toFloat64(number * 0)), toFloat64(-0.0) IN [toFloat64(number * 0)], toFloat64(-0.0) NOT IN [toFloat64(number * 0)] FROM numbers(1);
 SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 NOT IN arrayMap(x -> x + number % 2, [0, 1]) FROM numbers(6) ORDER BY number;
 SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM (SELECT number, [number, number + 1] AS arr FROM numbers(3)) ORDER BY number;

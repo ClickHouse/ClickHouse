@@ -1,5 +1,7 @@
 #include <mutex>
 #include <base/bit_cast.h>
+#include <base/normalizeNegativeZero.h>
+#include <Columns/canonicalizeNegativeZero.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -280,6 +282,11 @@ namespace
 
         void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_cast, size_t input_rows_count) const
         {
+            /// The lookup is by the raw bytes of a value, which are canonicalized in `from_column`.
+            ColumnPtr canonical_in = canonicalizeNegativeZero(*in);
+            if (canonical_in)
+                in = canonical_in.get();
+
             const auto & table = *cache->table_string_to_idx;
             column_result.reserve(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -325,7 +332,7 @@ namespace
                 column_result.reserve(input_rows_count);
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    const auto * it = table.find(bit_cast<UInt64>(pod[i]));
+                    const auto * it = table.find(bit_cast<UInt64>(normalizeNegativeZero(pod[i])));
                     if (it)
                         column_result.insertFrom(*cache->to_column, it->getMapped());
                     else if (cache->default_column)
@@ -390,7 +397,7 @@ namespace
             {
                 const char8_t * to = nullptr;
                 size_t to_size = 0;
-                const auto * it = table.find(bit_cast<UInt64>(pod[i]));
+                const auto * it = table.find(bit_cast<UInt64>(normalizeNegativeZero(pod[i])));
                 if (it)
                 {
                     const auto idx = it->getMapped();
@@ -459,7 +466,7 @@ namespace
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const auto * it = table.find(bit_cast<UInt64>(pod[i]));
+                const auto * it = table.find(bit_cast<UInt64>(normalizeNegativeZero(pod[i])));
                 if (it)
                 {
                     const auto idx = it->getMapped();
@@ -784,6 +791,13 @@ namespace
                 }
             }
         }
+
+        /// The keys of the tables below are compared by their binary representation, and negative zero
+        /// is equal to positive zero, but has a different one, so it is canonicalized on both sides -
+        /// see `canonicalizeNegativeZero`. The values are only used as keys here; the result comes
+        /// from `to_column` and from the input column.
+        if (ColumnPtr canonical_from_column = canonicalizeNegativeZero(*cache->from_column))
+            cache->from_column = canonical_from_column;
 
         WhichDataType which(from_type);
 

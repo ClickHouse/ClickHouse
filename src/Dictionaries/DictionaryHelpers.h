@@ -514,9 +514,14 @@ public:
             size_t allocated_size_for_columns = 0;
             const char * block_start = nullptr;
 
+            /// The serialized key is used as a key in a hash table, so negative zeros are
+            /// canonicalized: otherwise a lookup of `-0.` would not find the value stored for `0.`,
+            /// while the two are equal by the rules of comparison. See `canonicalizeNegativeZero`.
+            static constexpr auto settings = IColumn::SerializationSettings::createForHashTableKey();
+
             for (const auto & column : key_columns)
             {
-                std::string_view serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start, nullptr);
+                std::string_view serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start, &settings);
                 allocated_size_for_columns += serialized_data.size();
             }
 
