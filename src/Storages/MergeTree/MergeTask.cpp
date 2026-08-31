@@ -114,6 +114,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_pause_after_reserving_tmp_dir[];
 }
 
 namespace Setting
@@ -542,6 +543,20 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     global_ctx->need_block_offset_in_merge |= key_columns.contains(BlockOffsetColumn::name);
 }
 
+String MergeTask::buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix)
+{
+    if (suffix.empty() || !suffix.starts_with(DRY_RUN_TEMP_INFIX))
+        return prefix + part_name + suffix;
+
+    /// `OPTIMIZE ... DRY RUN` leaves the result part name out: the name must not collide with the
+    /// merge of those parts, and its length must not follow the part name, which is not capped. What
+    /// is left is a fixed-size name, kept as short as uniqueness allows so that a dry run runs out of
+    /// filename budget as late as possible - no earlier than the corresponding real merge for any
+    /// part whose name is 15 characters or longer. Keeps `prefix`, which the temporary directory cleaner and the
+    /// startup skip logic select by, and is never parsed back into a part name.
+    return prefix + suffix;
+}
+
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
@@ -551,7 +566,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
     String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
 
-    const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
+    /// Honor an explicitly supplied suffix for top-level merges too, not only projections.
+    /// Real top-level merges pass an empty suffix; `OPTIMIZE ... DRY RUN` passes a unique one.
+    const String local_tmp_suffix = global_ctx->suffix;
 
     global_ctx->checkOperationIsNotCanceled();
 
@@ -576,7 +593,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     global_ctx->disk = global_ctx->space_reservation->getDisk();
-    auto local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
+    auto local_tmp_part_basename = buildTempPartBasename(local_tmp_prefix, global_ctx->future_part->name, local_tmp_suffix);
 
     /// The `SingleDiskVolume`, `DataPartStorageOnDiskFull`, and `IMergeTreeDataPart` constructed
     /// here are stored on the merged part and live for its whole lifetime, so route them into the
@@ -587,6 +604,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// interrupted merge. Projection merges write nested inside the parent's directory, which has no claim.
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
+
+    LOG_TRACE(ctx->log, "Reserved temporary directory {} for the merge", local_tmp_part_basename);
+
+    /// Test-only: widen the window between reserving the temporary merge directory and the rest
+    /// of the merge, to deterministically race two `OPTIMIZE ... DRY RUN` over the same parts.
+    /// Scoped to dry-run merges so an unrelated background merge cannot consume the pause.
+    if (local_tmp_suffix.starts_with(DRY_RUN_TEMP_INFIX))
+        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_reserving_tmp_dir);
 
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
