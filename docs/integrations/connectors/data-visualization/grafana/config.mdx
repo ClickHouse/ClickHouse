@@ -154,7 +154,7 @@ jsonData:
 
 The **Trace ID correlation** section of the logs configuration contains the **Show "View logs" links** toggle.
 This toggle controls whether the plugin attaches "View logs" [data links](/integrations/connectors/data-visualization/grafana/query-builder#data-links) to trace ID fields in query results.
-The links are shown by default.
+The toggle is enabled by default, and the plugin attaches the link only when the data source is configured for logs.
 Turn the toggle off, or set `showLogLinks: false` in YAML, to hide them.
 
 ### Traces {#traces}
@@ -197,7 +197,7 @@ jsonData:
 
 The **Trace ID correlation** section of the traces configuration contains the **Show "View trace" links** toggle.
 This toggle controls whether the plugin attaches "View trace" [data links](/integrations/connectors/data-visualization/grafana/query-builder#data-links) to trace ID fields in query results.
-The links are shown by default.
+The toggle is enabled by default, and the plugin attaches the link only when the data source is configured for traces.
 Turn the toggle off, or set `showTraceLinks: false` in YAML, to hide them.
 
 ### Column aliases {#column-aliases}
