@@ -1177,7 +1177,9 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return true; }
+    /// Not injective: every key that is absent from the dictionary maps to the same empty array,
+    /// so two distinct absent keys collide. The claim would only hold for keys the dictionary has.
+    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
