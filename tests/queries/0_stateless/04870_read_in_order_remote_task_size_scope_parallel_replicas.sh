@@ -20,7 +20,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The branch lowers `merge_tree_min_bytes_per_task_for_remote_reading` to 1 byte, so the heuristic
 # must never raise `min_marks_per_task` above the floor (the concurrent-read floors are pinned to one
 # mark). The outer value is raised to 100 GB: under the leak the initiator-local pool would jump to
-# `sum_marks / (threads * replicas) / 2` (~80 marks for ~2000 marks, 4 threads, 3 replicas).
+# `sum_marks / (threads * replicas) / 2` (~80 marks for the ~1950 marks of this table, 4 threads, 3 replicas).
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t_remote_task_size;
@@ -28,11 +28,11 @@ DROP VIEW IF EXISTS v_remote_task_size;
 
 CREATE TABLE t_remote_task_size (key UInt64)
 ENGINE = MergeTree ORDER BY key
-SETTINGS index_granularity = 1024, storage_policy = 's3_cache';
+SETTINGS index_granularity = 256, storage_policy = 's3_cache';
 
 SYSTEM STOP MERGES t_remote_task_size;
 
-INSERT INTO t_remote_task_size SELECT number FROM numbers(2000000);
+INSERT INTO t_remote_task_size SELECT number FROM numbers(500000);
 
 CREATE VIEW v_remote_task_size AS
 SELECT key FROM t_remote_task_size
