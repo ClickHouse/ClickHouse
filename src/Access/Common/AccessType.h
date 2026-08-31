@@ -354,6 +354,8 @@ enum class AccessType : uint8_t
     M(SYSTEM_RELOAD_CONFIG, "RELOAD CONFIG", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_USERS, "RELOAD USERS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_DICTIONARY, "SYSTEM RELOAD DICTIONARIES, RELOAD DICTIONARY, RELOAD DICTIONARIES, SYSTEM UNLOAD DICTIONARY, SYSTEM UNLOAD DICTIONARIES, UNLOAD DICTIONARY, UNLOAD DICTIONARIES", GLOBAL, SYSTEM_RELOAD) \
+    /* The CatBoost integration is removed, but the privilege is kept in place, so that access entities granted before the removal still parse after an upgrade, and so that the numeric values of the other access types in `system.privileges` and `system.grants` do not change. */ \
+    M(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_FUNCTION, "SYSTEM RELOAD FUNCTIONS, RELOAD FUNCTION, RELOAD FUNCTIONS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_EMBEDDED_DICTIONARIES, "RELOAD EMBEDDED DICTIONARIES", GLOBAL, SYSTEM_RELOAD) /* implicitly enabled by the grant SYSTEM_RELOAD_DICTIONARY ON *.* */\
     M(SYSTEM_RELOAD_ASYNCHRONOUS_METRICS, "RELOAD ASYNCHRONOUS METRICS", GLOBAL, SYSTEM_RELOAD) \
@@ -442,8 +444,6 @@ enum class AccessType : uint8_t
     M(ARROW_FLIGHT, "", GLOBAL, ALL) \
     M(BIGQUERY, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
-    /* CatBoost integration is removed, but the privilege is kept, so that access entities granted before the removal still parse after an upgrade. */ \
-    M(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, ALL) \
     \
     /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \

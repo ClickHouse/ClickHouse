@@ -2329,6 +2329,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// (e.g., cloud installations carrying historical settings). Kept here so
         /// that upgrading installations don't fail to start due to leftover keys.
         "format_alter_operations_with_parentheses",
+        /// The CatBoost integration is removed, but a leftover `catboost_lib_path` must not prevent the server from starting.
+        "catboost_lib_path",
 
         /// Background pool settings (legacy, moved to merge_tree section)
         "background_processing_pool_thread_sleep_seconds",
