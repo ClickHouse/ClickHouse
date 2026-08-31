@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// The shared server-wide ladder in its published form. Relaxed ordering is enough: the word publishes
+/// The shared server-wide thresholds in their published form. Relaxed ordering is enough: the word publishes
 /// no other memory alongside itself.
 std::atomic<uint64_t> & publishedThresholds()
 {
@@ -85,7 +85,7 @@ MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw_level, uint6
 
         if (raw_level >= held.level)                                  /// snap up, restart the cooldown
             next = {raw_level, thresholds_generation, now_ms};
-        else if (thresholds_generation != held.generation)       /// stale ladder, take the new level now
+        else if (thresholds_generation != held.generation)       /// stale thresholds, take the new level now
             next = {raw_level, thresholds_generation, now_ms};
         else if (held.elapsedTo(now_ms) >= cooldown_ms)          /// one step per cooldown
             next = {stepDown(held.level), thresholds_generation, now_ms};
@@ -129,8 +129,6 @@ void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 cr
         if (live.packValues() == next_packed_values)
             return;
 
-        /// A real change, so the levels classified against the old values are stale. The new generation
-        /// tells every cooldown to take its next classification at once instead of decaying to it.
         const MemoryPressureThresholds next_values{
             elevated_pct, high_pct, critical_pct, static_cast<uint16_t>(live.generation + 1)};
 
@@ -182,12 +180,11 @@ double MemoryPressureMonitor::samplePressure() const
 MemoryPressureLevel MemoryPressureMonitor::currentLevel()
 {
     /// One read gives both the values and the generation that identifies them, so the classification
-    /// and the cooldown's staleness check always refer to the same published ladder.
+    /// and the cooldown's staleness check always refer to the same published thresholds.
     const MemoryPressureThresholds thresholds = getMemoryPressureThresholds();
     const MemoryPressureLevel own
         = cooldown.apply(thresholds.classify(samplePressure()), thresholds.generation);
 
-    /// Escalate up the chain: a monitor never reads below any level above it.
     if (auto * p = parent.load(std::memory_order_relaxed))
         return std::max(own, p->currentLevel());
     return own;

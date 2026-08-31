@@ -51,8 +51,8 @@ static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
 static constexpr size_t MIN_READER_EXECUTOR_SIZE = 128_KiB;
 
-/// The default memory-pressure ladder, as a percent of a memory tracker's hard limit. Shared by the
-/// `reader_executor_memory_pressure_*_level_pct` settings and the monitor's built-in ladder, which is
+/// The default memory-pressure thresholds, as a percent of a memory tracker's hard limit. Shared by the
+/// `reader_executor_memory_pressure_*_level_pct` settings and the monitor's built-in thresholds, which are
 /// what `clickhouse-local` classifies against - it never applies the settings.
 static constexpr UInt64 DEFAULT_MEMORY_PRESSURE_ELEVATED_PCT = 75;
 static constexpr UInt64 DEFAULT_MEMORY_PRESSURE_HIGH_PCT = 90;

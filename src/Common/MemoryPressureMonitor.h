@@ -19,7 +19,6 @@ enum class MemoryPressureLevel : uint8_t
     Count,
 };
 
-/// One level lower; `Normal` stays `Normal`.
 constexpr MemoryPressureLevel stepDown(MemoryPressureLevel level)
 {
     return level == MemoryPressureLevel::Normal
@@ -29,7 +28,7 @@ constexpr MemoryPressureLevel stepDown(MemoryPressureLevel level)
 
 /// The three thresholds as percent of a tracker's hard limit, with the generation that identifies this
 /// publication of them. The generation is assigned by the store, so a caller never supplies one, and it
-/// moves only when the values change - that is what lets a cooldown tell one ladder from another.
+/// moves only when the values change - that is what lets a cooldown tell one publication from another.
 struct MemoryPressureThresholds
 {
     /// Width of a publication generation, shared by both packed words in this file. A wrap needs 65536
@@ -41,7 +40,7 @@ struct MemoryPressureThresholds
     UInt64 critical_pct = 0;
     uint16_t generation = 0;
 
-    /// The values alone, as one word. Two ladders are the same ladder when these are equal.
+    /// The values alone, as one word. Two publications hold the same thresholds when these are equal.
     constexpr uint32_t packValues() const
     {
         return (static_cast<uint32_t>(elevated_pct) << 16)
@@ -50,7 +49,7 @@ struct MemoryPressureThresholds
     }
 
     /// The published form, `(generation << 32) | packValues()`. Values and generation share one word, so
-    /// a reader can never pair a new generation with an old ladder.
+    /// a reader can never pair a new generation with old values.
     constexpr uint64_t pack() const { return (static_cast<uint64_t>(generation) << 32) | packValues(); }
 
     static constexpr MemoryPressureThresholds unpack(uint64_t packed)
@@ -58,7 +57,6 @@ struct MemoryPressureThresholds
         return {(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu, packed & 0xFFu, static_cast<uint16_t>(packed >> 32)};
     }
 
-    /// Classify a pressure ratio against these thresholds. No cooldown, lock-free.
     MemoryPressureLevel classify(double pressure) const;
 };
 
@@ -66,19 +64,18 @@ struct MemoryPressureThresholds
 /// An `elevated` of 0 would classify every scope as `Elevated`, including one with no hard limit.
 void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
 
-/// The thresholds are server-wide: one shared ladder every monitor classifies against. `set` validates
+/// The thresholds are server-wide: one shared triple every monitor classifies against. `set` validates
 /// and publishes atomically (config reload), assigning the generation itself; `get` reads the live
 /// values together with the generation they were published under.
 void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
 MemoryPressureThresholds getMemoryPressureThresholds();
 
-/// Classify a pressure ratio against the shared thresholds. No cooldown, lock-free.
 MemoryPressureLevel classifyMemoryPressure(double pressure);
 
 /// Sticky cooldown over an already-classified level: snap up immediately, step down one level per
 /// `cooldown_ms` of sustained lower pressure. One instance per monitor.
 ///
-/// Lock-free. The level, the timestamp its cooldown runs from, and the ladder generation it was
+/// Lock-free. The level, the timestamp its cooldown runs from, and the thresholds generation it was
 /// classified against share one atomic word, because they must move as a unit: separate atomics pair a
 /// level with another level's timestamp and step down twice in one cooldown. A sample that changes
 /// nothing does not write, so an idle monitor's word stays read-only on every reader thread.
@@ -92,8 +89,8 @@ public:
 
     explicit PressureCooldown(uint64_t cooldown_ms_ = COOLDOWN_MS) : cooldown_ms(cooldown_ms_) {}
 
-    /// `thresholds_generation` identifies the ladder `raw_level` was classified against. A generation other
-    /// than the held level's means that level came from a ladder that no longer exists, so it is
+    /// `thresholds_generation` identifies the thresholds `raw_level` was classified against. A generation
+    /// other than the held level's means that level came from thresholds that no longer exist, so it is
     /// replaced at once rather than decaying over a cooldown, and a reload needs no per-monitor flag.
     ///
     /// Reads the clock only when there is state to update.
@@ -101,7 +98,6 @@ public:
     /// Time-injecting form, for tests.
     MemoryPressureLevel apply(MemoryPressureLevel raw_level, uint64_t now_ms, uint16_t thresholds_generation);
 
-    /// Clear the held level and its timestamp.
     void reset();
 
 private:
@@ -116,7 +112,6 @@ private:
 
         MemoryPressureLevel level = MemoryPressureLevel::Normal;
         uint16_t generation = 0;
-        /// When `level` was last set or refreshed.
         uint64_t cooldown_since_ms = 0;
 
         constexpr uint64_t pack() const
@@ -134,7 +129,6 @@ private:
                 packed & MS_MASK};
         }
 
-        /// Milliseconds the current cooldown has run for.
         constexpr uint64_t elapsedTo(uint64_t now_ms) const { return (now_ms - cooldown_since_ms) & MS_MASK; }
     };
 
@@ -173,12 +167,11 @@ public:
 private:
     double samplePressure() const;
 
-    MemoryTracker * scope;                          /// the tracker this monitor samples
+    MemoryTracker * scope;
     std::atomic<MemoryPressureMonitor *> parent;    /// null = root (global)
     PressureCooldown cooldown;
 };
 
-/// The global (root) monitor.
 MemoryPressureMonitor & getGlobalMemoryPressureMonitor();
 
 }

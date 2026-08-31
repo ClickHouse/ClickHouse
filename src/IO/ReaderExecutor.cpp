@@ -45,8 +45,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Divisors applied to a base size, indexed by `MemoryPressureLevel`. A table of another extent does
-/// not compile, so a new level cannot leave a zero divisor behind.
+/// A table of another extent does not compile, so a new level cannot leave a zero divisor behind.
 using PressureReduction = std::array<size_t, static_cast<size_t>(MemoryPressureLevel::Count)>;
 
 /// A window is what one `readNextWindow` serves; a block is the unit it is read and stored in - one
@@ -54,7 +53,6 @@ using PressureReduction = std::array<size_t, static_cast<size_t>(MemoryPressureL
 constexpr auto WINDOW_REDUCTION = std::to_array<size_t>({1, 4, 16, 64});
 constexpr auto BLOCK_REDUCTION = std::to_array<size_t>({1, 2, 2, 8});
 
-/// Shrink `base` for `pressure`, floored at `MIN_READER_EXECUTOR_SIZE` and capped at `base`.
 size_t sizeAtPressure(MemoryPressureLevel pressure, size_t base, const PressureReduction & reduction)
 {
     const size_t reduced = base / reduction[static_cast<size_t>(pressure)];
@@ -517,7 +515,6 @@ ReaderExecutor::BlockAndWindowSizes ReaderExecutor::sampleWindowSizes() const
 {
     const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
     const size_t window = sizeAtPressure(pressure, window_size, WINDOW_REDUCTION);
-    /// A block never exceeds the window it is read within.
     const size_t block = std::min(sizeAtPressure(pressure, block_size, BLOCK_REDUCTION), window);
     return {.window_bytes = window, .block_bytes = block};
 }

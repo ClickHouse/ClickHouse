@@ -2743,7 +2743,7 @@ try
             ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
 
             /// Fail closed on a legacy insert_deduplication_version, or on a memory-pressure threshold
-            /// ladder that is out of range or out of order, arriving via a runtime reload.
+            /// triple that is out of range or out of order, arriving via a runtime reload.
             /// Validate the incoming config BEFORE config().replace below: validating after would mutate
             /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
             /// system.server_settings reporting an unsupported value. Reject first, then replace.
@@ -2773,7 +2773,7 @@ try
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
 
-            /// The check above sees the incoming file alone. A ladder split across the file and the
+            /// The check above sees the incoming file alone. A triple split across the file and the
             /// command-line layer can have each source valid and the merge out of order, so check the
             /// merged view too - here, before the first live setting below is touched.
             validateMemoryPressureThresholds(
@@ -3055,8 +3055,8 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            /// The ladder was validated above, so a rejected reload never reaches here. Sets and stamps
-            /// the shared thresholds, so every monitor adopts the new ladder on its next sample,
+            /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
+            /// the shared thresholds, so every monitor adopts them on its next sample,
             /// bypassing the sticky cooldown.
             setMemoryPressureThresholds(
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
