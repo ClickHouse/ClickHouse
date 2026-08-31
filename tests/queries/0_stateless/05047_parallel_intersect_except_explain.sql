@@ -3,6 +3,11 @@
 
 SET explain_query_plan_default = 'legacy';
 
+-- The CI test config (users.d/limits.yaml) sets global DISTINCT size limits, which keep the
+-- stream merge before the final DISTINCT; reset them so the disjointness applies.
+SET max_rows_in_distinct = 0;
+SET max_bytes_in_distinct = 0;
+
 -- { echo }
 
 -- With several threads both inputs are scattered by the whole row and one transform runs per partition.

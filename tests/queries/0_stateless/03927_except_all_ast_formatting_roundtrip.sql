@@ -4,6 +4,9 @@
 -- because the parser's special case for (tuple_literal) didn't account for aliases.
 -- This is tested automatically in debug builds via the AST consistency check.
 
+-- The output order of INTERSECT/EXCEPT depends on the number of threads.
+SET max_threads = 1;
+
 SELECT (('a', 'b') AS x);
 
 -- The formatting roundtrip check in debug builds validates this during parsing,
