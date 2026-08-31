@@ -149,6 +149,7 @@
       "group": "가이드",
       "pages": [
         {
+          "expanded": true,
           "group": "데이터 수집",
           "pages": [
             "ko/clickstack/ingesting-data/index",
