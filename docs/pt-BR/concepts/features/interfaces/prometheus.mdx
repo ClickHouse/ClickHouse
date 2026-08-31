@@ -199,7 +199,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-Consulte os [recursos do PromQL compatíveis](/pt-BR/sql-reference/table-functions/prometheusQueryRange#supported-promql-features) para ver a lista de funções e operadores de agregação usados pela API HTTP, pelo dialeto `promql` e pelas funções de tabela.
+Consulte os [recursos do PromQL compatíveis](/pt-BR/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) para ver a lista de funções e operadores de agregação usados pela API HTTP, pelo dialeto `promql` e pelas funções de tabela.
 
 <div id="grafana">
   #### Grafana
@@ -233,7 +233,7 @@ O Grafana acrescenta `/api/v1/query` ou `/api/v1/query_range` a esta URL base e 
   #### Pontos de entrada SQL
 </div>
 
-O ClickHouse usa o mesmo conversor de PromQL para a API HTTP, o dialeto `promql` e as funções de tabela [`prometheusQuery`](/pt-BR/sql-reference/table-functions/prometheusQuery) e [`prometheusQueryRange`](/pt-BR/sql-reference/table-functions/prometheusQueryRange).
+O ClickHouse usa o mesmo conversor de PromQL para a API HTTP, o dialeto `promql` e as funções de tabela [`prometheusQuery`](/pt-BR/reference/functions/table-functions/prometheusQuery) e [`prometheusQueryRange`](/pt-BR/reference/functions/table-functions/prometheusQueryRange).
 
 Execute PromQL diretamente com o `clickhouse-client`:
 

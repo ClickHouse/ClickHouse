@@ -600,6 +600,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 * `splitByNonAlpha`는 ASCII 영숫자가 아닌 문자를 기준으로 문자열을 분할합니다(함수 [splitByNonAlpha](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)도 참조하십시오).
 * `splitByString(S)`는 사용자 정의 구분자 문자열 `S`를 기준으로 문자열을 분할합니다(함수 [splitByString](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByString)도 참조하십시오). 구분자는 선택적 매개변수로 지정할 수 있습니다. 예: `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. 각 문자열은 여러 문자로 이루어질 수 있습니다(예시의 `', '`). 명시적으로 지정하지 않으면 기본 구분자 목록은 공백 하나인 `[' ']`입니다.
 * `asciiCJK`는 유니코드 단어 경계 규칙(UAX #29와 유사)을 사용해 문자열을 토큰으로 분할합니다. ASCII 영숫자와 밑줄 문자는 연결자와 함께 토큰을 형성합니다(문자의 경우 `:`, 같은 유형의 문자의 경우 `.` 및 `'`). ASCII가 아닌 유니코드 문자는 한 글자 토큰이 됩니다.
+* `chinese`는 딕셔너리와 은닉 마르코프 모델을 사용해 중국어 텍스트를 단어로 분할합니다(알고리즘은 [jieba](https://github.com/fxsjy/jieba)를 따르며, 내장 딕셔너리와 모델 데이터는 [cppjieba](https://github.com/yanyiwu/cppjieba)에서 파생되었습니다). ASCII가 아닌 모든 문자를 한 글자 토큰으로 처리하는 `asciiCJK`와 달리, `chinese`는 연속된 중국어 문자를 단어로 그룹화하므로 중국어 텍스트에 대해 더 의미 있는 토큰과 더 높은 검색 품질을 제공합니다. 선택적 `granularity` 인수는 `coarse_grained`(기본값) 또는 `fine_grained`이며, 후자는 겹치는 하위 단어도 추가로 열거하여 더 큰 인덱스를 사용하는 대신 재현율을 향상합니다.
 * `icu(locale)`는 ICU 라이브러리의 유니코드 단어 분할(UAX #29)을 사용해 문자열을 단어 토큰으로 분할합니다. 단어 사이에 공백이 없는 문자 체계(예: 중국어, 일본어, 태국어)의 경우 ICU는 딕셔너리 기반 분할을 적용하므로 이러한 텍스트가 의미 있는 단어로 분할됩니다. `locale`은 세그먼터에 전달되는 ICU 로캘입니다(분할은 주로 문자 체계와 딕셔너리에 의해 결정되며, 로캘은 ICU의 로캘별 조정을 선택합니다). 이는 필수이며 별도의 인수로 전달합니다. 예: `tokens(value, 'icu', 'ja')`.
 * `japanese`는 MeCab 형태소 분석기를 사용해 일본어 텍스트를 단어로 분할합니다. 서버 구성에 딕셔너리가 구성되어 있어야 합니다([text index](/ko/reference/engines/table-engines/mergetree-family/textindexes) 문서 참조).
 * `ngrams(N)`는 문자열을 동일한 길이의 `N`-그램으로 분할합니다(함수 [ngrams](/ko/reference/functions/regular-functions/splitting-merging-functions#ngrams)도 참조하십시오). n-그램 길이는 1~8 사이의 선택적 정수 매개변수로 지정할 수 있습니다. 예: `tokens(value, 'ngrams', 3)`. 명시적으로 지정하지 않으면 기본 n-그램 크기는 3입니다.
@@ -617,6 +618,7 @@ tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'asciiCJK')
+tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
 tokens(value, 'japanese')
 tokens(value, 'ngrams'[, n])
@@ -627,13 +629,14 @@ tokens(value, 'array')
 **인수**
 
 * `value` — 입력 문자열입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
-* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 기본값은 `splitByNonAlpha`입니다. [`const String`](/ko/reference/data-types/string)
+* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 기본값은 `splitByNonAlpha`입니다. [`const String`](/ko/reference/data-types/string)
 * `locale` — 인수 `tokenizer`가 `icu`인 경우에만 적용됩니다. 예를 들어 `'ja'`와 같은 필수 로캘입니다. [`const String`](/ko/reference/data-types/string)
 * `n` — 인수 `tokenizer`가 `ngrams`인 경우에만 적용됩니다. n-그램의 길이를 지정하는 선택적 매개변수입니다. 명시적으로 설정하지 않으면 기본값은 `3`입니다. [`const UInt8`](/ko/reference/data-types/int-uint)
 * `separators` — 인수 `tokenizer`가 `split`인 경우에만 적용됩니다. 구분자 문자열을 지정하는 선택적 매개변수입니다. 명시적으로 설정하지 않으면 기본값은 `[' ']`입니다. [`const Array(String)`](/ko/reference/data-types/array)
 * `min_length` — 인수 `tokenizer`가 `sparseGrams`인 경우에만 적용됩니다. 최소 gram 길이를 지정하는 선택적 매개변수이며, 기본값은 3입니다. [`const UInt8`](/ko/reference/data-types/int-uint)
 * `max_length` — 인수 `tokenizer`가 `sparseGrams`인 경우에만 적용됩니다. 최대 gram 길이를 지정하는 선택적 매개변수이며, 기본값은 100입니다. [`const UInt8`](/ko/reference/data-types/int-uint)
 * `min_cutoff_length` — 인수 `tokenizer`가 `sparseGrams`인 경우에만 적용됩니다. 최소 cutoff 길이를 지정하는 선택적 매개변수입니다. [`const UInt8`](/ko/reference/data-types/int-uint)
+* `granularity` — 인수 `tokenizer`가 `chinese`인 경우에만 적용됩니다. 세분화 수준을 제어하는 선택적 매개변수로, `coarse_grained`(기본값) 또는 `fine_grained` 중 하나입니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -673,9 +676,14 @@ Introduced in: v26.3.0
 (예: 앞이나 뒤에 오는 와일드카드 문자), 패턴 매칭에 의미 있는
 토큰을 추출하기 위해 토크나이저별 규칙을 적용합니다.
 
-이 함수는 LIKE 패턴 토큰화를 구현하지 않는 `icu` 토크나이저를 제외하고
-`tokens` 함수와 동일한 인수 집합을 지원합니다. `tokenizer`
-뒤에 오는 추가 인수는 선택한 토크나이저에 따라 해석됩니다
+일부 예외를 제외하고 이 함수는 `tokens` 함수와 동일한 인수 집합을 지원합니다.
+여기서는 `chinese` 및 `icu` 토크나이저가 지원되지 않습니다.
+LIKE 패턴 토큰화는 LIKE 의미 체계를 명시적으로 지원하는
+토크나이저(`supportsStringLike()`)에서만 의미가 있습니다. 지원되지 않는 토크나이저로
+`tokensForLikePattern`을 호출하면 `BAD_ARGUMENTS`가 발생합니다.
+대신 일반 `tokens`를 사용하십시오.
+
+`tokenizer` 뒤에 오는 추가 인수는 선택한 토크나이저에 따라 해석됩니다
 (예: `ngrams`의 `n`, `splitByString`의 `separators`,
 `sparseGrams`의 `min_length` / `max_length` [/ `min_cutoff_length`]).
 
@@ -698,6 +706,7 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `min_length` — 인수 `tokenizer`가 `sparseGrams`인 경우에만 사용됩니다. 최소 gram 길이를 지정하는 선택적 매개변수이며, 기본값은 3입니다. [`const UInt8`](/ko/reference/data-types/int-uint)
 * `max_length` — 인수 `tokenizer`가 `sparseGrams`인 경우에만 사용됩니다. 최대 gram 길이를 지정하는 선택적 매개변수이며, 기본값은 100입니다. [`const UInt8`](/ko/reference/data-types/int-uint)
 * `min_cutoff_length` — 인수 `tokenizer`가 `sparseGrams`인 경우에만 사용됩니다. 최소 cutoff 길이를 지정하는 선택적 매개변수입니다. [`const UInt8`](/ko/reference/data-types/int-uint)
+* `granularity` — 인수 `tokenizer`가 `chinese`인 경우에만 사용됩니다. 세분화 수준을 제어하는 선택적 매개변수이며, `coarse_grained`(기본값) 또는 `fine_grained`를 지정할 수 있습니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
 

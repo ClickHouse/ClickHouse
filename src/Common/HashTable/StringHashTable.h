@@ -595,6 +595,35 @@ public:
         return dispatch(*this, x, FindCallable{}) != nullptr;
     }
 
+    struct EraseCallable
+    {
+        bool erased = false;
+
+        template <typename Submap, typename SubmapKey>
+        void ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
+        {
+            if constexpr (std::is_same_v<std::decay_t<Submap>, T0>)
+            {
+                if (map.hasZero())
+                {
+                    map.clearHasZero();
+                    erased = true;
+                }
+            }
+            else
+            {
+                erased = map.erase(key, hash);
+            }
+        }
+    };
+
+    bool ALWAYS_INLINE erase(const Key & x)
+    {
+        EraseCallable callable;
+        dispatch(*this, x, callable);
+        return callable.erased;
+    }
+
     bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
     {
         return dispatchWithHash(*this, x, hash_value, FindCallable{}) != nullptr;

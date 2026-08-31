@@ -212,12 +212,15 @@
             "concepts/features/interfaces/native-clients-interfaces-index",
             "concepts/features/interfaces/cli",
             "concepts/features/interfaces/client",
+            "concepts/features/interfaces/mcp",
             {
               "group": "Drivers and interfaces",
               "pages": [
                 "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
+                "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
+                "concepts/features/interfaces/adbc",
                 "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
                 { "$ref": "features/interfaces/odbc/navigation.json" },
@@ -234,6 +237,7 @@
             "concepts/features/interfaces/web-sql",
             "concepts/features/interfaces/web-ui-color-coding",
             "concepts/features/interfaces/web-ui-pinned-columns",
+            "concepts/features/interfaces/web-ui-result-shaping",
             "concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",

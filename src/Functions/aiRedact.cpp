@@ -138,19 +138,20 @@ newline, and carriage return are also normalized to spaces before the request, s
 byte-identical to inputs that contain them.
 
 Because `aiRedact` returns the whole input text with PII replaced, the output is about as long as the input.
-Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit
-will be incomplete.
+Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit is
+rejected with `AI_PROVIDER_RESPONSE_TRUNCATED` (or yields the column default when `ai_function_throw_on_error`
+is disabled) rather than returning partially redacted text.
 )",
         .syntax = "aiRedact(text, categories[, params])",
         .arguments = {
             {"text", "Text to redact.", {"String"}},
             {"categories", "Constant list of PII categories to redact (e.g. `['name', 'ssn', 'credit_card']`). An empty array falls back to a default set of common categories (name, email, phone number, address, credit card, IP address).", {"Array(String)"}},
-            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens or the reply may be truncated and incomplete), `replacement` (token that replaces each detected PII span; default `[REDACTED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens; a reply truncated by a too-low limit is rejected rather than returning partially redacted text), `replacement` (token that replaces each detected PII span; default `[REDACTED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"The text with detected PII replaced by the redaction token, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Redact specific categories", "SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])", "Purchase was done by customer [REDACTED] with email [REDACTED]"},
-            {"Redact the default PII categories with a custom token", "SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},
+            {"Redact specific categories", "SET allow_experimental_ai_functions = 1;\nSELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])", "Purchase was done by customer [REDACTED] with email [REDACTED]"},
+            {"Redact the default PII categories with a custom token", "SET allow_experimental_ai_functions = 1;\nCREATE TABLE tickets (body String) ENGINE = Memory;\nINSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');\nSELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},
         },
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::AI});

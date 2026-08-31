@@ -329,8 +329,8 @@ ClickHouse 会剪枝掉除 2025 年分区之外的所有分区。
 
 如果额外过滤条件可以通过[主键](/zh/reference/engines/table-engines/mergetree-family/mergetree#primary-key)评估 (即它们构成主键的前缀) ，并且
 
-* 如果过滤条件在某个 part 内至少排除一行，ClickHouse 将回退为对该 part 内“保留下来”的范围执行前过滤，
-* 如果过滤条件在某个 part 内没有排除任何行，ClickHouse 将对该 part 执行后过滤。
+* 如果过滤条件在某个分片内至少排除一行，ClickHouse 将回退为对该分片内“保留下来”的范围执行前过滤，
+* 如果过滤条件在某个分片内没有排除任何行，ClickHouse 将对该分片执行后过滤。
 
 在实际场景中，后一种情况通常不太可能发生。
 

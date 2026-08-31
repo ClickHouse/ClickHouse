@@ -20,6 +20,9 @@
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Field.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsBasic.h>
@@ -780,3 +783,67 @@ TEST(Statistics, BasicDefaultCountArray)
     EXPECT_DOUBLE_EQ(*eq_empty, 2.0);
 }
 
+
+/// Statistics files with version `V3` were produced by builds of `master` between PR #102356 (which
+/// added a `NullCount` statistic) and its revert. They must stay readable: a part written by such a
+/// build is otherwise unqueryable, and on a readonly disk it cannot be rewritten by
+/// `ALTER TABLE ... MATERIALIZE STATISTICS`. The layout is `V4` without `stored_type_name`, and bit 4
+/// of the type mask -- the reverted `NullCount` -- must be skipped rather than parsed as `Basic`.
+TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+
+    auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)
+    {
+        writeIntBinary(static_cast<UInt64>(stat_payload.size()), out);
+        out.write(stat_payload.data(), stat_payload.size());
+    };
+
+    String minmax_payload;
+    {
+        WriteBufferFromString buf(minmax_payload);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// row_count
+        writeStringBinary(data_type->getName(), buf);
+        writeFieldBinary(Field(Int64(-5)), buf);
+        writeFieldBinary(Field(Int64(42)), buf);
+        buf.finalize();
+    }
+
+    /// `StatisticsNullCount::serialize` wrote a single `UInt64`.
+    String null_count_payload;
+    {
+        WriteBufferFromString buf(null_count_payload);
+        writeIntBinary(static_cast<UInt64>(7), buf);
+        buf.finalize();
+    }
+
+    String file;
+    {
+        WriteBufferFromString buf(file);
+        writeIntBinary(static_cast<UInt16>(3), buf); /// StatisticsFileVersion::V3
+        /// bit 3 = `MinMax`, bit 4 = the reverted `NullCount`, which is today's `Basic` slot
+        writeIntBinary(static_cast<UInt64>((1ULL << 3) | (1ULL << 4)), buf);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// rows
+        lengthPrefixed(buf, minmax_payload);
+        lengthPrefixed(buf, null_count_payload);
+        buf.finalize();
+    }
+
+    ReadBufferFromString rb(file);
+    auto restored = ColumnStatistics::deserialize(rb, data_type);
+
+    ASSERT_TRUE(restored != nullptr);
+    EXPECT_EQ(restored->getNumRows(), 100u);
+
+    /// `MinMax` was read...
+    ASSERT_TRUE(restored->hasMinMax());
+    auto estimate = restored->getEstimate();
+    ASSERT_TRUE(estimate.estimated_min.has_value());
+    ASSERT_TRUE(estimate.estimated_max.has_value());
+    EXPECT_EQ(*estimate.estimated_min, Field(Int64(-5)));
+    EXPECT_EQ(*estimate.estimated_max, Field(Int64(42)));
+
+    /// ...and the reverted `NullCount` payload was skipped, not misread as a `Basic` payload.
+    EXPECT_FALSE(restored->getStats().contains(StatisticsType::Basic));
+    EXPECT_FALSE(restored->hasNullCount());
+}

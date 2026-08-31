@@ -25,6 +25,15 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_named_collections_encrypted2/",
     "test_multiple_disks/",
     "test_ytsaurus/",
+    # Starts 20 server nodes. Under continuous-mode coverage (%c) every node
+    # memory-maps its own ~178 MB profile, and the kernel's writeback of the
+    # dirty counter pages saturates the disk: 48 s on a plain coverage build,
+    # over 2 h under %c (blew the 7800 s sequential backstop).
+    "test_backup_restore_on_cluster/test_huge_concurrent_restore.py",
+    # Asserts wall-clock timing of reconnects with a 5.5 s margin. The %c
+    # writeback load pushed a 967/967-green test over the margin (9.6 s
+    # observed vs 8.5 s allowed).
+    "test_distributed_respect_user_timeouts/",
 ]
 
 TEST_CONFIGS = [
@@ -48,12 +57,6 @@ TEST_CONFIGS = [
         False,
         "18-node Keeper+S3 cluster; concurrent --dist=each copies OOM the ASAN runner",
         dist_each_sequential=True,
-    ),
-    TC(
-        "test_wasm_parser/",
-        True,
-        "two full-LTO builds of the parser; saturates the runner and would slow every "
-        "co-scheduled test down",
     ),
     TC("test_storage_kafka/", False, "each cluster has its own Kafka container and Docker network"),
     TC("test_storage_rabbitmq/", False, "each cluster has its own RabbitMQ container; tests use unique exchange/db names"),
@@ -581,8 +584,17 @@ def get_optimal_test_batch(
     The function optimizes tail latency of batch with num_workers parallel workers.
     The function works in a deterministic way, so that batch calculated on the other machine with the same input generates the same result.
     """
-    # parallel_skip_prefixes sanity check
+    # parallel_skip_prefixes sanity check. On LLVM coverage jobs the caller has
+    # already removed the tests matching LLVM_COVERAGE_SKIP_PREFIXES, so a
+    # TEST_CONFIGS entry that falls entirely under a skip prefix is legitimately
+    # absent there and must not trip the staleness check.
+    _is_llvm_coverage = "amd_llvm_coverage" in (job_options or "")
     for test_config in TEST_CONFIGS:
+        if _is_llvm_coverage and any(
+            test_config.prefix.startswith(skip_prefix)
+            for skip_prefix in LLVM_COVERAGE_SKIP_PREFIXES
+        ):
+            continue
         assert any(
             test_file.removeprefix("./").startswith(test_config.prefix)
             for test_file in tests

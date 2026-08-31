@@ -93,6 +93,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFile.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>

@@ -99,6 +99,11 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.isSelectedForTopKFilterOptimization())
         return false;
 
+    /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
+    /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
+    if (read.hasPinnedBlockNumbers())
+        return false;
+
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
     return mergetree_data.supportsReplication()
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
@@ -263,10 +268,23 @@ public:
             const bool original_step_was_final
                 = aggregating_step->getFinal(); /// Save whether the original AggregatingStep was final or partial
 
-            /// Convert Aggregation step to partial aggregation
+            /// Merging the results of the replicas is the same as merging the results of the shards of a
+            /// `Distributed` table, so it obeys the same setting. Note that this is not only about the memory:
+            /// the ordinary merging transform returns the two-level buckets in an arbitrary order, which the
+            /// node above cannot merge memory efficiently.
+            /// Grouping sets are not supported by the memory efficient merging, see `MergingAggregatedStep`.
+            const bool memory_efficient_aggregation = optimization_settings.distributed_aggregation_memory_efficient
+                && grouping_sets_params.empty() && !aggregating_step->getOutputHeader()->has("__grouping_set");
+
+            /// The memory-efficient merge consumes each input as a stream of buckets in ascending
+            /// order, so the partial aggregation must produce its result in bucket order.
             auto & partial_aggregation_node = nodes.emplace_back();
             partial_aggregation_node.step = aggregating_step->clone();
-            typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get())->setFinal(false);
+            auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
+            partial_aggregation_step->setFinal(false);
+            /// Keep the bucket order when the original step already promised it to its consumer.
+            partial_aggregation_step->setProduceResultsInBucketOrder(
+                should_produce_results_in_order_of_bucket_number || memory_efficient_aggregation);
             partial_aggregation_node.step->setStepDescription("partial");
             partial_aggregation_node.children = {original_split_node->children.front()};
 
@@ -277,13 +295,6 @@ public:
 
             /// Replace original aggregation step with MergingAggregated step
             aggregator_params.only_merge = true; /// Merge partial aggregation results
-            /// Merging the results of the replicas is the same as merging the results of the shards of a
-            /// `Distributed` table, so it obeys the same setting. Note that this is not only about the memory:
-            /// the ordinary merging transform returns the two-level buckets in an arbitrary order, which the
-            /// node above cannot merge memory efficiently.
-            /// Grouping sets are not supported by the memory efficient merging, see `MergingAggregatedStep`.
-            const bool memory_efficient_aggregation = optimization_settings.distributed_aggregation_memory_efficient
-                && grouping_sets_params.empty() && !new_split_node.step->getOutputHeader()->has("__grouping_set");
             QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
                 new_split_node.step->getOutputHeader(),
                 aggregator_params,

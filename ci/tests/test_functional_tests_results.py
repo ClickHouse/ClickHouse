@@ -18,11 +18,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ci.jobs.scripts.functional_tests_results import (
+    GLOBAL_TIME_LIMIT_EXIT_CODE,
+    HUNG_CHECK_EXIT_CODE,
     MAX_FAILURES_EXIT_CODE,
     STOP_TESTING_EXIT_CODE,
     FTResultsProcessor,
 )
 from ci.praktika.result import Result
+
+# Three passing tests and no failure at all - the shape of the reported bug, where
+# the aggregate said "Failed: 0, Passed: 3872" and the only failing leaf was
+# "Server died".
+_NO_FAILURES = (
+    "00001_a: [ OK ] 0.10 sec.\n"
+    "00002_b: [ OK ] 0.20 sec.\n"
+    "00003_c: [ OK ] 0.30 sec.\n"
+)
 
 # Two real failures from a parallel run that stopped early. No "All tests have
 # finished" line, because the run was aborted before completing.
@@ -155,3 +166,112 @@ def test_bugfix_validation_single_crash_counts_as_reproduction(tmp_path):
     culprit = _named(result, "04545_regression_test")[0]
     assert culprit.status == Result.Status.OK
     assert _named(result, "Server died")[0].status == Result.Status.OK
+
+
+# --- Hung-check exit code: the liveness leaf replaces "Server died" -----------
+#
+# `HUNG_CHECK_EXIT_CODE` is raised when a `check_server_liveness` probe failed.
+# It is an aborted run like the others (the per-test results are incomplete), so
+# only the synthetic leaf's NAME differs.
+
+_LIVENESS_LEAF = "Server liveness check failed"
+
+
+def test_hung_check_no_failures_reports_liveness_leaf_not_server_died(tmp_path):
+    """The reported bug: the probe failed, no test failed, and the job said the
+    server died. The aggregate stays FAIL (the run did abort), the leaf names
+    what was measured, and no "Server died" row is synthesized."""
+    result = _process(tmp_path, _NO_FAILURES, HUNG_CHECK_EXIT_CODE)
+
+    assert result.status == Result.Status.FAIL
+    leaves = _named(result, _LIVENESS_LEAF)
+    assert len(leaves) == 1
+    assert leaves[0].status == Result.Status.FAIL
+    assert not _named(result, "Server died")
+    assert result.info == "Failed: 0, Passed: 3, Skipped: 0"
+
+
+def test_hung_check_two_failures_still_demoted_to_unknown(tmp_path):
+    """The demotion lives INSIDE the aborted-run branch, so it must still apply
+    under the new exit code. A preceding `elif` for the new code would skip it."""
+    result = _process(tmp_path, _TWO_FAILURES, HUNG_CHECK_EXIT_CODE)
+
+    assert result.status == Result.Status.FAIL
+    assert len(_named(result, _LIVENESS_LEAF)) == 1
+    assert not _named(result, "Server died")
+    for name in ("00001_first_failing_test", "00002_second_failing_test"):
+        assert _named(result, name)[0].status == Result.Status.UNKNOWN, name
+
+
+def test_hung_check_single_failure_demoted_to_error(tmp_path):
+    """Same branch, the one-failure arm: the witness is demoted to ERROR outside
+    bugfix validation."""
+    result = _process(tmp_path, _ONE_FAILURE, HUNG_CHECK_EXIT_CODE)
+
+    assert result.status == Result.Status.FAIL
+    assert len(_named(result, _LIVENESS_LEAF)) == 1
+    assert _named(result, "04545_regression_test")[0].status == Result.Status.ERROR
+
+
+def test_stop_testing_code_still_reports_server_died(tmp_path):
+    """Narrowness guard: exit code 2 is still raised by an observed death (and by
+    generic catastrophic aborts), so its leaf must not be renamed."""
+    result = _process(tmp_path, _NO_FAILURES, STOP_TESTING_EXIT_CODE)
+
+    assert result.status == Result.Status.FAIL
+    assert len(_named(result, "Server died")) == 1
+    assert not _named(result, _LIVENESS_LEAF)
+
+
+def test_hung_check_bugfix_validation_counts_as_reproduction(tmp_path):
+    """A changed regression test can reproduce a defect by hanging the server just
+    as by killing it. The leaf is FAIL (not ERROR), so the culprit stays FAIL and
+    `invert_bugfix_validation_status` flips the run to a successful reproduction.
+    An ERROR leaf would trip the inverter's fail-closed guard instead."""
+    from ci.jobs.functional_tests import invert_bugfix_validation_status
+
+    result = _process(
+        tmp_path, _ONE_FAILURE, HUNG_CHECK_EXIT_CODE, is_bugfix_validation=True
+    )
+
+    culprit = _named(result, "04545_regression_test")[0]
+    assert culprit.status == Result.Status.FAIL
+    assert _named(result, _LIVENESS_LEAF)[0].status == Result.Status.FAIL
+
+    no_repro = invert_bugfix_validation_status(result)
+
+    assert no_repro is False
+    assert result.status == Result.Status.OK
+    assert culprit.status == Result.Status.OK
+    assert _named(result, _LIVENESS_LEAF)[0].status == Result.Status.OK
+
+
+def test_stop_testing_bugfix_validation_unchanged(tmp_path):
+    """The #105789 contract on exit code 2 is untouched by the new code path."""
+    from ci.jobs.functional_tests import invert_bugfix_validation_status
+
+    result = _process(
+        tmp_path, _ONE_FAILURE, STOP_TESTING_EXIT_CODE, is_bugfix_validation=True
+    )
+
+    assert _named(result, "04545_regression_test")[0].status == Result.Status.FAIL
+    assert invert_bugfix_validation_status(result) is False
+    assert result.status == Result.Status.OK
+    assert _named(result, "Server died")[0].status == Result.Status.OK
+
+
+def test_hung_check_not_conflated_with_time_limit_or_max_failures(tmp_path):
+    """Each abort cause keeps its own leaf: code 5 must not pick up code 3's
+    benign OK row or code 4's summary."""
+    liveness = _process(tmp_path, _NO_FAILURES, HUNG_CHECK_EXIT_CODE)
+    assert not _named(liveness, "Global time limit reached")
+    assert not _named(liveness, "Too many test failures")
+
+    timed_out = _process(tmp_path, _NO_FAILURES, GLOBAL_TIME_LIMIT_EXIT_CODE)
+    assert _named(timed_out, "Global time limit reached")[0].status == Result.Status.OK
+    assert not _named(timed_out, _LIVENESS_LEAF)
+    assert not _named(timed_out, "Server died")
+
+    too_many = _process(tmp_path, _TWO_FAILURES, MAX_FAILURES_EXIT_CODE)
+    assert _named(too_many, "Too many test failures")
+    assert not _named(too_many, _LIVENESS_LEAF)

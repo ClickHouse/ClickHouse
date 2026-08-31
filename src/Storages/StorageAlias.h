@@ -37,6 +37,10 @@ public:
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
 
+    /// Returns whether the current user has the specified access to the target table or column.
+    /// An empty `column_name` represents table-level access.
+    bool isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
+
     /// Read from target table
     void read(
         QueryPlan & query_plan,
@@ -186,11 +190,7 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsSparseSerialization();
     }
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
-    }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
     bool supportsStatistics() const override { return getTargetTable()->supportsStatistics(); }
@@ -252,8 +252,8 @@ public:
         return target->tryLockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     }
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override { auto target = tryGetTargetTable(); return target ? target->totalRows(query_context) : std::optional<UInt64>{}; }
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { auto target = tryGetTargetTable(); return target ? target->totalBytes(query_context) : std::optional<UInt64>{}; }
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override { auto target = tryGetTargetTable(); return target ? target->totalBytesUncompressed(settings) : std::optional<UInt64>{}; }
     std::optional<UInt64> lifetimeRows() const override { auto target = tryGetTargetTable(); return target ? target->lifetimeRows() : std::optional<UInt64>{}; }
     std::optional<std::optional<UInt64>> tryLifetimeRows() const override

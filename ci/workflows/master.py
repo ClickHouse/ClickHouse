@@ -35,6 +35,7 @@ workflow = Workflow.Config(
             )
             for job in JobConfigs.special_build_jobs
         ],
+        *JobConfigs.wasm_parser_build_jobs,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
@@ -59,6 +60,7 @@ workflow = Workflow.Config(
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
+        JobConfigs.docs_examples_job,
         JobConfigs.llvm_coverage_job,
     ],
     artifacts=[
@@ -69,6 +71,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.clickhouse_wasm,
+        ArtifactConfigs.wasm_parser,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.clickhouse_examples,

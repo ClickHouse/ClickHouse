@@ -1,11 +1,11 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "Concepts",
+  "item": "概念",
   "pages": [
     "ja/concepts/index",
     {
       "expanded": true,
-      "group": "Fundamentals",
+      "group": "基礎",
       "pages": [
         "ja/concepts/core-concepts/index",
         "ja/concepts/core-concepts/glossary",
@@ -19,11 +19,11 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouse concepts",
+      "group": "ClickHouseの基本概念",
       "pages": [
         "ja/concepts/features/index",
         {
-          "group": "Materialized views",
+          "group": "materialized view",
           "pages": [
             "ja/concepts/features/materialized-views/index",
             "ja/concepts/features/materialized-views/incremental-materialized-view",
@@ -39,21 +39,21 @@
           ]
         },
         {
-          "group": "Projections",
+          "group": "プロジェクション",
           "pages": [
             "ja/concepts/features/projections/projections",
             "ja/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "Performance",
+          "group": "パフォーマンス",
           "pages": [
             "ja/concepts/features/performance/index",
             "ja/concepts/features/performance/prewhere",
             "ja/concepts/features/performance/allocation-profiling",
             "ja/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "Caches",
+              "group": "キャッシュ",
               "pages": [
                 "ja/concepts/features/performance/caches/caches",
                 "ja/concepts/features/performance/caches/query-cache",
@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "Skipping-indexes",
+              "group": "スキッピング索引",
               "pages": [
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -70,7 +70,7 @@
             },
             "ja/concepts/features/performance/lazy-materialization",
             {
-              "group": "Troubleshooting",
+              "group": "トラブルシューティング",
               "pages": [
                 "ja/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "ja/concepts/features/performance/troubleshoot/oom-canary",
@@ -81,10 +81,10 @@
           ]
         },
         {
-          "group": "Operations",
+          "group": "操作",
           "pages": [
             {
-              "group": "Insert",
+              "group": "INSERT",
               "pages": [
                 "ja/concepts/features/operations/insert/inserting-data",
                 "ja/concepts/features/operations/insert/asyncinserts",
@@ -95,13 +95,13 @@
               ]
             },
             {
-              "group": "Select",
+              "group": "SELECT",
               "pages": [
                 "ja/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Update",
+              "group": "UPDATE",
               "pages": [
                 "ja/concepts/features/operations/update/index",
                 "ja/concepts/features/operations/update/overview",
@@ -109,7 +109,7 @@
               ]
             },
             {
-              "group": "Delete",
+              "group": "DELETE",
               "pages": [
                 "ja/concepts/features/operations/delete/index",
                 "ja/concepts/features/operations/delete/overview",
@@ -122,10 +122,10 @@
           ]
         },
         {
-          "group": "Configuration",
+          "group": "設定",
           "pages": [
             {
-              "group": "Settings",
+              "group": "設定",
               "pages": [
                 "ja/concepts/features/configuration/settings/overview",
                 "ja/concepts/features/configuration/settings/settings-query-level",
@@ -141,7 +141,7 @@
               ]
             },
             {
-              "group": "Server config",
+              "group": "サーバー設定",
               "pages": [
                 "ja/concepts/features/configuration/server-config/configuration-files",
                 "ja/concepts/features/configuration/server-config/storing-data",
@@ -155,7 +155,7 @@
           ]
         },
         {
-          "group": "Security and auth",
+          "group": "セキュリティと認証",
           "pages": [
             "ja/concepts/features/security/index",
             "ja/concepts/features/security/access-rights",
@@ -169,7 +169,7 @@
               ]
             },
             {
-              "group": "External authenticators",
+              "group": "外部認証",
               "pages": [
                 "ja/concepts/features/security/external-authenticators/index",
                 {
@@ -194,7 +194,7 @@
           ]
         },
         {
-          "group": "Backup and restore",
+          "group": "バックアップと復元",
           "pages": [
             "ja/concepts/features/backup-restore/overview",
             "ja/concepts/features/backup-restore/restore-settings",
@@ -206,20 +206,22 @@
           ]
         },
         {
-          "group": "Interfaces",
+          "group": "インターフェイス",
           "pages": [
             "ja/concepts/features/interfaces/native-clients-interfaces-index",
             "ja/concepts/features/interfaces/cli",
             "ja/concepts/features/interfaces/client",
             {
-              "group": "Drivers and interfaces",
+              "group": "ドライバーとインターフェイス",
               "pages": [
                 "ja/concepts/features/interfaces/overview",
                 "ja/concepts/features/interfaces/http",
                 "ja/concepts/features/interfaces/tcp",
                 "ja/concepts/features/interfaces/jdbc",
                 "ja/concepts/features/interfaces/mysql",
-                "ja/concepts/features/interfaces/odbc",
+                {
+                  "$ref": "features/interfaces/odbc/navigation.json"
+                },
                 "ja/concepts/features/interfaces/postgresql",
                 "ja/concepts/features/interfaces/prometheus",
                 "ja/concepts/features/interfaces/ssh",
@@ -235,7 +237,7 @@
             "ja/concepts/features/interfaces/web-ui-pinned-columns",
             "ja/concepts/features/interfaces/web-terminal",
             {
-              "group": "Third-party clients",
+              "group": "サードパーティ製クライアント",
               "pages": [
                 "ja/concepts/features/interfaces/third-party/index"
               ]
@@ -243,7 +245,7 @@
           ]
         },
         {
-          "group": "Tools and utilities",
+          "group": "ツールとユーティリティ",
           "pages": [
             "ja/concepts/features/tools-and-utilities/index",
             "ja/concepts/features/tools-and-utilities/backupview",
@@ -263,7 +265,7 @@
     },
     {
       "expanded": true,
-      "group": "Best practices",
+      "group": "ベストプラクティス",
       "pages": [
         "ja/concepts/best-practices/index",
         "ja/concepts/best-practices/choosing-a-primary-key",

@@ -65,6 +65,7 @@
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemDatabaseEngines.h>
+#include <Storages/System/StorageSystemStatements.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
@@ -204,13 +205,14 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.");
-    attach<StorageSystemDictionaryLayouts>(context, system_database, "dictionary_layouts", "Contains a list of all available dictionary layouts along with their embedded documentation.");
-    attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types along with their embedded documentation.");
-    attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources along with their embedded documentation.");
-    attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
+    attach<StorageSystemDictionaryLayouts>(context, system_database, "dictionary_layouts", "Contains a list of all available dictionary layouts.");
+    attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types.");
+    attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources.");
+    attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types.");
     attach<StorageSystemDocumentation>(context, system_database, "documentation", "Collects the embedded documentation of the components of the system (functions, table engines, data types, settings, profile events, metrics, system tables, etc.) into a single table, with the reference documentation rendered as Markdown and the path to the source file where it is defined.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
+    attach<StorageSystemStatements>(context, system_database, "statements", "Contains a list of all SQL statements of ClickHouse.");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
     attach<StorageSystemContributors>(context, system_database, "contributors", "Contains a list of all ClickHouse contributors <3");
     attach<StorageSystemUsers>(context, system_database, "users", "Contains a list of all users profiles either configured at the server through a configuration file or created via SQL.");

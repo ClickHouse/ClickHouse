@@ -1,7 +1,7 @@
 const ServerSettingsExplorer = ({ href: baseRoute }) => {
   // El renderizador de producción de Mintlify evalúa el componente exportado sin
-  // preservar los enlaces de ámbito de módulo. El estado diferido mantiene los datos
-  // generados en ese ámbito de evaluación y los construye solo una vez por montaje.
+  // preservar las vinculaciones a nivel de módulo. El estado perezoso mantiene los
+  // datos generados en ese ámbito de evaluación y los construye solo una vez por montaje.
   const [entries] = useState(() => [
     {
       label: "access_control_*",
@@ -356,8 +356,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "http_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "0" },
         { name: "http_handlers", path: "/http#http_handlers" },
         { name: "http_options_response", path: "/http#http_options_response" },
         { name: "http_server_default_response", path: "/http#http_server_default_response", default: '"Ok.\\n"' }

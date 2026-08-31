@@ -3,6 +3,7 @@
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
+#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -90,7 +91,7 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const Poco::T
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
-    if (!lock.try_lock_for(std::chrono::milliseconds(acquire_timeout.totalMilliseconds())))
+    if (!lock.try_lock_for(saturatedMilliseconds(acquire_timeout.totalMilliseconds())))
         return {};
 
     if (is_dropped || is_detached)

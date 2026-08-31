@@ -1480,7 +1480,7 @@ Suma de los picos de memoria de las consultas por usuario de todos los usuarios 
   ### ReaderExecutorModeledCostMsPerRequestedMiB
 </div>
 
-Eficiencia experimental de la ruta de lectura de ReaderExecutor: coste modelado (ms) por MiB de bytes solicitados durante el último intervalo de actualización en toda la instancia -- la relación entre los deltas de los ProfileEvents ReaderExecutorModeledCostMicroseconds y ReaderExecutorRequestedBytes. Cuanto menor, mejor: el límite inferior del ancho de banda es de ~20 (una lectura limpia desde el origen), los aciertos de caché tienden a 0, y la sobrelectura y las conexiones incompletas lo incrementan. 0 significa que no hubo lecturas del ejecutor durante el intervalo.
+Eficiencia experimental de la ruta de lectura de ReaderExecutor: coste modelado (ms) por MiB de bytes solicitados durante el último intervalo de actualización en toda la instancia -- la relación entre los deltas de los ProfileEvents ReaderExecutorModeledCostMicroseconds y ReaderExecutorDeliveredBytes. Cuanto menor, mejor: el límite inferior del ancho de banda es de ~20 (una lectura limpia desde el origen), los aciertos de caché tienden a 0, y la sobrelectura y las conexiones incompletas lo incrementan. 0 significa que no hubo lecturas del ejecutor durante el intervalo.
 
 <div id="replicasmaxabsolutedelay">
   ### ReplicasMaxAbsoluteDelay
