@@ -8885,25 +8885,29 @@ Patterns shorter than this threshold match too many dictionary tokens and are sk
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
-Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
+Maximum number of large (non-embedded) posting lists to read when text index LIKE evaluation by the dictionary scan is enabled.
+
+Each matched token with a non-embedded posting list counts once, regardless of its size; `text_index_like_max_postings_rows_to_read` bounds the total rows instead. Exceeding either limit cuts the dictionary scan short, and LIKE evaluation falls back to reading the column.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_rows_to_read, 1000000, R"(
 Maximum total number of posting rows to read when text index LIKE evaluation by the dictionary scan is enabled.
 
-Bounds the actual read work: a matched token with a large (non-embedded) posting list costs its cardinality in rows, so a single very common token can exhaust this budget. When either this limit or `text_index_like_max_postings_to_read` is exceeded, the dictionary scan is cut short and LIKE evaluation falls back to brute force on the column data.
+Each matched token with a large (non-embedded) posting list costs its cardinality in rows, so one very common token can exhaust the budget. Exceeding either this limit or `text_index_like_max_postings_to_read` cuts the dictionary scan short, and LIKE evaluation falls back to reading the column.
 
-The budget is charged per part against the whole part, except where the index is read after earlier pruning has already narrowed the rows, in which case a token those rows cannot reach costs nothing. It is not charged against the mark set of a combined predicate such as `pk = ... AND message LIKE ...`, so a token that is common in the part but rare in the surviving rows is still charged in full.
+The budget is charged per part against the whole part, except where earlier pruning has already narrowed the readable rows: a token those rows cannot reach costs nothing. It is not charged against the mark set of a combined predicate such as `pk = ... AND message LIKE ...`.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(Bool, use_text_index_like_pattern_bypass, true, R"(
-Whether a LIKE/ILIKE pattern query whose matched tokens cover every row may skip reading their posting lists.
+Whether a LIKE/ILIKE pattern query whose matched tokens provably cover every row may skip reading their posting lists.
+
+The decision reads no posting list: each list's row count is stored in the dictionary next to the token, and the bypass fires exactly when one matched token's stored count equals the part's row count - then the union covers the part and reading it cannot prune anything. An estimate is never used.
 
 "Every row" means every row of the part, not of the rows surviving an earlier predicate, so a combined predicate does not make the bypass more eager.
 
-Such a read cannot prune anything, so skipping it is pure saving. Disable to force the posting lists to be read anyway, which is what a test guarding the posting-list reader needs.
+Disable to force the posting lists to be read anyway, which is what a test guarding the posting-list reader needs.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
