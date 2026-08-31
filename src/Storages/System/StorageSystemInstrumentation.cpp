@@ -1,17 +1,14 @@
 #include <Storages/System/StorageSystemInstrumentation.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #if USE_XRAY
 
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/InstrumentationManager.h>
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -21,14 +18,12 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InstrumentationManager.h>
 
 namespace DB
 {
 
-namespace
-{
-
-ColumnsDescription getInstrumentationColumnsDescription()
+ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
 {
     auto entry_type_enum = std::make_shared<DataTypeEnum8> (
         DataTypeEnum8::Values
@@ -50,12 +45,6 @@ ColumnsDescription getInstrumentationColumnsDescription()
     };
 }
 
-}
-
-ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
-{
-    return getInstrumentationColumnsDescription();
-}
 
 void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {

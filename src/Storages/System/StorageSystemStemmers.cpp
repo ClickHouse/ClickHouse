@@ -2,38 +2,22 @@
 
 #if USE_LIBSTEMMER
 
-#include <DataTypes/DataTypeString.h>
-#include <Storages/ColumnsDescription.h>
-
-namespace DB
-{
-
-namespace
-{
-
-ColumnsDescription getStemmersColumnsDescription()
-{
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "Identifier of the Snowball stemmer (language/algorithm)"}
-    };
-}
-
-}
-
-}
-
 #include <Storages/System/StorageSystemStemmers.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 
 #include <libstemmer.h>
+
 
 namespace DB
 {
 
 ColumnsDescription StorageSystemStemmers::getColumnsDescription()
 {
-    return getStemmersColumnsDescription();
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Identifier of the Snowball stemmer (language/algorithm)"}
+    };
 }
 
 StorageSystemStemmers::StorageSystemStemmers(const StorageID & table_id)
