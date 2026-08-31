@@ -217,6 +217,10 @@ public:
     /// its result lies in [0,k], and sequenceMatch(p) == (sequenceCount(p) >= 1).
     bool checkSequenceFunnel(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Composite-subcolumn oracle (self-seeded): reading a subcolumn of a Tuple/Array/Map/Nullable
+    /// value equals the corresponding extraction function (pure syntactic-sugar identity).
+    bool checkDynamicSubcolumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

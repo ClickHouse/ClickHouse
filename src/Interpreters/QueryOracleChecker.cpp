@@ -94,6 +94,7 @@ extern const Event ASTFuzzerOracleLightweightUpdateChecks;
 extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
 extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
 extern const Event ASTFuzzerOracleSequenceFunnelChecks;
+extern const Event ASTFuzzerOracleSubcolumnChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -4288,6 +4289,55 @@ bool QueryOracleChecker::checkSequenceFunnel(const ASTSelectQuery &, const Conte
     }
 
     LOG_TRACE(logger, "sequence funnel oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkDynamicSubcolumn(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_36): reading a subcolumn of a composite value is, by definition,
+    /// identical to extracting that component with the corresponding function — a pure syntactic-sugar
+    /// identity in the type system. We use the stable composite types (Tuple/Array/Map/Nullable) and
+    /// the verified extraction forms (NOT the SQLancer CAST form, which is documented-wrong). A
+    /// divergence is a real subcolumn-resolution bug (cf. the Map-subcolumn getSubstreamPosition class).
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("subcol", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute(
+            "CREATE TABLE " + tbl + " (id UInt32, tup Tuple(a Int64, b String), arr Array(Int64), "
+            "m Map(String, Int64), n Nullable(Int64)) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, (toInt64(number), toString(number * 2)), range(number % 5), "
+            "map('k', toInt64(number), 'j', toInt64(number * 3)), if(number % 4 = 0, NULL, toInt64(number)) "
+            "FROM numbers(300)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "composite subcolumn oracle: {}", tbl);
+
+    /// Sum of per-row disagreements across every subcolumn == extraction-function identity; must be 0.
+    auto viol_opt = OracleExec::executeRows(
+        "SELECT countIf(tup.a != tupleElement(tup, 'a')) + countIf(tup.b != tupleElement(tup, 'b')) "
+        "+ countIf(arr.size0 != length(arr)) + countIf(mapKeys(m) != m.keys) "
+        "+ countIf(mapValues(m) != m.values) + countIf(n.null != isNull(n)) FROM " + tbl,
+        context, ResultShape::SortedBag);
+    if (!viol_opt)
+        return false;
+
+    if (viol_opt->size() != 1 || (*viol_opt)[0] != "0")
+        raiseOracleMismatch(
+            fmt::format(
+                "composite subcolumn oracle mismatch!\n"
+                "{} rows on {} disagree between a subcolumn read and its extraction function",
+                viol_opt->empty() ? "?" : (*viol_opt)[0], tbl),
+            context, &fixture);
+
+    LOG_TRACE(logger, "composite subcolumn oracle passed");
     return true;
 }
 
