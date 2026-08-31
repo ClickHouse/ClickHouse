@@ -16,6 +16,10 @@ ClickHouse can query open table formats directly in object storage without dupli
 
 Users can achieve this with either direct reading, using [table functions and table engines](/guides/use-cases/data-warehousing/getting-started/querying-directly), or by [connecting to a data catalogue](/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
 
+### Add compute to selected queries {#add-compute-to-selected-queries}
+
+On-Demand Compute, now in private preview, lets you run eligible `SELECT` queries over supported Apache Iceberg and Delta Lake data on additional ClickHouse workers through your existing service and endpoint, without resizing the service. Availability is best effort, performance varies, and ClickHouse Cloud SLOs and SLAs do not apply. See the [On-Demand Compute documentation](/cloud/features/on-demand-compute) for eligibility and limitations.
+
 ### Real-time analytical workloads with ClickHouse {#real-time-with-clickhouse}
 
 For workloads that demand high concurrency and low-latency responses, users can load data from open table formats into ClickHouse's [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) engine. This provides a real-time analytics layer on top of data that originates in a data lake, supporting dashboards, operational reporting, and other latency-sensitive workloads that benefit from MergeTree columnar storage and indexing capabilities.
