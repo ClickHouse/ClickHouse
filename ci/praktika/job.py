@@ -11,11 +11,6 @@ from .utils import Shell, Utils
 
 class Job:
     @dataclass
-    class Requirements:
-        python: bool = False
-        python_requirements_txt: str = ""
-
-    @dataclass
     class CacheDigestConfig:
         include_paths: List[str] = field(default_factory=list)
         exclude_paths: List[str] = field(default_factory=list)
@@ -56,8 +51,6 @@ class Job:
         #   May be only `Artifact.Config.name`
         provides: List[str] = field(default_factory=list)
 
-        job_requirements: Optional["Job.Requirements"] = None
-
         timeout: int = 5 * 3600
 
         timeout_shell_cleanup: Optional[str] = None
@@ -66,15 +59,7 @@ class Job:
 
         run_in_docker: str = ""
 
-        run_unless_cancelled: bool = False
-
-        # Run even when an upstream job failed, but still honour the cache and
-        # the job filter. `run_unless_cancelled` above drops the whole run
-        # condition down to `!cancelled()`, which also means "ignore a cache
-        # hit and ignore `should_skip_job`" - wrong for a job that is merely
-        # expected to report on a red head (see the "Build profile diff" job in
-        # ci/defs/job_configs.py).
-        run_on_upstream_failure: bool = False
+        always_run: bool = False
 
         # If True, the job failure does not block PR merge, but the job
         # is still shown as failed in the CI report.
@@ -85,6 +70,9 @@ class Job:
         # experimental jobs that are not yet stable enough to be enforced.
         force_success: bool = False
 
+        # GitHub Actions engine only: post this job as a commit status.
+        # Ignored (no-op) on the Praktika engine, which always publishes
+        # workflow/job status via the GitHub Checks API.
         enable_commit_status: bool = False
 
         enable_gh_auth: bool = False
@@ -215,12 +203,6 @@ class Job:
             return res
 
         def set_run_after(self, job, reset=False):
-            """
-            Return a copy of this `Job.Config` that must start after the named jobs.
-
-            `set_run_after` controls execution order only. Use `set_requires` when
-            the job consumes artifacts produced by another job.
-            """
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
                 job = [job]
@@ -283,6 +265,9 @@ class Job:
             res.allow_failure = value
             return res
 
+        def set_allow_merge_on_failure(self, value=True):
+            return self.set_allow_failure(value)
+
         def set_post_hooks(self, post_hooks):
             res = copy.deepcopy(self)
             res.post_hooks = post_hooks
@@ -323,9 +308,9 @@ class Job:
                     # Check if included
                     for include in self.digest_config.include_paths:
                         include_norm = os.path.normpath(include)
-                        if PurePosixPath("/" + file).match("/" + include_norm) or file.startswith(
-                            include_norm + os.sep
-                        ):
+                        if PurePosixPath("/" + file).match(
+                            "/" + include_norm
+                        ) or file.startswith(include_norm + os.sep):
                             return True
 
             # Optionally check for submodule changes
