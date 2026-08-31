@@ -191,7 +191,7 @@ namespace
 {
 
 /// Pushes the given blocks in order, sending a chunk that carries the header columns and no rows in
-/// place of every empty entry, and finishing the port in the same `prepare()` as the last entry. A
+/// place of every empty entry, and finishing the port in the same `prepare` as the last entry. A
 /// port whose header is not empty cannot carry "no data" as a columnless chunk, which is why
 /// `ISimpleTransform::work` builds this shape.
 class ScriptedSource : public IProcessor
@@ -415,7 +415,7 @@ TEST(ColumnGathererTest, RequiredSourceExhausted)
     start = 100;
     auto second = getBlockWithSize(key_columns, 2, 1, start);
 
-    /// Alternate the sources so that gather() cannot copy a whole block at once, then ask for one
+    /// Alternate the sources so that `gather` cannot copy a whole block at once, then ask for one
     /// row more from the second source than it delivered.
     auto code = gatherRows({first, second}, {0, 1, 0, 1, 1}).code;
 
