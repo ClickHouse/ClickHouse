@@ -108,15 +108,13 @@ public:
 
         ColumnPtr column_haystack = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
-        const NullMap * null_map = nullptr;
 
         if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column_haystack.get()))
         {
-            column_haystack = col_nullable->getNestedColumnPtr();
             /// Preserve the default NULL-literal short circuit without evaluating the regular expression.
-            if (isNothing(column_haystack->getDataType()))
+            if (isNothing(col_nullable->getNestedColumn().getDataType()))
                 return result_type->createColumnConstWithDefaultValue(input_rows_count);
-            null_map = &col_nullable->getNullMapData();
+            column_haystack = col_nullable->getNestedColumnWithDefaultOnNull();
         }
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
@@ -157,13 +155,6 @@ public:
             root_offsets_data.resize(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                /// For NULL values, produce empty array
-                if (null_map && (*null_map)[i])
-                {
-                    root_offsets_data[i] = current_root_offset;
-                    continue;
-                }
-
                 std::string_view current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
@@ -207,14 +198,6 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t matches_per_row = 0;
-
-                /// For NULL values, produce empty array
-                if (null_map && (*null_map)[i])
-                {
-                    number_of_matches_per_row.push_back(0);
-                    continue;
-                }
-
                 const auto & current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.

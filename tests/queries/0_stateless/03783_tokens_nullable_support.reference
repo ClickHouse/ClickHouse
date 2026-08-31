@@ -8,6 +8,10 @@
 []
 -- Test with FixedString nullable variant
 ['test']
+-- Test NULL FixedString uses the nested default
+['00000000']
+['00000000']
+['00000000']
 -- Test alphaTokens with nullable
 ['abc','def']
 []
@@ -33,19 +37,25 @@ hello, world
 []
 \N
 \N
+[['00'],['00'],['00'],['00']]
+[['00'],['00'],['00'],['00']]
 -- Test extractAllGroupsHorizontal with nullable
 [['abc','def'],['111','222']]
 [[],[]]
 \N
 \N
+[['00','00','00','00']]
 -- Test extractAllGroupsVertical with nullable
 [['abc','111'],['def','222']]
 []
 \N
 \N
+[['00'],['00'],['00'],['00']]
 -- Test ngrams with nullable
 ['Cli','lic','ick','ckH','kHo','Hou','ous','use']
 []
+['00000000']
+['00000000']
 -- Test sparseGrams with nullable
 []
 -- Test splitByChar with nullable

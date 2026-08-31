@@ -124,13 +124,9 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_input = arguments[arg_value].column;
-        const NullMap * null_map = nullptr;
 
         if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col_input.get()))
-        {
-            col_input = col_nullable->getNestedColumnPtr();
-            null_map = &col_nullable->getNullMapData();
-        }
+            col_input = col_nullable->getNestedColumnWithDefaultOnNull();
 
         auto col_result = ColumnString::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
@@ -142,11 +138,11 @@ public:
         if (tokenizer->isStateful())
         {
             auto stateful_tokenizer = tokenizer->clone();
-            executeWithTokenizer(*stateful_tokenizer, std::move(col_input), *col_offsets, null_map, input_rows_count, *col_result);
+            executeWithTokenizer(*stateful_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
         }
         else
         {
-            executeWithTokenizer(*tokenizer, std::move(col_input), *col_offsets, null_map, input_rows_count, *col_result);
+            executeWithTokenizer(*tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
         }
 
         return ColumnArray::create(std::move(col_result), std::move(col_offsets));
@@ -157,14 +153,13 @@ private:
         const ITokenizer & tokenizer_,
         ColumnPtr col_input,
         ColumnArray::ColumnOffsets & col_offsets,
-        const NullMap * null_map,
         size_t input_rows_count,
         ColumnString & col_result) const
     {
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            executeImpl(tokenizer_, *column_string, col_offsets, null_map, input_rows_count, col_result);
+            executeImpl(tokenizer_, *column_string, col_offsets, input_rows_count, col_result);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            executeImpl(tokenizer_, *column_fixed_string, col_offsets, null_map, input_rows_count, col_result);
+            executeImpl(tokenizer_, *column_fixed_string, col_offsets, input_rows_count, col_result);
     }
 
     template <typename StringColumnType>
@@ -172,7 +167,6 @@ private:
         const ITokenizer & tokenizer_,
         const StringColumnType & column_input,
         ColumnArray::ColumnOffsets & column_offsets_input,
-        const NullMap * null_map,
         size_t input_rows_count,
         ColumnString & column_result) const
     {
@@ -182,36 +176,33 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if (!(null_map && (*null_map)[i]))
+            std::string_view input = column_input.getDataAt(i);
+
+            if constexpr (TokensTraits::mode == TokensMode::LikePattern)
             {
-                std::string_view input = column_input.getDataAt(i);
+                size_t cur = 0;
+                const char * data = input.data();
+                size_t length = input.size();
+                String token;
 
-                if constexpr (TokensTraits::mode == TokensMode::LikePattern)
+                while (cur < length && tokenizer_.nextInStringLike(data, length, cur, token))
                 {
-                    size_t cur = 0;
-                    const char * data = input.data();
-                    size_t length = input.size();
-                    String token;
-
-                    while (cur < length && tokenizer_.nextInStringLike(data, length, cur, token))
+                    column_result.insertData(token.data(), token.size());
+                    ++tokens_count;
+                }
+            }
+            else
+            {
+                forEachToken(
+                    tokenizer_,
+                    input.data(),
+                    input.size(),
+                    [&](const char * token_start, size_t token_len)
                     {
-                        column_result.insertData(token.data(), token.size());
+                        column_result.insertData(token_start, token_len);
                         ++tokens_count;
-                    }
-                }
-                else
-                {
-                    forEachToken(
-                        tokenizer_,
-                        input.data(),
-                        input.size(),
-                        [&](const char * token_start, size_t token_len)
-                        {
-                            column_result.insertData(token_start, token_len);
-                            ++tokens_count;
-                            return false;
-                        });
-                }
+                        return false;
+                    });
             }
 
             offsets_data[i] = tokens_count;
