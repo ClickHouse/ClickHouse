@@ -23,11 +23,12 @@ INSERT INTO row_wrapper_projection (id, a, b, c)
 
 SELECT countIf(explain LIKE '%ReadFromMergeTree (p)%') FROM (
     EXPLAIN SELECT b, c FROM row_wrapper_projection WHERE a = 42
-    SETTINGS query_plan_use_row_wrappers = 1, optimize_use_projections = 1
+    SETTINGS query_plan_use_row_wrappers = 1, optimize_use_projections = 1, enable_parallel_replicas = 0
 );
 
 SELECT sum(b), sum(c) FROM row_wrapper_projection WHERE a = 42
-    SETTINGS query_plan_use_row_wrappers = 1, optimize_use_projections = 1, force_optimize_projection = 1;
+    SETTINGS query_plan_use_row_wrappers = 1, optimize_use_projections = 1, force_optimize_projection = 1,
+             enable_parallel_replicas = 0;
 
 SELECT sum(b), sum(c) FROM row_wrapper_projection WHERE a = 42
     SETTINGS query_plan_use_row_wrappers = 0, optimize_use_projections = 0;
@@ -35,7 +36,7 @@ SELECT sum(b), sum(c) FROM row_wrapper_projection WHERE a = 42
 -- With no projection to lose, the rewrite still applies.
 SELECT countIf(explain LIKE '%__rowElement%') > 0 FROM (
     EXPLAIN actions = 1 SELECT a, b, c FROM row_wrapper_projection
-    SETTINGS query_plan_use_row_wrappers = 1, optimize_use_projections = 0
+    SETTINGS query_plan_use_row_wrappers = 1, optimize_use_projections = 0, enable_parallel_replicas = 0
 );
 
 DROP TABLE row_wrapper_projection;
