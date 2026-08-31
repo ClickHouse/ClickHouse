@@ -61,18 +61,32 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "INSERT INTO $R2 SELECT 2, 1000000 + number, 1 FROM numbers(30)"
 
 block_numbers_path="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_prune_empty_03100_58/block_numbers/2"
-next_block_number=$($CLICKHOUSE_CLIENT --query "
+block_count_before=$($CLICKHOUSE_CLIENT --query "
 	SYSTEM FLUSH LOGS zookeeper_log;
-	SELECT if(count() = 0, 1, max(toUInt64OrZero(extract(path_created, 'block-(\\d+)$'))) + 1) FROM system.zookeeper_log
+	SELECT count() FROM system.zookeeper_log
 	WHERE type = 'Response' AND op_num = 'Create' AND path = '$block_numbers_path/block-'
 	  AND startsWith(path_created, '$block_numbers_path/block-')")
-next_block_name=$(printf 'block-%010d' "$next_block_number")
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT rmt_lightweight_update_sleep_after_block_allocation"
 
 $CLICKHOUSE_CLIENT --query "UPDATE $R1 SET v = 999 WHERE p = 2 SETTINGS enable_lightweight_update = 1" &
 
-wait_for_block_allocated "$block_numbers_path" "$next_block_name"
+for _ in {0..300}; do
+	sleep 0.3
+	block_count_after=$($CLICKHOUSE_CLIENT --query "
+		SYSTEM FLUSH LOGS zookeeper_log;
+		SELECT count() FROM system.zookeeper_log
+		WHERE type = 'Response' AND op_num = 'Create' AND path = '$block_numbers_path/block-'
+		  AND startsWith(path_created, '$block_numbers_path/block-')")
+	if [[ "$block_count_after" -gt "$block_count_before" ]]; then
+		break
+	fi
+done
+
+if [[ "$block_count_after" -le "$block_count_before" ]]; then
+	echo "Failed to observe a new block allocation for lightweight update at $block_numbers_path" >&2
+	exit 2
+fi
 
 $CLICKHOUSE_CLIENT --query "SYSTEM START REPLICATION QUEUES $R1"
 
