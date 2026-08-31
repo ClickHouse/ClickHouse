@@ -228,11 +228,14 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
 /// Route reads of columns covered by a `Row(...)` wrapper through the wrapper
 /// column instead of the individual column streams. See optimizeUseRowWrappers.cpp.
+/// Not part of `getOptimizations`: the rewrite drops the wrapped columns from
+/// `ReadFromMergeTree::all_column_names`, which is what projection matching feeds on, so it
+/// must run after projection selection in the second pass.
 size_t tryOptimizeUseRowWrappers(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 23> optimizations = {{
+    static const std::array<Optimization, 22> optimizations = {{
         /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
         /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
         /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
@@ -264,7 +267,6 @@ inline const auto & getOptimizations()
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
-        {tryOptimizeUseRowWrappers, "useRowWrappers", &QueryPlanOptimizationSettings::use_row_wrappers},
     }};
 
     return optimizations;
