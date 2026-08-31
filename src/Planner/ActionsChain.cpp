@@ -229,7 +229,7 @@ void ActionsChain::finalize(const NameSet & source_const_inputs)
 
     /// For last chain step there are no columns required in child nodes
     NameSet empty_child_input_columns;
-    steps.back().get()->finalizeInputAndOutputColumns(empty_child_input_columns, source_const_inputs);
+    steps.back()->finalizeInputAndOutputColumns(empty_child_input_columns, source_const_inputs);
 
     Int64 steps_last_index = steps.size() - 1;
     for (Int64 i = steps_last_index; i >= 1; --i)
