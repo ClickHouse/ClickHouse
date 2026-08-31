@@ -1406,6 +1406,8 @@ struct ProjectionOutputProvenance
     /// `flat_candidates` are whole-output donors selected per row (the branches of a conditional),
     /// not different slots, so each one is aligned with the entire result and they merge together.
     bool aligned_alternatives = false;
+    /// The map is the element of an Array, as built by arrayMap((k, v) -> map(k, v), ...).
+    bool is_map_in_array = false;
 };
 
 /// materialize(x)/CAST(x, T) and the nullability wrappers don't change x's own AST structure; look
@@ -1640,9 +1642,15 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                 /// bound array argument, so the whole-type merge cannot cross slots.
                 auto [lambda_params_tuple, lambda_body] = extractLambdaParamsAndBody(args);
                 /// The body may sit under a transparent wrapper: arrayMap((x, y) -> materialize(tuple(x, y)), ...).
-                const auto * body_tuple = lambda_body ? unwrapTransparentProjectionExpression(*lambda_body)->as<ASTFunction>() : nullptr;
-                if (lambda_params_tuple && body_tuple && body_tuple->name == "tuple" && body_tuple->arguments
-                    && body_tuple->arguments->children.size() >= 2)
+                const auto * body_function = lambda_body ? unwrapTransparentProjectionExpression(*lambda_body)->as<ASTFunction>() : nullptr;
+                const auto & body_args_ptr = body_function ? body_function->arguments : nullptr;
+                const size_t body_arity = body_args_ptr ? body_args_ptr->children.size() : 0;
+                const bool body_is_tuple = body_function && body_function->name == "tuple" && body_arity >= 2;
+                /// arrayMap((k, v) -> map(k, v), ...) builds Array(Map(...)) element-wise the same way,
+                /// except the body's arguments alternate key and value instead of naming slots.
+                const bool body_is_map = body_function && body_function->name == "map" && body_arity >= 2 && body_arity % 2 == 0;
+
+                if (lambda_params_tuple && (body_is_tuple || body_is_map))
                 {
                     std::unordered_map<String, const IAST *> param_to_source;
                     const auto & params = lambda_params_tuple->arguments->children;
@@ -1650,10 +1658,10 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                         if (const auto * param_identifier = params[i]->as<ASTIdentifier>())
                             param_to_source.emplace(param_identifier->name(), args[1 + i].get());
 
-                    provenance.is_array_zip = true;
-                    for (const auto & slot : body_tuple->arguments->children)
+                    /// Rewrites each lambda formal back to the array argument bound to it.
+                    auto resolve_slot = [&](const IAST & slot)
                     {
-                        IdentifierNameSet slot_names = collectValueCarryingIdentifierNames(*slot);
+                        IdentifierNameSet slot_names = collectValueCarryingIdentifierNames(slot);
                         std::vector<String> slot_candidates;
                         for (const auto & name : slot_names)
                         {
@@ -1677,7 +1685,26 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                                 slot_candidates.push_back(*source_name + name.substr(dot));
                             }
                         }
-                        provenance.tuple_element_candidates.push_back(std::move(slot_candidates));
+                        return slot_candidates;
+                    };
+
+                    const auto & body_args = body_args_ptr->children;
+                    if (body_is_map)
+                    {
+                        provenance.is_map = true;
+                        provenance.is_map_in_array = true;
+                        for (size_t i = 0; i != body_args.size(); ++i)
+                        {
+                            auto slot_candidates = resolve_slot(*body_args[i]);
+                            auto & target = (i % 2 == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
+                            target.insert(target.end(), slot_candidates.begin(), slot_candidates.end());
+                        }
+                    }
+                    else
+                    {
+                        provenance.is_array_zip = true;
+                        for (const auto & slot : body_args)
+                            provenance.tuple_element_candidates.push_back(resolve_slot(*slot));
                     }
                 }
             }
@@ -1942,7 +1969,17 @@ static void applyJSONSharedDataPathPoliciesForProjection(
         }
         else if (provenance && provenance->is_map)
         {
-            if (const auto * target_map = typeid_cast<const DataTypeMap *>(result_column.type.get()))
+            DataTypePtr map_container_type = result_column.type;
+            const DataTypeArray * target_array = nullptr;
+            if (provenance->is_map_in_array)
+            {
+                target_array = typeid_cast<const DataTypeArray *>(map_container_type.get());
+                if (target_array)
+                    map_container_type = target_array->getNestedType();
+            }
+
+            if (const auto * target_map = typeid_cast<const DataTypeMap *>(map_container_type.get());
+                target_map && (!provenance->is_map_in_array || target_array))
             {
                 auto key_type = resolveJSONSharedDataPathPolicyForCandidates(
                     target_map->getKeyType(), provenance->map_key_candidates, projection,
@@ -1950,7 +1987,10 @@ static void applyJSONSharedDataPathPoliciesForProjection(
                 auto value_type = resolveJSONSharedDataPathPolicyForCandidates(
                     target_map->getValueType(), provenance->map_value_candidates, projection,
                     source_parts, patch_parts, source_part_alter_conversions);
-                result_column.type = std::make_shared<DataTypeMap>(std::move(key_type), std::move(value_type));
+                DataTypePtr new_map = std::make_shared<DataTypeMap>(std::move(key_type), std::move(value_type));
+                result_column.type = provenance->is_map_in_array
+                    ? DataTypePtr(std::make_shared<DataTypeArray>(std::move(new_map)))
+                    : new_map;
                 handled_structurally = true;
             }
         }

@@ -34,6 +34,36 @@ WHERE database=currentDatabase() AND table='arraymap_tuple_04839' AND name = 'p'
 
 DROP TABLE arraymap_tuple_04839;
 
+-- The lambda body does not have to be a tuple: arrayMap((k, v) -> map(k, v), ...) builds
+-- Array(Map(...)) element-wise the same way, so the key and value sides must keep their own
+-- policies rather than both being dropped as an ambiguous multi-JSON output.
+DROP TABLE IF EXISTS arraymap_map_04839;
+CREATE TABLE arraymap_map_04839
+(
+    id UInt64,
+    arr1 Array(JSON(max_dynamic_paths=5, SHARED REGEXP '^a_')),
+    arr2 Array(JSON(max_dynamic_paths=5, SHARED REGEXP '^b_'))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO arraymap_map_04839 VALUES (1, ['{"a_x":1}'], ['{"b_x":2}']);
+
+ALTER TABLE arraymap_map_04839
+    MODIFY COLUMN arr1 Array(JSON(max_dynamic_paths=5)),
+    MODIFY COLUMN arr2 Array(JSON(max_dynamic_paths=5));
+
+ALTER TABLE arraymap_map_04839
+    ADD PROJECTION p (SELECT id, arrayMap((k, v) -> map(k, v), arr1, arr2) WHERE id > 0 ORDER BY id);
+ALTER TABLE arraymap_map_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+SELECT 'map key and value carry their own policies',
+       type
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='arraymap_map_04839' AND name = 'p' AND column LIKE 'arrayMap%' AND active;
+
+DROP TABLE arraymap_map_04839;
+
 -- assumeNotNull is provenance-transparent like materialize: the lambda's array source binding must
 -- still see `arr` through it, or the qualified `x.doc` donor is lost and the rule dropped.
 DROP TABLE IF EXISTS arraymap_notnull_04839;

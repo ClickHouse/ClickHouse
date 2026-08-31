@@ -1,4 +1,5 @@
 slots carry their own policies	Array(Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP \'^a_\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^b_\')))
+map key and value carry their own policies	Array(Map(JSON(max_dynamic_paths=5, SHARED REGEXP \'^a_\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^b_\')))
 assumeNotNull-wrapped source keeps the doc rule	1
 wrapped member base keeps the values rule	1
 scalar lambda output keeps only its own member rule	1
