@@ -19,7 +19,6 @@ FROM
     PREWHERE (k % 64 BETWEEN 4 AND 11)
           OR (k % 64 BETWEEN 20 AND 35)
           OR (k % 64 BETWEEN 48 AND 55)
-    ORDER BY k
 );
 
 DROP TABLE t_04908;

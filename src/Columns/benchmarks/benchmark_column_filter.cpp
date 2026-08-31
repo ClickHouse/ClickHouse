@@ -17,7 +17,7 @@ enum class FilterPattern
     DenseWithHole,
 };
 
-static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
+IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
 {
     IColumn::Filter filter;
     const UInt8 initial_value = pattern == FilterPattern::DenseWithHole ? 1 : 0;
@@ -36,8 +36,7 @@ static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
                     filter[i] = 1;
             }
             break;
-        case FilterPattern::Random:
-        {
+        case FilterPattern::Random: {
             UInt64 state = 0x9e3779b97f4a7c15ULL;
             for (size_t i = 0; i < rows; ++i)
             {
@@ -62,7 +61,7 @@ static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
 }
 
 template <typename T>
-static MutableColumnPtr createColumn(size_t rows)
+MutableColumnPtr createColumn(size_t rows)
 {
     auto column = ColumnVector<T>::create();
     auto & data = column->getData();
@@ -73,7 +72,7 @@ static MutableColumnPtr createColumn(size_t rows)
 }
 
 template <typename T, FilterPattern pattern>
-static void BM_filter(benchmark::State & state)
+void BM_filter(benchmark::State & state)
 {
     const size_t rows = state.range(0);
     auto column = createColumn<T>(rows);
@@ -89,7 +88,7 @@ static void BM_filter(benchmark::State & state)
 }
 
 template <typename T, FilterPattern pattern>
-static void BM_filter_in_place(benchmark::State & state)
+void BM_filter_in_place(benchmark::State & state)
 {
     const size_t rows = state.range(0);
     auto filter = createFilter(rows, pattern);

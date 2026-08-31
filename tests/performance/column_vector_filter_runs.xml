@@ -4,6 +4,7 @@
         <max_block_size>256</max_block_size>
         <max_threads>1</max_threads>
         <max_insert_threads>1</max_insert_threads>
+        <enable_optimize_predicate_expression>0</enable_optimize_predicate_expression>
     </settings>
 
     <!-- UInt128 keeps these queries on the generic out-of-place ColumnVector filter path. -->
