@@ -288,6 +288,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return exception_mode != IPStringToNumExceptionMode::Throw || cast_ipv4_ipv6_default_on_conversion_error;
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -458,6 +466,14 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return exception_mode != IPStringToNumExceptionMode::Throw || cast_ipv4_ipv6_default_on_conversion_error;
+    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

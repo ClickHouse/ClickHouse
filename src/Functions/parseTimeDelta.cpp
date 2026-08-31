@@ -146,6 +146,11 @@ namespace
             return std::make_shared<DataTypeFloat64>();
         }
 
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so a function that throws on the default value must not be executed on
+        /// the whole dictionary - it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
+
         bool useDefaultImplementationForConstants() const override { return true; }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
