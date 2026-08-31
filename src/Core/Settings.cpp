@@ -3800,7 +3800,7 @@ Possible values:
 
 - auto
 
- When set to `auto`, `hash` join is tried first. If a memory limit is hit, ClickHouse spills through `GraceHashJoin` when `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` are enabled, otherwise it drains onto `partial_merge`.
+ When set to `auto`, `hash` join is tried first. A memory-limit fallback exists only when `MergeJoin` or `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Then ClickHouse spills through `GraceHashJoin` if `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` are enabled, otherwise it drains onto `partial_merge`. Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no switch.
 
 - full_sorting_merge
 
