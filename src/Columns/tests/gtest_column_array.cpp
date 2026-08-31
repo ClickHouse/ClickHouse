@@ -125,6 +125,47 @@ TEST(ColumnArray, OffsetsConsistentWithNestedColumn)
     EXPECT_EQ(column->getSize(2), 1);
 }
 
+TEST(ColumnArray, InsertManyFromRepeatedSmallArrays)
+{
+    auto source = createArray({42, 10, 20}, {0, 1, 3});
+    auto destination = createArray({7}, {1});
+
+    /// Repeating an empty array only appends the current offset.
+    destination->insertManyFrom(*source, 0, 3);
+    ASSERT_EQ(destination->size(), 4);
+    EXPECT_EQ(destination->getData().size(), 1);
+    EXPECT_EQ(destination->getSize(1), 0);
+    EXPECT_EQ(destination->getSize(2), 0);
+    EXPECT_EQ(destination->getSize(3), 0);
+
+    /// A single-element array uses the nested column's bulk insertion path.
+    destination->insertManyFrom(*source, 1, 3);
+    ASSERT_EQ(destination->size(), 7);
+    ASSERT_EQ(destination->getData().size(), 4);
+    EXPECT_EQ(destination->getSize(4), 1);
+    EXPECT_EQ(destination->getSize(5), 1);
+    EXPECT_EQ(destination->getSize(6), 1);
+    EXPECT_EQ(destination->getData().getUInt(1), 42);
+    EXPECT_EQ(destination->getData().getUInt(2), 42);
+    EXPECT_EQ(destination->getData().getUInt(3), 42);
+
+    /// Arrays with multiple elements keep nested values interleaved.
+    destination->insertManyFrom(*source, 2, 2);
+    ASSERT_EQ(destination->size(), 9);
+    ASSERT_EQ(destination->getData().size(), 8);
+    EXPECT_EQ(destination->getSize(7), 2);
+    EXPECT_EQ(destination->getSize(8), 2);
+    EXPECT_EQ(destination->getData().getUInt(4), 10);
+    EXPECT_EQ(destination->getData().getUInt(5), 20);
+    EXPECT_EQ(destination->getData().getUInt(6), 10);
+    EXPECT_EQ(destination->getData().getUInt(7), 20);
+
+    /// Zero length remains a no-op even when the source position is invalid.
+    destination->insertManyFrom(*source, 100, 0);
+    EXPECT_EQ(destination->size(), 9);
+    EXPECT_EQ(destination->getData().size(), 8);
+}
+
 TEST(ColumnArray, CutPreservesSharedLowCardinalityDictionary)
 {
     auto dictionary_keys = ColumnUInt64::create();

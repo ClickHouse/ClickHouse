@@ -424,6 +424,86 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
     getOffsets().push_back(getOffsets().back() + size);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnArray::insertManyFrom(const IColumn & src_, size_t position, size_t length)
+#else
+void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
+#endif
+{
+    /// Keep the same no-op behavior as IColumn::insertManyFrom, including for an invalid position.
+    if (length == 0)
+        return;
+
+    /// A single insertion does not benefit from bulk setup.
+    if (length == 1)
+    {
+        insertFrom(src_, position);
+        return;
+    }
+
+    const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
+    const size_t source_size = src.sizeAt(position);
+
+    /// Repeating an array with two or more elements requires interleaving the nested values,
+    /// which cannot be expressed by one insertManyFrom call on the nested column.
+    if (source_size > 1)
+    {
+        const size_t source_offset = src.offsetAt(position);
+        auto & offsets_data = getOffsets();
+        const size_t old_rows = offsets_data.size();
+        const size_t old_offset = offsets_data.back();
+        if (old_rows + length > offsets_data.capacity())
+            offsets_data.reserve(old_rows + length);
+
+        const auto data_checkpoint = getData().getCheckpoint();
+        try
+        {
+            for (size_t i = 0; i < length; ++i)
+                getData().insertRangeFrom(src.getData(), source_offset, source_size);
+        }
+        catch (...)
+        {
+            getData().rollback(*data_checkpoint);
+            throw;
+        }
+
+        offsets_data.resize_assume_reserved(old_rows + length);
+        for (size_t i = 0; i < length; ++i)
+            offsets_data[old_rows + i] = old_offset + (i + 1) * source_size;
+        return;
+    }
+
+    auto & offsets_data = getOffsets();
+    const size_t old_rows = offsets_data.size();
+    const size_t old_offset = offsets_data.back();
+    if (old_rows + length > offsets_data.capacity())
+        offsets_data.reserve(old_rows + length);
+
+    if (source_size == 0)
+    {
+        offsets_data.resize_assume_reserved(old_rows + length);
+        std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
+        return;
+    }
+
+    /// Nested bulk insertion can make partial progress before throwing. Roll it back before
+    /// returning so that the nested data and offsets remain consistent.
+    const auto data_checkpoint = getData().getCheckpoint();
+    try
+    {
+        getData().insertManyFrom(src.getData(), src.offsetAt(position), length);
+    }
+    catch (...)
+    {
+        getData().rollback(*data_checkpoint);
+        throw;
+    }
+
+    offsets_data.resize_assume_reserved(old_rows + length);
+    for (size_t i = 0; i < length; ++i)
+        offsets_data[old_rows + i] = old_offset + i + 1;
+}
+
 
 void ColumnArray::insertDefault()
 {
