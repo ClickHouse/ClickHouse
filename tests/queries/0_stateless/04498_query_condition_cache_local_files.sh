@@ -193,3 +193,47 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_query_condition_cache"
 rm -f "$DATA_FILE"
+
+# A condition's plan does not have to name the time zone the condition reads while it runs, so a
+# recorded "no matching rows here" decision must not cross time zones: `toHour` of the epoch is 0 in
+# UTC and 9 in Asia/Tokyo, so this predicate matches every row in one session and no row in the
+# other. Own file and table, so the arms above are unaffected.
+ZONE_TABLE="${CLICKHOUSE_TEST_UNIQUE_NAME}_zone"
+ZONE_DATA_FILE="${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/${ZONE_TABLE}.parquet"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $ZONE_TABLE"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE $ZONE_TABLE (b UInt32)
+    ENGINE = File(Parquet, '${CLICKHOUSE_DATABASE}/${ZONE_TABLE}.parquet')
+    SETTINGS output_format_parquet_row_group_size = 100000
+"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO $ZONE_TABLE SELECT 0 FROM numbers(1000000)
+"
+
+# Same settling requirement as above: the version token is trusted only once the mtime has settled.
+touch -d '2020-01-01 00:00:00' "$ZONE_DATA_FILE"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
+
+echo "warm-up in Asia/Tokyo, nothing matches (expect 0):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM $ZONE_TABLE WHERE toHour(toDateTime(b)) = 0
+    SETTINGS session_timezone = 'Asia/Tokyo', use_query_condition_cache = 1
+"
+echo "the warm-up cached something (expect 1):"
+${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.query_condition_cache"
+echo "same condition in UTC, every row matches (expect 1000000):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM $ZONE_TABLE WHERE toHour(toDateTime(b)) = 0
+    SETTINGS session_timezone = 'UTC', use_query_condition_cache = 1
+"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
+echo "same query with the cache emptied first (expect 1000000):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM $ZONE_TABLE WHERE toHour(toDateTime(b)) = 0
+    SETTINGS session_timezone = 'UTC', use_query_condition_cache = 1
+"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE $ZONE_TABLE"
+rm -f "$ZONE_DATA_FILE"

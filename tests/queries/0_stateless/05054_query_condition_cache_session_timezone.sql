@@ -8,6 +8,8 @@
 -- the hour of the epoch is 9 and nothing matches, then repeats the query in `UTC`, where the hour
 -- is 0 and every row matches.
 
+-- The query condition cache is analyzer-only, so the old-analyzer lanes would write no entry at all.
+SET allow_experimental_analyzer = 1;
 SET use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
 -- Parallel replicas do extra cache lookups and run filter steps remotely, which the hit and miss
 -- counts at the end of this test do not expect.
