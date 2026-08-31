@@ -9,9 +9,13 @@ doc_type: 'reference'
 AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め込みの生成に使用でき、データの処理、情報の抽出、データの分類などを行えます。
 
 <Note>
-  AI 関数は Experimental です。有効にするには [`allow_experimental_ai_functions`](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) を設定してください。
+  AI 関数はベータです。
 
   AI 関数は予測不能な出力を返す場合があります。結果は、プロンプトの品質と使用するモデルに大きく依存します。
+</Note>
+
+<Note>
+  AI 関数は現在 ClickHouse Cloud サービスでは利用できません。今後の更新をお待ちください。
 </Note>
 
 <Warning>
@@ -226,6 +230,7 @@ aiClassify(text, categories[, params])
 **感情を分類**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -236,6 +241,9 @@ positive
 **明示的に指定した認証情報を使用してカラムを分類する**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
@@ -282,25 +290,30 @@ aiEmbed(text, model[, params])
 
 **戻り値**
 
-埋め込みベクトル。入力が NULL または空の場合、リクエストが失敗して `ai_function_throw_on_error` が無効になっている場合、あるいは `ai_function_throw_on_quota_exceeded` が無効になっている状態でクォータを超過した場合は、空の配列を返します。[`Array(Float32)`](/ja/reference/data-types/array)
+埋め込みベクトル。入力が NULL または空の場合、リクエストが失敗して `ai_function_throw_on_error` が無効になっている場合、あるいは `ai_function_throw_on_quota_exceeded` が無効になっている状態でクォータを超過した場合は、空のArrayを返します。[`Array(Float32)`](/ja/reference/data-types/array)
 
 **例**
 
 **単一の文字列を埋め込む (`ai_function_embedding_default_credentials` が設定されている場合、`credentials` は省略できます)&#x20;**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **次元を明示する場合**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
-**テキストを含むカラムを埋め込む**
+**テキストのカラムを埋め込む**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (title String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
@@ -318,7 +331,7 @@ LLMプロバイダーを使用して、非構造化テキストから構造化�
 指示モードでは、この関数は抽出した値をプレーンな文字列として返し、何も見つからなかった場合は空文字列を返します。
 スキーマモードでは、この関数は要求されたスキーマに対応するキーを持つ JSON オブジェクト文字列を返します。存在しないフィールドは `null` になります。
 
-認証情報 (プロバイダー、model、エンドポイント、および必要に応じて API key を指定する 名前付きコレクション)
+認証情報 (プロバイダー、モデル、エンドポイント、および必要に応じて API key を指定する 名前付きコレクション)
 は、省略可能な パラメータマップ の `credentials` キーから取得されるか、
 map で省略されている場合は `ai_function_text_default_credentials` setting から取得されます。
 
@@ -334,7 +347,7 @@ aiExtract(text, instruction_or_schema[, params])
 
 * `text` — 情報を抽出するテキスト。[`String`](/ja/reference/data-types/string)
 * `instruction_or_schema` — 自由形式の抽出指示、または抽出するフィールドを記述した定数の JSONオブジェクト。[`const String`](/ja/reference/data-types/string)
-* `params` — オプションの定数 `Map(String, String)` パラメーター。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度。デフォルト `0.0`)、`max_tokens` (1 回の呼び出しあたりの最大出力トークン数。デフォルト `1024`)。共通パラメーターである `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions) を参照)。[`Map(String, String)`](/ja/reference/data-types/map)
+* `params` — オプションの定数 `Map(String, String)` パラメータ。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度。デフォルト `0.0`)、`max_tokens` (1 回の呼び出しあたりの最大出力トークン数。デフォルト `1024`)。共通パラメータである `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions) を参照)。[`Map(String, String)`](/ja/reference/data-types/map)
 
 **戻り値**
 
@@ -345,6 +358,7 @@ aiExtract(text, instruction_or_schema[, params])
 **自由形式の指示**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -355,6 +369,9 @@ late and damaged package
 **スキーマ抽出**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
@@ -366,11 +383,11 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 LLMプロバイダー を使用して指定されたテキストに対する自然言語の条件を評価し、`WHERE`、`PREWHERE`、`JOIN ... ON` で使用できるブール値 (`UInt8`) を返します。
 
-この関数は、モデルに小文字の `true` または `false` のみで応答するよう求めます。失敗したリクエスト (`ai_function_throw_on_error` が無効な場合) および認識できない応答は `0` にマッピングされるため、行は除外されます。
+この関数は、モデルに小文字の `true` または `false` のみで応答するよう求めます。`true` 以外の完全な応答 (`false` や認識できないテキストを含む) は `0` にマッピングされるため、行は除外されます。一方、プロバイダーから不完全と通知された応答 (切り詰められた応答、コンテンツフィルタリングされた応答、または追加のアクションが必要な応答) はエラーとして扱われます。`ai_function_throw_on_error` が有効な場合 (デフォルト) はクエリが中止され、無効な場合は行が `0` にマッピングされて除外されます。
 
 **警告:** `aiFilter` の結果を無批判に信用しないでください。LLM ベースの述語は不正確であったり、一貫性を欠いたりする可能性があります。偽陽性や偽陰性が許容される場合にのみ使用してください。
 
-認証情報 (provider、model、endpoint、および必要に応じて API key を指定する 名前付きコレクション) は、任意の パラメータマップ の `credentials` キーから取得されます。このキーが map で省略されている場合は、`ai_function_text_default_credentials` 設定から取得されます。
+認証情報 (プロバイダー、モデル、エンドポイント、および必要に応じて API key を指定する 名前付きコレクション) は、任意の パラメータマップ の `credentials` キーから取得されます。このキーが map で省略されている場合は、`ai_function_text_default_credentials` 設定から取得されます。
 
 注: `JOIN ... ON` で `aiFilter` を使用すると、候補ペアごとに LLM が一度評価されるため、コストが高くなる可能性があります。
 
@@ -397,12 +414,18 @@ aiFilter(text, condition[, params])
 **怒りを含むレビューをフィルタリングする**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (body String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
 **認証情報を明示的に指定してカラムをフィルタリングする**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
@@ -416,7 +439,7 @@ LLMプロバイダーを使用して、プロンプトから自由形式のテ�
 
 この関数は、プロンプトを設定済みのAIプロバイダーに送信し、生成されたテキストを返します。
 
-認証情報 (provider、model、endpoint、および必要に応じて API key を指定する名前付きコレクション)
+認証情報 (プロバイダー、モデル、endpoint、および必要に応じて API key を指定する名前付きコレクション)
 は、任意のパラメータマップの `credentials` キーから取得されるか、
 パラメータマップで省略されている場合は `ai_function_text_default_credentials` 設定から取得されます。
 
@@ -446,6 +469,7 @@ aiGenerate(prompt[, params])
 **単純な質問**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -456,12 +480,16 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **明示的に指定した認証情報とシステムプロンプト**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **カラムの値を要約する**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
@@ -484,7 +512,7 @@ LLMプロバイダーを使用して、指定されたテキスト内の個人�
 </Warning>
 
 検出された各 PII span は、マスキングトークン (デフォルトでは `[REDACTED]`、`replacement`
-parameter で設定可能) に置き換えられます。`categories` Array は、マスキングする PII の種類を制限します。空の Array を指定した場合は、
+parameter で設定可能) に置き換えられます。`categories` Array は、マスキングする PII の種類を制限します。空のArrayを指定した場合は、
 一般的なカテゴリ (名前、メールアドレス、電話番号、住所、クレジットカード、IP アドレス) からなるデフォルトのセットにフォールバックします。
 
 `aiRedact` は、検出された PII span のみを変更するようモデルに指示しますが、周囲のテキストの保持は
@@ -493,8 +521,9 @@ parameter で設定可能) に置き換えられます。`categories` Array は�
 バイト単位で同一にはなりません。
 
 `aiRedact` は PII を置き換えた入力テキスト全体を返すため、出力は入力とほぼ同じ長さになります。
-`max_tokens` (デフォルトは `1024`) を、トークン単位の入力長より大きく設定してください。上限が低すぎて切り詰められた応答は
-不完全になります。
+`max_tokens` (デフォルトは `1024`) を、トークン単位の入力長より大きく設定してください。上限が低すぎて切り詰められた応答は、
+部分的にマスキングされたテキストを返すのではなく、`AI_PROVIDER_RESPONSE_TRUNCATED` により拒否されます
+(`ai_function_throw_on_error` が無効な場合はカラムのデフォルト値を返します) 。
 
 **構文**
 
@@ -507,8 +536,8 @@ aiRedact(text, categories[, params])
 **引数**
 
 * `text` — マスキング対象のテキスト。[`String`](/ja/reference/data-types/string)
-* `categories` — マスキングする PII カテゴリの定数リスト (例: `['name', 'ssn', 'credit_card']`) 。空の配列を指定すると、一般的なカテゴリ (名前、メールアドレス、電話番号、住所、クレジットカード、IP アドレス) のデフォルトセットが使用されます。[`Array(String)`](/ja/reference/data-types/array)
-* `params` — 任意の定数 `Map(String, String)` パラメータ。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度、デフォルト `0.0`) 、`max_tokens` (呼び出しごとの最大出力トークン数、デフォルト `1024` — `aiRedact` はテキスト全体を返すため、入力のトークン数より大きい値に設定してください。そうしないと、応答が切り詰められて不完全になる可能性があります) 、`replacement` (検出された各 PII span を置き換えるトークン、デフォルト `[REDACTED]`) 。共通パラメータの `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions)を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
+* `categories` — マスキングする PII カテゴリの定数リスト (例: `['name', 'ssn', 'credit_card']`) 。空のArrayを指定すると、一般的なカテゴリ (名前、メールアドレス、電話番号、住所、クレジットカード、IP アドレス) のデフォルトセットが使用されます。[`Array(String)`](/ja/reference/data-types/array)
+* `params` — 任意の定数 `Map(String, String)` パラメータ。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度、デフォルト `0.0`) 、`max_tokens` (呼び出しごとの最大出力トークン数、デフォルト `1024` — `aiRedact` はテキスト全体を返すため、入力のトークン数より大きい値に設定してください。上限が低すぎて切り詰められた応答は、部分的にマスキングされたテキストを返すのではなく拒否されます) 、`replacement` (検出された各 PII span を置き換えるトークン、デフォルト `[REDACTED]`) 。共通パラメータの `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions)を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
 
 **戻り値**
 
@@ -519,6 +548,7 @@ aiRedact(text, categories[, params])
 **特定のカテゴリをマスキングする**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -529,6 +559,9 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **カスタムトークンを使用してデフォルトのPIIカテゴリをマスキングする**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE tickets (body String) ENGINE = Memory;
+INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
@@ -578,18 +611,25 @@ aiSimilarity(text1, text2, model[, params])
 **2つの文字列を比較 (`ai_function_embedding_default_credentials` 設定が指定されている場合、`credentials` は省略できます)&#x20;**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **クエリとの類似度に基づいてレビューをランク付けする**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE product_reviews (review String) ENGINE = Memory;
+INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
 ```
 
 **自己結合による意味的重複排除**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
+INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
@@ -603,7 +643,7 @@ SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title
 
 文体や方言に関する追加の指示は、パラメータマップの `instructions` キーで渡すことができます (例: `'技術用語は翻訳しない'`) 。
 
-認証情報 (provider、model、endpoint、および必要に応じて API key を指定する 名前付きコレクション)
+認証情報 (プロバイダー、モデル、endpoint、および必要に応じて API key を指定する 名前付きコレクション)
 は、省略可能なパラメータマップの `credentials` キーから取得され、マップでこれが省略されている場合は
 `ai_function_text_default_credentials` 設定から取得されます。
 
@@ -630,6 +670,7 @@ aiTranslate(text, target_language[, params])
 **フランス語に翻訳**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -640,6 +681,9 @@ Bonjour le monde!
 **スタイル指示に従って日本語に翻訳**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 

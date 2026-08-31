@@ -143,9 +143,9 @@ Empty substrings may be selected when:
         "Usage example",
         "SELECT splitByChar(',', '1,2,3,abcde');",
         R"(
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
         )"
     }
     };

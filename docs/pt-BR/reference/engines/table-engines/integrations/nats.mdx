@@ -43,7 +43,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -70,10 +70,11 @@ Parâmetros opcionais:
 * `nats_max_block_size` - Número de linhas coletadas por poll(s) para descarregar dados do NATS. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `nats_flush_interval_ms` - Timeout para descarregar os dados lidos do NATS. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_wait_for_flush_interval` - Se `true`, um ciclo de streaming em segundo plano permanece aberto durante todo o intervalo de descarregamento (`nats_flush_interval_ms` ou `stream_flush_interval_ms`, caso contrário), em vez de terminar assim que a fila do consumer é esvaziada, permitindo que mais mensagens se acumulem em um único bloco, ao custo de até um intervalo de descarregamento adicional na latência de ingestão. Padrão: `false` (comportamento de esvaziar e seguir com baixa latência).
-* `nats_username` - Nome de usuário do NATS.
-* `nats_password` - Senha do NATS.
-* `nats_token` - Token de autenticação do NATS.
-* `nats_credential_file` - Caminho para um arquivo de credentials do NATS.
+* `nats_username` - Nome de usuário do NATS. Quando é armazenado em uma coleção nomeada definida no arquivo de configuração do servidor, a consulta não pode sobrescrever `nats_url` nem `nats_server_list` da coleção.
+* `nats_password` - Senha do NATS. Quando é armazenada em uma coleção nomeada definida no arquivo de configuração do servidor, a consulta não pode sobrescrever `nats_url` nem `nats_server_list` da coleção.
+* `nats_token` - Token de autenticação do NATS. Quando é armazenado em uma coleção nomeada definida no arquivo de configuração do servidor, a consulta não pode sobrescrever `nats_url` nem `nats_server_list` da coleção.
+* `nats_credential_file` - Caminho para um arquivo de credentials do NATS. Ele é aceito apenas de uma coleção nomeada definida no arquivo de configuração do servidor cujo `nats_url` e `nats_server_list` não são sobrescritos pela consulta, pois o servidor abre o caminho com seus próprios privilégios. Em uma consulta, informe o conteúdo do arquivo em `nats_credentials`.
+* `nats_credentials` - Conteúdo das credentials do NATS (a mesma carga útil de um arquivo `.creds` com JWT de usuário e seed). Como é a única forma que uma consulta pode usar, substitui um `nats_credential_file` herdado de uma coleção nomeada em vez de entrar em conflito com ele, a menos que o operador tenha bloqueado esse caminho com `<nats_credential_file overridable="false">`. Não pode receber uma string vazia para remover as credentials fornecidas por uma coleção nomeada.
 * `nats_startup_connect_tries` - Número de tentativas de conexão na inicialização. Padrão: `5`.
 * `nats_max_rows_per_message` — O número máximo de linhas gravadas em uma mensagem NATS para formatos baseados em linha. (padrão: `1`).
 * `nats_commit_on_select` - Faz commit das mensagens quando uma consulta é realizada. Aplica-se somente ao JetStream; o NATS Core não tem confirmações. Padrão: `0`.
@@ -123,7 +124,7 @@ CREATE TABLE queue (
 ```
 
 A configuração do servidor NATS pode ser adicionada usando o arquivo de configuração do ClickHouse.
-Mais especificamente, você pode adicionar sua senha para o mecanismo NATS:
+Mais especificamente, você pode adicionar sua senha para o engine NATS:
 
 ```xml
 <nats>

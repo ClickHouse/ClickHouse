@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest
 # no-fasttest: ANTLR4 support is disabled in the fast-test build, and the PromQL grammar needs it.
-# no-replicated-database: the experimental `TimeSeries` table engine does not round-trip through `DatabaseReplicated`.
 
 # A PromQL query with a long tail of unrecognized characters (e.g. a `FixedString` padded with NUL
 # bytes) must be rejected quickly. The lexer used to recover from each bad byte one at a time and

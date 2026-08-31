@@ -24,6 +24,22 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 drop 時に Iceberg のすべてのファイルを削除するかどうか。
 
+<div id="iceberg_delete_manifest_decode_concurrency">
+  ## iceberg_delete_manifest_decode_concurrency
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "最初の行を読み取る前に同時にデコードする Iceberg 削除マニフェストファイル数の上限を指定する新しい設定。26.8 より前は、一度に 1 つのマニフェストをデコードしつつ、次のマニフェストの fetch をすでに開始していました。そのため、従来の動作に最も近い値は `2` です。従来は、最初の行が返されるまでのクリティカルパスに、両方のオブジェクトストレージ往復の合計時間が含まれていました。"}]}]} />
+
+データファイルを読み取る前のクエリ実行中に、同時にデコードする Iceberg 削除マニフェストファイルの最大数。
+
+データファイルを読み取る前にすべての削除マニフェストをデコードする必要があるため、この処理は最初の行が返されるまでのクリティカルパスに含まれます。一度に複数をデコードすることで、オブジェクトストレージへの往復と行ごとのプルーニング処理を並行して実行できます。
+
+Iceberg メタデータファイルの cache が無効または満杯の場合、値を大きくするとクエリ初期化時のピークメモリ使用量が増加します。処理中の各マニフェストが、それぞれデコード済みの内容を保持するためです。
+
+ゼロより大きい値を指定する必要があります。`1` では、マニフェストを一度に 1 つずつデコードします。
+
 <div id="iceberg_manifest_min_count_to_compact">
   ## iceberg_manifest_min_count_to_compact
 </div>

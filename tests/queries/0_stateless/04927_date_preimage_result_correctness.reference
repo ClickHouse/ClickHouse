@@ -1,0 +1,19 @@
+mixed rhs analyzer off	0
+mixed rhs analyzer on	0
+mixed rhs legacy off	0
+mixed rhs legacy on	0
+skipped day analyzer off	['2011-12-30','2011-12-31']
+skipped day analyzer on	['2011-12-30','2011-12-31']
+skipped day legacy off	['2011-12-30','2011-12-31']
+skipped day legacy on	['2011-12-30','2011-12-31']
+lowcardinality rhs analyzer	0
+lowcardinality rhs legacy	0
+nullable rhs legacy	0
+datetime lower edge analyzer	2
+datetime lower edge legacy	2
+date lower edge analyzer	['1970-01-01','1970-01-02']
+date lower edge legacy	['1970-01-01','1970-01-02']
+implicit tz month not optimized	0
+implicit tz month optimized	0
+implicit tz day not optimized	1
+implicit tz day optimized	1
