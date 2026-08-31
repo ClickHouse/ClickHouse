@@ -36,6 +36,7 @@ extern const Event ASTFuzzerOracleMaterializeIndexChecks;
 extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
 extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
 extern const Event ASTFuzzerOracleGroupingSetsChecks;
+extern const Event ASTFuzzerOracleRowPolicyChecks;
 }
 
 namespace DB
@@ -115,6 +116,7 @@ OracleRegistry::OracleRegistry()
     add("De-Morgan predicate", ProfileEvents::ASTFuzzerOraclePredicateDeMorganChecks, &QueryOracleChecker::checkPredicateDeMorgan);
     add("ARRAY JOIN identity", ProfileEvents::ASTFuzzerOracleArrayJoinIdentityChecks, &QueryOracleChecker::checkArrayJoinIdentity);
     add("grouping-set equivalence", ProfileEvents::ASTFuzzerOracleGroupingSetsChecks, &QueryOracleChecker::checkGroupingSetsEquivalence);
+    add("row-policy equivalence", ProfileEvents::ASTFuzzerOracleRowPolicyChecks, &QueryOracleChecker::checkRowPolicyEquivalence);
 }
 
 const OracleRegistry & OracleRegistry::instance()
