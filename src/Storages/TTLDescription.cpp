@@ -1009,6 +1009,22 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
 
+/// `arrayJoin` is the one action that changes the number of rows in a block, while every consumer of a
+/// TTL expression indexes its result column positionally against the block's rows:
+/// `TTLDeleteAlgorithm::execute` sizes its loop by `block.rows()` and reads `timestamps[i]`. With a
+/// multi-element array a row is judged by an earlier row's timestamp - so rows whose own TTL is far in
+/// the future are deleted - and with an empty array the read goes past the end of the column, letting
+/// garbage decide deletion. Even `allow_suspicious_ttl_expressions` must not allow that; only loading
+/// already stored metadata does, because a rejection there fails the whole load rather than the one
+/// table.
+void checkTTLExpressionPreservesRowCount(const ExpressionActionsPtr & expression, std::string_view expression_kind)
+{
+    if (expression->hasArrayJoin())
+        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+            "TTL {}expression cannot contain arrayJoin, because it changes the number of rows",
+            expression_kind);
+}
+
 void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
@@ -1344,6 +1360,15 @@ TTLDescription TTLDescription::getTTLFromAST(
     }
 
     checkTTLExpression(expression, result.result_column, skip_validation);
+
+    if (validation_mode != TTLValidationMode::Attach)
+    {
+        checkTTLExpressionPreservesRowCount(expression, /*expression_kind=*/ "");
+        if (where_expression)
+            checkTTLExpressionPreservesRowCount(where_expression, /*expression_kind=*/ "WHERE ");
+        for (const auto & set_part : result.set_parts)
+            checkTTLExpressionPreservesRowCount(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
+    }
 
     if (where_expression && !skip_validation)
         checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");
