@@ -62,6 +62,44 @@ private:
         return backslash_count % 2 == 0;
     }
 
+    /// Whether the pattern turns the `m` (multiline) flag on with an inline group, `(?m)` or
+    /// `(?im:...)`. The scope of such a group is not tracked - any occurrence is enough to decline.
+    bool enablesMultiline(const std::string & regexp)
+    {
+        for (size_t i = 0; i + 2 < regexp.size(); ++i)
+        {
+            if (regexp[i] != '(' || regexp[i + 1] != '?' || !isUnescaped(regexp, i))
+                continue;
+
+            /// re2 flags are `i`, `m`, `s` and `U`, and everything after a `-` is turned off.
+            bool negated = false;
+            for (size_t j = i + 2; j < regexp.size(); ++j)
+            {
+                const char flag = regexp[j];
+                if (flag == '-')
+                    negated = true;
+                else if (flag == 'm' && !negated)
+                    return true;
+                else if (flag != 'i' && flag != 's' && flag != 'U' && flag != 'm')
+                    break; /// Not a flag group, or its flag list has ended.
+            }
+        }
+        return false;
+    }
+
+    /// Whether a pattern that ends with an unescaped `$` can also match the empty string there.
+    /// Deliberately conservative: it only accepts a pattern whose last element has to consume a
+    /// character, and refuses a quantifier that allows zero repetitions as well as a group, whose
+    /// contents could be nullable in turn.
+    static bool canMatchEmptyBeforeDollar(const std::string & regexp)
+    {
+        if (regexp.size() < 2)
+            return true; /// The pattern is just `$`.
+
+        const char last = regexp[regexp.size() - 2];
+        return last == '*' || last == '?' || last == '}' || last == ')' || last == '^';
+    }
+
     bool handleReplaceRegexpAll(FunctionNode & function_node)
     {
         auto & function_node_arguments_nodes = function_node.getArguments().getNodes();
@@ -86,6 +124,19 @@ private:
             ends_with_unescaped_dollar = isUnescaped(regexp, regexp.size() - 1);
 
         if (!starts_with_caret && !ends_with_unescaped_dollar)
+            return false;
+
+        /// An inline `m` flag makes `^` and `$` match at every line boundary rather than only at the
+        /// ends of the subject, so the pattern can match once per line: `replaceRegexpAll` over
+        /// `(?m)a$` replaces every line's `a`, `replaceRegexpOne` only the first line's.
+        if (enablesMultiline(regexp))
+            return false;
+
+        /// A `^`-anchored pattern can only match at offset 0, so replacing all and replacing one are
+        /// the same. A pattern anchored only by a trailing `$` matches once at the end - unless it
+        /// can also match the empty string there, in which case a global replace replaces twice:
+        /// `replaceRegexpAll('foo', 'o*$', 'Z')` is `fZZ`, while `replaceRegexpOne` gives `fZ`.
+        if (!starts_with_caret && canMatchEmptyBeforeDollar(regexp))
             return false;
 
         /// Analyze the regular expression to detect presence of alternatives (e.g., 'a|b'). If any alternatives are
