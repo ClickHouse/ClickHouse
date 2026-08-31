@@ -13,6 +13,9 @@ namespace DB
 
 class JoinStepLogical;
 
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+
 namespace QueryPlanOptimizations
 {
 
@@ -296,7 +299,12 @@ void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings, size_t max_limit_for_lazy_materialization);
-void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+/// Replaces a `CommonSubplanReferenceStep` with a clone of the subplan it references. The subplan's
+/// IN-subquery sets are appended to `extracted_sets` and removed from the plan, because a
+/// `FutureSetFromSubquery` source can be claimed only once; the caller attaches one builder for them
+/// above a node that dominates every copy.
+void materializeQueryPlanReferences(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets);
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
