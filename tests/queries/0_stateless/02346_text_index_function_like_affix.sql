@@ -192,7 +192,7 @@ INSERT INTO tab(id, tag) VALUES
     (1, 'ClickHouseServer'),
     (2, 'clickhouseClient'),
     (3, 'ClickHouseCloud'),
-    (4, 'ClickhouseSQL');
+    (4, 'CLICKHOUSE_SQL');
 
 SELECT '-- without optimization';
 
@@ -237,7 +237,7 @@ INSERT INTO tab(id, tag) VALUES
     (1, 'ClickHouseServer'),
     (2, 'clickhouseClient'),
     (3, 'ClickHouseCloud'),
-    (4, 'ClickhouseSQL');
+    (4, 'CLICKHOUSE_SQL');
 
 SELECT 'prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION startsWith(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag LIKE 'ClickHouse%');
