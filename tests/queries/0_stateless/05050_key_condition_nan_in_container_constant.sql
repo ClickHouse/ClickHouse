@@ -17,3 +17,13 @@ CREATE TABLE t2 (f Float64) ENGINE = MergeTree ORDER BY f;
 INSERT INTO t2 VALUES (1);
 
 SELECT f FROM t2 WHERE NOT (f < 'nan');
+
+-- The constant must not be pushed through an injective key expression either: `toString` orders it
+-- like any other string, while `(nan, 1) != (nan, 1)` is true, so both rows are returned.
+
+DROP TABLE IF EXISTS t3;
+
+CREATE TABLE t3 (k Tuple(Float64, Float64)) ENGINE = MergeTree ORDER BY toString(k) SETTINGS index_granularity = 1;
+INSERT INTO t3 VALUES ((nan, 1.)), ((2., 2.));
+
+SELECT count() FROM t3 WHERE k != (nan, 1.);
