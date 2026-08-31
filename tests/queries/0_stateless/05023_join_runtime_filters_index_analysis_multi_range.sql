@@ -112,8 +112,44 @@ SELECT
     (SELECT count() FROM mr_fact_null AS f INNER JOIN mr_dim_null AS d ON f.id = d.id
      SETTINGS enable_join_runtime_filters_index_analysis = 1, max_threads = 4);
 
+-- Keys at the very top of the UInt64 and Int64 domains. The bucket grid can extend past the end of
+-- the coordinate space, and a wrapped high edge would invert an interval, which prunes every granule
+-- and drops matching rows. The two clusters are chosen so the grid does not land on the last key.
+DROP TABLE IF EXISTS mr_fact_top;
+DROP TABLE IF EXISTS mr_dim_top;
+DROP TABLE IF EXISTS mr_fact_top_signed;
+DROP TABLE IF EXISTS mr_dim_top_signed;
+
+CREATE TABLE mr_fact_top (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 16;
+CREATE TABLE mr_dim_top (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO mr_fact_top SELECT 18446744073709551615 - number FROM numbers(40001);
+INSERT INTO mr_dim_top SELECT 18446744073709551615 - number FROM numbers(4000);
+INSERT INTO mr_dim_top SELECT 18446744073709511615 + number FROM numbers(4000);
+
+CREATE TABLE mr_fact_top_signed (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 16;
+CREATE TABLE mr_dim_top_signed (k Int64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO mr_fact_top_signed SELECT 9223372036854775807 - number FROM numbers(40001);
+INSERT INTO mr_dim_top_signed SELECT 9223372036854775807 - number FROM numbers(4000);
+INSERT INTO mr_dim_top_signed SELECT 9223372036854735807 + number FROM numbers(4000);
+
+SELECT
+    (SELECT count() FROM mr_fact_top AS f INNER JOIN mr_dim_top AS d ON f.k = d.k
+     SETTINGS enable_join_runtime_filters_index_analysis = 0) =
+    (SELECT count() FROM mr_fact_top AS f INNER JOIN mr_dim_top AS d ON f.k = d.k
+     SETTINGS enable_join_runtime_filters_index_analysis = 1);
+
+SELECT
+    (SELECT count() FROM mr_fact_top_signed AS f INNER JOIN mr_dim_top_signed AS d ON f.k = d.k
+     SETTINGS enable_join_runtime_filters_index_analysis = 0) =
+    (SELECT count() FROM mr_fact_top_signed AS f INNER JOIN mr_dim_top_signed AS d ON f.k = d.k
+     SETTINGS enable_join_runtime_filters_index_analysis = 1);
+
 DROP TABLE mr_fact;
 DROP TABLE mr_dim;
 DROP TABLE mr_dim_shuffled;
+DROP TABLE mr_fact_top;
+DROP TABLE mr_dim_top;
+DROP TABLE mr_fact_top_signed;
+DROP TABLE mr_dim_top_signed;
 DROP TABLE mr_fact_null;
 DROP TABLE mr_dim_null;

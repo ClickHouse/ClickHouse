@@ -192,6 +192,7 @@ struct KeyRangeHistogram
         const UInt64 margin = static_cast<UInt64>(buckets / 4) << new_shift;
         const UInt64 new_base = low > margin ? low - margin : 0;
 
+        const UInt64 width = UInt64(1) << shift;
         UInt64 remapped[words] = {};
         for (size_t bucket = 0, last = lastBucket(); bucket <= last; ++bucket)
         {
@@ -200,8 +201,13 @@ struct KeyRangeHistogram
 
             /// A widened bucket can straddle two new ones; set both, the cover must stay a superset.
             const UInt64 bucket_low = base + (static_cast<UInt64>(bucket) << shift);
+            /// The top bucket's high edge can lie past the end of the coordinate space. Saturate it:
+            /// wrapping would remap the bucket to the wrong place, or drop it and lose its keys.
+            const UInt64 bucket_high = std::numeric_limits<UInt64>::max() - bucket_low < width - 1
+                ? std::numeric_limits<UInt64>::max()
+                : bucket_low + width - 1;
             const size_t from = static_cast<size_t>((bucket_low - new_base) >> new_shift);
-            const size_t to = std::min<size_t>((bucket_low + ((UInt64(1) << shift) - 1) - new_base) >> new_shift, buckets - 1);
+            const size_t to = std::min<size_t>((bucket_high - new_base) >> new_shift, buckets - 1);
             for (size_t i = from; i <= to; ++i)
                 remapped[i >> 6] |= UInt64(1) << (i & 63);
         }
@@ -287,8 +293,16 @@ struct KeyRangeHistogram
             while (bucket <= last && isSet(bucket))
                 ++bucket;
 
+            /// Derived from the last set bucket, not from one past it, and saturated: at the top of
+            /// the coordinate space either would wrap and invert the interval.
+            const UInt64 width = UInt64(1) << shift;
+            const UInt64 run_last_low = base + (static_cast<UInt64>(bucket - 1) << shift);
+            const UInt64 run_high = std::numeric_limits<UInt64>::max() - run_last_low < width - 1
+                ? std::numeric_limits<UInt64>::max()
+                : run_last_low + width - 1;
+
             const UInt64 low = std::max(min_coordinate, base + (static_cast<UInt64>(from) << shift));
-            const UInt64 high = std::min(max_coordinate, base + (static_cast<UInt64>(bucket) << shift) - 1);
+            const UInt64 high = std::min(max_coordinate, run_high);
             cover.emplace_back(toField(low), toField(high));
         }
     }
@@ -344,7 +358,7 @@ KeyCover IRuntimeFilter::effectiveRangeCover() const
 
 void IRuntimeFilter::updateRange(const IColumn & column)
 {
-    if (!index_analysis_enabled || !range_supported || !range_positive || column.size() == 0)
+    if (!index_analysis_enabled || !range_supported || !range_positive || column.empty())
         return;
 
     /// Once the histogram exists it sees the keys themselves. Until then, and for key types it
