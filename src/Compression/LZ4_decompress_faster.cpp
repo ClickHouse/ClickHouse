@@ -502,7 +502,11 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            /// At least two more bytes have to be available. The check is written as a distance rather
+            /// than as `ip + 1 >= input_end`, because `ip` is allowed to be exactly `input_end` here, and
+            /// then `ip + 1` would be two past the end of the payload - out-of-range pointer arithmetic.
+            /// The same applies to the other availability checks below.
+            if (unlikely(input_end - ip < 2))
                 return false;
             continue_read_length();
         }
@@ -549,7 +553,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
     decompress_match:
 
-        if (unlikely(ip + 1 >= input_end))
+        if (unlikely(input_end - ip < 2))
             return false;
 
         /// Get match offset.
@@ -576,7 +580,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token & 0x0F;
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            if (unlikely(input_end - ip < 2))
                 return false;
             continue_read_length();
         }
