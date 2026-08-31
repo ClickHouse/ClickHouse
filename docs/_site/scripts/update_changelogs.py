@@ -5,11 +5,6 @@ Run from the docs directory:
 
     python3 _site/scripts/update_changelogs.py
 
-To update only one independent changelog source:
-
-    python3 _site/scripts/update_changelogs.py --scope cloud
-    python3 _site/scripts/update_changelogs.py --scope oss
-
 Cloud release-note frontmatter is the source of truth for the Cloud cards and
 navigation. The repository-level CHANGELOG.md is the source of truth for the
 current Open source changelog page.
@@ -17,7 +12,6 @@ current Open source changelog page.
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 import sys
@@ -59,7 +53,6 @@ OSS_RELEASE = re.compile(
     r'^### <a id="(\d+)"></a> ClickHouse release v?(\d+\.\d+)(.*)$'
 )
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.+?)(?:\s+\{#[^}]+\})?$")
-SCOPES = ("cloud", "oss")
 
 
 @dataclass(frozen=True)
@@ -335,12 +328,15 @@ def find_navigation_nodes(node, key: str, value: str) -> list[dict]:
     return matches
 
 
-def update_cloud_navigation(
-    navigation: object,
+def update_navigation(
+    docs_root: Path,
     grouped: dict[int, list[Release]],
     current_cloud_changelog: AnnualChangelog,
     cloud_archive: list[AnnualChangelog],
+    oss_year: int,
 ) -> None:
+    navigation_path = docs_root / "resources/changelogs/navigation.json"
+    navigation = json.loads(navigation_path.read_text(encoding="utf-8"))
     cloud_dropdowns = find_navigation_nodes(
         navigation, "dropdown", CLOUD_DROPDOWN
     )
@@ -371,12 +367,6 @@ def update_cloud_navigation(
         },
     ]
 
-
-def update_oss_navigation(
-    navigation: object,
-    docs_root: Path,
-    oss_year: int,
-) -> None:
     oss_dropdowns = find_navigation_nodes(navigation, "dropdown", OSS_DROPDOWN)
     if len(oss_dropdowns) != 1:
         raise ValueError(
@@ -404,9 +394,6 @@ def update_oss_navigation(
         SECURITY_CHANGELOG,
     ]
 
-
-def write_navigation(docs_root: Path, navigation: object) -> None:
-    navigation_path = docs_root / "resources/changelogs/navigation.json"
     navigation_path.write_text(
         json.dumps(navigation, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -556,68 +543,42 @@ def update_oss_changelog(docs_root: Path) -> tuple[int, int]:
     return year, len(releases)
 
 
-def update_cloud_changelogs(
-    docs_root: Path,
-) -> tuple[
-    dict[int, list[Release]], AnnualChangelog, list[AnnualChangelog]
-]:
-    grouped = group_releases(load_releases(docs_root))
-    current, archive = load_cloud_changelogs(docs_root)
-    update_index(docs_root, grouped)
-    update_cloud_landing(docs_root, current, archive)
-    return grouped, current, archive
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("docs_root", nargs="?")
-    parser.add_argument("--scope", action="append", choices=SCOPES, dest="scopes")
-    args = parser.parse_args(argv)
-
+def main() -> int:
     docs_root = (
-        Path(args.docs_root).resolve()
-        if args.docs_root
+        Path(sys.argv[1]).resolve()
+        if len(sys.argv) > 1
         else Path(__file__).resolve().parents[2]
     )
     if not (docs_root / "docs.json").is_file():
         print(f"Error: no docs.json in {docs_root}", file=sys.stderr)
         return 2
 
-    scopes = set(args.scopes or SCOPES)
     try:
-        navigation_path = docs_root / "resources/changelogs/navigation.json"
-        navigation = json.loads(navigation_path.read_text(encoding="utf-8"))
-        updates = []
-
-        if "cloud" in scopes:
-            grouped, current_cloud_changelog, cloud_archive = (
-                update_cloud_changelogs(docs_root)
-            )
-            update_cloud_navigation(
-                navigation,
-                grouped,
-                current_cloud_changelog,
-                cloud_archive,
-            )
-            count = sum(len(releases) for releases in grouped.values())
-            updates.append(
-                f"{count} Cloud release notes across "
-                f"{len(grouped)} year groups"
-            )
-
-        if "oss" in scopes:
-            oss_year, oss_release_count = update_oss_changelog(docs_root)
-            update_oss_navigation(navigation, docs_root, oss_year)
-            updates.append(
-                f"{oss_release_count} Open source {oss_year} releases"
-            )
-
-        write_navigation(docs_root, navigation)
-        print("Updated " + " and ".join(updates))
+        grouped = group_releases(load_releases(docs_root))
+        current_cloud_changelog, cloud_archive = load_cloud_changelogs(
+            docs_root
+        )
+        update_index(docs_root, grouped)
+        update_cloud_landing(
+            docs_root, current_cloud_changelog, cloud_archive
+        )
+        oss_year, oss_release_count = update_oss_changelog(docs_root)
+        update_navigation(
+            docs_root,
+            grouped,
+            current_cloud_changelog,
+            cloud_archive,
+            oss_year,
+        )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
+    count = sum(len(releases) for releases in grouped.values())
+    print(
+        f"Updated {count} Cloud release notes across {len(grouped)} year groups "
+        f"and {oss_release_count} Open source {oss_year} releases"
+    )
     return 0
 
 
