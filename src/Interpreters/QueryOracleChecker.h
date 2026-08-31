@@ -78,9 +78,6 @@ private:
     /// Execute a scalar query (returns a single value) and return the Field.
     static Field executeScalar(const String & query, const ContextMutablePtr & context);
 
-    /// Build a fresh context for oracle sub-queries.
-    static ContextMutablePtr makeOracleContext(const ContextMutablePtr & base_context);
-
     /// Extract the single ASTSelectQuery from an AST if it is a simple
     /// non-UNION SELECT. Returns nullptr otherwise.
     static const ASTSelectQuery * extractSimpleSelect(const ASTPtr & ast);
