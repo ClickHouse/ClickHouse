@@ -390,6 +390,19 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
     return result;
 }
 
+/// ClickHouse-specific discriminator emitted by the writers: Arrow has a single UUID extension type,
+/// but ClickHouse has two UUID types (`UUID` with the historical half-swapped ordering and the
+/// correctly-sorting `UUID2`), so the exact type is recorded in an extra field-metadata key.
+static std::string_view clickHouseUUIDTypeMetadata(const ArrowField & field)
+{
+    auto it = field.custom_metadata.find("ClickHouse:type");
+    if (it == field.custom_metadata.end())
+        return {};
+    if (it->second == "UUID" || it->second == "UUID2")
+        return it->second;
+    return {};
+}
+
 bool isUUIDField(const ArrowField & field)
 {
     if (field.type.kind != TypeKind::FixedSizeBinary || field.type.byte_width != 16)
@@ -398,18 +411,19 @@ bool isUUIDField(const ArrowField & field)
     if (it != field.custom_metadata.end() && it->second == "arrow.uuid")
         return true;
     auto logical = field.custom_metadata.find("PARQUET:logical_type");
-    return logical != field.custom_metadata.end() && logical->second == "UUID";
+    if (logical != field.custom_metadata.end() && logical->second == "UUID")
+        return true;
+    /// A dictionary-encoded (`LowCardinality`) column cannot carry the `arrow.uuid` extension keys: the
+    /// registered extension type rejects dictionary storage, so the Apache Arrow writer marks such a column
+    /// with the ClickHouse-specific discriminator alone. It is authoritative here as well.
+    return !clickHouseUUIDTypeMetadata(field).empty();
 }
 
 bool isUUID2Field(const ArrowField & field)
 {
     if (!isUUIDField(field))
         return false;
-    /// ClickHouse-specific discriminator emitted by the writers: Arrow has a single UUID extension type,
-    /// but ClickHouse has two UUID types (`UUID` with the historical half-swapped ordering and the
-    /// correctly-sorting `UUID2`), so the exact type is recorded in an extra field-metadata key.
-    auto it = field.custom_metadata.find("ClickHouse:type");
-    return it != field.custom_metadata.end() && it->second == "UUID2";
+    return clickHouseUUIDTypeMetadata(field) == "UUID2";
 }
 
 namespace
