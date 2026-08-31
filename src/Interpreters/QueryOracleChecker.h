@@ -141,6 +141,11 @@ public:
     /// (modulo the table name). A difference is a real metadata serialization bug.
     bool checkSchemaRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// DELETE-mutation oracle (self-seeded): after DELETE FROM t WHERE p (non-null p), the
+    /// surviving rows must equal a never-mutated snapshot filtered by NOT p. A difference is a
+    /// real lightweight-delete / mutation bug.
+    bool checkDeleteMutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
