@@ -300,7 +300,7 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
 
 IProcessor::Status VirtualRowReadAheadTransform::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
 {
-    if (!did_full_prepare)
+    if (!initialized)
         return prepare();
 
     ++touch_epoch;
@@ -380,7 +380,7 @@ IProcessor::Status VirtualRowReadAheadTransform::tryFinish()
 
 IProcessor::Status VirtualRowReadAheadTransform::prepare()
 {
-    did_full_prepare = true;
+    initialized = true;
     ++touch_epoch;
     touched_lanes.clear();
 

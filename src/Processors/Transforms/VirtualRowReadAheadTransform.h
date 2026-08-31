@@ -114,7 +114,7 @@ private:
     std::vector<UInt64> lane_touch_epoch;
     std::vector<size_t> touched_lanes;
     UInt64 touch_epoch = 0;
-    bool did_full_prepare = false;
+    bool initialized = false;
 };
 
 }
