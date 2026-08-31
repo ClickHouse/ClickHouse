@@ -52,6 +52,7 @@ namespace FailPoints
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
     extern const char database_replicated_stop_entry_execution[];
+    extern const char database_replicated_pause_before_initial_entry_execution[];
 }
 
 
@@ -505,6 +506,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
+
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_before_initial_entry_execution);
 
     processTask(*task, zookeeper, internal_query);
 

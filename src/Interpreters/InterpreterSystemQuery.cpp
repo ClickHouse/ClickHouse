@@ -1395,6 +1395,8 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
     const String database_name = query.getDatabase();
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
 
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
+
     const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name);
 
     auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
@@ -1402,6 +1404,11 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
     }
+
+    /// The restore replaces the database's DDL worker, so no query may be executing a replicated DDL
+    /// entry through it. Startup is awaited before the exclusive guard because it needs table guards.
+    db_ptr->waitDatabaseStarted();
+    auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
     replicated_db->restoreDatabaseInKeeper(getContext());
 
