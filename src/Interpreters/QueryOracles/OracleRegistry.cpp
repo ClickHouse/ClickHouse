@@ -35,6 +35,7 @@ extern const Event ASTFuzzerOracleUpdateMutationChecks;
 extern const Event ASTFuzzerOracleMaterializeIndexChecks;
 extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
 extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
+extern const Event ASTFuzzerOracleGroupingSetsChecks;
 }
 
 namespace DB
@@ -113,6 +114,7 @@ OracleRegistry::OracleRegistry()
     add("MATERIALIZE INDEX invariance", ProfileEvents::ASTFuzzerOracleMaterializeIndexChecks, &QueryOracleChecker::checkMaterializeIndexInvariance);
     add("De-Morgan predicate", ProfileEvents::ASTFuzzerOraclePredicateDeMorganChecks, &QueryOracleChecker::checkPredicateDeMorgan);
     add("ARRAY JOIN identity", ProfileEvents::ASTFuzzerOracleArrayJoinIdentityChecks, &QueryOracleChecker::checkArrayJoinIdentity);
+    add("grouping-set equivalence", ProfileEvents::ASTFuzzerOracleGroupingSetsChecks, &QueryOracleChecker::checkGroupingSetsEquivalence);
 }
 
 const OracleRegistry & OracleRegistry::instance()

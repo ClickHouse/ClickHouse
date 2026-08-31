@@ -165,6 +165,11 @@ public:
     /// A difference is a real ARRAY JOIN bug.
     bool checkArrayJoinIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Grouping-modifier equivalence oracle (self-seeded): CUBE(a,b) and ROLLUP(a,b) are defined as
+    /// GROUPING SETS expansions, so their result multisets must be identical. A difference is a real
+    /// grouping-modifier bug.
+    bool checkGroupingSetsEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
