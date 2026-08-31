@@ -61,10 +61,10 @@ SELECT extractAllGroupsVertical(toNullable(NULL), '(\\w+)=(\\w+)');
 SELECT '-- Test ngrams with nullable';
 SELECT ngrams(toNullable('ClickHouse'), 3);
 SELECT ngrams(CAST(NULL AS Nullable(String)), 3);
-SELECT ngrams(toNullable(NULL), 3); -- { serverError BAD_ARGUMENTS }
-SELECT ngrams('ClickHouse', toNullable(3)); -- { serverError BAD_ARGUMENTS }
-SELECT ngrams('ClickHouse', toNullable(CAST(NULL AS Nullable(INT)))); -- { serverError BAD_ARGUMENTS }
-SELECT ngrams('ClickHouse', toNullable(NULL)); -- { serverError BAD_ARGUMENTS }
+SELECT ngrams(toNullable(NULL), 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT ngrams('ClickHouse', toNullable(3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT ngrams('ClickHouse', toNullable(CAST(NULL AS Nullable(INT)))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT ngrams('ClickHouse', toNullable(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- Test sparseGrams with nullable';
 SELECT sparseGrams(CAST(NULL AS Nullable(String)));
