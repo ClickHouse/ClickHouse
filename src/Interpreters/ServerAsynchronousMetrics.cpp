@@ -1032,23 +1032,19 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 
 #define MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION \
-    "Approximate resident set size of thread stacks, refreshed on the heavy-metrics cadence. On Linux, it is summed from `Rss:` " \
-    "of /proc/self/smaps VMAs tagged with " \
-    "`[anon:clickhouse_stack]` via `prctl(PR_SET_VMA_ANON_NAME)`. On macOS, it is summed from resident pages of task VM regions " \
-    "tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions. Linux requires kernel 5.17 or newer; on older kernels the " \
-    "metric is absent and `system.warnings` contains `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE`."
+    "Approximate resident set size of pthread stacks, summed from `Rss:` of /proc/self/smaps VMAs tagged with " \
+    "`[anon:clickhouse_stack]` via `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or " \
+    "newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it " \
+    "is summed from the resident pages of the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
 #define MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION \
-    "Approximate virtual size of thread stacks, refreshed on the heavy-metrics cadence. On Linux, it is summed from `Size:` of " \
-    "/proc/self/smaps VMAs tagged with " \
-    "`[anon:clickhouse_stack]`. On macOS, it is summed from the sizes of task VM regions tagged `VM_MEMORY_STACK`, excluding " \
-    "inaccessible guard regions. Linux requires kernel 5.17 or newer; on older kernels the metric is absent and " \
-    "`system.warnings` contains `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE`."
+    "Approximate virtual size of pthread stacks, summed from `Size:` of /proc/self/smaps VMAs tagged with " \
+    "`[anon:clickhouse_stack]`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or newer; absent on older kernels (see " \
+    "the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it is summed from the sizes of the " \
+    "task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
 #define MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION \
-    "Number of thread-stack virtual memory regions, refreshed on the heavy-metrics cadence. On Linux, this counts " \
-    "/proc/self/smaps VMAs tagged with " \
-    "`[anon:clickhouse_stack]`. On macOS, it counts task VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions. " \
-    "Linux requires kernel 5.17 or newer; on older kernels the metric is absent and `system.warnings` contains " \
-    "`MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE`."
+    "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]` in /proc/self/smaps. Refreshed on the heavy-metrics " \
+    "cadence. Requires Linux 5.17 or newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in " \
+    "`system.warnings`). On macOS, it counts the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Re-emit cached thread-stack stats on every scrape so the metrics stay
