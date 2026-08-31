@@ -476,7 +476,8 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
 }
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
-    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
+    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_,
+    const RemoteDescriptionCaller & caller, bool require_table_or_query)
 {
     StorageMySQL::Configuration configuration;
 
@@ -509,7 +510,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     {
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-            configuration.addresses_expr, max_addresses, 3306, globCaller("MySQL address expression"));
+            configuration.addresses_expr, max_addresses, 3306, caller);
     }
 
     configuration.username = named_collection.getAny<String>({"username", "user"});
@@ -531,12 +532,14 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     return configuration;
 }
 
-StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id)
+StorageMySQL::Configuration StorageMySQL::getConfiguration(
+    ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
+    const RemoteDescriptionCaller & caller, const StorageID * table_id)
 {
     StorageMySQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id))
     {
-        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
+        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_, caller);
     }
     else
     {
@@ -562,7 +565,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-            configuration.addresses_expr, max_addresses, 3306, globCaller("MySQL address expression"));
+            configuration.addresses_expr, max_addresses, 3306, caller);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
         if (maybe_query)
             configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
@@ -611,7 +614,8 @@ void registerStorageMySQL(StorageFactory & factory)
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id);
+        auto configuration = StorageMySQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), mysql_settings, globCaller("Table engine 'MySQL'"), &args.table_id);
 
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,

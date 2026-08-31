@@ -655,7 +655,9 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(
+                *named_collection, &postgresql_settings, args.context,
+                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else

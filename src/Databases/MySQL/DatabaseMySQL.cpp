@@ -789,7 +789,9 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context))
         {
-            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
+            configuration = StorageMySQL::processNamedCollectionResult(
+                *named_collection, *mysql_settings, args.context,
+                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table_or_query=*/ false);
         }
         else
         {

@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
+#include <Common/parseRemoteDescription.h>
 #include <Core/PostgreSQL/ConnectionSSLParams.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -79,9 +80,16 @@ public:
     /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
     /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
     /// collections instead of being accepted and silently ignored.
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr);
+    /// `caller` names the surface the user invoked (`Table function 'postgresql'`,
+    /// `Table engine 'PostgreSQL'`, `Database engine 'MaterializedPostgreSQL'`, ...); it is only used
+    /// in the error messages of the address parser.
+    static Configuration getConfiguration(
+        ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
+        const RemoteDescriptionCaller & caller, const StorageID * table_id = nullptr);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
+    static Configuration processNamedCollectionResult(
+        const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_,
+        const RemoteDescriptionCaller & caller, bool require_table = true);
 
     /// Reads the TLS/SSL parameters from a named collection: `sslmode`, the certificate and key
     /// paths (`sslrootcert` / `sslcert` / `sslkey`) and their contents forms (`sslrootcert_pem` /
