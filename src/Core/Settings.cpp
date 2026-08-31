@@ -20,6 +20,7 @@
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
+#include <Common/maskURIPassword.h>
 #include <Common/typeid_cast.h>
 
 #include <boost/program_options.hpp>
@@ -9386,6 +9387,18 @@ void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util:
     }
 }
 
+/// Both settings maps below are display-only, so a secret is hidden in them as ASTSetQuery hides it in the query text.
+static String maskedCustomSettingValue(const SettingFieldCustom & field)
+{
+    CustomType custom;
+    if (field.value.tryGet<CustomType>(custom) && custom.isSecret())
+        return custom.toString(/* show_secrets */ false);
+
+    String value = field.toString();
+    maskURIPassword(&value);
+    return value;
+}
+
 void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 {
     if (!column)
@@ -9409,6 +9422,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 
         const auto & name = accessor.getName(i);
         auto value = accessor.getValueString(*this, i);
+        maskURIPassword(&value);
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
         ++size;
@@ -9422,7 +9436,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
             continue;
 
         const auto & name = custom.first;
-        auto value = setting_field.toString();
+        auto value = maskedCustomSettingValue(setting_field);
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
         ++size;
@@ -9437,12 +9451,18 @@ std::map<String, String> SettingsImpl::changedToMap() const
 
     const auto & accessor = Traits::Accessor::instance();
     for (size_t i = 0; i < accessor.size(); ++i)
-        if (accessor.isValueChanged(*this, i))
-            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
+    {
+        if (!accessor.isValueChanged(*this, i))
+            continue;
+
+        String value = accessor.getValueString(*this, i);
+        maskURIPassword(&value);
+        result.emplace(accessor.getName(i), std::move(value));
+    }
 
     for (const auto & custom : custom_settings_map)
         if (custom.second.changed)
-            result.emplace(custom.first, custom.second.toString());
+            result.emplace(custom.first, maskedCustomSettingValue(custom.second));
 
     return result;
 }
