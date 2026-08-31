@@ -40,6 +40,11 @@
          the full-scan reject. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(materialize(concat('https://example.com/', repeat('longpathcomponent/', 25))), '[0-9]{50}', 'X'))</query>
 
+    <!-- A cycle of rejecting haystacks against the same full-scan reject: every row differs from its
+         neighbour, so the non-adjacent repeats must be served by the cache instead of re-running the
+         reject for every occurrence. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '[0-9]{50}', 'X'))</query>
+
     <!-- Mostly-distinct haystacks: the distinct-ratio guard must disable deduplication. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
 

@@ -95,6 +95,13 @@ SELECT countIf(replaceRegexpOne(h, '^missing', 'X') != replaceRegexpOne(h, mater
 FROM (SELECT if(number < 500, concat('ab', toString(number), 'cd'), 'repeatedvalue') AS h FROM numbers(2000))
 SETTINGS max_block_size = 2000;
 
+-- Non-adjacent repeats of rejecting values with the pre-check engaged: the rejects are cached like
+-- matches, so each later occurrence of a value is served by the cache instead of re-running a reject
+-- that has to scan the whole haystack.
+SELECT countIf(replaceRegexpOne(h, '[0-9]{50}', 'X') != replaceRegexpOne(h, materialize('[0-9]{50}'), 'X'))
+FROM (SELECT concat('ab', toString(number % 7), 'cd', repeat('z', number % 5)) AS h FROM numbers(2000))
+SETTINGS max_block_size = 2000;
+
 -- Alternating rejecting and matching runs, each longer than the ratio window: the windowed match ratio
 -- turns the pre-check on and off repeatedly within one block.
 SELECT countIf(replaceRegexpOne(h, '^ab([0-9]+)', '<\\1>') != replaceRegexpOne(h, materialize('^ab([0-9]+)'), '<\\1>'))

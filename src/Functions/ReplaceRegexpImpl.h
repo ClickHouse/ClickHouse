@@ -373,7 +373,9 @@ struct ReplaceRegexpImpl
     /// A row without a match comes out identical to its input, so caching it saves only the match attempt,
     /// and for short-circuiting patterns such as '^foo' that attempt is cheaper than hashing the haystack.
     /// Once a block proves to be almost entirely non-matching, a capture-free existence check therefore runs
-    /// first and rejected rows are copied through directly, at the cost of the plain loop.
+    /// first and rejected rows are copied through directly, at the cost of the plain loop. While the cache
+    /// is enabled, rejects are cached like matches, so repeats of a rejecting value skip the re-check; only
+    /// after the distinct-ratio guard disables the cache do rejected rows bypass hashing entirely.
     /// `get_haystack(i)` must stay valid for the whole call.
     template <typename GetHaystack>
     static void processStringsDeduplicated(
@@ -407,11 +409,6 @@ struct ReplaceRegexpImpl
         bool precheck_non_matching = false;
         size_t rows_in_window = 0;
         size_t matched_in_window = 0;
-        /// Rows rejected by the non-matching pre-check never reach the cache, so the distinct ratio
-        /// must be measured against the rows that did, not against `i`: otherwise a rejected prefix
-        /// dilutes the ratio and keeps the cache enabled for a fully distinct matching suffix.
-        /// Adjacent duplicates do count: they are repeats the caching strategy serves.
-        size_t rows_for_distinct_ratio = 0;
 
         std::string_view prev_haystack;
         bool has_prev_haystack = false;
@@ -440,8 +437,11 @@ struct ReplaceRegexpImpl
             if (rows_in_window == ratio_check_window)
             {
                 precheck_non_matching = matched_in_window * 20 < ratio_check_window;
-                if (map_enabled && rows_for_distinct_ratio >= min_rows_for_distinct_ratio_check
-                    && results_cache.size() * 10 > rows_for_distinct_ratio * 9)
+                /// While the cache is enabled every row either reaches it or is an adjacent duplicate
+                /// (a repeat the caching strategy serves), so `i` is the right denominator for the
+                /// distinct ratio.
+                if (map_enabled && i >= min_rows_for_distinct_ratio_check
+                    && results_cache.size() * 10 > i * 9)
                 {
                     map_enabled = false;
                     results_cache.clearAndShrink();
@@ -462,7 +462,6 @@ struct ReplaceRegexpImpl
             {
                 copy_cached(prev_result);
                 matched_in_window += prev_result.matched;
-                ++rows_for_distinct_ratio;
                 res_offsets[i] = res_offset;
                 continue;
             }
@@ -470,8 +469,10 @@ struct ReplaceRegexpImpl
             /// A rejected row plus the copy is exactly the plain loop's cost. It is non-matching by
             /// definition, so leaving `matched_in_window` untouched counts it correctly. The row still
             /// becomes the previous value, so repeats of it are served by the compare above instead of
-            /// re-running the reject.
-            if (precheck_non_matching
+            /// re-running the reject. While the cache is enabled the reject runs inside the cache-miss
+            /// branch below instead, so that non-adjacent repeats of a rejecting value are served by the
+            /// cache rather than re-running a reject that may have to scan the whole haystack.
+            if (!map_enabled && precheck_non_matching
                 && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
             {
                 const UInt64 rejected_start = res_offset;
@@ -486,8 +487,6 @@ struct ReplaceRegexpImpl
                 res_offsets[i] = res_offset;
                 continue;
             }
-
-            ++rows_for_distinct_ratio;
 
             const UInt64 result_start = res_offset;
             bool row_matched;
@@ -504,7 +503,20 @@ struct ReplaceRegexpImpl
                 }
                 else
                 {
-                    row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+                    /// A rejected row is cached exactly like a processed one: it produces the same
+                    /// output either way, and caching it is what spares its later repeats the reject.
+                    if (precheck_non_matching
+                        && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
+                    {
+                        res_data.resize(res_data.size() + haystack.size());
+                        memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
+                        res_offset += haystack.size();
+                        budget.charge();
+                        budget.charge(haystack.size());
+                        row_matched = false;
+                    }
+                    else
+                        row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
                     it->getMapped() = {result_start, res_offset - result_start, row_matched};
                 }
             }
