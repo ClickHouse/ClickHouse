@@ -20,6 +20,7 @@ extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
 extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
 extern const Event ASTFuzzerOracleCodecRoundtripChecks;
 extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
+extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
 }
 
 namespace DB
@@ -83,6 +84,7 @@ OracleRegistry::OracleRegistry()
     /// Self-seeded (fixture-based) oracles run last.
     add("codec round-trip", ProfileEvents::ASTFuzzerOracleCodecRoundtripChecks, &QueryOracleChecker::checkCodecRoundtrip);
     add("engine equivalence", ProfileEvents::ASTFuzzerOracleEngineEquivalenceChecks, &QueryOracleChecker::checkEngineEquivalence);
+    add("partition equivalence", ProfileEvents::ASTFuzzerOraclePartitionEquivalenceChecks, &QueryOracleChecker::checkPartitionEquivalence);
 }
 
 const OracleRegistry & OracleRegistry::instance()
