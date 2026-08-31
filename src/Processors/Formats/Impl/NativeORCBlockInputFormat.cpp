@@ -42,6 +42,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -183,12 +184,118 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool ignore_case)
+/// Defined below, next to the read path that also uses it. The sargs path resolves predicate column
+/// names through the same recursive walk, so pruning and reading always agree on the column.
+static const orc::Type *
+traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type, DataTypePtr & type, bool ignore_case);
+
+/// The default ORC memory pool allocates with `std::malloc`, which returns a null pointer when it
+/// fails - and the library dereferences it - and which is invisible to the memory tracker. A
+/// malformed file can ask for an arbitrarily large buffer, so allocate through `operator new`
+/// instead: it is accounted for and it throws instead of returning null.
+class ORCMemoryPool : public orc::MemoryPool
 {
-    for (UInt64 i = 0; i != schema.getSubtypeCount(); ++i)
-        if (boost::equals(schema.getFieldName(i), name) || (ignore_case && boost::iequals(schema.getFieldName(i), name)))
-            return schema.getSubtype(i);
+public:
+    char * malloc(uint64_t size) override { return new char[size]; }
+    void free(char * p) override { delete[] p; }
+};
+
+orc::MemoryPool & getORCMemoryPool()
+{
+    static ORCMemoryPool pool;
+    return pool;
+}
+
+/// Resolves the CH type of `name` against `header`, following dots into tuple elements when the
+/// header carries only the parent column (which is the case for ORC, whose reader is not asked for
+/// individual tuple elements). Returns nullptr when no prefix of `name` is a header column.
+static DataTypePtr findHeaderTypeByPath(const Block & header, const String & name, bool ignore_case)
+{
+    if (const auto * column = header.findByName(name, ignore_case))
+        return column->type;
+
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = header.findByName(String(column_name), ignore_case);
+        if (!column)
+            continue;
+        if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
+            return subcolumn_type;
+    }
     return nullptr;
+}
+
+/// True when `path` is a named tuple element at every level, so it is a file leaf with its own
+/// statistics. Nullable, LowCardinality and Array are transparent; anything else is refused,
+/// which is what rejects Map/Variant/JSON/Dynamic and `.null`, `.size0`, `.keys`, `.values`.
+static bool isNamedTupleElementPath(const IDataType & type, std::string_view path, bool ignore_case)
+{
+    const IDataType * current = &type;
+    while (true)
+    {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(current))
+            current = nullable->getNestedType().get();
+        else if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(current))
+            current = low_cardinality->getDictionaryType().get();
+        else if (const auto * array = typeid_cast<const DataTypeArray *>(current))
+            current = array->getNestedType().get();
+        else
+            break;
+    }
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(current);
+    if (!tuple || !tuple->hasExplicitNames())
+        return false;
+
+    if (tuple->tryGetPositionByName(path, ignore_case))
+        return true;
+
+    /// An element name may itself contain dots, so every split has to be considered.
+    for (size_t dot = path.find('.'); dot != std::string_view::npos; dot = path.find('.', dot + 1))
+    {
+        auto head = path.substr(0, dot);
+        auto tail = path.substr(dot + 1);
+        if (head.empty() || tail.empty())
+            continue;
+        if (auto position = tuple->tryGetPositionByName(head, ignore_case))
+            if (isNamedTupleElementPath(*tuple->getElement(*position), tail, ignore_case))
+                return true;
+    }
+    return false;
+}
+
+/// Resolves `name` as a named tuple element of a header column, through the same
+/// tryGetSubcolumnType lookup the search argument builder resolves it with.
+static DataTypePtr findTupleElementKeyType(const Block & header, const String & name, bool ignore_case)
+{
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = header.findByName(String(column_name), ignore_case);
+        if (!column || !isNamedTupleElementPath(*column->type, subcolumn_name, ignore_case))
+            continue;
+        if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
+            return subcolumn_type;
+    }
+    return nullptr;
+}
+
+/// KeyCondition derives its key names from this block, and the ORC header carries only the parent
+/// column, so a tuple element predicate would degrade to `unknown`. Only the local copy grows;
+/// the reader header stays as it is, so the read path is unaffected.
+static Block buildORCKeyConditionBlock(const Block & header, const ActionsDAG * filter_dag, bool ignore_case)
+{
+    if (!filter_dag)
+        return header;
+
+    Block keys = header;
+    for (const auto & required : filter_dag->getRequiredColumns())
+    {
+        if (keys.has(required.name))
+            continue;
+        if (auto type = findTupleElementKeyType(header, required.name, ignore_case))
+            keys.insert({type->createColumn(), type, required.name});
+    }
+    return keys;
 }
 
 static bool isDictionaryEncoded(const orc::StripeInformation * stripe_info, const orc::Type * orc_type)
@@ -671,7 +778,22 @@ static void buildORCSearchArgumentImpl(
             }
 
             String column_name = getColumnNameFromKeyCondition(key_condition, curr.getKeyColumn());
-            const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
+            const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
+
+            /// The predicate column may be a tuple element (`t.x`), which the ORC header does not
+            /// carry as a flat entry, so resolve it through the type as well as through the schema.
+            auto column_type = findHeaderTypeByPath(header, column_name, ignore_case);
+            if (!column_type)
+            {
+                builder.literal(orc::TruthValue::YES_NO_NULL);
+                break;
+            }
+
+            /// The resolver rewrites the type it is given when it descends a LIST (a flattened
+            /// Nested column), so give it a scratch copy: the guards below must judge the key's
+            /// own type, which is what KeyCondition's RPN holds.
+            auto resolved_type = column_type;
+            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case);
             if (!orc_type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -689,14 +811,13 @@ static void buildORCSearchArgumentImpl(
             ///     down filters would result in different outputs.
             bool skipped = false;
             auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped, format_settings.max_parser_depth), format_settings);
-            const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
-            if (!expect_type || !column)
+            if (!expect_type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
             }
 
-            auto nested_type = removeNullable(recursiveRemoveLowCardinality(column->type));
+            auto nested_type = removeNullable(recursiveRemoveLowCardinality(column_type));
             auto expect_nested_type = removeNullable(expect_type);
             if (!nested_type->equals(*expect_nested_type))
             {
@@ -706,10 +827,10 @@ static void buildORCSearchArgumentImpl(
 
             /// If null_as_default is true, the only difference is nullable, and the evaluations of current RPNElement based on default and null field
             /// have the same result, we still should push down current filter.
-            if (format_settings.null_as_default && !column->type->isNullable() && !column->type->isLowCardinalityNullable())
+            if (format_settings.null_as_default && !column_type->isNullable() && !column_type->isLowCardinalityNullable())
             {
                 bool match_if_null = evaluateRPNElement({}, curr);
-                bool match_if_default = evaluateRPNElement(column->type->getDefault(), curr);
+                bool match_if_default = evaluateRPNElement(column_type->getDefault(), curr);
                 if (match_if_default != match_if_null)
                 {
                     builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -906,6 +1027,7 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
+    options.setMemoryPool(getORCMemoryPool());
     /// ORC library requires rangeSizeLimit > holeSizeLimit.
     static constexpr uint64_t default_range_size_limit = 10 * 1024 * 1024UL;
     /// Clamp to avoid overflow when computing holeSizeLimit + 1.
@@ -1114,7 +1236,10 @@ void NativeORCBlockInputFormat::prepareFileReader()
         return;
 
     if (format_filter_info)
-        format_filter_info->initKeyConditionOnce(getPort().getHeader());
+        format_filter_info->initKeyConditionOnce(buildORCKeyConditionBlock(
+            getPort().getHeader(),
+            format_filter_info->filter_actions_dag.get(),
+            format_settings.orc.case_insensitive_column_matching));
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
@@ -1142,7 +1267,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
-        sargs = buildORCSearchArgument(*format_filter_info->key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
+        sargs = buildORCSearchArgument(*format_filter_info->key_condition, header, file_schema, format_settings);
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
     read_iterator = 0;

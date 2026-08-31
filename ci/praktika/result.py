@@ -91,7 +91,7 @@ class Result(MetaClasses.Serializable):
         REPRODUCIBLE = "reproducible"
         LOG_CHECK = "log_check"
 
-    # Default hints rendered as a hover tooltip in json.html.
+    # Default hints rendered as a hover tooltip in praktika.html.
     # Looked up automatically when set_label is called without an explicit hint.
     LABEL_HINTS = {
         Label.OK_ON_RETRY: "Test failed initially but passed on retry",
@@ -113,7 +113,6 @@ class Result(MetaClasses.Serializable):
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
     files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
-    assets: List[Union[str, Path]] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -188,12 +187,11 @@ class Result(MetaClasses.Serializable):
             duration=duration,
             info="\n".join(infos) if infos else "",
             results=results or [],
-            assets=assets or [],
             files=files or [],
             links=links or [],
         )
-        for link in result.links:
-            result._record_link_size(link)
+        if assets:
+            result.ext["assets"] = list(assets)
         if isinstance(labels, str):
             labels = [labels]
         for label in labels or []:
@@ -296,6 +294,13 @@ class Result(MetaClasses.Serializable):
         self._dump_if_persisted()
         return self
 
+    def set_assets(self, assets) -> "Result":
+        if isinstance(assets, (str, Path)):
+            assets = [assets]
+        self.ext["assets"] = [str(asset) for asset in assets]
+        self._dump_if_persisted()
+        return self
+
     def set_on_error_hook(self, hook: str) -> "Result":
         """
         Sets a bash script to execute when the job encounters a critical error.
@@ -362,24 +367,10 @@ class Result(MetaClasses.Serializable):
         self._dump_if_persisted()
         return self
 
-    def set_link(self, link, size=None) -> "Result":
+    def set_link(self, link) -> "Result":
         self.links.append(link)
-        self._record_link_size(link, size)
         self._dump_if_persisted()
         return self
-
-    def _record_link_size(self, link, size=None):
-        """Remember the size in bytes of the object a link points to.
-
-        Stored in ``ext["link_sizes"]`` as a ``{link: bytes}`` map and rendered by
-        ``json.html`` next to the link, e.g. ``clickhouse-common-static.deb (1.2 GiB)``.
-        When ``size`` is not given it is taken from the uploads this process made,
-        so links to files uploaded by praktika get their size for free.
-        """
-        if size is None:
-            size = S3.get_uploaded_size(link)
-        if size is not None:
-            self.ext.setdefault("link_sizes", {})[link] = size
 
     def _add_job_summary_to_info(self):
         if not self.info:
@@ -396,6 +387,88 @@ class Result(MetaClasses.Serializable):
     @classmethod
     def file_name_static(cls, name):
         return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+
+    def to_markdown(self, max_rows: int = 50, report_url: str = "") -> str:
+        """Render this Result as a Markdown document suitable for posting
+        as a GitHub check run's ``output.text``.
+
+        Meant to be called on a job's top-level Result (the file dumped by
+        ``runner.py`` at the end of a job). The top-level status goes into
+        the header; ``self.results`` (sub-steps or individual tests) are
+        counted by status and then rendered as a single table with
+        failures sorted first. Plain text — no emoji.
+        """
+        from collections import Counter
+
+        def _escape(s):
+            return str(s).replace("|", r"\|").replace("\n", " ")
+
+        def _fmt_duration(d):
+            return f"{int(d)}s" if d else "—"
+
+        def _info_cell(s):
+            s = _escape(s or "")
+            if len(s) <= 120:
+                return s
+            return f"[see report]({report_url})" if report_url else "see report"
+
+        lines = []
+        # GitHub already renders status + duration as the check summary
+        # header, so don't repeat it in the body.
+        if self.info:
+            lines.append(_escape(self.info))
+            lines.append("")
+
+        refs = []
+        for url in self.links or []:
+            from urllib.parse import urlsplit
+
+            path = urlsplit(url).path
+            label = path.rsplit("/", 1)[-1] if path else ""
+            refs.append(f"- [{label or url}]({url})")
+        for f in self.files or []:
+            refs.append(f"- `{Path(str(f)).name}`")
+        if refs:
+            lines.append("**Artifacts:**")
+            lines.extend(refs)
+            lines.append("")
+
+        if self.results:
+            counts = Counter(r.status for r in self.results)
+            summary = ", ".join(f"{n} {s}" for s, n in counts.most_common())
+            lines.append(f"**Sub-results ({len(self.results)}):** {summary}")
+            lines.append("")
+
+            # Failures first (FAIL > ERROR > other non-OK > OK/SKIPPED),
+            # then by name. Truncated to max_rows.
+            def sort_key(r):
+                order = {
+                    Result.Status.FAIL: 0,
+                    Result.Status.ERROR: 1,
+                    Result.Status.XPASS: 2,
+                    Result.Status.UNKNOWN: 3,
+                    Result.Status.XFAIL: 4,
+                    Result.Status.OK: 5,
+                    Result.Status.SKIPPED: 6,
+                }
+                return (order.get(r.status, 9), str(r.name))
+
+            rows = sorted(self.results, key=sort_key)
+            overflow = max(0, len(rows) - max_rows)
+            rows = rows[:max_rows]
+
+            lines.append("| Name | Status | Duration | Info |")
+            lines.append("|---|---|---|---|")
+            for r in rows:
+                lines.append(
+                    f"| `{_escape(r.name)}` | {r.status} | "
+                    f"{_fmt_duration(r.duration)} | {_info_cell(r.info)} |"
+                )
+            if overflow:
+                lines.append("")
+                lines.append(f"_… {overflow} more rows omitted_")
+
+        return "\n".join(lines)
 
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
@@ -476,12 +549,14 @@ class Result(MetaClasses.Serializable):
     def remove_label(self, label):
         if not self.ext.get("labels", None):
             return self
-        self.ext["labels"] = [l for l in self.ext["labels"] if self._label_name(l) != label]
+        self.ext["labels"] = [
+            item for item in self.ext["labels"] if self._label_name(item) != label
+        ]
         return self
 
     def get_labels(self):
         """Return list of label names."""
-        return [self._label_name(l) for l in self.ext.get("labels", [])]
+        return [self._label_name(item) for item in self.ext.get("labels", [])]
 
     def has_label(self, label):
         if label in self.get_labels():
@@ -490,9 +565,9 @@ class Result(MetaClasses.Serializable):
         return label in [x[0] for x in self.ext.get("hlabels", []) if x]
 
     def get_label_link(self, label):
-        for l in self.ext.get("labels", []):
-            if isinstance(l, dict) and l.get("name") == label:
-                return l.get("link")
+        for item in self.ext.get("labels", []):
+            if isinstance(item, dict) and item.get("name") == label:
+                return item.get("link")
         # Legacy fallback for results stored before the label/hlabel unification.
         for h in self.ext.get("hlabels", []):
             if isinstance(h, (list, tuple)) and len(h) >= 2 and h[0] == label:
@@ -500,9 +575,9 @@ class Result(MetaClasses.Serializable):
         return None
 
     def get_label_hint(self, label):
-        for l in self.ext.get("labels", []):
-            if isinstance(l, dict) and l.get("name") == label:
-                return l.get("hint")
+        for item in self.ext.get("labels", []):
+            if isinstance(item, dict) and item.get("name") == label:
+                return item.get("hint")
         return None
 
     def set_comment(self, comment):
@@ -515,6 +590,7 @@ class Result(MetaClasses.Serializable):
         cwd=None,
         name="Tests",
         env=None,
+        pytest_command="pytest",
         pytest_report_file=None,
         pytest_logfile=None,
         logfile=None,
@@ -528,6 +604,7 @@ class Result(MetaClasses.Serializable):
             cwd (str, optional): Working directory to run the command in
             name (str, optional): Name for the root Result object
             env (dict, optional): Environment variables for the pytest command
+            pytest_command (str, optional): Command used to invoke pytest
             pytest_report_file (str, optional): Path to write the pytest jsonl report
             logfile (str, optional): Path to write pytest output logs
             timeout (int, optional): Hard timeout in seconds to kill the pytest process
@@ -537,14 +614,22 @@ class Result(MetaClasses.Serializable):
         """
         sw = Utils.Stopwatch()
         files = []
-        if pytest_report_file:
-            files.append(pytest_report_file)
-        else:
+        if not pytest_report_file:
             pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
 
         with ContextManager.cd(cwd):
-            # Construct the full pytest command with jsonl report
-            full_command = f"pytest {command} --report-log={pytest_report_file}"
+            supports_report_log = "--report-log" in Shell.get_output(
+                "pytest --help", verbose=False
+            )
+
+            # Construct the full pytest command with jsonl report when the
+            # plugin is installed; otherwise fall back to plain pytest so local
+            # `praktika run <job>` still works in dev envs that only have the
+            # base `pytest` package.
+            full_command = f"{pytest_command} {command}"
+            if supports_report_log:
+                full_command += f" --report-log={pytest_report_file}"
+                files.append(pytest_report_file)
             if pytest_logfile:
                 full_command += f" --log-file={pytest_logfile}"
                 files.append(pytest_logfile)
@@ -560,8 +645,37 @@ class Result(MetaClasses.Serializable):
                 name = f"pytest_{command}"
 
             # Run pytest
-            Shell.run(full_command, log_file=logfile, timeout=timeout)
-            test_result = ResultTranslator.from_pytest_jsonl(pytest_report_file=pytest_report_file)
+            exit_code = Shell.run(full_command, log_file=logfile, timeout=timeout)
+            if supports_report_log:
+                test_result = ResultTranslator.from_pytest_jsonl(
+                    pytest_report_file=pytest_report_file
+                )
+            else:
+                print(
+                    "WARNING: pytest-reportlog is unavailable, falling back to plain pytest results"
+                )
+                info = ""
+                if exit_code != 0:
+                    if logfile and os.path.isfile(logfile):
+                        with open(logfile, "r", encoding="utf-8", errors="ignore") as f:
+                            info = "".join(f.readlines()[-300:]).strip()
+                    if not info:
+                        info = f"pytest exited with code [{exit_code}]"
+                    info = (
+                        "pytest-reportlog plugin is not installed; using plain pytest fallback.\n\n"
+                        + info
+                    )
+                test_result = Result.create_from(
+                    name="pytest",
+                    status=(
+                        Result.Status.OK
+                        if exit_code == 0
+                        else Result.Status.FAIL
+                        if exit_code == 1
+                        else Result.Status.ERROR
+                    ),
+                    info=info,
+                )
 
         return Result.create_from(
             name=name,
@@ -635,6 +749,15 @@ class Result(MetaClasses.Serializable):
         result.results = failed_results
         return result
 
+    # ext keys dropped from a job's result when it is embedded as a sub-result of
+    # the workflow result. Only the heavy decimated host `metrics` timeline is
+    # dropped - it is not rendered at the workflow level and is only needed on the
+    # job's own report, which is uploaded separately with the full ext. Everything
+    # else (labels/hlabels badges, storage_usage link sizes, warnings/errors/notes,
+    # run_url) is lightweight and kept, so the workflow report and the embedded-node
+    # fallback path in json.html keep rendering the same content.
+    _WORKFLOW_SUB_RESULT_DROP_EXT_KEYS = ("metrics",)
+
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
@@ -647,6 +770,11 @@ class Result(MetaClasses.Serializable):
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
                     self.results[i].results = self._flat_failed_leaves(result, path=[self.name])
+                    self.results[i].ext = {
+                        k: v
+                        for k, v in (self.results[i].ext or {}).items()
+                        if k not in self._WORKFLOW_SUB_RESULT_DROP_EXT_KEYS
+                    }
                 else:
                     self.results[i] = result
         self._update_status()
@@ -761,69 +889,17 @@ class Result(MetaClasses.Serializable):
             result.set_status(Result.Status.FAIL)
         if result.is_error():
             # gtest.json is missing — the binary was killed before it could write results
-            # (e.g. by a sanitizer, OOM, an uncaught exception, or a logical error). Note: gdb
-            # returns 0 even when the inferior exits with a non-zero code, so we can't rely on
-            # binary_failed here.
-            #
-            # gtest prints "[ RUN      ] Suite.Test" before each test and a closing
-            # "[       OK ]"/"[  FAILED  ]" line after it. When the binary dies mid-test, the last
-            # "[ RUN      ]" line has no closing line and names the test that was running at the
-            # moment of the crash. Recover that name so the report shows the real test (instead of
-            # the gtest filter expression, e.g. "-FunctionsStress"), and scan only the lines after
-            # it for the crash message, so an unrelated error logged earlier by a test that
-            # finished normally (e.g. a deliberately-thrown-and-caught exception) is not mistaken
-            # for the cause.
-            # Covers sanitizer reports ("SUMMARY:"), ClickHouse logical errors, uncaught
-            # exceptions ("libc++abi:"/"terminate called") and fatal signals.
-            _ERROR_PREFIXES = (
-                "SUMMARY:",
-                "Logical error:",
-                "Code: ",
-                "Signal description:",
-                "libc++abi:",
-                "terminate called",
-            )
-            _ERROR_SUBSTRINGS = ("received signal SIG",)
-            crashed_test = ""
-            crash_info = ""
-            # Some gtests (e.g. the function property fuzzer, gtest_functions_stress) log the
-            # offending call as a runnable SQL query right before crashing, via
-            # logCurrentOperation: "(while executing: SELECT f(...);)". Surface it next to the
-            # error so the report shows a copy-pasteable repro instead of just the message.
-            repro_info = ""
-            _REPRO_MAX_LEN = 8192
+            # (e.g. by a sanitizer or OOM). Note: gdb returns 0 even when the inferior
+            # exits with a non-zero code, so we can't rely on binary_failed here.
+            # Extract the sanitizer SUMMARY line from the log file if available.
+            sanitizer_info = ""
             if result.files:
                 log_content = Shell.get_output(f"cat {result.files[0]}", verbose=False)
-                log_lines = log_content.splitlines()
-                # Index of the last test that started running. Everything before it belongs to
-                # tests that already finished, so the crash output must come after it. If no
-                # "[ RUN      ]" marker exists (the binary failed before any test ran), -1 makes
-                # the scan below cover the whole log.
-                last_run_idx = -1
-                for idx, line in enumerate(log_lines):
-                    if not line.startswith("[ RUN"):
-                        continue
-                    bracket_end = line.find("]")
-                    if bracket_end == -1:
-                        continue
-                    last_run_idx = idx
-                    crashed_test = line[bracket_end + 1 :].strip()
-                for line in log_lines[last_run_idx + 1 :]:
-                    if not crash_info and (any(line.startswith(p) for p in _ERROR_PREFIXES) or any(s in line for s in _ERROR_SUBSTRINGS)):
-                        crash_info = line.strip()
-                    if not repro_info and line.startswith("(while ") and "SELECT " in line:
-                        repro_info = line
-                        if len(repro_info) > _REPRO_MAX_LEN:
-                            repro_info = repro_info[:_REPRO_MAX_LEN] + " ... (truncated, see log)"
-                    if crash_info and repro_info:
+                for line in log_content.splitlines():
+                    if line.startswith("SUMMARY:"):
+                        sanitizer_info = line
                         break
-            crash_info = "\n".join(p for p in (crash_info, repro_info) if p)
-            result.info = crash_info or info
-            # Synthesize a failed sub-result so the job summary is not empty. Prefer the test that
-            # was running when the binary died; fall back to the filter expression only when the
-            # log had no "[ RUN      ]" marker at all.
-            crashed_test = crashed_test or gtest_filter.rstrip(".*") or "unknown"
-            result.set_results([Result(name=crashed_test, status=Result.Status.FAIL, info=crash_info or info)])
+            result.info = sanitizer_info or info
             result.set_status(Result.Status.FAIL)
         return result
 
@@ -841,6 +917,7 @@ class Result(MetaClasses.Serializable):
         command_kwargs=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
+        env=None,
     ):
         """
         Executes shell commands or Python callables, optionally logging output, and handles errors.
@@ -856,6 +933,8 @@ class Result(MetaClasses.Serializable):
         :param command_kwargs: Keyword arguments for the callable command.
         :param retries: The number of times to retry the command if it fails.
         :param retry_errors: The errors to retry on. Support for shell command(s) only.
+        :param env: Optional environment dict for shell commands (e.g. the job
+            python env so PYTHONPATH carries the checkout root for `ci.*` imports).
         :return: Result object with status and optional log file.
         """
 
@@ -917,6 +996,7 @@ class Result(MetaClasses.Serializable):
                         log_file=log_file,
                         retries=retries,
                         retry_errors=retry_errors,
+                        env=env,
                     )
                     if with_info or (with_info_on_failure and exit_code != 0):
                         log_output = Shell.get_output(f"cat {log_file}")
@@ -931,27 +1011,14 @@ class Result(MetaClasses.Serializable):
         # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
         truncated = False
         if len(info_lines) > MAX_LINES_IN_INFO:
-            # For clang-tidy and similar builds, find the first error (or, if
-            # there is none, the first warning) and show context around it
-            # instead of just the last lines.
-            # Errors take priority over warnings: a build log often contains
-            # many unrelated warnings (e.g. deprecation warnings from contrib
-            # libraries) before the actual compile error that stopped the
-            # build. Centering the excerpt on the first warning would truncate
-            # away the real error, so scan for the first error first and only
-            # fall back to the first warning when no error is present.
+            # For clang-tidy and similar builds, find the first error/warning
+            # and show context around it instead of just the last lines
             first_error_idx = None
-            first_warning_idx = None
             for idx, line in enumerate(info_lines):
                 # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
-                if ": error:" in line:
+                if ": error:" in line or ": warning:" in line:
                     first_error_idx = idx
                     break
-                if first_warning_idx is None and ": warning:" in line:
-                    first_warning_idx = idx
-
-            if first_error_idx is None:
-                first_error_idx = first_warning_idx
 
             if first_error_idx is not None:
                 # Show context around the first error (lines before and after)
@@ -1219,7 +1286,7 @@ class ResultInfo:
 
 class _ResultS3:
     # Map the ``kind`` field used in ``_Environment.REPORT_MESSAGES`` to the
-    # ``ext`` bucket rendered by ``json.html``. Unknown kinds fall into notes.
+    # ``ext`` bucket rendered by ``praktika.html``. Unknown kinds fall into notes.
     _REPORT_MESSAGE_KIND_TO_EXT_KEY = {
         "warning": "warnings",
         "error": "errors",
@@ -1339,7 +1406,6 @@ class _ResultS3:
                     _uploaded_file_link[file] = file_link
 
                 result.links.append(file_link)
-                result._record_link_size(file_link)
             except Exception as e:
                 traceback.print_exc()
                 print(f"ERROR: Failed to upload file [{file}] for result [{result.name}]")
@@ -1347,8 +1413,11 @@ class _ResultS3:
         result.files = []
 
         # Upload assets in parallel (preserving relative paths for HTML interlinking)
-        if result.assets:
-            asset_paths = [Path(a).resolve() for a in result.assets if Path(a).is_file()]
+        assets = result.ext.get("assets") or []
+        if assets:
+            asset_paths = [
+                Path(a).resolve() for a in assets if Path(a).is_file()
+            ]
             if asset_paths:
                 common_root = os.path.commonpath([p.parent for p in asset_paths])
                 env = _Environment.get()
@@ -1369,7 +1438,7 @@ class _ResultS3:
                         future.result()
                     except Exception as e:
                         print(f"ERROR: Failed to upload asset [{asset}]: {e}")
-        result.assets = []
+        result.ext.pop("assets", None)
 
         if result.results:
             for result_ in result.results:
@@ -1455,6 +1524,71 @@ class _ResultS3:
 class ResultTranslator:
     GTEST_RESULT_FILE = Path("./ci/tmp/gtest.json").absolute()
     PYTEST_RESULT_FILE = Path("./ci/tmp/pytest.jsonl").absolute()
+
+    @staticmethod
+    def _render_chain(chain):
+        """Render a serialized pytest longrepr "chain": every exception, oldest first."""
+        out = ""
+        for pair in chain:
+            if not isinstance(pair, list):
+                continue
+            # a rendered traceback already ends with its own message, so the
+            # per-entry reprcrash would only repeat it
+            has_rt = len(pair) >= 1 and isinstance(pair[0], dict) and "reprentries" in pair[0]
+            if has_rt:
+                for re_entry in pair[0].get("reprentries", []):
+                    dd = re_entry.get("data", {})
+                    if not isinstance(dd, dict):
+                        continue
+                    # a frame with no source location serializes the key as
+                    # present-and-null, so a get() default never fires
+                    fileloc = dd.get("reprfileloc")
+                    if not isinstance(fileloc, dict):
+                        fileloc = {}
+                    fpath = fileloc.get("path")
+                    flineno = fileloc.get("lineno")
+                    fmsg = fileloc.get("message")
+                    header_parts = []
+                    if fpath is not None and flineno is not None:
+                        header_parts.append(f"File: {fpath}:{flineno}")
+                    if fmsg:
+                        header_parts.append(str(fmsg))
+                    if header_parts:
+                        if out:
+                            out += "\n"
+                        out += " - ".join(header_parts)
+                    if dd.get("lines"):
+                        if out:
+                            out += "\n"
+                        out += "\n".join(dd["lines"])
+            elif len(pair) >= 2 and isinstance(pair[1], dict):
+                crash = pair[1]
+                p = crash.get("path")
+                ln = crash.get("lineno")
+                msg = crash.get("message")
+                seg = []
+                if p is not None and ln is not None:
+                    seg.append(f"File: {p}:{ln}")
+                if msg:
+                    seg.append(str(msg))
+                if seg:
+                    if out:
+                        out += "\n"
+                    out += "\n".join(seg)
+            # pytest attaches the causal separator to the entry it follows
+            if len(pair) >= 3 and pair[2]:
+                if out:
+                    out += "\n"
+                out += str(pair[2])
+        return out
+
+    @staticmethod
+    def _chain_of(longrepr):
+        """The chain, only when it is authoritative: reprtraceback is just its last entry."""
+        if not isinstance(longrepr, dict):
+            return None
+        chain = longrepr.get("chain")
+        return chain if isinstance(chain, list) and len(chain) > 1 else None
 
     @classmethod
     def from_gtest(cls):
@@ -1612,14 +1746,12 @@ class ResultTranslator:
             List[Result]: A list of Result objects representing individual test cases
         """
         name = "pytest"
-        sw = Utils.Stopwatch()
         if not os.path.isfile(pytest_report_file):
             print(f"ERROR: Pytest report file {pytest_report_file} not found")
             return Result.create_from(
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Pytest report file {pytest_report_file} not found",
-                stopwatch=sw,
             )
 
         # Track test cases by their node_id, and also track failures by phase
@@ -1653,7 +1785,10 @@ class ResultTranslator:
                                     # Best-effort: mirror traceback builder from TestReport for dict shape
                                     try:
                                         lr_txt = ""
-                                        crash = longrepr.get("reprcrash") if isinstance(longrepr, dict) else None
+                                        _chain = cls._chain_of(longrepr)
+                                        if _chain is not None:
+                                            lr_txt = cls._render_chain(_chain)
+                                        crash = longrepr.get("reprcrash") if _chain is None else None
                                         if isinstance(crash, dict):
                                             p = crash.get("path")
                                             ln = crash.get("lineno")
@@ -1665,12 +1800,16 @@ class ResultTranslator:
                                                 seg.append(str(msg))
                                             if seg:
                                                 lr_txt += "\n".join(seg)
-                                        rt = longrepr.get("reprtraceback") if isinstance(longrepr, dict) else None
+                                        rt = longrepr.get("reprtraceback") if _chain is None else None
                                         if isinstance(rt, dict) and "reprentries" in rt:
                                             composed = []
                                             for re_entry in rt.get("reprentries", []):
                                                 dd = re_entry.get("data", {})
-                                                fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
+                                                # a frame with no source location serializes the key
+                                                # as present-and-null, so a get() default never fires
+                                                fileloc = dd.get("reprfileloc") if isinstance(dd, dict) else None
+                                                if not isinstance(fileloc, dict):
+                                                    fileloc = {}
                                                 fpath = fileloc.get("path")
                                                 flineno = fileloc.get("lineno")
                                                 fmsg = fileloc.get("message")
@@ -1742,15 +1881,21 @@ class ResultTranslator:
                                             parts.append(str(message))
                                         if parts:
                                             traceback_str += "\n".join(parts)
+                                # A chained failure carries every exception in "chain" (oldest
+                                # first), while "reprtraceback" is only its last entry, so the
+                                # chain is authoritative whenever it holds more than one.
+                                _use_chain = cls._chain_of(data) is not None
                                 # reprtraceback: collect lines
-                                if data and isinstance(data, dict) and "reprtraceback" in data:
+                                if not _use_chain and data and isinstance(data, dict) and "reprtraceback" in data:
                                     rt = data.get("reprtraceback", {})
                                     if isinstance(rt, dict) and "reprentries" in rt:
                                         composed = []
                                         for re_entry in rt.get("reprentries", []):
                                             dd = re_entry.get("data", {})
                                             # include per-frame file location for full stack context
-                                            fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
+                                            fileloc = dd.get("reprfileloc") if isinstance(dd, dict) else None
+                                            if not isinstance(fileloc, dict):
+                                                fileloc = {}
                                             fpath = fileloc.get("path")
                                             flineno = fileloc.get("lineno")
                                             fmsg = fileloc.get("message")
@@ -1767,50 +1912,15 @@ class ResultTranslator:
                                             if traceback_str:
                                                 traceback_str += "\n"
                                             traceback_str += "\n".join(composed)
-                                # chain: fallback/additional entries (only if no reprtraceback)
+                                # chain: every exception of a chained failure, oldest first;
+                                # also the fallback when there is no top-level reprtraceback
                                 elif data and isinstance(data, dict) and "chain" in data:
                                     try:
-                                        chain = data.get("chain", [])
-                                        for pair in chain:
-                                            # pair typically is [reprtraceback, reprcrash, context]
-                                            if not isinstance(pair, list):
-                                                continue
-                                            if len(pair) >= 1 and isinstance(pair[0], dict):
-                                                rt = pair[0]
-                                                if "reprentries" in rt:
-                                                    for re_entry in rt.get("reprentries", []):
-                                                        dd = re_entry.get("data", {})
-                                                        fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
-                                                        fpath = fileloc.get("path")
-                                                        flineno = fileloc.get("lineno")
-                                                        fmsg = fileloc.get("message")
-                                                        header_parts = []
-                                                        if fpath is not None and flineno is not None:
-                                                            header_parts.append(f"File: {fpath}:{flineno}")
-                                                        if fmsg:
-                                                            header_parts.append(str(fmsg))
-                                                        if header_parts:
-                                                            if traceback_str:
-                                                                traceback_str += "\n"
-                                                            traceback_str += " - ".join(header_parts)
-                                                        if isinstance(dd, dict) and "lines" in dd and dd["lines"]:
-                                                            if traceback_str:
-                                                                traceback_str += "\n"
-                                                            traceback_str += "\n".join(dd["lines"])
-                                            if len(pair) >= 2 and isinstance(pair[1], dict):
-                                                crash = pair[1]
-                                                p = crash.get("path")
-                                                ln = crash.get("lineno")
-                                                msg = crash.get("message")
-                                                seg = []
-                                                if p is not None and ln is not None:
-                                                    seg.append(f"File: {p}:{ln}")
-                                                if msg:
-                                                    seg.append(str(msg))
-                                                if seg:
-                                                    if traceback_str:
-                                                        traceback_str += "\n"
-                                                    traceback_str += "\n".join(seg)
+                                        rendered = cls._render_chain(data.get("chain") or [])
+                                        if rendered:
+                                            if traceback_str:
+                                                traceback_str += "\n"
+                                            traceback_str += rendered
                                     except Exception:
                                         # Be resilient to unexpected shapes
                                         pass
@@ -1917,7 +2027,7 @@ class ResultTranslator:
                     elif "teardown" in failures:
                         test_results[node_id].status = failures["teardown"]
 
-            R = Result.create_from(name=name, results=list(test_results.values()), stopwatch=sw)
+            R = Result.create_from(name=name, results=list(test_results.values()))
 
             if session_exitstatus == 0:
                 # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
@@ -1956,5 +2066,4 @@ class ResultTranslator:
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Failed to parse pytest jsonl: {e}, {traceback.print_exc()}",
-                stopwatch=sw,
             )

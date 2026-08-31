@@ -1,0 +1,36 @@
+1. The IN spelling drops the same tokens as the = spelling, so it indexes the same tokens.
+a cat see
+a cat see
+2. Stop words spelled with IN leave no positional gap: [1,2,3].
+[1,2,3]
+[1,2,3]
+[1,2,3]
+[1,2,3]
+3. The needle is postprocessed too, so a needle with a stop word matches as well: [1,2,3].
+[1,2,3]
+[1,2,3]
+4. Reversed order still does not match: [4].
+[4]
+[4]
+5. NOT IN keeps only the listed tokens, every other token is dropped: [1,2,3,5].
+[1,2,3,5]
+[1,2,3,5]
+6. An array right-hand side drops both stop words: [1,2,3,5].
+[1,2,3,5]
+[1,2,3,5]
+7. The multiIf spelling behaves like if: [1,2,3].
+[1,2,3]
+[1,2,3]
+8. An IN filter in the preprocessor is reconstructed correctly too: [2,3,4].
+[2,3,4]
+[2,3,4]
+9. Partially materialized index: parts without the index use the same reconstructed expression.
+[1,2,3,4]
+[1,2,3,4]
+[]
+[]
+[1,2,3,4]
+[1,2,3,4]
+[1,2,3,4]
+[]
+[1,2,3,4]

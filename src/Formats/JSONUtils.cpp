@@ -34,7 +34,7 @@ namespace JSONUtils
 {
     template <const char opening_bracket, const char closing_bracket>
     static std::pair<bool, size_t>
-    fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
+    fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size)
     {
         skipWhitespaceIfAny(in);
 
@@ -43,18 +43,22 @@ namespace JSONUtils
         bool quotes = false;
         size_t number_of_rows = 0;
         bool need_more_data = true;
+        size_t object_start_bytes = 0;
 
         if (max_rows && (max_rows < min_rows))
             max_rows = min_rows;
 
         while (loadAtPosition(in, memory, pos) && need_more_data)
         {
-            const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
-            if (min_bytes != 0 && current_object_size > 10 * min_bytes)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
-                    "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
-                    "most likely JSON is malformed", in.count(), min_bytes, current_object_size);
+            if (max_row_size && balance > 0)
+            {
+                const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position()) - object_start_bytes;
+                if (current_object_size > max_row_size)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per object. "
+                        "Increase the value of setting 'input_format_json_max_object_size' or check your data manually, "
+                        "most likely JSON is malformed", in.count(), max_row_size, current_object_size);
+            }
 
             if (quotes)
             {
@@ -104,6 +108,7 @@ namespace JSONUtils
 
                 if (!quotes && balance == 0)
                 {
+                    object_start_bytes = memory.size() + static_cast<size_t>(pos - in.position());
                     ++number_of_rows;
                     if ((number_of_rows >= min_rows)
                         && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
@@ -117,15 +122,15 @@ namespace JSONUtils
     }
 
     std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(
-        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, size_t max_row_size)
     {
-        return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_bytes, 1, max_rows);
+        return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_bytes, 1, max_rows, max_row_size);
     }
 
     std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(
-        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size)
     {
-        return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows);
+        return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows, max_row_size);
     }
 
     template <const char opening_bracket, const char closing_bracket>
@@ -215,6 +220,7 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
+        const size_t row_start_bytes = in.count();
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
@@ -226,6 +232,17 @@ namespace JSONUtils
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             names_and_types.emplace_back(name, type);
             skipWhitespaceIfAny(in);
+
+            if (settings.json.max_row_size_for_json_each_row
+                && in.count() - row_start_bytes > settings.json.max_row_size_for_json_each_row)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Size of JSON object at position {} is extremely large. "
+                    "Expected not greater than {} bytes, but current is {} bytes per object. "
+                    "Increase the value of setting 'input_format_json_max_object_size' "
+                    "or check your data manually, most likely JSON is malformed",
+                    in.count(),
+                    settings.json.max_row_size_for_json_each_row,
+                    in.count() - row_start_bytes);
         }
 
         if (in.eof())
@@ -242,6 +259,7 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         DataTypes types;
+        const size_t row_start_bytes = in.count();
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)
@@ -251,6 +269,17 @@ namespace JSONUtils
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             types.push_back(std::move(type));
             skipWhitespaceIfAny(in);
+
+            if (settings.json.max_row_size_for_json_each_row
+                && in.count() - row_start_bytes > settings.json.max_row_size_for_json_each_row)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Size of JSON object at position {} is extremely large. "
+                    "Expected not greater than {} bytes, but current is {} bytes per object. "
+                    "Increase the value of setting 'input_format_json_max_object_size' "
+                    "or check your data manually, most likely JSON is malformed",
+                    in.count(),
+                    settings.json.max_row_size_for_json_each_row,
+                    in.count() - row_start_bytes);
         }
 
         if (in.eof())
@@ -328,22 +357,24 @@ namespace JSONUtils
 
     void writeFieldCompactDelimiter(WriteBuffer & out) { writeCString(", ", out); }
 
-    static void writeTitle(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
+    static void writeTitle(std::string_view title, WriteBuffer & out, size_t indent, std::string_view after_delimiter)
     {
         writeChar('\t', indent, out);
         writeChar('"', out);
-        writeCString(title, out);
-        writeCString("\":", out);
-        writeCString(after_delimiter, out);
+        out.write(title.data(), title.size());
+        out.write("\":", 2);
+        if (!after_delimiter.empty())
+            out.write(after_delimiter.data(), after_delimiter.size());
     }
 
-    static void writeTitlePretty(const char * title, WriteBuffer & out, const FormatSettings & settings, size_t indent, const char * after_delimiter)
+    static void writeTitlePretty(std::string_view title, WriteBuffer & out, const FormatSettings & settings, size_t indent, std::string_view after_delimiter)
     {
         writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, out);
         writeChar('"', out);
-        writeCString(title, out);
-        writeCString("\":", out);
-        writeCString(after_delimiter, out);
+        out.write(title.data(), title.size());
+        out.write("\":", 2);
+        if (!after_delimiter.empty())
+            out.write(after_delimiter.data(), after_delimiter.size());
     }
 
     void writeObjectStart(WriteBuffer & out, size_t indent, const char * title)
@@ -406,20 +437,20 @@ namespace JSONUtils
         bool yield_strings,
         const FormatSettings & settings,
         WriteBuffer & out,
-        const std::optional<String> & name,
+        std::optional<std::string_view> name,
         size_t indent,
-        const char * title_after_delimiter,
+        std::string_view title_after_delimiter,
         bool pretty_json)
     {
         if (name.has_value())
         {
             if (pretty_json)
             {
-                writeTitlePretty(name->data(), out, settings, indent, title_after_delimiter);
+                writeTitlePretty(*name, out, settings, indent, title_after_delimiter);
             }
             else
             {
-                writeTitle(name->data(), out, indent, title_after_delimiter);
+                writeTitle(*name, out, indent, title_after_delimiter);
             }
         }
 
