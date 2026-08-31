@@ -39,14 +39,22 @@ INSERT INTO test_spatial_bbox_nullable_arg VALUES ([[(100., 100.), (101., 100.),
 INSERT INTO test_spatial_bbox_nullable_arg_no_index VALUES ([[(100., 100.), (101., 100.), (101., 101.), (100., 100.)]], 1);
 "
 
-# Normalise so only the outcome is compared, not which table produced it.
+# Reduce each run to a single token -- a count, or `Code: N` for a failure. Nothing else may reach
+# stdout: the raw exception text carries timestamps, query ids and the varying `SETTINGS` clause, so
+# comparing it would be meaningless, and a stray exception in a test's stdout is a failure in itself.
 run() {
-    local table="$1" predicate="$2" extra="$3"
-    $CLICKHOUSE_CLIENT -q "
+    local table="$1" predicate="$2" extra="$3" out
+    out=$($CLICKHOUSE_CLIENT -q "
         SELECT count() FROM $table
         WHERE pointInPolygon((0., 0.), poly) AND $predicate
         SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0${extra:+, $extra};
-    " 2>&1 | sed -e 's/DB::Exception: Received from [^.]*\. //' -e "s/${table}/TABLE/g" | head -1
+    " 2>&1)
+
+    if grep -qom1 'Code: [0-9]*' <<< "$out"; then
+        grep -om1 'Code: [0-9]*' <<< "$out"
+    else
+        echo "$out" | head -1
+    fi
 }
 
 check() {
@@ -59,10 +67,7 @@ check() {
     if [ "$with_index" = "$without_index" ] && [ "$with_index" = "$no_index_table" ]; then
         echo "$label: index-neutral"
     else
-        echo "$label: DIVERGED"
-        echo "  index on:  $with_index"
-        echo "  index off: $without_index"
-        echo "  no index:  $no_index_table"
+        echo "$label: DIVERGED [$with_index] [$without_index] [$no_index_table]"
     fi
 }
 
