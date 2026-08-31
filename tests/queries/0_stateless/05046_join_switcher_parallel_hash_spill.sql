@@ -1,7 +1,9 @@
 -- `join_algorithm = 'auto'` can fill the hash phase in parallel, then drain onto
 -- `MergeJoin` when `max_rows_in_join` trips. Probe after the drain must stay
 -- correct for INNER/LEFT/RIGHT/FULL, including unmatched right rows.
--- Random settings limits: max_rows_in_join=(50, 50); max_bytes_in_join=(0, 0); max_bytes_before_external_join=(0, 0); max_bytes_ratio_before_external_join=(0, 0)
+-- Pin a small `max_block_size` so the left side is several blocks after the drain.
+-- Several `JoiningTransform`s then probe `MergeJoin` under `ExclusiveJoinResult`.
+-- Random settings limits: max_rows_in_join=(50, 50); max_bytes_in_join=(0, 0); max_bytes_before_external_join=(0, 0); max_bytes_ratio_before_external_join=(0, 0); max_block_size=(16, 16)
 
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
@@ -12,6 +14,7 @@ SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 SET join_algorithm = 'auto';
 SET parallel_hash_join_threshold = 1;
 SET max_threads = 8;
+SET max_block_size = 16;
 SET max_rows_in_join = 50;
 SET max_bytes_in_join = 0;
 SET join_use_nulls = 1;
@@ -31,24 +34,24 @@ SELECT countIf(explain LIKE '%FillingRightJoinSide%') > 1
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05046_l AS t1 INNER JOIN t05046_r AS t2 ON t1.n = t2.n
-    SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
+    SETTINGS max_threads = 8, max_block_size = 16, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
 );
 
 SELECT 'inner';
 SELECT count() FROM t05046_l AS t1 INNER JOIN t05046_r AS t2 ON t1.n = t2.n
-SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0, log_comment = '05046_switch';
+SETTINGS max_threads = 8, max_block_size = 16, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0, log_comment = '05046_switch';
 
 SELECT 'left';
 SELECT count() FROM t05046_l AS t1 LEFT JOIN t05046_r AS t2 ON t1.n = t2.n
-SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
+SETTINGS max_threads = 8, max_block_size = 16, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
 
 SELECT 'right';
 SELECT count() FROM t05046_l AS t1 RIGHT JOIN t05046_r AS t2 ON t1.n = t2.n
-SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
+SETTINGS max_threads = 8, max_block_size = 16, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
 
 SELECT 'full';
 SELECT count() FROM t05046_l AS t1 FULL JOIN t05046_r AS t2 ON t1.n = t2.n
-SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
+SETTINGS max_threads = 8, max_block_size = 16, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
 
 SYSTEM FLUSH LOGS query_log, text_log;
 SET max_rows_to_read = 0;
