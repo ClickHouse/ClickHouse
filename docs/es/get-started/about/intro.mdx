@@ -36,14 +36,14 @@ ClickHouse es una base de datos orientada a columna. En estos sistemas, las tabl
 La diferencia se explica mejor con una consulta de ejemplo que se ejecuta sobre 100 millones de filas de [datos reales anonimizados de analítica web](/es/get-started/sample-datasets/anon-web-analytics-metrica):
 
 ```sql
-SELECT MobilePhoneModel, COUNT() AS c
+SELECT MobilePhoneModel, count() AS c
 FROM metrica.hits
 WHERE
       RegionID = 229
   AND EventDate >= '2013-07-01'
   AND EventDate <= '2013-07-31'
   AND MobilePhone != 0
-  AND MobilePhoneModel not in ['', 'iPad']
+  AND MobilePhoneModel NOT IN ('', 'iPad')
 GROUP BY MobilePhoneModel
 ORDER BY c DESC
 LIMIT 8;

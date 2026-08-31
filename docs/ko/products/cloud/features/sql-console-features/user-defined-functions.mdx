@@ -1,22 +1,22 @@
 ---
-sidebarTitle: '사용자 정의 FUNCTION'
+sidebarTitle: '사용자 정의 함수'
 slug: /cloud/features/user-defined-functions
-title: 'Cloud의 사용자 정의 FUNCTION'
-description: 'Cloud에 실행형 Python 사용자 정의 FUNCTION을 추가합니다'
+title: 'Cloud의 사용자 정의 함수'
+description: 'Cloud에 실행형 Python 사용자 정의 함수를 추가합니다'
 doc_type: 'guide'
-keywords: ['사용자 정의 FUNCTION', 'UDF']
+keywords: ['사용자 정의 함수', 'UDF']
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
-사용자 정의 FUNCTION(UDF)를 사용하면 1,000개가 넘는 기본 제공 [FUNCTION](/ko/reference/functions/regular-functions/overview)만으로는 제공되지 않는 ClickHouse의 기능까지 확장할 수 있습니다.
+사용자 정의 함수(UDF)를 사용하면 1,000개가 넘는 기본 제공 [FUNCTION](/ko/reference/functions/regular-functions/overview)만으로는 제공되지 않는 ClickHouse의 기능까지 확장할 수 있습니다.
 
-ClickHouse Cloud에서 사용자 정의 FUNCTION을 생성하고 관리하는 방법은 여러 가지입니다:
+ClickHouse Cloud에서 사용자 정의 함수를 생성하고 관리하는 방법은 여러 가지입니다:
 
 1. SQL 사용
 2. UI와 직접 작성한 코드 사용(공개 베타)
 3. [Cloud API](#manage-udfs-with-the-cloud-api) 사용(베타)
-4. [Terraform](#manage-udfs-with-terraform) 사용(알파)
+4. [Terraform](#manage-udfs-with-terraform) 사용(베타)
 
 <div id="sql-udfs">
   ## SQL 사용자 정의 함수
@@ -219,10 +219,10 @@ API를 통해 UDF를 생성하고 배포하는 일반적인 워크플로는 다�
 | [UDF 삭제](/ko/products/cloud/api-reference/udf/udf-delete)                        | UDF의 모든 버전을 삭제하고 모든 서비스에서 분리합니다                 |
 | [UDF 버전 생성](/ko/products/cloud/api-reference/udf/udf-version-create)             | 소스 아카이브를 사용하여 버전을 할당하고 UDF 빌드를 시작합니다            |
 | [UDF 버전 목록](/ko/products/cloud/api-reference/udf/udf-version-list)               | UDF의 모든 버전을 반환합니다                               |
-| [UDF 버전 삭제](/ko/products/cloud/api-reference/udf/udf-version-delete)             | 어떤 서비스에도 ATTACH되지 않은 UDF 버전을 삭제합니다                  |
-| [UDF를 서비스에 ATTACH](/ko/products/cloud/api-reference/udf/udf-attach)                  | 필요한 경우 현재 버전을 교체하여 UDF 버전 하나를 서비스에 ATTACH합니다        |
-| [UDF ATTACH 목록](/ko/products/cloud/api-reference/udf/udf-attachment-list)            | UDF의 현재 서비스 ATTACH 정보를 반환합니다                        |
-| [UDF ATTACH 가져오기](/ko/products/cloud/api-reference/udf/udf-attachment-get)           | UDF가 특정 서비스에 현재 ATTACH된 상태를 반환합니다                   |
+| [UDF 버전 삭제](/ko/products/cloud/api-reference/udf/udf-version-delete)             | 어떤 서비스에도 ATTACH되지 않은 UDF 버전을 삭제합니다              |
+| [UDF를 서비스에 ATTACH](/ko/products/cloud/api-reference/udf/udf-attach)              | 필요한 경우 현재 버전을 교체하여 UDF 버전 하나를 서비스에 ATTACH합니다    |
+| [UDF ATTACH 목록](/ko/products/cloud/api-reference/udf/udf-attachment-list)        | UDF의 현재 서비스 ATTACH 정보를 반환합니다                    |
+| [UDF ATTACH 가져오기](/ko/products/cloud/api-reference/udf/udf-attachment-get)       | UDF가 특정 서비스에 현재 ATTACH된 상태를 반환합니다               |
 | [서비스에서 UDF 분리](/ko/products/cloud/api-reference/udf/udf-detach)                  | 서비스에서 UDF를 분리합니다                                |
 
 요청 및 응답 스키마는 [UDF API 참조](/ko/products/cloud/api-reference/udf/udf-create)를 확인하십시오.
@@ -231,13 +231,15 @@ API를 통해 UDF를 생성하고 배포하는 일반적인 워크플로는 다�
   ## Terraform으로 UDF 관리
 </div>
 
+<BetaBadge />
+
 공식 [ClickHouse Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)에는 Infrastructure as Code 방식으로 UDF를 관리할 수 있는 2개의 리소스가 포함되어 있습니다.
 
 * [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)는 FUNCTION 자체를 관리합니다. FUNCTION 소스 코드가 포함된 ZIP 아카이브를 사용하며, 아카이브 hash가 변경될 때마다 새 버전을 publish하고 빌드가 완료될 때까지 기다립니다.
-* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md)는 UDF 버전을 서비스에 연결합니다. 서비스에는 한 번에 FUNCTION의 버전을 최대 1개만 연결할 수 있습니다. 고정 버전 번호를 지정하거나 `clickhouse_udf.<name>.version`을 참조하여 서비스를 최신 버전으로 자동 업데이트할 수 있습니다.
+* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md)는 UDF 버전을 서비스에 ATTACH합니다. 서비스에는 한 번에 FUNCTION의 버전을 최대 1개만 ATTACH할 수 있습니다. 고정 버전 번호를 지정하거나 `clickhouse_udf.<name>.version`을 참조하여 서비스를 최신 버전으로 자동 업데이트할 수 있습니다.
 
 <Note>
-  이 리소스는 프로바이더 버전 3.24.0 이상에서 사용할 수 있습니다. 알파 상태이므로 향후 프로바이더 버전에서 동작이 변경될 수 있습니다.
+  이 리소스는 프로바이더 버전 3.24.0 이상에서 사용할 수 있습니다. 베타 상태이므로 향후 프로바이더 버전에서 동작이 변경될 수 있습니다.
 </Note>
 
 예를 들어, 앞선 예시의 `isBusinessHours` UDF를 Terraform으로 배포하려면 다음과 같이 합니다.
@@ -264,4 +266,4 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-ATTACH는 준비된 상태인 버전에서만 성공하며, 완료하는 데 몇 분이 걸릴 수 있습니다. 유휴 상태의 서비스는 자동으로 시작됩니다. `clickhouse_udf` resource를 삭제하면 해당 FUNCTION의 모든 버전이 제거되고 모든 서비스에서 분리됩니다.
+ATTACH는 준비된 상태인 버전에서만 성공하며, 완료하는 데 몇 분이 걸릴 수 있습니다. 유휴 상태의 서비스는 자동으로 시작됩니다. `clickhouse_udf` 리소스를 삭제하면 해당 FUNCTION의 모든 버전이 제거되고 모든 서비스에서 분리됩니다.

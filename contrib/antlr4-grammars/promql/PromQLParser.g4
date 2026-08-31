@@ -132,12 +132,7 @@ instantSelector
     ;
 
 labelMatcher
-    : selectorIdentifier labelMatcherOperator STRING
-    | STRING
-    ;
-
-selectorIdentifier
-    : labelName
+    : labelName labelMatcherOperator STRING
     | STRING
     ;
 
@@ -220,6 +215,7 @@ labelName
     : keyword
     | METRIC_NAME
     | LABEL_NAME
+    | STRING
     ;
 
 labelNameList

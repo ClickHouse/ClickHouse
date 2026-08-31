@@ -931,7 +931,7 @@ String IMergeTreeDataPart::getProjectionName() const
 StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 {
     if (info.isPatch())
-        return storage.getPatchPartMetadata(getColumnsDescription(), info.getPartitionId(), storage.getContext());
+        return storage.getPatchPartMetadata(*this, storage.getContext()).metadata;
 
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)
@@ -1472,15 +1472,14 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    /// Long-lived per-part metadata (columns substreams, checksums, index granularity, primary
-    /// index, per-column sizes, partition / minmax index, TTL infos, projections) is routed into
-    /// the dedicated parts arena by the inner block below. Deliberately kept OUT of that arena:
+    /// Long-lived per-part metadata (columns substreams, checksums, index granularity, patch part
+    /// index, primary index, per-column sizes, partition / minmax index, TTL infos, projections)
+    /// is routed into the dedicated parts arena by the inner block below. Deliberately kept OUT
+    /// of that arena:
     ///   - `loadColumns`: its file read and text/JSON parsing are short-lived scratch; the
     ///     persistent columns/serializations it produces are arena-scoped inside `setColumns`.
     ///   - `checkConsistency`: pure file-existence/size verification, allocates nothing persistent.
     ///   - `loadDefaultCompressionCodec`: a tiny per-part codec pointer.
-    /// (`loadSourcePartsSet` runs after this block but scopes itself into the arena, as its
-    /// patch-part metadata is part-lifetime.)
     /// These paths churn many short-lived allocations; keeping them in the default per-CPU arenas
     /// avoids serializing that churn on the single arena's locks under many concurrent merges.
 
@@ -1499,6 +1498,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadInvalidatedSystemColumns();
             loadChecksums(require_columns_checksums);
             loadIndexGranularity();
+
+            /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata takes
+            /// the sort-key columns from it, and the index cannot be deserialized without them.
+            loadPatchPartIndex();
 
             /// It's important to load index after index granularity.
             if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
@@ -1536,7 +1539,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
-        loadSourcePartsSet();
     }
     catch (...)
     {
@@ -1843,9 +1845,21 @@ bool IMergeTreeDataPart::isSystemColumnInvalidated(const String & column_name) c
     return invalidated_system_columns.contains(column_name);
 }
 
+NameSet IMergeTreeDataPart::getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info)
+{
+    if (part_info.isPatch())
+        return {};
+
+    return {BlockNumberColumn::name, BlockOffsetColumn::name};
+}
+
 void IMergeTreeDataPart::loadInvalidatedSystemColumns()
 {
     if (parent_part)
+        return;
+
+    /// Patch parts must never have invalidated system columns: _block_number and _block_offset are their payload.
+    if (info.isPatch())
         return;
 
     if (auto file_buf = readFileIfExists(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
@@ -1968,19 +1982,28 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         default_codec = detectDefaultCompressionCodec();
 }
 
-void IMergeTreeDataPart::loadSourcePartsSet()
+void IMergeTreeDataPart::setPatchPartIndex(PatchPartIndex patch_part_index_)
+{
+    patch_part_index = std::move(patch_part_index_);
+}
+
+const PatchPartIndex & IMergeTreeDataPart::getPatchPartIndex() const
+{
+    if (!patch_part_index)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part index is not initialized for part {}", name);
+
+    return *patch_part_index;
+}
+
+void IMergeTreeDataPart::loadPatchPartIndex()
 {
     if (!info.isPatch())
         return;
 
-    /// For patch parts `source_parts_set` (`min_max_versions_by_part` / `source_parts_by_version`)
-    /// is part-lifetime metadata, so route it into the dedicated arena like the other loaders.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-    if (auto in = readFileIfExists(SourcePartsSetForPatch::FILENAME))
-        source_parts_set.readBinary(*in);
+    if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
+        patch_part_index = PatchPartIndex::readBinary(*in);
     else
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", SourcePartsSetForPatch::FILENAME, name);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }
 
 template <typename Writer>
@@ -2372,10 +2395,10 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         size_t rows_to_read = index_granularity->getMarkRows(current_mark);
         continue_reading = (current_mark != 0);
 
-        Columns result;
+        MutableColumns result;
         result.resize(1);
 
-        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, 0, result);
+        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, result);
         if (!rows_read)
         {
             LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
@@ -2535,7 +2558,7 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
     /// `getMinMaxIndex` build, and the in-place merge/update sites in MergeTask): here it is either not
     /// yet populated (merge/mutation) or would be reset again later (zero-level virtual columns).
     if (info.isPatch())
-        reallocateByCopy(source_parts_set);
+        reallocateByCopy(patch_part_index);
 }
 
 void IMergeTreeDataPart::loadColumnsSubstreams()
@@ -3489,10 +3512,10 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
-    Columns result;
+    MutableColumns result;
     result.resize(1);
-    reader->readRows(0, false, 0, 0, result);
-    return result[0];
+    reader->readRows(0, false, 0, result);
+    return std::move(result[0]);
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

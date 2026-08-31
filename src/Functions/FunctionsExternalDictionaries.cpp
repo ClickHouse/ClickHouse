@@ -185,13 +185,13 @@ SELECT
     (number, toDate('2019-05-20')),
     dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
 FROM system.numbers LIMIT 5 FORMAT TabSeparated;
-)", R"(
-(0,'2019-05-20')  \N
-(1,'2019-05-20')  First
-(2,'2019-05-20')  Second
-(3,'2019-05-20')  Third
-(4,'2019-05-20')  \N
-)"}};
+)", R"DOCS_MD(
+(0,'2019-05-20')	\N
+(1,'2019-05-20')	First
+(2,'2019-05-20')	Second
+(3,'2019-05-20')	Third
+(4,'2019-05-20')	\N
+)DOCS_MD"}};
         FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
@@ -216,9 +216,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id S
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 )",
 R"(
-┌─dictGetUInt8⋯_value', 1)─┐
-│                      100 │
-└──────────────────────────┘
+┌─dictGetUInt8('all_types_dict', 'UInt8_value', 1)─┐
+│                                              100 │
+└──────────────────────────────────────────────────┘
 )"
             }
         };
@@ -249,12 +249,12 @@ SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
 SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
 )",
 R"(
-┌─dictGetUInt8⋯_value', 1)─┐
-│                      100 │
-└──────────────────────────┘
-┌─dictGetUInt8⋯e', 999, 0)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictGetUInt8('all_types_dict', 'UInt8_value', 1)─┐
+│                                              100 │
+└──────────────────────────────────────────────────┘
+┌─dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0)─┐
+│                                                              0 │
+└────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -279,9 +279,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 )",
 R"(
-┌─dictGetUInt1⋯_value', 1)─┐
-│                     5000 │
-└──────────────────────────┘
+┌─dictGetUInt16('all_types_dict', 'UInt16_value', 1)─┐
+│                                               5000 │
+└────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -311,12 +311,12 @@ SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
 SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
 )",
 R"(
-┌─dictGetUInt1⋯_value', 1)─┐
-│                     5000 │
-└──────────────────────────┘
-┌─dictGetUInt1⋯e', 999, 0)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictGetUInt16('all_types_dict', 'UInt16_value', 1)─┐
+│                                               5000 │
+└────────────────────────────────────────────────────┘
+┌─dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0)─┐
+│                                                                0 │
+└──────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -341,9 +341,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
 )",
 R"(
-┌─dictGetUInt3⋯_value', 1)─┐
-│                  1000000 │
-└──────────────────────────┘
+┌─dictGetUInt32('all_types_dict', 'UInt32_value', 1)─┐
+│                                            1000000 │
+└────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -373,12 +373,12 @@ SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
 SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
 )",
 R"(
-┌─dictGetUInt3⋯_value', 1)─┐
-│                  1000000 │
-└──────────────────────────┘
-┌─dictGetUInt3⋯e', 999, 0)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictGetUInt32('all_types_dict', 'UInt32_value', 1)─┐
+│                                            1000000 │
+└────────────────────────────────────────────────────┘
+┌─dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0)─┐
+│                                                                0 │
+└──────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -403,9 +403,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 )",
 R"(
-┌─dictGetUInt6⋯_value', 1)─┐
-│      9223372036854775807 │
-└──────────────────────────┘
+┌─dictGetUInt64('all_types_dict', 'UInt64_value', 1)─┐
+│                                9223372036854775807 │
+└────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -435,12 +435,12 @@ SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 )",
 R"(
-┌─dictGetUInt6⋯_value', 1)─┐
-│      9223372036854775807 │
-└──────────────────────────┘
-┌─dictGetUInt6⋯e', 999, 0)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictGetUInt64('all_types_dict', 'UInt64_value', 1)─┐
+│                                9223372036854775807 │
+└────────────────────────────────────────────────────┘
+┌─dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0)─┐
+│                                                                0 │
+└──────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -465,9 +465,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOU
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 )",
 R"(
-┌─dictGetInt8(⋯_value', 1)─┐
-│                     -100 │
-└──────────────────────────┘
+┌─dictGetInt8('all_types_dict', 'Int8_value', 1)─┐
+│                                           -100 │
+└────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -497,12 +497,12 @@ SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
 SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
 )",
 R"(
-┌─dictGetInt8(⋯_value', 1)─┐
-│                     -100 │
-└──────────────────────────┘
-┌─dictGetInt8O⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
+┌─dictGetInt8('all_types_dict', 'Int8_value', 1)─┐
+│                                           -100 │
+└────────────────────────────────────────────────┘
+┌─dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1)─┐
+│                                                            -1 │
+└───────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -527,9 +527,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id S
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
 )",
 R"(
-┌─dictGetInt16⋯_value', 1)─┐
-│                    -5000 │
-└──────────────────────────┘
+┌─dictGetInt16('all_types_dict', 'Int16_value', 1)─┐
+│                                            -5000 │
+└──────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -559,12 +559,12 @@ SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
 SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
 )",
 R"(
-┌─dictGetInt16⋯_value', 1)─┐
-│                    -5000 │
-└──────────────────────────┘
-┌─dictGetInt16⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
+┌─dictGetInt16('all_types_dict', 'Int16_value', 1)─┐
+│                                            -5000 │
+└──────────────────────────────────────────────────┘
+┌─dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1)─┐
+│                                                              -1 │
+└─────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -588,9 +588,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id S
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 )",
 R"(
-┌─dictGetInt32⋯_value', 1)─┐
-│                -1000000  │
-└──────────────────────────┘
+┌─dictGetInt32('all_types_dict', 'Int32_value', 1)─┐
+│                                         -1000000 │
+└──────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -620,12 +620,12 @@ SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
 SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
 )",
 R"(
-┌─dictGetInt32⋯_value', 1)─┐
-│                -1000000  │
-└──────────────────────────┘
-┌─dictGetInt32⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
+┌─dictGetInt32('all_types_dict', 'Int32_value', 1)─┐
+│                                         -1000000 │
+└──────────────────────────────────────────────────┘
+┌─dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1)─┐
+│                                                              -1 │
+└─────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -650,9 +650,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id S
 SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
 )",
 R"(
-┌─dictGetInt64⋯_value', 1)───┐
-│       -9223372036854775807 │
-└────────────────────────────┘
+┌─dictGetInt64('all_types_dict', 'Int64_value', 1)─┐
+│                             -9223372036854775807 │
+└──────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -682,12 +682,12 @@ SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
 SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
 )",
 R"(
-┌─dictGetInt64⋯_value', 1)─┐
-│     -9223372036854775808 │
-└──────────────────────────┘
-┌─dictGetInt64⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
+┌─dictGetInt64('all_types_dict', 'Int64_value', 1)─┐
+│                             -9223372036854775808 │
+└──────────────────────────────────────────────────┘
+┌─dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1)─┐
+│                                                              -1 │
+└─────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -711,9 +711,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY 
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 )",
 R"(
-┌─dictGetFloat⋯_value', 1)─┐
-│               -123.123   │
-└──────────────────────────┘
+┌─dictGetFloat32('all_types_dict', 'Float32_value', 1)─┐
+│                                             -123.123 │
+└──────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -772,9 +772,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY 
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
 )",
 R"(
-┌─dictGetFloat⋯_value', 1)─┐
-│                 -123.123 │
-└──────────────────────────┘
+┌─dictGetFloat64('all_types_dict', 'Float64_value', 1)─┐
+│                                             -123.123 │
+└──────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -804,12 +804,12 @@ SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
 SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
 )",
 R"(
-┌─dictGetFloat⋯_value', 1)─┐
-│            987654.123456 │
-└──────────────────────────┘
-┌─dictGetFloat⋯, 999, nan)─┐
-│                      nan │
-└──────────────────────────┘
+┌─dictGetFloat64('all_types_dict', 'Float64_value', 1)─┐
+│                                        987654.123456 │
+└──────────────────────────────────────────────────────┘
+┌─dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan)─┐
+│                                                                  nan │
+└──────────────────────────────────────────────────────────────────────┘
  )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -834,9 +834,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOU
 SELECT dictGetDate('all_types_dict', 'Date_value', 1)
 )",
 R"(
-┌─dictGetDate(⋯_value', 1)─┐
-│               2020-01-01 │
-└──────────────────────────┘
+┌─dictGetDate('all_types_dict', 'Date_value', 1)─┐
+│                                     2020-01-01 │
+└────────────────────────────────────────────────┘
 )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -866,12 +866,12 @@ SELECT dictGetDate('all_types_dict', 'Date_value', 1);
 SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'));
 )",
 R"(
-┌─dictGetDate(⋯_value', 1)─┐
-│               2024-01-15 │
-└──────────────────────────┘
-┌─dictGetDateO⋯70-01-01'))─┐
-│               1970-01-01 │
-└──────────────────────────┘
+┌─dictGetDate('all_types_dict', 'Date_value', 1)─┐
+│                                     2024-01-15 │
+└────────────────────────────────────────────────┘
+┌─dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'))─┐
+│                                                                      1970-01-01 │
+└─────────────────────────────────────────────────────────────────────────────────┘
 )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -896,9 +896,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KE
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
 )",
 R"(
-┌─dictGetDateT⋯_value', 1)─┐
-│      2024-01-15 10:30:00 │
-└──────────────────────────┘
+┌─dictGetDateTime('all_types_dict', 'DateTime_value', 1)─┐
+│                                    2024-01-15 10:30:00 │
+└────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -928,12 +928,12 @@ SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
 SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'));
 )",
 R"(
-┌─dictGetDateT⋯_value', 1)─┐
-│      2024-01-15 10:30:00 │
-└──────────────────────────┘
-┌─dictGetDateT⋯0:00:00'))──┐
-│      1970-01-01 00:00:00 │
-└──────────────────────────┘
+┌─dictGetDateTime('all_types_dict', 'DateTime_value', 1)─┐
+│                                    2024-01-15 10:30:00 │
+└────────────────────────────────────────────────────────┘
+┌─dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'))─┐
+│                                                                                  1970-01-01 00:00:00 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -958,9 +958,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOU
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 )",
 R"(
-┌─dictGetUUID(⋯_value', 1)─────────────┐
-│ 123e4567-e89b-12d3-a456-426614174000 │
-└──────────────────────────────────────┘
+┌─dictGetUUID('all_types_dict', 'UUID_value', 1)─┐
+│ 123e4567-e89b-12d3-a456-426614174000           │
+└────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1020,9 +1020,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOU
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 )",
 R"(
-┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
-│ 192.168.0.1                         │
-└─────────────────────────────────────┘
+┌─dictGetIPv4('all_types_dict', 'IPv4_value', 1)─┐
+│ 192.168.0.1                                    │
+└────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1082,9 +1082,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOU
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
 )",
 R"(
-┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
-│ 2001:db8:85a3::8a2e:370:7334        │
-└─────────────────────────────────────┘
+┌─dictGetIPv6('all_types_dict', 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334                   │
+└────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
@@ -1144,9 +1144,9 @@ CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id
 SELECT dictGetString('all_types_dict', 'String_value', 1)
 )",
 R"(
-┌─dictGetString(⋯_value', 1)─┐
-│ test string                │
-└────────────────────────────┘
+┌─dictGetString('all_types_dict', 'String_value', 1)─┐
+│ test string                                        │
+└────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1264,9 +1264,9 @@ CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHI
 SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 )",
 R"(
-┌─dictGetHiera⋯ionary', 5)─┐
-│ [5,2,1]                  │
-└──────────────────────────┘
+┌─dictGetHierarchy('hierarchical_dictionary', 5)─┐
+│ [5,2,1]                                        │
+└────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
@@ -1300,9 +1300,9 @@ CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHI
 SELECT dictGetRoot('hierarchical_dictionary', 5)
 )",
 R"(
-┌─dictGetRoot(⋯ionary', 5)─┐
-│                        1 │
-└──────────────────────────┘
+┌─dictGetRoot('hierarchical_dictionary', 5)─┐
+│                                         1 │
+└───────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
@@ -1339,12 +1339,12 @@ SELECT dictIsIn('hierarchical_dictionary', 6, 3);
 SELECT dictIsIn('hierarchical_dictionary', 3, 5);
 )",
 R"(
-┌─dictIsIn('hi⋯ary', 6, 3)─┐
-│                        1 │
-└──────────────────────────┘
-┌─dictIsIn('hi⋯ary', 3, 5)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictIsIn('hierarchical_dictionary', 6, 3)─┐
+│                                         1 │
+└───────────────────────────────────────────┘
+┌─dictIsIn('hierarchical_dictionary', 3, 5)─┐
+│                                         0 │
+└───────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_dictIsIn = {1, 1};
@@ -1387,9 +1387,9 @@ CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHI
 SELECT dictGetChildren('hierarchical_dictionary', 2);
 )",
 R"(
-┌─dictGetChild⋯ionary', 2)─┐
-│ [4,5]                    │
-└──────────────────────────┘
+┌─dictGetChildren('hierarchical_dictionary', 2)─┐
+│ [4,5]                                         │
+└───────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_dictGetChildren = {21, 4};
@@ -1442,9 +1442,9 @@ CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHI
 SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
 )",
 R"(
-┌─dictGetDesce⋯ary', 0, 2)─┐
-│ [3,2]                    │
-└──────────────────────────┘
+┌─dictGetDescendants('hierarchical_dictionary', 0, 2)─┐
+│ [3,2]                                               │
+└─────────────────────────────────────────────────────┘
 )"
             }
         };
@@ -1496,12 +1496,12 @@ SELECT dictHas('hierarchical_dictionary', 2);
 SELECT dictHas('hierarchical_dictionary', 7);
 )",
 R"(
-┌─dictHas('hie⋯ionary', 2)─┐
-│                        1 │
-└──────────────────────────┘
-┌─dictHas('hie⋯ionary', 7)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictHas('hierarchical_dictionary', 2)─┐
+│                                     1 │
+└───────────────────────────────────────┘
+┌─dictHas('hierarchical_dictionary', 7)─┐
+│                                     0 │
+└───────────────────────────────────────┘
 )"
             }
         };

@@ -443,7 +443,7 @@ TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
     for (const auto & [path, column] : column_object_with_dynamic_paths.getDynamicPaths())
         dynamic_paths[path] = IColumn::mutate(column);
 
-    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 16);
+    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 4, 16);
     column_object->repairDuplicatesInDynamicPathsAndSharedData(0);
     ASSERT_EQ((*column_object)[0], (Object{{"a", Field(1u)}}));
     ASSERT_EQ((*column_object)[1], (Object{{"a", Field(1u)}, {"b", Field(1u)}, {"c", Field(1u)}}));

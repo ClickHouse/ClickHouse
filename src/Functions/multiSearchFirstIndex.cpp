@@ -36,27 +36,27 @@ REGISTER_FUNCTION(MultiSearchFirstIndex)
         "Usage example",
         "SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server']);",
         R"(
-┌─multiSearchF⋯ 'Server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Case-sensitive behavior",
         "SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server']);",
         R"(
-┌─multiSearchF⋯ 'Server'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "No match found",
         "SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);",
         R"(
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
+│                                                         0 │
+└───────────────────────────────────────────────────────────┘
         )"
     }
     };

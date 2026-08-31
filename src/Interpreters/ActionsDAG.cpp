@@ -534,7 +534,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         all_const);
 }
 
-const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
+static const ActionsDAG::Node & addCastImpl(
+    ActionsDAG & dag, const ActionsDAG::Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context, CastType cast_kind)
 {
     Field cast_type_constant_value(cast_type->getName());
 
@@ -542,11 +543,21 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
     ColumnConstPtr column = type->createColumnConst(0, cast_type_constant_value);
     auto name = calculateConstantActionNodeName(cast_type_constant_value);
 
-    const auto * cast_type_constant_node = &addColumn(std::move(column), std::move(type), std::move(name));
+    const auto * cast_type_constant_node = &dag.addColumn(std::move(column), std::move(type), std::move(name));
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, CastType::nonAccurate, {}, context);
+    auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, cast_kind, {}, context);
 
-    return addFunction(func_base_cast, std::move(children), result_name);
+    return dag.addFunction(func_base_cast, std::move(children), result_name);
+}
+
+const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
+{
+    return addCastImpl(*this, node_to_cast, cast_type, std::move(result_name), std::move(context), CastType::nonAccurate);
+}
+
+const ActionsDAG::Node & ActionsDAG::addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
+{
+    return addCastImpl(*this, node_to_cast, cast_type, std::move(result_name), std::move(context), CastType::accurateOrNull);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
