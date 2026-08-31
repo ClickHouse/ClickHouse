@@ -67,6 +67,7 @@ extern const Event ASTFuzzerOracleCodecRoundtripChecks;
 extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
 extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
 extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
+extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2866,6 +2867,63 @@ bool QueryOracleChecker::checkLowCardinalityEquivalence(const ASTSelectQuery &, 
     }
 
     LOG_TRACE(logger, "LowCardinality-equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkSampleEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: SAMPLE 1.0 reads the entire table (sample coefficient 1 = 100%), so on a
+    /// table with a SAMPLE BY key the same query with SAMPLE 1.0 must return the identical multiset
+    /// as without it; a difference is a real sampling bug. Rate-limited.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("sample", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    /// SAMPLE BY must be part of the primary key.
+    if (!fixture.execute(
+            "CREATE TABLE " + tbl + " (k UInt64, v Int64, s String) ENGINE = MergeTree"
+            " ORDER BY (intHash32(k)) SAMPLE BY intHash32(k)"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, toInt64(number) * 2 - 100, toString(number % 61) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "SAMPLE-equivalence oracle: {}", tbl);
+
+    static const std::array<std::pair<std::string_view, std::string_view>, 2> query_shapes = {{
+        {"SELECT k, v, s FROM ", ""},
+        {"SELECT count(), sum(v) FROM ", ""},
+    }};
+
+    for (const auto & [prefix, suffix] : query_shapes)
+    {
+        const String q_full = String(prefix) + tbl + String(suffix);
+        const String q_sample = String(prefix) + tbl + " SAMPLE 1.0" + String(suffix);
+        auto full_rows_opt = OracleExec::executeRows(q_full, context, ResultShape::SortedBag);
+        auto sample_rows_opt = OracleExec::executeRows(q_sample, context, ResultShape::SortedBag);
+        if (!full_rows_opt || !sample_rows_opt)
+            return false;
+
+        if (!OracleCompare::equal(*full_rows_opt, *sample_rows_opt))
+        {
+            fixture.preserve();
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+                "SAMPLE-equivalence oracle mismatch!\n"
+                "no SAMPLE ({} rows): {}\n"
+                "SAMPLE 1.0 ({} rows): {}\n{}",
+                full_rows_opt->size(), q_full,
+                sample_rows_opt->size(), q_sample,
+                OracleCompare::diffSummary(*full_rows_opt, *sample_rows_opt));
+        }
+    }
+
+    LOG_TRACE(logger, "SAMPLE-equivalence oracle passed");
     return true;
 }
 
