@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool compile_expressions;
     extern const SettingsBool query_plan_direct_read_from_text_index;
+    extern const SettingsBool use_concurrency_control;
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -181,6 +182,14 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
     {
         settings[Setting::query_plan_direct_read_from_text_index] = false;
         adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
+    }
+    /// The concurrency control currently can cause starvation for cases when multiple tasks from one
+    /// query are executed on the same node and periodically wait on reads and writes to exchange sockets
+    /// while holding CPU slots.
+    if (settings[Setting::use_concurrency_control])
+    {
+        settings[Setting::use_concurrency_control] = false;
+        adjusted.emplace_back("use_concurrency_control = 0");
     }
 
     if (!adjusted.empty())
