@@ -43,9 +43,11 @@ SELECT 'v2 utc', any(toString(d)) FROM dynamic_datetime_v2
 SELECT 'v2 tokyo again', any(toString(d)) FROM dynamic_datetime_v2
     SETTINGS session_timezone = 'Asia/Tokyo', max_threads = 16;
 
--- All rows of one query must render identically, however many threads read them.
+-- All rows of one query must render identically, however many threads read them. The zone here is
+-- not the server's, so a thread that fell back to the server default also shows up as a second
+-- rendering.
 SELECT 'v2 renderings per query', count(DISTINCT toString(d)) FROM dynamic_datetime_v2
-    SETTINGS session_timezone = 'UTC', max_threads = 16;
+    SETTINGS session_timezone = 'Asia/Tokyo', max_threads = 16;
 
 -- Control on byte-identical data written with the current default version. It answers in the
 -- reading session's time zone both before and after this fix, so a passing v2 arm above is not

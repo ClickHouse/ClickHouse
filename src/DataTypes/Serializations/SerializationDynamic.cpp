@@ -377,6 +377,8 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         UInt64 structure_version = 0;
         readBinaryLittleEndian(structure_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(structure_version);
+        /// A variant name that declares no time zone, `DateTime` or `DateTime64(s)`, pins none, so the two
+        /// name-keyed branches below build such a type per read instead of taking one from a thread-local cache.
         if (structure_state->structure_version.value == SerializationVersion::FLATTENED)
         {
             /// Read the flattened list of types.
@@ -426,8 +428,6 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             }
             else
             {
-                /// These instances become the column's data type, and a `DateTime`/`DateTime64` with no declared zone
-                /// captures the ambient one at construction, so they must not come from a process-wide name-keyed memo.
                 String data_type_name;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
