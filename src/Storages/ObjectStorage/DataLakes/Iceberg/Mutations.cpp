@@ -733,18 +733,34 @@ void mutate(
         }
         /// The mutation was validated against one incarnation of the table, and the columns and
         /// the sample block below still come from it. Committing on top of a metadata file that
-        /// describes a different schema would execute a mutation that was never validated for it,
-        /// so fail instead: the statement can be retried against the new schema.
+        /// describes a different table, or a different schema of the same table, would execute a
+        /// mutation that was never validated for it, so fail instead: the statement can be retried
+        /// against the table that is in storage now.
+        ///
+        /// The incarnation has to be compared as well as the schema id: a table dropped and
+        /// recreated at the same root restarts its own `schema-id` numbering, so the validated
+        /// incarnation and its replacement can both be at `schema-id` 0 while describing entirely
+        /// different fields.
         if (storage_metadata->datalake_table_state.has_value())
         {
             const auto * validated_state = std::get_if<TableStateSnapshot>(&*storage_metadata->datalake_table_state);
-            if (validated_state && validated_state->schema_id != static_cast<Int32>(current_schema_id))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The schema of table {} changed from {} to {} while the mutation was running. Retry the mutation.",
-                    storage_id.getNameForLogs(),
-                    validated_state->schema_id,
-                    current_schema_id);
+            if (validated_state)
+            {
+                if (validated_state->trusted_uuid_incarnation.has_value()
+                    && *validated_state->trusted_uuid_incarnation != persistent_table_components.trusted_table_uuid->getIncarnation())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Table {} was replaced while the mutation was running. Retry the mutation.",
+                        storage_id.getNameForLogs());
+
+                if (validated_state->schema_id != static_cast<Int32>(current_schema_id))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The schema of table {} changed from {} to {} while the mutation was running. Retry the mutation.",
+                        storage_id.getNameForLogs(),
+                        validated_state->schema_id,
+                        current_schema_id);
+            }
         }
 
         auto fresh_storage_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_metadata);

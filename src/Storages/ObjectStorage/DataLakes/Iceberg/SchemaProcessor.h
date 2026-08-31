@@ -164,22 +164,42 @@ public:
     {
     }
 
+    /// The processor of the incarnation that is current right now. Only for callers that have no
+    /// pinned state to be consistent with, such as `IcebergMetadata::update` itself.
     IcebergSchemaProcessorPtr get() const
     {
         SharedLockGuard lock(mutex);
         return processor;
     }
 
-    void replaceWithFreshInstance()
+    /// The processor of the incarnation a query was validated against.
+    ///
+    /// A query pins one `TableStateSnapshot` from analysis through execution, and the schemas it
+    /// resolves at execution time must be the schemas of the incarnation it was analyzed for. The
+    /// cell is shared and mutable, so by then a concurrent query may have moved it to a table that
+    /// replaced the analyzed one in place - and a recreated table restarts its own `schema-id`
+    /// numbering, so registering the pinned incarnation's schemas in the replacement's processor
+    /// would either collide with an id it has already registered or poison it for the queries that
+    /// follow. Neither outcome is recoverable here, so the query fails and is retried against the
+    /// table that is in storage now.
+    ///
+    /// A pin that carries no incarnation - one deserialized on another server, whose cell counts
+    /// its own incarnations - cannot be checked and is served the current processor.
+    IcebergSchemaProcessorPtr getForPinnedIncarnation(std::optional<UInt64> pinned_incarnation) const;
+
+    void replaceWithFreshInstance(UInt64 new_incarnation)
     {
         std::lock_guard lock(mutex);
         processor = std::make_shared<IcebergSchemaProcessor>(allow_geo_parser);
+        incarnation = new_incarnation;
     }
 
 private:
     const bool allow_geo_parser;
     mutable SharedMutex mutex;
     IcebergSchemaProcessorPtr processor TSA_GUARDED_BY(mutex);
+    /// The `TrustedTableUuid` incarnation `processor` describes.
+    UInt64 incarnation TSA_GUARDED_BY(mutex) = 0;
 };
 
 using SharedSchemaProcessorPtr = std::shared_ptr<SharedSchemaProcessor>;

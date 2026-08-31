@@ -982,6 +982,19 @@ void generateManifestList(
     writer.close();
 }
 
+void IcebergStorageSink::checkTableWasNotReplaced() const
+{
+    /// A change of incarnation means the table this write was validated for was dropped and
+    /// recreated at the same root, and `sample_block` describes the table that is gone. Comparing
+    /// schema ids does not catch it: the recreated table restarts its own `schema-id` numbering
+    /// and legitimately reuses the same id for different fields.
+    if (pinned_incarnation.has_value() && *pinned_incarnation != persistent_table_components.trusted_table_uuid->getIncarnation())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table {} was replaced while the write was running. Retry the write.",
+            table_id.getNameForLogs());
+}
+
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -990,7 +1003,8 @@ IcebergStorageSink::IcebergStorageSink(
     ContextPtr context_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     const Iceberg::PersistentTableComponents & persistent_table_components_,
-    const StorageID & table_id_)
+    const StorageID & table_id_,
+    std::optional<UInt64> validated_incarnation_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
@@ -999,10 +1013,12 @@ IcebergStorageSink::IcebergStorageSink(
     , catalog(catalog_)
     , table_id(table_id_)
     , persistent_table_components(persistent_table_components_)
-    , pinned_incarnation(persistent_table_components_.trusted_table_uuid->getIncarnation())
+    , pinned_incarnation(validated_incarnation_)
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
+    checkTableWasNotReplaced();
+
     auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
@@ -1320,15 +1336,7 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.metadata_compression_method,
                 /* ignore_explicit_metadata_file_path */ true);
 
-            /// A change of incarnation means the table this write was validated for was dropped
-            /// and recreated at the same root. Comparing schema ids below does not catch it: the
-            /// recreated table restarts its own `schema-id` numbering and legitimately reuses the
-            /// same id for different fields.
-            if (persistent_table_components.trusted_table_uuid->getIncarnation() != pinned_incarnation)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Table {} was replaced during the write operation, try again",
-                    table_id.getNameForLogs());
+            checkTableWasNotReplaced();
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 

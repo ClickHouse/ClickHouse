@@ -40,6 +40,14 @@ struct PersistentTableComponents
     /// processor when the table is replaced, and the previous one stays alive for its holders.
     IcebergSchemaProcessorPtr getSchemaProcessor() const { return shared_schema_processor->get(); }
 
+    /// The schema processor of the incarnation a query was validated against, which is the one
+    /// every execution-time schema lookup of that query has to go through. Throws when the table
+    /// was replaced in the meantime. See `SharedSchemaProcessor::getForPinnedIncarnation`.
+    IcebergSchemaProcessorPtr getSchemaProcessorForPinnedIncarnation(std::optional<UInt64> pinned_incarnation) const
+    {
+        return shared_schema_processor->getForPinnedIncarnation(pinned_incarnation);
+    }
+
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).
     void invalidateMetadataCache() const

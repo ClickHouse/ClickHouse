@@ -133,6 +133,7 @@ public:
         const StorageID & /*table_id*/,
         ObjectStoragePtr /*object_storage*/,
         StorageObjectStorageConfigurationPtr /*configuration*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const std::optional<FormatSettings> & /*format_settings*/,
         ContextPtr /*context*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/)

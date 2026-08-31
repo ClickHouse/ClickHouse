@@ -303,7 +303,7 @@ void IcebergMetadata::update(const ContextPtr & local_context)
         /// table's mapping. Install a fresh processor for the queries that follow; a query that
         /// is already running keeps the previous one alive and finishes against the incarnation
         /// it was planned for.
-        persistent_components.shared_schema_processor->replaceWithFreshInstance();
+        persistent_components.shared_schema_processor->replaceWithFreshInstance(trusted_table_uuid.getIncarnation());
 
         /// The content cells keyed by the previous UUID are unreachable once the trusted UUID
         /// moves, but the latest-version cells under the previous UUID and under the table path
@@ -995,7 +995,9 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
-        metadata_object, *table_state_snapshot.snapshot_id, persistent_components.getSchemaProcessor());
+        metadata_object,
+        *table_state_snapshot.snapshot_id,
+        persistent_components.getSchemaProcessorForPinnedIncarnation(table_state_snapshot.trusted_uuid_incarnation));
 
     return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
@@ -1414,7 +1416,8 @@ ObjectIterator IcebergMetadata::iterate(
 NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    return *persistent_components.getSchemaProcessor()->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
+    return *persistent_components.getSchemaProcessorForPinnedIncarnation(actual_table_state_snapshot.trusted_uuid_incarnation)
+                ->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
 std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -1430,8 +1433,9 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(
-        ColumnsDescription{*persistent_components.getSchemaProcessor()->getClickHouseTableSchemaById(iceberg_state.schema_id)});
+    result->setColumns(ColumnsDescription{
+        *persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_state.trusted_uuid_incarnation)
+             ->getClickHouseTableSchemaById(iceberg_state.schema_id)});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
@@ -1584,13 +1588,33 @@ SinkToStoragePtr IcebergMetadata::write(
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
     StorageObjectStorageConfigurationPtr configuration,
+    const StorageMetadataPtr & metadata_snapshot,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+        /// The incarnation the INSERT was validated for, taken from the metadata snapshot the
+        /// interpreter pinned rather than from the shared cell, which a concurrent query may
+        /// already have moved on to a table that replaced this one in place.
+        std::optional<UInt64> validated_incarnation;
+        if (metadata_snapshot && metadata_snapshot->datalake_table_state.has_value())
+        {
+            if (const auto * iceberg_state = std::get_if<TableStateSnapshot>(&*metadata_snapshot->datalake_table_state))
+                validated_incarnation = iceberg_state->trusted_uuid_incarnation;
+        }
+
+        return std::make_shared<IcebergStorageSink>(
+            object_storage,
+            configuration,
+            format_settings,
+            sample_block,
+            context,
+            catalog,
+            persistent_components,
+            table_id,
+            validated_incarnation);
     }
     else
     {
@@ -1635,7 +1659,8 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
         auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
         iceberg_table_state = std::make_shared<TableStateSnapshot>(actual_table_state_snapshot);
     }
-    return persistent_components.getSchemaProcessor()->getColumnMapperById(iceberg_table_state->schema_id);
+    return persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_table_state->trusted_uuid_incarnation)
+        ->getColumnMapperById(iceberg_table_state->schema_id);
 }
 
 KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const

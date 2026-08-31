@@ -226,6 +226,7 @@ public:
         SharedHeader /* sample_block */,
         const StorageID & /* table_id */,
         ObjectStoragePtr /* object_storage */,
+        const StorageMetadataPtr & /* metadata_snapshot */,
         const std::optional<FormatSettings> & /* format_settings */,
         ContextPtr /* context */,
         std::shared_ptr<DataLake::ICatalog> /* catalog */)
