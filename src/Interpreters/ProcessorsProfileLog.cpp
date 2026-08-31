@@ -12,6 +12,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Port.h>
+#include <Processors/IProcessor.h>
 #include <QueryPipeline/printPipeline.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
@@ -93,9 +94,9 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(step_uniq_id);
 }
 
-VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors)
+VectorWithMemoryTracking<ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors)
 {
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> infos;
+    VectorWithMemoryTracking<ProcessorsProfileLogInfo> infos;
     infos.reserve(processors.size());
 
     for (const auto & processor : processors)
@@ -106,7 +107,7 @@ VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> getProcessorsProf
     return infos;
 }
 
-void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump)
+void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump)
 {
     const Settings & settings = context->getSettingsRef();
     if (settings[Setting::log_processors_profiles])

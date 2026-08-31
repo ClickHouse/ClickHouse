@@ -95,6 +95,10 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_IOBufferAllocBytes` ([UInt64](/ja/reference/data-types/int-uint)) — I/O バッファ (ReadBuffer/WriteBuffer 用) に割り当てられたバイト数。
 * `ProfileEvent_ArenaAllocChunks` ([UInt64](/ja/reference/data-types/int-uint)) — メモリアリーナ (GROUP BY などの操作で使用) に割り当てられた chunk 数
 * `ProfileEvent_ArenaAllocBytes` ([UInt64](/ja/reference/data-types/int-uint)) — メモリアリーナ (GROUP BY などの操作で使用) に割り当てられたバイト数
+* `ProfileEvent_FiberStackAllocs` ([UInt64](/ja/reference/data-types/int-uint)) — fiber に割り当てられたスタック数 (fiber はリモートレプリカとの非同期通信に使用されます) 。
+* `ProfileEvent_FiberStackAllocBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ガードページを含む、ファイバースタックに割り当てられたバイト数 (ガードページはデバッグビルドおよび sanitizer ビルドでのみ使用されます) 。
+* `ProfileEvent_FiberStackAllocNanoseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイバースタックの割り当てに費やされた時間。アロケータまたはカーネルで競合が発生していない限り、通常、単一の割り当ては 1 マイクロ秒未満であるため、ナノ秒が使用されます。
+* `ProfileEvent_FiberStackFreeNanoseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイバースタックの解放に費やされた時間。
 * `ProfileEvent_FunctionExecute` ([UInt64](/ja/reference/data-types/int-uint)) — SQL の通常関数呼び出し回数 (SQL 関数はブロックごとに呼び出されるため、この数値はブロック数を表します) 。
 * `ProfileEvent_TableFunctionExecute` ([UInt64](/ja/reference/data-types/int-uint)) — テーブル関数の呼び出し回数。
 * `ProfileEvent_DefaultImplementationForNullsRows` ([UInt64](/ja/reference/data-types/int-uint)) — 関数実行時に、NULL 値用のデフォルト実装で処理された行数
@@ -159,19 +163,19 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/ja/reference/data-types/int-uint)) — 読み取る posting list の数がしきい値を超えたため、テキスト索引でのパターンベースの辞書スキャンが破棄された回数。
 * `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/ja/reference/data-types/int-uint)) — テキスト索引に対して汎用排除検索アルゴリズムが使用された回数。
 * `ProfileEvent_TextIndexGenericExclusionSearchStepLimitReached` ([UInt64](/ja/reference/data-types/int-uint)) — テキスト索引に対する汎用排除検索が merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps に達し、それ以上分割せずに残りのマーク範囲を受け入れた回数。
-* `ProfileEvent_QueryConditionCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ条件 cache 内でエントリが見つかった回数 (その場合、mark の読み取りをスキップできます) 。SETTING `use_query_condition_cache = 1` を指定した SELECT クエリでのみ更新されます。
-* `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ条件 cache 内でエントリが見つからなかった回数 (その場合、mark の読み取りはスキップできません) 。SETTING `use_query_condition_cache = 1` を指定した SELECT クエリでのみ更新されます。
+* `ProfileEvent_QueryConditionCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ条件 cache 内でエントリが見つかった回数 (その場合、mark の読み取りをスキップできます) 。SETTING `use&#95;query&#95;condition&#95;cache = 1` を指定した SELECT クエリでのみ更新されます。
+* `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ条件 cache 内でエントリが見つからなかった回数 (その場合、mark の読み取りはスキップできません) 。SETTING use&#95;query&#95;condition&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
 * `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — 暗号化ヘッダーのバイト列が暗号化ヘッダーキャッシュで見つかったため、ソースからヘッダーを読み取らずに済んだ回数。
 * `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — 暗号化ヘッダーのバイト列が暗号化ヘッダーキャッシュで見つからず、ソースから読み取られた回数。
-* `ProfileEvent_QueryCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache 内でクエリ結果が見つかった回数 (その場合、クエリの計算は回避されます) 。SETTING `use_query_cache = 1` を指定した SELECT クエリでのみ更新されます。
-* `ProfileEvent_QueryCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache 内でクエリ結果が見つからなかった回数 (その場合、クエリの計算が必要になります) 。SETTING `use_query_cache = 1` を指定した SELECT クエリでのみ更新されます。
+* `ProfileEvent_QueryCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache 内でクエリ結果が見つかった回数 (その場合、クエリの計算は回避されます) 。SETTING use&#95;query&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
+* `ProfileEvent_QueryCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache 内でクエリ結果が見つからなかった回数 (その場合、クエリの計算が必要になります) 。SETTING use&#95;query&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
 * `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ja/reference/data-types/int-uint)) — 見つかったクエリ cache エントリの経過時間の合計 (秒) 。この値はヒット時とミス時の両方で設定されます。
 * `ProfileEvent_QueryCacheReadRows` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache から読み取られた行数。
 * `ProfileEvent_QueryCacheReadBytes` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache から読み取られた (非圧縮の) バイト数。
 * `ProfileEvent_QueryCacheWrittenRows` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache に保存された行数。
 * `ProfileEvent_QueryCacheWrittenBytes` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache に保存された (非圧縮の) バイト数
 * `ProfileEvent_CreatedReadBufferOrdinary` ([UInt64](/ja/reference/data-types/int-uint)) — データ読み取り用に通常の読み取りバッファが作成された回数 (ほかの読み取り method との間で選択する際) 。
-* `ProfileEvent_CreatedReadBufferDirectIO` ([UInt64](/ja/reference/data-types/int-uint)) — データ読み取り用に `O_DIRECT` を使用する読み取りバッファが作成された回数 (ほかの読み取り method との間で選択する際) 。
+* `ProfileEvent_CreatedReadBufferDirectIO` ([UInt64](/ja/reference/data-types/int-uint)) — データ読み取り用に O&#95;DIRECT を使用する読み取りバッファが作成された回数 (ほかの読み取り method との間で選択する際) 。
 * `ProfileEvent_CreatedReadBufferDirectIOFailed` ([UInt64](/ja/reference/data-types/int-uint)) — データ読み取り用に O&#95;DIRECT を使用する読み取りバッファの作成が試みられた回数です (他の読み取り方法を選択する際) 。ただし、OS がそれを許可せず (ファイルシステムのサポート不足やその他の理由により) 、通常の読み取り方法にフォールバックした回数を示します。
 * `ProfileEvent_CreatedReadBufferMMap` ([UInt64](/ja/reference/data-types/int-uint)) — データ読み取り用に &#39;mmap&#39; を使用する読み取りバッファが作成された回数です (他の読み取り方法を選択する際) 。
 * `ProfileEvent_CreatedReadBufferMMapFailed` ([UInt64](/ja/reference/data-types/int-uint)) — データ読み取り用に &#39;mmap&#39; を使用する読み取りバッファの作成が試みられた回数です (他の読み取り方法を選択する際) 。ただし、OS がそれを許可せず (ファイルシステムのサポート不足やその他の理由により) 、通常の読み取り方法にフォールバックした回数を示します。
@@ -262,14 +266,14 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_QueryRemoteReadThrottlerBytes` ([UInt64](/ja/reference/data-types/int-uint)) — &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39; スロットラーを通過したバイト数。
 * `ProfileEvent_QueryRemoteReadThrottlerSleepMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — クエリが &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39; のスロットリングに従うために待機していた合計時間。
 * `ProfileEvent_ReaderExecutorSourceRequests` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor がソース側で開始したリクエスト数 (ライブバッファの再利用を除く) 。
-* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/ja/reference/data-types/int-uint)) — すべてのキャッシュ階層でミスした後に ReaderExecutor がソースに発行した物理バイト数 (フォアグラウンドおよびバックグラウンドのプリフェッチと、後で破棄されて無駄になったプリフェッチのバイト数を含む) 。コンシューマーに提供されたバイト数ではありません。ReaderExecutorRequestedBytes を参照してください。
-* `ProfileEvent_ReaderExecutorRequestedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor が読み取りリクエストに提供した有用なバイト数 (要求されたウィンドウのペイロード。過剰読み取りとキャッシュへのライトバックを除く) 。モデル化されたバイト当たりコスト KPI の分母です (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes) 。
+* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/ja/reference/data-types/int-uint)) — すべてのキャッシュ階層でミスした後に ReaderExecutor がソースに発行した物理バイト数 (フォアグラウンドおよびバックグラウンドのプリフェッチと、後で破棄されて無駄になったプリフェッチのバイト数を含む) 。コンシューマーに提供されたバイト数ではありません。ReaderExecutorDeliveredBytes を参照してください。
+* `ProfileEvent_ReaderExecutorDeliveredBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor が読み取りリクエストに提供した有用なバイト数 (要求されたウィンドウのペイロード。過剰読み取りとキャッシュへのライトバックを除く) 。モデル化されたバイト当たりコスト KPI の分母です (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes) 。
 * `ProfileEvent_ReaderExecutorCacheGetRequests` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor における ICacheHandle::get の呼び出し回数。ReaderExecutor のキャッシュ階層が導入されるまでゼロです。
 * `ProfileEvent_ReaderExecutorCachePopulateRequests` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor での ICacheHandle::put 呼び出し回数。ReaderExecutor のキャッシュ階層が導入されるまで 0 です。
 * `ProfileEvent_ReaderExecutorIncompleteConnections` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor がソース接続を右端まで読み切る前に破棄した回数。この接続はプールで再利用できないため、再確立が必要になります。ReaderExecutor によるライブソースバッファの再利用が導入されるまで 0 です。
 * `ProfileEvent_ReaderExecutorWorkMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor::readNextWindow 内で費やされた実時間の合計 (提供するウィンドウのオープン、シーク、読み取り) 。クエリの読み取りレイテンシに直接影響します。
 * `ProfileEvent_ReaderExecutorDecryptMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor が提供するペイロードをインプレースで復号するのに費やした時間 (CTR、位置指定可能) 。暗号化されていない読み取り、および SSL なしのビルドでは 0 です。
-* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor の読み取りにおけるモデル化された I/O コスト。読み取りパスの最適性を示す合成プロキシ KPI であり、測定レイテンシではありません。ヒューリスティックな S3 重みを使用した上記カウンターの加重合計: ソースリクエストあたり 30ms + 未完了接続あたり 5ms + ソースから転送された MiB あたり 20ms (有用なペイロードと過剰読み取り) + cache put あたり 0.1ms + cache get あたり 0.05ms。負荷に依存しないバイトあたりのコストを得るには、ReaderExecutorRequestedBytes で除算します。Experimental であり、Experimental な ReaderExecutor を追跡します。
+* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor の読み取りにおけるモデル化された I/O コスト。読み取りパスの最適性を示す合成プロキシ KPI であり、測定レイテンシではありません。ヒューリスティックな S3 重みを使用した上記カウンターの加重合計: ソースリクエストあたり 30ms + 未完了接続あたり 5ms + ソースから転送された MiB あたり 20ms (有用なペイロードと過剰読み取り) + cache put あたり 0.1ms + cache get あたり 0.05ms。負荷に依存しないバイトあたりのコストを得るには、ReaderExecutorDeliveredBytes で除算します。Experimental であり、Experimental な ReaderExecutor を追跡します。
 * `ProfileEvent_ReaderExecutorLongConnectionOpened` ([UInt64](/ja/reference/data-types/int-uint)) — 逐次読み取りを最適化するために ReaderExecutor が開いた長期ソース接続数。
 * `ProfileEvent_ReaderExecutorLongConnectionHits` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor がすでに開かれている長期ソース接続から読み取って提供したウィンドウ数。
 * `ProfileEvent_ReaderExecutorLongConnectionFallbacks` ([UInt64](/ja/reference/data-types/int-uint)) — ReaderExecutor が長期接続を必要としたものの、利用可能なスロットがなかったため単発読み取りにフォールバックした回数。
@@ -291,6 +295,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/ja/reference/data-types/int-uint)) — すべての読み取りタスクで適用されたパッチパートの総数
 * `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/ja/reference/data-types/int-uint)) — すべての読み取りタスクで Merge モードにより適用されたパッチパートの総数
 * `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/ja/reference/data-types/int-uint)) — すべての読み取りタスクで Join モードにより適用されたパッチパートの総数
+* `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/ja/reference/data-types/int-uint)) — すべての読み取りタスクで MergeOnKey モード (v2) により適用されたパッチパートの総数
 * `ProfileEvent_PatchesReadRows` ([UInt64](/ja/reference/data-types/int-uint)) — パッチパートから読み取られた行の総数
 * `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — パッチパートから読み取られた非圧縮バイト数の総計
 * `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/ja/reference/data-types/int-uint)) — Join モードのパッチパートを適用する際に hash table に追加された行の総数
@@ -298,6 +303,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — パッチパートの読み取りに費やされた合計時間
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Merge モードのパッチパートを適用するための索引構築に費やされた合計時間
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Join モードのパッチパートを適用するための索引および hash table の構築に費やされた合計時間
+* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — applyPatchesMergeOnKey のソートキー・マージループ内で費やされた合計時間
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — パッチパートの索引分析に費やされた合計時間
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/ja/reference/data-types/int-uint)) — オンザフライで何らかの mutation が適用された読み取りタスクの総数
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/ja/reference/data-types/int-uint)) — すべての読み取りタスクでオンザフライ適用された mutation の総数
@@ -896,6 +902,21 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/ja/reference/data-types/int-uint)) — RemoteReadBufferCache 内のローカル cache buffer から読み取られたバイト数。
 * `ProfileEvent_MainConfigLoads` ([UInt64](/ja/reference/data-types/int-uint)) — メイン設定が再読み込みされた回数。
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/ja/reference/data-types/int-uint)) — aggregation 用の hash table で事前割り当てされた要素数。
+* `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/ja/reference/data-types/int-uint)) — アダプティブ集計がフリーズしきい値でフリーズしたローカル hash table の数。
+* `ProfileEvent_AdaptiveAggregationGiveUps` ([UInt64](/ja/reference/data-types/int-uint)) — ストリームが保持する個別キーが少なかったため、アダプティブ集計でフリーズを断念したスレッド数。
+* `ProfileEvent_AdaptiveAggregationPressureStandDowns` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ逼迫が外部集計のしきい値を超えたため、アダプティブ集計で学習フェーズを完全に終了し、ローカルテーブルを通常の外部集計でスピルするようになったスレッド数。
+* `ProfileEvent_AdaptiveAggregationThaws` ([UInt64](/ja/reference/data-types/int-uint)) — ステージングされたストリームが繰り返し主体であることが判明したため、アダプティブ集計がローカルテーブルを解凍した回数。
+* `ProfileEvent_AdaptiveAggregationProbeBypasses` ([UInt64](/ja/reference/data-types/int-uint)) — ほとんど行がヒットしなかったため、アダプティブ集計でフリーズしたローカルテーブルのプローブを停止したスレッド数。
+* `ProfileEvent_AdaptiveAggregationStagedRecords` ([UInt64](/ja/reference/data-types/int-uint)) — アダプティブ集計が重複排除前にステージングした遅延レコード数。
+* `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/ja/reference/data-types/int-uint)) — アダプティブ集計がパブリッシュ時およびシール時に重複キーとしてマージ・除去したステージング済みレコード数。
+* `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — マージ時のドレインに備えてアダプティブ集計がステージングしたキーバイト数。
+* `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/ja/reference/data-types/int-uint)) — バッファリングされたステージングバッチからアダプティブ集計がシールした結合済み chunk 数。
+* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/ja/reference/data-types/int-uint)) — バッファリングされたバッチ間で特定の引数位置のカラム表現が一致しなかったため、アダプティブ集計のシール処理でカラム表現を正規化した回数。
+* `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/ja/reference/data-types/int-uint)) — アダプティブ集計がマージ時に共有テーブルへドレインした遅延レコード数。
+* `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ逼迫によりアダプティブ集計がステージング済みレコードを早期にドレインした回数。
+* `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ逼迫下でアダプティブ集計が早期にドレインしたステージング済みレコード数。
+* `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ja/reference/data-types/int-uint)) — マージ・変換の完了直後、マージ全体の完了前に作業メモリ (アリーナスロット、ステージング済み chunk への参照) が解放された二段階 bucket 数。
+* `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ja/reference/data-types/int-uint)) — bucket ローカルの Top-K 選択 (aggregationBucketTopK プラン最適化) によって変換された二段階 bucket 数。
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ja/reference/data-types/int-uint)) — aggregation 用に two-level として初期化された hash table の数。
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ja/reference/data-types/int-uint)) — 実行時に単一レベルの集約 hash table が二段階に変換された回数。
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ja/reference/data-types/int-uint)) — キーの等しい範囲の最適化が適用された blocks 数。
@@ -1100,6 +1121,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_MergerMutatorSelectRangePartsCount` ([UInt64](/ja/reference/data-types/int-uint)) — マージ対象として選択された範囲内のパーツ数
 * `ProfileEvent_ConnectionPoolIsFullMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 接続プールのスロット待機に費やされた合計時間。
 * `ProfileEvent_AsyncLoaderWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — クエリが非同期ローダーのジョブを待機していた合計時間。
+* `ProfileEvent_AsyncLoaderSpawnFailures` ([UInt64](/ja/reference/data-types/int-uint)) — グローバルスレッドプールがスレッドを提供できなかったため、非同期ローダーがワーカーを起動できなかった回数。その後、キュー内のジョブはプールがすでに保持しているワーカー、つまり実行中のワーカーまたは別のプールのジョブ待機から再開したワーカーによって実行されます。
 * `ProfileEvent_DistrCacheServerSwitches` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの読み取りバッファに関するイベント。リードスルー/ライトスルーキャッシュにおける分散キャッシュサーバー間の切り替え回数
 * `ProfileEvent_DistrCacheReadMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの読み取りバッファに関するイベント。分散キャッシュからの読み取りに費やした時間
 * `ProfileEvent_DistrCacheFallbackReadMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの読み取りバッファに関するイベント。分散キャッシュではなくフォールバックバッファからの読み取りに費やした時間
@@ -1285,6 +1307,10 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/ja/reference/data-types/int-uint)) — コミット先読みリーダーのデコード済みウィンドウからコミットスレッドに提供されたログエントリ数 (高速パスの pop またはウィンドウ先頭の drain pop)
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper の changelog に書き込まれたバイト数
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper の changelog に対する `fsync` に費やした時間 (非圧縮ログのみ)
+* `ProfileEvent_KeeperChangelogStartupReadMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper 起動時の changelog 並列読み取りに費やされた実時間
+* `ProfileEvent_KeeperChangelogStartupStitchMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルごとの並列起動時読み取り結果を LogEntryStorage の状態に統合するのに費やされた実時間
+* `ProfileEvent_KeeperChangelogStartupReadEntries` ([UInt64](/ja/reference/data-types/int-uint)) — 並列 Keeper 起動リーダーによって検証された changelog レコード数
+* `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 並列 Keeper 起動リーダーによって changelog file から読み取られた物理バイト数 (checksum + header + ブロブ)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper の snapshot file に書き込まれたバイト数
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper の snapshot file に対する `fsync` に費やした時間
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/ja/reference/data-types/int-uint)) — ストレージ向けに作成された接続数
@@ -1376,6 +1402,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — executable&#95;pool ユーザー定義関数プールが枯渇した場合に tryBorrowObject で待機した時間 (マイクロ秒) 。
 * `ProfileEvent_ParquetReadRowGroups` ([UInt64](/ja/reference/data-types/int-uint)) — Parquet データから読み取られた行グループの総数
 * `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/ja/reference/data-types/int-uint)) — Parquet データからプルーニングされた行グループの総数
+* `ProfileEvent_ParquetReadPages` ([UInt64](/ja/reference/data-types/int-uint)) — 読み取られた Parquet データページの総数
 * `ProfileEvent_ParquetPrunedPages` ([UInt64](/ja/reference/data-types/int-uint)) — カラム索引を介して Parquet データからプルーニングされたページの総数
 * `ProfileEvent_ParquetDecodingTasks` ([UInt64](/ja/reference/data-types/int-uint)) — Parquet リーダーが発行したタスク数
 * `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/ja/reference/data-types/int-uint)) — Parquet リーダーがスレッドプールに送信したタスクグループ数
@@ -1740,6 +1767,9 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `CurrentMetric_KeeperChangelogReadAheadThreads` ([Int64](/ja/reference/data-types/int-uint)) — Keeper changelog の先読み補完タスク用スレッドプール内のスレッド数。
 * `CurrentMetric_KeeperChangelogReadAheadThreadsActive` ([Int64](/ja/reference/data-types/int-uint)) — Keeper changelog の先読み補完タスク用スレッドプール内のアクティブなスレッド数。
 * `CurrentMetric_KeeperChangelogReadAheadThreadsScheduled` ([Int64](/ja/reference/data-types/int-uint)) — Keeper changelog の先読み補完タスク用スレッドプールでキューに入っている、またはアクティブなジョブ数。
+* `CurrentMetric_KeeperChangelogStartupReadThreads` ([Int64](/ja/reference/data-types/int-uint)) — Keeper changelog の起動時並列読み取り用スレッドプール内のスレッド数。
+* `CurrentMetric_KeeperChangelogStartupReadThreadsActive` ([Int64](/ja/reference/data-types/int-uint)) — Keeper changelog の起動時並列読み取り用スレッドプール内のアクティブなスレッド数。
+* `CurrentMetric_KeeperChangelogStartupReadThreadsScheduled` ([Int64](/ja/reference/data-types/int-uint)) — Keeper changelog の起動時並列読み取り用スレッドプールでキューに入っている、またはアクティブなジョブ数。
 * `CurrentMetric_KeeperBlockCacheBytes` ([Int64](/ja/reference/data-types/int-uint)) — Keeper ストレージのブロックキャッシュ内のブロックの合計サイズ (バイト) 。
 * `CurrentMetric_KeeperBlockCacheBlocks` ([Int64](/ja/reference/data-types/int-uint)) — Keeper ストレージのブロックキャッシュ内のブロック数。
 * `CurrentMetric_DistributedBytesToInsert` ([Int64](/ja/reference/data-types/int-uint)) — 分散テーブルへの非同期挿入で、処理待ちとなっているバイト数。各分片のバイト数を合計した値です。
@@ -1766,6 +1796,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `CurrentMetric_PartsCompact` ([Int64](/ja/reference/data-types/int-uint)) — compact パーツ。
 * `CurrentMetric_MMappedFiles` ([Int64](/ja/reference/data-types/int-uint)) — メモリマップされたファイルの総数。
 * `CurrentMetric_MMappedFileBytes` ([Int64](/ja/reference/data-types/int-uint)) — メモリマップされたファイル領域の合計サイズ。
+* `CurrentMetric_FiberStacks` ([Int64](/ja/reference/data-types/int-uint)) — 現在割り当てられているファイバースタック数 (ファイバーはリモートレプリカとの非同期通信に使用されます) 。
+* `CurrentMetric_FiberStackBytes` ([Int64](/ja/reference/data-types/int-uint)) — 現在割り当てられているファイバースタックの合計サイズ。
 * `CurrentMetric_AsynchronousReadWait` ([Int64](/ja/reference/data-types/int-uint)) — 非同期読み取りを待機しているスレッド数。
 * `CurrentMetric_PendingAsyncInsert` ([Int64](/ja/reference/data-types/int-uint)) — フラッシュ待ちの非同期挿入数。
 * `CurrentMetric_KafkaConsumers` ([Int64](/ja/reference/data-types/int-uint)) — アクティブな Kafka コンシューマー数

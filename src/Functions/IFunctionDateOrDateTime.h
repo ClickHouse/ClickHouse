@@ -200,6 +200,25 @@ public:
                     : is_not_monotonic;
         }
     }
+
+    bool hasInformationAboutPreimage() const override
+    {
+        if constexpr (requires { Transform::hasPreimage(); })
+            return Transform::hasPreimage();
+
+        return false;
+    }
+
+    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    {
+        if constexpr (requires { Transform::hasPreimage(); })
+        {
+            if constexpr (Transform::hasPreimage())
+                return Transform::getPreimage(type, point);
+        }
+
+        return IFunction::getPreimage(type, point);
+    }
 };
 
 }
