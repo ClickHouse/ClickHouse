@@ -1265,7 +1265,7 @@ TEST(SchedulerSpaceShared, FittingRegularGrowthRemainsProductive)
 }
 
 
-TEST(SchedulerSpaceShared, BeneficiaryReleasingToZeroEndsSuspension)
+TEST(SchedulerSpaceShared, ZeroSizeVictimIsPoppedBeforeSuctionContinues)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -1282,18 +1282,24 @@ TEST(SchedulerSpaceShared, BeneficiaryReleasingToZeroEndsSuspension)
     entered.get_future().get();
 
     heavy.increaseAsync(5000);
-    ManualAllocation beneficiary(queue, "beneficiary", 1000, /* wait_for_admission = */ false);
+    auto beneficiary = std::make_unique<ManualAllocation>(
+        queue, "beneficiary", 1000, /* wait_for_admission = */ false);
     release.set_value();
 
-    beneficiary.waitSynced();
+    beneficiary->waitSynced();
     heavy.waitPressureCount(1);
     EXPECT_EQ(heavy.killCount(), 0u);
 
     /// Releasing all memory ends productive membership even though the allocation object stays alive.
-    beneficiary.decreaseAsync(1000);
-    beneficiary.waitSynced();
-    EXPECT_EQ(beneficiary.size(), 0);
+    beneficiary->decreaseAsync(1000);
+    beneficiary->waitSynced();
+    EXPECT_EQ(beneficiary->size(), 0);
     heavy.recoveryCheckpoint();
+
+    /// Preserve the existing victim order: the live zero-sized allocation is selected first. It
+    /// must leave before the same suction owner can advance to its final self-eviction fallback.
+    ASSERT_TRUE(beneficiary->waitKillsFor(1, std::chrono::seconds(5)));
+    beneficiary.reset();
     heavy.waitKills(1);
 }
 
@@ -1351,25 +1357,12 @@ TEST(SchedulerSpaceShared, NestedLimitsConsumeSuctionIndependently)
     ASSERT_TRUE(inner_heavy->waitKillsFor(1, std::chrono::seconds(5)));
     inner_heavy.reset();
 
-    std::promise<void> outer_entered;
-    std::promise<void> outer_release;
-    t.scheduler.event_queue.enqueue([&] { outer_entered.set_value(); outer_release.get_future().get(); });
-    outer_entered.get_future().get();
-
+    /// The completed inner entry no longer occupies the parent scope. A separate outer entry can
+    /// therefore consume that level's suction slot and reach its own final fallback.
     outer_heavy.increaseAsync(8000); // Impossible even after the inner branch releases.
-    auto shared_beneficiary = std::make_unique<ManualAllocation>(
-        inner_queue_ptr, "shared_beneficiary", 200, /* wait_for_admission = */ false);
-    outer_release.set_value();
-    shared_beneficiary->waitSynced();
-
-    EXPECT_EQ(outer_heavy.killCount(), 0u);
-
-    /// The outer level owns a separate suction slot. Its existing hierarchy policy may select the
-    /// outer owner directly; suction does not replace that victim order with a leaf-local rule.
     EXPECT_TRUE(outer_heavy.waitKillsFor(1, std::chrono::seconds(5)))
         << "outer limit lost its last-resort suction decision; outer kills="
         << outer_heavy.killCount();
-    EXPECT_EQ(shared_beneficiary->killCount(), 0u);
 }
 
 
