@@ -1,6 +1,7 @@
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_erase.h>
 
 namespace
@@ -83,8 +85,15 @@ bool shardContains(
 namespace DB
 {
 
-bool OptimizeShardingKeyRewriteInMatcher::needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/)
+bool OptimizeShardingKeyRewriteInMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
+    /// Do not rewrite an `IN` that is part of the query's own output. Pruning the set to the elements
+    /// routed to this shard leaves the value of the expression correct - a row on this shard can only
+    /// equal an element routed here - but it changes the result column's name, so the initiator cannot
+    /// bind the column the shard returns.
+    if (const auto * select = node->as<ASTSelectQuery>())
+        return child != select->select();
+
     return true;
 }
 
@@ -148,6 +157,17 @@ public:
         : Base(std::move(context))
         , data(std::move(data_))
     {}
+
+    /// See the comment in `OptimizeShardingKeyRewriteInMatcher::needChildVisit`: an `IN` in the
+    /// projection would keep its value but change its result column name, which the initiator then
+    /// cannot bind.
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        if (const auto * query_node = parent->as<QueryNode>())
+            return child != query_node->getProjectionNode();
+
+        return true;
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
