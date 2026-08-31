@@ -6,6 +6,12 @@ SELECT count() OVER (ORDER BY 3.4028234663852886e38 RANGE BETWEEN inf PRECEDING 
 SELECT count() OVER (ORDER BY 3.4028234663852886e38 RANGE BETWEEN UNBOUNDED PRECEDING AND 0.0 FOLLOWING);
 SELECT count() OVER (ORDER BY 3.4028234663852886e38 RANGE BETWEEN UNBOUNDED PRECEDING AND nan FOLLOWING); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY 3.4028234663852886e38 RANGE BETWEEN UNBOUNDED PRECEDING AND inf FOLLOWING); -- { serverError BAD_ARGUMENTS }
+-- the `ORDER BY` column above is floating; these pin that a non-finite offset is rejected for
+-- an integer or `Decimal` one too, where coercion would otherwise report it as out of range
+SELECT count() OVER (ORDER BY materialize(1)::UInt64 RANGE nan PRECEDING); -- { serverError BAD_ARGUMENTS }
+SELECT count() OVER (ORDER BY materialize(1)::UInt64 RANGE BETWEEN CURRENT ROW AND inf FOLLOWING); -- { serverError BAD_ARGUMENTS }
+SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE inf PRECEDING); -- { serverError BAD_ARGUMENTS }
+SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE BETWEEN CURRENT ROW AND nan FOLLOWING); -- { serverError BAD_ARGUMENTS }
 -- a `RANGE` offset that is not a nonnegative number is rejected before execution,
 -- with either analyzer, and before a lossy coercion could hide it
 SELECT count() OVER (ORDER BY materialize(1.5)::Nullable(Float64) RANGE NULL::Nullable(Float64) PRECEDING); -- { serverError BAD_ARGUMENTS }

@@ -6,6 +6,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -27,6 +29,18 @@ bool isNumericFieldType(Field::Types::Which which)
         || which == Field::Types::Float64
         || which == Field::Types::UInt128 || which == Field::Types::Int128
         || which == Field::Types::UInt256 || which == Field::Types::Int256;
+}
+
+/// A `RANGE` offset is added to the `ORDER BY` value, so it has to order against zero, which a
+/// non-finite one does not: `nan` compares false both ways, and an infinite offset added to an
+/// infinite value yields `nan`.
+bool isValidRangeOffset(const Field & offset)
+{
+    if (!isNumericFieldType(offset.getType()))
+        return false;
+    if (offset.getType() == Field::Types::Float64 && !std::isfinite(offset.safeGet<Float64>()))
+        return false;
+    return !accurateLess(offset, Field(0));
 }
 
 }
@@ -139,24 +153,22 @@ void WindowFrame::checkValid() const
     }
     else
     {
-        // Checked here rather than after coercion: a non-numeric offset would reach the
-        // comparators as the wrong `Field` alternative, and coercion to a lower scale can
-        // truncate a negative offset to zero.
-        if (begin_type == BoundaryType::Offset
-            && (!isNumericFieldType(begin_offset.getType()) || accurateLess(begin_offset, Field(0))))
+        // Checked before the coercion in `WindowTransform`: coercion to a lower scale can
+        // truncate a negative offset to zero, and coercion of a non-finite offset to an
+        // integer or `Decimal` column rejects it as out of range instead.
+        if (begin_type == BoundaryType::Offset && !isValidRangeOffset(begin_offset))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Frame start offset for '{}' frame must be a nonnegative number, '{}' of type '{}' given",
+                            "Frame start offset for '{}' frame must be a finite nonnegative number, '{}' of type '{}' given",
                             type,
                             applyVisitor(FieldVisitorToString(), begin_offset),
                             begin_offset.getType());
         }
 
-        if (end_type == BoundaryType::Offset
-            && (!isNumericFieldType(end_offset.getType()) || accurateLess(end_offset, Field(0))))
+        if (end_type == BoundaryType::Offset && !isValidRangeOffset(end_offset))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Frame end offset for '{}' frame must be a nonnegative number, '{}' of type '{}' given",
+                            "Frame end offset for '{}' frame must be a finite nonnegative number, '{}' of type '{}' given",
                             type,
                             applyVisitor(FieldVisitorToString(), end_offset),
                             end_offset.getType());
