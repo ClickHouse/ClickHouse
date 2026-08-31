@@ -75,6 +75,7 @@ private:
 
     /// A running allocation whose growth is parked at a hard limit.
     ResourceAllocation * suspended_growth = nullptr;
+    UInt64 last_eviction_order = 0;
 
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;

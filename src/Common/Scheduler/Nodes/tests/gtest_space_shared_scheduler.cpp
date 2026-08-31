@@ -928,8 +928,16 @@ TEST(SchedulerSpaceShared, ForceSpillingRequestCannotCaptureSuctionRelease)
     spilling->increaseAsync(2000);
     spilling->waitPressureCount(1);
 
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    /// Complete both spill passes before the scheduler can observe either one. Suction must follow
+    /// eviction-entry order, not allocation size or callback timing.
     suctioned.recoveryCheckpoint();
     spilling->recoveryCheckpoint();
+    release.set_value();
 
     /// The release makes Suctioned fit exactly. Spilling has also completed recovery, but it is
     /// still in the eviction queue and must not consume this level's local opportunity.
@@ -1225,6 +1233,7 @@ TEST(SchedulerSpaceShared, FittingRegularGrowthRemainsProductive)
     r.registerResource();
 
     ManualAllocation heavy(queue, "heavy", 6000);
+    heavy.protectAfterPressureRounds(2);
     auto other = std::make_unique<ManualAllocation>(queue, "other", 1000);
 
     std::promise<void> entered;
@@ -1237,6 +1246,7 @@ TEST(SchedulerSpaceShared, FittingRegularGrowthRemainsProductive)
     release.set_value();
 
     anchor->waitSynced();
+    heavy.waitPressureCount(1);
     other->increaseAsync(500);
     other->waitSynced();
     EXPECT_EQ(other->size(), 1500);
@@ -1247,6 +1257,7 @@ TEST(SchedulerSpaceShared, FittingRegularGrowthRemainsProductive)
     EXPECT_EQ(heavy.killCount(), 0u);
 
     other.reset();
+    heavy.recoveryCheckpoint();
     heavy.waitKills(1);
 }
 
@@ -1260,6 +1271,7 @@ TEST(SchedulerSpaceShared, BeneficiaryReleasingToZeroEndsSuspension)
     r.registerResource();
 
     ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.protectAfterPressureRounds(2);
 
     std::promise<void> entered;
     std::promise<void> release;
@@ -1271,17 +1283,19 @@ TEST(SchedulerSpaceShared, BeneficiaryReleasingToZeroEndsSuspension)
     release.set_value();
 
     beneficiary.waitSynced();
+    heavy.waitPressureCount(1);
     EXPECT_EQ(heavy.killCount(), 0u);
 
     /// Releasing all memory ends productive membership even though the allocation object stays alive.
     beneficiary.decreaseAsync(1000);
     beneficiary.waitSynced();
     EXPECT_EQ(beneficiary.size(), 0);
+    heavy.recoveryCheckpoint();
     heavy.waitKills(1);
 }
 
 
-TEST(SchedulerSpaceShared, NestedLimitsTrackTheSameBeneficiaryIndependently)
+TEST(SchedulerSpaceShared, NestedLimitsConsumeSuctionIndependently)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -1312,7 +1326,7 @@ TEST(SchedulerSpaceShared, NestedLimitsTrackTheSameBeneficiaryIndependently)
     outer_limit.reset();
     r.registerResource();
 
-    ManualAllocation inner_heavy(inner_queue_ptr, "inner_heavy", 6000);
+    auto inner_heavy = std::make_unique<ManualAllocation>(inner_queue_ptr, "inner_heavy", 6000);
     ManualAllocation outer_heavy(outer_queue_ptr, "outer_heavy", 3000);
 
     std::promise<void> inner_entered;
@@ -1320,12 +1334,19 @@ TEST(SchedulerSpaceShared, NestedLimitsTrackTheSameBeneficiaryIndependently)
     t.scheduler.event_queue.enqueue([&] { inner_entered.set_value(); inner_release.get_future().get(); });
     inner_entered.get_future().get();
 
-    inner_heavy.increaseAsync(2000);
+    inner_heavy->increaseAsync(2000);
     auto inner_beneficiary = std::make_unique<ManualAllocation>(
         inner_queue_ptr, "inner_beneficiary", 500, /* wait_for_admission = */ false);
     inner_release.set_value();
     inner_beneficiary->waitSynced();
-    EXPECT_EQ(inner_heavy.killCount(), 0u);
+    EXPECT_EQ(inner_heavy->killCount(), 0u);
+
+    /// Spill has completed, so the inner level consumes its one suction slot one victim at a
+    /// time. Resolve that complete queue entry before starting an independent outer-level entry.
+    ASSERT_TRUE(inner_beneficiary->waitKillsFor(1, std::chrono::seconds(5)));
+    inner_beneficiary.reset();
+    ASSERT_TRUE(inner_heavy->waitKillsFor(1, std::chrono::seconds(5)));
+    inner_heavy.reset();
 
     std::promise<void> outer_entered;
     std::promise<void> outer_release;
@@ -1338,20 +1359,16 @@ TEST(SchedulerSpaceShared, NestedLimitsTrackTheSameBeneficiaryIndependently)
     outer_release.set_value();
     shared_beneficiary->waitSynced();
 
-    EXPECT_EQ(inner_heavy.killCount(), 0u);
     EXPECT_EQ(outer_heavy.killCount(), 0u);
 
+    ASSERT_TRUE(shared_beneficiary->waitKillsFor(1, std::chrono::seconds(5)));
     shared_beneficiary.reset();
-    inner_beneficiary.reset();
 
-    /// The inner last resort releases its branch. The outer impossible growth must then reach its
-    /// own last resort; a leaked nested beneficiary membership would leave it suspended forever.
-    EXPECT_TRUE(inner_heavy.waitKillsFor(1, std::chrono::seconds(5)))
-        << "inner limit lost its last-resort suction decision; inner kills="
-        << inner_heavy.killCount() << ", outer kills=" << outer_heavy.killCount();
+    /// The outer level owns a separate suction slot and reaches its own final fallback after its
+    /// first existing-policy victim releases.
     EXPECT_TRUE(outer_heavy.waitKillsFor(1, std::chrono::seconds(5)))
-        << "outer limit lost its last-resort suction decision; inner kills="
-        << inner_heavy.killCount() << ", outer kills=" << outer_heavy.killCount();
+        << "outer limit lost its last-resort suction decision; outer kills="
+        << outer_heavy.killCount();
 }
 
 
@@ -1996,7 +2013,8 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
         anchor.reset();
 
         /// Once every beneficiary finishes, the heavy request is still impossible and must reach
-        /// the existing last-resort kill path rather than remain parked forever.
+        /// the existing last-resort kill path after its exhaustive spill pass completes.
+        heavy.recoveryCheckpoint();
         heavy.waitKills(1);
         EXPECT_EQ(heavy.killCount(), 1u);
 
@@ -2042,6 +2060,7 @@ TEST(SchedulerSpaceShared, LateFittingAdmissionWakesSuspendedQueue)
     r.registerResource();
 
     ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.protectAfterPressureRounds(2);
 
     std::promise<void> entered;
     std::promise<void> release;
@@ -2054,6 +2073,7 @@ TEST(SchedulerSpaceShared, LateFittingAdmissionWakesSuspendedQueue)
     release.set_value();
 
     beneficiary->waitSynced();
+    heavy.waitPressureCount(1);
     ASSERT_EQ(beneficiary->size(), 1000);
     ASSERT_EQ(heavy.killCount(), 0u);
 
@@ -2063,6 +2083,8 @@ TEST(SchedulerSpaceShared, LateFittingAdmissionWakesSuspendedQueue)
     EXPECT_EQ(late_fitting->size(), 1000);
     EXPECT_EQ(blocked->size(), 0);
     EXPECT_EQ(heavy.killCount(), 0u);
+
+    heavy.recoveryCheckpoint();
 }
 
 
@@ -2077,6 +2099,7 @@ TEST(SchedulerSpaceShared, LateFittingRegularGrowthWakesSuspendedQueue)
     r.registerResource();
 
     ManualAllocation heavy(queue, "heavy", 7000);
+    heavy.protectAfterPressureRounds(2);
     ManualAllocation late_grower(queue, "late_grower", 500);
 
     std::promise<void> entered;
@@ -2090,12 +2113,15 @@ TEST(SchedulerSpaceShared, LateFittingRegularGrowthWakesSuspendedQueue)
     release.set_value();
 
     beneficiary->waitSynced();
+    heavy.waitPressureCount(1);
     late_grower.increaseAsync(500);
     late_grower.waitSynced();
 
     EXPECT_EQ(late_grower.size(), 1000);
     EXPECT_EQ(blocked->size(), 0);
     EXPECT_EQ(heavy.killCount(), 0u);
+
+    heavy.recoveryCheckpoint();
 }
 
 

@@ -84,6 +84,7 @@ private:
     /// request can be considered. The allocation can still decrease or be removed while growth is parked.
     bool memory_growth_suspended = false; /// Scheduler-thread only.
     bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
+    UInt64 memory_growth_eviction_order = 0; /// Queue-local order assigned on eviction nomination.
     bool memory_growth_recovery_pending = false; /// Queue-mutex protected durable query-to-scheduler hand-off.
     bool memory_growth_suction_priority = false; /// The allocation owns the one suction slot in its scope.
     bool kill_requested = false; /// Scheduler-thread marker preventing duplicate victim selection across stacked limits.

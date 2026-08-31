@@ -151,6 +151,7 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
         /// controller has already exhausted that pass and is immediately ready for suction.
         if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
             allocation.memory_growth_recovery_pending = true;
+        allocation.memory_growth_eviction_order = ++last_eviction_order;
         if (!suspended_growth)
             suspended_growth = &allocation;
     }
@@ -188,6 +189,7 @@ bool AllocationQueue::retrySuction(ResourceAllocation & allocation)
         if (!canEnterSuction(allocation))
             return false;
         allocation.memory_growth_suction_priority = true;
+        allocation.memory_growth_eviction_order = 0;
         if (suspended_growth == &allocation)
             suspended_growth = nullptr;
     }
@@ -362,6 +364,7 @@ void AllocationQueue::approveIncrease()
     allocation.allocated += increase->size;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
+        allocation.memory_growth_eviction_order = 0;
         allocation.memory_growth_suction_priority = false;
         allocation.onGrowthPressureResolved();
     }
@@ -555,9 +558,7 @@ void AllocationQueue::processActivation()
                 pending.memory_growth_suspension_attempted = false;
             }
             for (ResourceAllocation & increasing : increasing_allocations)
-            {
                 increasing.memory_growth_suspended = false;
-            }
             memory_growth_suspension_retry_requested = false;
         }
 
@@ -568,6 +569,8 @@ void AllocationQueue::processActivation()
             removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
             if (&allocation == suspended_growth)
                 clearMemoryGrowthSuspension();
+            else
+                allocation.memory_growth_eviction_order = 0;
             if (allocation.pending_hook.is_linked()) // Allocation is still pending - cancel it
             {
                 pending_allocations.erase(pending_allocations.iterator_to(allocation));
@@ -610,6 +613,25 @@ void AllocationQueue::processActivation()
             }
         }
 
+        /// The eviction queue is represented by nomination order on the existing increase
+        /// requests. Re-establish its head only after the previous suction has been consumed.
+        if (!suspended_growth && !getSuctionAllocation())
+        {
+            auto next = std::min_element(
+                increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & lhs, const ResourceAllocation & rhs)
+                {
+                    const UInt64 lhs_order = lhs.memory_growth_eviction_order;
+                    const UInt64 rhs_order = rhs.memory_growth_eviction_order;
+                    if (lhs_order == 0)
+                        return false;
+                    if (rhs_order == 0)
+                        return true;
+                    return lhs_order < rhs_order;
+                });
+            if (next != increasing_allocations.end() && next->memory_growth_eviction_order != 0)
+                suspended_growth = &*next;
+        }
+
         // Update requests. A completed spill enters suction only after this queue has exhausted
         // every currently visible fitting opportunity. This preserves normal scheduling during
         // the spill phase and makes suction the final transition before eviction.
@@ -624,19 +646,17 @@ void AllocationQueue::processActivation()
                 {
                     return allocation.memory_growth_suction_priority && !allocation.memory_growth_recovery_pending;
                 });
-            auto ready_for_suction = std::find_if(
-                increasing_allocations.begin(), increasing_allocations.end(), [this, local_suction_exists](const ResourceAllocation & allocation)
-                {
-                    if (!allocation.memory_growth_recovery_pending || allocation.memory_growth_suspended)
-                        return false;
-                    return !local_suction_exists && canEnterSuction(allocation);
-                });
-
-            if (ready_for_suction != increasing_allocations.end())
+            ResourceAllocation * ready_for_suction = suspended_growth;
+            if (ready_for_suction
+                && ready_for_suction->memory_growth_recovery_pending
+                && !ready_for_suction->memory_growth_suspended
+                && !local_suction_exists
+                && canEnterSuction(*ready_for_suction))
             {
                 ResourceAllocation & recovering = *ready_for_suction;
                 recovering.memory_growth_recovery_pending = false;
                 recovering.memory_growth_suction_priority = true;
+                recovering.memory_growth_eviction_order = 0;
                 suction_changed = true;
                 recovering.memory_growth_suspended = false;
                 if (suspended_growth == &recovering)
@@ -768,6 +788,7 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     {
         suspended_growth->onGrowthPressureResolved();
         suspended_growth->memory_growth_suspended = false;
+        suspended_growth->memory_growth_eviction_order = 0;
         suspended_growth->memory_growth_recovery_pending = false;
         suspended_growth->memory_growth_suction_priority = false;
     }
