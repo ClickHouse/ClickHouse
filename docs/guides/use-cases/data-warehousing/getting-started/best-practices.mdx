@@ -7,6 +7,8 @@ keywords: ['data lake', 'lakehouse', 'Iceberg', 'Delta Lake', 'DataLakeCatalog',
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 The [getting started guide](/guides/use-cases/data-warehousing/getting-started/overview) walks you through querying [Apache Iceberg](/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/reference/engines/table-engines/integrations/hudi), and [Apache Paimon](/reference/functions/table-functions/paimon) for the first time. Once you're past setup, use this page to choose the right access pattern, tune query performance, and debug lake queries in production.
 
 ## Choose an access method {#choose-access-method}
@@ -119,6 +121,8 @@ Pass your cluster name as the first argument (`'default'` on ClickHouse Cloud). 
 You can combine cluster reads with other performance settings.
 
 ### Cluster functions and On-Demand Compute {#cluster-functions-and-on-demand-compute}
+
+<PrivatePreviewBadge/>
 
 Cluster variants such as [`icebergS3Cluster`](/reference/functions/table-functions/icebergCluster) and [`deltaLakeCluster`](/reference/functions/table-functions/deltalakeCluster) distribute file reads across nodes in your existing cluster. The cluster function itself does not add compute. On-Demand Compute is a ClickHouse Cloud capability that temporarily assigns additional workers from a managed pool to eligible queries through your existing service and endpoint.
 
