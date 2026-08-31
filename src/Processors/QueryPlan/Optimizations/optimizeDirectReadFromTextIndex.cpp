@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
@@ -9,11 +10,13 @@
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -287,9 +290,50 @@ void collectTextIndexInjectInfos(const ReadFromMergeTree * read_from_merge_tree_
     }
 }
 
+ASTPtr convertSetColumnToAST(const IColumn & column)
+{
+    const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(&column);
+    if (!column_set)
+        column_set = checkAndGetColumn<const ColumnSet>(&column);
+    if (!column_set)
+        return nullptr;
+
+    auto future_set = column_set->getData();
+    const auto * set_from_tuple = dynamic_cast<const FutureSetFromTuple *>(future_set.get());
+    if (!set_from_tuple)
+        return nullptr;
+
+    const Columns key_columns = set_from_tuple->getKeyColumns();
+    if (key_columns.empty() || key_columns.front()->empty())
+        return nullptr;
+
+    const size_t num_elements = key_columns.front()->size();
+    auto elements = makeASTFunction("tuple");
+    elements->arguments->children.reserve(num_elements);
+
+    for (size_t i = 0; i < num_elements; ++i)
+    {
+        if (key_columns.size() == 1)
+        {
+            elements->arguments->children.push_back(make_intrusive<ASTLiteral>((*key_columns.front())[i]));
+            continue;
+        }
+
+        /// A set over a tuple left-hand side, e.g. `(a, b) IN ((1, 2), (3, 4))`.
+        Tuple key;
+        key.reserve(key_columns.size());
+        for (const auto & key_column : key_columns)
+            key.push_back((*key_column)[i]);
+        elements->arguments->children.push_back(make_intrusive<ASTLiteral>(Field(std::move(key))));
+    }
+
+    return elements;
+}
+
 /// Converts an ActionsDAG node to an AST node.
 /// It is not correct in the general case, but is
 /// sufficient for expressions that can be used with a text index.
+/// Returns `nullptr` if any part has no AST representation: a partial conversion would change the meaning.
 /// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
 /// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
 /// instead of being emitted as bare, unresolvable identifiers.
@@ -321,7 +365,12 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
     lambda->arguments = make_intrusive<ASTExpressionList>();
     lambda->children.push_back(lambda->arguments);
     lambda->arguments->children.push_back(std::move(arguments));
-    lambda->arguments->children.push_back(convertNodeToAST(*capture_dag.getOutputs().front(), body_captured));
+
+    auto body = convertNodeToAST(*capture_dag.getOutputs().front(), body_captured);
+    if (!body)
+        return nullptr;
+
+    lambda->arguments->children.push_back(std::move(body));
     return lambda;
 }
 
@@ -335,7 +384,16 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             return make_intrusive<ASTIdentifier>(node.result_name);
 
         case ActionsDAG::ActionType::COLUMN:
-            return node.column ? make_intrusive<ASTLiteral>((*node.column)[0]) : make_intrusive<ASTLiteral>(Field{});
+        {
+            if (!node.column)
+                return nullptr;
+
+            /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
+            if (WhichDataType(node.result_type).isSet())
+                return convertSetColumnToAST(*node.column);
+
+            return make_intrusive<ASTLiteral>((*node.column)[0]);
+        }
 
         case ActionsDAG::ActionType::ALIAS:
             return node.children.empty() ? nullptr : convertNodeToAST(*node.children[0], captured);
@@ -354,8 +412,11 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             function->name = node.function_base->getName();
             for (const auto * child : node.children)
             {
-                if (auto arg_ast = convertNodeToAST(*child, captured))
-                    function->arguments->children.push_back(arg_ast);
+                auto arg_ast = convertNodeToAST(*child, captured);
+                if (!arg_ast)
+                    return nullptr;
+
+                function->arguments->children.push_back(std::move(arg_ast));
             }
 
             return function;
@@ -583,6 +644,11 @@ private:
             if (!search_query)
                 continue;
 
+            /// The search query is built from the canonicalized subtree, but the rewrites below apply to
+            /// the original node, so check that node as well.
+            if (!text_index_condition.canAnswerFunctionNode(function_node))
+                continue;
+
             const bool is_index_analyzed
                 = !require_index_analyzed_predicate || isIndexAnalyzedPredicate(index_name, info, canonical_node);
 
@@ -654,7 +720,7 @@ private:
         const ContextPtr & context)
     {
         const auto & function_node = *replacement.node;
-        if (selected_conditions.size() != 1 || function_node.children.size() != 2)
+        if (selected_conditions.size() != 1 || function_node.children.size() < 2 || function_node.children.size() > 3)
             return;
 
         auto new_children = function_node.children;
@@ -725,12 +791,16 @@ private:
         {
             const String tokenizer_description = tokenizer->getDescription();
 
-            /// Add argument with tokenizer definition.
+            /// Set the argument with the tokenizer definition. Assign when one is already present, so
+            /// the argument count stays the same however often this runs over the same node.
             DataTypePtr arg_type = std::make_shared<DataTypeString>();
             MutableColumnConstPtr arg_column = arg_type->createColumnConst(0, Field(tokenizer_description));
             String name = quoteString(tokenizer_description);
             const ActionsDAG::Node & new_child = actions_dag.addColumn(std::move(arg_column), std::move(arg_type), std::move(name));
-            new_children.push_back(&new_child);
+            if (new_children.size() == 3)
+                new_children[2] = &new_child;
+            else
+                new_children.push_back(&new_child);
 
             /// Convert needles to array if they are a string by applying a tokenizer.
             /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
@@ -892,6 +962,21 @@ private:
         if (!has_materialized_index)
             return;
 
+        /// Convert up front: without an AST the optimization must be skipped, not registered with a different meaning.
+        ASTPtr exact_default_expression;
+        if (has_exact_search)
+        {
+            exact_default_expression = convertNodeToAST(function_node);
+            if (!exact_default_expression)
+            {
+                LOG_TRACE(
+                    getLogger("optimizeDirectReadFromTextIndex"),
+                    "Cannot use direct reading from text index. Predicate '{}' has no AST representation",
+                    function_node.result_name);
+                return;
+            }
+        }
+
         auto add_condition_to_input = [&](const SelectedCondition & condition)
         {
             auto [it, inserted] = virtual_column_to_node.try_emplace(condition.virtual_column_name);
@@ -902,8 +987,9 @@ private:
                 /// It will be executed by merge tree reader when index is not materialized in the data part.
                 ASTPtr default_expression;
 
+                /// Shared, not cloned: a stored default expression is immutable, `addDefaultRequiredExpressionsRecursively` clones it before use.
                 if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
-                    default_expression = convertNodeToAST(function_node);
+                    default_expression = exact_default_expression;
                 /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
                 else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
