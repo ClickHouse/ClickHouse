@@ -94,7 +94,8 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     WriteBuffer * out_row_sources_buf_,
     const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
-    bool apply_virtual_row_conversions_)
+    bool apply_virtual_row_conversions_,
+    bool emit_boundary_virtual_rows_)
     : header(std::move(header_))
     , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , description(description_)
@@ -102,6 +103,8 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , out_row_sources_buf(out_row_sources_buf_)
     , filter_column_position(filter_column_name_ ? header->getPositionByName(filter_column_name_.value()) : -1)
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
+    , emit_boundary_virtual_rows(emit_boundary_virtual_rows_)
+    , input_is_virtual_row(num_inputs, 0)
     , current_inputs(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
@@ -133,6 +136,7 @@ void MergingSortedAlgorithm::addInput()
     current_inputs.emplace_back();
     cursors.emplace_back();
     virtual_row_boundary.emplace_back();
+    input_is_virtual_row.emplace_back(0);
 }
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
@@ -140,7 +144,8 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         auto & input = inputs[i];
-        if (!isVirtualRow(input.chunk))
+        input_is_virtual_row[i] = isVirtualRow(input.chunk);
+        if (!input_is_virtual_row[i])
             continue;
 
         auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
@@ -195,6 +200,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     bool is_virtual_row = isVirtualRow(input.chunk);
+    input_is_virtual_row[source_num] = is_virtual_row;
     if (is_virtual_row)
     {
         auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
@@ -369,9 +375,24 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
         {
+            size_t source_num = current.impl->order;
+
+            if (emit_boundary_virtual_rows && input_is_virtual_row[source_num])
+            {
+                /// Rows merged before this boundary must leave first, or downstream would
+                /// see data below a boundary it was already given.
+                if (merged_data.mergedRows() != 0)
+                    return Status(merged_data.pull());
+
+                queue.removeTop();
+                Status result(std::move(current_inputs[source_num].chunk));
+                result.required_source = source_num;
+                return result;
+            }
+
             /// Get the next block from the corresponding source, if there is one.
             queue.removeTop();
-            return Status(current.impl->order);
+            return Status(source_num);
         }
 
         if (current.impl->isFirst()
@@ -455,9 +476,23 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
 
             if (initial_batch_size == 1)
             {
+                size_t source_num = current.impl->order;
+
+                if (emit_boundary_virtual_rows && input_is_virtual_row[source_num])
+                {
+                    /// See mergeImpl: flush merged rows before forwarding the boundary.
+                    if (merged_data.mergedRows() != 0)
+                        return Status(merged_data.pull());
+
+                    queue.removeTop();
+                    Status result(std::move(current_inputs[source_num].chunk));
+                    result.required_source = source_num;
+                    return result;
+                }
+
                 /// Get the next block from the corresponding source, if there is one.
                 queue.removeTop();
-                return Status(current.impl->order);
+                return Status(source_num);
             }
         }
 

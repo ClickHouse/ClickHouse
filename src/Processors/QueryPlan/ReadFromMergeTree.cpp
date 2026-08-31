@@ -1896,10 +1896,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
 
-    /// Preliminary MergingSortedTransform consumes virtual row, so it won't reach downstream sorting and optimization won't work.
-    if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
-        need_preliminary_merge = false;
-
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
     const size_t total_query_nodes = is_parallel_reading_from_replicas
@@ -2118,6 +2114,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
 
+        /// A preliminary merge consumes its members' virtual rows as cursors; forwarding each
+        /// one downstream keeps the whole group deferrable by the top-level merge (and, with
+        /// `read_in_order_use_virtual_row_per_block`, keeps the per-block boundaries flowing).
+        /// Pointless for a single group (nothing to defer it against, and the boundary hop
+        /// lets the free-running read race one extra block), and not for the partition-wise
+        /// output: that one feeds aggregation, not a merge.
+        bool emit_boundary_virtual_rows = virtual_row_conversion && pipes.size() > 1 && !output_each_partition_through_separate_port;
+
         auto merge_streams = [&](Pipe & pipe)
         {
             pipe.addSimpleTransform([sorting_key_expr](const SharedHeader & header)
@@ -2138,7 +2142,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     /*out_row_sources_buf=*/ nullptr,
                     /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
-                    /*apply_virtual_row_conversions*/ false);
+                    /*apply_virtual_row_conversions*/ false,
+                    emit_boundary_virtual_rows);
 
                 pipe.addTransform(std::move(transform));
             }

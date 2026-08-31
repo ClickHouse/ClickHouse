@@ -4358,7 +4358,6 @@ Use virtual row while reading in order of primary key or its monotonic function 
     DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
 When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
 This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
-Note that it disables preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0) \
     DECLARE(Int64, read_in_order_virtual_row_prefetch_window, -1, R"(
 The number of sources deferred behind virtual rows that are allowed to read ahead in parallel during a read-in-order merge. Bounds the number of concurrently open readers and the reads wasted when a `LIMIT` finishes the merge before it reaches the prefetched sources.

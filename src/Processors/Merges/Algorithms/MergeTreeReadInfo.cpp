@@ -1,6 +1,7 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
 #include <Columns/ColumnConst.h>
+#include <base/scope_guard.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -49,6 +50,7 @@ Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_
     chassert(read_info);
 
     Block & pk_block = read_info->pk_block;
+    SCOPE_EXIT({ chunk.getChunkInfos().add(std::move(read_info)); });
 
     // std::cerr << apply_virtual_row_conversions << std::endl;
     // std::cerr << read_info->virtual_row_conversions->dumpActions() << std::endl;

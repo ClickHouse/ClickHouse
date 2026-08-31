@@ -26,7 +26,8 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
-        bool apply_virtual_row_conversions_ = true);
+        bool apply_virtual_row_conversions_ = true,
+        bool emit_boundary_virtual_rows_ = false);
 
     void addInput();
 
@@ -55,6 +56,15 @@ private:
     ssize_t filter_column_position = -1;
 
     bool apply_virtual_row_conversions;
+
+    /// A preliminary merge of a two-level in-order merge consumes its members' virtual rows;
+    /// with this set it forwards each one downstream first: the group's next output is
+    /// bounded by its queue minimum, so the announcement is as valid for the merged stream
+    /// as it was for the member, and the top-level merge can keep the whole group deferred.
+    const bool emit_boundary_virtual_rows;
+    /// Whether the current chunk of a source is a virtual row (`skip_last_row` alone does not
+    /// tell: parallel FINAL uses it for real data).
+    std::vector<char> input_is_virtual_row;
 
     /// Chunks currently being merged.
     Inputs current_inputs;
