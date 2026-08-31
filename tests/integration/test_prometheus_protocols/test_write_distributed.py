@@ -50,8 +50,8 @@ def test_remote_write_over_distributed():
     ]
     protobuf = convert_time_series_to_protobuf(time_series)
     send_protobuf_to_remote_write(node.ip_address, 9093, "/dist/write", protobuf)
-    node.query("SYSTEM FLUSH DISTRIBUTED prom_dist")
 
+    # No flush: the 204 acknowledgement itself must mean the samples already reached the shards.
     # Every sample lands exactly once across the shards, and the fixed hash split fills both.
     assert_eq_with_retry(
         node,

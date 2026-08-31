@@ -306,7 +306,12 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
     /// Check the engine of the target table: a Distributed target is written through its own sink,
     /// which routes the rows to the TimeSeries table of each shard.
-    resolvePrometheusQueryTarget(*time_series_storage);
+    if (resolvePrometheusQueryTarget(*time_series_storage))
+    {
+        /// The 204 acknowledgement must mean the samples reached the shards: Prometheus never
+        /// retries an acknowledged write, so a queued async insert would be silent data loss.
+        context_->setSetting("distributed_foreground_insert", true);
+    }
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
