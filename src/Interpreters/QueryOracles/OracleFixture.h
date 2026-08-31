@@ -38,13 +38,20 @@ public:
     /// Run a CREATE / INSERT / ALTER / OPTIMIZE / SYSTEM statement. Fail-close: false on any error.
     bool execute(const std::string & sql, const SettingsOverlay & overlay = {});
 
+    /// Create an auxiliary object whose lifetime is bound to this fixture but which is not a table
+    /// (a row policy, dictionary, view, etc.): `create_sql` runs now and, only if it succeeds,
+    /// `drop_sql` is queued for teardown. All teardown (tables and auxiliaries) runs in reverse
+    /// creation order on destruction, so an auxiliary created after its backing table is dropped
+    /// first. Fail-close: returns false and queues nothing if the create fails.
+    bool createAuxiliary(const std::string & create_sql, const std::string & drop_sql);
+
     /// Disarm all drops so the created tables survive for reproduction after a mismatch.
     void preserve() { preserved = true; }
 
 private:
     ContextMutablePtr base_context;
     std::string feature;
-    std::vector<std::string> created;   /// owned names, dropped in reverse order
+    std::vector<std::string> teardown;  /// full DROP statements, executed in reverse creation order
     bool valid_ = false;
     bool preserved = false;
 };
