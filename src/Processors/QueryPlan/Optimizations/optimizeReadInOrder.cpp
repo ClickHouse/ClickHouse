@@ -236,6 +236,23 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
         dag = expression.clone();
 }
 
+/// A `LIMIT n` above a join bounds how many rows the left side has to produce only when the join
+/// cannot drop a left row. `LEFT ALL` and `LEFT ANY` emit at least one row for every left row, so
+/// `n` output rows need at most `n` left rows; duplication works in our favour, because a left row
+/// matching several right rows only makes fewer left rows necessary. Every other kind and
+/// strictness can filter the left stream (`INNER`, `SEMI`, `ANTI`, ...), and then the limit says
+/// nothing about how much has to be read.
+bool joinKeepsLeftSideLimit(const IJoin * join_ptr)
+{
+    if (!join_ptr)
+        return false;
+
+    const auto & table_join = join_ptr->getTableJoin();
+    const auto strictness = table_join.strictness();
+    return table_join.kind() == JoinKind::Left
+        && (strictness == JoinStrictness::All || strictness == JoinStrictness::Any);
+}
+
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
 void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
@@ -266,9 +283,20 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
         return;
     }
 
-    if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
+    /// Keeping the limit through a join is what tells the reading step how many rows it will be
+    /// asked for. `ReadFromMergeTree` announces `min(part rows, InputOrderInfo::limit)` as
+    /// `total_rows_to_read`, and `ReadProgressCallback` checks `max_rows_to_read` in `throw` mode
+    /// against that announcement rather than against the rows actually read - so dropping the
+    /// limit here makes a bounded read look like a full scan to the row limits.
+    if (const auto * join_step = typeid_cast<const JoinStep *>(step))
     {
-        limit = 0;
+        if (!joinKeepsLeftSideLimit(join_step->getJoin().get()))
+            limit = 0;
+    }
+    else if (const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(step))
+    {
+        if (!joinKeepsLeftSideLimit(filled_join_step->getJoin().get()))
+            limit = 0;
     }
 
     if (node.children.empty())
