@@ -558,7 +558,7 @@ A table with the specified structure for reading data from cluster in the specif
         {
             .description = R"(The table function can be used to read the DeltaLake table stored on Azure object store in parallel for many nodes in a specified cluster.)",
             .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])\n"
-                      "deltaLakeAzureCluster(cluster, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=))",
+                      "deltaLakeAzureCluster(cluster, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
