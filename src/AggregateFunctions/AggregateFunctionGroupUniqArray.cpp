@@ -369,7 +369,7 @@ SELECT groupUniqArray(x) FROM t;
         )",
         R"(
 ┌─groupUniqArray(x)─┐
-│ [1,4,2,3]         │
+│ [1,2,3,4]         │
 └───────────────────┘
         )"
     },

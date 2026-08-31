@@ -64,9 +64,6 @@ public:
 
     virtual JoinResultBlock next() = 0;
 
-    /// Right table rows matched while producing the result. Only meaningful once the result is exhausted.
-    virtual size_t getMatchedRightRows() const { return 0; }
-
     static JoinResultPtr createFromBlock(Block block);
 };
 
@@ -193,11 +190,6 @@ public:
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
-
-    /// Called by `JoiningTransform` when every probe stream has consumed its whole left input.
-    /// Not called when the probe is cut short (LIMIT, cancellation).
-    /// `matched_right_rows` is the number of right table rows matched across every probe stream.
-    virtual void onProbePhaseFinish(size_t /*matched_right_rows*/) { }
 
     /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
     /// a post build optimization step.

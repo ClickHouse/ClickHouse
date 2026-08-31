@@ -434,11 +434,9 @@ class ClickHouseProc:
         )
 
         # set profile file for the server (not needed for per-test coverage,
-        # which uses system.coverage_log instead of .profraw files).
-        # %c (continuous mode) keeps the profile valid at every instant, so the
-        # SIGTRAP/SIGKILL escalation in stop_server cannot tear an exit-time write.
+        # which uses system.coverage_log instead of .profraw files)
         if not self.is_per_test_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%c%m.profraw"
+            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(

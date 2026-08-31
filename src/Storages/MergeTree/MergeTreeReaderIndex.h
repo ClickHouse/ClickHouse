@@ -26,7 +26,8 @@ public:
         size_t from_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        MutableColumns & res_columns) override;
+        size_t offset,
+        Columns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 

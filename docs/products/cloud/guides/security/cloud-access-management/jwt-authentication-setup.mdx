@@ -17,7 +17,7 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge/>
 <VersionBadge minVersion="26.4" />
-<EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider"/>
+<EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider" support="true"/>
 
 <Tip>
 This guide covers configuring JWKS providers in the Cloud console. To learn how to generate a JWT and what its structure looks like — its required claims, the roles and grants claims, and how ephemeral users work — see the [JWT Authentication](/operations/external-authenticators/jwt) reference.
@@ -25,7 +25,11 @@ This guide covers configuring JWKS providers in the Cloud console. To learn how 
 
 ClickHouse Cloud lets you authenticate connections to a service with JSON Web Tokens (JWTs) validated against your own JSON Web Key Set (JWKS) endpoints. Instead of managing database credentials, your identity provider issues short-lived tokens that ClickHouse verifies against the public keys published at a JWKS URL you configure.
 
-You configure these JWKS providers yourself, per service, from **Settings → Security** in the ClickHouse Cloud console.
+Once the feature is enabled for your organization, you configure these JWKS providers yourself, per service, from **Settings → Security** in the ClickHouse Cloud console.
+
+<Note>
+To enable JWT providers for your organization, reach out to [support](https://clickhouse.com/support/program).
+</Note>
 
 ## Before you begin {#before-you-begin}
 
@@ -34,10 +38,10 @@ To configure JWT providers for a service, you need:
 - An organization on the **Enterprise** plan.
 - A service running **ClickHouse version 26.4 or later**.
 - A role with the `control-plane:service:manage` permission on the service (for example, **Admin** or **Service admin**). Members without it see the section as read only.
-- A publicly reachable **HTTPS** JWKS URL that publishes at least one **RSA** key (`RS256`) or, for services on version 26.8 or later, an **EC** key (`ES256`, `ES384`, `ES512`).
+- A publicly reachable **HTTPS** JWKS URL that publishes at least one **RSA** key (tokens must be signed with **RS256**).
 
 <Note>
-JWKS-based providers accept **RSA** keys and, from version 26.8, **EC** keys on the P-256, P-384, and P-521 curves. A JWKS document may contain other key types, but at least one usable key must be present.
+JWKS-based providers accept **RSA keys only**. Tokens signed with HMAC (`HS256`) or EC (`ES256`) keys cannot be verified against a JWKS endpoint and are rejected. A JWKS document may contain other key types, but at least one usable RSA key must be present.
 </Note>
 
 ## How it works {#how-it-works}
@@ -45,7 +49,7 @@ JWKS-based providers accept **RSA** keys and, from version 26.8, **EC** keys on 
 The client (your identity provider or application) generates a JWT and signs it with its **private key**. The token must follow the expected [token format](/operations/external-authenticators/jwt#token-claims). ClickHouse then verifies it against the **public** keys published at your JWKS URL:
 
 1. ClickHouse reads the token's `kid` (key ID) header and selects the matching key from your JWKS document.
-2. It verifies the token signature against that public key and checks the `iss` (issuer) and `aud` (audience) claims against your provider configuration.
+2. It verifies the token signature against that RSA public key and checks the `iss` (issuer) and `aud` (audience) claims against your provider configuration.
 3. On success, the connection runs as an ephemeral user whose access rights come from the token's `clickhouse:grants` and `clickhouse:roles` claims, capped by the permission limit (the `default` user). See [Access rights](/operations/external-authenticators/jwt#access-rights) for details.
 
 ClickHouse validates and fetches the JWKS URL when you add or update a provider, so a misconfigured or unreachable URL is rejected up front.
@@ -72,7 +76,7 @@ Complete the provider form and select **Save**.
 | **Name** | A unique name for this provider on the service. Cannot be changed after creation. |
 | **Issuer** | The expected `iss` claim of incoming tokens. |
 | **Audience** | The expected `aud` claim of incoming tokens. |
-| **JWKS URL** | The public HTTPS URL that publishes the public keys used to verify token signatures. |
+| **JWKS URL** | The public HTTPS URL that publishes your RSA public keys used to verify token signatures. |
 | **Roles claim** (optional) | The token claim to read ClickHouse roles from. Leave blank to use the default claim name `clickhouse:roles`. Roles named in the token must already exist on the service. |
 
 </Step>
@@ -89,7 +93,7 @@ Deleting a JWT provider immediately stops accepting tokens issued for it, and an
 ## Limits {#limits}
 
 - A maximum of **five** JWT providers per service.
-- JWKS providers accept **RSA** keys (`RS256`) and, from version 26.8, **EC** keys (`ES256`, `ES384`, `ES512`).
+- JWKS providers accept **RSA / RS256** keys only.
 - The JWKS URL must be a public HTTPS endpoint. Private, internal, or link-local addresses are rejected.
 
 ## Related {#related}

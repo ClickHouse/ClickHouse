@@ -165,14 +165,7 @@ if (WITH_COVERAGE)
     message (STATUS "Enabled instrumentation for code coverage")
 
     # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
-    # -runtime-counter-relocation makes counter updates go through a bias variable,
-    # which is what lets the profile runtime memory-map the counters straight into
-    # the .profraw file ("continuous mode", the %c pattern in LLVM_PROFILE_FILE).
-    # The file is then valid at every instant, so a process killed with SIGKILL
-    # (integration tests do this on purpose) leaves an intact profile instead of a
-    # half-written one that crashes llvm-profdata later. Without %c at runtime the
-    # flag is inert (the bias stays zero).
-    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping -mllvm -runtime-counter-relocation)
+    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 
     if (WITH_COVERAGE_DEPTH)

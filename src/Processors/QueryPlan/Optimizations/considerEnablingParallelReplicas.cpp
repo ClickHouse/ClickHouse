@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -36,15 +35,6 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-/// Is this the branch of the plan that reads from the other replicas? Both implementations of parallel
-/// replicas are recognized: the query-based one (`ReadFromParallelRemoteReplicasStep`) and the plan-based
-/// one (`ReadFromParallelReplicasStep`, enabled by `parallel_replicas_plan_based`).
-bool isReadFromOtherReplicas(const IQueryPlanStep & step)
-{
-    return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step)
-        || typeid_cast<const ReadFromParallelReplicasStep *>(&step);
-}
-
 /// Find the top node of the parallel replicas plan. E.g.:
 ///
 /// Expression ((Project names + Projection))
@@ -55,10 +45,6 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
 ///          Expression ((WHERE + Change column names to column identifiers))
 ///            ReadFromMergeTree (default.hits)
 ///      ReadFromRemoteParallelReplicas (Query: ... Replicas: ...)
-///
-/// The plan-based implementation of parallel replicas (`parallel_replicas_plan_based`) builds the very
-/// same shape, the only difference being that the branch reading from the other replicas is a
-/// `ReadFromParallelReplicas` step, which ships a serialized plan fragment instead of a query.
 ///
 QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel_replicas_root)
 {
@@ -72,7 +58,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
         auto & frame = stack.back();
 
         /// Currently the approach is very simple: we look for Union step in the plan tree,
-        /// and consider its children. The first child that is not a read from the other replicas
+        /// and consider its children. The first child that is not ReadFromParallelRemoteReplicas
         /// is considered the top node of replicas plan.
         if (typeid_cast<UnionStep *>(frame.node->step.get()))
         {
@@ -93,7 +79,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                     chassert(!node->children.empty());
                     node = node->children.front();
                 }
-                if (!isReadFromOtherReplicas(*node->step))
+                if (!typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
                 {
                     if (replicas_plan_top_node)
                     {

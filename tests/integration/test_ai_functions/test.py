@@ -105,22 +105,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
-        # Endpoint returning a billed `200` whose body has no usable `choices`.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_no_choices AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/no_choices', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        # Anthropic endpoint returning a billed `200` with no `content` array.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_anthropic_no_content AS "
-            f"provider = 'anthropic', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/no_content', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
         # Endpoint returning a deterministic HTTP 400, which the url table function never retries.
         instance.query(
             f"CREATE NAMED COLLECTION ai_bad_request AS "

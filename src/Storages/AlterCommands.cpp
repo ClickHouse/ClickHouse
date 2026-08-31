@@ -1267,14 +1267,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             /// For implicit indices, check the index name rather than column_names because
             /// for ALIAS columns, column_names contains the underlying expression columns.
             if (index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
-            {
                 index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
-                index.name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to;
-                /// For an ALIAS column the index covers the columns its expression expands to,
-                /// which the column's own name never appears in, so a rename does not affect them.
-                if (!metadata.columns.hasAlias(rename_to))
-                    index.column_names = {rename_to};
-            }
             else
                 rename_visitor.visit(index.definition_ast);
         }
