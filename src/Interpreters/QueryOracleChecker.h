@@ -121,6 +121,10 @@ public:
     /// nullIf/isNull) must hold row-for-row over Nullable data; a violation is a real bug.
     bool checkNullIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// CAST round-trip oracle (self-seeded): integer and Date values survive a String round-trip
+    /// exactly (CAST(CAST(x AS String) AS T) == x); a violation is a real CAST/parse bug.
+    bool checkCastRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
