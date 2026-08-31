@@ -32,12 +32,11 @@ CREATE TABLE training_04509
 ENGINE = MergeTree
 ORDER BY tuple();
 
--- Small deterministic dataset: y = 2 * x1 + 3 * x2.
 INSERT INTO training_04509 (x1, x2, y)
 SELECT
-    number AS x1,
-    number * 2 AS x2,
-    2 * x1 + 3 * x2 AS y
+    number % 10 AS x1,
+    intDiv(number, 10) AS x2,
+    x1 + 10 * x2 AS y
 FROM numbers(100);
 
 -- Feature-only table for inference: exactly the feature columns, no target.
@@ -50,7 +49,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO inference_04509 (x1, x2)
-SELECT number AS x1, number * 2 AS x2 FROM numbers(10);
+SELECT number % 10 AS x1, intDiv(number, 10) AS x2 FROM numbers(10);
 
 SELECT 'Positive: an XGBOOST dictionary with explicit hyperparameters';
 
