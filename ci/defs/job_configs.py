@@ -6,6 +6,7 @@ from ci.defs.defs import (
     LLVM_FT_NUM_BATCHES,
     LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
     LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_S3_PARALLEL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -898,24 +899,36 @@ class JobConfigs:
             for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel"],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, ParallelReplicas, s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[
+                    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel_{batch}"
+                ],
+            )
+            for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
             provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential"],
         ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel"],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, AsyncInsert, s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[
+                    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel_{batch}"
+                ],
+            )
+            for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
