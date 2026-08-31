@@ -11,6 +11,7 @@
 #include <Common/Crypto/X509Certificate.h>
 
 #include <Poco/Logger.h>
+#include <Poco/Net/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <openssl/x509v3.h>
 #include <openssl/ssl.h>
@@ -43,15 +44,16 @@ class CertificateReloader
 public:
     using stat_t = struct stat;
 
-    /// Owns a reference to a set of trusted CA certificates.
+    /// Owns a reference to a set of trusted CA certificates and remembers where they were loaded from.
     struct CAStore
     {
-        explicit CAStore(X509_STORE * store_) : store(store_) {}
+        CAStore(X509_STORE * store_, Poco::Net::Context::CAPaths paths_) : store(store_), paths(std::move(paths_)) {}
         CAStore(const CAStore &) = delete;
         CAStore & operator=(const CAStore &) = delete;
         ~CAStore() { X509_STORE_free(store); }
 
         X509_STORE * const store;
+        const Poco::Net::Context::CAPaths paths;
     };
 
     struct Data
@@ -112,9 +114,11 @@ public:
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
     /// Register an additional SSL_CTX to share certificates and trusted CAs with the primary context of `prefix`.
+    /// `load_default_cas` tells whether `ctx` was created with the default CA certificates, the reloaded CA certificates
+    /// are shared only if this matches the configuration of the primary context.
     /// Returns true if the context will get its certificate and key from CertificateReloader,
     /// false if the caller has to configure them on the context itself.
-    bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix);
+    bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix, bool load_default_cas);
 
     /// Handle configuration reload for all contexts
     void tryReloadAll(const Poco::Util::AbstractConfiguration & config);
@@ -129,6 +133,10 @@ public:
     /// It is not necessarily the certificate of the corresponding `SSL_CTX`: certificates are installed
     /// per connection, and with `<acme>` the context itself never gets a certificate at all.
     std::optional<X509Certificate> getCertificate(const std::string & prefix) const;
+
+    /// Where the CA certificates that are currently used to verify peers of `prefix` connections were loaded from,
+    /// if they are managed by CertificateReloader (i.e. `caConfig` is set for the prefix).
+    std::optional<Poco::Net::Context::CAPaths> getCAPaths(const std::string & prefix) const;
 
 private:
     CertificateReloader() = default;

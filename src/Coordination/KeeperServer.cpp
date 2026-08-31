@@ -197,7 +197,7 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
 
         /// Try to register with CertificateReloader for hot-reload support.
         /// If registration fails, fall back to static certificate loading.
-        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix))
+        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix, params.loadDefaultCAs))
         {
             /// For passphrase-protected keys, load certificates manually
             if (certificate_data)

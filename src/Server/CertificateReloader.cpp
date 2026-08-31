@@ -121,7 +121,7 @@ std::unique_ptr<const CertificateReloader::CAStore> loadCAStore(const std::strin
     if (!store || X509_STORE_up_ref(store) != 1)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot get CA certificates from SSL context: {}", Poco::Net::Utility::getLastError());
 
-    return std::make_unique<const CertificateReloader::CAStore>(store);
+    return std::make_unique<const CertificateReloader::CAStore>(store, context.getCAPaths());
 }
 
 }
@@ -294,7 +294,7 @@ void CertificateReloader::tryLoadACMECertificate(SSL_CTX * ctx, const std::strin
 void CertificateReloader::tryLoadCAImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
     std::string new_ca_path = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
-    bool new_load_default_cas = config.getBool(prefix + Poco::Net::SSLManager::CFG_ENABLE_DEFAULT_CA, false);
+    bool new_load_default_cas = config.getBool(prefix + Poco::Net::SSLManager::CFG_ENABLE_DEFAULT_CA, Poco::Net::SSLManager::VAL_ENABLE_DEFAULT_CA);
 
     /// Without `caConfig` the trusted certificates come only from the system locations (if at all), there is nothing to reload.
     /// But if `caConfig` was there before, keep following the configuration, like a restart would.
@@ -388,7 +388,7 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 }
 
 
-bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix)
+bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix, bool load_default_cas)
 {
     if (!ctx)
         return false;
@@ -405,8 +405,13 @@ bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::st
 
     MultiData * pdata = &*(it->second);
 
-    /// Share the reloadable CA certificates of this prefix (see `findOrInsert`).
-    SSL_CTX_set_cert_verify_callback(ctx, callVerifyCertificate, reinterpret_cast<void *>(pdata));
+    /// Share the reloadable CA certificates of this prefix (see `findOrInsert`),
+    /// unless this context trusts a different set of CA certificates than the primary one.
+    if (!pdata->ca_store.get() || load_default_cas == pdata->load_default_cas)
+        SSL_CTX_set_cert_verify_callback(ctx, callVerifyCertificate, reinterpret_cast<void *>(pdata));
+    else
+        LOG_INFO(log, "CA certificates of the additional context for prefix '{}' will not be reloaded without restart, "
+            "set `loadDefaultCAFile` explicitly to enable it.", prefix);
 
     /// Verify that certificate data was actually loaded, not just the entry created.
     /// If data is null, return false so caller can use fallback (static cert loading).
@@ -441,6 +446,22 @@ std::optional<X509Certificate> CertificateReloader::getCertificate(const std::st
     X509 * leaf_certificate = static_cast<X509 *>(current->certs_chain.front());
     X509_up_ref(leaf_certificate);
     return X509Certificate(leaf_certificate);
+}
+
+
+std::optional<Poco::Net::Context::CAPaths> CertificateReloader::getCAPaths(const std::string & prefix) const
+{
+    std::lock_guard lock{data_mutex};
+
+    auto it = data_index.find(prefix);
+    if (it == data_index.end())
+        return {};
+
+    auto current = it->second->ca_store.get();
+    if (!current)
+        return {};
+
+    return current->paths;
 }
 
 

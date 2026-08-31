@@ -33,6 +33,13 @@ CERT_FILES = [
 # Serves HTTPS and acts as a TLS client towards itself.
 node = cluster.add_instance("node", main_configs=["configs/ssl.xml"] + CERT_FILES)
 
+# Does not set `loadDefaultCAFile`, and OpenSSL's default CA file is ca2 for this instance.
+node_with_default_cas = cluster.add_instance(
+    "node_with_default_cas",
+    main_configs=["configs/ssl_with_default_cas.xml"] + CERT_FILES,
+    env_variables={"SSL_CERT_FILE": f"{CONFIG_DIR}/ca2.crt"},
+)
+
 # Three nodes with embedded Keeper talking Raft over TLS.
 keeper_nodes = [
     cluster.add_instance(f"node{i}", main_configs=[f"configs/keeper{i}.xml", "configs/ssl.xml"] + CERT_FILES) for i in (1, 2, 3)
@@ -69,7 +76,7 @@ def set_own_certificate(instance, cert):
 @pytest.fixture(autouse=True)
 def restore_certificates(started_cluster):
     yield
-    for instance in [node] + keeper_nodes:
+    for instance in [node, node_with_default_cas] + keeper_nodes:
         set_trusted_cas(instance, "ca1")
         set_own_certificate(instance, "cert1")
         instance.query("SYSTEM RELOAD CONFIG")
@@ -78,9 +85,9 @@ def restore_certificates(started_cluster):
     ku.wait_nodes(cluster, keeper_nodes)
 
 
-def https_request_with_client_certificate(cert):
-    """Query the HTTPS port of `node` presenting the given client certificate. Returns the response, or None if the TLS handshake failed."""
-    result = node.exec_in_container(
+def https_request_with_client_certificate(cert, instance=node):
+    """Query the HTTPS port of `instance` presenting the given client certificate. Returns the response, or None if the TLS handshake failed."""
+    result = instance.exec_in_container(
         [
             "bash",
             "-c",
@@ -131,6 +138,35 @@ def test_client_reloads_ca(started_cluster):
     set_trusted_cas(node, "ca1")
     node.query("SYSTEM RELOAD CONFIG")
     assert node.query(query) == "1\n"
+
+
+def test_default_cas_are_kept(started_cluster):
+    """With `loadDefaultCAFile` left at its default, both the CAs from `caConfig` and the default ones are trusted, before and after a reload."""
+    # cert1 is trusted through `caConfig` (ca.crt = ca1), cert2 through the default CA file (SSL_CERT_FILE = ca2).
+    assert https_request_with_client_certificate("cert1", node_with_default_cas) == "1\n"
+    assert https_request_with_client_certificate("cert2", node_with_default_cas) == "1\n"
+
+    reloads = int(node_with_default_cas.count_in_log("Reloaded CA certificates").strip())
+    set_trusted_cas(node_with_default_cas, "ca1")  # same content, new modification time
+    node_with_default_cas.query("SYSTEM RELOAD CONFIG")
+    assert int(node_with_default_cas.count_in_log("Reloaded CA certificates").strip()) > reloads
+
+    assert https_request_with_client_certificate("cert1", node_with_default_cas) == "1\n"
+    assert https_request_with_client_certificate("cert2", node_with_default_cas) == "1\n"
+
+
+def test_system_certificates_follows_reload(started_cluster):
+    """`system.certificates` shows the CA certificates that are currently used, also after `caConfig` is changed to another file."""
+    query = "SELECT path, subject LIKE '%Test Root CA {}%' FROM system.certificates WHERE NOT default"
+    assert node.query(query.format(1)) == f"{CONFIG_DIR}/ca.crt\t1\n"
+
+    node.replace_in_config(f"{CONFIG_DIR}/ssl.xml", f"{CONFIG_DIR}/ca.crt", f"{CONFIG_DIR}/ca2.crt")
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query(query.format(2)) == f"{CONFIG_DIR}/ca2.crt\t1\n"
+    finally:
+        node.replace_in_config(f"{CONFIG_DIR}/ssl.xml", f"{CONFIG_DIR}/ca2.crt", f"{CONFIG_DIR}/ca.crt")
+        node.query("SYSTEM RELOAD CONFIG")
 
 
 def kill_raft_connections(instance):
