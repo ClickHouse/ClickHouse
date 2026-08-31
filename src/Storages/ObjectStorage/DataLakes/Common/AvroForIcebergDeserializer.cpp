@@ -54,6 +54,7 @@ try
     }
 
     metadata = manifest_file_reader->metadata();
+    bytes_read = buffer->count();
     parsed_column = std::move(columns[0]);
     parsed_column_data_type = std::dynamic_pointer_cast<const DataTypeTuple>(data_type);
     parsed_manifest_file_entries.resize(parsed_column->size());
@@ -195,6 +196,17 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             file_sequence_number = file_sequence_number_value.safeGet<Int64>();
     }
 
+    std::optional<UInt64> first_row_id;
+
+    if (format_version > 2 && hasPath(c_data_file_first_row_id))
+    {
+        const auto first_row_id_value = getValueFromRowByName(row_index, c_data_file_first_row_id);
+        if (!first_row_id_value.isNull())
+        {
+            first_row_id = first_row_id_value.safeGet<Int64>();
+        }
+    }
+
     const auto file_path_key = IcebergPathFromMetadata::deserialize(
         getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>());
     /// NOTE: This is weird, because in manifest file partition looks like this:
@@ -290,6 +302,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
+                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
@@ -338,6 +351,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
+                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
@@ -375,6 +389,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
+                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
