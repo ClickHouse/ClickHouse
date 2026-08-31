@@ -94,12 +94,15 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
     if (max_rows == 0)
         return;
 
-    /// If the user has already set `max_rows_to_group_by`, we only apply the optimization
-    /// when our derived value is strictly smaller — otherwise the user's setting is tighter
-    /// and ours would be a no-op. When the user has a tighter throw/break contract, we'd
-    /// also break their semantics (already guarded by the `mode_is_changed` check above).
+    /// A `max_rows_to_group_by` cap set by the user is a contract: unless the overflow mode is
+    /// `ANY`, the query has to fail (or break) once the cap is exceeded. That holds for the
+    /// default mode, `THROW`, just as much as for an explicitly set one, so the mode check above
+    /// is not enough here. Overwriting the cap with `LIMIT + OFFSET` and switching the mode to
+    /// `ANY` would silently turn the limit into "return the first `LIMIT` keys".
+    /// In `ANY` mode we only apply the optimization when our derived value is strictly smaller —
+    /// otherwise the user's setting is tighter and ours would be a no-op.
     const UInt64 user_max_rows = settings[Setting::max_rows_to_group_by];
-    if (user_max_rows != 0 && user_max_rows <= max_rows)
+    if (user_max_rows != 0 && (!mode_is_any || user_max_rows <= max_rows))
         return;
 
     auto & mutable_context = query->getMutableContext();
