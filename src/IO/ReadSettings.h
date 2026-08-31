@@ -53,6 +53,9 @@ struct ReadSettings
     bool enable_filesystem_cache_log = false;
     size_t filesystem_cache_segments_batch_size = 20;
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    /// How long a read may wait for a file segment which is being downloaded by a concurrent query
+    /// before bypassing the cache and reading directly from remote storage.
+    size_t filesystem_cache_wait_for_concurrent_download_timeout_milliseconds = 1000;
     bool filesystem_cache_allow_background_download = true;
     bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
     bool filesystem_cache_allow_background_download_during_fetch = true;
