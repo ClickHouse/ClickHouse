@@ -6,7 +6,10 @@ Markdown documentation files. Structured table metadata comments provide the
 description, examples and related material; system.documentation combines those
 parts with the live column metadata into a consistently structured page.
 Asynchronous metric descriptions are extracted directly from their C++
-registrations because clickhouse-local has no live metrics instance.
+registrations because clickhouse-local has no live metrics instance; the
+surrounding `system.asynchronous_metrics` page itself is owned by the source
+too, so `system.documentation` exposes it even though the table is attached
+only by the server.
 
 Usage:
     python3 utils/generate-system-tables-docs --binary ./build/programs/clickhouse --docs-dir docs/reference/system-tables/
@@ -99,7 +102,12 @@ def populate_asynchronous_metrics_catalog(full_documentation):
     """Populate the async-metric page from C++ source, independent of runtime state."""
     table_name = "asynchronous_metrics"
     if table_name not in full_documentation:
-        raise ValueError("system.documentation has no asynchronous_metrics page")
+        raise ValueError(
+            "system.documentation has no asynchronous_metrics page. The page is owned by the source"
+            " (`ASYNCHRONOUS_METRICS_DOCUMENTATION` in src/Storages/System/StorageSystemAsynchronousMetrics.cpp)"
+            " and StorageSystemDocumentation emits it even where the table is not attached, so the binary"
+            " is either too old or was built without that row"
+        )
 
     generated_catalog, metric_count = load_async_metrics_generator().generate_markdown()
     if not generated_catalog:

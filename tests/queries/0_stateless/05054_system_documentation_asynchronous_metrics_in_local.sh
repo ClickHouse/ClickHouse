@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# `system.asynchronous_metrics` is attached only by the server, but its documentation is owned by the source,
+# so the page must also be available in `clickhouse-local`, which is how `utils/generate-system-tables-docs` runs.
+${CLICKHOUSE_LOCAL} --query "SELECT count() FROM system.tables WHERE database = 'system' AND name = 'asynchronous_metrics'"
+
+${CLICKHOUSE_LOCAL} --query "
+    SELECT
+        source,
+        description LIKE '%## Description {#description}%' AS has_description,
+        description LIKE '%## Columns {#columns}%' AS has_columns,
+        description LIKE '%## Metric descriptions {#metric-descriptions}%' AS has_metric_descriptions,
+        description LIKE '%## Examples {#examples}%' AS has_examples,
+        description LIKE '%{{ASYNCHRONOUS_METRICS}}%' AS has_unresolved_placeholder
+    FROM system.documentation
+    WHERE type = 'System Table' AND name = 'asynchronous_metrics'"
+
+# The row must not be duplicated on a server, where the table is attached.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count()
+    FROM system.documentation
+    WHERE type = 'System Table' AND name = 'asynchronous_metrics'"

@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -1340,6 +1341,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     /// System-table documentation is stored in each attached table's metadata comment. A structured comment uses
     /// section markers such as `.description` and `.examples`; an ordinary comment remains a concise fallback.
     const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
+    bool has_asynchronous_metrics = false;
     if (system_database)
     {
         for (auto iterator = system_database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -1351,6 +1353,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 if (metadata_snapshot)
                 {
                     const IStorage & storage = *table;
+                    has_asynchronous_metrics |= table_name == "asynchronous_metrics";
                     addRow(
                         res_columns,
                         EntityType::SystemTable,
@@ -1361,6 +1364,22 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
             }
         }
     }
+
+    /// `system.asynchronous_metrics` is attached only by the server, because it needs a live `AsynchronousMetrics`
+    /// instance. Its documentation, however, is owned by the source and does not depend on that instance, so the page
+    /// is rendered from the source-owned comment and the static column description wherever the table is missing -
+    /// in particular in `clickhouse-local`, which is how the documentation generator reads this table.
+    if (!has_asynchronous_metrics)
+        addRow(
+            res_columns,
+            EntityType::SystemTable,
+            "asynchronous_metrics",
+            renderSystemTableDoc(
+                "asynchronous_metrics",
+                ASYNCHRONOUS_METRICS_DOCUMENTATION,
+                StorageSystemAsynchronousMetrics::getColumnsDescription(),
+                context),
+            makeRepoRelative(getSystemTableSource(typeid(StorageSystemAsynchronousMetrics))));
 }
 
 }

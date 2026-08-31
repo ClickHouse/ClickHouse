@@ -8,6 +8,14 @@ namespace DB
 class AsynchronousMetrics;
 class Context;
 
+/** The documentation of `system.asynchronous_metrics`.
+  *
+  * The table itself is attached only by the server, because it needs a live `AsynchronousMetrics` instance,
+  * but its documentation has to be available everywhere, in particular in `clickhouse-local`, which is how
+  * the documentation generator reads `system.documentation`.
+  */
+extern const char * const ASYNCHRONOUS_METRICS_DOCUMENTATION;
+
 
 /** Implements system table asynchronous_metrics, which allows to get values of periodically (asynchronously) updated metrics.
   */
