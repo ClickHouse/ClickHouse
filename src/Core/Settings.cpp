@@ -8907,7 +8907,7 @@ The decision reads no posting list: each list's row count is stored in the dicti
 
 "Every row" means every row of the part, not of the rows surviving an earlier predicate, so a combined predicate does not make the bypass more eager.
 
-Disable to force the posting lists to be read anyway, which is what a test guarding the posting-list reader needs.
+Disabling turns off only this exact-proof bypass; it does not by itself force the posting lists to be read, because `text_index_like_max_postings_to_read` and `text_index_like_max_postings_rows_to_read` can still cut the dictionary scan short. A test that must reach the posting-list reader on a broad pattern also needs both budgets set high enough for its data.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \

@@ -16,8 +16,12 @@ SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 -- The pattern below matches every row, so the bypass would skip reading the posting lists -
--- which is exactly the reader this test exists to guard. Force the read.
+-- which is exactly the reader this test exists to guard. Force the read. The bypass switch alone
+-- does not guarantee it: the postings budgets can still cut the scan short, so pin them above
+-- this table's size instead of relying on the defaults staying larger than it.
 SET use_text_index_like_pattern_bypass = 0;
+SET text_index_like_max_postings_to_read = 1000;
+SET text_index_like_max_postings_rows_to_read = 1000000000;
 
 DROP TABLE IF EXISTS t_text_index_like_large;
 
