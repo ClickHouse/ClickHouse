@@ -671,7 +671,13 @@ bool ColumnAggregateFunction::hasCompatibleStateType(const String & field_type_n
     /// legacy version 0 state be accepted into a column of the current version and read with the wrong
     /// layout.
     const size_t field_version = field_state_type->getVersionIfExplicit().value_or(0);
-    if (field_version != version.value_or(0))
+
+    /// The two sides resolve an absent version differently, and each has to be read the way it will
+    /// actually be used. On the column side `insert` hands `version` straight to `deserialize`, which
+    /// reads an absent one as the function's default, so that is the version the payload will be read
+    /// at. Treating it as 0 here would accept an explicit version 0 field into a column that then
+    /// deserializes it at the default version.
+    if (field_version != version.value_or(func->getDefaultVersion()))
         return false;
 
     return field_state_type->equals(*this_state_type);

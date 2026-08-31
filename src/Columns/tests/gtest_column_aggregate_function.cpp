@@ -142,4 +142,20 @@ TEST(ColumnAggregateFunction, InsertRejectsStateOfAnotherVersion)
     /// rather than everything that reaches the slow path.
     EXPECT_NO_THROW(column_v1->insert(field_v1));
     EXPECT_NO_THROW(column_v0->insert(field_v0));
+
+    /// A column built without an explicit version prints its state unversioned, but `insert` passes
+    /// that absent version straight to `deserialize`, which reads it as the function's default. The
+    /// comparison has to use the same resolution, or a state explicitly spelled as version 0 would be
+    /// accepted here and then read at the default version.
+    auto column_default = ColumnAggregateFunction::create(aggregate_function);
+
+    AggregateFunctionStateData explicit_v0;
+    explicit_v0.name = "AggregateFunction(0, groupBitmap, UInt32)";
+    explicit_v0.data = field_v0.safeGet<AggregateFunctionStateData>().data;
+
+    expect_rejected(*column_default, Field(explicit_v0));
+    EXPECT_FALSE(column_default->tryInsert(Field(explicit_v0)));
+
+    /// The default version for `groupBitmap` is 1, so a version 1 state is what it does accept.
+    EXPECT_NO_THROW(column_default->insert(field_v1));
 }
