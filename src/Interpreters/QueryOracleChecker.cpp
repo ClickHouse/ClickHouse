@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryOracles/OracleSettings.h>
 #include <Interpreters/QueryOracles/OracleRegistry.h>
+#include <Interpreters/QueryOracles/OracleExec.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -368,38 +369,7 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     return false;
 }
 
-/// Split a string by newline into individual rows, ignoring trailing empty line.
-std::vector<String> splitIntoRows(const String & output)
-{
-    /// Split TabSeparated output into rows. ClickHouse always terminates a TSV
-    /// row with `\n`, so the canonical form is `<row1>\n<row2>\n...\n<rowN>\n`.
-    /// Strip exactly one trailing `\n` if present (it terminates the last row,
-    /// not a separator), then split the rest on `\n`. This produces the right
-    /// number of rows even when many of them are empty strings (e.g. unmatched
-    /// LEFT JOIN rows for a `String` right-side column come out as empty).
-    std::vector<String> rows;
-    if (output.empty())
-        return rows;
-
-    std::string_view sv{output};
-    if (sv.back() == '\n')
-        sv.remove_suffix(1);
-
-    size_t start = 0;
-    while (true)
-    {
-        size_t end = sv.find('\n', start);
-        if (end == std::string_view::npos)
-        {
-            rows.emplace_back(sv.substr(start));
-            break;
-        }
-        rows.emplace_back(sv.substr(start, end - start));
-        start = end + 1;
-    }
-
-    return rows;
-}
+/// (`splitIntoRows` moved to QueryOracles/OracleExec.cpp along with the execution helpers.)
 
 /// ARRAY JOIN multiplies rows (one input → many output), breaking partition identity.
 bool hasArrayJoin(const ASTSelectQuery & select)
@@ -1195,102 +1165,27 @@ String QueryOracleChecker::formatAST(const ASTPtr & ast)
 }
 
 
-ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr & base_context)
-{
-    auto session_context = Context::createCopy(base_context);
-    session_context->makeSessionContext();
-
-    auto oracle_context = Context::createCopy(session_context);
-    oracle_context->makeQueryContext();
-
-    /// Apply every neutralization from the single source of truth (QueryOracles/OracleSettings).
-    /// This is the ONLY place these pins are applied; `isPinnedByOracleContext` mirrors the same
-    /// list so the setting-flip sweep can never flip a pinned setting. Rationale for each pin
-    /// lives in the `why` field there (single-thread pin closes a pipeline-teardown UAF; the
-    /// read/result caps throw rather than truncate; `readonly`/`implicit_transaction` off keep
-    /// fixture DDL executable).
-    for (const auto & pin : oraclePinnedSettings())
-        oracle_context->setSetting(String(pin.name), pin.value);
-
-    oracle_context->setCurrentQueryId("");
-    return oracle_context;
-}
-
+/// The execution + shaping implementations now live in QueryOracles/OracleExec. These remain as
+/// thin forwarders so the existing check* methods keep their current call sites; new oracles use
+/// OracleExec directly.
 
 std::optional<std::vector<String>>
 QueryOracleChecker::executeAndCollectSortedRows(const String & query, const ContextMutablePtr & context)
 {
-    auto oracle_context = makeOracleContext(context);
-    oracle_context->setDefaultFormat("TabSeparated");
-
-    /// Use the ReadBuffer/WriteBuffer executeQuery API — this is crash-safe because
-    /// ClickHouse handles all column serialization within the pipeline internally,
-    /// writing formatted text directly to the output buffer.
-    ReadBufferFromString istr(query);
-    WriteBufferFromOwnString ostr;
-
-    try
-    {
-        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
-    }
-    catch (const Exception & e)
-    {
-        /// `result_overflow_mode=throw` makes oracle sub-queries that exceed
-        /// `max_result_rows` / `max_result_bytes` throw rather than silently
-        /// truncate. Catch the size-cap exceptions here and signal "skipped"
-        /// so the oracle never compares partial results.
-        if (e.code() == ErrorCodes::TOO_MANY_ROWS || e.code() == ErrorCodes::TOO_MANY_BYTES)
-            return std::nullopt;
-        throw;
-    }
-
-    String output = ostr.str();
-    if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return std::nullopt; /// Belt-and-braces: still cap the formatted output.
-
-    auto rows = splitIntoRows(output);
-    std::sort(rows.begin(), rows.end());
-    return rows;
+    return OracleExec::executeRows(query, context, ResultShape::SortedBag);
 }
 
 
 Field QueryOracleChecker::executeScalar(const String & query, const ContextMutablePtr & context)
 {
-    auto oracle_context = makeOracleContext(context);
-
-    auto result = executeQuery(query, oracle_context, QueryFlags{.internal = true});
-
-    if (!result.second.pipeline.initialized() || !result.second.pipeline.pulling())
-        return Field();
-
-    PullingPipelineExecutor executor(result.second.pipeline);
-    Block block;
-
-    Field scalar;
-    bool found = false;
-
-    while (executor.pull(block))
-    {
-        if (block.rows() > 0 && block.columns() > 0 && !found)
-        {
-            block.getByPosition(0).column->get(0, scalar);
-            found = true;
-        }
-    }
-
-    return scalar;
+    return OracleExec::executeScalar(query, context).value_or(Field());
 }
 
 
 std::optional<std::vector<String>>
 QueryOracleChecker::executeAndCollectSortedUniqueRows(const String & query, const ContextMutablePtr & context)
 {
-    auto rows_opt = executeAndCollectSortedRows(query, context);
-    if (!rows_opt)
-        return std::nullopt;
-    auto & rows = *rows_opt;
-    rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
-    return rows_opt;
+    return OracleExec::executeRows(query, context, ResultShape::SortedSet);
 }
 
 
@@ -1299,31 +1194,7 @@ QueryOracleChecker::executeWithSettings(
     const String & query, const ContextMutablePtr & context,
     const std::vector<std::pair<String, Field>> & settings)
 {
-    auto oracle_context = makeOracleContext(context);
-    oracle_context->setDefaultFormat("TabSeparated");
-    for (const auto & [name, value] : settings)
-        oracle_context->setSetting(name, value);
-
-    ReadBufferFromString istr(query);
-    WriteBufferFromOwnString ostr;
-    try
-    {
-        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::TOO_MANY_ROWS || e.code() == ErrorCodes::TOO_MANY_BYTES)
-            return std::nullopt;
-        throw;
-    }
-
-    String output = ostr.str();
-    if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return std::nullopt;
-
-    auto rows = splitIntoRows(output);
-    std::sort(rows.begin(), rows.end());
-    return rows;
+    return OracleExec::executeRows(query, context, ResultShape::SortedBag, settings);
 }
 
 
