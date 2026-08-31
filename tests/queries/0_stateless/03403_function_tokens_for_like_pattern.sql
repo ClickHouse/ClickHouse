@@ -23,6 +23,12 @@ SELECT tokens('abcd%', 'ngrams', 2), tokensForLikePattern('abcd%', 'ngrams', 2);
 SELECT tokens('%ab_cd%', 'ngrams', 2), tokensForLikePattern('%ab_cd%', 'ngrams', 2);
 SELECT tokens('%ab\_cd%', 'ngrams', 2), tokensForLikePattern('%ab\_cd%', 'ngrams', 2);
 
+-- Nullable inputs
+SELECT 'nullable:';
+SELECT tokensForLikePattern(CAST(NULL AS Nullable(String)));
+SELECT tokensForLikePattern(materialize(toNullable('hello\_world')));
+SELECT tokensForLikePattern(nullIf(materialize('hello\_world'), materialize('hello\_world')));
+
 -- Unsupported tokenizers should throw error
 SELECT 'unsupported tokenizers:';
 SELECT tokensForLikePattern('%hello world%', 'splitByString', [' ']); -- { serverError BAD_ARGUMENTS }

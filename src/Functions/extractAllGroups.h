@@ -108,13 +108,21 @@ public:
 
         ColumnPtr column_haystack = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
+        const NullMap * null_map = nullptr;
 
         if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column_haystack.get()))
         {
             /// Preserve the default NULL-literal short circuit without evaluating the regular expression.
             if (isNothing(col_nullable->getNestedColumn().getDataType()))
                 return result_type->createColumnConstWithDefaultValue(input_rows_count);
-            column_haystack = col_nullable->getNestedColumnWithDefaultOnNull();
+
+            if (checkColumn<ColumnString>(&col_nullable->getNestedColumn()))
+            {
+                column_haystack = col_nullable->getNestedColumnPtr();
+                null_map = &col_nullable->getNullMapData();
+            }
+            else
+                column_haystack = col_nullable->getNestedColumnWithDefaultOnNull();
         }
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
@@ -156,6 +164,8 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view current_row = column_haystack->getDataAt(i);
+                if (null_map && (*null_map)[i])
+                    current_row.remove_prefix(current_row.size());
 
                 // Extract all non-intersecting matches from haystack except group #0.
                 // Match over the whole row, advancing the start offset, so that the characters before the current
@@ -198,7 +208,9 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t matches_per_row = 0;
-                const auto & current_row = column_haystack->getDataAt(i);
+                std::string_view current_row = column_haystack->getDataAt(i);
+                if (null_map && (*null_map)[i])
+                    current_row.remove_prefix(current_row.size());
 
                 // Extract all non-intersecting matches from haystack except group #0.
                 // Match over the whole row, advancing the start offset, so that the characters before the current

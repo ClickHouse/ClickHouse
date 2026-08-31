@@ -124,9 +124,18 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_input = arguments[arg_value].column;
+        const NullMap * null_map = nullptr;
 
         if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col_input.get()))
-            col_input = col_nullable->getNestedColumnWithDefaultOnNull();
+        {
+            if (checkColumn<ColumnString>(&col_nullable->getNestedColumn()))
+            {
+                col_input = col_nullable->getNestedColumnPtr();
+                null_map = &col_nullable->getNullMapData();
+            }
+            else
+                col_input = col_nullable->getNestedColumnWithDefaultOnNull();
+        }
 
         auto col_result = ColumnString::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
@@ -138,11 +147,11 @@ public:
         if (tokenizer->isStateful())
         {
             auto stateful_tokenizer = tokenizer->clone();
-            executeWithTokenizer(*stateful_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            executeWithTokenizer(*stateful_tokenizer, std::move(col_input), *col_offsets, *col_result, null_map, input_rows_count);
         }
         else
         {
-            executeWithTokenizer(*tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            executeWithTokenizer(*tokenizer, std::move(col_input), *col_offsets, *col_result, null_map, input_rows_count);
         }
 
         return ColumnArray::create(std::move(col_result), std::move(col_offsets));
@@ -153,13 +162,14 @@ private:
         const ITokenizer & tokenizer_,
         ColumnPtr col_input,
         ColumnArray::ColumnOffsets & col_offsets,
-        size_t input_rows_count,
-        ColumnString & col_result) const
+        ColumnString & col_result,
+        const NullMap * null_map,
+        size_t input_rows_count) const
     {
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            executeImpl(tokenizer_, *column_string, col_offsets, input_rows_count, col_result);
+            executeImpl(tokenizer_, *column_string, col_offsets, col_result, null_map, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            executeImpl(tokenizer_, *column_fixed_string, col_offsets, input_rows_count, col_result);
+            executeImpl(tokenizer_, *column_fixed_string, col_offsets, col_result, null_map, input_rows_count);
     }
 
     template <typename StringColumnType>
@@ -167,8 +177,9 @@ private:
         const ITokenizer & tokenizer_,
         const StringColumnType & column_input,
         ColumnArray::ColumnOffsets & column_offsets_input,
-        size_t input_rows_count,
-        ColumnString & column_result) const
+        ColumnString & column_result,
+        const NullMap * null_map,
+        size_t input_rows_count) const
     {
         auto & offsets_data = column_offsets_input.getData();
         offsets_data.resize(input_rows_count);
@@ -177,6 +188,8 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view input = column_input.getDataAt(i);
+            if (null_map && (*null_map)[i])
+                input.remove_prefix(input.size());
 
             if constexpr (TokensTraits::mode == TokensMode::LikePattern)
             {
