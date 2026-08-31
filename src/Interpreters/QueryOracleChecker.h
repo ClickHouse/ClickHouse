@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/SelectUnionMode.h>
+#include <Interpreters/QueryOracles/OracleGate.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -167,7 +168,7 @@ private:
     static const ASTSelectQuery * extractSimpleSelect(const ASTPtr & ast);
 
     /// Check if a SELECT query is structurally safe for oracle testing.
-    static bool isSafeForOracle(const ASTSelectQuery & select);
+    static bool isSafeForOracle(const ASTSelectQuery & select, GateRelax relax = GateRelax::None);
 
     /// Check if the AST contains non-deterministic functions. Uses
     /// `FunctionFactory::isDeterministic` as the primary source of truth and

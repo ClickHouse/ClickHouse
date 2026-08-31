@@ -1043,60 +1043,57 @@ const ASTSelectQuery * QueryOracleChecker::extractSimpleSelect(const ASTPtr & as
 }
 
 
-bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
+bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select, GateRelax relax)
 {
-    /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause
-    /// stays identical across all TLP partitions, only WHERE changes.
-    /// ARRAY JOIN clause and PASTE JOIN are NOT safe. Neither is the `arrayJoin()`
-    /// *function* appearing anywhere in the query: it multiplies rows, breaking
-    /// `count(Q) == countIf(WHERE)` (NoREC) and the partitioned-vs-whole-table
-    /// row-count equality the TLP oracles depend on.
-    if (hasArrayJoin(select) || hasPasteJoin(select))
+    /// The standard structural gate. Each rejection clause below can be individually relaxed by a
+    /// GateRelax bit; an oracle that sets a bit takes ownership of the soundness obligation that
+    /// clause was protecting. The default (GateRelax::None) enables every clause — identical to the
+    /// historical single-argument gate, so all existing callers are unchanged.
+
+    /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause stays identical
+    /// across all TLP partitions, only WHERE changes. The ARRAY JOIN clause multiplies rows
+    /// (relaxable, task 04); PASTE JOIN and the `arrayJoin()` *function* are always unsafe (they
+    /// multiply/zip rows, breaking the partitioned-vs-whole-table row-count equality the oracles
+    /// depend on).
+    if (!hasRelax(relax, GateRelax::AllowArrayJoinClause) && hasArrayJoin(select))
+        return false;
+    if (hasPasteJoin(select))
         return false;
     if (hasArrayJoinFunction(select.clone()))
         return false;
     /// `system.*` / `INFORMATION_SCHEMA.*` views are non-deterministic.
     if (referencesNonDeterministicDatabase(select))
         return false;
-    if (select.distinct)
+    if (!hasRelax(relax, GateRelax::AllowDistinct) && select.distinct)
         return false;
-    if (select.limitLength())
+    /// LIMIT / LIMIT BY / bare OFFSET are order-sensitive: `stripOrderAndLimit` deletes them for the
+    /// reference/rewrite runs, so a rewrite that changes rows only inside the skipped prefix would
+    /// raise a false mismatch. Reject at the gate rather than silently deleting them (relaxable for
+    /// identical-text-both-sides oracles that keep the LIMIT on both runs).
+    if (!hasRelax(relax, GateRelax::AllowLimit) && (select.limitLength() || select.limitBy() || select.limitOffset()))
         return false;
-    if (select.limitBy())
-        return false;
-    /// Bare `OFFSET` (without `LIMIT`) is order-sensitive: `stripOrderAndLimit`
-    /// deletes it for the reference/rewrite runs, so if a rewrite changes rows
-    /// only inside the skipped prefix the stripped bags differ and we raise a
-    /// false mismatch even though the observable post-`OFFSET` result matches.
-    /// Reject at the gate instead of silently deleting it.
-    if (select.limitOffset())
-        return false;
-    /// PREWHERE can interact unpredictably with WHERE partitioning — the fuzzer
-    /// may produce PREWHERE expressions with suspicious type coercions that
-    /// silently succeed in some contexts but fail in others, causing false
-    /// positive mismatches. Skip queries with PREWHERE.
-    if (select.prewhere())
+    /// PREWHERE can interact unpredictably with WHERE partitioning (suspicious type coercions that
+    /// succeed in some contexts but fail in others) — relaxable.
+    if (!hasRelax(relax, GateRelax::AllowPrewhere) && select.prewhere())
         return false;
     if (select.qualify())
         return false;
     if (!select.tables())
         return false;
-    if (select.group_by_with_rollup || select.group_by_with_cube
-        || select.group_by_with_totals || select.group_by_with_grouping_sets)
+    if (!hasRelax(relax, GateRelax::AllowGroupingModifiers)
+        && (select.group_by_with_rollup || select.group_by_with_cube
+            || select.group_by_with_totals || select.group_by_with_grouping_sets))
         return false;
-    /// `GROUP BY ALL` sets `select.group_by_all` but leaves `select.groupBy()`
-    /// empty, so the per-oracle grouping guards (which test `select.groupBy()`)
-    /// do not recognise it and a grouping query slips into the non-grouping
-    /// TLP / NoREC / DISTINCT paths. There the reference side drops `WHERE` and
-    /// keeps one row per group, while the partitioned side runs three
-    /// `GROUP BY ALL` branches and `UNION ALL`s them, duplicating groups that
-    /// span more than one partition — a false `AST_FUZZER_ORACLE_MISMATCH`.
-    /// Skip the whole query rather than special-case every oracle.
-    if (select.group_by_all)
+    /// `GROUP BY ALL` sets `select.group_by_all` but leaves `select.groupBy()` empty, so the
+    /// per-oracle grouping guards (which test `select.groupBy()`) do not recognise it and a grouping
+    /// query slips into the non-grouping paths, duplicating groups across the UNION ALL partitions —
+    /// a false mismatch. Gated with the same bit as the other grouping modifiers.
+    if (!hasRelax(relax, GateRelax::AllowGroupingModifiers) && select.group_by_all)
         return false;
 
-    /// Window functions are never safe for oracle testing.
-    if (select.select())
+    /// Window functions are never safe for oracle testing (relaxable for task 03's ordered-window
+    /// oracle, which applies its own allowlist on top).
+    if (!hasRelax(relax, GateRelax::AllowWindow) && select.select())
     {
         SafeAggregateScan data;
         scanAggregatesSafe(select.select(), data);
