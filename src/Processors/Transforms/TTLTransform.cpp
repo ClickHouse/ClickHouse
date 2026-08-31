@@ -83,8 +83,14 @@ TTLTransform::TTLTransform(
             old_ttl_infos.table_ttl, old_ttl_infos.table_ttl_expression, old_ttl_infos.table_ttl_timezone,
             current_time_, force_);
 
-        /// Skip all data if table ttl is expired for part
-        if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast)
+        /// Skip all data if table ttl is expired for part.
+        /// Not when the part is known to hold rows whose TTL computed to exactly 0 (the epoch): such a
+        /// timestamp means "no TTL" to the rest of the machinery (`ITTLAlgorithm::isTTLExpired` never
+        /// expires it) and is excluded from the stored bounds, so `max` does not summarize those rows and
+        /// dropping the part without reading it would delete rows that a scan of the very same TTL
+        /// expression keeps. Such a part is scanned instead: the rows the bounds do describe are removed
+        /// and the epoch rows survive, exactly as they would in a part whose bounds were never expired.
+        if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast && !old_ttl_infos.table_ttl.has_epoch_timestamps)
             all_data_dropped = true;
 
         algorithms.emplace_back(std::move(algorithm));
