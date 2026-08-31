@@ -500,8 +500,8 @@ below an explicit `max_bytes_before_external_join` prevents the join from spilli
 
 To let a join keep running by spilling the right side to disk instead of failing, use:
 
-- [max_bytes_before_external_join](/reference/settings/session-settings/join#max_bytes_before_external_join) — Absolute spill threshold.
-- [max_bytes_ratio_before_external_join](/reference/settings/session-settings/join#max_bytes_ratio_before_external_join) — Spill threshold as a ratio of available memory.
+- [max_bytes_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) — Absolute spill threshold.
+- [max_bytes_ratio_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) — Spill threshold as a ratio of available memory.
 
 These are the single spill trigger for every hash-based algorithm, including `grace_hash`. The `join_algorithm` you pick
 decides how a join spills — `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect

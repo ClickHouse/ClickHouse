@@ -3691,9 +3691,9 @@ intermediate result. It is a hard cap for every hash-based `join_algorithm`: whe
 is reached the query throws or breaks according to
 [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
 It never makes a join spill to disk — that decision belongs to
-[`max_bytes_before_external_join`](#max_bytes_before_external_join)
+[`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
 and
-[`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join).
+[`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
 
 Possible values:
 
@@ -3773,7 +3773,7 @@ Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
-Whether a hash-based algorithm spills to disk is not part of this choice: [`max_bytes_before_external_join`](#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join) are the spill threshold for all of them, and [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) a hard cap for all of them. The value you pick decides how a join spills: `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect it in memory and switch over once the threshold is crossed.
+Whether a hash-based algorithm spills to disk is not part of this choice: [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) are the spill threshold for all of them, and [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) a hard cap for all of them. The value you pick decides how a join spills: `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect it in memory and switch over once the threshold is crossed.
 
 Most algorithms affect a query only when they are the one selected for it. Some, however, change planning merely by being listed — even as a lower-priority fallback that is not ultimately selected — because the decision is made before the algorithm is picked. There are two such effects:
 
@@ -3788,7 +3788,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- `grace_hash` is external from the first block: the right table is partitioned straight away, where `hash` and `parallel_hash` collect it in memory first and partition it only once it crosses the spill threshold. Pick it when you already know the right side will not fit in memory and want to skip the in-memory phase. The spill threshold itself is the same one every hash algorithm uses, [`max_bytes_before_external_join`](#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join), and one of the two has to be non-zero.
+ `grace_hash` is external from the first block: the right table is partitioned straight away, where `hash` and `parallel_hash` collect it in memory first and partition it only once it crosses the spill threshold. Pick it when you already know the right side will not fit in memory and want to skip the in-memory phase. The spill threshold itself is the same one every hash algorithm uses, [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), and one of the two has to be non-zero.
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the spill threshold, the number of buckets is increased along with the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
