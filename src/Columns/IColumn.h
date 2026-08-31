@@ -426,8 +426,8 @@ public:
     /// Per-row weak hash kernel. Writes a 32-bit CRC32C-based hash for each row in
     /// [row_begin, row_end) into the caller-provided buffer `hash_out` (which must hold at
     /// least row_end - row_begin entries). It's a fast weak hash, mainly needed to scatter
-    /// data between threads (sharded aggregation, `grace_hash` joins, parallel-window
-    /// partitioning, hash-join scatter).
+    /// data between threads (`grace_hash` joins, parallel-window partitioning, hash-join
+    /// scatter).
     ///
     /// `h(row)` denotes the finalized per-row hash. With `initial == true` the buffer is
     /// overwritten with it; with `initial == false` the buffer is combined with it via

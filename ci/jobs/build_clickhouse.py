@@ -246,7 +246,8 @@ def main():
 
         def do_checkout():
             res = Shell.check(
-                f"mkdir -p {build_dir} && git submodule sync && git submodule init"
+                f"mkdir -p {build_dir} && git submodule sync && git submodule init",
+                strict=True,
             )
 
             if os.path.isdir(".git/modules/contrib") and os.listdir(
@@ -266,11 +267,13 @@ def main():
                     command=f"xargs --max-procs={min(Utils.cpu_count(), 20)} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch --",
                     stdin_str="\0".join(submodules) + "\0",
                     retries=3,
+                    strict=True,
                 )
             else:
                 res = res and Shell.check(
                     "contrib/update-submodules.sh --max-procs 10",
                     retries=3,
+                    strict=True,
                 )
             return res
 

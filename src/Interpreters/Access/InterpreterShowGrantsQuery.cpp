@@ -94,11 +94,23 @@ namespace
         boost::intrusive_ptr<ASTRolesOrUsersSet> grantees = make_intrusive<ASTRolesOrUsersSet>();
         grantees->names.push_back(grantee.getName());
 
-        AccessRights access = grantee.access;
-        if (final)
-            unionAccessFromRoles(access, grantee, access_control);
+        AccessRights access_copy;
 
-        getGrantsFromAccess(res, access, grantees, access_control, attach_mode, with_implicit);
+        if (final)
+        {
+            access_copy = grantee.access;
+            unionAccessFromRoles(access_copy, grantee, access_control);
+        }
+
+        const AccessRights & access = final ? access_copy : grantee.access;
+
+        getGrantsFromAccess(
+            res,
+            access,
+            grantees,
+            access_control,
+            attach_mode,
+            with_implicit);
 
         if (!final)
         {
