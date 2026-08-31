@@ -31,7 +31,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 COPY requirements.txt /
-RUN python3.13 -m pip install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
+RUN python3.13 -m pip install --ignore-installed --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
@@ -45,7 +45,8 @@ RUN arch=${TARGETARCH:-amd64} \
     esac \
   && cd /tmp \
   && curl -o mysql-odbc.rpm "https://cdn.mysql.com/archives/mysql-connector-odbc-8.0/mysql-connector-odbc-8.0.32-1.el9.${rarch}.rpm" \
-  && rpm2archive mysql-odbc.rpm \
+  # rpm 4.18 rpm2archive streams to stdout when it is not a tty instead of creating <file>.tgz
+  && rpm2archive - < mysql-odbc.rpm > mysql-odbc.rpm.tgz \
   && tar xf mysql-odbc.rpm.tgz -C / ./usr/lib64/ \
   && rm mysql-odbc.rpm mysql-odbc.rpm.tgz \
   && ODBC_DIR=$(dpkg -L odbc-postgresql | rg '^/usr/lib/.*-linux-gnu/odbc$') \
