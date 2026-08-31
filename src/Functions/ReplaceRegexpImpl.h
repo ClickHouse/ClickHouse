@@ -458,7 +458,11 @@ struct ReplaceRegexpImpl
             /// The checkpoint must not be gated on `map_enabled`: the match ratio has to keep being
             /// re-evaluated after the cache is disabled, or a matching suffix behind a rejected prefix
             /// would pay the pre-check plus the full match for every remaining row.
-            if (i >= next_ratio_check)
+            /// The schedule advances on `rows_past_precheck`, not on `i`: rows rejected by the pre-check
+            /// skip this checkpoint, so an absolute-index schedule would keep doubling across a long
+            /// rejected run and a matching suffix that ends before the next power of two would never be
+            /// re-evaluated at all.
+            if (rows_past_precheck >= next_ratio_check)
             {
                 if (map_enabled && rows_past_precheck >= min_rows_for_distinct_ratio_check
                     && results_cache.size() * 10 > rows_past_precheck * 9)
