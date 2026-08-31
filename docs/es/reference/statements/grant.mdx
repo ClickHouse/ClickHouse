@@ -268,6 +268,7 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
   * `SHOW FILESYSTEM CACHES`
   * [`FUENTES`](#sources)
     * `AZURE`
+    * `BIGQUERY`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -285,6 +286,9 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
     * `SQLITE`
     * `URL`
   * [`SYSTEM`](#system)
+    * `SYSTEM BACKGROUND`
+      * `SYSTEM STREAMING ENGINES`
+      * `SYSTEM VIEWS`
     * `SYSTEM CLEANUP`
     * `SYSTEM DROP CACHE`
       * `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -301,7 +305,6 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
       * `SYSTEM DROP S3 CLIENT CACHE`
       * `SYSTEM DROP SCHEMA CACHE`
       * `SYSTEM DROP UNCOMPRESSED CACHE`
-    * `SYSTEM DROP PRIMARY INDEX CACHE`
     * `SYSTEM DROP REPLICA`
     * `SYSTEM FAILPOINT`
     * `SYSTEM FETCHES`
@@ -309,8 +312,6 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
       * `SYSTEM FLUSH ASYNC INSERT QUEUE`
       * `SYSTEM FLUSH LOGS`
     * `SYSTEM JEMALLOC`
-    * `SYSTEM KILL QUERY`
-    * `SYSTEM KILL TRANSACTION`
     * `SYSTEM LISTEN`
     * `SYSTEM LOAD PRIMARY KEY`
     * `SYSTEM MERGES`
@@ -344,7 +345,6 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
     * `SYSTEM TTL MERGES`
     * `SYSTEM UNFREEZE`
     * `SYSTEM UNLOAD PRIMARY KEY`
-    * `SYSTEM VIEWS`
     * `SYSTEM VIRTUAL PARTS UPDATE`
     * `SYSTEM WAIT LOADING PARTS`
   * [`TABLE ENGINE`](#table-engine)
@@ -644,6 +644,9 @@ Permite a un usuario ejecutar consultas [SYSTEM](/es/reference/statements/system
   * `SYSTEM REPLICATION QUEUES`. Nivel: `TABLE`. Alias: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   * `SYSTEM SYNC REPLICA`. Nivel: `TABLE`. Alias: `SYNC REPLICA`
   * `SYSTEM RESTART REPLICA`. Nivel: `TABLE`. Alias: `RESTART REPLICA`
+  * `SYSTEM BACKGROUND`. Nivel: `GROUP`
+    * `SYSTEM STREAMING ENGINES`. Nivel: `TABLE`
+    * `SYSTEM VIEWS`. Nivel: `VIEW`. Alias: `SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   * `SYSTEM FLUSH`. Nivel: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. Nivel: `TABLE`. Alias: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. Nivel: `GLOBAL`. Alias: `FLUSH LOGS`
@@ -676,6 +679,7 @@ Permite usar fuentes de datos externas. Se aplica a los [motores de tabla](/es/r
 Parámetros posibles:
 
 * `AZURE`
+* `BIGQUERY`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -796,9 +800,9 @@ Nivel de privilegio: `DICTIONARY`.
 </div>
 
 Permite que un usuario vea secretos en consultas `SHOW` y `SELECT` si tanto la
-[`display_secrets_in_show_and_select` configuración del servidor](/es/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+[`display_secrets_in_show_and_select` configuración del servidor](/es/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 como la
-[`format_display_secrets_in_show_and_select` configuración de formato](/es/reference/settings/formats#format_display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` configuración de formato](/es/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 están activadas.
 
 <div id="named-collection-admin">
@@ -826,6 +830,8 @@ Suponiendo que una colección con nombre se llama abc, otorgamos el privilegio C
 <div id="table-engine">
   ### TABLE ENGINE
 </div>
+
+<CloudNotSupportedBadge />
 
 Permite usar un motor de tabla específico al crear una tabla. Se aplica a los [motores de tabla](/es/reference/engines/table-engines/index).
 
