@@ -1,0 +1,331 @@
+---
+sidebarTitle: 'Microsoft Fabric'
+slug: /integrations/microsoft-fabric
+description: 'Microsoft Fabric용 ClickHouse는 OneLake를 위한 가속화 계층으로, Fabric을 벗어나지 않고 OneLake 데이터에 대해 비용 효율적인 1초 미만의 분석을 제공합니다.'
+keywords: ['clickhouse', 'microsoft fabric', 'onelake', 'workload', 'power bi', 'mcp']
+title: 'Microsoft Fabric용 ClickHouse'
+doc_type: 'guide'
+hidden: true
+integration:
+  - support_level: 'core'
+  - category: 'data_integration'
+---
+
+import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## 개요
+</div>
+
+Microsoft Fabric용 ClickHouse 워크로드는 OneLake를 가속하는 계층입니다. 가장 빠른 오픈 소스 분석 데이터베이스인 ClickHouse를 네이티브 워크로드로 Fabric 워크스페이스에 직접 제공합니다.
+
+데이터는 이미 OneLake에 저장되어 있습니다. 이 워크로드를 사용하면 선택한 테이블을 전용 ClickHouse Cloud 서비스에 동기화하고, 비용 효율적인 전용 컴퓨트에서 높은 동시성으로 1초 미만의 응답 시간에 쿼리할 수 있습니다. OneLake는 전체 과정에서 원본 데이터의 기준으로 유지됩니다.
+
+일반적인 사용 사례:
+
+* **AI agents**: Copilot Studio, Azure AI Foundry, GitHub Copilot 및 모든 MCP 호환 도구에서 MCP를 통해 에이전트에 데이터에 대한 관리형 읽기 전용 SQL 액세스를 제공합니다.
+* **대화형 분석**: 수십억 행 규모의 데이터에 대해 밀리초 단위의 쿼리 지연 시간으로 대시보드와 데이터 탐색을 제공합니다.
+* **고객 대상 애플리케이션**: 애플리케이션 활용을 위해 페타바이트 규모의 실시간 분석 쿼리를 제공합니다.
+
+<Frame>
+  ![Microsoft Fabric 워크로드 허브의 ClickHouse 워크로드 페이지](/images/integrations/tools/data-integration/microsoft-fabric/fabric-01-workload-hub-card.webp)
+</Frame>
+
+이 워크로드는 Microsoft Fabric 워크로드 허브에서 사용할 수 있습니다. 보안, 개인정보 보호 및 컴플라이언스에 관한 자세한 내용은 [공급업체 증명](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)을 참조하십시오.
+
+<div id="provisioning">
+  ## Provisioning
+</div>
+
+ClickHouse 항목을 생성하려면 다음 단계를 따르십시오.
+
+1. Fabric 워크스페이스에서 **+ New item**을 선택합니다.
+2. **ClickHouse**를 검색하여 선택합니다.
+3. 항목 이름을 지정하고 **Create**를 선택합니다.
+
+<Frame>
+  ![ClickHouse 설정: Cloud 조직 생성 및 서비스 프로비저닝](/images/integrations/tools/data-integration/microsoft-fabric/fabric-02-provisioning-canvas.webp)
+</Frame>
+
+워크스페이스에서 ClickHouse 항목을 처음 생성할 때는 청구 권한이 있는 Fabric 관리자가 워크로드를 설치하고 [서비스 약관](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf)에 동의해야 합니다. 이후 워크스페이스 멤버가 액세스할 수 있습니다.
+
+서비스는 Fabric 용량 Region과 가장 가까운 ClickHouse Cloud Azure Region에 프로비저닝됩니다. [지원 리전](/ko/products/cloud/reference/supported-regions)을 참조하십시오. 데이터가 저장 및 처리되는 위치에 관한 자세한 내용은 [증명서의 데이터 레지던시 섹션](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)을 참조하십시오.
+
+<div id="clickhouse-cloud-trial">
+  ## ClickHouse Cloud 평가판
+</div>
+
+첫 번째 ClickHouse 항목을 생성하면 평가판이 자동으로 시작됩니다. 평가판 조직과 전용 서비스는 Microsoft Entra 아이덴티티를 사용하여 프로비저닝됩니다.
+
+평가판에는 다음이 포함됩니다.
+
+* 30일간 유효한 평가판 크레딧
+* [ClickHouse Scale tier](https://clickhouse.com/docs/products/cloud/features/cloud-tiers)의 전용 서비스
+* 기본적으로 활성화되는 서비스 유휴 상태 전환 기능으로, 비활성 평가판 서비스는 일시 중지된 동안 컴퓨트 크레딧을 소비하지 않습니다.
+
+평가판이 종료되거나 크레딧이 소진되면 [Azure Marketplace의 ClickHouse Cloud 오퍼](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)를 통해 유료 조직으로 전환하십시오.
+
+<div id="syncing-data-from-onelake">
+  ## OneLake에서 데이터 동기화
+</div>
+
+Sync 흐름을 통해 OneLake 테이블을 ClickHouse로 가져올 수 있습니다.
+
+1. ClickHouse 항목을 열고 **Sync**를 선택합니다.
+2. **Sync from OneLake**를 선택하고 워크스페이스에서 Lakehouse를 선택합니다.
+3. 가속할 테이블을 선택합니다.
+4. **Save and sync**를 선택하여 데이터의 특정 시점 동기화를 시작합니다.
+
+<Frame>
+  ![정렬 키를 사용해 새 대상 테이블을 생성하는 Sync 구성](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
+</Frame>
+
+OneLake에서 감지된 스키마를 기반으로 데이터 타입을 추론하고 기본 구성으로 대상 테이블을 생성할 수 있습니다. 테이블 정의를 더 세밀하게 제어하려면 테이블을 미리 생성한 후 기존 테이블을 대상으로 사용할 수 있습니다.
+
+<Frame>
+  ![OneLake 원본 테이블에서 기존 ClickHouse 테이블로의 Sync 컬럼 매핑](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
+</Frame>
+
+동기화 상태는 테이블별로 표시됩니다. 테이블 동기화가 완료되면 SQL 콘솔에서 즉시 쿼리할 수 있습니다. 대용량 테이블은 백그라운드에서 동기화되므로 로드되는 동안에도 계속 작업할 수 있습니다.
+
+<Note>
+  공개 미리 보기에서는 특정 시점 스냅샷 복사만 지원합니다. 향후 릴리스에서 더 다양한 복제 옵션을 제공할 예정입니다.
+</Note>
+
+<div id="powered-by-clickpipes">
+  ### ClickPipes 기반
+</div>
+
+동기화된 각 테이블은 ClickHouse Cloud의 관리형 수집 서비스인 [ClickPipe](/ko/integrations/clickpipes/home)를 통해 처리됩니다.
+
+1. 워크로드는 권한이 부여된 자격 증명을 사용하여 OneLake에서 테이블을 직접 읽습니다.
+2. ClickPipe는 OneLake의 타입을 ClickHouse 타입에 매핑하고 데이터를 ClickHouse 서비스의 테이블로 스트리밍합니다.
+
+<div id="cost">
+  ### 비용
+</div>
+
+Microsoft Fabric 공개 미리 보기 기간에는 OneLake에서 ClickHouse로 데이터를 동기화해도 무료입니다. Fabric 워크로드가 일반 제공되면 청구가 시작됩니다. 워크로드가 일반 제공(GA)되면 가격 정보가 공개됩니다.
+
+<div id="sql-console-and-saved-queries">
+  ## SQL 콘솔 및 저장된 쿼리
+</div>
+
+내장 SQL 콘솔을 사용하면 Fabric을 벗어나지 않고도 ClickHouse 데이터를 쿼리할 수 있습니다.
+
+<Frame>
+  ![동기화된 NYC 택시 테이블을 쿼리하는 내장 ClickHouse SQL 콘솔](/images/integrations/tools/data-integration/microsoft-fabric/fabric-05-sql-console.webp)
+</Frame>
+
+<div id="saved-queries">
+  ### 저장된 쿼리
+</div>
+
+쿼리에 이름을 지정해 저장하면 나중에 재사용할 수 있습니다. 저장된 쿼리는 항목과 함께 저장되므로 워크스페이스의 모든 사용자가 동일한 쿼리 모음을 사용합니다.
+
+<div id="go-further-with-clickhouse-sql">
+  ### ClickHouse SQL 자세히 살펴보기
+</div>
+
+ClickHouse는 빠른 SELECT뿐 아니라 데이터가 수집되는 즉시 결과를 미리 계산하는 materialized view, 전문 검색, 근사 집계, 수백 가지의 특화 함수 등 다양한 기능을 제공합니다. ClickHouse의 모든 기능을 자세히 알아보려면 [ClickHouse 모범 사례](/ko/concepts/best-practices/index), [materialized view](/ko/concepts/features/materialized-views/index), [사용 사례 예시](/ko/guides/use-cases/index)를 확인하세요.
+
+<div id="connecting-your-data">
+  ## 데이터 연결
+</div>
+
+**Connect** 화면에서는 서비스에 연결할 수 있는 모든 도구와 서비스에 대해 복사하여 바로 사용할 수 있는 안내를 제공합니다.
+
+* **분석 및 BI**: Power BI Desktop 및 서비스, Python 클라이언트를 사용하는 Fabric 노트북 등
+* **에이전트 및 AI**: Copilot Studio, Azure AI Foundry, GitHub Copilot용 ClickHouse MCP 서버
+* **빌드 및 인터페이스**: HTTPS, JDBC/ODBC, 공식 ClickHouse 클라이언트(Python, Node.js, Java, Go, C#, Rust 등)
+
+<Frame>
+  ![ClickHouse 서비스의 Power BI 연결 정보를 보여주는 Connect 화면](/images/integrations/tools/data-integration/microsoft-fabric/fabric-06-connect-power-bi.webp)
+</Frame>
+
+MCP 액세스는 서비스별로 선택하여 활성화할 수 있으며 읽기 전용입니다. 활성화하면 에이전트가 SQL로 쿼리할 수 있는 관리형 엔드포인트가 제공됩니다. Fabric 용량에 영향을 주지 않고 콘솔과 동일하게 1초 미만의 응답을 얻을 수 있습니다. 설정 단계는 [원격 MCP 서버 활성화](/ko/products/cloud/features/ai-ml/remote-mcp#enabling)를, 사용 가능한 도구는 [ClickHouse MCP 서버 참고](/ko/products/cloud/features/ai-ml/remote-mcp#available-tools)를 참조하십시오.
+
+<div id="administration-and-management">
+  ## 관리 및 운영
+</div>
+
+<div id="open-in-clickhouse-cloud">
+  ### ClickHouse Cloud에서 열기
+</div>
+
+**Open in ClickHouse Cloud**를 선택하면 Microsoft 아이덴티티로 로그인된 전체 ClickHouse Cloud 콘솔이 열립니다. Fabric 워크로드에서 데이터를 ClickHouse로 동기화하고 모든 SQL 문을 실행할 수 있지만, 관리 작업을 수행하려면 Cloud Console에서 서비스 관리 페이지로 이동해야 합니다.
+
+<Frame>
+  ![워크로드에서 연 ClickHouse Cloud 콘솔의 서비스 설정](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
+</Frame>
+
+<div id="scaling">
+  ### 스케일링
+</div>
+
+서비스는 구성된 범위 내에서 수직 및 수평으로 스케일링됩니다. Cloud Console의 **설정**에서 최소 및 최대 레플리카 크기를 조정하십시오. 지연 시간에 민감한 워크로드에서 일관된 성능을 유지하려면 최소 레플리카 크기를 고정하여 서비스를 항상 준비 상태로 유지하십시오. 자세한 내용은 [자동 스케일링](/ko/products/cloud/features/autoscaling/overview)을 참조하십시오.
+
+<div id="idling">
+  ### 유휴 상태 전환
+</div>
+
+유휴 상태 전환은 서비스에 쿼리가 들어오지 않을 때 컴퓨트를 일시 중지하고, 다음 쿼리가 도착하면 짧은 시작 지연 시간 후 자동으로 재개합니다. 평가판 서비스는 유휴 상태 전환이 활성화된 상태로 생성됩니다.
+
+* 비용을 최소화하려면 개발 및 간헐적인 워크로드에서는 유휴 상태 전환을 **켜 두세요**
+* 일관된 밀리초 수준의 지연 시간이 필요한 프로덕션 대시보드, 애플리케이션 및 에이전트에서는 유휴 상태 전환을 **끄세요**
+
+Cloud Console의 **설정** 페이지에서 유휴 상태 전환을 구성합니다. 전체 동작은 [자동 유휴 상태 전환](/ko/products/cloud/features/autoscaling/idling)을 참조하십시오.
+
+<div id="monitoring-the-service">
+  ### 서비스 모니터링
+</div>
+
+서비스 상태, 쿼리 성능 및 리소스 사용량은 ClickHouse Cloud 콘솔에서 확인할 수 있습니다. 기본 제공 모니터링 기능과 통합 옵션은 [ClickHouse Cloud 모니터링](/ko/guides/use-cases/observability/cloud-monitoring)을 참조하십시오. 플랫폼 전반의 상태와 인시던트 이력은 [status.clickhouse.com](https://status.clickhouse.com)에서 확인할 수 있습니다.
+
+<div id="monitoring-clickpipes">
+  ### ClickPipes 모니터링
+</div>
+
+OneLake의 각 동기화는 ClickPipe로 실행됩니다. ClickHouse Cloud Console의 [ClickPipes 페이지](/ko/integrations/clickpipes/monitoring)에서 동기화 진행률, 처리량, 오류를 확인하십시오.
+
+<div id="mapping-to-clickhouse-cloud">
+  ## ClickHouse Cloud 매핑
+</div>
+
+이 워크로드는 Azure에서 실행되는 [ClickHouse Cloud](https://clickhouse.com/cloud)를 기반으로 합니다. Fabric 개념과 ClickHouse 개념의 연결 방식은 다음 3가지 매핑으로 정의됩니다.
+
+| Fabric        | ClickHouse Cloud | 관계                                          |
+| ------------- | ---------------- | ------------------------------------------- |
+| 워크스페이스        | 조직               | 1:1, 워크스페이스에서 첫 번째 ClickHouse 항목을 생성할 때 생성됨 |
+| ClickHouse 항목 | 서비스              | 1:1, 항목 생성 시 고정됨                            |
+| 사용자           | 사용자              | 1:1, 사용자가 처음으로 ClickHouse 항목을 열 때 생성됨       |
+
+**워크스페이스와 조직.** 각 Fabric 워크스페이스는 정확히 하나의 ClickHouse Cloud 조직에 매핑됩니다. 워크스페이스에서 처음으로 ClickHouse 항목을 생성하면 조직이 자동으로 생성됩니다. 액세스 범위는 Microsoft Entra 테넌트로 제한되며, 이 워크로드를 통해 테넌트 간에 데이터를 공유할 수 없습니다.
+
+**항목과 서비스.** 워크스페이스의 각 ClickHouse 항목은 정확히 하나의 전용 ClickHouse 서비스에 매핑됩니다. 항목을 생성하면 서비스가 프로비저닝되고, 항목을 삭제하면 서비스도 삭제됩니다. 이 서비스는 전용 인프라입니다. 쿼리가 다른 테넌트와 리소스를 경합하지 않으며, 높은 쿼리 부하로 Fabric 용량이 소모되지 않습니다.
+
+**사용자.** Fabric 워크스페이스의 멤버가 처음으로 ClickHouse 항목을 열면 워크스페이스에 매핑된 ClickHouse Cloud 조직에 ClickHouse 사용자가 자동으로 프로비저닝됩니다.
+
+<div id="support">
+  ## 지원
+</div>
+
+ClickHouse 워크로드에 대한 지원은 ClickHouse에서 제공합니다. 심각도 수준 및 응답 시간을 포함한 자세한 내용은 [ClickHouse 지원 프로그램](https://clickhouse.com/support/program)에서 확인할 수 있습니다. 해당 페이지 또는 ClickHouse Cloud 콘솔에서 직접 지원 요청을 제출할 수 있습니다. 플랫폼 상태 및 인시던트 이력은 [status.clickhouse.com](https://status.clickhouse.com)에서 확인하십시오.
+
+<div id="azure-marketplace">
+  ## Azure Marketplace
+</div>
+
+워크로드 요금은 [Azure Marketplace의 ClickHouse Cloud 오퍼](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)을 통해 청구됩니다:
+
+* 평가판이 종료되면 워크로드의 업그레이드 절차를 통해 조직의 Marketplace 구매 절차로 진행합니다. 이후 사용량은 Azure 계정을 통해 종량제로 청구됩니다. 자세한 내용은 [Azure Marketplace PAYG 청구](/ko/products/cloud/reference/billing/marketplace/azure-marketplace-payg)를 참조하십시오.
+* Marketplace 구매를 완료하려면 워크스페이스 관리자가 보유한 ClickHouse 조직의 청구 권한이 필요합니다. 조직 관리자는 Cloud Console에서 이 권한을 다른 사용자에게 부여할 수 있습니다.
+
+<div id="getting-started-tutorial">
+  ## 시작하기 튜토리얼
+</div>
+
+이 안내에서는 Fabric에 기본 제공되는 샘플 데이터를 사용하므로 자체 데이터셋 없이도 워크로드를 사용해 볼 수 있습니다.
+
+<div id="load-the-sample-data">
+  ### 샘플 데이터 불러오기
+</div>
+
+Fabric 워크스페이스에서 **+ New item**을 선택한 후 **Sample lakehouse**를 선택하여 **Public holidays** 샘플을 추가합니다. `publicholidays` 테이블이 Tables 아래에 표시되는지 확인합니다.
+
+<Frame>
+  ![Fabric Lakehouse의 Public holidays 샘플 테이블](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+</Frame>
+
+<div id="create-a-clickhouse-item-and-sync">
+  ### ClickHouse 항목 생성 및 동기화
+</div>
+
+1. [프로비저닝](#provisioning)에 설명된 대로 동일한 워크스페이스에 ClickHouse 항목을 생성합니다.
+2. **Sync**를 열고 Lakehouse를 선택한 다음 `publicholidays` 테이블을 선택합니다.
+3. 가장 자주 필터링하는 컬럼을 기준으로 정렬합니다: `countryOrRegion, date`
+4. 동기화를 시작합니다. 잠시 후 데이터가 채워지며, 이 정도 크기의 테이블은 몇 초 안에 완료됩니다.
+
+<div id="query-the-data">
+  ### 데이터 쿼리
+</div>
+
+SQL 콘솔을 열고 다음을 실행해 보십시오:
+
+```sql
+-- Which countries have the most holidays?
+SELECT countryOrRegion, count() AS holidays
+FROM publicholidays
+GROUP BY countryOrRegion
+ORDER BY holidays DESC
+LIMIT 10;
+```
+
+```sql
+-- Paid time off vs. observance days by year
+SELECT
+    toYear(date) AS year,
+    countIf(isPaidTimeOff) AS paid_days,
+    count() AS all_days
+FROM publicholidays
+GROUP BY year
+ORDER BY year;
+```
+
+첫 번째 쿼리를 **국가별 공휴일**로 저장해 저장된 쿼리가 어떻게 작동하는지 확인합니다.
+
+<div id="connect-to-mcp">
+  ### MCP에 연결
+</div>
+
+1. **Connect** 화면에서 서비스의 **MCP**를 활성화합니다.
+2. [원격 MCP 서버 시작하기](/ko/products/cloud/features/ai-ml/remote-mcp#getting-started)에 설명된 대로 원하는 MCP 클라이언트에 ClickHouse MCP 서버를 등록합니다.
+3. 다음과 같이 질문합니다: *&quot;2026년에 공휴일이 가장 많은 국가는 어디이며, 그중 유급 휴가일은 며칠인가요?&quot;*
+
+에이전트는 동기화된 테이블에 대해 거버넌스가 적용된 읽기 전용 SQL을 실행하여 답변합니다.
+
+<div id="known-limitations">
+  ## 알려진 제한 사항
+</div>
+
+ClickHouse 워크로드는 공개 미리 보기 단계입니다. 아래 제한 사항은 최종 모습이 아닌 현재 상태이며, 대부분은 로드맵에 포함되어 있습니다.
+
+<div id="data-movement">
+  ### 데이터 이동
+</div>
+
+* **복사는 특정 시점의 스냅샷입니다.** 예약 복제나 지속적 복제는 아직 지원되지 않습니다. 최신 OneLake 데이터로 테이블을 갱신하려면 동기화를 다시 실행하십시오. 원본 테이블의 업데이트 및 삭제 사항은 ClickHouse 사본에 반영되지 않습니다.
+* **Lakehouse 테이블만 지원됩니다.** Sync는 동일한 워크스페이스에 있는 Lakehouse의 테이블을 읽습니다.
+* **OneLake로의 쓰기 지원 없음.** 데이터는 OneLake에서 ClickHouse로 단방향으로 이동합니다. 쿼리 결과를 OneLake에 다시 쓰는 기능은 추후 지원될 예정입니다.
+
+<div id="service-management">
+  ### 서비스 관리
+</div>
+
+* **항목당 서비스는 1개이며, 생성 시점에 고정됩니다.** 기존 ClickHouse Cloud 서비스를 Fabric 항목에 연결할 수 없으며, 워크로드를 기존 ClickHouse Cloud 조직에 연결할 수도 없습니다.
+* **ClickHouse Cloud Console에서 서비스를 삭제하면 Fabric 항목이 고아 상태가 되어 복구할 수 없습니다.** Fabric 항목을 삭제하면 해당 서비스도 삭제되지만, 반대 방향은 현재 지원되지 않습니다.
+* **서비스 구성은 Cloud Console에서 관리합니다.** 스케일링, 유휴 상태 전환 및 백업은 Fabric 항목 설정이 아닌 ClickHouse Cloud에서 관리합니다.
+
+<div id="access-and-identity">
+  ### 액세스 및 아이덴티티
+</div>
+
+* **역할 변경은 항목을 다음에 열 때 적용됩니다.** ClickHouse 항목을 열 때마다 Fabric 워크스페이스 역할이 ClickHouse 조직 역할에 매핑됩니다. Fabric은 역할 변경 사항을 ClickHouse에 알릴 수 없으므로, 변경된 워크스페이스 역할은 즉시 적용되지 않습니다.
+* **Fabric에서 사용자를 제거하거나 다운그레이드해도 ClickHouse 액세스가 취소되지 않습니다.** 역할은 사용자가 ClickHouse 항목을 열 때만 적용되므로, 워크스페이스에서 제거되거나 다운그레이드된 사용자는 ClickHouse Cloud 측에서 기존 액세스를 유지할 수 있으며, 항목을 다시 열지 않으면 해당 변경 사항은 전혀 전파되지 않습니다. 액세스를 즉시 안정적으로 취소하려면 ClickHouse Cloud 콘솔에서 조직에서 사용자를 제거하십시오.
+* **워크스페이스 수준의 액세스.** 워크스페이스의 모든 사용자가 해당 워크스페이스의 ClickHouse 항목을 사용할 수 있습니다. OneLake의 세분화된 테이블별 권한 동기화는 현재 지원되지 않습니다.
+* **Console SSO를 사용하려면 Entra 프로필에 이메일이 필요합니다.** ClickHouse Cloud 사용자는 이메일 주소가 필요합니다. Microsoft Entra 프로필에 이메일 주소가 설정되어 있지 않으면 Cloud Console에 로그인할 수 없습니다.
+
+<div id="reference">
+  ## 참고
+</div>
+
+* [공급업체 증명](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)
+* [Microsoft Marketplace의 ClickHouse Cloud](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)
+* [Azure Marketplace PAYG 청구](/ko/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [지원 리전](/ko/products/cloud/reference/supported-regions)
+* [ClickPipes 가격 책정 차원](/ko/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage)
+* [지원 프로그램](https://clickhouse.com/support/program)
+* [서비스 상태](https://status.clickhouse.com)
+* [서비스 약관](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf)
