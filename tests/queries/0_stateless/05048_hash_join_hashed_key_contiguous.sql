@@ -79,7 +79,7 @@ DROP TABLE IF EXISTS t_tricky_left;
 DROP TABLE IF EXISTS t_tricky_right;
 
 CREATE TABLE t_tricky_left (a String, b Nullable(String), c LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE t_tricky_right (a String, b Nullable(String), c LowCardinality(String), w UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_tricky_right (a String, b Nullable(String), c LowCardinality(String), w UInt64, matched UInt8) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_tricky_left SELECT
     repeat('a', number % 5) || '\0' || toString(number % 37),
@@ -92,7 +92,8 @@ INSERT INTO t_tricky_right SELECT
     repeat('a', number % 6) || '\0' || toString(number % 41),
     if(number % 19 = 0, NULL, repeat('b', number % 600)),
     toString(number % 13),
-    number
+    number,
+    1
 FROM numbers(20000);
 
 SELECT 'same result as full sorting merge';
@@ -105,7 +106,10 @@ SELECT
     SETTINGS join_algorithm = 'full_sorting_merge'
 );
 
--- The same for the rows that find nothing, which full sorting merge only does as a left join.
+-- The same for the rows that find nothing, which full sorting merge only does as a left join. A row
+-- of the right table always carries `matched` = 1, so a left row that reads 0 there found nothing,
+-- and no key column has to be made nullable to tell - which is a type full sorting merge refuses to
+-- join a non-nullable key to, once the old analyzer has stopped inserting the conversion.
 SELECT 'anti join same result as full sorting merge';
 SELECT
 (
@@ -113,8 +117,8 @@ SELECT
     SETTINGS join_algorithm = 'hash'
 ) = (
     SELECT sum(l.v) FROM t_tricky_left AS l LEFT JOIN t_tricky_right AS r ON l.a = r.a AND l.b = r.b AND l.c = r.c
-    WHERE r.a IS NULL
-    SETTINGS join_algorithm = 'full_sorting_merge', join_use_nulls = 1
+    WHERE r.matched = 0
+    SETTINGS join_algorithm = 'full_sorting_merge'
 );
 
 DROP TABLE t_tricky_left;
