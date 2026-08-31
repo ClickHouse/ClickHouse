@@ -159,9 +159,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
+    bool is_distributed_target = false;
     if (auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage))
     {
-        checkPrometheusQueryDistributedRead(*time_series_storage, getContext());
+        is_distributed_target = true;
         evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
         evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
     }
@@ -182,6 +183,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query, timestamp_scale);
+    /// Applied only when the query actually reads the table, as on the table-function path.
+    if (is_distributed_target && prometheusQueryReadsTimeSeries(*query_tree))
+        checkPrometheusQueryDistributedRead(*time_series_storage, getContext());
     LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
     if (params.type == Type::Instant)

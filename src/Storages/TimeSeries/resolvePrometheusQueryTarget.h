@@ -9,6 +9,7 @@
 namespace DB
 {
 class IStorage;
+class PrometheusQueryTree;
 
 /// A prometheus query target which is a Distributed table over per-shard TimeSeries tables.
 struct PrometheusQueryDistributedTarget
@@ -20,6 +21,9 @@ struct PrometheusQueryDistributedTarget
 /// Checks that a table can be used as a target of a prometheus query, i.e. that it's either a TimeSeries table
 /// or a Distributed table over per-shard TimeSeries tables. Returns std::nullopt for a TimeSeries table.
 std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(const IStorage & storage);
+
+/// True when the parsed PromQL contains a selector, i.e. would actually read the table.
+bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 
 /// Refuses what every TimeSeries rewrite silently skips: a non-trivial row policy on the table,
 /// and an additional_table_filters entry aimed at it (matched the way the planner matches keys).

@@ -226,7 +226,7 @@ SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now
 
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {.description = R"DOCS_MD(
-Evaluates a prometheus query using data from a TimeSeries table.
+Evaluates a prometheus query using data from a TimeSeries table, or from a Distributed table over per-shard TimeSeries tables (samples are then selected on every shard and the query is evaluated on the initiator).
 
 ## Syntax {#syntax}
 
@@ -301,7 +301,7 @@ SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ true>>(
         {.description = R"DOCS_MD(
-Evaluates a prometheus query using data from a TimeSeries table over a range of evaluation times.
+Evaluates a prometheus query over a range of evaluation times, using data from a TimeSeries table or from a Distributed table over per-shard TimeSeries tables.
 
 ## Syntax {#syntax}
 

@@ -111,8 +111,6 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
     auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
-    if (distributed_target)
-        checkPrometheusQueryDistributedRead(*time_series_storage, context);
 
     /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,
     /// so the data types are taken from the target's own metadata in both cases.
@@ -123,6 +121,11 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
     PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), timestamp_scale};
+
+    /// Applied only when the query actually reads the table: '1 + 2' has no selector, so
+    /// wrapper-only settings must not refuse it.
+    if (distributed_target && prometheusQueryReadsTimeSeries(promql_query))
+        checkPrometheusQueryDistributedRead(*time_series_storage, context);
 
     PrometheusQueryEvaluationMode mode = {};
     DateTime64 start_time;
