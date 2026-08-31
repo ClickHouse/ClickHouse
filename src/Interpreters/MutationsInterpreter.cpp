@@ -10,7 +10,6 @@
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/misc.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -62,6 +61,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
@@ -152,6 +152,134 @@ void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context)
     }
 }
 
+bool mutationPredicateContainsDeferredSet(const ASTPtr & predicate)
+{
+    if (predicate->as<ASTSubquery>() || predicate->as<ASTSelectQuery>() || predicate->as<ASTSelectWithUnionQuery>())
+        return true;
+
+    if (const auto * function = predicate->as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            /// Only a literal tuple or array on the right-hand side is a stable constant set. A plain
+            /// identifier names a table, and any other function may be a table function; the analyzer
+            /// resolves both into a prepared set.
+            auto is_literal_enumeration = [](const ASTPtr & node, const auto & self) -> bool
+            {
+                if (node->as<ASTLiteral>())
+                    return true;
+
+                const auto * rhs_function = node->as<ASTFunction>();
+                if (!rhs_function || !rhs_function->arguments || (rhs_function->name != "tuple" && rhs_function->name != "array"))
+                    return false;
+
+                return std::ranges::all_of(rhs_function->arguments->children, [&](const auto & child) { return self(child, self); });
+            };
+
+            if (!is_literal_enumeration(arguments[1], is_literal_enumeration))
+                return true;
+        }
+    }
+
+    return std::ranges::any_of(predicate->children, [](const auto & child) { return mutationPredicateContainsDeferredSet(child); });
+}
+
+std::optional<MutationPredicateActions> buildActionsForMutationPredicate(
+    ASTPtr predicate,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextMutablePtr & context)
+{
+    std::optional<ActionsDAG> actions_dag;
+    const ActionsDAG::Node * predicate_node = nullptr;
+
+    if (shouldUseAnalyzerForMutations(context))
+    {
+        auto expression = buildQueryTree(predicate, context);
+
+        /// Resolve against the storage, so that its columns (including `ALIAS` and `EPHEMERAL`),
+        /// subcolumns and virtual columns (e.g. `_part`, `_partition_id`) are visible, just like
+        /// during the mutation execution.
+        auto table_expression = std::make_shared<TableNode>(storage, context);
+
+        QueryAnalyzer analyzer(false);
+        analyzer.resolveConstantExpression(expression, table_expression, context);
+
+        GlobalPlannerContextPtr global_planner_context
+            = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        auto planner_context = std::make_shared<PlannerContext>(context, global_planner_context, SelectQueryOptions{});
+
+        collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+        collectSets(expression, *planner_context);
+
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        /// Use plain column names for the DAG inputs (instead of planner column identifiers
+        /// like `__table1.x`), so that the caller can match them against key expression columns.
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/ {},
+            planner_context,
+            empty_correlated_columns_set,
+            /*use_column_identifier_as_action_node_name=*/ false);
+        correlated_subtrees.assertEmpty("in a mutation predicate");
+
+        /// Plan the subqueries, so that `KeyCondition` can build the sets for `IN (SELECT ...)`.
+        auto subquery_options = SelectQueryOptions{}.subquery();
+        for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+        {
+            auto query_tree = subquery->detachQueryTree();
+            createUniqueAliasesIfNecessary(query_tree, context);
+            Planner subquery_planner(
+                query_tree,
+                subquery_options,
+                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+            subquery_planner.buildQueryPlanIfNeeded();
+
+            auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+            subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        }
+
+        actions_dag.emplace(std::move(actions));
+        if (actions_dag->getOutputs().size() != 1)
+            return std::nullopt;
+        predicate_node = actions_dag->getOutputs().front();
+    }
+    else
+    {
+        /// Every column the mutation predicate may legally reference must be known here, otherwise
+        /// this analysis throws on a predicate the mutation itself accepts. `getAll` adds the
+        /// `ALIAS` and `EPHEMERAL` columns on top of the physical ones; the virtual columns
+        /// (e.g. `_part`, `_partition_id`) are available during mutation execution too.
+        /// A column that is not part of a key simply makes the expression opaque to the caller,
+        /// which then keeps the data - it does not have to be readable here.
+        auto columns = metadata_snapshot->getColumns().getAll();
+
+        NameSet column_names;
+        for (const auto & column : columns)
+            column_names.insert(column.name);
+        for (const auto & column : metadata_snapshot->virtuals)
+        {
+            if (!column_names.contains(column.name))
+                columns.emplace_back(column.name, column.type);
+        }
+
+        TreeRewriter tree_rewriter(context);
+        auto syntax_result = tree_rewriter.analyze(predicate, columns);
+        actions_dag.emplace(ExpressionAnalyzer(predicate, syntax_result, context).getActionsDAG(false));
+
+        /// The predicate output is the node matching the predicate expression name.
+        /// `getActionsDAG` may include input columns in the outputs list, so we need
+        /// to find the correct node by name.
+        predicate_node = actions_dag->tryFindInOutputs(predicate->getColumnName());
+    }
+
+    if (!predicate_node)
+        return std::nullopt;
+
+    return MutationPredicateActions{.dag = std::move(*actions_dag), .predicate = predicate_node};
+}
+
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
@@ -231,25 +359,6 @@ ColumnDependencies getAllColumnDependencies(
     return dependencies;
 }
 
-bool containsSubqueryOrTableReference(const IAST & ast)
-{
-    if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTTableIdentifier>())
-        return true;
-
-    /// A plain identifier on the right side of `IN` is a table reference, not a column.
-    if (const auto * function = ast.as<ASTFunction>();
-        function && functionIsInOrGlobalInOperator(function->name)
-        && function->arguments && function->arguments->children.size() == 2
-        && function->arguments->children[1]->as<ASTIdentifier>())
-        return true;
-
-    for (const auto & child : ast.children)
-        if (containsSubqueryOrTableReference(*child))
-            return true;
-
-    return false;
-}
-
 /// Tries to prove, from the part's partition value, minmax index and primary key index alone,
 /// that the predicates match no rows of the part, mirroring the index analysis the `SELECT count()`
 /// check query would perform. Conservative: returns false whenever exclusion cannot be proven.
@@ -274,27 +383,24 @@ bool canExcludePartByIndexAnalysis(
     {
         ASTPtr condition = makeASTForLogicalOr(std::move(predicates));
 
-        /// SQL UDF bodies are allowed to contain subqueries and table reads; TreeRewriter expands
-        /// them below, so the guard must run after the same substitution, not on the raw predicate.
+        /// SQL UDF bodies are allowed to contain subqueries and table reads; the analysis below
+        /// expands them, so the guard must run after the same substitution, not on the raw predicate.
         if (!UserDefinedSQLFunctionFactory::instance().empty())
             UserDefinedSQLFunctionVisitor::visit(condition, context);
 
         /// Sets for subqueries and table references would be built again by the fallback path.
-        if (containsSubqueryOrTableReference(*condition))
+        if (mutationPredicateContainsDeferredSet(condition))
             return false;
 
-        auto syntax_result = TreeRewriter(context).analyze(
-            condition,
-            metadata_snapshot->getColumns().getAllPhysical(),
-            storage_from_part,
-            storage_from_part->getStorageSnapshot(metadata_snapshot, context));
+        /// Resolve the predicate with the analyzer that will interpret the mutation, so this
+        /// shortcut sees every predicate shape the fallback check query resolves.
+        auto actions = buildActionsForMutationPredicate(
+            condition, storage_from_part, metadata_snapshot, Context::createCopy(context));
 
-        auto actions = ExpressionAnalyzer(condition, syntax_result, context).getActionsDAG(false);
-        const auto * predicate_node = actions.tryFindInOutputs(condition->getColumnName());
-        if (!predicate_node)
+        if (!actions)
             return false;
 
-        inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate_node, context, /*boolean_context=*/true);
+        inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(actions->predicate, context, /*boolean_context=*/true);
     }
     catch (...)
     {
