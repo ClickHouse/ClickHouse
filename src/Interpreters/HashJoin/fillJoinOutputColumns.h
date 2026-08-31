@@ -12,7 +12,7 @@ namespace DB
 
 /// Fills join output columns by dispatching on `ColumnAccessIndex::Type`:
 /// RowStore columns are filled from `row_store_ptrs`, the rest from `columns_with_row_numbers`.
-/// A `gathered` entry with a non-null `data_by_block` marks a column the caller has already filled.
+/// A `gathered` entry with a non-null `node` marks a column the caller has already filled.
 void fillJoinOutputColumns(
     MutableColumns & columns,
     const ColumnAccessIndexes & output_access_indexes,

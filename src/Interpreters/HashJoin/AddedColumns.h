@@ -86,9 +86,9 @@ struct LazyOutput
     std::vector<const IColumn * const *> emit_block_columns;
     std::vector<const ColumnReplicated * const *> emit_block_replicated;
 
-    /// Per output column, the raw fixed-width source `gatherColumnDirect` reads; a null `data_by_block`
-    /// means that column keeps the generic path. Resolved once per probe block, because the admission
-    /// test is a property of the join and not of an output chunk.
+    /// Per output column, the source `gatherColumnDirect` reads; a null `node` means that column
+    /// keeps the generic path. Resolved once per probe block, because the admission test is a
+    /// property of the join and not of an output chunk.
     std::vector<DirectGatherColumn> emit_direct_gather;
     size_t num_direct_gather = 0;
     size_t num_columnar_dst = 0;
