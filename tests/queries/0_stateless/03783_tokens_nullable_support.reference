@@ -14,7 +14,7 @@
 -- Test mixed nullable rows
 ['hello','world']
 []
-['click','house']
+['foo','bar']
 ['a','b']
 ['']
 ['c','d']

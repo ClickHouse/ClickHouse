@@ -30,7 +30,7 @@ SELECT alphaTokens(CAST(NULL AS Nullable(String)));
 SELECT alphaTokens(toNullable(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- Test mixed nullable rows';
-SELECT tokens(s) FROM (SELECT arrayJoin([toNullable('hello world'), NULL, toNullable('click house')]) AS s);
+SELECT tokens(s) FROM (SELECT arrayJoin([toNullable('hello world'), NULL, toNullable('foo bar')]) AS s);
 SELECT splitByChar(',', s) FROM (SELECT arrayJoin([toNullable('a,b'), NULL, toNullable('c,d')]) AS s);
 SELECT extractAll(s, '\\d+') FROM (SELECT arrayJoin([toNullable('a1b22'), NULL, toNullable('c333')]) AS s);
 SELECT extractURLParameterNames(s) FROM (SELECT arrayJoin([toNullable('http://example.com/?a=1&b=2'), NULL, toNullable('http://example.com/?c=3')]) AS s);
