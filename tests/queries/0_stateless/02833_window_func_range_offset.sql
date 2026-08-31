@@ -12,6 +12,10 @@ SELECT count() OVER (ORDER BY materialize(1)::UInt64 RANGE nan PRECEDING); -- { 
 SELECT count() OVER (ORDER BY materialize(1)::UInt64 RANGE BETWEEN CURRENT ROW AND inf FOLLOWING); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE inf PRECEDING); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE BETWEEN CURRENT ROW AND nan FOLLOWING); -- { serverError BAD_ARGUMENTS }
+-- the relative position of the two bounds is a property of the frame as written, so a start bound
+-- that exceeds the end bound is rejected even where coercion to the `ORDER BY` scale would make
+-- the two equal
+SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE BETWEEN 0.5 PRECEDING AND 0.5111::Decimal32(4) PRECEDING); -- { serverError BAD_ARGUMENTS }
 -- a `RANGE` offset that is not a nonnegative number is rejected before execution,
 -- with either analyzer, and before a lossy coercion could hide it
 SELECT count() OVER (ORDER BY materialize(1.5)::Nullable(Float64) RANGE NULL::Nullable(Float64) PRECEDING); -- { serverError BAD_ARGUMENTS }
