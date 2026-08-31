@@ -23,11 +23,11 @@ $CLICKHOUSE_CLIENT --query_id "$query_id_normalized_empty" --trace_profile_event
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS trace_log"
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT countIf(event = 'Query') > 0, uniqExact(event) <= 2
+    SELECT arraySort(groupUniqArray(event))
     FROM system.trace_log
     WHERE event_date >= yesterday() AND query_id = '$query_id_listed' AND trace_type = 'ProfileEvent'"
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT countIf(event = 'Query') > 0, uniqExact(event) > 2
+    SELECT countIf(event = 'Query') > 0, countIf(event = 'SelectQuery') > 0, uniqExact(event) > 2
     FROM system.trace_log
     WHERE event_date >= yesterday() AND query_id = '$query_id_normalized_empty' AND trace_type = 'ProfileEvent'"
