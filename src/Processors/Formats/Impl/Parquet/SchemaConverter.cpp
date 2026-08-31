@@ -671,133 +671,65 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
 
 bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
 {
-    size_t innermost_array_idx = 0;
-    for (size_t i = 0; i < levels.size(); ++i)
-        if (levels[i].is_array)
-            innermost_array_idx = i;
-    const bool group_is_optional = node.element->repetition_type == parq::FieldRepetitionType::OPTIONAL;
-    const size_t ancestor_end = levels.size() - (group_is_optional ? 1 : 0);
-    bool has_optional_ancestor = false;
-    for (size_t i = innermost_array_idx + 1; i < ancestor_end; ++i)
-        has_optional_ancestor |= !levels[i].is_array;
-    bool nullable_group = false;
-    if (node.type_hint && node.type_hint->isNullable() && !has_optional_ancestor)
-    {
-        if (node.element->repetition_type == parq::FieldRepetitionType::REQUIRED)
-            node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
-        else if (group_is_optional && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1))
-        {
-            node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
-            nullable_group = true;
-        }
-    }
-
-    /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
-    nullable_tuple_group_depth += nullable_group ? 1 : 0;
-    SCOPE_EXIT({ nullable_tuple_group_depth -= nullable_group ? 1 : 0; });
-
-    bool lookup_by_name = false;
-    std::vector<size_t> elements;
-    if (!lookup_by_name && node.requested)
-        elements.resize(size_t(node.element->num_children), UINT64_MAX);
-
-    Strings names;
-    DataTypes types;
-    if (node.requested)
-    {
-        names.resize(elements.size());
-        types.resize(elements.size());
-    }
-
-    size_t primitive_start = primitive_columns.size();
-    size_t skipped_unsupported_columns = 0;
-    std::vector<String> element_names_in_file;
-
-    bool has_metadata = false;
-    bool has_value = false;
-
-    for (size_t i = 0; i < size_t(node.element->num_children); ++i)
-    {
-        const String & element_name = element_names_in_file.emplace_back(
-            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
-        std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
-        if (lookup_by_name)
-        {
-            idx_in_output_tuple = std::nullopt;
-
-            if (idx_in_output_tuple.has_value() && elements.at(idx_in_output_tuple.value()) != UINT64_MAX)
-                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", node.getNameForLogging(), element_name);
-        }
-
-        const bool element_requested = node.requested && idx_in_output_tuple.has_value();
-
-        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
-        subnode.requested = element_requested;
-        if (node.schema_context == SchemaContext::MapTuple && idx_in_output_tuple == 0)
-            subnode.schema_context = SchemaContext::MapKey;
-
-        processSubtree(subnode);
-        has_metadata |= subnode.name == node.name + ".metadata";
-        if (subnode.name == node.name + ".metadata")
-            idx_in_output_tuple = 0;
-        has_value |= subnode.name == node.name + ".value";
-        if (subnode.name == node.name + ".value")
-            idx_in_output_tuple = 1;
-        auto element_idx = subnode.output_idx;
-
-        if (element_requested)
-        {
-            if (!element_idx.has_value())
-            {
-                {
-                    skipped_unsupported_columns += 1;
-                    elements.pop_back();
-                    names.pop_back();
-                    types.pop_back();
-                    continue;
-                }
-            }
-
-            elements.at(idx_in_output_tuple.value()) = element_idx.value();
-
-            const auto & type = output_columns.at(element_idx.value()).output_type;
-            {
-                names.at(idx_in_output_tuple.value()) = element_name;
-                types.at(idx_in_output_tuple.value()) = type;
-            }
-        }
-    }
-
-    if (!has_metadata || !has_value)
+    if (node.element->num_children != 2)
+        return false;
+    if (schema_idx + 1 >= file_metadata.schema.size())
         return false;
 
-    /// Map tuple in parquet has elements: {"key" , "value" },
-    /// but DataTypeMap requires:          {"keys", "values"}.
-    if (node.schema_context == SchemaContext::MapTuple)
-        names = {"keys", "values"};
+    const bool group_annotated_variant = node.element->logicalType.__isset.VARIANT;
 
-    DataTypePtr output_type;
+    auto is_variant_leaf = [&](const parq::SchemaElement & element, std::string_view name)
     {
-        output_type = std::make_shared<DataTypeDynamic>();
+        return element.name == name
+            && isPrimitiveNode(element)
+            && element.type == parq::Type::BYTE_ARRAY
+            && element.repetition_type != parq::FieldRepetitionType::REPEATED
+            && (group_annotated_variant || (!element.logicalType.__isset.STRING && !element.__isset.converted_type));
+    };
+
+    const parq::SchemaElement & first = file_metadata.schema[schema_idx];
+    const parq::SchemaElement & second = file_metadata.schema[schema_idx + 1];
+    size_t metadata_child;
+    if (is_variant_leaf(first, "metadata") && is_variant_leaf(second, "value"))
+        metadata_child = 0;
+    else if (is_variant_leaf(first, "value") && is_variant_leaf(second, "metadata"))
+        metadata_child = 1;
+    else
+        return false;
+
+    if (node.type_hint && !WhichDataType(node.type_hint->getTypeId()).isDynamic())
+        return false;
+
+    size_t primitive_start = primitive_columns.size();
+    size_t output_start = output_columns.size();
+
+    std::optional<size_t> child_output_idx[2];
+    for (size_t i = 0; i < 2; ++i)
+    {
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        subnode.requested = node.requested;
+        processSubtree(subnode);
+        child_output_idx[i] = subnode.output_idx;
     }
 
-    if (nullable_group && primitive_start == primitive_columns.size())
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
-            "physical elements to read (all requested elements are missing), so its null map cannot be "
-            "reconstructed; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
-    if (nullable_group)
-        output_type = makeNullable(output_type);
+    if (!node.requested)
+        return true;
+
+    if (!child_output_idx[0].has_value() || !child_output_idx[1].has_value())
+    {
+        primitive_columns.resize(primitive_start);
+        output_columns.resize(output_start);
+        return true;
+    }
 
     node.output_idx = output_columns.size();
     OutputColumnInfo & output = output_columns.emplace_back();
     output.name = node.name;
     output.primitive_start = primitive_start;
     output.primitive_end = primitive_columns.size();
-    output.input_type = std::move(output_type);
+    output.input_type = std::make_shared<DataTypeDynamic>();
     output.output_type = output.input_type;
-    output.nested_columns = elements;
-    output.nullable_group = nullable_group;
+    output.nested_columns = {child_output_idx[metadata_child].value(), child_output_idx[1 - metadata_child].value()};
     return true;
 }
 
