@@ -84,7 +84,7 @@ unsigned char patternByte(size_t i)
 }
 
 /// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
-/// `concurrent_download` holds the ranges another thread is downloading: `claim` leaves them
+/// `concurrent_download` holds the ranges another thread is downloading: `role` leaves them
 /// unlisted and `write` refuses to land bytes there, so the driver fetches them through from source.
 struct MockCacheState
 {
@@ -97,7 +97,7 @@ struct MockCacheState
     IntervalSet concurrent_download;
     /// Ranges that became committed AFTER `resolve` but are still reported as a miss by `resolve`
     /// (they are not in `resident`). `committed()` reports them - models a block a concurrent query
-    /// populated in the window between our read-only probe and the claim.
+    /// populated in the window between our read-only probe and the role.
     IntervalSet late_committed;
     /// Blocks a POPULATING tier resolves as a writer-less miss because the segment is detached (cannot
     /// take a downloader) - like `DiskCacheProvider`'s `emit_uncacheable_miss`. Served from source,
@@ -216,18 +216,18 @@ private:
                 return {};
             return read(sub);
         }
-        Claim claimLeadRole() override
+        FillRole takeFillRole() override
         {
-            /// A block populated since `resolve` (`committed()` now reports it): nothing to fill, no claim.
+            /// A block populated since `resolve` (`committed()` now reports it): nothing to fill, no role.
             if (state->late_committed.subtract(r).empty())
                 return {};
             /// We hold the role unless the whole segment is being downloaded elsewhere (then hold nothing).
             const bool held = !state->concurrent_download.subtract(r).empty();
-            return makeClaim(held, /*release=*/nullptr);
+            return makeFillRole(held, /*release=*/nullptr);
         }
-        size_t write(ChainedBuffers data, const Claim & claim) override
+        size_t write(ChainedBuffers data, const FillRole & role) override
         {
-            chassert(claim);
+            chassert(role);
             /// The cache rejects this block (no disk space / reservation failure): nothing lands, so
             /// `committed()` does not advance and the caller must keep the bytes in memory.
             if (state->reject.subtract(r).empty())
@@ -674,7 +674,7 @@ TEST_F(ReaderExecutorTest, ConcurrentDownloadWaitTimesOutFallsBackToSource)
 TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
 {
     /// A block that a concurrent query populated AFTER our `resolve` (a read-only probe) but BEFORE we
-    /// claim it: `claimLeadRole` re-probes and reports it as `available`, so the executor serves it
+    /// role it: `takeFillRole` re-probes and reports it as `available`, so the executor serves it
     /// from cache and does not re-read it from the source. Here block 0 is committed-since-resolve;
     /// blocks 1..3 are plain misses fetched from source. Zero source bytes for block 0 is the signal.
     const size_t block = 256;
@@ -699,10 +699,10 @@ TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
     for (size_t i = 0; i < data.size(); ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
 
-    /// Only blocks 1..3 hit the source; block 0 came from cache via the claim-time recheck.
+    /// Only blocks 1..3 hit the source; block 0 came from cache via the role-time recheck.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 3 * block)
         << "block committed since resolve should be served from cache, not the source";
-    /// Nothing filled block 0 - it was already committed (available, no claim).
+    /// Nothing filled block 0 - it was already committed (available, no role).
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, block) << "wrote the already-committed block 0";
 }

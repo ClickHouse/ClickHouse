@@ -65,9 +65,9 @@ public:
 
     ByteRange range() const override { return aligned_range; }
     size_t committed() const override;
-    size_t write(ChainedBuffers data, const Claim & claim) override;
+    size_t write(ChainedBuffers data, const FillRole & role) override;
     ChainedBuffers read(ByteRange subrange) override;
-    Claim claimLeadRole() override;
+    FillRole takeFillRole() override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
 
 private:

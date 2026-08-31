@@ -93,14 +93,14 @@ ChainedBuffers makeChain(size_t offset, size_t size, char fill)
     return chain;
 }
 
-/// Claim the writer's range then write - the page cache has no downloader role, so its default
-/// claim always authorizes; mirrors how the executor drives a write under a held claim.
+/// FillRole the writer's range then write - the page cache has no downloader role, so its default
+/// role always authorizes; mirrors how the executor drives a write under a held role.
 size_t claimedWrite(CacheWriter & writer, ChainedBuffers chain)
 {
-    auto claim = writer.claimLeadRole();
-    if (!claim)
+    auto role = writer.takeFillRole();
+    if (!role)
         return 0;
-    return writer.write(std::move(chain), claim);
+    return writer.write(std::move(chain), role);
 }
 
 /// Flatten `chain`'s coverage of `[offset, offset + size)` into a std::string,
@@ -476,13 +476,13 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
     EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'F'));
 }
 
-/// (k) claimLeadRole re-probes the cache: a block populated by another writer between the openWriter
-/// (a read-only `resolve`) and the claim is adopted and reported as `available` with NO claim, so the
+/// (k) takeFillRole re-probes the cache: a block populated by another writer between the openWriter
+/// (a read-only `resolve`) and the role is adopted and reported as `available` with NO role, so the
 /// caller serves it from cache instead of re-reading it from the source.
 TEST(PageCacheBuffers, ClaimLeadRoleAdoptsBlockCachedSinceResolve)
 {
     auto cache = makeCache();
-    auto file = makeFile("buffers-claim-recheck");
+    auto file = makeFile("buffers-role-recheck");
     constexpr size_t block_size = 4096;
     PageCacheProvider provider(
         cache, file, block_size, /*inject_eviction=*/false,
@@ -499,11 +499,11 @@ TEST(PageCacheBuffers, ClaimLeadRoleAdoptsBlockCachedSinceResolve)
     /// A concurrent writer populates the block with 'C'.
     EXPECT_EQ(claimedWrite(*early[0].writer, makeChain(0, block_size, 'C')), block_size);
 
-    /// The late writer's claimLeadRole re-probes: the block is now resident, so it holds no claim and
+    /// The late writer's takeFillRole re-probes: the block is now resident, so it holds no role and
     /// `committed()` reports the whole block.
     auto & late_writer = *late[0].writer;
-    auto claim = late_writer.claimLeadRole();
-    EXPECT_FALSE(static_cast<bool>(claim)) << "nothing left to fill: the block is already committed";
+    auto role = late_writer.takeFillRole();
+    EXPECT_FALSE(static_cast<bool>(role)) << "nothing left to fill: the block is already committed";
     EXPECT_EQ(late_writer.committed(), block_size);
 
     /// The late writer serves the concurrently-written bytes from cache (adopted its cell).

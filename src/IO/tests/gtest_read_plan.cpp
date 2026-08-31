@@ -28,7 +28,7 @@ public:
     ByteRange range() const override { return r; }
     size_t committed() const override { return frontier; }
     bool fillsWholeSegment() const override { return whole; }
-    size_t write(ChainedBuffers, const Claim &) override { return 0; }
+    size_t write(ChainedBuffers, const FillRole &) override { return 0; }
     ChainedBuffers read(ByteRange) override { return {}; }
 private:
     ByteRange r;

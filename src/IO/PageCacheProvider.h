@@ -63,11 +63,11 @@ public:
         return cell ? range_member.end() : range_member.offset;
     }
     bool fillsWholeSegment() const override { return true; }
-    size_t write(ChainedBuffers data, const Claim & claim) override;
+    size_t write(ChainedBuffers data, const FillRole & role) override;
     ChainedBuffers read(ByteRange sub) override;
     /// Re-probe the cache: if the block was cached by a concurrent query since `resolve`, adopt its cell
-    /// (`committed()` then reports it) and hold no claim; otherwise hold the claim to fill it.
-    Claim claimLeadRole() override;
+    /// (`committed()` then reports it) and hold no role; otherwise hold the role to fill it.
+    FillRole takeFillRole() override;
 
 private:
     PageCachePtr cache;

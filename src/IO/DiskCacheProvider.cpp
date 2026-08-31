@@ -223,7 +223,7 @@ DiskCacheWriter::DiskCacheWriter(
         && aligned_range.end() <= seg_range.right + 1 + object_file_offset);
 }
 
-size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
+size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
 {
     if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
@@ -237,15 +237,15 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
     const size_t miss_obj_end = miss_obj_off + aligned_range.size;
 
     /// Append append-only at our one segment's live current write offset, never completing it
-    /// here (kept appendable across windows; the claim's release / the destructor finalize it). NEVER
+    /// here (kept appendable across windows; the role's release / the destructor finalize it). NEVER
     /// throws on the soft skips (unclaimed / no-op).
     FileSegment & seg = segment();
     const auto & seg_range = seg.range();
 
-    /// `claimLeadRole` is the sole role-acquisition site; `write` never takes one. So a caller reaches
-    /// here only under a held `claim` that won this segment's role - assert the caller's proof and the
+    /// `takeFillRole` is the sole role-acquisition site; `write` never takes one. So a caller reaches
+    /// here only under a held `role` that won this segment's role - assert the caller's proof and the
     /// live state.
-    chassert(claim);
+    chassert(role);
     chassert(seg.isDownloader());
 
     /// Append-only: start at the live current write offset.
@@ -256,7 +256,7 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
         return 0;
 
     /// A gap inside `data` caps the write; the segment stays claimed (partial) for continuation in a
-    /// later call under the same claim.
+    /// later call under the same role.
     const ByteRange target{write_offset, write_end_max - write_offset};
     size_t contiguous = target.size;
     if (auto data_gaps = data.gaps(target); !data_gaps.empty())
@@ -292,7 +292,7 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
     }
 
     const bool written_ok = tryWriteToSegment(seg, flat_buf.data(), contiguous, write_offset);
-    /// Keep the segment appendable; the downloader role stays with the open claim (its release
+    /// Keep the segment appendable; the downloader role stays with the open role (its release
     /// finalizes it). Only wake the readers waiting on the committed prefix.
     seg.notifyDownloadProgress();
 
@@ -322,29 +322,29 @@ size_t DiskCacheWriter::committed() const
     /// The segment's committed prefix in file space (append-only from its start), clamped to our range.
     /// Reads the segment's live frontier directly - no separate bookkeeping - so it also reflects a
     /// prefix another downloader committed on the same segment.
-    const size_t frontier = segmentCommittedEnd(segment()) + object_file_offset;
-    return std::clamp(frontier, aligned_range.offset, aligned_range.end());
+    const size_t seg_committed_file_end = segmentCommittedEnd(segment()) + object_file_offset;
+    return std::clamp(seg_committed_file_end, aligned_range.offset, aligned_range.end());
 }
 
-CacheWriter::Claim DiskCacheWriter::claimLeadRole()
+CacheWriter::FillRole DiskCacheWriter::takeFillRole()
 {
-    /// Our one segment. If it has an uncommitted tail we either win the role (hold the claim, fetch+write
+    /// Our one segment. If it has an uncommitted tail we either win the role (hold the role, fetch+write
     /// it) or a concurrent downloader leads it (hold nothing; the caller reads `committed()` and waits).
     FileSegment & seg = segment();
-    const size_t seg_file_hi = seg.range().right + 1 + object_file_offset;
+    const size_t seg_file_end = seg.range().right + 1 + object_file_offset;
 
     if (seg.state() == FileSegmentState::DOWNLOADED)
         return {};   /// fully cached: readable via committed(), no role
 
     /// The write offset is readable without the role; if it already covers the segment, nothing to fill.
-    if (seg.getCurrentWriteOffset() + object_file_offset >= seg_file_hi)
+    if (seg.getCurrentWriteOffset() + object_file_offset >= seg_file_end)
         return {};
 
-    /// Acquire the role for the tail. Never nested (one claim per write), so we do not already hold it.
+    /// Acquire the role for the tail. Never nested (one role per write), so we do not already hold it.
     chassert(!seg.isDownloader());
     const bool won = seg.getOrSetDownloader() == FileSegment::getCallerId();
 
-    /// If we won, release the role on any exit below unless we hand it to the Claim: a leaked
+    /// If we won, release the role on any exit below unless we hand it to the FillRole: a leaked
     /// DOWNLOADING segment aborts the writer's holder dtor and deadlocks a later waitAndRead.
     bool safe_guard_armed = true;
     SCOPE_EXIT({
@@ -365,12 +365,12 @@ CacheWriter::Claim DiskCacheWriter::claimLeadRole()
     if (!won)
         return {};   /// a concurrent downloader leads the tail: hold nothing, the caller waits on it
 
-    if (seg.getCurrentWriteOffset() + object_file_offset >= seg_file_hi)
+    if (seg.getCurrentWriteOffset() + object_file_offset >= seg_file_end)
         return {};   /// filled since the pre-check: nothing left (the guard releases the role)
 
-    /// Hand the role to the Claim (disarming the guard). The release captures the segment (a shared
+    /// Hand the role to the FillRole (disarming the guard). The release captures the segment (a shared
     /// ref), not the writer.
-    Claim claim = makeClaim(/*held=*/true, [seg_ptr = segment_holder->getSingleFileSegment(), logger = log]() noexcept
+    FillRole role = makeFillRole(/*held=*/true, [seg_ptr = segment_holder->getSingleFileSegment(), logger = log]() noexcept
     {
         chassert(seg_ptr->isDownloader());
         try
@@ -384,7 +384,7 @@ CacheWriter::Claim DiskCacheWriter::claimLeadRole()
         }
     });
     safe_guard_armed = false;
-    return claim;
+    return role;
 }
 
 ChainedBuffers DiskCacheWriter::waitAndRead(ByteRange subrange)
@@ -394,11 +394,11 @@ ChainedBuffers DiskCacheWriter::waitAndRead(ByteRange subrange)
     /// cannot deadlock.
     FileSegment & seg = segment();
     const auto & seg_range = seg.range();
-    const size_t seg_file_lo = seg_range.left + object_file_offset;
-    const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
+    const size_t seg_file_begin = seg_range.left + object_file_offset;
+    const size_t seg_file_end = seg_range.right + 1 + object_file_offset;
 
-    const size_t lo = std::max(subrange.offset, seg_file_lo);
-    const size_t hi = std::min(subrange.end(), seg_file_hi);
+    const size_t lo = std::max(subrange.offset, seg_file_begin);
+    const size_t hi = std::min(subrange.end(), seg_file_end);
     const auto st = seg.state();
     const bool readable = st == FileSegmentState::DOWNLOADED
         || st == FileSegmentState::PARTIALLY_DOWNLOADED

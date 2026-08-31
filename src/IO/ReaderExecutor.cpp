@@ -449,22 +449,22 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
 
     /// One pass over the writers (fastest-first) resolving the head inline: serve `pos` from a committed
     /// prefix; else if a concurrent downloader leads it, wait once and serve from cache if it lands; else
-    /// take the download claim to fill below. A missed wait just falls through to the source read.
-    struct Claimed { CacheWriter * writer; CacheWriter::Claim claim; };
+    /// take the download role to fill below. A missed wait just falls through to the source read.
+    struct Claimed { CacheWriter * writer; CacheWriter::FillRole role; };
     VectorWithMemoryTracking<Claimed> claimed;
     for (auto * writer : writers)
     {
         const bool covers_head = writer->range().offset <= pos && pos < writer->range().end();
-        CacheWriter::Claim claim = writer->claimLeadRole();
+        CacheWriter::FillRole role = writer->takeFillRole();
         if (covers_head && pos < writer->committed())   /// committed prefix `[range.offset, committed)` covers `pos`
             return writer->read(ByteRange{pos, serve_len(writer->committed())});
-        if (covers_head && !claim)
+        if (covers_head && !role)
         {
             ChainedBuffers waited = writer->waitAndRead(ByteRange{pos, serve_len(fetch_range.end())});
             if (!waited.empty())
                 return waited;
         }
-        claimed.push_back({writer, std::move(claim)});
+        claimed.push_back({writer, std::move(role)});
     }
 
     /// One source read of the whole extent. (With two populating layers a slower tier may already hold
@@ -479,8 +479,8 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
     IntervalSet cached;
     for (auto & c : claimed)
     {
-        /// Only a held claim authorizes a write; a tier led by a concurrent downloader is filled there.
-        if (c.claim)
+        /// Only a held role authorizes a write; a tier led by a concurrent downloader is filled there.
+        if (c.role)
         {
             const size_t lo = std::max(c.writer->range().offset, fetch_range.offset);
             const size_t hi = std::min(c.writer->range().end(), fetched_end);
@@ -490,7 +490,7 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
                 if (fetched.covers(write_range))
                 {
                     stats.add(Stats::CachePopulateRequests);
-                    c.writer->write(fetched.slice(write_range), c.claim);
+                    c.writer->write(fetched.slice(write_range), c.role);
                 }
             }
         }
@@ -498,7 +498,7 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
         const size_t committed = c.writer->committed();
         if (committed > c.writer->range().offset)
             cached.add(ByteRange{c.writer->range().offset, committed - c.writer->range().offset});
-        c.claim.reset();
+        c.role.reset();
     }
 
     /// Serve one block; hand the un-served bytes no tier accepted to the memory hold. A cold read whose
