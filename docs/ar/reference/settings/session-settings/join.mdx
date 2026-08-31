@@ -17,17 +17,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
   ## join_algorithm
 </div>
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "تم إهمال 'default' لصالح تحديد خوارزميات join صراحةً، كما أصبحت parallel_hash الآن مفضلة على hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "أُضيف `ie_join` إلى القائمة الافتراضية، لذا يُنفَّذ join الذي لا يحتوي قسم `ON` فيه إلا على شروط لعدم المساواة باستخدام IEJoin بدلًا من `CROSS JOIN` مع filter. ولأنه الأخير، لا يُستخدم إلا عندما لا تنطبق الخوارزميات الأخرى."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "تم إهمال 'default' لصالح تحديد خوارزميات join صراحةً، كما أصبحت parallel_hash الآن مفضلة على hash"}]}]} />
 
 يحدد خوارزمية [JOIN](/ar/reference/statements/select/join) المستخدمة.
 
-يمكن تحديد عدة خوارزميات، وتُختار الخوارزمية المناسبة لكل استعلام بحسب kind/الصرامة ومحرك الجدول.
+يمكن تحديد عدة خوارزميات، وتُختار الخوارزمية المناسبة لكل استعلام بحسب kind/صرامة ومحرك الجدول.
 
 تؤثر معظم الخوارزميات في الاستعلام فقط عندما تكون هي الخوارزمية المحددة له. لكن بعضها يغيّر التخطيط بمجرد إدراجه، حتى لو كان خيارًا احتياطيًا منخفض الأولوية لا يُختار في النهاية، لأن القرار يُتخذ قبل اختيار الخوارزمية. ويوجد تأثيران من هذا النوع:
 
-* يصبح استدلال النوع لـ join key أكثر صرامة (فعلى سبيل المثال، لا يمكن لـ merge join ضم مفاتيح من أنواع مختلفة مثل `String` و`Nullable(String)`). قد يغيّر ذلك الأنواع الناتجة لأعمدة `USING`، وقد يؤدي إلى فشل join مع table ذات engine من نوع `Join` بسبب `TYPE_MISMATCH`. يتم تفعيله بواسطة `full_sorting_merge` و`parallel_full_sorting_merge`.
+* يصبح استدلال النوع لـ مفتاح JOIN أكثر صرامة (فعلى سبيل المثال، لا يمكن لـ merge join ضم مفاتيح من أنواع مختلفة مثل `String` و`Nullable(String)`). قد يغيّر ذلك الأنواع الناتجة لأعمدة `USING`، وقد يؤدي إلى فشل join مع table ذات engine من نوع `Join` بسبب `TYPE_MISMATCH`. يتم تفعيله بواسطة `full_sorting_merge` و`parallel_full_sorting_merge`.
 * يحصل `ORDER BY ... LIMIT` على الجانب المحفوظ من join على sort صريح بدلًا من قراءة بترتيب primary key، لأن join يُفترض أنه يقطع القراءة المرتبة (تُدرج merge join sort خاصًا بها قبل join؛ وتُعيد partial merge join فرز blocks اليسرى؛ كما أن join التي يمكنها إنتاج blocks مؤجلة لا تنشر القراءة المرتبة أيضًا). تكون النتيجة نفسها، لكن plan أقل كفاءة. يتم تفعيله بواسطة `full_sorting_merge` و`parallel_full_sorting_merge` و`partial_merge` و`prefer_partial_merge` و`grace_hash` و`auto`، وكذلك بواسطة قيمة غير صفرية لـ `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
 
 ينطبق كلاهما حتى عندما يُنفذ الاستعلام في النهاية باستخدام `hash` أو خوارزمية أخرى. إذا كان ذلك غير مرغوب فيه، فلا تدرج الخوارزميات المذكورة أعلاه في `join_algorithm` للاستعلامات المتأثرة.
@@ -38,13 +38,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 تُستخدم [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join). توفّر Grace hash خيار خوارزمية يتيح تنفيذ joins معقدة بكفاءة مع الحد من استهلاك الذاكرة.
 
-في المرحلة الأولى من grace join، يُقرأ الجدول الأيمن ويُقسَّم إلى N من الـ buckets وفقًا لقيمة hash الخاصة بـ key columns (في البداية تكون N هي `grace_hash_join_initial_buckets`). ويُنفَّذ ذلك بطريقة تضمن إمكانية معالجة كل bucket بشكل مستقل. تُضاف rows من الـ bucket الأولى إلى hash table داخل الذاكرة، بينما تُحفَظ البقية على disk. وإذا تجاوز نمو hash table مقدار memory limit (على سبيل المثال كما هو محدد بواسطة [`max_bytes_in_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join))، فسيُزاد عدد الـ buckets ويُعاد تحديد الـ bucket المخصصة لكل row. وأي rows لا تنتمي إلى الـ bucket الحالية تُفرَّغ وتُعاد إعادة تخصيصها.
+في المرحلة الأولى من grace join، يُقرأ الجدول الأيمن ويُقسَّم إلى N من الـ buckets وفقًا لقيمة hash الخاصة بـ key columns (في البداية تكون N هي `grace_hash_join_initial_buckets`). ويُنفَّذ ذلك بطريقة تضمن إمكانية معالجة كل bucket بشكل مستقل. تُضاف rows من الـ bucket الأولى إلى hash table داخل الذاكرة، بينما تُحفَظ البقية على قرص. وإذا تجاوز نمو hash table مقدار memory limit (على سبيل المثال كما هو محدد بواسطة [`max_bytes_in_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join))، فسيُزاد عدد الـ buckets ويُعاد تحديد الـ bucket المخصصة لكل row. وأي rows لا تنتمي إلى الـ bucket الحالية تُفرَّغ وتُعاد إعادة تخصيصها.
 
 يدعم `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
 * hash
 
-تُستخدم [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join). وهي أكثر تطبيقات join عمومية، إذ تدعم جميع التركيبات من kind وstrictness، كما تدعم عدة join keys مدمجة باستخدام `OR` في قسم `JOIN ON`.
+تُستخدم [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join). وهي أكثر تطبيقات join عمومية، إذ تدعم جميع التركيبات من kind وصرامة، كما تدعم عدة مفاتيح JOIN مدمجة باستخدام `OR` في قسم `JOIN ON`.
 
 عند استخدام خوارزمية `hash`، يُحمَّل الجزء الأيمن من `JOIN` إلى RAM.
 
@@ -58,18 +58,18 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 نوع مختلف من [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join)، حيث يُفرَز الجدول الأيمن بالكامل فقط.
 
-لا يُدعَم `RIGHT JOIN` و`FULL JOIN` إلا مع strictness من نوع `ALL` (`SEMI` و`ANTI` و`ANY` و`ASOF` غير مدعومة).
+لا يُدعَم `RIGHT JOIN` و`FULL JOIN` إلا مع صرامة من نوع `ALL` (`SEMI` و`ANTI` و`ANY` و`ASOF` غير مدعومة).
 
-عند استخدام خوارزمية `partial_merge`، يقوم ClickHouse بفرز البيانات وتفريغها إلى disk. تختلف خوارزمية `partial_merge` في ClickHouse قليلًا عن التطبيق التقليدي. أولًا، يفرز ClickHouse الجدول الأيمن حسب join keys على هيئة blocks، ثم ينشئ min-max index للـ blocks المرتبة. بعد ذلك يفرز أجزاءً من الجدول الأيسر حسب `join key` ويجري join عليها مع الجدول الأيمن. ويُستخدم min-max index أيضًا لتخطي blocks غير اللازمة من الجدول الأيمن.
+عند استخدام خوارزمية `partial_merge`، يفرز ClickHouse البيانات ويكتبها على القرص. تختلف خوارزمية `partial_merge` في ClickHouse قليلًا عن التنفيذ التقليدي. أولًا، يفرز ClickHouse الجدول الأيمن بحسب مفاتيح JOIN على شكل blocks وينشئ min-max index للـ blocks المرتبة. ثم يفرز أجزاءً من الجدول الأيسر بحسب `join key` ويجري join لها مع الجدول الأيمن. ويُستخدم min-max index أيضًا لتخطي blocks غير الضرورية من الجدول الأيمن.
 
 * direct
 
 تجري خوارزمية `direct` (المعروفة أيضًا باسم nested loop) عملية lookup في الجدول الأيمن باستخدام rows من الجدول الأيسر كمفاتيح.
 وهي مدعومة في أنواع تخزين خاصة مثل [Dictionary](/ar/reference/engines/table-engines/special/dictionary) و[EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb) وtables من نوع [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
 
-بالنسبة إلى MergeTree tables، تدفع الخوارزمية مرشحات join key مباشرةً إلى storage layer. وقد يكون ذلك أكثر كفاءة عندما يتمكن المفتاح من استخدام primary key index الخاص بالجدول في عمليات lookup، وإلا فإنها تُجري فحصًا كاملًا للجدول الأيمن لكل block من الجدول الأيسر.
+بالنسبة إلى MergeTree tables، تدفع الخوارزمية مرشحات مفتاح JOIN مباشرةً إلى storage layer. وقد يكون ذلك أكثر كفاءة عندما يتمكن المفتاح من استخدام primary key index الخاص بالجدول في عمليات lookup، وإلا فإنها تُجري فحصًا كاملًا للجدول الأيمن لكل block من الجدول الأيسر.
 
-يدعم `INNER` و`LEFT` joins، وjoin keys أحادية العمود للمساواة فقط، من دون شروط أخرى.
+يدعم `INNER` و`LEFT` joins، ومفاتيح JOIN أحادية العمود للمساواة فقط، من دون شروط أخرى.
 
 * auto
 
@@ -83,15 +83,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 خوارزمية [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) المعتمدة على الفرز، والمخصصة لـ `JOIN` يحتوي قسم `ON` فيه على مقارنتين لعدم المساواة (`<` و`<=` و`>` و`>=`) بين تعبيرات الجداول الموصولة. تدعم `ALL INNER/LEFT/RIGHT/FULL JOIN` و`SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
-يحدد موضعها في القائمة الأولوية: فإذا أُدرجت بعد الخوارزميات الأخرى، فلا تُستخدم IEJoin إلا عندما لا تنطبق تلك الخوارزميات (أي عندما لا يحتوي قسم `ON` على شروط مساواة)؛ وإذا أُدرجت أولًا، فتُستخدم كلما احتوى قسم `ON` على شرطي عدم مساواة. تُطبَّق الشروط المتبقية (بما فيها شروط المساواة) كـ filter على نتيجة join بالنسبة إلى `ALL INNER JOIN`، وتُقيَّم داخل operator كشرط متبقٍ يؤثر في المطابقة للأنواع الأخرى. من دون `ie_join` في القائمة، يُنفَّذ `INNER JOIN` الذي لا يحتوي إلا على شروط عدم مساواة بوصفه `CROSS JOIN` مع filter، ولا تُدعَم الأنواع الأخرى.
+يحدد موضعها في القائمة الأولوية: فإذا أُدرجت بعد الخوارزميات الأخرى، كما في القيمة الافتراضية، فلا تُستخدم IEJoin إلا عندما لا تنطبق تلك الخوارزميات (أي عندما لا يحتوي قسم `ON` على شروط مساواة)؛ وإذا أُدرجت أولًا، فتُستخدم كلما احتوى قسم `ON` على شرطي عدم مساواة. تُطبَّق الشروط المتبقية (بما فيها شروط المساواة) كـ filter على نتيجة join بالنسبة إلى `ALL INNER JOIN`، وتُقيَّم داخل operator كشرط متبقٍ يؤثر في المطابقة للأنواع الأخرى. من دون `ie_join` في القائمة، يُنفَّذ `INNER JOIN` الذي لا يحتوي إلا على شروط عدم مساواة بوصفه `CROSS JOIN` مع filter، ولا تُدعَم الأنواع الأخرى.
 
 يُراكَم كلا الإدخالين في الذاكرة قبل تنفيذ join: يحدّ [`max_rows_in_join`](/ar/reference/settings/session-settings/max-rows#max_rows_in_join) و[`max_bytes_in_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join) إجمالي الإدخال المتراكم لكلا الجانبين معًا (وليس الجانب الأيمن فقط)، ويُحدَّد الإجراء عند overflow بواسطة [`join_overflow_mode`](/ar/reference/settings/session-settings/join#join_overflow_mode)؛ ولا تُحتسب sort indexes التي يبنيها operator فوق الإدخال المتراكم ضمن الحد. يعمل join operator نفسه في thread واحد؛ ولا يُنفَّذ بالتوازي إلا الفرز السابق لـ join للإدخالين.
 
 * parallel&#95;full&#95;sorting&#95;merge
 
-مماثلة لـ `full_sorting_merge`، إلا أن joins المساواة المتوافقة مع hash تُقسَّم إلى shards بحسب hash الخاص بـ join keys، لتكوين merge joins مستقلة لكل shard تعمل بالتوازي (حتى `max_threads`) بدلًا من merge join واحدة. يحافظ ذلك على الاستخدام المنخفض والمتدفق للذاكرة في merge join مع استخدام جميع threads، ولا تكون النتيجة مرتبة.
+مماثلة لـ `full_sorting_merge`، إلا أن joins المساواة المتوافقة مع hash تُقسَّم إلى shards بحسب hash الخاص بـ مفاتيح JOIN، لتكوين merge joins مستقلة لكل shard تعمل بالتوازي (حتى `max_threads`) بدلًا من merge join واحدة. يحافظ ذلك على الاستخدام المنخفض والمتدفق للذاكرة في merge join مع استخدام جميع threads، ولا تكون النتيجة مرتبة.
 
-لا يُطبَّق التقسيم إلى shards باستخدام hash الخاص بـ join keys إلا على joins المساواة البسيطة لأنواع المفاتيح التي يتوافق hash الخاص بها مع مقارنة merge-join، وفقط عندما لا يكون أي من الجانبين مرتبًا مسبقًا. ويُتخطى في الحالات التالية:
+لا يُطبَّق التقسيم إلى shards باستخدام hash الخاص بـ مفاتيح JOIN إلا على joins المساواة البسيطة لأنواع المفاتيح التي يتوافق hash الخاص بها مع مقارنة merge-join، وفقط عندما لا يكون أي من الجانبين مرتبًا مسبقًا. ويُتخطى في الحالات التالية:
 
 * joins من نوع `ASOF`، وأنواع المفاتيح floating-point و`JSON` و`Object` و`Dynamic`: إذ لا تتسق hashes الخاصة بها مع مقارنة merge-join، ولذلك قد تصل المفاتيح المتساوية إلى shards مختلفة.
 * الجوانب المرتبة مسبقًا (قراءة MergeTree بالترتيب، أو أي إدخال مرتب مسبقًا): قد يؤدي scatter المحافظ على الترتيب إلى merge joins لكل shard إلى حدوث deadlock في pipeline. ويُحتفَظ بدلًا من ذلك بالقراءة بالترتيب وتحسينها `read_in_order_use_virtual_row`.
@@ -101,7 +101,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * prefer&#95;partial&#95;merge
 
-يحاول ClickHouse دائمًا استخدام join `partial_merge` إن أمكن، وإلا يستخدم `hash`. *Deprecated*، وهو مماثل لـ `partial_merge,hash`.
+يحاول ClickHouse دائمًا استخدام join `partial_merge` إن أمكن، وإلا يستخدم `hash`. *مهمل*، وهو مماثل لـ `partial_merge,hash`.
 
 * default (مهمل)
 

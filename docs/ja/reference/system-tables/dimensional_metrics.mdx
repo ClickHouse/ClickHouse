@@ -96,6 +96,30 @@ MergeTree データパーツの数。パーツの状態、パーツのタイプ�
 
 ファイルシステムキャッシュから追い出されたファイルセグメントの合計バイト数。キャッシュ名とユーザー ID ごとにラベル付けされます。デフォルトでは無効です。`expose_prometheus_eviction_metrics` と `expose_prometheus_eviction_metrics_per_user` で有効にします。
 
+<div id="object-storage-queue-failures-total">
+  ### `object_storage_queue_failures_total`
+</div>
+
+データベース、テーブル、処理ステージ (`read`、`set_processing`、`insert`、`commit`) 、エラーコードごとにラベル付けされた `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) の失敗回数。
+
+<div id="object-storage-queue-permanently-failed-files-total">
+  ### `object_storage_queue_permanently_failed_files_total`
+</div>
+
+再試行をすべて使い果たした後 (または再試行が無効な場合) に、永続的に処理を断念した `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) ファイルの数。データベースおよびテーブルでラベル付けされます。各ファイルは、そのデータが今後処理されることのないファイルを表します。
+
+<div id="object-storage-queue-newest-seen-object-timestamp-seconds">
+  ### `object_storage_queue_newest_seen_object_timestamp_seconds`
+</div>
+
+`ObjectStorageQueue` (`S3Queue`/`AzureQueue`) テーブルでこれまでに検出された最新オブジェクトの最終更新時刻を表すUnix timestamp。データベースおよびテーブルでラベル付けされます。
+
+<div id="object-storage-queue-newest-committed-object-timestamp-seconds">
+  ### `object_storage_queue_newest_committed_object_timestamp_seconds`
+</div>
+
+`ObjectStorageQueue` (`S3Queue`/`AzureQueue`) テーブルでこれまでに完全に処理された最新のオブジェクトの最終更新時刻を表すUnix timestamp。データベースおよびテーブルでラベル付けされます。
+
 <div id="see-also">
   ## 関連項目
 </div>

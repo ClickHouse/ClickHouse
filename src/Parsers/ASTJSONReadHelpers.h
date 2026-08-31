@@ -170,6 +170,15 @@ public:
     /// any other node type or value category here. Returns nullptr when the key is absent.
     ASTPtr readStringLiteralChild(const char * key) const;
 
+    /// Read the multi-partition `IN PARTITION p1, p2, ...` slot of a mutation (`ALTER ... DELETE/UPDATE`,
+    /// `DELETE FROM`, `UPDATE`). The parser builds it with `ParserList` over `ParserPartition` and collapses
+    /// a one-element list into the single-partition `partition` slot, so the node is always an
+    /// `ASTExpressionList` with at least two `ASTPartition` children. Execution relies on exactly that shape:
+    /// `MergeTreeData::getPartitionIDsFromQuery` passes every element to `getPartitionIDFromQuery`, which
+    /// downcasts it with `->as<ASTPartition &>()`.
+    /// Returns nullptr when the key is absent.
+    ASTPtr readPartitionListChild(const char * key) const;
+
     /// Read the "children" array.
     ASTs readChildren() const
     {
