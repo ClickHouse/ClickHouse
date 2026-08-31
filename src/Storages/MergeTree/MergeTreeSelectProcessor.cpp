@@ -346,13 +346,6 @@ void MergeTreeSelectProcessor::setVirtualRowConversions(
     virtual_row_conversions = std::move(virtual_row_conversions_);
     pk_block_header = std::move(pk_block_header_);
     read_in_reverse_order = read_in_reverse_order_;
-
-    /// A virtual row is emitted per block; the empty columns are immutable, so one set is
-    /// shared by all of them instead of being allocated per chunk.
-    virtual_row_empty_columns.clear();
-    virtual_row_empty_columns.reserve(result_header.columns());
-    for (size_t i = 0; i < result_header.columns(); ++i)
-        virtual_row_empty_columns.push_back(result_header.getByPosition(i).type->createColumn());
 }
 
 ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
@@ -391,7 +384,11 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     }
     Block pk_block(std::move(pk_columns));
 
-    Chunk chunk(virtual_row_empty_columns, 0);
+    Columns empty_columns;
+    empty_columns.reserve(result_header.columns());
+    for (size_t i = 0; i < result_header.columns(); ++i)
+        empty_columns.push_back(result_header.getByPosition(i).type->createColumn());
+    Chunk chunk(std::move(empty_columns), 0);
     auto part_level = data_part_info->getPartInfo().level;
     chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
 
