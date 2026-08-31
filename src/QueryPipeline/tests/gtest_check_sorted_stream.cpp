@@ -300,7 +300,13 @@ void checkCancellation(const char * fail_point_name)
     });
 
     /// Bound the wait so a pull that errors out before reaching the failpoint cannot wedge the job.
+    /// `waitForPause` returns void, so a timeout is indistinguishable from a real pause; distinguish
+    /// them by checking that the pull is still running. If it already finished, the pipeline never
+    /// paused at the failpoint (e.g. an unrelated early error) and the cancellation path below was
+    /// not exercised - fail loudly instead of silently passing.
     FailPointInjection::waitForPause(fail_point_name, UInt64{5000});
+    ASSERT_FALSE(state->pull_finished)
+        << "Pull finished before cancellation; failpoint '" << fail_point_name << "' was never hit";
 
     state->executor->cancel();
     FailPointInjection::disableFailPoint(fail_point_name);
