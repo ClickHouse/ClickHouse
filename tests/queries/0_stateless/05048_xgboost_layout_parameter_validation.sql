@@ -52,7 +52,7 @@ PRIMARY KEY (x1, x2)
 SOURCE(CLICKHOUSE(TABLE 'training_05048'))
 LAYOUT(XGBOOST(num_iterations 10 eval_metric 'mae'))
 LIFETIME(0);
-SELECT predictXGBoost('model_05048_eval_metric', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_05048_eval_metric', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY model_05048_eval_metric;
 
 SELECT 'An unknown training parameter is rejected';
@@ -63,7 +63,7 @@ PRIMARY KEY (x1, x2)
 SOURCE(CLICKHOUSE(TABLE 'training_05048'))
 LAYOUT(XGBOOST(num_iterations 10 not_a_real_param 1))
 LIFETIME(0);
-SELECT predictXGBoost('model_05048_unknown', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_05048_unknown', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY model_05048_unknown;
 
 SELECT 'A negative parameter value cannot be expressed in the dictionary DDL';

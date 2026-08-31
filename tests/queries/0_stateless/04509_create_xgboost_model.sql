@@ -103,7 +103,7 @@ SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('iteration_beg
 SELECT 'Negative: prediction parameters';
 
 SELECT 'Error: unknown or forbidden prediction parameter';
-SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('not_a_predict_param', 1)); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('not_a_predict_param', 1)); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Error: prediction parameter Map value is not numeric';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 'x')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -129,15 +129,15 @@ SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', toUInt64
 SELECT 'Error: an iteration bound outside the boosting rounds of the model';
 -- XGBoost narrows both bounds to Int32 and range-checks only `iteration_end`, so an out-of-range
 -- `iteration_begin` would otherwise reach an unchecked index into the per-round tree offsets.
-SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', 101)); -- { serverError XGBOOST_ERROR }
-SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', 2147483648, 'iteration_end', 0)); -- { serverError XGBOOST_ERROR }
-SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', -1)); -- { serverError XGBOOST_ERROR }
-SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', 101)); -- { serverError XGBOOST_ERROR }
-SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', 2147483648)); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', 101)); -- { serverError BAD_ARGUMENTS }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', 2147483648, 'iteration_end', 0)); -- { serverError BAD_ARGUMENTS }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', -1)); -- { serverError BAD_ARGUMENTS }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', 101)); -- { serverError BAD_ARGUMENTS }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', 2147483648)); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Error: prediction type other than 0 (value) or 1 (margin) emits several values per row and is unsupported';
-SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 2)); -- { serverError XGBOOST_ERROR }
-SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 4)); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 2)); -- { serverError BAD_ARGUMENTS }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 4)); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Error: prediction parameter Map key is not a String';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map(1, 2)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -176,14 +176,14 @@ SELECT 'Error: unknown or forbidden training parameter';
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(not_a_training_param 1)) LIFETIME(0);
-SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY model_04509_bad;
 
 SELECT 'Error: num_iterations must be a positive integer';
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(num_iterations 0)) LIFETIME(0);
-SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY model_04509_bad;
 
 -- A multiclass objective needs 'num_class', which is not an accepted training parameter, because a
@@ -192,7 +192,7 @@ SELECT 'Error: a multiclass objective is rejected, because num_class is not an a
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(objective 'multi:softmax')) LIFETIME(0);
-SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY model_04509_bad;
 
 SELECT 'Negative: an integer target attribute (rejected at first use)';
@@ -269,7 +269,7 @@ SELECT 'Error: num_iterations must be a positive integer, rejected at SYSTEM REL
 CREATE DICTIONARY model_04509_eager (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(num_iterations 0)) LIFETIME(0);
-SYSTEM RELOAD DICTIONARY model_04509_eager; -- { serverError XGBOOST_ERROR }
+SYSTEM RELOAD DICTIONARY model_04509_eager; -- { serverError BAD_ARGUMENTS }
 
 DROP DICTIONARY model_04509_eager;
 DROP DICTIONARY model_04509_xgb;
