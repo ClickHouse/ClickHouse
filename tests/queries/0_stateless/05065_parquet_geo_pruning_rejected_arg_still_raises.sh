@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# `no-fasttest`: the fast-test build has no `Parquet` support.
+#
 # GeoParquet row-group pruning shares the bbox extractor in `GeoBbox.h` with the `spatial_bbox` skip
 # index, and it prunes harder: `Parquet::ReadManager::read` returns EOF once every row group is gone,
 # rather than handing the pipeline an empty block. So the question is whether a sibling conjunct whose
