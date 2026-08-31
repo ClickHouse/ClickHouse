@@ -81,6 +81,11 @@ public:
     /// PREWHERE move, ...) must never change the result multiset, so a divergence is a real bug.
     bool checkSettingFlipSweep(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Codec round-trip oracle (self-seeded, ignores the fuzzed query): codecs are lossless, so
+    /// identical data stored under CODEC(NONE) vs compression codecs must read back identical.
+    /// Creates its own fixture tables via OracleFixture; rate-limited.
+    bool checkCodecRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
