@@ -33,13 +33,20 @@ settings read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_bl
 -- so only the tail of the last part must be read.
 select x from tab where v = 1 order by x desc limit 5
 settings read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1,
-         max_threads = 2, use_query_condition_cache = 0, use_statistics_for_part_pruning = 0;
+         max_threads = 2, use_query_condition_cache = 0, use_statistics_for_part_pruning = 0,
+         log_comment = '05042_per_block_scan_reverse';
 
 system flush logs query_log;
 
 -- The forward scan cannot stop early: every part must be read in full.
 select read_rows from system.query_log
 where current_database = currentDatabase() and log_comment = '05042_per_block_scan'
+    and type = 'QueryFinish' and event_date >= (today() - 1) and event_time >= now() - 600
+order by event_time desc limit 1;
+
+-- The reverse scan is answered by the last part alone; the seven deferred parts stay unread.
+select read_rows <= 100000 from system.query_log
+where current_database = currentDatabase() and log_comment = '05042_per_block_scan_reverse'
     and type = 'QueryFinish' and event_date >= (today() - 1) and event_time >= now() - 600
 order by event_time desc limit 1;
 

@@ -67,23 +67,17 @@ private:
 
         /// Permission to read one group ahead; consumed by the next virtual row, granted
         /// again when the merge asks for the lane, when the lane just fed the merge, and by
-        /// `topUpReadAhead`. So the window limits how many lanes read at once, and the buffer
-        /// caps limit how much real data a lane accumulates ahead of the merge. A lane that
-        /// never produces virtual rows keeps its credit and streams like a plain buffer.
+        /// `topUpReadAhead`. So the window limits how many lanes speculate at once, and the
+        /// buffer caps limit how much real data a lane accumulates ahead of the merge. A lane
+        /// that never produces virtual rows keeps its credit and streams like a plain buffer.
         size_t credit = 0;
 
-        /// Real rows since the last virtual row, and how many groups in a row ended with
-        /// none. While whole groups are filtered out there is nothing to wait for between
-        /// them — the merge consumes the announcement and comes right back — so after
-        /// `free_run_dataless_groups` such groups the virtual rows stop consuming the credit
-        /// and the lane reads on until real data appears.
-        size_t rows_in_current_group = 0;
-        size_t dataless_groups = 0;
+        /// The current credit was granted by `topUpReadAhead` and the merge has not reached
+        /// this lane since: only such lanes count toward `read_ahead_window`, so a window of
+        /// N really means N sources reading ahead of the merge (the lane feeding the merge,
+        /// and lanes that never announce boundaries, hold demand-driven credit outside it).
+        bool speculative = false;
     };
-
-    /// See Lane::dataless_groups. The initial virtual row arrives before any data was read
-    /// and counts as the first data-less group, so 2 means: one actually empty group.
-    static constexpr size_t free_run_dataless_groups = 2;
 
     /// Returns true if any port state changed (more progress may be possible).
     bool processLane(size_t lane_num);
@@ -93,7 +87,7 @@ private:
         return lane.buffered_rows < max_rows_to_buffer || lane.buffered_bytes < max_bytes_to_buffer;
     }
     Status tryFinish();
-    void grantCredit(size_t lane_num);
+    void grantCredit(size_t lane_num, bool speculative = false);
     void touchLane(size_t lane_num);
     void topUpReadAhead();
     bool speculationAllowed() const { return read_ahead_window > 0; }

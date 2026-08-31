@@ -100,10 +100,11 @@ void VirtualRowReadAheadTransform::touchLane(size_t lane_num)
     }
 }
 
-void VirtualRowReadAheadTransform::grantCredit(size_t lane_num)
+void VirtualRowReadAheadTransform::grantCredit(size_t lane_num, bool speculative)
 {
     auto & lane = lanes[lane_num];
     lane.credit = 1;
+    lane.speculative = speculative;
     lane.input->setNeeded();
     /// The input may already hold a chunk pushed just before the lane parked; the setNeeded
     /// above wakes only the upstream, so make sure this pass processes the lane too.
@@ -114,7 +115,7 @@ void VirtualRowReadAheadTransform::topUpReadAhead()
 {
     size_t reading_ahead = 0;
     for (const auto & lane : lanes)
-        if (lane.credit > 0 && !lane.input->isFinished())
+        if (lane.speculative && lane.credit > 0 && !lane.input->isFinished())
             ++reading_ahead;
 
     if (reading_ahead >= read_ahead_window)
@@ -141,7 +142,7 @@ void VirtualRowReadAheadTransform::topUpReadAhead()
         [&](size_t a, size_t b) { return boundaryLess(lanes[a], lanes[b]); });
 
     for (size_t i = 0; i < slots; ++i)
-        grantCredit(candidates[i]);
+        grantCredit(candidates[i], /*speculative=*/ true);
 }
 
 void VirtualRowReadAheadTransform::onMiss(size_t lane_num)
@@ -203,6 +204,8 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
 
             output.push(std::move(chunk));
             progress = true;
+            if (!is_virtual_row)
+                lane.speculative = false;
 
             /// Refill: keep a lane that demonstrably feeds the merge reading ahead, so its
             /// next read overlaps with the merge of the data just delivered. A virtual row
@@ -251,19 +254,13 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
                 else
                     lane.buffer.push(std::move(chunk));
 
-                if (lane.rows_in_current_group == 0)
-                    ++lane.dataless_groups;
-                else
-                    lane.dataless_groups = 0;
-                lane.rows_in_current_group = 0;
+                --lane.credit;
 
-                /// See Lane::dataless_groups: while whole groups are filtered out, keep the
-                /// lane free-running instead of parking it at every boundary.
-                if (!(speculationAllowed() && lane.dataless_groups >= free_run_dataless_groups))
-                    --lane.credit;
-
-                /// A read-ahead slot may have been freed: keep the window full so the lanes
-                /// closest to the merge keep reading concurrently.
+                /// A read-ahead slot was freed: keep the window full so the lanes closest to
+                /// the merge keep reading concurrently. A lane whose groups are entirely
+                /// filtered out is typically re-granted right here and scans on; once its
+                /// boundary runs ahead of the k nearest ones, it stops being selected — that
+                /// is what bounds the reads wasted when a limit ends the merge early.
                 if (cross_lane_read_ahead && speculationAllowed())
                     topUpReadAhead();
             }
@@ -274,11 +271,12 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
             }
             else
             {
+                /// Compact before measuring: the buffered bytes are decremented from the
+                /// compacted chunk on the way out, so both sides must measure the same columns.
+                compactReplicatedColumns(chunk);
                 lane.num_processed_rows += chunk.getNumRows();
-                lane.rows_in_current_group += chunk.getNumRows();
                 lane.buffered_rows += chunk.getNumRows();
                 lane.buffered_bytes += chunk.bytes();
-                compactReplicatedColumns(chunk);
                 lane.buffer.push(std::move(chunk));
 
                 if (limit && lane.num_processed_rows >= limit)

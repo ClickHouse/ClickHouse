@@ -3,8 +3,8 @@
 -- Regression test for the read-ahead window used with `read_in_order_use_virtual_row`.
 -- Sources deferred behind a virtual row are prefetched within a bounded window. When a
 -- prefetched source is completely filtered out upstream it finishes without ever delivering
--- a real chunk, so `consume` is never called for it and the merge must still release its
--- read-ahead slot (see `MergingSortedAlgorithm::onSourceExhausted`). Otherwise the window
+-- a real chunk; its read-ahead slot must still free up (a finished input stops counting
+-- toward the window in `VirtualRowReadAheadTransform::topUpReadAhead`). Otherwise the window
 -- stops refilling after `max_threads` such sources and the merge silently degrades to
 -- reading one part at a time. Here the leading parts the merge has to walk through are all
 -- filtered out, exercising that path; the query must stay correct.

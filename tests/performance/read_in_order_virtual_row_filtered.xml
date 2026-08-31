@@ -4,7 +4,8 @@
         `read_in_order_use_virtual_row`. A source deferred behind a virtual row holds a
         read-ahead slot; when such a source is reached but is entirely filtered out
         upstream it finishes without delivering a real chunk. If that slot is not released
-        (see `MergingSortedAlgorithm::onSourceExhausted`) the window stops refilling after
+        (a finished input must stop counting toward the window in
+        `VirtualRowReadAheadTransform::topUpReadAhead`) the window stops refilling after
         `max_threads` such sources and the merge degrades to reading one part at a time.
 
         The table below has 64 parts with disjoint, increasing key ranges. Only the last
