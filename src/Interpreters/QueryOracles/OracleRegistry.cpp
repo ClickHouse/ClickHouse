@@ -26,6 +26,7 @@ extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
 extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
 extern const Event ASTFuzzerOracleAggregateIfIdentityChecks;
 extern const Event ASTFuzzerOracleNullIdentityChecks;
+extern const Event ASTFuzzerOracleCastRoundtripChecks;
 }
 
 namespace DB
@@ -95,6 +96,7 @@ OracleRegistry::OracleRegistry()
     add("projection equivalence", ProfileEvents::ASTFuzzerOracleProjectionEquivalenceChecks, &QueryOracleChecker::checkProjectionEquivalence);
     add("aggregate-If identity", ProfileEvents::ASTFuzzerOracleAggregateIfIdentityChecks, &QueryOracleChecker::checkAggregateIfIdentity);
     add("NULL identity", ProfileEvents::ASTFuzzerOracleNullIdentityChecks, &QueryOracleChecker::checkNullIdentity);
+    add("CAST round-trip", ProfileEvents::ASTFuzzerOracleCastRoundtripChecks, &QueryOracleChecker::checkCastRoundtrip);
 }
 
 const OracleRegistry & OracleRegistry::instance()
