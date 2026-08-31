@@ -43,9 +43,8 @@ SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%common%'
 -- Selective token needle: the index serves it, no bypass, correct result.
 SELECT count() FROM t_text_index_like_guards WHERE message LIKE '%paa%' SETTINGS text_index_like_min_pattern_length = 3;
 
--- Embedded tokens covering the whole part: every matched posting list is inline in the dictionary
--- and already folded during the scan, so there is no read left for the bypass to save - it must
--- not fire, and the finished union answers from the index with no large posting read.
+-- All matched postings are embedded and already folded, so the bypass has nothing to save:
+-- it must not fire, and the finished union answers with no large posting read.
 DROP TABLE IF EXISTS t_text_index_like_embedded;
 CREATE TABLE t_text_index_like_embedded
 (
