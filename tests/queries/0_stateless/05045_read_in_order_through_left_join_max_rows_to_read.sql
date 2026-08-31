@@ -21,7 +21,9 @@ SET enable_parallel_replicas = 0;
 DROP TABLE IF EXISTS t_left_in_order;
 DROP TABLE IF EXISTS t_right_dim;
 
-CREATE TABLE t_left_in_order (id UInt64) ENGINE = MergeTree ORDER BY id;
+-- Small granules, so the in-order read can stop far below `max_rows_to_read`
+-- (a granule is the minimum read unit).
+CREATE TABLE t_left_in_order (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 10;
 CREATE TABLE t_right_dim (id UInt64) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_left_in_order SELECT number FROM numbers(1000);
