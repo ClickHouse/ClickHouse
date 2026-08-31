@@ -130,6 +130,11 @@ public:
     /// over the raw data; a difference is a real aggregate state-I/O bug.
     bool checkAggregateStateColumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Tuple-summing oracle (self-seeded): a SummingMergeTree with a Tuple value column collapses
+    /// rows per key by summing each element; a FINAL read must equal an element-wise sum over the
+    /// same rows flattened into a plain MergeTree. A difference is a real SummingSortedAlgorithm bug.
+    bool checkTupleSumming(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
