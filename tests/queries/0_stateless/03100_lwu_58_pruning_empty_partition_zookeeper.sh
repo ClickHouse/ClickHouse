@@ -63,7 +63,7 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO $R2 SELECT 2, 1000000 + number, 1 FROM n
 block_numbers_path="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_prune_empty_03100_58/block_numbers/2"
 next_block_number=$($CLICKHOUSE_CLIENT --query "
 	SYSTEM FLUSH LOGS zookeeper_log;
-	SELECT if(count() = 0, 0, max(toUInt64OrZero(extract(path_created, 'block-(\\d+)$'))) + 1) FROM system.zookeeper_log
+	SELECT if(count() = 0, 1, max(toUInt64OrZero(extract(path_created, 'block-(\\d+)$'))) + 1) FROM system.zookeeper_log
 	WHERE type = 'Response' AND op_num = 'Create' AND path = '$block_numbers_path/block-'
 	  AND startsWith(path_created, '$block_numbers_path/block-')")
 next_block_name=$(printf 'block-%010d' "$next_block_number")
