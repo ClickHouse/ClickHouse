@@ -41,6 +41,7 @@
 #include <Poco/String.h>
 
 #include <algorithm>
+#include <array>
 #include <unordered_set>
 
 
@@ -60,6 +61,7 @@ extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
 extern const Event ASTFuzzerOracleDistinctViaGroupByChecks;
 extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
 extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
+extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2564,6 +2566,62 @@ bool QueryOracleChecker::checkSkipIndexEquivalence(const ASTSelectQuery & select
     }
 
     LOG_TRACE(logger, "skip-index-equivalence oracle passed ({} rows)", off_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// Toggle one result-invariant optimizer/cache setting off vs on and require byte-identical SQL
+    /// to return the identical multiset. These settings are pure optimizations/caches that must
+    /// never change the result, so a divergence is a real bug. Both sides run the same text, so the
+    /// structural gates that protect AST rewrites do not apply — only determinism + read stability.
+    /// Settings already covered by checkDQP are intentionally NOT repeated here.
+    static constexpr std::array<std::string_view, 3> flips = {
+        "use_query_condition_cache",
+        "query_plan_optimize_lazy_materialization",
+        "query_plan_optimize_prewhere",
+    };
+
+    if (!select.tables())
+        return false;
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    const std::string_view flip = flips[thread_local_rng() % flips.size()];
+
+    /// Strip ORDER BY / LIMIT / SETTINGS (so the query cannot override our overlay) and compare
+    /// the row multiset.
+    auto q_ast = select.clone();
+    stripOrderAndLimit(q_ast->as<ASTSelectQuery &>());
+    const String sql = formatAST(q_ast);
+    if (sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "setting-flip-sweep oracle ({}): {}", flip, sql);
+
+    const std::vector<std::pair<String, Field>> off{{String(flip), Field(UInt64(0))}};
+    const std::vector<std::pair<String, Field>> on{{String(flip), Field(UInt64(1))}};
+
+    auto off_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, off);
+    auto on_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, on);
+    if (!off_rows_opt || !on_rows_opt)
+        return false;
+
+    if (!OracleExec::isStable(sql, *off_rows_opt, context, ResultShape::SortedBag, off))
+        return false;
+
+    if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "setting-flip-sweep oracle mismatch!\n"
+            "{}=0 ({} rows) vs {}=1 ({} rows): {}\n{}",
+            flip, off_rows_opt->size(), flip, on_rows_opt->size(), sql,
+            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+    }
+
+    LOG_TRACE(logger, "setting-flip-sweep oracle passed ({}, {} rows)", flip, off_rows_opt->size());
     return true;
 }
 
