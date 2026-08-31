@@ -42,6 +42,17 @@ def started_cluster():
         cluster.shutdown()
 
 
+def default_ca_file():
+    # `SSL_CERT_FILE` overrides the compiled-in default CA file (`/etc/ssl/cert.pem`,
+    # as `OPENSSLDIR` of the bundled OpenSSL is `/etc/ssl`). Some cluster flavors
+    # (e.g. "db disk") bring up minio, whose setup injects `SSL_CERT_FILE` into every
+    # container of the cluster, so the effective path is read from the environment of
+    # the container instead of being hardcoded.
+    return node.exec_in_container(
+        ["bash", "-c", 'echo -n "${SSL_CERT_FILE:-/etc/ssl/cert.pem}"']
+    )
+
+
 def https_ping():
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     response = requests.get(
@@ -113,10 +124,11 @@ def test_embedded_ca_certificates(started_cluster):
     # `SSL_CTX_set_default_verify_paths` reports success for it while silently
     # yielding an empty trust store, so the file only counts as certificates
     # being present when at least one certificate can actually be loaded from it.
-    # `/etc/ssl/cert.pem` is the default CA file of the bundled OpenSSL
-    # (`OPENSSLDIR` is `/etc/ssl`).
+    ca_file = default_ca_file()
     node.exec_in_container(
-        ["bash", "-c", "touch /etc/ssl/cert.pem"], privileged=True, user="root"
+        ["bash", "-c", f"mkdir -p $(dirname {ca_file}) && touch {ca_file}"],
+        privileged=True,
+        user="root",
     )
     node.restart_clickhouse()
 
@@ -141,11 +153,12 @@ def test_default_ca_file_does_not_shadow_default_dir(started_cluster):
     # default CA file and, under its OpenSSL subject-hash name ("f1a05c1a.0", so that
     # the directory counts as containing certificates), to the default CA directory.
     cert = "/etc/clickhouse-server/config.d/server-cert.pem"
+    ca_file = default_ca_file()
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"mkdir -p /etc/ssl/certs && cp {cert} /etc/ssl/cert.pem"
+            f"mkdir -p /etc/ssl/certs $(dirname {ca_file}) && cp {cert} {ca_file}"
             f" && cp {cert} /etc/ssl/certs/f1a05c1a.0",
         ],
         privileged=True,
@@ -159,7 +172,7 @@ def test_default_ca_file_does_not_shadow_default_dir(started_cluster):
     assert (
         int(
             node.query(
-                "SELECT count() FROM system.certificates WHERE path = '/etc/ssl/cert.pem'"
+                f"SELECT count() FROM system.certificates WHERE path = '{ca_file}'"
             ).strip()
         )
         > 0
