@@ -104,4 +104,29 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 ORDER BY log_comment, event_time_microseconds DESC
 LIMIT 1 BY log_comment;
 
+-- Index analysis writes entries of its own, under a different key than the row-level filter, and
+-- `use_skip_indexes_on_data_read = 0` is what puts a `set` index's evaluation there. That evaluation
+-- runs over the values the index stored, so it follows the session time zone. The warm-up reading no
+-- row is what pins its entry on index analysis: the row-level filter has to read a granule to find
+-- nothing in it. The repeat in the same zone must hit, or nothing would be there for `UTC` to miss.
+SELECT '-- index analysis';
+DROP TABLE IF EXISTS tab_skip_index;
+CREATE TABLE tab_skip_index (x UInt32, INDEX idx x TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '', index_granularity = 1024;
+INSERT INTO tab_skip_index SELECT number FROM numbers(3600);
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT count() FROM tab_skip_index WHERE fromUnixTimestamp(x, '%H') = '00' SETTINGS session_timezone = 'Asia/Tokyo', use_query_condition_cache = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, log_comment = '05054_index_analysis_warm';
+SELECT count() FROM tab_skip_index WHERE fromUnixTimestamp(x, '%H') = '00' SETTINGS session_timezone = 'Asia/Tokyo', use_query_condition_cache = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, log_comment = '05054_index_analysis_reuse';
+SELECT count() FROM tab_skip_index WHERE fromUnixTimestamp(x, '%H') = '00' SETTINGS session_timezone = 'UTC', use_query_condition_cache = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT count() FROM tab_skip_index WHERE fromUnixTimestamp(x, '%H') = '00' SETTINGS session_timezone = 'UTC', use_query_condition_cache = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, read_rows, ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05054_index_analysis_warm', '05054_index_analysis_reuse')
+ORDER BY log_comment, event_time_microseconds DESC
+LIMIT 1 BY log_comment;
+
+DROP TABLE tab_skip_index;
 DROP TABLE tab;

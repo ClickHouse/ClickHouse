@@ -33,3 +33,10 @@
 -- repeated query in one session still hits
 05054_first	1000000	0	1
 05054_second	0	1	0
+-- index analysis
+0
+0
+3600
+3600
+05054_index_analysis_reuse	0	1
+05054_index_analysis_warm	0	0
