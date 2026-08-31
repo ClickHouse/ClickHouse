@@ -220,19 +220,24 @@ EOL
                     <readonly/>
                 </max_ast_depth>
 
-               <!--
-                Disable experimental WINDOW VIEW tests for stress tests, since they may be
-                created with old analyzer and then, after server restart it will refuse to start.
-                FIXME: remove once the support for WINDOW VIEW will be implemented in analyzer.
-               -->
-               <allow_experimental_window_view>
-                   <readonly/>
-               </allow_experimental_window_view>
+                <!--
+                 `WINDOW VIEW` is removed, and the setting is an obsolete no-op here, but the upgrade
+                 check runs the *previous release's* test suite under the *previous release's* binary,
+                 which still accepts `CREATE WINDOW VIEW`. `clickhouse-test --upgrade-check` runs the
+                 client with `--fake-drop`, so those tests' `DROP TABLE` is ignored and the window view
+                 is left in the metadata, which the new binary then cannot load on the post-upgrade
+                 restart. Keep the setting unchangeable until the previous release no longer contains
+                 tests that create window views. The constraint alone is enough: it rejects any change
+                 with `SETTING_CONSTRAINT_VIOLATION`, and both binaries default the setting to `false`.
+                 Assigning the value in the profile instead would mark an obsolete setting as changed on
+                 the new binary, which adds an `Obsolete setting` entry to `system.warnings` that
+                 `01945_system_warnings` asserts is absent.
+                -->
+                <allow_experimental_window_view>
+                    <readonly/>
+                </allow_experimental_window_view>
 
             </constraints>
-
-            <allow_experimental_window_view>false</allow_experimental_window_view>
-
             <!--
                 Server-side backstop for the enable_analyzer constraint above. A constraint can only
                 reject an explicit change, and a 'compatibility' setting below 24.3 (the version where
@@ -304,7 +309,7 @@ function stop_server()
       kill -s 0 "$pid" && sleep 60
 
       # The server could finally stop while we were terminating gdb, let's recheck if it's still running
-      kill -s 0 "$pid" || return
+      kill -s 0 "$pid" || return 0
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
       timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
