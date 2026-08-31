@@ -121,6 +121,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_row_type;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -1112,7 +1113,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
 
-    validateTableStructure(create, properties);
+    validateTableStructure(create, properties, mode);
 
     chassert(as_database_saved.empty() && as_table_saved.empty());
     std::swap(create.as_database, as_database_saved);
@@ -1124,7 +1125,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 }
 
 void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & create,
-                                                    const InterpreterCreateQuery::TableProperties & properties) const
+                                                    const InterpreterCreateQuery::TableProperties & properties,
+                                                    LoadingStrictnessLevel mode) const
 {
     /// Check for duplicates
     std::set<String> all_columns;
@@ -1136,14 +1138,34 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
+    if (create.is_materialized_view)
+        return;
+
     /// If it's not attach and not materialized view to existing table,
     /// we need to validate data types (check for experimental or suspicious types).
-    if (!create.attach && !create.is_materialized_view)
+    if (!create.attach)
     {
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
+        return;
     }
+
+    /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = ...` is CREATE-like user input that
+    /// also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata stored on
+    /// this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart) are marked with
+    /// `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL replay in `Replicated`
+    /// databases, `RESTORE`) also replays previously validated definitions.
+    if (mode != LoadingStrictnessLevel::ATTACH || create.attach_short_syntax)
+        return;
+
+    /// Only the Row gate is enforced here, not the suspicious-type checks: a definition that was
+    /// accepted once has to stay attachable under stricter settings, while Row introduces a persisted
+    /// on-disk layout whose opt-in must not be bypassable by spelling the definition as ATTACH.
+    DataTypeValidationSettings validation_settings;
+    validation_settings.allow_experimental_row_type = settings[Setting::allow_experimental_row_type];
+    for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        validateDataType(name_and_type_pair.type, validation_settings);
 }
 
 void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
