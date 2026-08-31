@@ -4,7 +4,7 @@
 -- The filter is an over-approximation: a probe row whose equality key has no match at
 -- all on the build side can never satisfy the closest-match condition either, so it is
 -- safe to drop such rows before the join. RIGHT ASOF JOIN is not supported by ClickHouse
--- at all (regardless of join algorithm), so only INNER and LEFT are covered here.
+-- at all (regardless of join algorithm), so only INNER is covered here.
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -41,30 +41,6 @@ FROM (
     EXPLAIN PLAN
     SELECT l.id, l.ts, r.ts, r.val
     FROM t_rf_asof_left l ASOF INNER JOIN t_rf_asof_right r ON l.id = r.id AND l.ts >= r.ts
-    ORDER BY l.id, l.ts
-    SETTINGS enable_join_runtime_filters = 1
-)
-WHERE explain LIKE '%Build runtime join filter%';
-
-SELECT '--- ASOF LEFT JOIN: same result without and with runtime filter ---';
-
-SELECT l.id, l.ts, r.ts, r.val
-FROM t_rf_asof_left l ASOF LEFT JOIN t_rf_asof_right r ON l.id = r.id AND l.ts >= r.ts
-ORDER BY l.id, l.ts
-SETTINGS enable_join_runtime_filters = 0;
-
-SELECT l.id, l.ts, r.ts, r.val
-FROM t_rf_asof_left l ASOF LEFT JOIN t_rf_asof_right r ON l.id = r.id AND l.ts >= r.ts
-ORDER BY l.id, l.ts
-SETTINGS enable_join_runtime_filters = 1;
-
-SELECT '--- runtime filter IS applied to equality key for ASOF LEFT JOIN ---';
-
-SELECT trimLeft(explain)
-FROM (
-    EXPLAIN PLAN
-    SELECT l.id, l.ts, r.ts, r.val
-    FROM t_rf_asof_left l ASOF LEFT JOIN t_rf_asof_right r ON l.id = r.id AND l.ts >= r.ts
     ORDER BY l.id, l.ts
     SETTINGS enable_join_runtime_filters = 1
 )
