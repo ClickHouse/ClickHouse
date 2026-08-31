@@ -68,6 +68,7 @@ extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
 extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
 extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
 extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
+extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2924,6 +2925,64 @@ bool QueryOracleChecker::checkSampleEquivalence(const ASTSelectQuery &, const Co
     }
 
     LOG_TRACE(logger, "SAMPLE-equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkProjectionEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: a projection is a redundant re-sorted/aggregated copy that must never
+    /// change results. The same query with optimize_use_projections=0 vs =1 must be identical; a
+    /// difference is a real projection bug. Only INTEGER aggregates are used: float sums are
+    /// non-associative, so the projection (pre-aggregated) vs base-table (aggregated at read) paths
+    /// could differ by rounding and produce a false positive.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("projection", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute(
+            "CREATE TABLE " + tbl + " (k UInt64, g UInt8, v Int64,"
+            " PROJECTION agg (SELECT g, sum(v), count() GROUP BY g)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, number % 10, toInt64(number) * 3 - 500 FROM numbers(2000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "projection-equivalence oracle: {}", tbl);
+
+    const std::vector<std::pair<String, Field>> proj_off{{"optimize_use_projections", Field(UInt64(0))}};
+    const std::vector<std::pair<String, Field>> proj_on{
+        {"optimize_use_projections", Field(UInt64(1))}, {"optimize_use_implicit_projections", Field(UInt64(1))}};
+
+    static const std::array<std::string_view, 2> queries = {
+        "SELECT g, sum(v), count() FROM ",
+        "SELECT g, count() FROM ",
+    };
+    for (const std::string_view q_prefix : queries)
+    {
+        const String sql = String(q_prefix) + tbl + " GROUP BY g";
+        auto off_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, proj_off);
+        auto on_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, proj_on);
+        if (!off_rows_opt || !on_rows_opt)
+            return false;
+
+        if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
+        {
+            fixture.preserve();
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+                "projection-equivalence oracle mismatch!\n"
+                "optimize_use_projections=0 ({} rows) vs =1 ({} rows): {}\n{}",
+                off_rows_opt->size(), on_rows_opt->size(), sql,
+                OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+        }
+    }
+
+    LOG_TRACE(logger, "projection-equivalence oracle passed");
     return true;
 }
 
