@@ -188,6 +188,36 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     }
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnLowCardinality::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    if (length == 0)
+        return;
+
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+
+    if (!low_cardinality_src)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
+    const size_t source_index = low_cardinality_src->getIndexes().getUInt(position);
+
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
+    {
+        /// Dictionary is shared with src column. Insert only indexes.
+        idx.insertManyIndexes(source_index, length);
+    }
+    else
+    {
+        compactIfSharedDictionary();
+        const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
+        const size_t destination_index = getDictionary().uniqueInsertFrom(nested, source_index);
+        idx.insertManyIndexes(destination_index, length);
+    }
+}
+
 void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 {
     compactIfSharedDictionary();
