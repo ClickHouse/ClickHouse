@@ -1,0 +1,9 @@
+-- previews enabled by the query context
+0	200000
+1	200000
+-- previews enabled by an inline SETTINGS clause
+0	200000
+1	200000
+-- the shards received neither the settings nor a query text enabling previews
+05054_query_result_previews_context	0	0	0
+05054_query_result_previews_inline	0	0	0
