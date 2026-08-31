@@ -534,6 +534,11 @@ namespace
     /// series id. The supported types are the ones `TimeSeriesIDGenerator` can generate hashes for.
     std::optional<std::pair<ASTPtr, ASTPtr>> makeMinMaxLiteralsForIDComponent(const IDataType & type)
     {
+        /// A LowCardinality component has the value space of its dictionary type: the range bounds
+        /// are the dictionary type's bounds (constants have no dictionary encoding of their own).
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+            return makeMinMaxLiteralsForIDComponent(*low_cardinality_type->getDictionaryType());
+
         WhichDataType which(type);
 
         if (which.isUInt64())

@@ -1412,7 +1412,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
 
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
+            bool suitable_for_ttl_optimization = source.getMergeTreeData()
+                && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
                 && metadata_snapshot->hasOnlyRowsTTL();
 
             if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
