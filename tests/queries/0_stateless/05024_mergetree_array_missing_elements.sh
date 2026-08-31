@@ -33,6 +33,11 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "
     CREATE TABLE corrupted (k UInt32, a Array(UInt32)) ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
     INSERT INTO corrupted SELECT number, range(number % 3) FROM numbers(10);
+
+    CREATE TABLE corrupted_compact (k UInt32, a Array(UInt32) CODEC(Delta(4), LZ4)) ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = '1G',
+            write_marks_for_substreams_in_compact_parts = 1;
+    INSERT INTO corrupted_compact SELECT number, range(number % 3) FROM numbers(10);
 "
 
 # Empty the elements file of `a`, keeping its sizes file: the column is not recorded as partially
@@ -58,5 +63,16 @@ fi
 rm -f "${PART_DIR}checksums.txt"
 
 ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT a FROM corrupted ORDER BY k" 2>&1 | grep -c -F 'INCORRECT_DATA'
+
+# The same for a compact part, which is read by `MergeTreeReaderCompact`: every column of such a part
+# lives in `data.bin`, and a non-default codec on the elements of `a` gives them a compressed block of
+# their own. Cutting the file at the mark of the elements substream keeps the sizes of `a` and takes
+# its elements away.
+COMPACT_PART_DIR=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'corrupted_compact' AND active")
+ELEMENTS_OFFSET=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT tupleElement(\`a.mark\`, 1) FROM mergeTreeIndex(currentDatabase(), corrupted_compact, with_marks = 1) WHERE mark_number = 0")
+truncate -s "${ELEMENTS_OFFSET}" "${COMPACT_PART_DIR}data.bin"
+rm -f "${COMPACT_PART_DIR}checksums.txt"
+
+${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT a FROM corrupted_compact ORDER BY k" 2>&1 | grep -c -F 'INCORRECT_DATA'
 
 rm -rf "${WORKING_DIR}"
