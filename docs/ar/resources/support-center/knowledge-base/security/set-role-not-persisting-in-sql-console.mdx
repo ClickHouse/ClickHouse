@@ -12,6 +12,10 @@ keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Access Control']
 
 عند تشغيل `SET ROLE` في ClickHouse Cloud SQL Console، قد يبدو أن الدور يتغير لاستعلام واحد ثم يعود إلى حالته السابقة في الاستعلام التالي. استخدم دور SQL Console مخصصًا لكل مستخدم عندما تحتاج الأذونات إلى الاستمرار عبر الاستعلامات والجلسات.
 
+<Tip>
+  يُفضّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (بيتا) لإدارة الوصول إلى قاعدة البيانات من وحدة التحكم. لا تتوافق أدوار `sql-console-role:<email>` مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
 <div id="symptoms">
   ## الأعراض
 </div>
