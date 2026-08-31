@@ -3203,8 +3203,6 @@ static BlockIO executeQueryImpl(
 
             plan.resolveStorages(context);
 
-            /// A deserialized plan has no query tree, so the distributed-to-local fallback can
-            /// only flip the settings, not the contexts; the same settings object must reach both
             /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
             /// plan to a distributed one.
             QueryPlanOptimizationSettings optimization_settings(context);

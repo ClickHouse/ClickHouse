@@ -242,14 +242,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 {
     checkInitialized();
 
-    /// The universal decision point for `make_distributed_plan`: every pipeline passes through
-    /// here, directly before both consumers of the flag (the `optimize` below and the
-    /// `convertToDistributed` gate). Entry points that already decided (and possibly propagated
-    /// the fallback into the contexts, see
-    /// `InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded`) pass the flipped
-    /// settings, which makes this call a no-op. Callers that run `optimize` separately must
-    /// decide (or force-clear the flag) before it themselves: the distributed transforms require
-    /// a validated plan.
+    /// The universal decision point for `make_distributed_plan`:
     QueryPlanOptimizationSettings effective_settings = optimization_settings;
     applyDistributedPlanFallbackToLocal(effective_settings);
 
