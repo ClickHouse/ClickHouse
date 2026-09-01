@@ -29,6 +29,14 @@
                     <table>default.mt_not_ts</table>
                 </handler>
             </bad_engine_api>
+            <!-- The same shards behind a wrapper declaring another `time_series` type. -->
+            <coarse_api>
+                <url_prefix>/coarse</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_coarse</table>
+                </handler>
+            </coarse_api>
             <!-- Neither database nor table is set here, so both come from the 'database' and
                  'table' query parameters. -->
             <dynamic_api>

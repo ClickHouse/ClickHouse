@@ -29,6 +29,8 @@ b	2
 [('job','a')]	1970-01-01 00:02:20.000	55
 [('job','b')]	1970-01-01 00:02:20.000	5500
 --- rejected: the target is not a Distributed table over TimeSeries tables ---
+--- rejected: the shard-local tables must declare the same time_series type ---
+1
 --- declared Distributed settings the generated read has to carry ---
 1
 1

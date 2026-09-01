@@ -304,8 +304,8 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     /// Grant before existence: a probe without the right must not learn whether the name exists.
     context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
     /// Written through the wrapper's own sink on the caller's settings, like any other INSERT.
-    /// Only the shard engines are checked: the sink would accept rows no read surface can return.
-    checkPrometheusQueryDistributedWrite(*time_series_storage, context_);
+    /// The sink itself would accept shard targets no prometheus read surface can answer from.
+    checkPrometheusQueryDistributedTargets(*time_series_storage, context_);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
