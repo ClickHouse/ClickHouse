@@ -7,12 +7,16 @@ inherits it, so both answers are the unfiltered ones and stay equal to each othe
 This is a deliberate contract, not an accident: the tests below pin both halves of it, that the
 policy really is in force (it empties an ordinary SELECT) and that the PromQL answer over the
 wrapper is nevertheless the same as over the equivalent local TimeSeries table.
+
+The metadata endpoints are the exception: they read the inner tables directly, could apply neither
+a row policy nor an `additional_table_filters` entry, and so refuse a table that has one.
 """
 
 import contextlib
 import json
 
 import pytest
+import requests
 
 from helpers.cluster import ClickHouseCluster
 
@@ -33,6 +37,17 @@ DIST = "/dist/api/v1"
 LOCAL = "/local/api/v1"
 
 EVALUATION_TIME = 140
+
+# The endpoints that derive their answer from the inner tables of a TimeSeries table.
+METADATA_ENDPOINTS = [("series", {"match[]": "m"}), ("labels", {}), ("metadata", {})]
+
+FILTERED_USERS = {
+    # The short name matches from the default database, the full name from anywhere.
+    "prom_filter_short": "{''ts_all'':''metric_name != metric_name''}",
+    "prom_filter_full": "{''default.ts_all'':''1''}",
+    # Other tables, including this name in another database: not this table.
+    "prom_filter_other": "{''ts_other'':''0'',''shard_0.ts_all'':''0''}",
+}
 
 # The same series, tags and timestamps as 05055: `h1` and `h2` hash to one shard and `h3`, `h4`,
 # `h5` to the other, so both jobs of `m` straddle the two shards.
@@ -89,6 +104,42 @@ def restrictive_row_policies():
         node.query("DROP ROW POLICY p_ts_all ON ts_all")
 
 
+@contextlib.contextmanager
+def filtered_users():
+    """Users carrying an additional_table_filters entry, with every grant the endpoints need."""
+    for user, filters in FILTERED_USERS.items():
+        node.query(
+            f"CREATE USER {user} IDENTIFIED WITH no_password "
+            f"SETTINGS additional_table_filters = '{filters}'"
+        )
+    users = ", ".join(FILTERED_USERS)
+    node.query(f"GRANT SELECT ON default.* TO {users}")
+    node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {users}")
+    try:
+        yield
+    finally:
+        node.query(f"DROP USER {users}")
+
+
+def metadata_response(endpoint, params, user=None):
+    if user is not None:
+        params = {**params, "user": user, "password": ""}
+    return requests.get(
+        f"http://{node.ip_address}:9093{LOCAL}/{endpoint}", params=params
+    )
+
+
+def assert_fails_closed(response, endpoint, reason):
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["status"] == "error", body
+    assert (
+        f"The Prometheus /api/v1/{endpoint} endpoint is not supported on table"
+        in body["error"]
+    ), body["error"]
+    assert reason in body["error"], body["error"]
+
+
 def keyed_result(data_json):
     """Keys the series of a query result by their labels: an instant result comes back in no
     defined order, so it has to be keyed before two answers can be compared."""
@@ -118,9 +169,7 @@ def test_the_row_policies_are_in_force():
         assert node.query("SELECT count() FROM ts_all").strip() == "0"
 
 
-@pytest.mark.parametrize(
-    "promql, expected_series", [("m", 4), ("sum by (job) (m)", 2)]
-)
+@pytest.mark.parametrize("promql, expected_series", [("m", 4), ("sum by (job) (m)", 2)])
 def test_row_policy_leaves_the_promql_answer_unchanged(promql, expected_series):
     unfiltered_dist = query(DIST, promql)
     unfiltered_local = query(LOCAL, promql)
@@ -132,3 +181,36 @@ def test_row_policy_leaves_the_promql_answer_unchanged(promql, expected_series):
         # reaches neither PromQL answer - on the distributed path exactly as on the local one.
         assert query(DIST, promql) == unfiltered_dist
         assert query(LOCAL, promql) == unfiltered_local
+
+
+@pytest.mark.parametrize("endpoint, params", METADATA_ENDPOINTS)
+def test_metadata_endpoints_fail_closed_under_a_row_policy(endpoint, params):
+    assert metadata_response(endpoint, params).status_code == 200
+    with restrictive_row_policies():
+        assert_fails_closed(
+            metadata_response(endpoint, params),
+            endpoint,
+            "while a row policy applies to it",
+        )
+    assert metadata_response(endpoint, params).status_code == 200
+
+
+@pytest.mark.parametrize("endpoint, params", METADATA_ENDPOINTS)
+def test_metadata_endpoints_fail_closed_under_additional_table_filters(
+    endpoint, params
+):
+    with filtered_users():
+        # The filter is in force for these users: an ordinary SELECT sees nothing through it.
+        assert (
+            node.query("SELECT count() FROM ts_all", user="prom_filter_short").strip()
+            == "0"
+        )
+        for user in ("prom_filter_short", "prom_filter_full"):
+            assert_fails_closed(
+                metadata_response(endpoint, params, user),
+                endpoint,
+                "with an additional_table_filters entry for it",
+            )
+        assert (
+            metadata_response(endpoint, params, "prom_filter_other").status_code == 200
+        )
