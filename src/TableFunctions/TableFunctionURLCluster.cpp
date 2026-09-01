@@ -16,8 +16,7 @@ namespace
 {
     void checkURLClusterDoesNotUseIndexPageWildcards(const String & filename)
     {
-        /// Rejected regardless of the configured `http_method`: `StorageURLCluster` cannot
-        /// list index pages, so it must never silently take over such queries.
+        /// `StorageURLCluster` cannot list index pages.
         if (urlPathHasListableGlobs(filename))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
     }

@@ -23,9 +23,8 @@ public:
                                       " - uri, format\n"
                                       " - uri, format, structure\n"
                                       " - uri, format, structure, compression_method\n"
-                                      "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`) "
-                                      "and an optional `http_method = 'POST'` key-value argument "
-                                      "(POST overrides the default GET for SELECT; POST or PUT override the default POST for INSERT)";
+                                      "All signatures support optional headers (specified as `headers('name'='value', 'name2'='value2')`) "
+                                      "and an optional `http_method = 'POST'` key-value argument";
 
     String getName() const override
     {
@@ -69,9 +68,7 @@ public:
         }
         else
         {
-            /// If arguments contain key-value arguments (`headers(...)`, `http_method = '...'`),
-            /// remove them so the remaining arguments keep their positional meaning, and re-add
-            /// them at the end of arguments later.
+            /// Detach key-value args for ITableFunctionFileLike, reattach after.
             HTTPHeaderEntries tmp_headers;
             String tmp_http_method;
             size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context, /*evaluate_arguments=*/ true, &tmp_http_method);

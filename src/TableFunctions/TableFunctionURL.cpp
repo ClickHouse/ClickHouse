@@ -122,8 +122,7 @@ VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(cons
             continue;
         }
 
-        /// The `http_method = 'POST'` / `method = 'POST'` key-value argument: its left-hand
-        /// side is a bare identifier that must not be resolved as a column reference.
+        /// `http_method = 'POST'` / `method = 'POST'`: the left-hand identifier must not be resolved as a column.
         if (function_node->getFunctionName() == "equals")
         {
             const auto & equals_arguments = function_node->getArguments().getNodes();
@@ -170,9 +169,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         size_t count = StorageURL::evalArgsAndCollectHeaders(
             args, configuration.headers, context, /*evaluate_arguments=*/ true, &configuration.http_method);
 
-        /// ITableFunctionFileLike cannot parse the key-value arguments (`headers(...)` and
-        /// `http_method = '...'`), which evalArgsAndCollectHeaders moved to the end, so
-        /// detach them for the call and reattach afterwards.
+        /// Detach key-value args (moved to end by evalArgsAndCollectHeaders) for ITableFunctionFileLike, reattach after.
         ASTs key_value_args(args.begin() + count, args.end());
         args.resize(count);
 
@@ -209,18 +206,8 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         if (!configuration.http_method.empty())
         {
-            /// Named collections accepted `http_method` for any URL scheme before it applied
-            /// to reads, so a value STORED in a collection keeps delegating with the key
-            /// ignored, mirroring the URL engine's behavior. The inline key-value argument
-            /// and query-time collection overrides are new syntax with no legacy usage, so
-            /// they are rejected. (The flag is set by processNamedCollectionResult.)
-            if (configuration.http_method_stored_in_collection)
-                configuration.http_method.clear();
-            else
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The url table function does not support http_method when dispatching to the {} engine (URL '{}')",
-                    storageEngineNameForURLScheme(target), filename);
+            /// `http_method` is meaningless for non-HTTP backends; clear it so the delegate ignores it.
+            configuration.http_method.clear();
         }
 
         buildDelegate(target, context);
@@ -370,18 +357,8 @@ StoragePtr TableFunctionURL::getStorage(
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
 
-    /// Listable `*` / `**` path wildcards are expanded by listing HTTP index pages through
-    /// `StorageObjectStorage` (the branch below). `StorageURLCluster` still uses
-    /// `DisclosedGlobIterator` / `parseRemoteDescription` and cannot list index pages, so it must not
-    /// take over such queries via the parallel-replicas path — that would silently fall back to the
-    /// old literal/template expansion and read different (or no) files than the non-cluster path.
-    /// The index-page listing requests are plain GET; a silent fallback to probing the
-    /// literal `*` URL would read different files, so reject the combination explicitly.
-    /// PUT applies to writes only, so PUT-configured reads take the listing path like GET.
-    /// An INSERT with auto-deduced structure (empty `columns`) is rejected too: its schema
-    /// inference happens inside the storage constructor, which would otherwise POST-probe
-    /// the literal `*` URL. An INSERT with explicit structure legitimately writes to the
-    /// literal URL and stays allowed.
+    /// POST reads cannot expand `*`/`**` from index pages (listing is GET-only).
+    /// An INSERT with auto-deduced structure (empty `columns`) would POST-probe the literal `*` URL.
     if ((!is_insert_query || columns.empty()) && urlPathHasListableGlobs(source)
         && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
         throw Exception(
@@ -480,10 +457,6 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
                 filename);
 
-        /// No `is_insert_query` condition here: callers overload that flag as "structure is
-        /// required" (e.g. InterpreterDescribeQuery passes true for DESCRIBE), so it cannot
-        /// discriminate real INSERTs. POST is rejected above; GET/PUT inference lists index
-        /// pages exactly as reads do.
         if (IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
             && urlPathHasListableGlobs(filename))
         {
