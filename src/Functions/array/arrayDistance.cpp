@@ -7,6 +7,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/checkLpNormPArgument.h>
 
 #include <cmath>
 
@@ -18,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
@@ -440,6 +440,8 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = count / unroll_count * unroll_count;
 
+        /// Keep this outer loop scalar: `clang-22` otherwise vectorizes it into a slow strided gather instead of letting the unrolled inner loop SLP-vectorize into contiguous loads (worst for `Linf`/`BFloat16`).
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -514,6 +516,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = count / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -590,6 +593,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = array_size / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -661,6 +665,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = array_size / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -737,6 +742,10 @@ public:
 
             types.push_back(array_type->getNestedType());
         }
+
+        if constexpr (std::is_same_v<Kernel, LpDistance>)
+            checkLpNormPArgumentForAnalysis(arguments[2], getName());
+
         const DataTypePtr & common_type = getLeastSupertype(types);
         switch (common_type->getTypeId())
         {
@@ -991,24 +1000,13 @@ LpDistance::ConstParams FunctionArrayDistance<LpDistance>::initConstParams(const
                     "Argument p of function {} was not provided",
                     getName());
 
-    if (!arguments[2].column->isNumeric())
-        throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument p of function {} must be numeric constant",
-                    getName());
-
     if (!isColumnConst(*arguments[2].column) && arguments[2].column->size() != 1)
         throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Second argument for function {} must be either constant Float64 or constant UInt",
+                    "Argument p of function {} must be constant",
                     getName());
 
-    Float64 p = arguments[2].column->getFloat64(0);
-    if (p < 1 || p >= HUGE_VAL)
-        throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Second argument for function {} must be not less than one and not be an infinity",
-                    getName());
+    Float64 p = extractLpNormPArgument(*arguments[2].column, getName());
 
     return LpDistance::ConstParams{p, 1 / p};
 }

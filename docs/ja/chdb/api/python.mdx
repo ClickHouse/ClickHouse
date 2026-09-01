@@ -18,8 +18,8 @@ doc_type: 'reference'
 chDBエンジンを使用してSQLクエリを実行します。
 
 これは、埋め込み
-ClickHouse エンジンを使用してSQLステートメントを実行する主要なクエリ関数です。さまざまな出力フォーマットをサポートし、インメモリ
-またはファイルベースのデータベースで動作します。
+ClickHouse エンジンを使用してSQLステートメントを実行する主要なクエリ関数です。さまざまな出力フォーマットをサポートし、一時
+データベースまたはファイルベースのデータベースで動作します。
 
 **構文**
 
@@ -32,9 +32,9 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | Parameter       | Type | Default    | Description                                                                                                                                                                                                                                                        |
 | --------------- | ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sql`           | str  | *required* | 実行する SQL クエリ文字列                                                                                                                                                                                                                                                    |
-| `output_format` | str  | `"CSV"`    | 結果の出力フォーマット。対応フォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 詳細なログを有効化 |
-| `path`          | str  | `""`       | データベースファイルのパス。デフォルトではインメモリデータベースが使用されます。<br />ファイルパス、またはインメモリデータベースを表す `":memory:"` を指定できます                                                                                                                                                                        |
-| `udf_path`      | str  | `""`       | ユーザー定義関数ディレクトリへのパス                                                                                                                                                                                                                                                 |
+| `output_format` | str  | `"CSV"`    | 結果の出力フォーマット。対応フォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 詳細なロギングを有効化 |
+| `path`          | str  | `""`       | データベースファイルのパス。デフォルトでは一時的な非永続データベース (`":memory:"` と同等) が使用されます。<br />ディスクに永続化するにはファイルパスを指定します                                                                                                                                                                       |
+| `udf_path`      | str  | `""`       | レガシーなサブプロセスベースの UDF ディレクトリへのパス。ネイティブ Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) には不要です                                                                                                                                        |
 
 **戻り値**
 
@@ -47,7 +47,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | `pa.Table`         | `output_format` が `"ArrowTable"` または `"arrowtable"` の場合 |
 | chdb result object | その他のフォーマットの場合                                           |
 
-**例外**
+**送出される例外**
 
 | Exception     | Condition                               |
 | ------------- | --------------------------------------- |
@@ -57,14 +57,14 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 **例**
 
 ```pycon
->>> # 基本的なCSVクエリ
+>>> # Basic CSV query
 >>> result = chdb.query("SELECT 1, 'hello'")
 >>> print(result)
 "1,hello"
 ```
 
 ```pycon
->>> # DataFrame形式で出力するクエリ
+>>> # Query with DataFrame output
 >>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
 >>> print(df)
    id    msg
@@ -72,13 +72,8 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 ```
 
 ```pycon
->>> # ファイルベースのデータベースを使用したクエリ
+>>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # UDFを使ったクエリ
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
@@ -87,9 +82,9 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
   ### `chdb.sql`
 </div>
 
-chDB engineを使用してSQLクエリを実行します。
+chDB エンジンを使用してSQLクエリを実行します。
 
-これは、埋め込みClickHouse エンジンを使用してSQLステートメントを実行する主要なクエリ関数です。さまざまな出力フォーマットをサポートし、インメモリまたはファイルベースのデータベースで使用できます。
+これは、埋め込みClickHouse エンジンを使用してSQLステートメントを実行する主要なクエリ関数です。さまざまな出力フォーマットをサポートし、一時データベースまたはファイルベースのデータベースで使用できます。
 
 **構文**
 
@@ -102,9 +97,9 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 | Parameter       | Type | Default    | Description                                                                                                                                                                                                                                                          |
 | --------------- | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str  | *required* | 実行する SQL クエリ文字列                                                                                                                                                                                                                                                      |
-| `output_format` | str  | `"CSV"`    | 結果の出力フォーマット。対応フォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 詳細なログを有効にする |
-| `path`          | str  | `""`       | database ファイルのパス。デフォルトではインメモリ database を使用します。<br />ファイルパス、またはインメモリ database 用の `":memory:"` を指定できます                                                                                                                                                                 |
-| `udf_path`      | str  | `""`       | ユーザー定義関数 ディレクトリの path                                                                                                                                                                                                                                  |
+| `output_format` | str  | `"CSV"`    | 結果の出力フォーマット。対応フォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 詳細なロギングを有効にする |
+| `path`          | str  | `""`       | データベースファイルのパス。デフォルトでは一時的で永続化されないデータベース (`":memory:"` と同等) を使用します。<br />ディスクに永続化するにはファイルパスを指定します                                                                                                                                                                      |
+| `udf_path`      | str  | `""`       | レガシーなサブプロセスベースの UDF ディレクトリのパス。ネイティブ Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) では不要です                                                                                                                                           |
 
 **戻り値**
 
@@ -127,14 +122,14 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 **例**
 
 ```pycon
->>> # 基本的なCSVクエリ
+>>> # Basic CSV query
 >>> result = chdb.query("SELECT 1, 'hello'")
 >>> print(result)
 "1,hello"
 ```
 
 ```pycon
->>> # DataFrame形式で出力するクエリ
+>>> # Query with DataFrame output
 >>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
 >>> print(df)
    id    msg
@@ -142,13 +137,8 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 ```
 
 ```pycon
->>> # ファイルベースのデータベースを使用したクエリ
+>>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # UDFを使用したクエリ
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
@@ -253,8 +243,7 @@ chdb.to_df(r)
 chDB バックグラウンドサーバーへの接続を作成します。
 
 この関数は、chDB (ClickHouse) データベースエンジンへの [Connection](#chdb-state-sqlitelike-connection) を確立します。
-1 つのプロセスで開ける接続は 1 つだけです。
-同じ接続文字列で複数回呼び出した場合は、同じ接続オブジェクトが返されます。
+各呼び出しは独立した接続を返し、同じデータベースパスに対して複数の接続を同時に開くことができます。
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -268,25 +257,25 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 **基本的なフォーマット**
 
-| フォーマット                    | 説明                   |
-| ------------------------- | -------------------- |
-| `":memory:"`              | インメモリデータベース (デフォルト)  |
-| `"test.db"`               | 相対パスのデータベースファイル      |
-| `"file:test.db"`          | 相対パスと同じ              |
-| `"/path/to/test.db"`      | 絶対パスのデータベースファイル      |
-| `"file:/path/to/test.db"` | 絶対パスと同じ              |
+| フォーマット                    | 説明               |
+| ------------------------- | ---------------- |
+| `":memory:"`              | 一時データベース (デフォルト) |
+| `"test.db"`               | 相対パスのデータベースファイル  |
+| `"file:test.db"`          | 相対パスと同じ          |
+| `"/path/to/test.db"`      | 絶対パスのデータベースファイル  |
+| `"file:/path/to/test.db"` | 絶対パスと同じ          |
 
 **クエリパラメータ付き**
 
-| フォーマット                                             | 説明            |
-| -------------------------------------------------- | ------------- |
-| `"file:test.db?param1=value1&param2=value2"`       | パラメータ付きの相対パス  |
-| `"file::memory:?verbose&log-level=test"`           | パラメータ付きのインメモリ |
-| `"///path/to/test.db?param1=value1&param2=value2"` | パラメータ付きの絶対パス  |
+| フォーマット                                             | 説明               |
+| -------------------------------------------------- | ---------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | パラメータ付きの相対パス     |
+| `"file::memory:?verbose&log-level=test"`           | パラメータ付きの一時データベース |
+| `"///path/to/test.db?param1=value1&param2=value2"` | パラメータ付きの絶対パス     |
 
 **クエリパラメータの処理**
 
-クエリパラメータは起動引数として ClickHouse engine に渡されます。
+クエリパラメータは起動引数として ClickHouse エンジン に渡されます。
 特殊なパラメータの処理:
 
 | 特殊パラメータ          | 変換後            | 説明          |
@@ -309,31 +298,30 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ----------------- |
 | `RuntimeError` | データベースへの接続に失敗した場合 |
 
-<Warning>
-  プロセスごとにサポートされる接続は 1 つだけです。
-  新しい接続を作成すると、既存の接続は閉じられます。
-</Warning>
+<Note>
+  1 つのプロセスでは、1 つのデータベースパスに紐付いた埋め込みエンジンが 1 つ実行されます。同じパスへの複数の接続は共存でき、クエリを同時実行できます。いずれかの接続が開いている間に*別の*パスを開くと `RuntimeError` が発生します。先に開いている接続を閉じてください。
+</Note>
 
 **例**
 
 ```pycon
->>> # インメモリデータベース
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # ファイルベースのデータベース
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # パラメータ付き
->>> conn = connect("data.db?mode=ro")  # 読み取り専用モード
->>> conn = connect(":memory:?verbose&log-level=debug")  # デバッグログ
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # コンテキストマネージャーを使用した自動クリーンアップ
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # 接続が自動的に閉じられる
+>>> # Connection automatically closed
 ```
 
 **関連項目**
@@ -366,8 +354,7 @@ chDB 関連のエラーに対する基本例外クラスです。
 基底クラス: `object`
 
 セッションはクエリの状態を保持します。
-path が None の場合は、一時ディレクトリが作成され、それがデータベースのパスとして使用されます。
-また、その一時ディレクトリはセッションを閉じると削除されます。
+path が None の場合、セッションはプロセス全体で共有される一時的な (`:memory:`) データベースを使用するため、path を指定しないすべてのセッションは互いのテーブルを参照できます。その一時ディレクトリは、そのような最後のセッションまたは接続が閉じられた場合にのみ削除されます。
 パスを指定して、その場所にデータを保持するデータベースを作成することもできます。
 
 接続文字列を使って、path やその他のパラメータを渡すこともできます。
@@ -378,36 +365,36 @@ class chdb.session.Session(path=None)
 
 **例**
 
-| Connection String                                  | 説明                     |
-| -------------------------------------------------- | ---------------------- |
-| `":memory:"`                                       | インメモリデータベース            |
-| `"test.db"`                                        | 相対パス                   |
-| `"file:test.db"`                                   | 上記と同じ                  |
-| `"/path/to/test.db"`                               | 絶対パス                   |
-| `"file:/path/to/test.db"`                          | 上記と同じ                  |
-| `"file:test.db?param1=value1&param2=value2"`       | クエリパラメータ付きの相対パス        |
-| `"file::memory:?verbose&log-level=test"`           | クエリパラメータ付きのインメモリデータベース |
-| `"///path/to/test.db?param1=value1&param2=value2"` | クエリパラメータ付きの絶対パス        |
+| Connection String                                  | 説明                  |
+| -------------------------------------------------- | ------------------- |
+| `":memory:"`                                       | 一時データベース            |
+| `"test.db"`                                        | 相対パス                |
+| `"file:test.db"`                                   | 上記と同じ               |
+| `"/path/to/test.db"`                               | 絶対パス                |
+| `"file:/path/to/test.db"`                          | 上記と同じ               |
+| `"file:test.db?param1=value1&param2=value2"`       | クエリパラメータ付きの相対パス     |
+| `"file::memory:?verbose&log-level=test"`           | クエリパラメータ付きの一時データベース |
+| `"///path/to/test.db?param1=value1&param2=value2"` | クエリパラメータ付きの絶対パス     |
 
 <Info>
   **接続文字列の引数処理**
 
   “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)” のようにクエリパラメータを含む接続文字列では、
-  “param1=value1” は起動引数として ClickHouse engine に渡されます。
+  “param1=value1” は起動引数として ClickHouse エンジン に渡されます。
 
   詳細については、`clickhouse local –help –verbose` を参照してください。
 
   特殊な引数の処理の例:
 
-  * “mode=ro” は clickhouse では “–readonly=1” になります (読み取り専用モード) 
+  * “mode=ro” は clickhouse では “–readonly=1” になります (読み取り専用モード)
 </Info>
 
-<Warning>
+<Note>
   **重要**
 
-  * 同時に存在できるセッションは 1 つだけです。新しいセッションを作成する場合は、既存のセッションを閉じる必要があります。
-  * 新しいセッションを作成すると、既存のセッションは閉じられます。
-</Warning>
+  * 同じデータベースパスを共有している限り、複数のセッションを共存させることができます。
+  * 別のデータベースパスを使用するには、まず開いているセッションを閉じてください。
+</Note>
 
 ***
 
@@ -507,7 +494,7 @@ query(sql, fmt='CSV', udf_path='')
 | ---------- | ---- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str  | *required* | 実行する SQL クエリ文字列                                                                                                                                                                                                                                                             |
 | `fmt`      | str  | `"CSV"`    | 結果の出力フォーマット。使用可能なフォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"TabSeparated"` - タブ区切り値<br />• `"Pretty"` - 整形済みのテーブルフォーマット<br />• `"JSONCompact"` - コンパクトな JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット |
-| `udf_path` | str  | `""`       | ユーザー定義関数へのパス。指定しない場合は、セッション初期化時の UDF パスを使用します                                                                                                                                                                                                                               |
+| `udf_path` | str  | `""`       | レガシーなサブプロセスベースの UDF ディレクトリへのパス。ネイティブ Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) には不要です。指定しない場合は、セッション初期化時の UDF パスを使用します                                                                                                                 |
 
 **戻り値**
 
@@ -543,7 +530,7 @@ query(sql, fmt='CSV', udf_path='')
 ```pycon
 >>> session = Session("test.db")
 >>>
->>> # デフォルトのCSVフォーマットを使用した基本クエリ
+>>> # Basic query with default CSV format
 >>> result = session.query("SELECT 1 as number")
 >>> print(result)
 number
@@ -551,7 +538,7 @@ number
 ```
 
 ```pycon
->>> # JSONフォーマットでクエリを実行
+>>> # Query with JSON format
 >>> result = session.query("SELECT 1 as number", fmt="JSON")
 >>> print(result)
 {"number": "1"}
@@ -658,7 +645,7 @@ send_query(sql, fmt='CSV') → StreamingResult
 
 SQLクエリを実行し、結果を返します。
 
-このメソッドは、セッションに紐づくデータベースに対してSQLクエリを実行し、
+このメソッドは、セッションのデータベースに対してSQLクエリを実行し、
 指定したフォーマットで結果を返します。さまざまな出力フォーマットをサポートし、
 クエリ間でセッションの状態を維持します。
 
@@ -670,16 +657,16 @@ sql(sql, fmt='CSV', udf_path='')
 
 **パラメータ**
 
-| パラメータ      | 型   | デフォルト      | 説明                                                                                                                                                                                                                                                                          |
+| Parameter      | 型   | デフォルト      | 説明                                                                                                                                                                                                                                                                          |
 | ---------- | --- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str | *required* | 実行する SQL クエリ文字列                                                                                                                                                                                                                                                             |
 | `fmt`      | str | `"CSV"`    | 結果の出力フォーマット。使用可能なフォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"TabSeparated"` - タブ区切り値<br />• `"Pretty"` - 整形済みのテーブルフォーマット<br />• `"JSONCompact"` - コンパクトな JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット |
-| `udf_path` | str | `""`       | ユーザー定義関数へのパス。指定しない場合は、セッション初期化時の UDF パスを使用します                                                                                                                                                                                                                               |
+| `udf_path` | str | `""`       | レガシーなサブプロセスベースの UDF ディレクトリへのパス。ネイティブ Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) には不要です。指定しない場合は、セッション初期化時の UDF パスを使用します                                                                                                                |
 
 **戻り値**
 
 指定したフォーマットでクエリ結果を返します。
-返り値の型は `fmt` パラメータによって異なります。
+戻り値の型は `fmt` パラメータによって異なります。
 
 * 文字列フォーマット (CSV、JSON など) の場合は str を返します
 * バイナリ形式 (Arrow、Parquet) の場合は bytes を返します
@@ -710,7 +697,7 @@ sql(sql, fmt='CSV', udf_path='')
 ```pycon
 >>> session = Session("test.db")
 >>>
->>> # デフォルトのCSVフォーマットを使用した基本クエリ
+>>> # Basic query with default CSV format
 >>> result = session.query("SELECT 1 as number")
 >>> print(result)
 number
@@ -718,14 +705,14 @@ number
 ```
 
 ```pycon
->>> # JSONフォーマットでクエリを実行
+>>> # Query with JSON format
 >>> result = session.query("SELECT 1 as number", fmt="JSON")
 >>> print(result)
 {"number": "1"}
 ```
 
 ```pycon
->>> # テーブル作成を含む複雑なクエリ
+>>> # Complex query with table creation
 >>> session.query("CREATE TABLE test (id INT, name String) ENGINE = MergeTree() order by id")
 >>> session.query("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
 >>> result = session.query("SELECT * FROM test ORDER BY id")
@@ -751,8 +738,7 @@ id,name
 chDB バックグラウンドサーバーへの [Connection](#chdb-state-sqlitelike-connection) を作成します。
 
 この関数は、chDB (ClickHouse) データベースエンジンへの 接続 を確立します。
-プロセスごとに、開ける 接続 は 1 つだけです。同じ
-接続文字列で複数回呼び出すと、同じ 接続 オブジェクトが返されます。
+呼び出すたびに独立した接続が返され、同じデータベース path への接続は同時にいくつでも開くことができます。
 
 **構文**
 
@@ -770,21 +756,21 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 
 サポートされている接続文字列のフォーマット:
 
-| Format                    | Description          |
-| ------------------------- | -------------------- |
-| `":memory:"`              | インメモリデータベース (デフォルト)  |
-| `"test.db"`               | 相対パスのデータベースファイル      |
-| `"file:test.db"`          | 相対パスと同じ              |
-| `"/path/to/test.db"`      | 絶対パスのデータベースファイル      |
-| `"file:/path/to/test.db"` | 絶対パスと同じ              |
+| Format                    | Description      |
+| ------------------------- | ---------------- |
+| `":memory:"`              | 一時データベース (デフォルト) |
+| `"test.db"`               | 相対パスのデータベースファイル  |
+| `"file:test.db"`          | 相対パスと同じ          |
+| `"/path/to/test.db"`      | 絶対パスのデータベースファイル  |
+| `"file:/path/to/test.db"` | 絶対パスと同じ          |
 
 **クエリパラメータ付き**
 
-| Format                                             | Description   |
-| -------------------------------------------------- | ------------- |
-| `"file:test.db?param1=value1&param2=value2"`       | パラメータ付きの相対パス  |
-| `"file::memory:?verbose&log-level=test"`           | パラメータ付きのインメモリ |
-| `"///path/to/test.db?param1=value1&param2=value2"` | パラメータ付きの絶対パス  |
+| Format                                             | Description      |
+| -------------------------------------------------- | ---------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | パラメータ付きの相対パス     |
+| `"file::memory:?verbose&log-level=test"`           | パラメータ付きの一時データベース |
+| `"///path/to/test.db?param1=value1&param2=value2"` | パラメータ付きの絶対パス     |
 
 **クエリパラメータの処理**
 
@@ -811,33 +797,30 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ----------------- |
 | `RuntimeError` | データベースへの接続に失敗した場合 |
 
-<Warning>
-  **警告**
-
-  プロセスごとにサポートされる接続は 1 つだけです。
-  新しい接続を作成すると、既存の接続は閉じられます。
-</Warning>
+<Note>
+  1 つのプロセスでは、1 つのデータベースパスにバインドされた埋め込み engine が 1 つ実行されます。同じパスへの複数の接続は共存でき、クエリを同時実行できます。いずれかの接続が開いている間に*異なる*パスを開くと、`RuntimeError` が送出されます。先に開いている接続を閉じてください。
+</Note>
 
 **例**
 
 ```pycon
->>> # インメモリデータベース
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # ファイルベースのデータベース
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # パラメータ付き
->>> conn = connect("data.db?mode=ro")  # 読み取り専用モード
->>> conn = connect(":memory:?verbose&log-level=debug")  # デバッグログ
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # コンテキストマネージャを使用して自動的にクリーンアップ
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # 接続が自動的にクローズされる
+>>> # Connection automatically closed
 ```
 
 **関連項目**
@@ -1822,7 +1805,7 @@ chDB の DB-API 2.0 インターフェイスには、次の要素が含まれま
 * **Cursors**: クエリの実行と結果の取得
 * **Type System**: DB-API 2.0 準拠の型定数とコンバータ
 * **Error Handling**: 標準のデータベース例外階層
-* **Thread Safety**: レベル 1 のスレッドセーフティ (スレッドはモジュールを共有できますが、接続は共有できません) 
+* **Thread Safety**: レベル 1 のスレッドセーフティ (スレッドはモジュールを共有できますが、接続は共有できません)
 
 ***
 
@@ -1846,9 +1829,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **パラメータ**
 
-| Parameter | Type | Default | Description                          |
-| --------- | ---- | ------- | ------------------------------------ |
-| `path`    | str  | `None`  | データベースファイルのパス。インメモリデータベースの場合は `None` |
+| Parameter | Type | Default | Description                                |
+| --------- | ---- | ------- | ------------------------------------------ |
+| `path`    | str  | `None`  | データベースファイルのパス。一時的な非永続データベースの場合は `None` |
 
 **送出される例外**
 
@@ -1924,10 +1907,10 @@ chdb.dbapi.Binary(x)
 
 chDB データベースへの DB-API 2.0 準拠の接続。
 
-このクラスは、chDB データベースに接続して操作するための標準的な DB-API インターフェイスを提供します。インメモリデータベースとファイルベースのデータベースの両方をサポートしています。
+このクラスは、chDB データベースに接続して操作するための標準的な DB-API インターフェイスを提供します。一時データベースとファイルベースのデータベースの両方をサポートしています。
 
-この接続は基盤となる chDB engine を管理し、
-クエリの実行、transaction の管理 (ClickHouse では no-op) 、およびカーソルの作成のためのメソッドを提供します。
+この接続は基盤となる chDB エンジンを管理し、
+クエリの実行、トランザクションの管理 (ClickHouse では no-op) 、およびカーソルの作成のためのメソッドを提供します。
 
 ```python
 class chdb.dbapi.connections.Connection(path=None)
@@ -1935,9 +1918,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **パラメーター**
 
-| パラメーター | 型   | デフォルト  | 説明                                                                                                                |
-| ------ | --- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| `path` | str | `None` | データベースファイルのパス。None の場合はインメモリデータベースを使用します。&#39;database.db&#39; のようなファイルパス、または &#39;:memory:&#39; を表す None を指定できます |
+| パラメーター | 型   | デフォルト  | 説明                                                                                                                           |
+| ------ | --- | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `path` | str | `None` | データベースファイルのパス。None (デフォルト) の場合は、一時的な非永続データベース (`':memory:'` と同等) を使用します。ディスクに永続化するには、&#39;database.db&#39; のようなファイルパスを指定します。 |
 
 **変数**
 
@@ -1949,7 +1932,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **例**
 
 ```pycon
->>> # インメモリデータベース
+>>> # Temporary database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -1958,7 +1941,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # ファイルベースのデータベース
+>>> # File-based database
 >>> conn = Connection('mydata.db')
 >>> with conn.cursor() as cur:
 ...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
@@ -1967,7 +1950,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # コンテキストマネージャの使用
+>>> # Context manager usage
 >>> with Connection() as cur:
 ...     cur.execute("SELECT version()")
 ...     version = cur.fetchone()
@@ -2847,7 +2830,7 @@ DataError: Invalid date format
 これには、次のようなケースが含まれます。
 
 * 外部キー制約違反
-* 主キーまたは UNIQUE 制約違反 (重複キー) 
+* 主キーまたは UNIQUE 制約違反 (重複キー)
 * CHECK 制約違反
 * NOT NULL 制約違反
 * 参照整合性違反
@@ -2886,7 +2869,7 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 この例外は、データベースのインターフェイス実装に次のような問題がある場合に送出されます。
 
 * 無効な接続パラメーター
-* API の誤用 (クローズされた接続に対してメソッドを呼び出すなど) 
+* API の誤用 (クローズされた接続に対してメソッドを呼び出すなど)
 * インターフェイスレベルのプロトコルエラー
 * モジュールのインポートまたは初期化の失敗
 
@@ -2914,8 +2897,8 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 この例外は、アプリケーションが原因ではない内部エラーがデータベースシステムで
 発生した場合に送出されます。たとえば、次のようなものです。
 
-* 無効なカーソル状態 (カーソルがすでに有効でない) 
-* トランザクション状態の不整合 (トランザクションの同期が取れていない) 
+* 無効なカーソル状態 (カーソルがすでに有効でない)
+* トランザクション状態の不整合 (トランザクションの同期が取れていない)
 * データベースの破損
 * 内部データ構造の破損
 * システムレベルのデータベースエラー
@@ -3035,7 +3018,7 @@ NotSupportedError: WITH clause not supported in this database version
 * 作成時にテーブルまたは索引がすでに存在する
 * ステートメント内の SQL 構文エラー
 * プリペアドステートメントで指定されたパラメータ数が誤っている
-* 無効な SQL 操作 (例: 存在しないオブジェクトに対する DROP) 
+* 無効な SQL 操作 (例: 存在しないオブジェクトに対する DROP)
 * データベース API メソッドの誤った使用
 
 **送出**
@@ -3120,7 +3103,7 @@ str(bytes_or_buffer[, encoding[, errors]]) -> str
 指定されたオブジェクトから新しい文字列オブジェクトを作成します。encoding または
 errors が指定されている場合、そのオブジェクトは、指定された encoding と
 エラーハンドラーを使ってデコードされるデータバッファを公開している必要が
-あります。そうでない場合は、`object._\_str_\_()` の結果 (定義されている場合) 
+あります。そうでない場合は、`object._\_str_\_()` の結果 (定義されている場合)
 または `repr(object)` を返します。
 
 * encoding のデフォルトは ‘utf-8’ です。
@@ -3166,7 +3149,7 @@ str(bytes_or_buffer[, encoding[, errors]]) -> str
 与えられたオブジェクトから新しい文字列オブジェクトを作成します。encoding または
 errors が指定されている場合、オブジェクトは、指定された encoding とエラーハンドラーで
 デコードされるデータバッファを公開している必要があります。
-それ以外の場合は、object.*&#95;str*&#95;() の結果 (定義されている場合) 
+それ以外の場合は、object.*&#95;str*&#95;() の結果 (定義されている場合)
 または repr(object) を返します。
 encoding のデフォルトは ‘utf-8’ です。
 errors のデフォルトは ‘strict’ です。
@@ -3355,7 +3338,7 @@ field&#95;type が単一の型の値である場合に “field&#95;type == STRI
 DB-API 2.0 の型比較用に拡張された frozenset です。
 
 このクラスは、DB-API 2.0 の型比較セマンティクスをサポートするために、frozenset を拡張したものです。
-個々の項目を等価演算子と不等価演算子の両方で Set と比較できるため、
+個々の項目を等値演算子と不等値演算子の両方で Set と比較できるため、
 柔軟な型チェックが可能になります。
 
 これは STRING、BINARY、NUMBER などの型定数で使用され、
@@ -3366,9 +3349,9 @@ field&#95;type が単一の型の値である場合に、「field&#95;type == ST
 
 ```pycon
 >>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
->>> FIELD_TYPE.STRING == string_types  # Trueを返す
->>> FIELD_TYPE.INT != string_types     # Trueを返す
->>> FIELD_TYPE.BLOB in string_types    # Falseを返す
+>>> FIELD_TYPE.STRING == string_types  # Returns True
+>>> FIELD_TYPE.INT != string_types     # Returns True
+>>> FIELD_TYPE.BLOB in string_types    # Returns False
 ```
 
 **使用例**
@@ -3380,16 +3363,16 @@ import chdb.dbapi as dbapi
 
 print("chdb driver version: {0}".format(dbapi.get_client_info()))
 
-# 接続とカーソルを作成する
+# Create connection and cursor
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# クエリを実行する
+# Execute query
 cur.execute('SELECT version()')
 print("description:", cur.description)
 print("data:", cur.fetchone())
 
-# クリーンアップ
+# Clean up
 cur.close()
 conn.close()
 ```
@@ -3402,7 +3385,7 @@ import chdb.dbapi as dbapi
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# テーブルを作成する
+# Create table
 cur.execute("""
     CREATE TABLE employees (
         id UInt32,
@@ -3412,7 +3395,7 @@ cur.execute("""
     ) ENGINE = Memory
 """)
 
-# データを挿入する
+# Insert data
 cur.execute("""
     INSERT INTO employees VALUES
     (1, 'Alice', 'Engineering', 75000.00),
@@ -3420,10 +3403,10 @@ cur.execute("""
     (3, 'Charlie', 'Engineering', 80000.00)
 """)
 
-# データをクエリする
+# Query data
 cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
 
-# 結果を取得する
+# Fetch results
 print("Column names:", [desc[0] for desc in cur.description])
 for row in cur.fetchall():
     print(row)
@@ -3436,19 +3419,19 @@ conn.close()
 ```python
 import chdb.dbapi as dbapi
 
-# インメモリデータベース（デフォルト）
+# Temporary database (default)
 conn1 = dbapi.connect()
 
-# 永続データベースファイル
+# Persistent database file
 conn2 = dbapi.connect("./my_database.chdb")
 
-# パラメータ付き接続
+# Connection with parameters
 conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
 
-# 読み取り専用接続
+# Read-only connection
 conn4 = dbapi.connect("./my_database.chdb?mode=ro")
 
-# 接続の自動クリーンアップ
+# Automatic connection cleanup
 with dbapi.connect("test.chdb") as conn:
     cur = conn.cursor()
     cur.execute("SELECT count() FROM numbers(1000)")
@@ -3468,7 +3451,7 @@ with dbapi.connect("test.chdb") as conn:
 
 <Note>
   * chDB の DB-API 2.0 インターフェイスは、ほとんどの Python データベースツールと互換性があります
-  * このインターフェイスはレベル 1 のスレッドセーフティを備えています (スレッドはモジュールを共有できますが、接続は共有できません) 
+  * このインターフェイスはレベル 1 のスレッドセーフティを備えています (スレッドはモジュールを共有できますが、接続は共有できません)
   * 接続文字列は chDB セッションと同じパラメータをサポートします
   * 標準の DB-API 2.0 例外をすべてサポートしています
 </Note>
@@ -3482,16 +3465,294 @@ with dbapi.connect("test.chdb") as conn:
 </Warning>
 
 <div id="user-defined-functions">
-  ## ユーザー定義関数 (UDF)
+  ## Python ユーザー定義関数 (UDF)
 </div>
 
-chDB のユーザー定義関数モジュールです。
+chDB は、型付きの引数、自動型推論、設定可能な NULL/例外処理を備え、インプロセスで実行されるネイティブ Python UDF をサポートしています。UDF として登録した Python 関数は、SQL クエリから直接呼び出せます。
 
-このモジュールは、chDB でユーザー定義関数 (UDF) を作成・管理する機能を提供します。
-これにより、SQLクエリから呼び出せるカスタム Python 関数を記述して、chDB の機能を拡張できます。
+以下の例では、デフォルトの CSV 出力フォーマットを使用します。インラインコメントは論理的な結果値を示しています。生データ出力では、`NULL` は `\N` として出力され、文字列および日付の値には CSV の引用符付けが適用されます。
+
+<div id="create-function">
+  ### `chdb.create_function`
+</div>
+
+Python 関数を chDB SQL 関数として登録します。
+
+**構文**
+
+```python
+chdb.create_function(name, func, arg_types=None, return_type=None, *, on_null=None, on_error=None)
+```
+
+**パラメータ**
+
+| パラメータ         | 型                                  | デフォルト         | 説明                                                        |
+| ------------- | ---------------------------------- | ------------- | --------------------------------------------------------- |
+| `name`        | str                                | *(必須)*        | 登録するSQL関数の名前                                              |
+| `func`        | callable                           | *(必須)*        | 登録するPython関数                                              |
+| `arg_types`   | list of ChdbType/str/type, or None | `None`        | 引数の型のリスト。`None`の場合は、型アノテーションから推論されます                      |
+| `return_type` | ChdbType/str/type, or None         | `None`        | 戻り値の型。`None`の場合は関数の戻り値アノテーションから推論され、アノテーションもない場合は登録に失敗します |
+| `on_null`     | str or NullHandling                | `None` (スキップ) | NULL入力の処理方法：`"skip"`または`"pass"`。キーワード専用                   |
+| `on_error`    | str or ExceptionHandling           | `None` (伝播)   | 例外の処理方法：`"propagate"`または`"ignore"`。キーワード専用                |
+
+各型パラメータ (`arg_types`の要素および`return_type`) には、以下を指定できます。
+
+* `ChdbType`定数：`INT64`、`STRING`、`FLOAT64`など
+* ClickHouse型文字列：`"Int64"`、`"String"`、`"DateTime64(6)"`、`"DateTime('UTC')"`など
+* Python型：`int`、`float`、`str`、`bool`、`bytes`、`datetime.date`、`datetime.datetime` — [自動型マッピング](#udf-automatic-type-mapping)に従ってマッピングされます
+
+すでに登録済みの名前を登録しようとするとエラーが発生します。UDFsは暗黙的に置き換えられません。関数を再登録するには、まず[`drop_function`](#drop-function)を呼び出してください。
+
+**例**
+
+```python
+from chdb import create_function, drop_function, query
+from chdb.sqltypes import INT64, STRING
+
+create_function("strlen", len, arg_types=[STRING], return_type=INT64)
+print(query("SELECT strlen('hello')"))  # 5
+
+drop_function("strlen")
+```
+
+***
+
+<div id="drop-function">
+  ### `chdb.drop_function`
+</div>
+
+登録済みの Python UDF を削除します。関数が登録されていない場合は何も実行されないため、常に安全に呼び出せます。
+
+**構文**
+
+```python
+chdb.drop_function(name)
+```
+
+**パラメータ**
+
+| パラメータ  | Type | 説明             |
+| ------ | ---- | -------------- |
+| `name` | str  | 削除する SQL 関数の名前 |
+
+***
+
+<div id="func-decorator">
+  ### `@func` デコレータ
+</div>
+
+Python 関数を chDB SQL 関数として登録するデコレータです。登録した関数は通常の Python 関数として引き続き呼び出せるほか、`__name__` を使用して SQL クエリからも利用できます。
+
+**構文**
+
+```python
+from chdb import func
+
+@func(arg_types=None, return_type=None, *, on_null=None, on_error=None)
+def my_function(...):
+    ...
+```
+
+**パラメータ**
+
+デコレートされた関数から導出される `name` と `func` を除き、[`create_function`](#create-function) と同じです。
+
+**例**
+
+```python
+from chdb import func, query
+from chdb.sqltypes import INT64, STRING
+
+# Explicit types
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+# Types inferred from annotations
+@func()
+def multiply(a: int, b: int) -> int:
+    return a * b
+
+# Explicit return_type, arg_types inferred from annotations
+@func(return_type=STRING)
+def greet(name: str):
+    return f"Hello, {name}!"
+
+print(query("SELECT add(12, 22)"))       # 34
+print(query("SELECT multiply(3, 7)"))    # 21
+print(query("SELECT greet('world')"))    # Hello, world!
+```
+
+***
+
+<div id="udf-type-system">
+  ### 型システム
+</div>
+
+<div id="udf-available-types">
+  #### 利用可能な型
+</div>
+
+`chdb.sqltypes` から型をインポートします。
+
+```python
+from chdb.sqltypes import (
+    BOOL,
+    INT8, INT16, INT32, INT64, INT128, INT256,
+    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256,
+    FLOAT32, FLOAT64,
+    STRING,
+    DATE, DATE32, DATETIME, DATETIME64,
+)
+```
+
+<div id="udf-automatic-type-mapping">
+  #### 自動型マッピング
+</div>
+
+Python アノテーションから型を推論する場合、以下のマッピングが使用されます。
+
+| Python Type         | ClickHouse Type |
+| ------------------- | --------------- |
+| `bool`              | `Bool`          |
+| `int`               | `Int64`         |
+| `float`             | `Float64`       |
+| `str`               | `String`        |
+| `bytes`             | `String`        |
+| `bytearray`         | `String`        |
+| `datetime.date`     | `Date`          |
+| `datetime.datetime` | `DateTime64(6)` |
+
+<div id="udf-type-specification-methods">
+  #### 型の指定方法
+</div>
+
+型は複数の方法で指定できます。
+
+```python
+from chdb import create_function, func
+from chdb.sqltypes import INT64
+
+# 1. ChdbType constants
+create_function("f1", lambda x: x, arg_types=[INT64], return_type=INT64)
+
+# 2. ClickHouse type strings
+create_function("f2", lambda x: x, arg_types=["Int64"], return_type="Int64")
+
+# 3. Parameterized type strings
+create_function("f3", lambda x: x, arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+
+# 4. Python types — passed directly or used as annotations
+create_function("f4", lambda x: x, arg_types=[int], return_type=int)
+
+@func()
+def f5(x: int) -> int:
+    return x
+```
+
+***
+
+<div id="udf-null-handling">
+  ### NULL の処理
+</div>
+
+`on_null` パラメータで NULL 値の処理を制御します。
+
+| 値        | 列挙型                 | 動作                          |
+| -------- | ------------------- | --------------------------- |
+| `"skip"` | `NullHandling.SKIP` | 関数を呼び出さずに NULL を返す (デフォルト)  |
+| `"pass"` | `NullHandling.PASS` | NULL を `None` に変換して関数を呼び出す  |
+
+```python
+from chdb import func, query, NullHandling
+
+# Default: NULL in → NULL out, function not called
+@func(return_type="Int64")
+def add_one(x: int) -> int:
+    return x + 1
+
+print(query("SELECT add_one(NULL)"))  # NULL
+
+# Pass NULL as None
+@func(return_type="Int64", on_null="pass")
+def null_safe(x):
+    return 0 if x is None else x + 1
+
+print(query("SELECT null_safe(NULL)"))  # 0
+```
+
+***
+
+<div id="udf-exception-handling">
+  ### 例外処理
+</div>
+
+`on_error` パラメータを使用して、例外の処理方法を制御します。
+
+| 値             | 列挙型                           | 動作                          |
+| ------------- | ----------------------------- | --------------------------- |
+| `"propagate"` | `ExceptionHandling.PROPAGATE` | 例外を SQL エラーとして送出する (デフォルト)  |
+| `"ignore"`    | `ExceptionHandling.IGNORE`    | 例外を捕捉して NULL を返す            |
+
+```python
+from chdb import func, query
+
+# Default: exception propagates
+@func(arg_types=["Int64", "Int64"], return_type="Int64")
+def divide(a, b):
+    return a // b
+
+# print(query("SELECT divide(1, 0)"))  # Error: division by zero
+
+# Ignore: exception → NULL
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_error="ignore")
+def safe_divide(a, b):
+    return a // b
+
+print(query("SELECT safe_divide(1, 0)"))   # NULL
+print(query("SELECT safe_divide(10, 2)"))  # 5
+```
+
+***
+
+<div id="udf-datetime">
+  ### DateTime とタイムゾーンのサポート
+</div>
+
+UDF は、タイムゾーンに対応した `Date`、`Date32`、`DateTime`、`DateTime64` 型を完全にサポートします。
+
+```python
+from chdb import func, query
+from datetime import datetime, timedelta, date
+
+@func(arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+def add_one_hour(dt):
+    return dt + timedelta(hours=1)
+
+@func()
+def get_year(d: date) -> int:
+    return d.year
+
+print(query("SELECT add_one_hour(toDateTime('2024-01-01 12:00:00', 'UTC'))"))  # 2024-01-01 13:00:00
+print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
+```
+
+* 入力されたClickHouseの`DateTime`/`DateTime64`値は、タイムゾーン情報を含むPythonの`datetime`オブジェクトに変換されます
+* 出力されるPythonの`datetime`オブジェクトは、ClickHouseに返される際もタイムゾーン情報を保持します
+* `chdb.sqltypes`の`DATETIME64`型は、デフォルトでスケールが6 (マイクロ秒) に設定されており、`DateTime64(6)`と同等です
+
+***
+
+<div id="legacy-udf">
+  ### レガシー API
+</div>
+
+<Warning>
+  **非推奨:** `@chdb_udf` デコレータは、レガシーなサブプロセスベースの UDF の仕組みです。関数を別の Python プロセスで実行し、すべての引数を文字列として渡します。現在も利用できますが、型付き引数、NULL の処理、例外制御をサポートするネイティブ Python UDF API ([`@func`](#func-decorator) / [`create_function`](#create-function)) を推奨します。ネイティブ UDF はインプロセスで実行されます。詳しい手順については、[Python UDF ガイド](/ja/chdb/guides/python-udf)を参照してください。
+</Warning>
 
 <div id="chdb-udf">
-  ### `chdb.udf.chdb_udf`
+  #### `chdb.udf.chdb_udf`
 </div>
 
 chDB の Python UDF (ユーザー定義関数) のデコレータ。
@@ -3527,13 +3788,13 @@ def sum_udf(lhs, rhs):
 @chdb_udf()
 def func_use_json(arg):
     import json
-    # ... jsonモジュールを使用する
+    # ... use json module
 ```
 
 ***
 
 <div id="generate-udf">
-  ### `chdb.udf.generate_udf`
+  #### `chdb.udf.generate_udf`
 </div>
 
 UDF の設定ファイルと実行可能スクリプトファイルを生成します。
@@ -3929,7 +4190,7 @@ str(bytes_or_buffer[, encoding[, errors]]) -> str
 指定されたオブジェクトから新しい文字列オブジェクトを作成します。encoding または
 errors が指定されている場合、オブジェクトはデータバッファを提供している必要があり、
 そのデータは指定された encoding とエラーハンドラーを使ってデコードされます。
-それ以外の場合は、object.*&#95;str*&#95;() の結果 (定義されている場合) 
+それ以外の場合は、object.*&#95;str*&#95;() の結果 (定義されている場合)
 または repr(object) を返します。
 
 * encoding のデフォルトは ‘utf-8’ です。

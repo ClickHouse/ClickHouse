@@ -476,7 +476,7 @@ FROM otel_logs
 
 上述 materialized view 依赖隐式类型转换，尤其是在使用 `LogAttributes` Map 的情况下。ClickHouse 通常会自动将提取出的值转换为目标表的类型，从而减少所需的语法。不过，我们建议用户始终通过以下方式测试视图：使用该视图的 `SELECT` 语句，并配合一个面向相同 schema 目标表的 [`INSERT INTO`](/zh/reference/statements/insert-into) 语句。这样应能确认类型是否得到了正确处理。尤其要注意以下情况：
 
-* 如果某个 key 在 Map 中不存在，将返回空字符串。对于数值类型，你需要将其映射为合适的值。这可以通过[条件函数](/zh/reference/functions/regular-functions/conditional-functions)实现，例如 `if(LogAttributes['status'] = ", 200, LogAttributes['status'])`；如果可以接受默认值，也可以使用[类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)，例如 `toUInt8OrDefault(LogAttributes['status'] )`
+* 如果某个键在 Map 中不存在，将返回空字符串。对于数值类型，你需要将其映射为合适的值。这可以通过[条件函数](/zh/reference/functions/regular-functions/conditional-functions)实现，例如 `if(LogAttributes['status'] = ", 200, LogAttributes['status'])`；如果可以接受默认值，也可以使用[类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)，例如 `toUInt8OrDefault(LogAttributes['status'] )`
 * 某些类型并不总是会被自动转换，例如，数值的字符串表示形式不会被转换为枚举值。
 * 如果未找到值，JSON 提取函数会返回该类型的默认值。请务必确认这些值是合理的！
 
@@ -955,11 +955,11 @@ CREATE TABLE regexp_device
 这些表可以通过 `url` 表函数，使用以下公开托管的 CSV 文件填充：
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 在内存表填充好数据后，我们就可以加载正则表达式字典了。请注意，我们需要将键值指定为列，这些列就是我们可以从 User-Agent 中提取的属性。

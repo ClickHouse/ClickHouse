@@ -14,7 +14,7 @@ doc_type: 'reference'
 클라이언트가 네이티브로 렌더링하는 protobuf 인코딩 타일입니다. ClickHouse는 서로 연동되는 두 개의
 함수를 사용해 이러한 타일을 전적으로 SQL로 생성할 수 있습니다.
 
-* `MVTEncodeGeom` — 지오메트리를 슬리피 맵 타일의 타일 로컬 픽셀 공간으로 투영하고
+* `MVTEncodeGeom` — 지오메트리를 Slippy-map 타일의 타일 로컬 픽셀 공간으로 투영하고
   타일 경계에 맞게 잘라내는 스칼라 함수입니다.
 * `MVTEncode` — 그룹의 투영된 지오메트리를 모아 단일 레이어 타일의 바이너리 바이트로 인코딩하는
   집계 함수입니다.
@@ -22,8 +22,8 @@ doc_type: 'reference'
 두 개의 도우미 함수인 `MVTBoundingBox`와 `MVTBoundingBoxMercator`는 타일의 경계 상자를 반환하므로, `WHERE`
 절에서 인덱스를 사용해 행을 해당 범위로 제한할 수 있습니다.
 
-Point, 선, Polygon 지오메트리를 지원하며, `Geometry` 타입과 구체적인 geo 타입(`Point`,
-`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)도 포함됩니다.
+Point, 선, 다각형 지오메트리를 지원하며, `Geometry` 타입과 구체적인 geo 타입(`Point`,
+`MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)도 포함됩니다.
 
 결과 바이트는 완전한 타일이며, `FORMAT RawBLOB`과 함께 HTTP 인터페이스를 통해 직접 반환할 수 있습니다.
 
@@ -35,7 +35,7 @@ Point, 선, Polygon 지오메트리를 지원하며, `Geometry` 타입과 구체
 </div>
 
 지리 좌표(경도/위도)로 주어진 지오메트리를 `zoom`, `tile_x`, `tile_y`로 식별되는
-slippy-map 타일의 타일 내부 픽셀 공간으로 투영하고, 정수 픽셀 그리드에 스냅한 다음 타일 경계에 맞게 잘라내어
+Slippy-map 타일의 타일 내부 픽셀 공간으로 투영하고, 정수 픽셀 그리드에 스냅한 다음 타일 경계에 맞게 클리핑하여
 타일 공간의 지오메트리를 반환합니다.
 
 투영에는 전체 `UInt32` 좌표 범위에 걸친 Web Mercator를 사용합니다. 반환되는 좌표의 원점은 타일의
@@ -44,14 +44,14 @@ Tile 포맷의 좌표 규약이므로 결과를 `MVTEncode`에 바로 전달할 
 `MVTEncodeGeom`으로 그룹화하면 동일한 그리드에 놓인 지오메트리가 하나의 클러스터로 합쳐집니다.
 
 `clip`이 활성화되면(기본값) 지오메트리는 `buffer` 픽셀만큼 확장된 타일 범위(각 축에서
-`[-buffer, extent + buffer]`)로 잘려 나가며, 완전히 바깥에 있는 지오메트리는 `NULL`이 됩니다. 이는
+`[-buffer, extent + buffer]`)로 클리핑되며, 완전히 바깥에 있는 지오메트리는 `NULL`이 됩니다. 이는
 PostGIS `ST_AsMVTGeom`에 대응합니다.
 
 Polygon 좌표는 검증 전에 `2^30` 윈도우로 제한됩니다. 이는 `zoom` 18과 `extent` 4096에서 전 세계 전체의 픽셀 범위와
 정확히 같으므로, 일반적인 타일에서는 지오메트리가 검증되지만 클리핑되지는 않으며, 이 제한은 극단적인 `zoom` 또는 `extent`
 값에 배치된 지오메트리에만 영향을 줍니다.
 
-출력 지오메트리 유형은 입력에 따라 달라집니다. `Point`는 `Point`를 반환하고, `LineString` 또는 `MultiLineString`은
+출력 지오메트리 유형은 입력에 따라 달라집니다. `Point`는 `Point`를 반환하고, `MultiPoint`는 `MultiPoint`를 반환하며, `LineString` 또는 `MultiLineString`은
 `MultiLineString`을 반환하며, `Ring`, `Polygon`, `MultiPolygon`은 `MultiPolygon`을 반환합니다
 (클리핑 과정에서 하나의 지오메트리가 여러 파트로 분할될 수 있습니다).
 
@@ -63,12 +63,12 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 
 **인수**
 
-* `geometry` — 도 단위의 경도/위도로 표현된 Geometry입니다. 경도는 `[-180, 180]` 범위로 제한되고, 위도는 Web Mercator 범위 `[-85.05112878, 85.05112878]`로 제한됩니다. [`Point`](/ko/reference/data-types/geo) / [`LineString`](/ko/reference/data-types/geo) / [`MultiLineString`](/ko/reference/data-types/geo) / [`Ring`](/ko/reference/data-types/geo) / [`Polygon`](/ko/reference/data-types/geo) / [`MultiPolygon`](/ko/reference/data-types/geo) / [`Geometry`](/ko/reference/data-types/geo).
+* `geometry` — 도 단위의 경도/위도로 표현된 Geometry입니다. 경도는 `[-180, 180]` 범위로 제한되고, 위도는 Web Mercator 범위 `[-85.05112878, 85.05112878]`로 제한됩니다. [`Point`](/ko/reference/data-types/geo) / [`MultiPoint`](/ko/reference/data-types/geo) / [`LineString`](/ko/reference/data-types/geo) / [`MultiLineString`](/ko/reference/data-types/geo) / [`Ring`](/ko/reference/data-types/geo) / [`Polygon`](/ko/reference/data-types/geo) / [`MultiPolygon`](/ko/reference/data-types/geo) / [`Geometry`](/ko/reference/data-types/geo).
 * `zoom` — `[0, 32]` 범위의 Slippy-map 확대/축소 수준입니다. [`UInt8`](/ko/reference/data-types/int-uint).
 * `tile_x` — `[0, 2^zoom - 1]` 범위의 타일 컬럼 인덱스입니다. [`UInt32`](/ko/reference/data-types/int-uint).
 * `tile_y` — `[0, 2^zoom - 1]` 범위의 타일 행 인덱스입니다. [`UInt32`](/ko/reference/data-types/int-uint).
 * `extent` — 타일 한 변의 픽셀 수를 나타내는 선택적 extent이며, 범위는 `[1, 2147483647]`입니다. 기본값은 Mapbox Vector Tile의 기본값인 `4096`입니다. [`UInt32`](/ko/reference/data-types/int-uint).
-* `buffer` — 픽셀 단위의 선택적 클립 버퍼이며, 범위는 `[0, 2147483647]`입니다. 기본값은 `1`입니다. [`UInt32`](/ko/reference/data-types/int-uint).
+* `buffer` — 픽셀 단위의 선택적 클리핑 버퍼이며, 범위는 `[0, 2147483647]`입니다. 기본값은 `1`입니다. [`UInt32`](/ko/reference/data-types/int-uint).
 * `clip` — 선택적 flag입니다. 0이 아니면(기본값) 지오메트리가 타일과 버퍼를 포함한 범위로 클리핑됩니다. [`UInt8`](/ko/reference/data-types/int-uint).
 
 **반환 값**

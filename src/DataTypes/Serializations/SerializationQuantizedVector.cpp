@@ -110,9 +110,17 @@ public:
         state = std::make_shared<DeserializedStateProductQuantization>();
     }
 
+    /// The codebook is a single per-part value broadcast to the whole range. Wrap the base column as an empty
+    /// ColumnConst; deserialize sets its value and grows its size, so the (large) codebook is never materialized
+    /// per row.
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override
+    {
+        column->insertDefault(); /// placeholder single value; the real one is set during deserialization
+        return ColumnConst::create(std::move(column), 0);
+    }
+
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t /*rows_offset*/,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -127,7 +135,8 @@ public:
             state_pq = new_state.get();
             state = std::move(new_state);
         }
-        const size_t prev_size = column ? column->size() : 0;
+
+        auto & const_column = assert_cast<ColumnConst &>(column);
 
         /// Read the part's single codebook value exactly once (the stream holds one value for the whole part); every
         /// granule reuses it.
@@ -145,14 +154,17 @@ public:
                 return;
 
             auto value = value_type->createColumn();
-            nested_serialization->deserializeBinaryBulk(*value, *stream, /*rows_offset=*/0, /*limit=*/1, /*avg_value_size_hint=*/0.0);
+            nested_serialization->deserializeBinaryBulk(*value, *stream, /*limit=*/1, /*avg_value_size_hint=*/0.0);
             if (value->size() != 1)
                 throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
                     "Expected exactly one per-part PQ codebook value but read {}", value->size());
             state_pq->codebook = std::move(value);
         }
 
-        column = ColumnConst::create(state_pq->codebook, prev_size + limit);
+        /// Set the broadcast value (idempotent across granules and freshly-created result columns) and extend the
+        /// range by `limit` rows (O(1) for ColumnConst).
+        const_column.setValue(state_pq->codebook);
+        const_column.insertManyFrom(*state_pq->codebook, 0, limit);
     }
 
 private:
@@ -180,6 +192,11 @@ SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPt
             SerializationProductQuantizationCodebook::create(codebook_type->getDefaultSerialization(), codebook_type),
             product_quantization_subcolumn_name, ISerialization::Substream::ProductQuantizationCodebook);
     }
+}
+
+String SerializationQuantizedVector::getCustomSerializationIdentity() const
+{
+    return fmt::format("QuantizedVector({},{},{},{})", params.method, params.dimensions, params.bits, params.m);
 }
 
 void SerializationQuantizedVector::enumerateStreams(

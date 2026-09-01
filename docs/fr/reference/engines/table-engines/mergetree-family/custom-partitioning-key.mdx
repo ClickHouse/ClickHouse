@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 Dans cet exemple, nous définissons le partitionnement en fonction des types d’événements survenus pendant la semaine en cours.
 
-Par défaut, la clé de partitionnement à virgule flottante n’est pas prise en charge. Pour l’utiliser, activez le paramètre [allow&#95;floating&#95;point&#95;partition&#95;key](/fr/reference/settings/merge-tree-settings#allow_floating_point_partition_key).
+Par défaut, la clé de partitionnement à virgule flottante n’est pas prise en charge. Pour l’utiliser, activez le paramètre [allow&#95;floating&#95;point&#95;partition&#95;key](/fr/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key).
 
 Lors de l’insertion de nouvelles données dans une table, celles-ci sont stockées dans une partie distincte (fragment), triée selon la clé primaire. Dans les 10 à 15 minutes qui suivent l’insertion, les parties de la même partition fusionnent en une seule partie.
 
