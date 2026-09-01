@@ -2284,6 +2284,42 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, std::uni
 /// every command is either a metadata mutation that the merge materializes on its own, or scoped to
 /// another partition, and then it is never applied to that part at all. Anything else (`UPDATE`,
 /// `DELETE`, `MATERIALIZE INDEX`, ...) needs a mutation to run, so a merge leaves it pending.
+/// Where a mutation command applies relative to one partition. `IN PARTITION p` is stored in
+/// `ASTAlterCommand::partition`, and `IN PARTITION p1, p2, ...` in `ASTAlterCommand::partitions`;
+/// both shapes are honoured per part by `canSkipMutationCommandForPart`.
+enum class PartitionScope
+{
+    Unscoped,
+    ThisPartition,
+    OtherPartitions,
+};
+
+static PartitionScope getPartitionScope(
+    const MergeTreeData & storage, const ASTAlterCommand * alter, const String & partition_id, const ContextPtr & context)
+{
+    if (!alter)
+        return PartitionScope::Unscoped;
+
+    if (alter->partition)
+    {
+        return storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context) == partition_id
+            ? PartitionScope::ThisPartition
+            : PartitionScope::OtherPartitions;
+    }
+
+    if (alter->partitions)
+    {
+        for (const auto & partition_ast : alter->partitions->children)
+        {
+            if (storage.getPartitionIDFromQuery(partition_ast, context) == partition_id)
+                return PartitionScope::ThisPartition;
+        }
+        return PartitionScope::OtherPartitions;
+    }
+
+    return PartitionScope::Unscoped;
+}
+
 static bool isMaterializedByMerge(
     const MergeTreeData & storage, const MutationCommands & commands, const String & partition_id, const ContextPtr & context)
 {
@@ -2293,15 +2329,15 @@ static bool isMaterializedByMerge(
     return std::all_of(commands.begin(), commands.end(), [&](const auto & command)
     {
         auto alter = command.ast();
-        bool in_partition = alter && alter->partition;
+        auto scope = getPartitionScope(storage, alter.get(), partition_id, context);
 
-        /// A command scoped to another partition is not applied to this part: `MutateTask` skips it
+        /// A command scoped to other partitions is not applied to this part: `MutateTask` skips it
         /// through `canSkipMutationCommandForPart` and clones the untouched part forward to the
         /// mutation version. So it leaves nothing pending for the merged part, whatever the command
         /// is. Checked before the type of the command on purpose: an `UPDATE ... IN PARTITION p1`
         /// treated as a blocker would refuse every merge in the other partitions - including
         /// `OPTIMIZE FINAL PARTITION p2` - as soon as a `RENAME COLUMN` is pending behind it.
-        if (in_partition && storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context) != partition_id)
+        if (scope == PartitionScope::OtherPartitions)
             return true;
 
         if (!AlterConversions::isSupportedMetadataMutation(command.type))
@@ -2320,7 +2356,7 @@ static bool isMaterializedByMerge(
         /// merged part alone is not something to rely on. No command reaches this today: `RENAME
         /// COLUMN` has no `IN PARTITION` form, and the only partition-scoped `DROP_COLUMN` is
         /// `CLEAR COLUMN`, excluded above.
-        if (in_partition)
+        if (scope == PartitionScope::ThisPartition)
             return false;
 
         return true;
