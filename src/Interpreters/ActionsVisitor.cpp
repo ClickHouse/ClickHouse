@@ -1938,9 +1938,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (i < argument_names.size())
                 {
                     const auto * arg_node = index.tryGetNode(argument_names[i]);
-                    if (arg_node && arg_node->result_type && (isNumber(*removeNullable(arg_node->result_type)) || isDecimal(*removeNullable(arg_node->result_type))))
+                    if (!arg_node || !arg_node->result_type)
+                        continue;
+                    auto arg_type = removeLowCardinalityAndNullable(arg_node->result_type);
+                    if (isNumber(*arg_type) || isDecimal(*arg_type))
                     {
-                        reference_type = arg_node->result_type;
+                        reference_type = arg_type;
                         break;
                     }
                 }

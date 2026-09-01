@@ -3144,7 +3144,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto * const_node = function_arguments[i]->as<ConstantNode>();
             if (const_node && const_node->hasNumberLiteralText())
                 continue;
-            auto arg_type = removeNullable(argument_types[i]);
+            auto arg_type = removeLowCardinalityAndNullable(argument_types[i]);
             if (arg_type && (isNumber(*arg_type) || isDecimal(*arg_type)))
             {
                 reference_type = arg_type;
