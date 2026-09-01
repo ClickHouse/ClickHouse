@@ -1,7 +1,6 @@
 import logging
 import os
 import time
-import uuid
 
 import pytest
 from pyhdfs import HdfsClient
@@ -17,13 +16,6 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_PATH = os.path.join(
     SCRIPT_DIR, "./_instances/node/configs/config.d/storage_conf.xml"
 )
-BLOCKED_REMOTE_HOST_CONFIG = """
-<clickhouse>
-    <remote_url_allow_hosts>
-        <host>blocked.invalid</host>
-    </remote_url_allow_hosts>
-</clickhouse>
-"""
 
 
 if is_arm():
@@ -93,12 +85,7 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node",
-            main_configs=[
-                "configs/config.d/storage_conf.xml",
-                "configs/config.d/remote_host_filter.xml",
-            ],
-            with_hdfs=True,
+            "node", main_configs=["configs/config.d/storage_conf.xml"], with_hdfs=True
         )
         logging.info("Starting cluster...")
         cluster.start()
@@ -195,49 +182,6 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
     assert (
         node.query("SELECT count(*) FROM hdfs_test where id = 1 FORMAT Values") == "(2)"
     )
-
-
-def test_remote_host_filter_reload_does_not_block_configured_disk(cluster):
-    create_table(cluster, "hdfs_test")
-    node = cluster.instances["node"]
-    node.query("INSERT INTO hdfs_test VALUES ('2020-01-03', 1, 'data')")
-
-    with node.with_replace_config(
-        "/etc/clickhouse-server/config.d/remote_host_filter.xml",
-        BLOCKED_REMOTE_HOST_CONFIG,
-        reload_before=True,
-        reload_after=True,
-    ):
-        assert node.query("SELECT data FROM hdfs_test") == "data\n"
-
-
-def test_remote_host_filter_reload_blocks_sql_storage(cluster):
-    node = cluster.instances["node"]
-    suffix = uuid.uuid4().hex
-    table_name = f"hdfs_remote_host_filter_{suffix}"
-    object_path = f"/remote_host_filter_{suffix}.tsv"
-    try:
-        node.query(
-            f"""
-            CREATE TABLE {table_name} (data String)
-            ENGINE = HDFS('hdfs://hdfs1:9000{object_path}', 'TSV')
-            """
-        )
-        node.query(f"INSERT INTO {table_name} VALUES ('payload')")
-        assert node.query(f"SELECT data FROM {table_name}") == "payload\n"
-
-        with node.with_replace_config(
-            "/etc/clickhouse-server/config.d/remote_host_filter.xml",
-            BLOCKED_REMOTE_HOST_CONFIG,
-            reload_before=True,
-            reload_after=True,
-        ):
-            assert "UNACCEPTABLE_URL" in node.query_and_get_error(
-                f"SELECT data FROM {table_name}"
-            )
-    finally:
-        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-        HdfsClient(hosts=cluster.hdfs_ip, user_name="root").delete(object_path)
 
 
 def test_alter_table_columns(cluster):

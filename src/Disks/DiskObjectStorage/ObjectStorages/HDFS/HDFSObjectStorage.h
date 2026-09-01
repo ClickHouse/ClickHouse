@@ -9,7 +9,6 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Common/Logger.h>
-#include <Common/RemoteHostFilter.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -38,12 +37,10 @@ public:
         const String & hdfs_root_path_,
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_,
-        const RemoteHostFilter & remote_host_filter_,
         bool lazy_initialize,
         const String & disk_name_ = {})
         : HDFSErrorWrapper(hdfs_root_path_, config_)
         , config(config_)
-        , remote_host_filter(remote_host_filter_)
         , settings(std::move(settings_))
         , disk_name(disk_name_)
         , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
@@ -133,7 +130,6 @@ private:
     void removeObjects(const StoredObjects & objects);
 
     const Poco::Util::AbstractConfiguration & config;
-    const RemoteHostFilter & remote_host_filter;
 
     mutable HDFSFSPtr hdfs_fs;
 

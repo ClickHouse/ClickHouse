@@ -800,93 +800,12 @@ def test_remote_host_filter(started_cluster):
         f"SELECT count() FROM icebergS3('{blocked_url}/')",
         f"SELECT count() FROM icebergS3Cluster('cluster', '{blocked_url}/')",
         f"CREATE TABLE remote_host_filter_iceberg (x UInt32) ENGINE = IcebergS3('{blocked_url}/')",
-        f"select *, column1*column2*column3 from s3('{blocked_url}/test.csv', 'CSV', '{format}')",
-        f"insert into table function s3('{blocked_url}/test.csv', 'CSV', '{format}') values {other_values}",
+        f"SELECT *, column1 * column2 * column3 FROM s3('{blocked_url}/test.csv', 'CSV', '{format}')",
+        f"INSERT INTO TABLE FUNCTION s3('{blocked_url}/test.csv', 'CSV', '{format}') VALUES {other_values}",
     )
 
     for query in queries:
         assert "UNACCEPTABLE_URL" in instance.query_and_get_error(query), query
-
-
-def test_remote_host_filter_reload_for_persistent_table(started_cluster):
-    instance = started_cluster.instances["restricted_dummy"]
-    filename = "remote_host_filter_reload.csv"
-    put_s3_file_content(started_cluster, started_cluster.minio_bucket, filename, b"1\n")
-    url = (
-        f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/"
-        f"{started_cluster.minio_bucket}/{filename}"
-    )
-    instance.query(
-        f"CREATE TABLE remote_host_filter_reload (x UInt8) "
-        f"ENGINE = S3('{url}', 'minio', '{minio_secret_key}', 'CSV', "
-        "headers('X-Object-Storage-Test' = '1'))"
-    )
-    try:
-        instance.query("SYSTEM RELOAD CONFIG")
-        assert instance.query("SELECT * FROM remote_host_filter_reload") == "1\n"
-        blocked_config = """
-<clickhouse>
-    <remote_url_allow_hosts>
-        <host>blocked.invalid</host>
-    </remote_url_allow_hosts>
-</clickhouse>
-"""
-        with instance.with_replace_config(
-            "/etc/clickhouse-server/config.d/config_for_test_remote_host_filter.xml",
-            blocked_config,
-            reload_before=True,
-            reload_after=True,
-        ):
-            assert "UNACCEPTABLE_URL" in instance.query_and_get_error(
-                "SELECT * FROM remote_host_filter_reload"
-            )
-    finally:
-        instance.query("DROP TABLE remote_host_filter_reload")
-
-
-def test_remote_host_filter_reload_for_iceberg_maintenance(started_cluster):
-    instance = started_cluster.instances["restricted_dummy"]
-    url = (
-        f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/"
-        f"{started_cluster.minio_bucket}/remote_host_filter_reload_iceberg"
-    )
-    instance.query(
-        f"CREATE TABLE remote_host_filter_reload_iceberg (x UInt32) "
-        f"ENGINE = IcebergS3('{url}', 'minio', '{minio_secret_key}') "
-        "SETTINGS iceberg_metadata_async_prefetch_period_ms = 100"
-    )
-    try:
-        instance.query(
-            "INSERT INTO remote_host_filter_reload_iceberg VALUES (1)",
-            settings={"allow_insert_into_iceberg": 1},
-        )
-        assert instance.query("SELECT * FROM remote_host_filter_reload_iceberg") == "1\n"
-        blocked_config = """
-<clickhouse>
-    <remote_url_allow_hosts>
-        <host>blocked.invalid</host>
-    </remote_url_allow_hosts>
-</clickhouse>
-"""
-        with instance.with_replace_config(
-            "/etc/clickhouse-server/config.d/config_for_test_remote_host_filter.xml",
-            blocked_config,
-            reload_before=True,
-            reload_after=True,
-        ):
-            instance.wait_for_log_line(
-                "URL .*remote_host_filter_reload_iceberg.* is not allowed in configuration file"
-            )
-            assert "UNACCEPTABLE_URL" in instance.query_and_get_error(
-                "ALTER TABLE remote_host_filter_reload_iceberg ADD COLUMN y UInt32",
-                settings={"allow_insert_into_iceberg": 1},
-            )
-            assert "UNACCEPTABLE_URL" in instance.query_and_get_error(
-                "OPTIMIZE TABLE remote_host_filter_reload_iceberg",
-                settings={"allow_experimental_iceberg_compaction": 1},
-            )
-    finally:
-        instance.query("DROP TABLE remote_host_filter_reload_iceberg")
 
 
 def test_wrong_s3_syntax(started_cluster):

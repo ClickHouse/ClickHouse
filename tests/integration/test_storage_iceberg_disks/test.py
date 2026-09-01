@@ -106,7 +106,7 @@ def generate_cluster_def(common_path, port, azure_container):
     </storage_configuration>
     <allowed_disks_for_table_engines>disk_local_common,disk_s3_common,disk_azure_common,disk_s3_with_cache,disk_azure_with_cache</allowed_disks_for_table_engines>
     <remote_url_allow_hosts>
-        <host>blocked.invalid</host>
+        <host>azurite1</host>
     </remote_url_allow_hosts>
 </clickhouse>
 """

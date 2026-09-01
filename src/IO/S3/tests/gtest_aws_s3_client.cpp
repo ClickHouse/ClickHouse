@@ -939,7 +939,7 @@ private:
 
 std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
 {
-    static const DB::RemoteHostFilter remote_host_filter;
+    DB::RemoteHostFilter remote_host_filter;
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         "us-east-1",
         remote_host_filter,

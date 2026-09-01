@@ -129,9 +129,9 @@ public:
 
     void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
-        BaseStorageConfiguration::update(object_storage, local_context);
         if (tryGetMetadata())
             return;
+        BaseStorageConfiguration::update(object_storage, local_context);
         assertLocalPathCorrect(object_storage, local_context);
         auto fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
         std::shared_ptr<IDataLakeMetadata> displaced;
@@ -219,14 +219,6 @@ public:
             this->checkFormat();
         else
             BaseStorageConfiguration::check(context);
-    }
-
-    void checkForUpdate(ContextPtr context) override
-    {
-        if (ready_object_storage)
-            this->checkFormat();
-        else
-            BaseStorageConfiguration::checkForUpdate(context);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override

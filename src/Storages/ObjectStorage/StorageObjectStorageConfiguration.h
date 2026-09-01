@@ -142,7 +142,6 @@ public:
     virtual std::string getPathInArchive() const;
 
     virtual void check(ContextPtr context);
-    virtual void checkForUpdate(ContextPtr context) { check(context); }
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
