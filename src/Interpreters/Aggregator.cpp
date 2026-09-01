@@ -36,6 +36,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -285,7 +286,6 @@ size_t getMinBytesForPrefetch()
     /// is cache resident and prefetching is pure overhead.
     return getL2CacheSize();
 }
-
 
 }
 
@@ -1161,8 +1161,11 @@ void Aggregator::executeImpl(
             /// below calls `getKeyHolder` a second time for every row, so a method that materializes
             /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
             /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
+            /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
+            /// smaller threshold.
+            const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+                && (method.data.getBufferSizeInBytes() > min_bytes);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -2315,9 +2318,9 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// above the threshold is state the frozen table would replicate on every worker. The
         /// slicer only reports the boundary; the transition is decided here. A const block
         /// stays on the baseline path: it adds at most one key, and the between-blocks check
-        /// handles it. The admission gate rules out `max_rows_to_group_by` and the overflow
-        /// row, which is what entitles the slices to pass `no_more_keys = false` and no
-        /// overflow destination.
+        /// handles it. The admission gate rules out the dropping overflow modes and the
+        /// overflow row, so `no_more_keys` can never become true, which is what entitles the
+        /// slices to pass `no_more_keys = false` and no overflow destination.
         const size_t split
             = executeImplUntilAdaptiveFreeze(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data());
         if (split < row_end)
@@ -2577,8 +2580,12 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     Arena * arena,
     bool final,
     Int32 bucket,
-    UInt64 * topk_full_key_bytes) const
+    UInt64 * topk_full_key_bytes,
+    size_t * full_group_count) const
 {
+    if (full_group_count)
+        *full_group_count = method.data.impls[bucket].size();
+
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
 
@@ -2771,7 +2778,8 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     bool final,
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+    size_t * full_group_count) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -2790,7 +2798,7 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
             updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
-        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, &topk_full_key_bytes); \
+        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, &topk_full_key_bytes, full_group_count); \
         if (updater) \
         { \
             if (topk_full_key_bytes) \
@@ -2853,7 +2861,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVa
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, /*topk_full_key_bytes=*/nullptr); \
+        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, /*topk_full_key_bytes=*/nullptr, /*full_group_count=*/nullptr); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -2909,7 +2917,7 @@ void Aggregator::writeToTemporaryFileImpl(
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
-        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*topk_full_key_bytes=*/nullptr);
+        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*topk_full_key_bytes=*/nullptr, /*full_group_count=*/nullptr);
         auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
@@ -4006,7 +4014,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*topk_full_key_bytes=*/nullptr));
+            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*topk_full_key_bytes=*/nullptr, /*full_group_count=*/nullptr));
         }
     };
 
@@ -4454,7 +4462,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes()
+            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -4542,7 +4551,8 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
+            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
