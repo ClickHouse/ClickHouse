@@ -41,6 +41,14 @@ struct RuntimeDataflowStatistics
     /// would evict each other's rate and each read one measured on the other's join.
     size_t join_probe_rows = 0;
     size_t join_matched_probe_rows = 0;
+
+    /// Rows the read passed on, against the `total_rows_to_read` it scanned. Their ratio is the fraction
+    /// that survived whatever filtered them inside the read - in practice a join runtime filter moved into
+    /// PREWHERE, which is the same predicate the parallel-replicas rewrite ships and which applies before
+    /// the aggregation, where the join's own match rate cannot see it. It is written to the join's entry
+    /// and not to the fragment's, for the same reason the match rate is: the filter comes from the join, so
+    /// two queries aggregating one subquery under different joins do not share this number either.
+    size_t read_passed_rows = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -132,6 +140,9 @@ public:
 
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
+    /// Unsampled, unlike the byte statistics: the point is the exact ratio to `total_rows_to_read`.
+    void recordReadPassedRows(size_t rows) { read_passed_rows.fetch_add(rows, std::memory_order_relaxed); }
+
     /// Registers where to read the match rate of the join above the instrumented node once the query has
     /// run, and the key to file it under. It is a callback because the join counts the rows as it executes
     /// and only knows the totals at the end.
@@ -161,6 +172,8 @@ private:
     size_t join_cache_key = 0;
     std::function<std::optional<JoinProbeMatchRate>()> join_match_rate_provider;
 
+    std::atomic_size_t read_passed_rows{0};
+
     std::atomic_bool unsupported_case{false};
 
     enum InputStatisticsType
@@ -182,6 +195,22 @@ private:
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
+/// Counts every row a read step passes on. Cheap enough to be unsampled - one atomic add per chunk - and
+/// it has to be, because it is compared against a row count from index analysis rather than to itself.
+class RuntimeDataflowReadRowCounter : public ISimpleTransform
+{
+public:
+    RuntimeDataflowReadRowCounter(SharedHeader header_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+
+    String getName() const override { return "RuntimeDataflowReadRowCounter"; }
+
+protected:
+    void transform(Chunk & chunk) override;
+
+private:
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+};
 
 class RuntimeDataflowStatisticsCollector : public ISimpleTransform
 {

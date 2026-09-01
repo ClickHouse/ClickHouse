@@ -38,6 +38,7 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
@@ -5279,6 +5280,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         {
             return std::make_shared<ExpressionTransform>(header, converting_dag_expr);
         });
+    }
+
+    /// Count what the read passes on, for the automatic parallel replicas cost model: against the rows
+    /// index analysis said would be scanned, it gives the selectivity of whatever filtered inside the read.
+    if (dataflow_cache_updater)
+    {
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+        { return std::make_shared<RuntimeDataflowReadRowCounter>(header, dataflow_cache_updater); });
     }
 
     for (const auto & processor : pipe.getProcessors())

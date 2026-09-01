@@ -90,17 +90,20 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         {
             LOG_DEBUG(
                 getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-                "Collected join match rate for {}: probe rows={}, matched probe rows={}",
+                "Collected join match rate for {}: probe rows={}, matched probe rows={}, read passed {} of {} scanned rows",
                 join_cache_key,
                 match_rate->probe_rows,
-                match_rate->matched_rows);
+                match_rate->matched_rows,
+                read_passed_rows.load(std::memory_order_relaxed),
+                total_rows_to_read);
 
             dataflow_cache.update(
                 join_cache_key,
                 RuntimeDataflowStatistics{
                     .total_rows_to_read = total_rows_to_read,
                     .join_probe_rows = match_rate->probe_rows,
-                    .join_matched_probe_rows = match_rate->matched_rows});
+                    .join_matched_probe_rows = match_rate->matched_rows,
+                    .read_passed_rows = read_passed_rows.load(std::memory_order_relaxed)});
         }
     }
 
@@ -343,6 +346,19 @@ RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
 {
     static RuntimeDataflowStatisticsCache stats_cache;
     return stats_cache;
+}
+
+RuntimeDataflowReadRowCounter::RuntimeDataflowReadRowCounter(
+    SharedHeader header_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/false)
+    , updater(std::move(updater_))
+{
+}
+
+void RuntimeDataflowReadRowCounter::transform(Chunk & chunk)
+{
+    if (updater)
+        updater->recordReadPassedRows(chunk.getNumRows());
 }
 
 RuntimeDataflowStatisticsCollector::RuntimeDataflowStatisticsCollector(

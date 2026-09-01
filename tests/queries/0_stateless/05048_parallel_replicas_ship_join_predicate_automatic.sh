@@ -14,9 +14,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # reading threads it credits either plan with at `input_bytes / merge_tree_min_bytes_per_task_for_remote_reading`,
 # and a large enough value collapses both sides of the comparison and declines parallel replicas outright,
 # never reaching the shipping decision.
-# `enable_join_runtime_filters` is off because the filter lands in a different place in the two plan builds
-# (pushed into the read on one node, a separate step above the fragment with parallel replicas), which makes
-# their cache keys disagree and the cost model bail before costing anything.
 # The join's orientation is pinned because the match rate priced here is the one of the join's probe side:
 # with the fragment moved to the build side there is no measured rate for it and nothing is shipped.
 
@@ -26,7 +23,7 @@ PR_SETTINGS="enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
     parallel_replicas_min_number_of_rows_per_replica = 0, automatic_parallel_replicas_min_bytes_per_replica = 0,
-    enable_join_runtime_filters = 0, max_threads = 2,
+    max_threads = 2,
     query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
     merge_tree_min_bytes_per_task_for_remote_reading = 1"
 

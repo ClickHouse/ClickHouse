@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/SipHashingWriteBuffer.h>
 #include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -36,6 +37,46 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
     return hash.get64();
 }
 
+/// A join runtime filter reaches the data through a `__applyFilter` conjunct.
+bool isJoinRuntimeFilterAtom(const ActionsDAG::Node & atom)
+{
+    return atom.type == ActionsDAG::ActionType::FUNCTION && atom.function_base
+        && atom.function_base->getName() == "__applyFilter";
+}
+
+/// Hashes the conjuncts of a filter predicate that are not join runtime filters, and says whether any
+/// were left. Nothing is left for a filter the join placed there on its own.
+///
+/// A join runtime filter must not reach a cache key, because the two builds of one query do not put it in
+/// the same place. On one node it is applied inside the fragment - pushed into the read's PREWHERE, or a
+/// `FilterStep` just above it; with parallel replicas it can only be applied outside the fragment, since
+/// the fragment ships as query text or as a serialized plan and the filter lives in the initiator's
+/// `RuntimeFilterLookup`. The fragment computes the same thing either way, so hashing the filter would
+/// cost Auto-PR every query with a join over a shipped fragment - the shape it exists for.
+///
+/// The statistics the key then serves were measured with the filter applied and are reused for a plan that
+/// does not apply it inside the fragment, so `input_bytes` is understated - by 12% on a 2M-row probe joined
+/// to a 10-row dimension, where the filter prunes no granules (index analysis is off by default) but
+/// PREWHERE still skips reading the payload column for filtered rows. That is the harmless direction: the
+/// comparison the cost model makes reduces to `input_bytes * (replicas - 1) / threads > output_bytes`, so a
+/// smaller `input_bytes` only makes it decline parallel replicas, never enable them wrongly.
+bool updateHashWithUserConjuncts(SipHash & hash, const ActionsDAG & dag, const String & filter_column_name)
+{
+    const auto * predicate = dag.tryFindInOutputs(filter_column_name);
+    if (!predicate)
+        return false;
+
+    bool any_user_conjunct = false;
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(predicate))
+    {
+        if (isJoinRuntimeFilterAtom(*atom))
+            continue;
+        atom->updateHash(hash, /*build_independent=*/true);
+        any_user_conjunct = true;
+    }
+    return any_user_conjunct;
+}
+
 UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
     SipHash hash;
@@ -57,8 +98,8 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
         if (table_expression->as<TableFunctionNode>())
             hash.update(table_expression->getTreeHash({.compare_aliases = false}));
     }
-    if (const auto & dag = read.getPrewhereInfo())
-        dag->prewhere_actions.updateHash(hash, /*build_independent=*/true);
+    if (const auto & prewhere = read.getPrewhereInfo())
+        updateHashWithUserConjuncts(hash, prewhere->prewhere_actions, prewhere->prewhere_column_name);
     return hash.get64();
 }
 
@@ -79,6 +120,18 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
 
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
+    /// A filter that only applies a join runtime filter is transparent for the cache key, for the reason
+    /// given on `updateHashWithUserConjuncts`: with parallel replicas the same filter sits outside the
+    /// fragment instead of just above its read, and the fragment below is the same either way.
+    if (const auto * filter = typeid_cast<const FilterStep *>(&transform))
+    {
+        SipHash filter_hash;
+        filter_hash.update(filter->getSerializationName());
+        if (!updateHashWithUserConjuncts(filter_hash, filter->getExpression(), filter->getFilterColumnName()))
+            return 0;
+        return filter_hash.get64();
+    }
+
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
     /// leaves the output byte layout unchanged. The cache stores `output_bytes`, not just cardinality,
     /// so a row-preserving `ExpressionStep` that adds, removes, or widens columns DOES change the

@@ -21,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <map>
 #include <optional>
 
@@ -335,8 +336,20 @@ bool shouldShipJoinPredicate(
         return false;
     }
 
-    const double match_rate
+    /// The predicate is priced by the fraction of the fragment's rows that survive it, and that fraction can
+    /// be split between two places, because a join runtime filter applies the very same predicate earlier.
+    /// The filter sits in the read, below the aggregation, so whatever it removed the join never sees and
+    /// the join reports almost nothing but matches; without a filter the read passes everything and the
+    /// join's rate is the whole story. Their product is the fraction either way, and it is a product rather
+    /// than a choice because the filter is approximate above `join_runtime_filter_exact_values_limit` - it
+    /// passes false positives that the join then rejects.
+    const double read_pass_rate = join_stats->total_rows_to_read && join_stats->read_passed_rows
+        ? std::min(
+              1.0, static_cast<double>(join_stats->read_passed_rows) / static_cast<double>(join_stats->total_rows_to_read))
+        : 1.0;
+    const double join_match_rate
         = static_cast<double>(join_stats->join_matched_probe_rows) / static_cast<double>(join_stats->join_probe_rows);
+    const double match_rate = read_pass_rate * join_match_rate;
 
     /// What a filtered row is worth depends on where the predicate can act. When it can restrict the read's
     /// key range, a row it removes is a row the replica never reads. When it cannot, the replicas read their
@@ -351,10 +364,13 @@ bool shouldShipJoinPredicate(
     LOG_DEBUG(
         getLogger("optimizeTree"),
         "Shipping the join predicate would save {} {} per replica against a {} row scan to build the set "
-        "(match rate {}/{})",
+        "(match rate {}: {} of {} rows past the read, {}/{} matched by the join)",
         rows_saved_per_replica,
         can_restrict_ranges ? "rows read" : "groups produced (the predicate cannot restrict the read's key range)",
         *build_side_rows,
+        match_rate,
+        join_stats->read_passed_rows,
+        join_stats->total_rows_to_read,
         join_stats->join_matched_probe_rows,
         join_stats->join_probe_rows);
 
