@@ -1391,6 +1391,87 @@ def test_write_command_reply_counts_are_truthful(started_cluster):
     assert collection.delete_many({}).deleted_count == 3
 
 
+def test_bulk_write_command_reply_counts_are_truthful(started_cluster):
+    """A `delete` or an `update` command carries a list of specs that Mongo applies one after
+    another, so a spec sees what the previous ones did. The mutation of each spec is therefore
+    awaited before the next one is counted: otherwise two overlapping specs would both count the
+    same rows and `n` would report more documents than the command touched."""
+    client = make_client()
+    database = client["db"]
+    collection = database["bulk_write_counts"]
+
+    collection.drop()
+    collection.insert_many([{"id": i, "k": i % 2, "v": 0} for i in range(6)])
+
+    # The second spec matches nothing any more: the first one has renamed the value of `k`.
+    reply = database.command(
+        {
+            "update": "bulk_write_counts",
+            "updates": [
+                {"q": {"k": 1}, "u": {"$set": {"k": 2}}, "multi": True},
+                {"q": {"k": 1}, "u": {"$set": {"v": 1}}, "multi": True},
+            ],
+        }
+    )
+    assert reply["ok"] == 1
+    assert reply["n"] == 3
+
+    # Two identical delete specs: the first one removes the rows, the second one finds none.
+    reply = database.command(
+        {
+            "delete": "bulk_write_counts",
+            "deletes": [
+                {"q": {"k": 2}, "limit": 0},
+                {"q": {"k": 2}, "limit": 0},
+            ],
+        }
+    )
+    assert reply["ok"] == 1
+    assert reply["n"] == 3
+    assert collection.count_documents({}) == 3
+
+
+def test_an_existing_table_is_not_rewritten_as_a_placeholder(started_cluster):
+    """`createCollection` leaves behind a placeholder table of a single `json JSON` column that
+    the first insert replaces with a column per field. That column layout is also an ordinary
+    table somebody may have created in ClickHouse directly, so the rewrite is keyed off the
+    marker comment `createCollection` writes, not off the layout: an insert into a table without
+    the marker fails instead of retyping it."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.a_user_table", password="123")
+    node.query(
+        "CREATE TABLE db.a_user_table (json JSON) ENGINE = MergeTree ORDER BY tuple()",
+        password="123",
+    )
+
+    collection = make_client()["db"]["a_user_table"]
+    with pytest.raises(pymongo.errors.OperationFailure):
+        collection.insert_one({"a": 1})
+
+    # The table kept its own schema.
+    assert (
+        node.query(
+            "SELECT name, type FROM system.columns WHERE database = 'db' AND table = 'a_user_table' FORMAT TSV",
+            password="123",
+        ).strip()
+        == "json\tJSON"
+    )
+
+    # A collection the Mongo path did create is still given the schema of the first document.
+    client_database = make_client()["db"]
+    client_database["a_mongo_collection"].drop()
+    client_database.create_collection("a_mongo_collection")
+    client_database["a_mongo_collection"].insert_one({"a": 1})
+    assert (
+        node.query(
+            "SELECT name, type FROM system.columns WHERE database = 'db' AND table = 'a_mongo_collection' FORMAT TSV",
+            password="123",
+        ).strip()
+        == "a\tInt32"
+    )
+
+
 def test_oversized_incoming_document_is_an_error(started_cluster):
     """`maxBsonObjectSize` of the handshake promises the client that a document of more than
     16 MiB is refused. A message may hold several documents and may be much larger than one of

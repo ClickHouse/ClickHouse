@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Common/SettingsChanges.h>
 #include <Interpreters/Session.h>
 #include <base/types.h>
 
@@ -158,7 +159,12 @@ class QueryExecutor
 public:
     explicit QueryExecutor(std::unique_ptr<Session> & session_, const Poco::Net::SocketAddress & address_);
 
-    String execute(const String & query);
+    /** Runs `query` in a fresh query context of this session and returns its output.
+      * `extra_settings` are applied on top of the settings the reply encoding requires, e.g. a
+      * write command submits its mutation with `mutations_sync` so that the next statement of
+      * the same command observes it.
+      */
+    String execute(const String & query, const SettingsChanges & extra_settings = {});
 
     void authenticate(const String & username, const String & password);
 

@@ -34,10 +34,12 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     /// silently widened into deleteMany.
     /// Every spec is translated first, and only then executed: a malformed filter has to be an
     /// error whether the collection exists or not.
-    /// A ClickHouse mutation is asynchronous and says nothing about the rows it will remove, so
-    /// the documents a spec matches are counted with the very same filter, translated as a `find`,
-    /// before the mutation is submitted. Without it the reply would claim that a successful
-    /// `deleteMany` removed nothing.
+    /// A ClickHouse mutation says nothing about the rows it will remove, so the documents a spec
+    /// matches are counted with the very same filter, translated as a `find`, before the mutation
+    /// is submitted. Without it the reply would claim that a successful `deleteMany` removed
+    /// nothing. Mongo applies the specs one after another, so each mutation is awaited (see
+    /// `getMutationSettings`) before the next spec is counted; otherwise two overlapping specs
+    /// would both count the same rows and the reply would over-report the deletion.
     auto translate = [&](const String & mongo_dialect_query)
     {
         auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
@@ -96,7 +98,7 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
         for (size_t i = 0; i < sql_queries.size(); ++i)
         {
             deleted += countMatchedRows(select_queries[i], executor);
-            executor->execute(sql_queries[i]);
+            executor->execute(sql_queries[i], getMutationSettings());
         }
     }
 

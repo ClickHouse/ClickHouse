@@ -255,14 +255,22 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
 /** Tells whether the collection is the placeholder table that `createCollection` leaves behind: a
   * single `JSON` column named `json`, because an explicitly created collection has no document to
   * infer a schema from. The first `insert` gives it the schema of the inserted document.
+  *
+  * That column layout is also a perfectly ordinary table a user may have created directly in
+  * ClickHouse, so the layout alone does not authorize the rewrite: the table must additionally
+  * carry the comment `createCollection` puts on the placeholder. A table without that marker is
+  * used as it is, and an inserted document that does not fit it fails on the `INSERT` itself
+  * rather than having its columns silently retyped.
   */
 bool isPlaceholderCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
 {
     auto answer = executor->execute(fmt::format(
-        "SELECT count() = 1 AND countIf(name = 'json' AND type = 'JSON') = 1 FROM system.columns "
-        "WHERE database = {} AND table = {} FORMAT TSV",
+        "SELECT (SELECT count() = 1 AND countIf(name = 'json' AND type = 'JSON') = 1 FROM system.columns "
+        "WHERE database = {0} AND table = {1}) "
+        "AND (SELECT countIf(comment = {2}) = 1 FROM system.tables WHERE database = {0} AND name = {1}) FORMAT TSV",
         quoteString(collection.database),
-        quoteString(collection.collection)));
+        quoteString(collection.collection),
+        quoteString(PLACEHOLDER_COLLECTION_COMMENT)));
     return answer.starts_with('1');
 }
 

@@ -120,8 +120,12 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     {
         for (size_t i = 0; i < alter_queries.size(); ++i)
         {
+            /// Mongo applies the specs one after another, so each mutation is awaited (see
+            /// `getMutationSettings`) before the next spec is counted: otherwise a spec whose
+            /// predicate an earlier one has already changed would still be counted against the
+            /// pre-mutation rows and the reply would over-report the matches.
             matched += countMatchedRows(select_queries[i], executor);
-            executor->execute(alter_queries[i]);
+            executor->execute(alter_queries[i], getMutationSettings());
         }
     }
 

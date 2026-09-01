@@ -777,6 +777,17 @@ Int64 countMatchedRows(const String & select_query, std::shared_ptr<QueryExecuto
     return std::stoll(output);
 }
 
+SettingsChanges getMutationSettings()
+{
+    SettingsChanges changes;
+    /// Waiting on this server is enough: the count of the next spec is taken by this same
+    /// connection, i.e. on this server.
+    changes.setSetting("mutations_sync", Field(UInt64(1)));
+    return changes;
+}
+
+const char * const PLACEHOLDER_COLLECTION_COMMENT = "Mongo collection created by `createCollection`, awaiting the schema of the first inserted document";
+
 Header makeResponseHeader(Header request_header, Int32 message_size, Int32 response_id)
 {
     Header result;

@@ -37,8 +37,13 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
     /// field of the inserted document, which is what a collection created implicitly by an
     /// `insert` gets right away. No `IF NOT EXISTS`: a collection created concurrently between
     /// the probe above and this statement must surface as an error, not as a false success.
+    /// The comment marks the table as that placeholder: the shape of its columns alone is also
+    /// the shape of an ordinary table a user may have created, and the rewrite of the first
+    /// `insert` must not retype somebody else's table (see `isPlaceholderCollection`).
     executor->execute(fmt::format(
-        "CREATE TABLE {} (json JSON) ENGINE = MergeTree ORDER BY tuple()", collection.getQualifiedName()));
+        "CREATE TABLE {} (json JSON) ENGINE = MergeTree ORDER BY tuple() COMMENT {}",
+        collection.getQualifiedName(),
+        quoteString(PLACEHOLDER_COLLECTION_COMMENT)));
 
     bson_t * bson_doc = bson_new();
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);

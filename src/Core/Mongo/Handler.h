@@ -89,6 +89,17 @@ bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object
   */
 Int64 countMatchedRows(const String & select_query, std::shared_ptr<QueryExecutor> executor);
 
+/** The settings a write command submits its mutation with. A `delete` or an `update` carries a
+  * list of specs that Mongo applies one after another, and the reply counts what each of them
+  * matched, so a spec has to observe what the previous ones did. An `ALTER TABLE ... DELETE` is
+  * asynchronous by default, which would let two overlapping specs count the same rows twice, so
+  * every mutation is awaited before the next spec is counted.
+  */
+SettingsChanges getMutationSettings();
+
+/// The comment `createCollection` puts on the placeholder table it creates, see `Create.cpp`.
+extern const char * const PLACEHOLDER_COLLECTION_COMMENT;
+
 struct IHandler
 {
     virtual std::vector<String> getIdentifiers() const = 0;

@@ -80,7 +80,7 @@ QueryExecutor::QueryExecutor(std::unique_ptr<Session> & session_, const Poco::Ne
 {
 }
 
-String QueryExecutor::execute(const String & query)
+String QueryExecutor::execute(const String & query, const SettingsChanges & extra_settings)
 {
     auto query_context = session->makeQueryContext();
     auto secret_key = dis(gen);
@@ -110,6 +110,9 @@ String QueryExecutor::execute(const String & query)
     /// The dates of the result are parsed back into BSON dates, so they must be formatted the
     /// way the parsing expects rather than the way the user's profile asks.
     query_context->setSetting("date_time_output_format", String("simple"));
+
+    for (const auto & change : extra_settings)
+        query_context->setSetting(change.name, change.value);
 
     auto query_scope = QueryScope::create(query_context);
     ReadBufferFromString read_buf(query);
