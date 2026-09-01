@@ -273,7 +273,7 @@ public:
 
         size_t sampled_len = 0;
         readBinaryLittleEndian(sampled_len, buf);
-        /// The constant is arbitrary (matches windowFunnel).
+        /// The constant is arbitrary (matches `windowFunnel`).
         if (sampled_len > 100'000'000)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large array size ({}) in quantileGK deserialization", sampled_len);

@@ -119,7 +119,7 @@ struct AggregateFunctionSequenceMatchData final
         size_t size = 0;
         readBinary(size, buf);
 
-        /// The constant is arbitrary (mirrors windowFunnel).
+        /// The constant is arbitrary (mirrors `windowFunnel`).
         if (size > 100'000'000)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large size ({}) of the state of sequenceMatch/sequenceCount", size);

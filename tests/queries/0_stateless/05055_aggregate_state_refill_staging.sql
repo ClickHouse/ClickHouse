@@ -39,3 +39,22 @@ SELECT (SELECT groupUniqArrayState(s) FROM (SELECT repeat('z', 1000000) AS s));
 SELECT sum(length(x)) FROM (SELECT arrayJoin(groupUniqArrayMerge(gua)) AS x FROM t_deserialize_allocation_bomb_chunks) SETTINGS max_memory_usage = 8000000, use_uncompressed_cache = 0;
 
 DROP TABLE t_deserialize_allocation_bomb_chunks;
+
+-- Both limbs of a statistics state arrive one element at a time here: at 4-byte blocks
+-- `available()` is below `sizeof(Float64)`, so every element spans a refill and the sample grows
+-- once per element. A fully buffered blob reads all of it in a single batch instead.
+DROP TABLE IF EXISTS t_deserialize_allocation_bomb_stat;
+CREATE TABLE t_deserialize_allocation_bomb_stat
+(
+    mw AggregateFunction(mannWhitneyUTest, Float64, UInt8)
+)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0,
+    min_compress_block_size = 4, max_compress_block_size = 4;
+
+INSERT INTO t_deserialize_allocation_bomb_stat
+SELECT mannWhitneyUTestState(number::Float64, (number % 2)::UInt8) FROM numbers(100);
+
+SELECT mannWhitneyUTestMerge(mw) FROM t_deserialize_allocation_bomb_stat;
+
+DROP TABLE t_deserialize_allocation_bomb_stat;

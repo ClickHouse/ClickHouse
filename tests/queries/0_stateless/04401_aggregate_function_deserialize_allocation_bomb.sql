@@ -66,6 +66,9 @@ SELECT finalizeAggregation(CAST(unhex('01080000008000000000'), 'AggregateFunctio
 -- serialize() walks a map, so a repeated key cannot come from a writer. Each repetition used to
 -- allocate a nested state that emplace then dropped.
 SELECT finalizeAggregation(CAST(unhex('020161000000000000000001610000000000000000'), 'AggregateFunction(sumMap, Map(String, UInt64))')); -- { serverError INCORRECT_DATA }
+-- The nested function below holds a plain hash set, so its `create` takes heap and the rejection
+-- path is the one that has to give it back.
+SELECT finalizeAggregation(CAST(unhex('020161010301000000000000000300000000000000020000000000000001610103010000000000000003000000000000000200000000000000'), 'AggregateFunction(groupArrayIntersectMap, Map(String, Array(UInt64)))')); -- { serverError INCORRECT_DATA }
 
 -- The caps added earlier still admit their own value, so the four reserves behind them are here too.
 SELECT finalizeAggregation(CAST(unhex('00FFC1D72F'), 'AggregateFunction(groupArrayIntersect, Array(UInt64))')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }

@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 struct Settings;
 
-/// The constant is arbitrary (matches windowFunnel).
+/// The constant is arbitrary (matches `windowFunnel`).
 static constexpr size_t MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE = 100'000'000;
 
 
