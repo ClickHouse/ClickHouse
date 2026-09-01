@@ -81,15 +81,7 @@ SELECT * FROM prometheusQuery(ts_remote_tf, 'm', 140); -- { serverError UNEXPECT
 CREATE TABLE ts_nested AS ts_all ENGINE = Distributed(test_shard_localhost, currentDatabase(), ts_dist);
 SELECT * FROM prometheusQuery(ts_nested, 'm', 140); -- { serverError UNEXPECTED_TABLE_ENGINE }
 
-SELECT '--- wrapper-level guards: row policies and declared Distributed settings ---';
--- An always-true policy restricts nothing, so the rewrite preserves behavior exactly: must pass.
-CREATE ROW POLICY p_05055_true ON ts_dist USING 1 TO ALL;
-SELECT count() > 0 FROM prometheusQuery(ts_dist, 'm', 140);
-DROP ROW POLICY p_05055_true ON ts_dist;
--- A real filter cannot be applied faithfully by the rewritten per-shard query: fail closed.
-CREATE ROW POLICY p_05055_real ON ts_dist USING metric_name = 'm' TO ALL;
-SELECT * FROM prometheusQuery(ts_dist, 'm', 140); -- { serverError NOT_IMPLEMENTED }
-DROP ROW POLICY p_05055_real ON ts_dist;
+SELECT '--- declared Distributed settings the generated read has to carry ---';
 -- Declaring the default explicitly changes nothing about the read: must pass.
 CREATE TABLE ts_skip_default AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 0;
 SELECT count() > 0 FROM prometheusQuery(ts_skip_default, 'm', 140);
@@ -98,7 +90,7 @@ DROP TABLE ts_skip_default;
 -- a plain SELECT through the wrapper: must pass.
 CREATE TABLE ts_skip_on AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 1;
 SELECT count() > 0 FROM prometheusQuery(ts_skip_on, 'm', 140);
--- A selector-free query never reads the wrapper, so wrapper-only settings must not refuse it.
+-- A selector-free query never reads the wrapper at all.
 SELECT count() FROM prometheusQuery(ts_skip_on, '1 + 2', 140);
 -- An explicit query setting overrides the declaration on the normal path and reaches the generated
 -- cluster() call too, so with it the reads match exactly: must pass.
@@ -109,19 +101,22 @@ DROP TABLE ts_skip_on;
 CREATE TABLE ts_mode_only AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards_mode = 'unavailable';
 SELECT count() > 0 FROM prometheusQuery(ts_mode_only, 'm', 140);
 DROP TABLE ts_mode_only;
--- A filter aimed at the source table fails closed on the local path too: the selector rewrite
--- would silently drop it.
-SELECT count() FROM prometheusQuery(ts_all, 'm', 140) SETTINGS additional_table_filters = {'ts_all': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
--- A short filter key from another current database does not match, exactly as the planner
--- matches keys: must pass.
-SELECT count() > 0 FROM prometheusQuery(shard_0.ts_local, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''};
--- A filter aimed at the wrapper cannot be remapped into the generated read: fail closed.
-SELECT * FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
--- A filter keyed by the shard-local table name would bind on every shard's plain path but has no
--- table inside the selector rewrite: fail closed at the initiator, not with a shard error.
-SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
--- The qualified spelling can match on whichever shard defaults to that database: same refusal.
-SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'shard_0.ts_local': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
+
+SELECT '--- row policies and additional_table_filters: distributed answers as the local table does ---';
+-- PromQL reads a TimeSeries table through its selector, which does not apply a row policy or an
+-- additional_table_filters entry attached to the table itself - that is how a single-node
+-- TimeSeries table already behaves. The distributed path inherits it, so both answers are the
+-- unfiltered ones and stay equal to each other.
+CREATE ROW POLICY p_05055_dist ON ts_dist USING metric_name = 'nothing_matches' TO ALL;
+CREATE ROW POLICY p_05055_all ON ts_all USING metric_name = 'nothing_matches' TO ALL;
+SELECT (SELECT count() FROM prometheusQuery(ts_dist, 'm', 140)) = (SELECT count() FROM prometheusQuery(ts_all, 'm', 140));
+DROP ROW POLICY p_05055_dist ON ts_dist;
+DROP ROW POLICY p_05055_all ON ts_all;
+-- Four series of `m`, whichever name the filter is keyed by, restrictive or trivially true.
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': 'metric_name != \'m\''};
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''};
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': '1'};
+SELECT count() FROM prometheusQuery(ts_all, 'm', 140) SETTINGS additional_table_filters = {'ts_all': 'metric_name != \'m\''};
 
 SELECT '--- the TimeSeries table functions still need a real TimeSeries table ---';
 SELECT count() FROM timeSeriesData(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
