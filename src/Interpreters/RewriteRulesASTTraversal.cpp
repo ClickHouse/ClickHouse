@@ -356,9 +356,14 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                         }
                         matching_map.emplace(query_parameter->name, std::move(cloned_ast));
                     };
+                    /// `{x:Int}` is documented as matching an integer literal, so it must accept
+                    /// only true integer `Field` kinds. In particular it must NOT accept a decimal:
+                    /// a typed query parameter such as `SELECT {p:Decimal32(2)}` with `param_p =
+                    /// '1.25'` is substituted into an `ASTLiteral(DecimalField<...>)` (wrapped in a
+                    /// `_CAST` that the matcher unwraps above), and capturing it here would let a
+                    /// `REJECT` / `REWRITE` rule written for integers fire on a non-integer value.
                     if (auto* literal = match_node->as<ASTLiteral>();
                         literal && ((query_parameter_type == "String" && literal->value.getType() == Field::Types::Which::String)
-                        || (query_parameter_type == "Int" && Field::isDecimal(literal->value.getType()))
                         || (query_parameter_type == "Int" && literal->value.getType() == Field::Types::Which::UInt128)
                         || (query_parameter_type == "Int" && literal->value.getType() == Field::Types::Which::UInt256)
                         || (query_parameter_type == "Int" && literal->value.getType() == Field::Types::Which::UInt64)
