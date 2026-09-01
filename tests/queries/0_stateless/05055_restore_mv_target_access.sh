@@ -15,6 +15,9 @@ bk_forged="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_forged')"
 bk_own="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_own')"
 bk_inner="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inner')"
 bk_ts="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_ts')"
+bk_ext="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_ext')"
+db_ext="${CLICKHOUSE_DATABASE}_ext"
+db_restored="${CLICKHOUSE_DATABASE}_restored"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $user"
 ${CLICKHOUSE_CLIENT} --multiquery -q "
@@ -24,6 +27,11 @@ DROP TABLE IF EXISTS $db.src;
 DROP TABLE IF EXISTS $db.own;
 DROP TABLE IF EXISTS $db.dst;
 DROP TABLE IF EXISTS $db.metrics;
+DROP DATABASE IF EXISTS $db_ext;
+DROP DATABASE IF EXISTS $db_restored;
+-- Its tables are resolved per file on demand and it iterates as empty, so a backup of it holds
+-- only what the query renames into it, whatever the shared user_files directory contains.
+CREATE DATABASE $db_ext ENGINE = Filesystem;
 CREATE TABLE $db.src (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE $db.own (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE $db.dst (k UInt64) ENGINE = MergeTree ORDER BY k;
@@ -46,6 +54,7 @@ GRANT TABLE ENGINE ON MergeTree TO $user;
 -- Same for the TimeSeries arm: creating that table locally needs the engines and a temporary table.
 GRANT TABLE ENGINE ON TimeSeries, TABLE ENGINE ON AggregatingMergeTree TO $user;
 GRANT CREATE ARBITRARY TEMPORARY TABLE ON *.* TO $user;
+GRANT CREATE DATABASE, CREATE TABLE, CREATE VIEW ON $db_restored.* TO $user;
 "
 
 deny_or_allow() {
@@ -105,4 +114,22 @@ ${CLICKHOUSE_CLIENT} --user "$user" -q \
     "RESTORE TEMPORARY TABLE ts AS ts2 FROM $bk_ts SETTINGS structure_only = 1 FORMAT Null" 2>&1 \
     | grep -c -m1 'INSERT ON '"$db"'\.dst'
 
+# A database with an external engine is skipped whole, so nothing under it is created and a view
+# there can write nowhere. The same backup with the setting off does restore it, and does require
+# the target, which is what keeps this pair from passing on an empty backup.
+echo "-- a view under a database the restore skips does not require its target"
+${CLICKHOUSE_CLIENT} -q "BACKUP DATABASE $db_ext, TABLE $db.mv_own AS $db_ext.mv, TABLE $db.own AS $db.dst
+    TO $bk_ext SETTINGS structure_only = 1 FORMAT Null"
+deny_or_allow "RESTORE DATABASE $db_ext AS $db_restored FROM $bk_ext
+    SETTINGS restore_replace_external_engines_to_null = 1, structure_only = 1 FORMAT Null"
+echo "-- nothing was created, so the grant it used to demand was never needed"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '$db_restored'"
+echo "-- with the setting off the same backup is restored, and then it does require the target"
+deny_or_allow "RESTORE DATABASE $db_ext AS $db_restored FROM $bk_ext SETTINGS structure_only = 1 FORMAT Null"
+echo "-- and the setting does not lift the check for a database that is not skipped"
+deny_or_allow "RESTORE TABLE $db.mv_own AS $db.mv_forged3 FROM $bk_forged
+    SETTINGS restore_replace_external_engines_to_null = 1 FORMAT Null"
+
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS $db_restored"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS $db_ext"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $user"

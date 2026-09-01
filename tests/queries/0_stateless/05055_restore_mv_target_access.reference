@@ -24,3 +24,11 @@ forged
 denied
 -- and that denial names the forged target too
 1
+-- a view under a database the restore skips does not require its target
+allowed
+-- nothing was created, so the grant it used to demand was never needed
+0
+-- with the setting off the same backup is restored, and then it does require the target
+denied
+-- and the setting does not lift the check for a database that is not skipped
+denied
