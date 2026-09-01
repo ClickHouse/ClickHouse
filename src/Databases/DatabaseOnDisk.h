@@ -92,9 +92,12 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
-    /// Throws `TOO_MANY_TABLES` if adding one more table would exceed the `max_tables` limit.
-    void checkTablesLimit() const;
-    void checkTablesLimitUnlocked() const TSA_REQUIRES(mutex);
+    /// Throws `TOO_MANY_TABLES` if adding `tables_to_add` more tables would exceed the
+    /// `max_tables` limit. More than one slot is needed for the engines that create hidden inner
+    /// tables (`MaterializedView`, `TimeSeries`): all of them must be accounted for at once,
+    /// otherwise the inner tables are created and the outer object is then rejected.
+    void checkTablesLimit(size_t tables_to_add = 1) const;
+    void checkTablesLimitUnlocked(size_t tables_to_add = 1) const TSA_REQUIRES(mutex);
 
     /// Supports `ALTER DATABASE ... MODIFY SETTING max_tables = ...` for Atomic and Ordinary
     /// databases. Other engines derived from this class reject the query.
