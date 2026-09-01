@@ -303,11 +303,8 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
 {
     /// Grant before existence: a probe without the right must not learn whether the name exists.
     context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
-    /// A Distributed target is written through its own sink, exactly like any other INSERT into a
-    /// Distributed table: its settings, sharding key and acknowledgement semantics are the caller's
-    /// to choose, and the endpoint does not override them. What it does check is that the shards
-    /// really hold TimeSeries tables, since the sink would otherwise accept rows no read surface
-    /// can return - the one thing an ordinary INSERT has no reason to catch.
+    /// Written through the wrapper's own sink on the caller's settings, like any other INSERT.
+    /// Only the shard engines are checked: the sink would accept rows no read surface can return.
     checkPrometheusQueryDistributedWrite(*time_series_storage, context_);
 }
 

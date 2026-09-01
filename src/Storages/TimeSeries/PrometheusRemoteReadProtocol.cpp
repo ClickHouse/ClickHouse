@@ -212,10 +212,8 @@ namespace
         }
     }
 
-    /// The query built above groups by the node-local counter of timeSeriesIdToGroup(), which each shard of a
-    /// Distributed table would restart on its own, silently merging unrelated series into one group.
-    /// The SELECT check comes first: the engine-specific refusal below must not tell a caller
-    /// without access what kind of table hides behind the name.
+    /// Each shard restarts timeSeriesIdToGroup()'s node-local counter, merging unrelated series.
+    /// SELECT first, so the engine refusal cannot describe a table the caller may not see.
     ConstStoragePtr checkTargetIsNotDistributed(ConstStoragePtr storage, const ContextPtr & context)
     {
         context->checkAccess(AccessType::SELECT, storage->getStorageID());

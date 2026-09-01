@@ -25,22 +25,12 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
 /// True when the parsed PromQL contains a selector, i.e. would actually read the table.
 bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 
-/// Enforces the wrapper's SELECT grant, which its rewrite would otherwise bypass.
-/// Call before reading through a resolved distributed target.
-///
-/// This is the only decoration the rewrite has to reproduce by hand. A PromQL leaf carries no
-/// WHERE/PREWHERE/FINAL/SAMPLE/LIMIT/ORDER BY, so of everything PlannerJoinTree attaches to a
-/// TableNode only three items are table-scoped: the SELECT grant (checkAccessRights), the row
-/// policy - which for a remote storage the planner refuses rather than applies - and
-/// additional_table_filters, which ClusterProxy forwards to the shards itself. Table functions are
-/// exempt from the planner's grant check by design, hence this call. If PlannerJoinTree ever grows
-/// a fourth decoration keyed on the storage id rather than on a query clause, revisit this.
+/// The wrapper's SELECT grant, the one table-scoped decoration the rewrite must redo by hand:
+/// table functions are exempt from the planner's check. Revisit if PlannerJoinTree gains another.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
-/// Refuses a Distributed target whose shard-local tables are not TimeSeries, which an INSERT would
-/// otherwise accept: the rows would land in tables every prometheus read surface rejects. The
-/// verdict is cached per cluster and table, keyed on the fleet itself so a configuration reload
-/// re-probes rather than trusting a stale answer. Call after the caller's INSERT check.
+/// Refuses shard-local tables that are not TimeSeries, which an INSERT would otherwise accept.
+/// Cached per cluster and table, keyed on the fleet so a reload re-probes. Call after the grant.
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
 
 /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
