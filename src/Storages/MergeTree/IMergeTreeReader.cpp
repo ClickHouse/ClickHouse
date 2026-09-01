@@ -242,7 +242,8 @@ ColumnsDescription IMergeTreeReader::buildCombinedColumnsForDefaultExpressions()
     return combined_columns;
 }
 
-void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const
+void IMergeTreeReader::evaluateMissingDefaults(
+    Block additional_columns, Columns & res_columns, NameSet * columns_evaluated_from_defaults) const
 {
     try
     {
@@ -257,10 +258,17 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
         /// Columns that are materialized rather than computed from a default expression: the ones
         /// produced by earlier steps and the ones read from the part below. Only they can be used
-        /// as a source of the current shared `Nested` offsets.
+        /// as a source of the current shared `Nested` offsets. A column that an earlier step itself
+        /// evaluated from a `DEFAULT` describes the offsets as they were at that step, so it is not
+        /// a valid source and is skipped here.
         NameSet materialized_columns;
         for (const auto & elem : additional_columns)
-            materialized_columns.insert(elem.name);
+            if (!columns_evaluated_from_defaults || !columns_evaluated_from_defaults->contains(elem.name))
+                materialized_columns.insert(elem.name);
+
+        /// Columns read from the part by this very step. They already went through the patches and
+        /// on-fly mutations of the preceding steps, so they take precedence as an offsets source.
+        NameSet current_step_columns;
 
         /// Convert columns list to block. And convert subcolumns to full columns.
         /// Defaults should be executed on full columns to get correct values for subcolumns.
@@ -282,6 +290,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
                 additional_columns.insert({res_columns[pos], it->type, it->name});
                 materialized_columns.insert(it->name);
+                current_step_columns.insert(it->name);
             }
             else
             {
@@ -330,17 +339,23 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                     if (offsets_it != shared_offsets_of_missing_defaults.end() && !offsets_it->second.empty())
                     {
                         auto offsets = refreshSharedOffsetsFromSibling(
-                            it->name, offsets_it->second, additional_columns, materialized_columns, column->size());
+                            it->name, offsets_it->second, additional_columns, materialized_columns, current_step_columns, column->size());
                         if (!offsets.empty() && offsets.front()->size() == column->size())
                             column = reconcileEvaluatedDefaultWithSharedOffsets(column, it->type, offsets);
                     }
                 }
+
+                if (was_missing[pos] && columns_evaluated_from_defaults)
+                    columns_evaluated_from_defaults->insert(it->name);
 
                 res_columns[pos] = std::move(column);
                 continue;
             }
 
             auto name_in_storage = it->getNameInStorage();
+
+            if (was_missing[pos] && columns_evaluated_from_defaults)
+                columns_evaluated_from_defaults->insert(it->name);
 
             if (it->isSubcolumn())
             {
@@ -372,6 +387,7 @@ Columns IMergeTreeReader::refreshSharedOffsetsFromSibling(
     const Columns & cached_offsets,
     const Block & block,
     const NameSet & materialized_columns,
+    const NameSet & current_step_columns,
     size_t num_rows) const
 {
     if (cached_offsets.empty() || !(*storage_settings)[MergeTreeSetting::share_nested_offsets])
@@ -390,24 +406,34 @@ Columns IMergeTreeReader::refreshSharedOffsetsFromSibling(
     /// mutations applied between that call and this one can change the array sizes of the whole
     /// `Nested` structure, so a sibling subcolumn present in the block is the current truth for the
     /// shared level.
-    ColumnPtr current_offsets;
-    for (const auto & elem : block)
+    /// A sibling read by the current step reflects every patch and on-fly mutation applied so far,
+    /// while one carried over from an earlier step may predate the ones applied in between. Look for
+    /// a current-step sibling first and only then fall back to the columns of the earlier steps.
+    auto find_sibling_offsets = [&](const NameSet & candidates) -> ColumnPtr
     {
-        if (elem.name == column_name || !elem.column || !materialized_columns.contains(elem.name))
-            continue;
+        for (const auto & elem : block)
+        {
+            if (elem.name == column_name || !elem.column || !candidates.contains(elem.name))
+                continue;
 
-        auto sibling = Nested::splitName(elem.name);
-        if (sibling.second.empty() || sibling.first != split.first)
-            continue;
+            auto sibling = Nested::splitName(elem.name);
+            if (sibling.second.empty() || sibling.first != split.first)
+                continue;
 
-        auto full_column = elem.column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
-        const auto * array = typeid_cast<const ColumnArray *>(full_column.get());
-        if (!array || array->size() != num_rows)
-            continue;
+            auto full_column = elem.column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+            const auto * array = typeid_cast<const ColumnArray *>(full_column.get());
+            if (!array || array->size() != num_rows)
+                continue;
 
-        current_offsets = array->getOffsetsPtr();
-        break;
-    }
+            return array->getOffsetsPtr();
+        }
+
+        return nullptr;
+    };
+
+    ColumnPtr current_offsets = find_sibling_offsets(current_step_columns);
+    if (!current_offsets)
+        current_offsets = find_sibling_offsets(materialized_columns);
 
     if (!current_offsets)
         return cached_offsets;
