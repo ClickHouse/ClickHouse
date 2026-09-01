@@ -195,8 +195,9 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
         return 1;
     }
 
-    /// Read metadata from end of file
-    MetaData metadata = *reinterpret_cast<MetaData*>(input + info_in.st_size - sizeof(MetaData));
+    /// Read metadata from end of file (memcpy because the data may be unaligned)
+    MetaData metadata;
+    memcpy(&metadata, input + info_in.st_size - sizeof(MetaData), sizeof(MetaData));
 
     /// Prepare to read information about files and decompress them
     off_t files_pointer = le64toh(metadata.start_of_files_data);
@@ -206,7 +207,8 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
     off_t check_pointer = le64toh(metadata.start_of_files_data);
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
     {
-        FileData data = *reinterpret_cast<FileData*>(input + check_pointer);
+        FileData data;
+        memcpy(&data, input + check_pointer, sizeof(FileData));
         decompressed_full_size += le64toh(data.uncompressed_size);
         check_pointer += sizeof(FileData) + le64toh(data.name_length);
     }
@@ -234,7 +236,7 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
     {
         /// Read information about file
-        file_info = *reinterpret_cast<FileData*>(input + files_pointer);
+        memcpy(&file_info, input + files_pointer, sizeof(FileData));
         files_pointer += sizeof(FileData);
 
         /// for output filename matching compressed allow additional 13 + 7 symbols for ".decompressed.XXXXXX" suffix
