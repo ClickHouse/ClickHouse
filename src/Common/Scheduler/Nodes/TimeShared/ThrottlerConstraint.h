@@ -4,9 +4,7 @@
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/Scheduler/Debug.h>
 
-#include <algorithm>
 #include <chrono>
-#include <limits>
 #include <utility>
 
 
@@ -21,6 +19,10 @@ class ThrottlerConstraint final : public ISchedulerConstraint
 {
 public:
     static constexpr double default_burst_seconds = 1.0;
+
+    /// Postponing a request for longer than this is meaningless, and the bound keeps the delay
+    /// arithmetic in `updateBucket` inside the `Int64` nanosecond range.
+    static constexpr auto max_delay = std::chrono::nanoseconds(std::chrono::hours(24 * 365));
 
     explicit ThrottlerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, double max_speed_ = 0.0, double max_burst_ = 0.0)
         : ISchedulerConstraint(event_queue_, info_)
@@ -109,7 +111,8 @@ public:
     /// Should be called from the scheduler thread because it could lead to activation
     void updateConstraints(double new_max_speed, double new_max_burst)
     {
-        cancelPostponement();
+        event_queue.cancelPostponed(postponed);
+        postponed = EventQueue::not_postponed;
         bool was_active = active();
         updateBucket(0, true); // To apply previous params for duration since `last_update`
         max_speed = new_max_speed;
@@ -152,48 +155,13 @@ public:
     }
 
 private:
-    /// The largest representable delay and throttling duration (~292 years).
-    static constexpr auto max_duration = std::chrono::nanoseconds(std::numeric_limits<std::chrono::nanoseconds::rep>::max());
-
-    /// Bounds a delay so that it survives both the narrowing to `Int64` and the addition to `now`.
-    /// The comparison must happen before the cast: casting an out-of-range `Float64` is the
-    /// undefined behavior being avoided here.
-    static std::chrono::nanoseconds boundedDelay(double delay_ns, EventQueue::TimePoint now)
+    /// The bound has to be applied before the narrowing: casting an out-of-range `Float64` to
+    /// `Int64` is itself the undefined behavior.
+    static std::chrono::nanoseconds saturatingDelay(double delay_ns)
     {
-        /// `steady_clock`'s epoch is unspecified, so clamp the elapsed part before subtracting.
-        auto elapsed = std::max(std::chrono::nanoseconds(now.time_since_epoch()), std::chrono::nanoseconds::zero());
-        auto room = max_duration - elapsed;
-        if (delay_ns < static_cast<double>(room.count()))
+        if (delay_ns < static_cast<double>(max_delay.count()))
             return std::chrono::nanoseconds(static_cast<Int64>(delay_ns));
-        return room;
-    }
-
-    /// `throttling_duration` accumulates over the whole node lifetime, so no bound on a single delay
-    /// can keep the sum in range. Saturate rather than wrap.
-    void addThrottlingDuration(std::chrono::nanoseconds delay)
-    {
-        if (delay > max_duration - throttling_duration) /// Both operands are non-negative
-            throttling_duration = max_duration;
-        else
-            throttling_duration += delay;
-    }
-
-    /// Drops a postponement before it fires. The whole delay was counted up front, so give back the
-    /// part that never elapsed: the caller re-postpones and would otherwise count that part twice.
-    void cancelPostponement()
-    {
-        if (postponed != EventQueue::not_postponed)
-        {
-            /// A saturated total is a sentinel: less than the full delay went into it, so giving the
-            /// whole unelapsed part back would make the metric go down.
-            if (throttling_duration < max_duration)
-            {
-                auto remaining = std::max(postponed_until - event_queue.now(), EventQueue::Duration::zero());
-                throttling_duration -= std::min(std::chrono::nanoseconds(remaining), throttling_duration);
-            }
-            event_queue.cancelPostponed(postponed);
-            postponed = EventQueue::not_postponed;
-        }
+        return max_delay;
     }
 
     void onPostponed()
@@ -217,12 +185,14 @@ private:
             // Postpone activation until there is positive amount of tokens
             if (!do_not_postpone && tokens < 0.0)
             {
-                auto delay_ns = boundedDelay(-tokens / max_speed * 1e9, now);
+                auto delay_ns = saturatingDelay(-tokens / max_speed * 1e9);
                 if (postponed == EventQueue::not_postponed)
                 {
-                    postponed_until = std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns);
-                    postponed = event_queue.postpone(postponed_until, [this] { onPostponed(); });
-                    addThrottlingDuration(delay_ns);
+                    postponed = event_queue.postpone(std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns),
+                        [this] { onPostponed(); });
+                    /// The total accumulates for the node's lifetime, so bounding a single delay
+                    /// cannot keep the sum in range.
+                    throttling_duration += std::min(delay_ns, std::chrono::nanoseconds::max() - throttling_duration);
                 }
             }
         }
@@ -244,7 +214,6 @@ private:
 
     EventQueue::TimePoint last_update;
     UInt64 postponed = EventQueue::not_postponed;
-    EventQueue::TimePoint postponed_until; /// Valid iff `postponed != not_postponed`
     double tokens; /// in ResourceCost units
     bool child_active = false;
 

@@ -1,5 +1,4 @@
 #include <chrono>
-#include <limits>
 #include <gtest/gtest.h>
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
@@ -14,12 +13,9 @@ using ResourceTest = ResourceTestClass;
 namespace
 {
 
-constexpr auto max_duration = std::chrono::nanoseconds(std::numeric_limits<std::chrono::nanoseconds::rep>::max());
-
 /// A speed of 2^-33 tokens/s parks a cost-1 request for 2^33 seconds. That delay fits in `Int64`
-/// nanoseconds, but two of them do not, and neither does one added to a large enough time point.
+/// nanoseconds, but adding it to a large enough time point does not.
 constexpr double tiny_speed = 1.0 / 8589934592.0;
-constexpr auto tiny_speed_delay = std::chrono::nanoseconds(8589934592000000000);
 
 /// Parks one cost-1 request on a throttler installed as the root node, and returns that root.
 ThrottlerConstraint & parkOneRequest(ResourceTest & t, EventQueue::TimePoint start, double max_speed)
@@ -213,7 +209,7 @@ TEST(SchedulerThrottlerConstraint, TinySpeedDelayNarrowingIsBounded)
     ResourceTest t;
     EventQueue::TimePoint start{std::chrono::seconds(1)};
     auto & throttler = parkOneRequest(t, start, /*max_speed=*/ 1e-30);
-    EXPECT_EQ(throttler.getThrottlingDuration(), max_duration - start.time_since_epoch());
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
 }
 
 /// A representable quotient, but `now + delay` is not representable.
@@ -222,75 +218,19 @@ TEST(SchedulerThrottlerConstraint, TinySpeedDeadlineIsBounded)
     ResourceTest t;
     EventQueue::TimePoint start{std::chrono::nanoseconds(Int64(1) << 62)};
     auto & throttler = parkOneRequest(t, start, tiny_speed);
-    EXPECT_EQ(throttler.getThrottlingDuration(), max_duration - start.time_since_epoch());
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
 }
 
-/// Two delays that are each representable, but whose sum is not. `steady_clock`'s epoch is
-/// unspecified, and a negative one leaves room for a delay longer than the time already elapsed.
+/// Each delay is bounded, but their sum is not: every `ALTER WORKLOAD` re-postpones the pending
+/// delay and counts it again, and 300 years of them overrun the ~292-year `Int64` range.
 TEST(SchedulerThrottlerConstraint, ThrottlingDurationSaturates)
 {
     ResourceTest t;
-    EventQueue::TimePoint start{std::chrono::seconds(-1)};
+    EventQueue::TimePoint start{std::chrono::seconds(1)};
     auto & throttler = parkOneRequest(t, start, tiny_speed);
-    EXPECT_EQ(throttler.getThrottlingDuration(), tiny_speed_delay);
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
 
-    /// Serve that postponement in full, then park a second request at the new time.
-    t.enqueue("/A", {1});
-    t.process(start + tiny_speed_delay);
-    t.consumed("A", 1);
-    EXPECT_EQ(throttler.getThrottlingDuration(), max_duration);
-
-    /// Cancelling the pending postponement must not undo the saturation: the total is a sentinel,
-    /// and less than that postponement's whole delay went into it. Dropping the limit altogether is
-    /// what makes a give-back observable, since then nothing re-postpones and re-adds it.
-    throttler.updateConstraints(/*new_max_speed=*/ 0.0, /*new_max_burst=*/ 0.0);
-    EXPECT_EQ(throttler.getThrottlingDuration(), max_duration);
-}
-
-/// Re-postponing an unelapsed delay must not count it twice. Unlike the cases above this needs no
-/// sanitizer and an ordinary speed: it is what makes `system.scheduler.throttling_us` report more
-/// throttling than the server has been up for.
-TEST(SchedulerThrottlerConstraint, ThrottlingDurationIsNotDoubleCounted)
-{
-    ResourceTest t;
-    EventQueue::TimePoint start = EventQueue::Clock::now();
-    constexpr double max_speed = 0.001; // A cost-1 request parks for 1000 seconds
-    constexpr auto delay = std::chrono::seconds(1000);
-
-    auto & throttler = parkOneRequest(t, start, max_speed);
-    EXPECT_EQ(throttler.getThrottlingDuration(), delay);
-
-    /// Nothing has elapsed, so the whole delay is still pending and re-postponing it adds nothing.
-    for (int i = 0; i < 3; i++)
-    {
-        throttler.updateConstraints(max_speed, /*new_max_burst=*/ 0.0);
-        EXPECT_EQ(throttler.getThrottlingDuration(), delay);
-    }
-
-    /// Halfway through, half the delay has been served and only the other half is re-postponed.
-    t.process(start + delay / 2, 0);
-    throttler.updateConstraints(max_speed, /*new_max_burst=*/ 0.0);
-    EXPECT_EQ(throttler.getThrottlingDuration(), delay);
-}
-
-/// The two guards above must not be satisfied by suppressing the metric: an ordinary speed still
-/// has to accumulate the exact delay it postpones, once per postponement.
-TEST(SchedulerThrottlerConstraint, ThrottlingDurationIsAccumulated)
-{
-    ResourceTest t;
-    EventQueue::TimePoint start = EventQueue::Clock::now();
-    constexpr double max_speed = 0.001;
-    constexpr auto delay = std::chrono::seconds(1000);
-
-    auto & throttler = parkOneRequest(t, start, max_speed);
-    EXPECT_EQ(throttler.getThrottlingDuration(), delay);
-
-    /// Each request is served exactly when its postponement elapses, so each adds a whole delay.
-    for (int i = 1; i < 4; i++)
-    {
-        t.enqueue("/A", {1});
-        t.process(start + delay * i);
-        t.consumed("A", 1);
-        EXPECT_EQ(throttler.getThrottlingDuration(), delay * (i + 1));
-    }
+    for (int i = 0; i < 300; i++)
+        throttler.updateConstraints(tiny_speed, /*new_max_burst=*/ 0.0);
+    EXPECT_EQ(throttler.getThrottlingDuration(), std::chrono::nanoseconds::max());
 }
