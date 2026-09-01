@@ -1,0 +1,45 @@
+---
+title: "Descripción general"
+sidebarTitle: "Descripción general"
+description: "Opciones de configuración de red para ClickPipes."
+slug: "/integrations/clickpipes/networking"
+doc_type: "guide"
+keywords: ["redes de ClickPipes", "redes privadas", "endpoint privado inverso", "AWS PrivateLink", "Google Cloud Private Service Connect", "conectividad privada", "Azure PrivateLink"]
+integration:
+  - support_level: "core"
+  - category: "clickpipes"
+---
+
+En función de la configuración de red de tu fuente de datos de origen, puedes conectar ClickPipes mediante los siguientes métodos:
+
+<div id="ip-allowlisting">
+  ## Lista de direcciones IP permitidas
+</div>
+
+Para las fuentes de datos expuestas a Internet público, puede usar una lista de direcciones IP permitidas para restringir el tráfico a las IP de NAT estáticas desde las que se conecta ClickPipes. Añada las [IP de NAT estáticas](/es/integrations/clickpipes/networking/static-ips) de la región desde la que se conecta ClickPipes a las reglas del firewall o del grupo de seguridad de origen.
+
+<div id="managed-private-endpoints">
+  ## Endpoints privados administrados
+</div>
+
+Para las fuentes de datos que **no** están expuestas a Internet público, puede conectarse mediante endpoints privados administrados. ClickPipes crea un **endpoint privado inverso (RPE)** en su VPC y lo conecta a un servicio de endpoint privado publicado para su fuente de datos, de modo que el tráfico nunca se expone a Internet público.
+
+La compatibilidad con RPE depende del proveedor de Cloud y de la región en la que esté alojada su fuente de datos:
+
+| Proveedor                                                                   | Compatible | Notas                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [AWS PrivateLink](/es/integrations/clickpipes/networking/aws-privatelink)      | Sí         | Para fuentes de datos alojadas en AWS. La conectividad entre regiones puede configurarse mediante un servicio de endpoint de VPC.                                                                                         |
+| [GCP Private Service Connect](/es/integrations/clickpipes/networking/gcp-psc)  | Sí         | Para fuentes de datos alojadas en GCP. La conectividad entre regiones puede configurarse mediante el [acceso global](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). |
+| [Azure Private Link](/es/integrations/clickpipes/networking/azure-privatelink) | No         | Use [tunelización SSH](#ssh-tunneling) para acceder a una fuente de datos privada de Azure.                                                                                                                                    |
+
+<div id="ssh-tunneling">
+  ## Tunelización SSH
+</div>
+
+Para las fuentes de datos que **no** están expuestas a Internet público y **no pueden** usar endpoints privados administrados, puede conectarse mediante un túnel SSH a través de un host bastión. Agregue las [IP de NAT estáticas](/es/integrations/clickpipes/networking/static-ips) correspondientes a la región desde la que se conecta ClickPipes a las reglas del firewall del host bastión de origen.
+
+Debe usar este enfoque cuando:
+
+* La fuente de datos está alojada en Azure.
+* La fuente de datos y ClickPipes están alojados en distintos proveedores de Cloud o regiones, y no existe la opción de conectividad entre regiones mediante [endpoints privados administrados](#managed-private-endpoints).
+* No existe la opción de usar [endpoints privados administrados](#managed-private-endpoints), *por ejemplo,* en implementaciones locales a las que solo se puede acceder mediante un host bastión.

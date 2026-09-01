@@ -1,0 +1,430 @@
+---
+slug: /cloud/managed-postgres/quickstart
+sidebarTitle: '快速入门'
+title: 'ClickHouse Managed Postgres 快速入门'
+description: '体验 NVMe 加持的 Postgres 性能，并通过原生 ClickHouse 集成实现实时分析'
+keywords: ['Managed Postgres', '快速入门', '开始使用', '创建数据库', 'NVMe', '性能', 'clickhousectl', '命令行客户端', '自动化', 'AI 智能体']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
+
+<Visibility for="agents">
+  <QuickstartCLI />
+</Visibility>
+
+<Visibility for="humans">
+  <View title="Cloud UI">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
+
+    ClickHouse Managed Postgres 是企业级 Postgres 服务，以 NVMe 存储为底层支撑，与 EBS 等网络附加存储相比，针对磁盘密集型工作负载可提供高达 10 倍的性能提升。本快速入门分为两个部分：
+
+    * **第 1 部分：** 上手 NVMe Postgres，体验其性能
+    * **第 2 部分：** 通过与 ClickHouse 集成，实现实时分析
+
+    ClickHouse Managed Postgres 目前已在 AWS 的多个区域上线，当前处于 Public Beta 阶段。
+
+    **在本快速入门中，您将：**
+
+    * 创建一个具备 NVMe 加速性能的 ClickHouse Managed Postgres 实例
+    * 加载 100 万条样本事件，直观感受 NVMe 速度
+    * 运行查询，体验低延迟性能
+    * 将数据复制到 ClickHouse 进行实时分析
+    * 使用 `pg_clickhouse` 直接从 Postgres 查询 ClickHouse
+
+    ## Part 1：NVMe Postgres 入门
+
+    ### 创建数据库
+
+    要创建新的 ClickHouse Managed Postgres service，请在 Cloud Console 的服务列表中点击 **New service** 按钮，然后即可选择 Postgres 作为数据库类型。
+
+    <Image img="/images/managed-postgres/create-service.webp" alt="创建 ClickHouse Managed Postgres 服务" size="md" border />
+
+    为您的数据库实例输入名称，然后点击 **Create service**。您将跳转至概览页面。
+
+    <Image img="/images/managed-postgres/overview.webp" alt="ClickHouse Managed Postgres 概览" size="md" border />
+
+    您的 ClickHouse Managed Postgres 实例将在 3 至 5 分钟内完成配置并可投入使用。
+
+    ### 连接到您的数据库
+
+    在左侧边栏中，您将看到一个 [**Connect** 按钮](/zh/products/managed-postgres/connection)。点击该按钮，即可查看您的连接详情以及多种格式的连接字符串。
+
+    <Image img="/images/managed-postgres/connect-modal.webp" alt="ClickHouse Managed Postgres 连接弹窗" size="md" border />
+
+    复制 `psql` 连接字符串并连接到您的数据库。您也可以使用任何兼容 Postgres 的客户端 (如 DBeaver) 或任何应用程序库。
+
+    ### 体验 NVMe 性能
+
+    下面来实际感受一下 NVMe 带来的性能提升。首先，在 psql 中启用计时功能，以测量查询执行时间：
+
+    ```sql
+    \timing
+    ```
+
+    创建两个示例表，分别用于事件和用户：
+
+    ```sql
+    CREATE TABLE events (
+       event_id SERIAL PRIMARY KEY,
+       event_name VARCHAR(255) NOT NULL,
+       event_type VARCHAR(100),
+       event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       event_data JSONB,
+       user_id INT,
+       user_ip INET,
+       is_active BOOLEAN DEFAULT TRUE,
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE users (
+       user_id SERIAL PRIMARY KEY,
+       name VARCHAR(100),
+       country VARCHAR(50),
+       platform VARCHAR(50)
+    );
+    ```
+
+    现在，插入 100 万条事件，看看 NVMe 的速度：
+
+    ```sql
+    INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
+    SELECT
+       'Event ' || gs::text AS event_name,
+       CASE
+           WHEN random() < 0.5 THEN 'click'
+           WHEN random() < 0.75 THEN 'view'
+           WHEN random() < 0.9 THEN 'purchase'
+           WHEN random() < 0.98 THEN 'signup'
+           ELSE 'logout'
+       END AS event_type,
+       NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
+       jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
+       GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
+       ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
+    FROM
+       generate_series(1, 1000000) gs;
+    ```
+
+    ```text
+    INSERT 0 1000000
+    Time: 3596.542 ms (00:03.597)
+    ```
+
+    <Tip>
+      **NVMe 性能**
+
+      在不到 4 秒的时间内插入 100 万行 JSONB 数据。在使用 EBS 等网络附加存储的传统云数据库中，由于网络往返延迟和 IOPS 限流，同样的操作通常要多花 2 到 3 倍的时间。NVMe 存储将存储设备直接与计算资源物理连接，从而消除这些瓶颈。
+
+      性能会因实例规格、当前负载和数据特征而异。
+    </Tip>
+
+    插入 1,000 个用户：
+
+    ```sql
+    INSERT INTO users (name, country, platform)
+    SELECT
+        first_names[first_idx] || ' ' || last_names[last_idx] AS name,
+        CASE
+            WHEN random() < 0.25 THEN 'India'
+            WHEN random() < 0.5 THEN 'USA'
+            WHEN random() < 0.7 THEN 'Germany'
+            WHEN random() < 0.85 THEN 'China'
+            ELSE 'Other'
+        END AS country,
+        CASE
+            WHEN random() < 0.2 THEN 'iOS'
+            WHEN random() < 0.4 THEN 'Android'
+            WHEN random() < 0.6 THEN 'Web'
+            WHEN random() < 0.75 THEN 'Windows'
+            WHEN random() < 0.9 THEN 'MacOS'
+            ELSE 'Linux'
+        END AS platform
+    FROM
+        generate_series(1, 1000) AS seq
+        CROSS JOIN LATERAL (
+            SELECT
+                array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
+                array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
+                1 + (seq % 32) AS first_idx,
+                1 + ((seq / 32)::int % 32) AS last_idx
+        ) AS names;
+    ```
+
+    ### 运行数据查询
+
+    现在我们来运行一些查询，看看采用 NVMe 存储的 Postgres 响应有多快。
+
+    **按类型聚合 100 万条事件：**
+
+    ```sql
+    SELECT event_type, COUNT(*) as count 
+    FROM events 
+    GROUP BY event_type 
+    ORDER BY count DESC;
+    ```
+
+    ```text
+     event_type | count  
+    ------------+--------
+     click      | 499523
+     view       | 375644
+     purchase   | 112473
+     signup     |  12117
+     logout     |    243
+    (5 rows)
+
+    Time: 114.883 ms
+    ```
+
+    **使用 JSONB 过滤器和日期范围进行查询：**
+
+    ```sql
+    SELECT COUNT(*) 
+    FROM events 
+    WHERE event_timestamp > NOW() - INTERVAL '30 days'
+      AND event_data->>'additional_info' LIKE 'info_5%';
+    ```
+
+    ```text
+     count 
+    -------
+      9042
+    (1 row)
+
+    Time: 109.294 ms
+    ```
+
+    **将事件与用户进行关联：**
+
+    ```sql
+    SELECT u.country, COUNT(*) as events, AVG(LENGTH(e.event_data::text))::int as avg_json_size
+    FROM events e
+    JOIN users u ON e.user_id = u.user_id
+    GROUP BY u.country
+    ORDER BY events DESC;
+    ```
+
+    ```text
+     country | events | avg_json_size 
+    ---------+--------+---------------
+     USA     | 383748 |            52
+     India   | 255990 |            52
+     Germany | 223781 |            52
+     China   | 127754 |            52
+     Other   |   8727 |            52
+    (5 rows)
+
+    Time: 224.670 ms
+    ```
+
+    <Info>
+      **您的 Postgres 已就绪**
+
+      至此，您已经拥有一个功能完备、高性能的 Postgres 数据库，可用于承载您的事务型工作负载。
+
+      继续阅读第 2 部分，了解原生 ClickHouse 集成如何大幅提升您的分析能力。
+    </Info>
+
+    ***
+
+    ## 第二部分：使用 ClickHouse 添加实时分析功能
+
+    Postgres 擅长处理事务性工作负载 (OLTP) ，而 ClickHouse 则专为大规模数据集上的分析查询 (OLAP) 而生。将两者结合，即可兼得两者之长：
+
+    * **Postgres** 用于存储应用程序的事务性数据 (插入、更新、点查)
+    * **ClickHouse** 用于对数十亿行数据进行亚秒级分析
+
+    本节介绍如何将 Postgres 数据复制到 ClickHouse 并进行无缝查询。
+
+    ### 设置 ClickHouse 集成
+
+    现在 Postgres 中已有表和数据，接下来将这些表复制到 ClickHouse 以进行分析。首先点击侧边栏中的 **Sync to ClickHouse**，然后点击 **Replicate data in ClickHouse**。
+
+    <Image img="/images/managed-postgres/integration-landing.webp" alt="ClickHouse Managed Postgres 集成为空" size="md" border />
+
+    在接下来的表单中，您可以为集成输入名称，并选择一个现有的 ClickHouse 实例作为复制目标。如果您尚未拥有 ClickHouse 实例，可以直接在此表单中创建一个。
+
+    <Info>
+      **重要**
+
+      请先确保您选择的 ClickHouse 服务处于 Running 状态，然后再继续。
+    </Info>
+
+    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="ClickHouse Managed Postgres 集成表单" size="md" border />
+
+    点击 **Next**，进入表选择器。在此，您只需：
+
+    * 选择要复制到的 ClickHouse 数据库。
+    * 展开 **public** schema，并选择我们之前创建的 users 和 events 表。
+    * 点击 **将数据复制到 ClickHouse**。
+
+    <Image img="/images/managed-postgres/table-picker.webp" alt="ClickHouse Managed Postgres 表选择器" size="md" border />
+
+    复制过程将随即启动，您将被跳转至集成概览页面。由于这是首次集成，初始基础设施的配置可能需要 2 到 3 分钟。在此期间，我们来了解一下新的 **pg&#95;clickhouse** 扩展。
+
+    ### 从 Postgres 查询 ClickHouse
+
+    `pg_clickhouse` 扩展允许您直接在 Postgres 中使用标准 SQL 查询 ClickHouse 数据。这意味着您的应用程序可以将 Postgres 作为统一的查询层，同时处理事务性数据和分析性数据。详情请参阅[完整文档](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction)。
+
+    启用该扩展：
+
+    ```sql
+    CREATE EXTENSION pg_clickhouse;
+    ```
+
+    然后，创建一个连接到 ClickHouse 的外部服务器连接。使用 `http` 驱动程序，并通过端口 `8443` 建立安全连接：
+
+    ```sql
+    CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
+           OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
+    ```
+
+    将 `<clickhouse_cloud_host>` 替换为您的 ClickHouse 主机名，将 `<database_name>` 替换为您在复制设置过程中选择的数据库。您可以在 ClickHouse 服务中点击侧边栏中的 **Connect** 来找到主机名。
+
+    <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="获取 ClickHouse 主机地址" size="md" border />
+
+    <Note>
+      如果您使用 ClickHouse Cloud 控制台运行 SQL，请授予控制台管理员用户对外部服务器的访问权限：
+
+      ```sql
+      GRANT USAGE ON FOREIGN SERVER ch TO chpg_console_admin;
+      ```
+    </Note>
+
+    现在，将 Postgres 用户映射到 ClickHouse 服务的凭据：
+
+    ```sql
+    CREATE USER MAPPING FOR CURRENT_USER SERVER ch 
+    OPTIONS (user 'default', password '<clickhouse_password>');
+    ```
+
+    现在将 ClickHouse 表导入到 Postgres schema 中：
+
+    ```sql
+    CREATE SCHEMA organization;
+    IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
+    ```
+
+    将 `<database_name>` 替换为创建服务器时所使用的数据库名称。
+
+    现在，您可以在 Postgres 客户端中查看所有 ClickHouse 表：
+
+    ```sql
+    \det+ organization.*
+    ```
+
+    ### 实际体验数据分析功能
+
+    返回集成页面查看状态。此时初始复制应已完成。点击集成名称可查看详细信息。
+
+    <Image img="/images/managed-postgres/analytics-list.webp" alt="ClickHouse Managed Postgres 分析列表" size="md" border />
+
+    点击服务名称，打开 ClickHouse 控制台，查看您的复制表。
+
+    <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse 中的 ClickHouse Managed Postgres 复制表" size="md" border />
+
+    ### 比较 Postgres 与 ClickHouse 的性能
+
+    现在，让我们运行一些分析查询，比较 Postgres 与 ClickHouse 之间的性能差异。请注意，复制表采用 `public_<table_name>` 的命名规范。
+
+    **查询 1：按活跃度排名的用户**
+
+    此查询使用多个聚合来找出最活跃的用户：
+
+    ```sql
+    -- Via ClickHouse
+    SELECT 
+        user_id,
+        COUNT(*) as total_events,
+        COUNT(DISTINCT event_type) as unique_event_types,
+        SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
+        MIN(event_timestamp) as first_event,
+        MAX(event_timestamp) as last_event
+    FROM organization.public_events
+    GROUP BY user_id
+    ORDER BY total_events DESC
+    LIMIT 10;
+    ```
+
+    ```text
+     user_id | total_events | unique_event_types | purchases |        first_event         |         last_event         
+    ---------+--------------+--------------------+-----------+----------------------------+----------------------------
+           1 |        31439 |                  5 |      3551 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+           2 |        13235 |                  4 |      1492 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+    ...
+    (10 rows)
+
+    Time: 163.898 ms   -- ClickHouse
+    Time: 554.621 ms   -- Same query on Postgres
+    ```
+
+    **查询 2：按国家和平台划分的用户参与度**
+
+    此查询将事件与用户进行关联，并计算参与度指标：
+
+    ```sql
+    -- Via ClickHouse
+    SELECT 
+        u.country,
+        u.platform,
+        COUNT(DISTINCT e.user_id) as users,
+        COUNT(*) as total_events,
+        ROUND(COUNT(*)::numeric / COUNT(DISTINCT e.user_id), 2) as events_per_user,
+        SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) as purchases
+    FROM organization.public_events e
+    JOIN organization.public_users u ON e.user_id = u.user_id
+    GROUP BY u.country, u.platform
+    ORDER BY total_events DESC
+    LIMIT 10;
+    ```
+
+    ```text
+     country | platform | users | total_events | events_per_user | purchases 
+    ---------+----------+-------+--------------+-----------------+-----------
+     USA     | Android  |   115 |       109977 |             956 |     12388
+     USA     | Web      |   108 |       105057 |             972 |     11847
+     USA     | iOS      |    83 |        84594 |            1019 |      9565
+     Germany | Android  |    85 |        77966 |             917 |      8852
+     India   | Android  |    80 |        68095 |             851 |      7724
+    ...
+    (10 rows)
+
+    Time: 170.353 ms   -- ClickHouse
+    Time: 1245.560 ms  -- Same query on Postgres
+    ```
+
+    **性能对比：**
+
+    | 查询                | Postgres (NVMe) | ClickHouse (通过 pg&#95;clickhouse) | 加速比  |
+    | ----------------- | --------------- | --------------------------------- | ---- |
+    | 热门用户 (5 个聚合)      | 555 ms          | 164 ms                            | 3.4x |
+    | 用户参与度 (JOIN + 聚合) | 1,246 ms        | 170 ms                            | 7.3x |
+
+    <Tip>
+      **何时使用 ClickHouse**
+
+      即使在这个 100 万行的数据集上，ClickHouse 在包含 JOIN 和多种聚合的复杂分析查询中，性能也能达到 3 到 7 倍提升。随着规模进一步增大 (1 亿+行) ，这种差异会更加显著，此时 ClickHouse 的列式存储和向量化执行可带来 10 到 100 倍的加速。
+
+      查询时间会因实例规格、服务之间的网络延迟、数据特征和当前负载而异。
+    </Tip>
+
+    ## 清理
+
+    要删除本快速入门中创建的资源：
+
+    1. 首先，从 ClickHouse 服务中删除 ClickPipe 集成
+    2. 然后，在 Cloud Console 中删除 ClickHouse Managed Postgres 实例
+  </View>
+
+  <View title="命令行客户端">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
+
+    你可以按这条路径自行操作，把它写成脚本，或交给 AI 智能体处理。如需查看控制台版本，请切换到 **Cloud UI** 视图。
+
+    <QuickstartCLI />
+  </View>
+</Visibility>

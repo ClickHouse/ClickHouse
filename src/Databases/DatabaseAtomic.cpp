@@ -13,6 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -167,6 +168,8 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
+    ensurePopulated();
+
     // it is important to call the destructors of not_in_use without
     // locked mutex to avoid potential deadlock.
     DetachedTables not_in_use;
@@ -268,6 +271,10 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
 
+    ensurePopulated();
+    if (!inside_database)
+        other_db.ensurePopulated();
+
     if (!inside_database)
         other_db.createDirectories();
 
@@ -284,6 +291,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         chassert(!table_data_path_saved.empty());
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
+        /// This path bypasses detachTableUnlocked, so clear stale async-load names
+        /// here too, otherwise getAllTableNames keeps suggesting the old name (#91777).
+        db.eraseAsyncLoadState(table_name_);
         if (has_symlink)
             db.tryRemoveSymlink(table_name_);
         return table_data_path_saved;
@@ -306,6 +316,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
             if (mv->hasInnerTable())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
+        if (const auto * ts = dynamic_cast<const StorageTimeSeries *>(table_.get()))
+            if (ts->hasInnerTables())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move TimeSeries table with inner tables to other database");
     };
 
     String table_data_path;
@@ -725,16 +738,20 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     waitDatabaseStarted();
     std::lock_guard lock(mutex);
 
+    /// A longer database name leaves less room for the table name in the dropped-metadata file
+    /// name metadata_dropped/{db}.{table}.{uuid}.sql, so a rename can leave a table that cannot
+    /// be dropped. Detached tables are checked too, because ATTACH does not re-check the length.
+    for (const auto & table : tables)
+        checkTableNameLengthUnlocked(new_name, table.first, getContext());
+    for (const auto & detached_table : snapshot_detached_tables)
+        checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
+
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         for (auto & table : tables)
-        {
-            checkTableNameLengthUnlocked(new_name, table.first, getContext());
-
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
-        }
     }
 
 
@@ -899,7 +916,7 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 
 :::note
-On ClickHouse Cloud, the [`Shared` database engine](/cloud/reference/shared-catalog#shared-database-engine) is used by default and also supports
+On ClickHouse Cloud, the [`Shared` database engine](/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) is used by default and also supports
 the above mentioned operations.
 :::
 
@@ -913,7 +930,7 @@ CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
 
 ### Table UUID {#table-uuid}
 
-Each table in the `Atomic` database has a persistent [UUID](../../sql-reference/data-types/uuid.md) and stores its data in the following directory:
+Each table in the `Atomic` database has a persistent [UUID](/reference/data-types/uuid) and stores its data in the following directory:
 
 ```text
 /clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
@@ -930,21 +947,21 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
 ```
 
 :::note
-You can use the [show_table_uuid_in_table_create_query_if_not_nil](../../operations/settings/settings.md#show_table_uuid_in_table_create_query_if_not_nil) setting to display the UUID with the `SHOW CREATE` query.
+You can use the [show_table_uuid_in_table_create_query_if_not_nil](/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) setting to display the UUID with the `SHOW CREATE` query.
 :::
 
 ### RENAME TABLE {#rename-table}
 
-[`RENAME`](../../sql-reference/statements/rename.md) queries do not modify the UUID or move table data. These queries execute immediately and do not wait for other queries that are using the table to complete.
+[`RENAME`](/reference/statements/rename) queries do not modify the UUID or move table data. These queries execute immediately and do not wait for other queries that are using the table to complete.
 
 ### DROP/DETACH TABLE {#drop-detach-table}
 
-When using `DROP TABLE`, no data is removed. The `Atomic` engine just marks the table as dropped by moving it's metadata to `/clickhouse_path/metadata_dropped/` and notifies the background thread. The delay before the final table data deletion is specified by the [`database_atomic_delay_before_drop_table_sec`](../../operations/server-configuration-parameters/settings.md#database_atomic_delay_before_drop_table_sec) setting.
-You can specify synchronous mode using `SYNC` modifier. Use the [`database_atomic_wait_for_drop_and_detach_synchronously`](../../operations/settings/settings.md#database_atomic_wait_for_drop_and_detach_synchronously) setting to do this. In this case `DROP` waits for running `SELECT`, `INSERT` and other queries which are using the table to finish. The table will be removed when it's not in use.
+When using `DROP TABLE`, no data is removed. The `Atomic` engine just marks the table as dropped by moving it's metadata to `/clickhouse_path/metadata_dropped/` and notifies the background thread. The delay before the final table data deletion is specified by the [`database_atomic_delay_before_drop_table_sec`](/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) setting.
+You can specify synchronous mode using `SYNC` modifier. Use the [`database_atomic_wait_for_drop_and_detach_synchronously`](/reference/settings/session-settings/database#database_atomic_wait_for_drop_and_detach_synchronously) setting to do this. In this case `DROP` waits for running `SELECT`, `INSERT` and other queries which are using the table to finish. The table will be removed when it's not in use.
 
 ### EXCHANGE TABLES/DICTIONARIES {#exchange-tables}
 
-The [`EXCHANGE`](../../sql-reference/statements/exchange.md) query swaps tables or dictionaries atomically. For instance, instead of this non-atomic operation:
+The [`EXCHANGE`](/reference/statements/exchange) query swaps tables or dictionaries atomically. For instance, instead of this non-atomic operation:
 
 ```sql title="Non-atomic"
 RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
@@ -957,7 +974,7 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### ReplicatedMergeTree in atomic database {#replicatedmergetree-in-atomic-database}
 
-For [`ReplicatedMergeTree`](/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [`default_replica_name`](../../operations/server-configuration-parameters/settings.md#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
+For [`ReplicatedMergeTree`](/reference/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](/reference/settings/server-settings/settings/default-replica#default_replica_path) and [`default_replica_name`](/reference/settings/server-settings/settings/default-replica#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
 
 ### Metadata disk {#metadata-disk}
 When `disk` is specified in `SETTINGS`, the disk is used to store table metadata files.
@@ -970,7 +987,7 @@ If unspecified, the disk defined in `database_disk.disk` is used by default.
 
 ## See also {#see-also}
 
-- [system.databases](../../operations/system-tables/databases.md) system table
+- [system.databases](/reference/system-tables/databases) system table
 )DOCS_MD",
         .syntax = "ENGINE = Atomic",
         .related = {"Replicated", "Ordinary"}});

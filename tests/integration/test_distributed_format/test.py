@@ -282,3 +282,151 @@ def test_invalid_shard_directory_format(started_cluster):
     # Clean up
     node.query("drop table test.dist_invalid sync")
     node.query("drop table test.local_invalid sync")
+
+
+def test_long_directory_name_internal_replication(started_cluster):
+    # With internal replication the async-insert directory is named after every replica of the
+    # shard concatenated, so it can exceed NAME_MAX without any single field being long. That has
+    # to be a user error rather than a logical error (which aborts assert builds). See #112719.
+    node.query("drop table if exists test.local_long_path sync")
+    node.query("drop table if exists test.distr_long_path sync")
+    node.query(
+        "create table test.local_long_path (x UInt64) engine = MergeTree order by x"
+    )
+    node.query(
+        "create table test.distr_long_path (x UInt64) engine = "
+        "Distributed('test_cluster_internal_replication_long_path', test, local_long_path)"
+    )
+
+    error = node.query_and_get_error(
+        "insert into test.distr_long_path values (1)",
+        settings={
+            "distributed_foreground_insert": "0",
+            "prefer_localhost_replica": "0",
+            "use_compact_format_in_distributed_parts_names": "0",
+        },
+    )
+    assert "ARGUMENT_OUT_OF_BOUND" in error
+    assert "The max length of a directory name" in error
+    assert "distr_long_path" in error
+    assert "test_cluster_internal_replication_long_path" in error
+    assert "is 255" in error
+
+    # The compact format keeps the name bounded, so the same cluster still works with it.
+    node.query(
+        "insert into test.distr_long_path values (1)",
+        settings={
+            "distributed_foreground_insert": "0",
+            "prefer_localhost_replica": "0",
+            "use_compact_format_in_distributed_parts_names": "1",
+        },
+    )
+    assert (
+        node.query(
+            "select count() from system.distribution_queue "
+            "where database = 'test' and table = 'distr_long_path'"
+        ).strip()
+        != "0"
+    )
+
+    node.query("drop table test.distr_long_path sync")
+    node.query("drop table test.local_long_path sync")
+
+
+def test_long_directory_name_rejected_before_local_write(started_cluster):
+    # A shard holding this server plus a too long remote destination must be rejected before the
+    # local write, otherwise the INSERT reports a failure it has already partly applied and a
+    # retry duplicates rows on the local replica.
+    node.query("drop table if exists test.local_mixed_path sync")
+    node.query("drop table if exists test.distr_mixed_path sync")
+    node.query(
+        "create table test.local_mixed_path (x UInt64) engine = MergeTree order by x"
+    )
+    node.query(
+        "create table test.distr_mixed_path (x UInt64) engine = "
+        "Distributed('test_cluster_mixed_local_long_path', test, local_mixed_path)"
+    )
+
+    settings = {
+        "distributed_foreground_insert": "0",
+        "prefer_localhost_replica": "1",
+        "use_compact_format_in_distributed_parts_names": "0",
+    }
+    for _ in range(3):
+        error = node.query_and_get_error(
+            "insert into test.distr_mixed_path values (1)", settings=settings
+        )
+        assert "ARGUMENT_OUT_OF_BOUND" in error
+        assert "The max length of a directory name" in error
+
+    assert node.query("select count() from test.local_mixed_path").strip() == "0"
+
+    node.query("drop table test.distr_mixed_path sync")
+    node.query("drop table test.local_mixed_path sync")
+
+
+@cluster_param
+def test_selected_rows_not_double_counted(started_cluster, cluster):
+    # `Distributed` is read through an inner pipeline whose source accounts the rows on its own,
+    # so `SelectedRows` and `SelectedBytes` are twice `read_rows`/`read_bytes` of the same query
+    # unless that pipeline has profile event updates disabled. See #116301.
+    node.query("drop table if exists test.distr_counters sync")
+    node.query(
+        "create table test.distr_counters (x UInt64, s String) engine = "
+        "Distributed('{}', database, table)".format(cluster)
+    )
+    node.query(
+        "insert into test.distr_counters values (1, 'a'), (2, 'bb'), (3, 'ccc')",
+        settings={"use_compact_format_in_distributed_parts_names": "1"},
+    )
+    path = get_dist_path(cluster, node, "distr_counters", 1)
+
+    # The spool file lives under the table's data path, which `file` refuses to read, so the read
+    # goes through a copy inside `user_files`. Both names carry the cluster to keep the two
+    # parametrized runs independent.
+    file_name = f"distr_counters_{cluster}.bin"
+    query_id = f"116301_distfmt_{cluster}"
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir -p /var/lib/clickhouse/user_files && cp {path}/1.bin /var/lib/clickhouse/user_files/{file_name}",
+            ],
+            privileged=True,
+            user="root",
+        )
+
+        node.query(
+            f"select * from file('{file_name}', 'Distributed') format Null",
+            query_id=query_id,
+            settings={
+                # The server-side AST fuzzer would re-run this read as extra queries.
+                "ast_fuzzer_runs": "0",
+            },
+        )
+        node.query("system flush logs query_log")
+
+        read_rows, read_bytes, selected_rows, selected_bytes = node.query(
+            f"""
+            select read_rows, read_bytes,
+                   ProfileEvents['SelectedRows'], ProfileEvents['SelectedBytes']
+            from system.query_log
+            where query_id = '{query_id}' and type = 'QueryFinish'
+            order by event_time_microseconds desc limit 1
+            """
+        ).split()
+
+        # The read amounts are pinned as well, so a query that stops reading the spool file cannot
+        # satisfy the equalities with both sides at zero.
+        assert read_rows == "3", (read_rows, read_bytes)
+        assert read_bytes != "0", (read_rows, read_bytes)
+        assert selected_rows == read_rows, (selected_rows, read_rows)
+        assert selected_bytes == read_bytes, (selected_bytes, read_bytes)
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"rm -f /var/lib/clickhouse/user_files/{file_name}"],
+            privileged=True,
+            user="root",
+        )
+        node.query("drop table test.distr_counters sync")

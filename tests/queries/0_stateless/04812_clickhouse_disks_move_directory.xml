@@ -1,0 +1,19 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <test_disk_plain_rewritable_04812>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <path from_env="TEST_DISK_PLAIN_REWRITABLE_04812_PATH"></path>
+            </test_disk_plain_rewritable_04812>
+            <test_disk_04812>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <path from_env="TEST_DISK_04812_PATH"></path>
+                <metadata_path from_env="TEST_DISK_04812_METADATA_PATH"></metadata_path>
+            </test_disk_04812>
+        </disks>
+    </storage_configuration>
+</clickhouse>

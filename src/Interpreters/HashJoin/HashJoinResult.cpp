@@ -66,18 +66,19 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
         right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
 
     if (!right_column.type->equals(*right_key_type))
-    {
         right_column.column = castColumnAccurate(right_column, right_key_type);
-        right_column.type = right_key_type;
-    }
+
+    /// Types may be equal but not identical, DateTime with different timezones
+    /// share physical representation but affect expressions over the key (issue #111033)
+    right_column.type = right_key_type;
 
     right_column.column = right_column.column->convertToFullColumnIfConst();
     return right_column;
 }
 
-static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes)
+static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool force_lazy_replication)
 {
-    if (isLazyReplicationUseful(column))
+    if ((force_lazy_replication && !column->isConst()) || isLazyReplicationUseful(column))
     {
         if (!indexes)
             indexes = convertOffsetsToIndexes(offsets);
@@ -100,15 +101,32 @@ static void appendRightColumns(
     size_t existing_columns = block.columns();
     const auto & table_join = properties.table_join;
 
+    /// Avoid lazy replication that grow the output size on not useful columns (e.g. small types)
+    /// because it can be much slower than eager replication.
+    bool is_replication_growing = !offsets.empty() && offsets.back() > offsets.size();
+    if (is_replication_growing)
+    {
+        auto cols = block.getColumns();
+        for (auto & col : cols)
+            col = convertToFullColumnIfReplicationNotUseful(col, /*with_size_check=*/ false);
+        block.setColumns(cols);
+    }
+
     std::set<size_t> block_columns_to_erase;
     if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
     {
-        std::unordered_set<String> left_output_columns;
+        /// Keep left columns matching getOutputColumns(Left) by name AND multiplicity: it may list a
+        /// name fewer times than the physical block holds it, and the surviving count must equal
+        /// getOutputColumns(Left).size() (used as left_columns_count downstream). Cap per name.
+        std::unordered_map<std::string_view, size_t> left_output_remaining;
         for (const auto & out_column : table_join.getOutputColumns(JoinTableSide::Left))
-            left_output_columns.insert(out_column.name);
+            ++left_output_remaining[out_column.name];
         for (size_t i = 0; i < block.columns(); ++i)
         {
-            if (!left_output_columns.contains(block.getByPosition(i).name))
+            auto it = left_output_remaining.find(block.getByPosition(i).name);
+            if (it != left_output_remaining.end() && it->second > 0)
+                --it->second;
+            else
                 block_columns_to_erase.insert(i);
         }
     }
@@ -168,13 +186,22 @@ static void appendRightColumns(
         chassert(offsets.size() == block.rows());
 
         auto columns_to_replicate = block.getColumns();
-        if (properties.enable_lazy_columns_replication)
+        if (properties.enable_lazy_columns_replication || properties.enable_lazy_columns_indexing)
         {
-            ColumnPtr indexes;
+            std::vector<size_t> positions;
+            positions.reserve(existing_columns + right_keys_to_replicate.size());
             for (size_t i = 0; i < existing_columns; ++i)
-                replicateColumnLazily(columns_to_replicate[i], offsets, indexes);
+                positions.push_back(i);
             for (size_t pos : right_keys_to_replicate)
-                replicateColumnLazily(columns_to_replicate[pos], offsets, indexes);
+                positions.push_back(pos);
+
+            bool force_lazy_replication = properties.enable_lazy_columns_indexing && !is_replication_growing;
+            ColumnPtr indexes;
+            transformColumnsWithSharedIndex(
+                columns_to_replicate,
+                [&](const ColumnPtr & index) { return index->replicate(offsets); },
+                [&](ColumnPtr & col) { replicateColumnLazily(col, offsets, indexes, force_lazy_replication); },
+                positions);
         }
         else
         {
@@ -289,6 +316,14 @@ Block HashJoinResult::generateBlock(
         lazy_output.type_name,
         properties);
 
+    if (!properties.enable_lazy_columns_indexing)
+    {
+        auto cols = block.getColumns();
+        for (auto & col : cols)
+            col = convertToFullColumnIfReplicationNotUseful(col);
+        block.setColumns(cols);
+    }
+
     if (is_state_finished)
         state.reset();
 
@@ -340,6 +375,7 @@ HashJoinResult::HashJoinResult(
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
     IColumn::Offsets && matched_rows_,
+    size_t matched_right_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -349,6 +385,7 @@ HashJoinResult::HashJoinResult(
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
     , matched_rows(std::move(matched_rows_))
+    , matched_right_rows(matched_right_rows_)
 {
 }
 
@@ -405,7 +442,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
         if (properties.need_filter)
             scattered_block->filter(std::span<UInt64>{matched_rows});
-        scattered_block->filterBySelector();
+        if (properties.enable_lazy_columns_indexing)
+            scattered_block->filterBySelectorLazily();
+        else
+            scattered_block->filterBySelector();
 
         current_row_state.emplace(GenerateCurrentRowState{
             .block = std::move(*scattered_block).getSourceBlock(),
@@ -531,7 +571,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
     if (properties.need_filter)
         current_scattered_block.filter(partial_matched_rows);
-    current_scattered_block.filterBySelector();
+    if (properties.enable_lazy_columns_indexing)
+        current_scattered_block.filterBySelectorLazily();
+    else
+        current_scattered_block.filterBySelector();
 
     current_row_state.emplace(GenerateCurrentRowState{
         .block = std::move(current_scattered_block).getSourceBlock(),

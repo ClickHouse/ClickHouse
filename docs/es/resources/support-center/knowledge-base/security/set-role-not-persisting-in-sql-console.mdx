@@ -1,0 +1,144 @@
+---
+description: 'Aprenda por qué `SET ROLE` no se mantiene en la SQL Console de ClickHouse Cloud y cómo asignar permisos persistentes por usuario.'
+sidebar_label: 'Por qué `SET ROLE` no se mantiene en SQL Console'
+sidebar_position: 6
+slug: /resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console
+title: 'Por qué `SET ROLE` no se mantiene en la SQL Console de ClickHouse Cloud'
+doc_type: 'guide'
+date: 2026-07-24
+tags: ['Seguridad y autenticación', 'Gestión de Cloud', 'Solución de problemas']
+keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Control de acceso']
+---
+
+Al ejecutar `SET ROLE` en la SQL Console de ClickHouse Cloud, el rol puede parecer que cambia para una consulta y luego vuelve al anterior en la siguiente. Use un rol de SQL Console por usuario si necesita que los permisos se mantengan entre consultas y sesiones.
+
+<Tip>
+  Prefiera los [roles de base de datos administrados por Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para gestionar el acceso a la base de datos desde la consola. Los roles `sql-console-role:<email>` no son compatibles con la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
+<div id="symptoms">
+  ## Síntomas
+</div>
+
+Es posible que observe uno o varios de los siguientes síntomas:
+
+* Después de ejecutar `SET ROLE sql_console_developer`, las consultas posteriores siguen ejecutándose con `sql_console_read_only`.
+* Los resultados de `currentRoles`, `enabledRoles` y `defaultRoles` varían entre consultas.
+* Ejecutar `SET ROLE` junto con otra consulta no siempre conserva el rol seleccionado.
+* `SHOW GRANTS` muestra los roles esperados, pero sus permisos no están activos.
+
+Puede consultar el usuario y los roles actuales con:
+
+```sql
+SELECT
+    currentUser(),
+    currentRoles(),
+    enabledRoles(),
+    defaultRoles();
+```
+
+<div id="why-this-happens">
+  ## Por qué ocurre esto
+</div>
+
+La SQL Console envía consultas a través de conexiones HTTP sin estado a un servicio de ClickHouse Cloud con varias réplicas. No se garantiza que las consultas consecutivas utilicen la misma conexión o réplica.
+
+`SET ROLE` modifica los roles habilitados para la sesión actual. No conserva ese estado de sesión para solicitudes posteriores de la SQL Console. Por lo tanto, una consulta posterior puede ejecutarse sin el rol habilitado por una solicitud anterior.
+
+Por este motivo, no use `SET ROLE` como mecanismo persistente de control de acceso en la SQL Console.
+
+<div id="how-sql-console-user-roles-work">
+  ## Cómo funcionan los roles de usuario de SQL Console
+</div>
+
+Cuando un usuario abre SQL Console, ClickHouse Cloud crea un usuario de base de datos con la siguiente convención de nomenclatura:
+
+```text
+sql-console:user@example.com
+```
+
+ClickHouse Cloud también comprueba si existe un rol de base de datos cuyo nombre siga la siguiente convención:
+
+```text
+sql-console-role:user@example.com
+```
+
+Cuando existe ese rol, ClickHouse Cloud se lo asigna al usuario correspondiente de SQL Console. Esta es la forma admitida de otorgar permisos personalizados persistentes a un usuario concreto de SQL Console.
+
+| Entidad                                       | Propósito                                                                 | Persistente                                   |
+| --------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------- |
+| `sql-console:<email>`                         | Usuario de base de datos aprovisionado cuando el usuario abre SQL Console | Sí, administrado por ClickHouse Cloud         |
+| `sql_console_admin` y `sql_console_read_only` | Roles integrados de SQL Console                                           | Sí, administrado por ClickHouse Cloud         |
+| `sql-console-role:<email>`                    | Rol personalizado por usuario creado por un administrador                 | Sí, se aplica cuando el usuario inicia sesión |
+
+<div id="configure-persistent-permissions">
+  ## Configurar permisos persistentes
+</div>
+
+Ejecute las siguientes sentencias como un usuario con privilegios administrativos en el servicio, por ejemplo, un usuario de SQL Console con el rol `sql_console_admin` u otro usuario con el privilegio `ACCESS MANAGEMENT`.
+
+<Steps>
+  <Step title="Crear el rol personalizado" id="create-the-custom-role">
+    El siguiente ejemplo crea un rol personalizado, `sql_console_developer`, y le otorga permisos sobre `my_database`:
+
+    ```sql
+    CREATE ROLE IF NOT EXISTS sql_console_developer;
+
+    GRANT SELECT, INSERT, CREATE TABLE
+    ON my_database.*
+    TO sql_console_developer;
+    ```
+
+    `sql_console_developer` es un rol de ejemplo, no un rol integrado de ClickHouse Cloud. También puede utilizar un rol personalizado existente que tenga los permisos que necesita el usuario.
+  </Step>
+
+  <Step title="Crear el rol de SQL Console por usuario" id="create-the-per-user-sql-console-role">
+    Cree un rol cuyo nombre contenga la dirección de correo electrónico exacta del usuario:
+
+    ```sql
+    CREATE ROLE IF NOT EXISTS `sql-console-role:user@example.com`;
+    ```
+
+    Las comillas invertidas son obligatorias porque el nombre del rol contiene caracteres especiales.
+  </Step>
+
+  <Step title="Otorgar el rol personalizado" id="grant-the-custom-role">
+    Otorgue el rol deseado al rol de SQL Console por usuario:
+
+    ```sql
+    GRANT sql_console_developer
+    TO `sql-console-role:user@example.com`;
+    ```
+
+    Puede otorgar varios roles cuando sea necesario:
+
+    ```sql
+    GRANT sql_console_developer, sql_console_read_only
+    TO `sql-console-role:user@example.com`;
+    ```
+  </Step>
+
+  <Step title="Iniciar una nueva sesión de SQL Console" id="start-a-new-sql-console-session">
+    Pida al usuario que cierre sesión y vuelva a iniciarla en SQL Console, o que actualice la pestaña del navegador. En la nueva sesión, ClickHouse Cloud aplica `sql-console-role:user@example.com` a `sql-console:user@example.com`; no se requiere ninguna sentencia `SET ROLE`.
+
+    Verifique los roles activos:
+
+    ```sql
+    SELECT
+        currentUser(),
+        currentRoles(),
+        enabledRoles(),
+        defaultRoles();
+    ```
+
+    Los resultados deben incluir los permisos otorgados mediante `sql-console-role:user@example.com`.
+  </Step>
+</Steps>
+
+<div id="avoid-modifying-managed-roles">
+  ## Evite modificar los roles administrados
+</div>
+
+No modifique `sql_console_admin` ni `sql_console_read_only` para conceder permisos personalizados. ClickHouse Cloud administra estos roles integrados. En su lugar, use `sql-console-role:<email>` para asignar permisos por usuario.
+
+Para consultar ejemplos generales de administración de roles, vea [Consultas comunes de administración de acceso](/es/products/cloud/guides/security/cloud-access-management/common-access-management-queries).

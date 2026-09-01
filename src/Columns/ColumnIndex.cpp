@@ -11,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 
@@ -167,6 +168,29 @@ size_t ColumnIndex::getIndexAt(size_t row) const
     return index;
 }
 
+void ColumnIndex::setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset)
+{
+    if (offset + mask.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Mask of size {} at offset {} does not match ColumnIndex of size {}",
+            mask.size(), offset, size());
+    chassert(value <= getMaxIndexForCurrentType());
+
+    auto set_value = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    {
+        auto & data = getIndexesData<CurIndexType>();
+        const auto typed_value = static_cast<CurIndexType>(value);
+        for (size_t row = 0, rows = mask.size(); row < rows; ++row)
+        {
+            if (!mask[row])
+                data[offset + row] = typed_value;
+        }
+    };
+
+    callForType(std::move(set_value), size_of_type);
+}
+
 
 void ColumnIndex::insertIndex(size_t index)
 {
@@ -216,6 +240,16 @@ void ColumnIndex::insertIndexesRange(const IColumn & column, size_t offset, size
             indexes->insertRangeFrom(column, offset, limit);
         else
         {
+            const size_t column_size = column_ptr->size();
+            if (offset > column_size || limit > column_size - offset)
+                throw Exception(
+                    ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "Parameters offset = {}, limit = {} are out of bound in ColumnIndex::insertIndexesRange method "
+                    "(column.size() = {})",
+                    offset,
+                    limit,
+                    column_size);
+
             auto copy = [&](auto cur_type)
             {
                 using CurIndexType = decltype(cur_type);

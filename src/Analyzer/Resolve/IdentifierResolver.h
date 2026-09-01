@@ -55,12 +55,12 @@ public:
 
     static bool tryBindIdentifierToTableExpression(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
     static bool tryBindIdentifierToTableExpressions(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
     static bool tryBindIdentifierToArrayJoinExpressions(
@@ -83,6 +83,13 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context);
 
+    /// Suggest a same/similar-named table when a table identifier cannot be resolved,
+    /// possibly in another database (e.g. `system.functions` for a bare `functions`).
+    /// Returns a (database, table) pair, or an empty pair when there is no good hint.
+    static std::pair<String, String> tryGetTableNameHint(
+        const Identifier & table_identifier,
+        const ContextPtr & context);
+
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
         const Identifier & expression_identifier,
         size_t identifier_bind_size,
@@ -102,7 +109,7 @@ public:
 
     IdentifierResolveResult tryResolveIdentifierFromJoinTreeNode(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & join_tree_node,
+        const TableExpressionNodePtr & join_tree_node,
         IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierFromJoinTree(
@@ -114,7 +121,7 @@ private:
 
     IdentifierResolveResult tryResolveIdentifierFromStorage(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,
         IdentifierResolveScope & scope,
         size_t identifier_column_qualifier_parts,
@@ -122,17 +129,17 @@ private:
 
     IdentifierResolveResult tryResolveIdentifierFromTableExpression(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierFromCrossJoin(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierFromJoin(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
     QueryTreeNodePtr matchArrayJoinSubcolumns(
@@ -143,7 +150,7 @@ private:
 
     IdentifierResolveResult tryResolveIdentifierFromArrayJoin(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveExpressionFromArrayJoinNestedExpression(

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
@@ -35,7 +36,9 @@ static String escapeJSON(const String & s)
             case '\r': out += "\\r"; break;
             case '\t': out += "\\t"; break;
             default:
-                if (c < 0x20 || c >= 0x80)
+                /// Bytes >= 0x80 pass through untouched: escaping them as \u00XX would
+                /// mojibake multi-byte UTF-8 sequences (e.g. enum element names)
+                if (c < 0x20)
                     out += fmt::format("\\u{:04x}", c);
                 else
                     out += static_cast<char>(c);
@@ -67,7 +70,7 @@ bool ClickHouseIntegratedDatabase::performTableIntegration(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
                 quoteIdentifier(entry.getBottomName()),
-                columnTypeAsString(rg, t.is_deterministic, tp),
+                columnTypeAsString(rg, t.isDeterministic(), tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             first = false;
         }
@@ -311,7 +314,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName())));
+    return !performQuery(fmt::format("{} {}{};", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName()), truncateSuffix()));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -406,6 +409,12 @@ String MySQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, 
 String MySQLIntegration::truncateStatement()
 {
     return fmt::format("TRUNCATE{}", is_clickhouse ? " TABLE" : "");
+}
+
+String MySQLIntegration::truncateSuffix()
+{
+    /// SYNC is ClickHouse-only; plain MySQL does not accept it.
+    return is_clickhouse ? " SYNC" : "";
 }
 
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
@@ -571,14 +580,6 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
 #endif
 
 #if defined USE_LIBPQXX && USE_LIBPQXX
-void PostgreSQLIntegration::closePostgreSQLConnection(pqxx::connection * psql)
-{
-    if (psql)
-    {
-        psql->close();
-    }
-}
-
 std::unique_ptr<PostgreSQLIntegration>
 PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
 {
@@ -610,8 +611,8 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     }
     try
     {
-        std::unique_ptr<PostgreSQLIntegration> psql = std::make_unique<PostgreSQLIntegration>(
-            fcc, scc, PostgreSQLUniqueKeyPtr(new pqxx::connection(connection_str), closePostgreSQLConnection));
+        std::unique_ptr<PostgreSQLIntegration> psql
+            = std::make_unique<PostgreSQLIntegration>(fcc, scc, std::make_unique<pqxx::connection>(connection_str));
 
         if (read_log || (!psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && !psql->performQuery("CREATE SCHEMA test;")))
         {
@@ -689,7 +690,7 @@ int PostgreSQLIntegration::performQuery(const String & query)
     }
     try
     {
-        pqxx::work w(*(postgres_connection.get()));
+        pqxx::work w(*postgres_connection);
 
         out_file << query << std::endl;
         /// Ignore the query result set
@@ -1101,7 +1102,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        String buf = dttp->extended ? rg.nextDateTime64("", false, rg.nextBool()) : rg.nextDateTime("", false, rg.nextBool());
+        String buf = dttp->extended ? rg.nextDateTime64("", false, dttp->precision.value_or(0)) : rg.nextDateTime("", false, rg.nextBool());
 
         if constexpr (is_document<T>)
         {
@@ -1240,11 +1241,11 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
 
         if constexpr (is_document<T>)
         {
-            output << cname << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator));
+            output << cname << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), this->fc.fuzz_floating_points);
         }
         else
         {
-            output << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator));
+            output << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), this->fc.fuzz_floating_points);
         }
     }
     else if ((gtp = dynamic_cast<GeoType *>(tp)))
@@ -1697,21 +1698,26 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
 
         collectColumnPaths(val.getColumnName(), val.tp.get(), 0, cpc, entries);
     }
+    /// Sometimes send the columns in a different order to stress schema resolution by name
+    if (entries.size() > 1 && rg.nextSmallNumber() < 4)
+    {
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
+    }
     /// Common information
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
         rg.nextInFullRange(),
         escapeJSON(t.getDatabaseName()),
         escapeJSON(t.getBaseName(false)),
-        t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
-        t.is_deterministic ? "1" : "0");
+        t.file_format.value_or("any"),
+        t.isDeterministic() ? "1" : "0");
     for (const auto & entry : entries)
     {
         buf += fmt::format(
             R"({}{{"name":"{}","type":"{}"}})",
             first ? "" : ",",
             escapeJSON(entry.getBottomName()),
-            entry.getBottomType()->typeName(false, true));
+            escapeJSON(entry.getBottomType()->typeName(false, true)));
         first = false;
     }
     buf += "]";
@@ -1727,6 +1733,11 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     else if (t.isKafkaEngine())
     {
         buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", escapeJSON(t.topic.value()), escapeJSON(t.group.value()));
+    }
+    else if (t.isFileEngine())
+    {
+        buf += fmt::format(
+            R"(,"engine":"file","path":"{}","compression":"{}")", escapeJSON(t.getTablePath()), t.file_comp.value_or("none"));
     }
     buf += "}";
     fc.outf << "--External table " << buf << std::endl;
@@ -1841,7 +1852,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                           te->add_params()->set_svalue(minio.secret);
                           if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
                           {
-                              te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                              te->add_params()->set_svalue(t.file_format.value());
                               if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
                               {
                                   te->add_params()->set_svalue(t.file_comp.value());
@@ -1876,7 +1887,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
         te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
         te->add_params()->set_svalue(t.topic.value()); /// topic
         te->add_params()->set_svalue(t.group.value()); /// group
-        te->add_params()->set_in_out(t.file_format.has_value() ? t.file_format.value() : InOutFormat::INOUT_CSV);
+        te->add_params()->set_in_out(t.file_format.value_or("CSV"));
     }
 }
 

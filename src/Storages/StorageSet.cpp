@@ -184,7 +184,8 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , set(std::make_shared<Set>(SizeLimits(), 0, true))
 {
-    Block header = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    Block header = metadata_snapshot->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
@@ -384,7 +385,7 @@ When creating a table, the following settings are applied:
 
 #### Persistent {#persistent}
 
-Disables persistency for the Set and [Join](/engines/table-engines/special/join) table engines.
+Disables persistency for the Set and [Join](/reference/engines/table-engines/special/join) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 

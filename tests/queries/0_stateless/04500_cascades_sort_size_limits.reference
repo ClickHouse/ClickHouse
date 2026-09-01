@@ -1,0 +1,2 @@
+-- max_rows_to_sort is enforced under Cascades
+-- Baseline without Cascades fails the same way
