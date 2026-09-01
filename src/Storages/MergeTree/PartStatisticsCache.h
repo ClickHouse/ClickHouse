@@ -46,6 +46,13 @@ public:
     /// Calculate key from the part path.
     static UInt128 hash(const String & part_path);
 
+    MappedPtr get(const Key & key)
+    {
+        auto result = Base::get(key);
+        ProfileEvents::increment(result ? ProfileEvents::PartStatisticsCacheHits : ProfileEvents::PartStatisticsCacheMisses);
+        return result;
+    }
+
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {

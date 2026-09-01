@@ -3,7 +3,8 @@
 -- the second query with the same part set reuses the cached selectivity estimator and does not
 -- touch part statistics at all.
 -- `refresh_statistics_interval = 0` disables the background refresh task so the cache
--- interactions below are fully deterministic.
+-- interactions below are fully deterministic, and the prewhere settings are pinned because the
+-- estimator is built while moving conditions to `PREWHERE`.
 
 DROP TABLE IF EXISTS t_part_stats_cache;
 
@@ -15,8 +16,8 @@ SYSTEM STOP MERGES t_part_stats_cache;
 INSERT INTO t_part_stats_cache SELECT number, number % 7 FROM numbers(1000);
 INSERT INTO t_part_stats_cache SELECT number + 1000, number % 11 FROM numbers(1000);
 
-SELECT count() FROM t_part_stats_cache WHERE a > 100 AND b > 1 SETTINGS use_statistics = 1, use_statistics_cache = 1, log_comment = '05054_part_statistics_cache_first';
-SELECT count() FROM t_part_stats_cache WHERE a > 100 AND b > 1 SETTINGS use_statistics = 1, use_statistics_cache = 1, log_comment = '05054_part_statistics_cache_second';
+SELECT count() FROM t_part_stats_cache WHERE a > 100 AND b > 1 SETTINGS use_statistics = 1, use_statistics_cache = 1, query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1, log_comment = '05054_part_statistics_cache_first';
+SELECT count() FROM t_part_stats_cache WHERE a > 100 AND b > 1 SETTINGS use_statistics = 1, use_statistics_cache = 1, query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1, log_comment = '05054_part_statistics_cache_second';
 
 SYSTEM FLUSH LOGS query_log;
 

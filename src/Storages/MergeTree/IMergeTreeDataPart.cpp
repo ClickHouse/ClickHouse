@@ -1432,12 +1432,20 @@ UInt128 IMergeTreeDataPart::getStatisticsCacheKey() const
 
 std::shared_ptr<const ColumnsStatistics> IMergeTreeDataPart::loadStatisticsWithCache(PartStatisticsCache * cache, const NameSet & required_columns) const
 {
-    /// The cache entry must serve any later column set, so it always holds all columns;
-    /// the uncached path reads only what was asked for.
     if (!cache)
         return std::make_shared<ColumnsStatistics>(loadStatistics(required_columns));
 
-    return cache->getOrSet(getStatisticsCacheKey(), [this] { return std::make_shared<ColumnsStatistics>(loadStatistics({})); });
+    /// A cache entry has to serve any later column set, so only a request for all columns may
+    /// populate it. A narrower request that misses reads exactly its own columns and is not
+    /// cached: statistics are advisory per column, and populating from a narrow request would
+    /// let an unreadable statistics file of a column the query never referenced fail that query.
+    if (required_columns.empty())
+        return cache->getOrSet(getStatisticsCacheKey(), [this] { return std::make_shared<ColumnsStatistics>(loadStatistics({})); });
+
+    if (auto cached = cache->get(getStatisticsCacheKey()))
+        return cached;
+
+    return std::make_shared<ColumnsStatistics>(loadStatistics(required_columns));
 }
 
 void IMergeTreeDataPart::removeStatisticsFromCache(PartStatisticsCache * cache) const
