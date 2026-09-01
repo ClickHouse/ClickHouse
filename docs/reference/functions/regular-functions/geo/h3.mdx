@@ -304,9 +304,11 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
 └────────────────────┘
 ```
 
-## h3PolygonToCells
+## h3PolygonToCells {#h3polygontocells}
 
-Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon.
+Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon. A hexagon is contained when the geometry contains its center, which is containment mode `0` of [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment).
+
+Every vertex of the geometry must be on the sphere: longitude in the range `[-180, 180]` and latitude in `[-90, 90]` degrees. The order of the returned cells is not guaranteed, so sort the array when the order matters.
 
 **Syntax**
 
@@ -334,12 +336,12 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ``` text title="Response"
 ┌────────────h3index─┐
-│ 608692970769612799 │
-│ 608692971927240703 │
 │ 608692970585063423 │
-│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
+│ 608692970769612799 │
+│ 608692970819944447 │
+│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
@@ -347,6 +349,8 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 ## h3PolygonToCellsWithContainment {#h3polygontocellswithcontainment}
 
 Returns the hexagons (at specified resolution) covering the provided geometry, either ring or (multi-)polygon, using H3 experimental containment modes.
+
+Every vertex of the geometry must be on the sphere: longitude in the range `[-180, 180]` and latitude in `[-90, 90]` degrees. The order of the returned cells is not guaranteed, so sort the array when the order matters.
 
 This function maps `flags` to H3 containment modes:
 
