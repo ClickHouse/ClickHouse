@@ -29,6 +29,12 @@ namespace DB
 /// `loop(mysql(..., SETTINGS ...))` is covered too - and puts back the ones that were consumed, including
 /// when the analysis throws (a failed analysis is tolerated for a target with an explicit column list, and
 /// the definition is persisted anyway).
+///
+/// Today the clause cannot reach these targets: a table function written inside the argument list of a
+/// table engine (or of another function) is parsed as an ordinary expression, and only the table-function
+/// position of a query accepts a `SETTINGS` clause, so `Distributed(c, mysql(..., SETTINGS ...))` is a
+/// syntax error. The guard exists so that the persisted definition cannot start losing settings if that
+/// position ever accepts the clause.
 class PreservedTableFunctionSettings
 {
 public:
