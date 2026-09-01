@@ -10,11 +10,10 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Formats/registerFormats.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <cstring>
-#include <mutex>
 
 using namespace DB;
 
@@ -44,14 +43,13 @@ constexpr auto OLD_WORKER_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WIT
 
 /// `ClusterFunctionReadTaskResponse::deserialize` resolves the bucket payload through
 /// `FormatFactory`, and decodes the (empty) data-lake `ActionsDAG` against the global context.
+/// `tryRegisterFormats` is used instead of `registerFormats` because the latter is not idempotent:
+/// other test translation units register the formats through the same shared guard, and a second
+/// direct call would throw on the duplicate registration and fail whichever test happens to run next.
 void prepareResponseEnvironment()
 {
-    static std::once_flag flag;
-    std::call_once(flag, []
-    {
-        getContext();
-        registerFormats();
-    });
+    getContext();
+    tryRegisterFormats();
 }
 
 String serializeResponse(const ClusterFunctionReadTaskResponse & response, size_t protocol_version)
