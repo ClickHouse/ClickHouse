@@ -417,7 +417,16 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
 
 std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 {
-    return getTotalActiveSizeInRows();
+    /// The cached data volume counts every Active part, including the patch parts a lightweight
+    /// `UPDATE` produces. Those hold the updated values of rows that already live in the base parts,
+    /// so counting them would report more rows than the table has - and the trivial-count path would
+    /// serve that number as `count()`. `StorageReplicatedMergeTree::totalRows` walks the regular parts
+    /// for the same reason.
+    UInt64 res = 0;
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
+        res += part->rows_count;
+    return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
@@ -428,14 +437,19 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
 {
-    return getTotalActiveSizeInBytes();
+    /// Patch parts are excluded for the same reason as in `totalRows`.
+    UInt64 res = 0;
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
+        res += part->getBytesOnDisk();
+    return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &) const
 {
     UInt64 res = 0;
-    auto parts = getDataPartsForInternalUsage();
-    for (const auto & part : parts)
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
         res += part->getBytesUncompressedOnDisk();
     return res;
 }
