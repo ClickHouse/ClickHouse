@@ -608,7 +608,7 @@ roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 k
 }
 
 template <typename OnPosition>
-void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_cardinality, OnPosition && on_position)
+void deserializeRoaringPositionBitmap(std::string_view bytes, OnPosition && on_position)
 {
     if (bytes.size() < sizeof(Int64))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
@@ -653,15 +653,7 @@ void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_ca
         if (common::addOverflow(running_cardinality, bitmap_cardinality, new_running_cardinality))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Deletion vector cardinality exceeds declared cardinality {}",
-                expected_cardinality);
-
-        if (new_running_cardinality > expected_cardinality)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Deletion vector cardinality {} exceeds declared cardinality {}",
-                new_running_cardinality,
-                expected_cardinality);
+                "Deletion vector cardinality exceeds declared cardinality");
 
         running_cardinality = new_running_cardinality;
 
@@ -681,13 +673,6 @@ void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_ca
 
     if (remaining != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap has {} trailing bytes", remaining);
-
-    if (running_cardinality != expected_cardinality)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector cardinality {} does not match deserialized row count {}",
-            expected_cardinality,
-            running_cardinality);
 }
 
 std::string_view extractDeletionVectorPayload(std::string_view blob)
@@ -733,7 +718,6 @@ void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinal
 
     deserializeRoaringPositionBitmap(
         extractDeletionVectorPayload(blob),
-        expected_cardinality,
         [&](UInt64 position) { positions.insertValue(position); }
     );
 }
@@ -809,10 +793,9 @@ void checkPuffinHeader(const Block & header)
 
 void forEachDeletionVectorPosition(
     std::string_view blob,
-    UInt64 expected_cardinality,
     const std::function<void(UInt64)> & on_position)
 {
-    deserializeRoaringPositionBitmap(extractDeletionVectorPayload(blob), expected_cardinality, on_position);
+    deserializeRoaringPositionBitmap(extractDeletionVectorPayload(blob), on_position);
 }
 
 PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_)

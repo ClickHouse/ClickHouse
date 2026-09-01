@@ -13,7 +13,6 @@ struct PositionDeleteObject
     Int64 sequence_number = 0;
     std::optional<Int64> content_offset;
     std::optional<Int64> content_size_in_bytes;
-    UInt64 record_count = 0;
 
     bool isDeletionVector() const
     {

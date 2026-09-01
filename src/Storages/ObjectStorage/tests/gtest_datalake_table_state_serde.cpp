@@ -71,7 +71,9 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
     info.schema_id_relevant_to_iterator = 7;
     info.sequence_number = 123456;
     info.file_format = "PARQUET";
-    info.position_deletes_objects = {{"s3://bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet"}};
+    info.position_deletes_objects = {
+        {"s3://bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet", 5, std::nullopt, std::nullopt},
+        {"s3://bucket/deletes/dv1.puffin", "PUFFIN", std::nullopt, 6, 4, 1234}};
     info.equality_deletes_objects = {{"s3://bucket/deletes/eq1.parquet", "PARQUET", std::vector<Int32>{1, 2, 3}, 42}};
     info.record_count = 100500;
     info.file_size_in_bytes = 999888777;
@@ -91,7 +93,11 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
     ASSERT_EQ(deserialized.schema_id_relevant_to_iterator, info.schema_id_relevant_to_iterator);
     ASSERT_EQ(deserialized.sequence_number, info.sequence_number);
     ASSERT_EQ(deserialized.file_format, info.file_format);
-    ASSERT_EQ(deserialized.position_deletes_objects.size(), 1);
+    ASSERT_EQ(deserialized.position_deletes_objects.size(), 2);
+    ASSERT_FALSE(deserialized.position_deletes_objects[0].isDeletionVector());
+    ASSERT_TRUE(deserialized.position_deletes_objects[1].isDeletionVector());
+    ASSERT_EQ(*deserialized.position_deletes_objects[1].content_offset, 4);
+    ASSERT_EQ(*deserialized.position_deletes_objects[1].content_size_in_bytes, 1234);
     ASSERT_EQ(deserialized.equality_deletes_objects.size(), 1);
     ASSERT_TRUE(deserialized.record_count.has_value());
     ASSERT_EQ(*deserialized.record_count, 100500);

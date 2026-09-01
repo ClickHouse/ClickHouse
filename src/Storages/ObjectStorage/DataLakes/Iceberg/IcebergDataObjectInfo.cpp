@@ -124,8 +124,7 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
         std::nullopt,
         position_delete_object->sequence_number,
         parsed_entry.content_offset,
-        parsed_entry.content_size_in_bytes,
-        parsed_entry.record_count);
+        parsed_entry.content_size_in_bytes);
 }
 
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path)
@@ -169,7 +168,6 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
                     writeVarUInt(1, out);
                     writeVarInt(*pos_delete_obj.content_offset, out);
                     writeVarInt(*pos_delete_obj.content_size_in_bytes, out);
-                    writeVarInt(pos_delete_obj.record_count, out);
                 }
                 else
                 {
@@ -294,7 +292,6 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
                     Int64 content_size_in_bytes = 0;
                     readVarInt(content_offset, in);
                     readVarInt(content_size_in_bytes, in);
-                    readVarInt(pos_delete_obj.record_count, in);
                     pos_delete_obj.content_offset = content_offset;
                     pos_delete_obj.content_size_in_bytes = content_size_in_bytes;
                 }

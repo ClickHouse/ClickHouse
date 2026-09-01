@@ -156,7 +156,6 @@ void IcebergPositionDeleteTransform::readDeletionVector(const PositionDeleteObje
 
     forEachDeletionVectorPosition(
         blob,
-        deletion_vector_object.record_count,
         [this](UInt64 position) { deletion_vector_rows.add(position); });
 
     has_deletion_vectors = true;

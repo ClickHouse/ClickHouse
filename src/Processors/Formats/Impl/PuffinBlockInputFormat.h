@@ -81,7 +81,6 @@ public:
 
 void forEachDeletionVectorPosition(
     std::string_view blob,
-    UInt64 expected_cardinality,
     const std::function<void(UInt64)> & on_position);
 
 class FormatFactory;
