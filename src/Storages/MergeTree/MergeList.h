@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MergeTree/MergeType.h>
@@ -194,12 +195,19 @@ public:
 
     void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
     {
-        /// Collect hooks under the merge list mutex and invoke them after it is released:
-        /// the hook cancels a running pipeline, which must not touch the merge list under a lock.
-        /// Marking and hook collection are split so the (allocation-free) marking pass is infallible:
-        /// even if copying a hook throws (e.g. OOM), no matching entry escapes cancellation; the
-        /// (best-effort) hook pass only affects how promptly the in-flight pipeline is interrupted.
+        /// Mark entries as cancelled and collect their hooks under the merge list mutex, then invoke
+        /// the hooks after it is released: a hook cancels a running pipeline, which must not touch
+        /// the merge list under a lock. Marking is allocation-free and infallible and always precedes
+        /// hook collection, so no matching entry escapes cancellation; the hook pass is best-effort
+        /// and only affects how promptly the in-flight pipeline is interrupted. The whole collect must
+        /// not throw out of this function (a `std::function` copy can allocate, e.g. OOM): a throw here
+        /// would break the callers, e.g. `StorageMergeTree::killMutation` erases the entry before
+        /// calling us and must still remove the mutation file afterwards, and the for-loop of the
+        /// replicated `killMutation` must still cancel the remaining partitions. Marking has already
+        /// happened before collection, so a failure of the best-effort pass is logged and skipped
+        /// without undoing any cancellation.
         std::vector<std::function<void()>> hooks_to_invoke;
+        try
         {
             std::lock_guard lock{mutex};
             auto matches = [&](const MergeListElement & merge_element)
@@ -221,8 +229,21 @@ public:
                     hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
             }
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         for (const auto & hook : hooks_to_invoke)
-            hook();
+        {
+            try
+            {
+                hook();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 
     /// Cancel all current merges and mutations, and also all inserted later.
@@ -231,10 +252,13 @@ public:
     {
         /// Cancel every running merge/mutation in the table, including a still in-flight pipeline.
         /// `all_cancelled` prevents new entries from being inserted after this point (checked in `insert`).
-        /// As in `cancelPartMutations`, the (allocation-free) marking pass is infallible so that even
-        /// if hook collection throws (OOM during `OOMCanary` shutdown) no entry escapes cancellation.
+        /// As in `cancelPartMutations`, the allocation-free marking pass is infallible and precedes the
+        /// best-effort hook collection, so even if hook collection throws (OOM during `OOMCanary`
+        /// shutdown) no entry escapes cancellation; the throw never propagates, keeping the callers of
+        /// `cancelAll` (e.g. `OOMCanary`) consistent.
         all_cancelled = true;
         std::vector<std::function<void()>> hooks_to_invoke;
+        try
         {
             std::lock_guard lock{mutex};
             for (auto & merge_element : entries)
@@ -246,8 +270,21 @@ public:
                     hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
             }
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         for (const auto & hook : hooks_to_invoke)
-            hook();
+        {
+            try
+            {
+                hook();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 
     template <typename... Args>
@@ -262,8 +299,11 @@ public:
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
     {
         /// Cancel every running merge/mutation in the partition, including a still in-flight pipeline.
-        /// Same split into an infallible marking pass and a best-effort hook pass as the other cancels.
+        /// Same split into an infallible marking pass and a best-effort hook pass as the other cancels:
+        /// marking always precedes hook collection and a failure of the latter is logged and skipped,
+        /// never thrown out of this function.
         std::vector<std::function<void()>> hooks_to_invoke;
+        try
         {
             std::lock_guard lock{mutex};
             auto matches = [&](const MergeListElement & merge_element)
@@ -284,8 +324,21 @@ public:
                     hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
             }
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         for (const auto & hook : hooks_to_invoke)
-            hook();
+        {
+            try
+            {
+                hook();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 
     /// Merge consists of two parts: assignment and execution. We add merge to
