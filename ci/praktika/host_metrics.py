@@ -16,8 +16,19 @@ class HostMetricsCollector:
     ``os.statvfs`` directly, so it reflects the load of the whole host (not just
     this process) regardless of whether the job itself runs inside Docker.
 
-    Three usage series are tracked (all as 0-100%): ``cpu`` (busy%), ``mem``
-    (used%) and ``disk`` (used% of the workspace filesystem).
+    Four usage series are tracked (all as 0-100%): ``cpu`` (busy%), ``iowait``
+    (share of CPU time idle with I/O outstanding), ``mem`` (used%) and ``disk``
+    (used% of the workspace filesystem).
+
+    ``cpu`` deliberately counts ``iowait`` as idle - a core waiting on the disk
+    is doing no work - so ``cpu + iowait <= 100`` and the two read as separate
+    lines. Without ``iowait`` a job blocked on I/O is indistinguishable from an
+    idle one: a build stalled for 100s flushing a freshly pulled docker image to
+    a slow EBS volume charts as a flat 0% CPU. Note that the kernel charges
+    ``iowait`` per CPU (only cores that go idle with a task of theirs blocked in
+    I/O), so a single stalled task dilutes to a fraction of a big host's
+    capacity; the ``psi`` totals below are the fraction-of-time counterpart and
+    do not dilute.
 
     Spike handling. Inputs are read at a fine cadence
     (``HOST_METRICS_FINE_INTERVAL_SEC``) but the timeline emits one aggregated
@@ -26,7 +37,8 @@ class HostMetricsCollector:
     RAM allocation shows up as the window's peak instead of being averaged away.
     Two signals are peak-exact and independent of the sampling rate:
 
-    * ``peaks`` - the maximum CPU%/RAM%/disk% seen across every fine sample.
+    * ``peaks`` - the maximum CPU%/iowait%/RAM%/disk% seen across every fine
+      sample.
     * ``psi`` - Linux Pressure Stall Information (``/proc/pressure/*``, for cpu,
       memory and io). The kernel accumulates stalled time continuously, so
       reading the totals once at start and once at stop captures all contention
@@ -85,10 +97,12 @@ class HostMetricsCollector:
         self._disk_available = False
         # Exact global peaks over every fine sample (never decimated away).
         self._cpu_peak = 0.0
+        self._iowait_peak = 0.0
         self._mem_peak = 0.0
         self._disk_peak = 0.0
         # Time-weighted running sums for whole-run averages (area = value * dt).
         self._cpu_area = 0.0
+        self._iowait_area = 0.0
         self._mem_area = 0.0
         self._disk_area = 0.0
         self._dt_total = 0.0
@@ -170,6 +184,7 @@ class HostMetricsCollector:
         # the forced tail sample after stop() may cover only a few ms and must
         # not carry the same weight as a full fine interval.
         win_cpu: List[Tuple[float, float]] = []
+        win_iowait: List[Tuple[float, float]] = []
         win_mem: List[Tuple[float, float]] = []
         win_disk: List[Tuple[float, float]] = []
 
@@ -185,8 +200,10 @@ class HostMetricsCollector:
             sample = {
                 "t": round(now - start, 1),
                 "cpu": wmean(win_cpu),
+                "iowait": wmean(win_iowait),
                 "mem": wmean(win_mem),
                 "cpu_peak": round(max(v for v, _ in win_cpu), 1),
+                "iowait_peak": round(max(v for v, _ in win_iowait), 1),
                 "mem_peak": round(max(v for v, _ in win_mem), 1),
             }
             if win_disk:
@@ -195,6 +212,7 @@ class HostMetricsCollector:
             self._samples.append(sample)
             self._append_to_fs(sample)
             win_cpu.clear()
+            win_iowait.clear()
             win_mem.clear()
             win_disk.clear()
 
@@ -209,6 +227,7 @@ class HostMetricsCollector:
             try:
                 cur_cpu = self._read_cpu_times()
                 cpu_pct = self._cpu_percent(prev_cpu, cur_cpu)
+                iowait_pct = self._iowait_percent(prev_cpu, cur_cpu)
                 prev_cpu = cur_cpu
                 mem_pct = self._mem_percent()
             except Exception as e:
@@ -222,13 +241,16 @@ class HostMetricsCollector:
             dt = now - last_time
             last_time = now
             win_cpu.append((cpu_pct, dt))
+            win_iowait.append((iowait_pct, dt))
             win_mem.append((mem_pct, dt))
             self._n_fine += 1
             # Exact global peaks, immune to windowing/decimation.
             self._cpu_peak = max(self._cpu_peak, cpu_pct)
+            self._iowait_peak = max(self._iowait_peak, iowait_pct)
             self._mem_peak = max(self._mem_peak, mem_pct)
             # Time-weighted running totals for the whole-run averages.
             self._cpu_area += cpu_pct * dt
+            self._iowait_area += iowait_pct * dt
             self._mem_area += mem_pct * dt
             self._dt_total += dt
             # Disk is sampled independently: a failure here disables only the
@@ -280,24 +302,35 @@ class HostMetricsCollector:
         except OSError:
             return 1
 
-    def _read_cpu_times(self) -> Tuple[int, int]:
-        """Return (idle_all, total) jiffies from the aggregate ``cpu`` line."""
+    def _read_cpu_times(self) -> Tuple[int, int, int]:
+        """Return (idle_all, iowait, total) jiffies from the aggregate ``cpu`` line."""
         with open(self._CPU_STAT, "r", encoding="utf8") as f:
             line = f.readline()
         # cpu  user nice system idle iowait irq softirq steal guest guest_nice
         fields = [int(x) for x in line.split()[1:]]
-        idle = fields[3] + (fields[4] if len(fields) > 4 else 0)  # idle + iowait
+        iowait = fields[4] if len(fields) > 4 else 0
+        idle = fields[3] + iowait  # iowait is idle time, reported on its own
         total = sum(fields)
-        return idle, total
+        return idle, iowait, total
 
     @staticmethod
-    def _cpu_percent(prev: Tuple[int, int], cur: Tuple[int, int]) -> float:
+    def _cpu_percent(prev: Tuple[int, int, int], cur: Tuple[int, int, int]) -> float:
+        """Busy% over the interval, with iowait counted as idle (see class doc)."""
         idle_delta = cur[0] - prev[0]
-        total_delta = cur[1] - prev[1]
+        total_delta = cur[2] - prev[2]
         if total_delta <= 0:
             return 0.0
         busy = 100.0 * (total_delta - idle_delta) / total_delta
         return round(max(0.0, min(100.0, busy)), 1)
+
+    @staticmethod
+    def _iowait_percent(prev: Tuple[int, int, int], cur: Tuple[int, int, int]) -> float:
+        """Share of CPU time over the interval spent idle with I/O outstanding."""
+        total_delta = cur[2] - prev[2]
+        if total_delta <= 0:
+            return 0.0
+        iowait = 100.0 * (cur[1] - prev[1]) / total_delta
+        return round(max(0.0, min(100.0, iowait)), 1)
 
     def _mem_percent(self) -> float:
         total_kb = 0
@@ -386,17 +419,20 @@ class HostMetricsCollector:
         mem_total_gb = round(self._mem_total_kb / 1024.0 / 1024.0, 2)
         peaks = {
             "cpu": round(self._cpu_peak, 1),
+            "iowait": round(self._iowait_peak, 1),
             "mem": round(self._mem_peak, 1),
             "mem_gb": round(mem_total_gb * self._mem_peak / 100.0, 2),
         }
         averages = {
             "cpu": round(self._cpu_area / self._dt_total, 1) if self._dt_total else 0.0,
+            "iowait": round(self._iowait_area / self._dt_total, 1) if self._dt_total else 0.0,
             "mem": round(self._mem_area / self._dt_total, 1) if self._dt_total else 0.0,
         }
         if self._disk_dt_total:
             averages["disk"] = round(self._disk_area / self._disk_dt_total, 1)
         series = {
             "cpu": self._decimate([(s["t"], s["cpu"], s["cpu_peak"]) for s in samples], self._max_points),
+            "iowait": self._decimate([(s["t"], s["iowait"], s["iowait_peak"]) for s in samples], self._max_points),
             "mem": self._decimate([(s["t"], s["mem"], s["mem_peak"]) for s in samples], self._max_points),
         }
         result = {

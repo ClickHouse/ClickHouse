@@ -100,7 +100,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
     auto maybe_query = tryGetExternalDatabaseQuery(
-        args[1], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::Regular);
+        args[1], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::SQLite);
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (i == 1 && maybe_query)
@@ -135,7 +135,7 @@ sqlite('db_path', 'table_name')
 - `db_path` — Path to a file with an SQLite database. [String](/reference/data-types/string).
 - `table_name` — Name of a table in the SQLite database, or a query passed to SQLite as is (see [Passing a query instead of a table name](#passing-a-query)). [String](/reference/data-types/string).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 - A table object with the same columns as in the original `SQLite` table.
 

@@ -277,7 +277,12 @@ StoragePtr TableFunctionURL::executeImpl(
             /*check_create_temporary_table=*/false,
             /*check_source_access=*/false);
 
-    return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
+    /// Stored columns accompany a table definition rather than an ad-hoc query, so creation and
+    /// replay must resolve to the same storage.
+    const bool keep_creation_storage_choice = is_insert_query || !cached_columns.empty();
+
+    return ITableFunctionFileLike::executeImpl(
+        ast_function, context, table_name, std::move(cached_columns), keep_creation_storage_choice);
 }
 
 bool TableFunctionURL::needStructureHint() const
@@ -482,8 +487,8 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
@@ -504,7 +509,7 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified format and structure and with data from the defined `URL`.
 
@@ -609,7 +614,8 @@ The resolution rules are:
 - **Query-only** (e.g. `?x=1`): appended to the full base path, replacing any existing query or fragment.
 - **Fragment-only** (e.g. `#frag`): appended to the base URL, preserving the query, replacing any existing fragment.
 - **Empty**: returns the base URL without fragment.
-- **Absolute URL**: passed through unchanged; `url_base` is ignored.
+- **Absolute URL**: passed through unchanged; `url_base` is ignored. A URL is considered absolute only when it starts with `scheme://`: a name whose first path segment contains a colon (e.g. `report:2026.csv`), which RFC 3986 would parse as an absolute URI with the scheme `report`, is resolved as a path-relative reference instead, because such a name is not a usable URL.
+- **Scheme-only base** (e.g. `file://`): a path-relative URL is appended to the base directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the [user_files](/reference/settings/server-settings/settings/user#user_files_path) directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case.
 
 **Example**
 

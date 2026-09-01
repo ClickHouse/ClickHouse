@@ -10,6 +10,9 @@
 #include <Server/StaticRequestHandler.h>
 #include <Server/WebUIRequestHandler.h>
 #include <Server/WebTerminalRequestHandler.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <boost/algorithm/string/predicate.hpp>
 #if CLICKHOUSE_CLOUD
 #include <Server/CloudReadinessHandler.h>
 #endif
@@ -20,6 +23,10 @@
 #endif
 
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -54,6 +61,67 @@ public:
     }
 };
 
+/// Matches incoming requests against the registry of SQL-defined handlers (CREATE HANDLER).
+/// Consulted after all configuration-defined handlers, so config handlers always take priority.
+/// SQL-defined handlers are tried in lexicographic order of their names.
+class SQLDefinedHTTPHandlerFactory : public HTTPRequestHandlerFactory
+{
+public:
+    SQLDefinedHTTPHandlerFactory(
+        IServer & server_,
+        std::string protocol_name_,
+        std::optional<String> default_session_user_)
+        : server(server_)
+        , protocol_name(std::move(protocol_name_))
+        , default_session_user(std::move(default_session_user_))
+    {
+    }
+
+    std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override
+    {
+        auto handlers = SQLDefinedHandlersFactory::instance().getAll();
+        if (!handlers || handlers->empty())
+            return nullptr;
+
+        /// Match against the URL path only, without the query string and fragment.
+        const auto & uri = request.getURI();
+        const char * path_end = find_first_symbols<'?', '#'>(uri.data(), uri.data() + uri.size());
+        const String path(uri.data(), path_end);
+
+        const String & method = request.getMethod();
+
+        /// Mirror the method semantics of config-defined HTTP handlers (see `allowGetAndHeadRequest` /
+        /// `allowRESTMethods` in HTTPHandlerFactory.h): `HEAD` reuses the handler declared for `GET`, and every
+        /// path/protocol match answers `OPTIONS` so the generic preflight/CORS branch in `HTTPHandler::handleRequest`
+        /// can respond. `ParserCreateHandlerQuery` never stores `HEAD`/`OPTIONS`, so these cannot be matched directly.
+        const bool is_head = method == Poco::Net::HTTPRequest::HTTP_HEAD;
+        const bool is_options = method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+        for (const auto & [name, handler] : *handlers)
+        {
+            const bool method_matches = handler->matchesMethod(method)
+                || (is_head && handler->matchesMethod(Poco::Net::HTTPRequest::HTTP_GET))
+                || is_options;
+
+            if (handler->matchesProtocol(protocol_name)
+                && method_matches
+                && handler->matchesURL(path))
+            {
+                HTTPHandlerConnectionConfig connection_config;
+                connection_config.default_session_user = default_session_user;
+                return std::make_unique<SQLDefinedQueryHandler>(server, connection_config, *handler);
+            }
+        }
+
+        return nullptr;
+    }
+
+private:
+    IServer & server;
+    std::string protocol_name;
+    std::optional<String> default_session_user;
+};
+
 HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
@@ -82,7 +150,14 @@ static void addDefaultHandlersFactory(
     HTTPRequestHandlerFactoryMain & factory,
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics);
+    AsynchronousMetrics & async_metrics,
+    const std::optional<String> & default_session_user);
+
+static void addCatchAllQueryHandlerFactory(
+    HTTPRequestHandlerFactoryMain & factory,
+    IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::optional<String> & default_session_user);
 
 static auto createPingHandlerFactory(IServer & server)
 {
@@ -127,7 +202,8 @@ static inline auto createHandlersFactoryFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & name,
     const String & prefix,
-    AsynchronousMetrics & async_metrics)
+    AsynchronousMetrics & async_metrics,
+    const std::optional<String> & default_session_user)
 {
     auto main_handler_factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
 
@@ -147,11 +223,18 @@ static inline auto createHandlersFactoryFromConfig(
         }
     }
 
+    /// Process configured rules first, then fall back to defaults. This guarantees that a
+    /// configured rule (e.g. a redirect for `/upyachka` or a dynamic-query handler under a URL
+    /// prefix like `/api/v1`) takes precedence over the built-in catch-all dynamic handler that
+    /// `<defaults/>` registers. Without this ordering, when the config is split across multiple
+    /// files (config.d/) the merged child-key iteration order is not insertion order, and the
+    /// default catch-all may be registered before the user's rule, breaking it.
+    bool has_defaults = std::find(keys.begin(), keys.end(), "defaults") != keys.end();
     for (const auto & key : keys)
     {
         if (key == "defaults")
         {
-            addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
+            /// Defer.
         }
         else if (startsWith(key, "rule"))
         {
@@ -171,16 +254,16 @@ static inline auto createHandlersFactoryFromConfig(
             }
             else if (handler_type == "dynamic_query_handler")
             {
-                main_handler_factory->addHandler(createDynamicHandlerFactory(server, config, prefix + "." + key, common_headers_override));
+                main_handler_factory->addHandler(createDynamicHandlerFactory(server, config, prefix + "." + key, common_headers_override, default_session_user));
             }
             else if (handler_type == "predefined_query_handler")
             {
-                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key, common_headers_override));
+                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key, common_headers_override, default_session_user));
             }
             else if (handler_type.starts_with("prometheus"))
             {
                 main_handler_factory->addHandler(
-                    createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics, common_headers_override));
+                    createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics, common_headers_override, default_session_user));
             }
             else if (handler_type == "replicas_status")
             {
@@ -265,7 +348,16 @@ static inline auto createHandlersFactoryFromConfig(
             }
             else if (handler_type == "webterminal")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
+                /// Build the handler through a creator lambda (like `addDefaultHandlersFactory`)
+                /// so that a composable HTTP endpoint exposing the web terminal via a custom
+                /// `handlers` section honors the per-endpoint `default_session_user` override
+                /// (including an empty override, which disables anonymous access) instead of
+                /// falling back to the global setting.
+                auto webterminal_creator = [&server, default_session_user] () -> std::unique_ptr<WebTerminalRequestHandler>
+                {
+                    return std::make_unique<WebTerminalRequestHandler>(server, default_session_user);
+                };
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(std::move(webterminal_creator));
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
@@ -292,19 +384,43 @@ static inline auto createHandlersFactoryFromConfig(
                 "{}.{}, must be 'rule' or 'defaults'", prefix, key);
     }
 
+    /// All configured rules are now registered. Add defaults (which includes the catch-all
+    /// dynamic-query handler) last so they only match what the configured rules didn't.
+    if (has_defaults)
+        addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics, default_session_user);
+
     return main_handler_factory;
 }
 
-static inline HTTPRequestHandlerFactoryPtr
-createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics, const std::string & http_handlers_key = "http_handlers")
+static inline HTTPRequestHandlerFactoryPtr createHTTPHandlerFactory(
+    IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & name,
+    AsynchronousMetrics & async_metrics,
+    const std::string & http_handlers_key,
+    const std::string & protocol_name,
+    const std::optional<String> & default_session_user)
 {
+    std::shared_ptr<HTTPRequestHandlerFactoryMain> factory;
     if (config.has(http_handlers_key))
     {
-        return createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics);
+        factory = createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics, default_session_user);
+    }
+    else
+    {
+        factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+        addDefaultHandlersFactory(*factory, server, config, async_metrics, default_session_user);
     }
 
-    auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    addDefaultHandlersFactory(*factory, server, config, async_metrics);
+    /// SQL-defined handlers (CREATE HANDLER) are matched after all configuration-defined handlers.
+    factory->addHandler(std::make_shared<SQLDefinedHTTPHandlerFactory>(server, protocol_name, default_session_user));
+
+    /// And the catch-all query handler comes last of all, so that it only sees the requests no
+    /// handler claimed: it matches paths that belong to somebody else (any `OPTIONS` preflight, and -
+    /// when `http_allow_path_requests` is on - any path at all, to interpret it as a database/table
+    /// reference). Registering it earlier would shadow every SQL-defined handler.
+    if (factory->areDefaultHandlersRegistered())
+        addCatchAllQueryHandlerFactory(*factory, server, config, default_session_user);
     return factory;
 }
 
@@ -320,16 +436,23 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
     return factory;
 }
 
-HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name, const std::string & http_handlers_key)
+HTTPRequestHandlerFactoryPtr createHandlerFactory(
+    IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    AsynchronousMetrics & async_metrics,
+    const std::string & name,
+    const std::string & http_handlers_key,
+    const std::string & protocol_name,
+    const std::optional<String> & default_session_user)
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
-        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key);
+        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key, protocol_name, default_session_user);
     if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name, config);
     if (name == "PrometheusHandler-factory")
-        return createPrometheusHandlerFactory(server, config, async_metrics, name);
+        return createPrometheusHandlerFactory(server, config, async_metrics, name, default_session_user);
     if (name == "KeeperPrometheusHandler-factory")
-        return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name);
+        return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name, default_session_user);
 #if CLICKHOUSE_CLOUD
     if (name == "CloudHandler-factory")
         return createCloudMainHandlerFactory(server, config, name);
@@ -449,7 +572,8 @@ void addDefaultHandlersFactory(
     HTTPRequestHandlerFactoryMain & factory,
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics)
+    AsynchronousMetrics & async_metrics,
+    const std::optional<String> & default_session_user)
 {
     addCommonDefaultHandlersFactory(factory, server, config);
 
@@ -459,19 +583,38 @@ void addDefaultHandlersFactory(
     /// different (HMAC) trust model and is typically less-firewalled inside the
     /// cluster, so exposing an interactive PTY shell there would punch a hole
     /// through that boundary even when `enable_webterminal` is set.
-    auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
+    auto webterminal_creator = [&server, default_session_user] () -> std::unique_ptr<WebTerminalRequestHandler>
+    {
+        return std::make_unique<WebTerminalRequestHandler>(server, default_session_user);
+    };
+    auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(std::move(webterminal_creator));
     webterminal_handler->attachNonStrictPath("/webterminal");
     webterminal_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/webterminal");
     factory.addHandler(webterminal_handler);
 
-    auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
+    /// Register Prometheus BEFORE the dynamic query handler. The dynamic handler's catch-all
+    /// path match (gated by the `http_allow_*_as_path` settings) would otherwise shadow
+    /// `/metrics` and other prometheus endpoints.
+    /// createPrometheusHandlerFactoryForHTTPRuleDefaults() can return nullptr if prometheus protocols must not be served on http port.
+    if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics, default_session_user))
+        factory.addHandler(prometheus_handler);
+
+    auto path_hints = factory.getPathHints();
+    auto dynamic_creator = [&server, default_session_user, path_hints] () -> std::unique_ptr<DynamicQueryHandler>
     {
-        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
+        HTTPHandlerConnectionConfig connection_config;
+        connection_config.default_session_user = default_session_user;
+        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)
         {
+            /// The explicit query-string forms (`?...`, `/?...`, `/query?...`) plus an empty or "/"
+            /// POST. These name no path of their own, so nothing else can be competing for them and
+            /// they are claimed here, among the defaults. The catch-all forms (a CORS preflight for
+            /// any path, and the path-as-file routing) are registered separately, after the
+            /// SQL-defined handlers - see `addCatchAllQueryHandlerFactory`.
             bool path_matches_get_or_head = startsWith(request.getURI(), "?")
                             || startsWith(request.getURI(), "/?")
                             || startsWith(request.getURI(), "/query?");
@@ -489,9 +632,94 @@ void addDefaultHandlersFactory(
     );
     factory.addHandler(query_handler);
 
-    /// createPrometheusHandlerFactoryForHTTPRuleDefaults() can return nullptr if prometheus protocols must not be served on http port.
-    if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics))
-        factory.addHandler(prometheus_handler);
+    /// Record that the catch-all still has to be appended. It cannot be added here: it claims paths
+    /// it does not own, so it has to lose to every handler that does - including the SQL-defined ones
+    /// (`CREATE HANDLER`), which `createHTTPHandlerFactory` registers after all of these.
+    factory.setDefaultHandlersRegistered();
+}
+
+void addCatchAllQueryHandlerFactory(
+    HTTPRequestHandlerFactoryMain & factory,
+    IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::optional<String> & default_session_user)
+{
+    auto path_hints = factory.getPathHints();
+    auto dynamic_creator = [&server, default_session_user, path_hints] () -> std::unique_ptr<DynamicQueryHandler>
+    {
+        HTTPHandlerConnectionConfig connection_config;
+        connection_config.default_session_user = default_session_user;
+        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
+    };
+    /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
+    /// default off), evaluated here at routing time — before authentication, where the connecting
+    /// user is unknown. The per-user `http_allow_database_as_path` / `http_allow_table_as_file` /
+    /// `http_allow_filters_as_path` settings then control, after authentication, whether a routed
+    /// path is actually interpreted (see `HTTPHandler::processQuery`). When the server flag is off,
+    /// path requests are not claimed at all, so unknown paths keep returning a plain pre-auth 404
+    /// (`NotFoundHandler`).
+    const bool allow_path_requests = config.getBool("http_allow_path_requests", false);
+    auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
+    query_handler->addFilter([allow_path_requests](const auto & request)
+        {
+            const auto & method = request.getMethod();
+            bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
+                               || method == Poco::Net::HTTPRequest::HTTP_HEAD;
+            bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
+                                   || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+            /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
+            /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
+            /// authentication and without running a query, so it is claimed here for any path —
+            /// regardless of the URL shape and independent of `http_allow_path_requests`. Otherwise an
+            /// `OPTIONS` preflight to a path the page will later GET (e.g. `/play`, `/db/table`)
+            /// reaches no handler and the browser treats the connection as broken. A handler that owns
+            /// the path answers the preflight itself: config-defined and SQL-defined handlers both
+            /// match `OPTIONS`, and both are registered before this one.
+            if (method == Poco::Net::HTTPRequest::HTTP_OPTIONS)
+                return true;
+
+            if (!is_get_or_head && !is_post_or_options)
+                return false;
+
+            /// Everything below is the path-as-file extension. Skip it unless path requests are
+            /// allowed server-wide, so unknown paths fall through to `NotFoundHandler` (HTTP 404)
+            /// exactly as before this PR. (The path features are still gated again per-user inside
+            /// `HTTPHandler::processQuery`; this server-level flag is only the routing-time gate.)
+            if (!allow_path_requests)
+                return false;
+
+            /// Skip the path-as-file routing for clients sending an `Authorization` header with a
+            /// scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`, used by
+            /// `clickhouse-local`'s S3 client when probing paths like `/nonexistent`). The dynamic
+            /// handler would otherwise reject the request with `AUTHENTICATION_FAILED` (HTTP 403)
+            /// before it has a chance to look up the path against the catalog; the
+            /// `NotFoundHandler` fallback returns a plain 404 the S3 client is already prepared to
+            /// handle as non-retriable. Supported schemes (Basic, Negotiate) still get the
+            /// dynamic-handler treatment.
+            if (request.has("Authorization"))
+            {
+                const auto & auth_header = request.get("Authorization");
+                std::string_view scheme = auth_header;
+                auto sep = scheme.find(' ');
+                if (sep != std::string_view::npos)
+                    scheme = scheme.substr(0, sep);
+                /// `Authorization: never` is a supported sentinel that makes `authenticateUserByHTTP`
+                /// ignore credentials (see `03362_basic_auth_interactive_not_with_authorization_never`);
+                /// let it through so a path-style request is handled the same way the query-string
+                /// route is, instead of falling through to `NotFoundHandler`.
+                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate") && !boost::iequals(auth_header, "never"))
+                    return false;
+            }
+
+            /// Path-as-file routing: accept any single-component or multi-segment path so the
+            /// dynamic handler can either resolve it as a database/table/filter reference or
+            /// surface the combined handler+catalog hints on a typo. The actual interpretation
+            /// (and "is this really a database?" check) happens inside the handler.
+            return true;
+        }
+    );
+    factory.addHandler(query_handler);
 }
 
 }

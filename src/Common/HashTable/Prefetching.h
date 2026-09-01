@@ -52,4 +52,27 @@ private:
     Stopwatch watch;
 };
 
+/// `min_bytes_for_prefetch` marks where a hash table whose cells carry an aggregate-state pointer
+/// stops fitting in caches. What decides how many lookups miss is the number of cells - one random
+/// probe each - not how wide they are, so a table of key-only cells has to start prefetching at the
+/// same number of cells, which for it means fewer bytes. Scale the threshold by the ratio of the
+/// cell to its mapped counterpart; for a table that does carry the pointer the ratio is 1.
+/// Both carriers of the threshold go through here: `Aggregator`'s own prefetch gates and the
+/// self-prefetching `HashMethodSerialized`.
+template <typename Data, bool has_mapped>
+size_t minBytesForPrefetch(size_t min_bytes_for_prefetch)
+{
+    if constexpr (has_mapped)
+        return min_bytes_for_prefetch;
+    else
+    {
+        using Cell = typename Data::cell_type;
+        /// The mapped counterpart of this cell is the same cell plus an aligned pointer to the aggregate state.
+        static constexpr size_t alignment = alignof(void *);
+        static constexpr size_t mapped_cell_size = ((sizeof(Cell) + sizeof(void *) + alignment - 1) / alignment) * alignment;
+
+        return min_bytes_for_prefetch * sizeof(Cell) / mapped_cell_size;
+    }
+}
+
 }

@@ -93,9 +93,15 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     flushMemoryUsageDiff(std::move(diff));
 }
 
-ReadManager::~ReadManager()
+void ReadManager::shutdownTasks()
 {
     shutdown->shutdown();
+    reader.prefetcher.shutdownTasks();
+}
+
+ReadManager::~ReadManager()
+{
+    shutdownTasks();
 }
 
 void ReadManager::cancel() noexcept
@@ -879,7 +885,8 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::ColumnIndexAndOffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
-                reader.applyColumnIndex(column, column_info, row_group);
+                if (column.use_column_index)
+                    reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
             case ReadStage::OffsetIndex:

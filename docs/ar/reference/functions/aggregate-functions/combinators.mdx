@@ -303,7 +303,7 @@ FROM
 
 يغيّر سلوك دالة تجميعية.
 
-يحوّل هذا المُركِّب ناتج الدالة التجميعية إلى نوع البيانات [Nullable](/ar/reference/data-types/nullable). وإذا لم تتوفر للدالة التجميعية قيم لإجراء الحساب عليها، فإنها تُرجع [NULL](/ar/reference/settings/formats#input_format_null_as_default).
+يحوّل هذا المُركِّب ناتج الدالة التجميعية إلى نوع البيانات [Nullable](/ar/reference/data-types/nullable). وإذا لم تتوفر للدالة التجميعية قيم لإجراء الحساب عليها، فإنها تُرجع [NULL](/ar/reference/settings/formats/input-format#input_format_null_as_default).
 
 يمكن استخدام `-OrNull` مع مُركِّبات أخرى.
 
@@ -338,7 +338,7 @@ SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE n
 └───────────────────┴───────────────────────────────┘
 ```
 
-يمكن أيضًا استخدام `-OrNull` مع combinators أخرى. ويكون ذلك مفيدًا عندما لا تقبل الدالة التجميعية مُدخلًا فارغًا.
+يمكن أيضًا استخدام `-OrNull` مع مُركِّبات أخرى. ويكون ذلك مفيدًا عندما لا تقبل الدالة التجميعية مُدخلًا فارغًا.
 
 ```sql title="Query"
 SELECT avgOrNullIf(x, x > 10)

@@ -580,14 +580,6 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
 #endif
 
 #if defined USE_LIBPQXX && USE_LIBPQXX
-void PostgreSQLIntegration::closePostgreSQLConnection(pqxx::connection * psql)
-{
-    if (psql)
-    {
-        psql->close();
-    }
-}
-
 std::unique_ptr<PostgreSQLIntegration>
 PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
 {
@@ -619,8 +611,8 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     }
     try
     {
-        std::unique_ptr<PostgreSQLIntegration> psql = std::make_unique<PostgreSQLIntegration>(
-            fcc, scc, PostgreSQLUniqueKeyPtr(new pqxx::connection(connection_str), closePostgreSQLConnection));
+        std::unique_ptr<PostgreSQLIntegration> psql
+            = std::make_unique<PostgreSQLIntegration>(fcc, scc, std::make_unique<pqxx::connection>(connection_str));
 
         if (read_log || (!psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && !psql->performQuery("CREATE SCHEMA test;")))
         {
@@ -698,7 +690,7 @@ int PostgreSQLIntegration::performQuery(const String & query)
     }
     try
     {
-        pqxx::work w(*(postgres_connection.get()));
+        pqxx::work w(*postgres_connection);
 
         out_file << query << std::endl;
         /// Ignore the query result set
