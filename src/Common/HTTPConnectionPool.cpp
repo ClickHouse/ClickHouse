@@ -881,16 +881,16 @@ private:
 
 
     /// Establish a connection through a non-bypassed proxy. Poco connects to the proxy, which
-    /// resolves and reaches the target, so the target `HostResolver` is not consulted and
-    /// `_resolved_host` is left empty (Poco then uses `_host` for the proxy request / `CONNECT`
-    /// target). A connect failure here belongs to the proxy, so it propagates without resolver
-    /// bookkeeping or per-address retry.
+    /// resolves and reaches the target, so the target `HostResolver` is not consulted.
+    /// `_resolved_host` is set to the proxy host so that `getResolvedAddress()` reports it
+    /// (e.g. for S3 request logging) instead of the target URL host that was never dialled.
     ConnectionPtr prepareConnectionViaProxy(
         const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
     {
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
+        connection->setResolvedHost(poco_proxy_config.host);
 
         try
         {
