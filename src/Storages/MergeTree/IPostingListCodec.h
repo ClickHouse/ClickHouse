@@ -41,9 +41,6 @@ public:
 
     /// Total number of row ids accumulated so far.
     virtual size_t cardinality() const = 0;
-
-    /// Heap memory held by the accumulator (for memory accounting during the build).
-    virtual size_t memoryUsageBytes() const = 0;
 };
 
 /// IPostingListCodec is an interface for serializing/deserializing text index posting lists.

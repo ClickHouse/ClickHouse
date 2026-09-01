@@ -288,14 +288,6 @@ void PostingListEncoderNone::finalize(WriteBuffer & out, TokenPostingsInfo & inf
         info.header |= SingleBlock;
 }
 
-size_t PostingListEncoderNone::memoryUsageBytes() const
-{
-    size_t result = current_segment.getSizeInBytes();
-    for (const auto & segment : segments)
-        result += segment.getSizeInBytes();
-    return result;
-}
-
 std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder() const
 {
     return std::make_unique<PostingListEncoderNone>();

@@ -140,20 +140,6 @@ public:
     /// Total number of row ids added so far.
     size_t cardinality() const { return total_row_ids; }
 
-    /// Heap memory held by the in-memory encoded representation.
-    size_t memoryUsageBytes() const
-    {
-        size_t block_metas_bytes = 0;
-        for (const auto & segment : segment_block_metas)
-            block_metas_bytes += segment.metas.capacity() * sizeof(PackedBlockMeta);
-
-        return compressed_data.capacity()
-            + block_values.capacity() * sizeof(UInt32)
-            + segment_descriptors.capacity() * sizeof(SegmentDescriptor)
-            + segment_block_metas.capacity() * sizeof(SegmentBlockMetas)
-            + block_metas_bytes;
-    }
-
     /// Deserialize a postings list from input `in` into `out`.
     ///
     /// Format per segment:
@@ -225,7 +211,6 @@ public:
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     size_t cardinality() const override { return impl.cardinality(); }
-    size_t memoryUsageBytes() const override { return impl.memoryUsageBytes(); }
 
 private:
     SegmentedPostingListCodec impl;
@@ -267,7 +252,6 @@ public:
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     size_t cardinality() const override { return total_row_ids; }
-    size_t memoryUsageBytes() const override;
 
 private:
     void finishSegment();
