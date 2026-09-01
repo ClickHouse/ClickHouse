@@ -398,9 +398,9 @@ struct ComparisonFilterInfo
     /// so that the tightened predicate reaches downstream analysis.
     bool modified = false;
     /// Set when the filter went to `opaque_filters` because this analysis and execution do not order
-    /// its constant the same way. Such a filter is not a point in that order, so it must stay out of
-    /// the `notEquals` merge into `NOT IN`, whose set membership uses that order, as well as out of
-    /// the pairwise comparison.
+    /// its constant the same way. Such a filter must stay out of the pairwise comparison, and out of
+    /// the `notEquals` merge into `NOT IN`, which replaces the comparison with set membership: a
+    /// third notion of equality, which need not agree with the one the comparison applies.
     bool order_inconsistent = false;
 };
 
@@ -423,7 +423,8 @@ struct ExpressionFilters
     /// Convertible notEquals filters, keyed by their canonicalized converted value.
     std::map<Field, ComparisonFilterInfo> not_equals_filters;
     /// Excluded from the analysis: non-lossless conversions (they also veto the fold-to-false
-    /// collapse), NaN constants, and everything when pruning is disabled.
+    /// collapse), NaN constants, a nullable comparison result, a constant this analysis and execution
+    /// do not order the same way, and everything when pruning is disabled.
     std::vector<ComparisonFilterInfo> opaque_filters;
 };
 

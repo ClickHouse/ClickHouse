@@ -175,16 +175,21 @@ SELECT count() FROM t_element_wise_not_in WHERE a != [(toFloat32(nan), toInt8(9)
 SELECT count() FROM t_element_wise_not_in WHERE a != [(toFloat32(nan), toInt8(9))] AND a != [(nan, toInt16(9))] AND a != [(nan, toInt32(9))] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
 SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_not_in WHERE a != [(toFloat32(nan), toInt8(9))] AND a != [(nan, toInt16(9))] AND a != [(nan, toInt32(9))] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0, optimize_min_inequality_conjunction_chain_length = 3) WHERE explain ILIKE '%function_name: notIn,%';
 
--- 20) The merge that must survive: a bare `NaN` constant is also held aside from the pruning analysis,
---     but by the order it is a point in, so it still merges. Two ordinary conjuncts make up the three
---     entries. The second query drops the `NaN` conjunct and leaves two, which is what shows the held
---     aside one is carrying the merge here rather than the arm passing for some other reason.
+-- 20) The merge that must survive: a bare `NaN` constant is held aside from the pruning analysis by an
+--     older screen, which does not set this flag, so it still merges. What is excluded is the flagged
+--     filter, not every opaque one. Two ordinary conjuncts make up the three entries; the second query
+--     drops the `NaN` conjunct and leaves two, which shows the held aside one is carrying the merge.
 SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_not_in WHERE f != nan AND f != 1. AND f != 2. SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0, optimize_min_inequality_conjunction_chain_length = 3) WHERE explain ILIKE '%function_name: notIn,%';
 SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_not_in WHERE f != 1. AND f != 2. SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0, optimize_min_inequality_conjunction_chain_length = 3) WHERE explain ILIKE '%function_name: notIn,%';
 
 -- 21) The merge also has to leave the rejection of arm 11 alone: a `String` against a container has no
 --     common type, and `NOT IN` reports a different error for it than the comparison does.
 SELECT count() FROM t_element_wise_live WHERE s != CAST((1, 2), 'Tuple(UInt8, UInt8)') AND s != CAST((1, 2), 'Tuple(UInt16, UInt16)') AND s != CAST((1, 2), 'Tuple(UInt32, UInt32)') SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3; -- { serverError NO_COMMON_TYPE }
+
+-- 22) The nested-`NULL` constant of arm 12 reaches the merge too, and is held out of it by the same flag.
+--     Here the two notions of equality happen to agree, so this exclusion is a conservative choice rather
+--     than a correctness requirement: the arm pins the choice, not a result.
+SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_nested_null WHERE a != [NULL] AND a != [1] AND a != [2] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0, optimize_min_inequality_conjunction_chain_length = 3) WHERE explain ILIKE '%function_name: notIn,%';
 
 DROP TABLE t_element_wise_array;
 DROP TABLE t_element_wise_tuple;
