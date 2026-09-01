@@ -108,6 +108,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <cctype>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 
@@ -182,6 +183,23 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Analyzer identifiers are `__tableN.col`; wrap headers and dummy DAGs may disagree on N.
+std::string_view stripAnalyzerTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && std::isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
 
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
@@ -299,16 +317,46 @@ void tryAddClusterWrapFilter(QueryPlan & query_plan, const TableExpressionData &
     ActionsDAG rename_dag(header->getColumnsWithTypeAndName());
     const auto & identifier_to_name = table_expression_data.getColumnIdentifierToColumnName();
 
+    auto header_name_for_filter_input = [&](const String & input_name) -> String
+    {
+        if (header->has(input_name))
+            return input_name;
+
+        auto it = identifier_to_name.find(input_name);
+        if (it != identifier_to_name.end() && header->has(it->second))
+            return it->second;
+
+        for (const auto & [identifier, physical] : identifier_to_name)
+        {
+            if (physical == input_name && header->has(identifier))
+                return identifier;
+        }
+
+        /// Wrap subquery planning restarts `__tableN` at 1 while JOIN dummy analysis
+        /// may still use `__table2.bid`. Match on the unqualified storage name.
+        const auto input_unqualified = stripAnalyzerTableQualifier(input_name);
+        for (const auto & column : header->getColumnsWithTypeAndName())
+        {
+            const auto header_unqualified = stripAnalyzerTableQualifier(column.name);
+            if (header_unqualified == input_name
+                || input_unqualified == column.name
+                || header_unqualified == input_unqualified)
+                return column.name;
+        }
+
+        return {};
+    };
+
     for (const auto * input : filter_dag.getInputs())
     {
         if (header->has(input->result_name))
             continue;
 
-        auto it = identifier_to_name.find(input->result_name);
-        if (it == identifier_to_name.end() || !header->has(it->second))
+        const auto header_name = header_name_for_filter_input(input->result_name);
+        if (header_name.empty() || !header->has(header_name))
             continue;
 
-        const auto & physical = rename_dag.findInOutputs(it->second);
+        const auto & physical = rename_dag.findInOutputs(header_name);
         rename_dag.addOrReplaceInOutputs(rename_dag.addAlias(physical, input->result_name));
     }
 

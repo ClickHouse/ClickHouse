@@ -71,7 +71,6 @@ class ReadFromCluster : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromCluster"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromCluster(
         const Names & column_names_,
@@ -109,6 +108,8 @@ private:
     bool extension_has_predicate = false;
     UInt64 extension_filter_hash = 0;
     bool extension_used_in_pipeline = false;
+    /// Listing DAG with analyzer identifiers (`__tableN.col`) rewritten to storage names.
+    std::optional<ActionsDAG> listing_filter_dag;
 
     void createExtension(const ActionsDAG::Node * predicate);
     ContextPtr updateSettings(const Settings & settings);

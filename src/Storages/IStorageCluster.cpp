@@ -18,13 +18,17 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Common/ProfileEvents.h>
 
 #include <algorithm>
+#include <cctype>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 
 namespace ProfileEvents
@@ -50,6 +54,71 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
+namespace
+{
+
+/// Analyzer / wrap headers use `__tableN.col`; Iceberg min/max and hive partition
+/// listing match DAG inputs against storage column names.
+std::string_view stripAnalyzerTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && std::isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
+
+bool isStorageColumnName(const StorageSnapshotPtr & storage_snapshot, const String & name)
+{
+    if (!storage_snapshot)
+        return false;
+
+    return storage_snapshot->tryGetColumn(
+        GetColumnsOptions(GetColumnsOptions::All)
+            .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
+            .withSubcolumns(),
+        name).has_value();
+}
+
+std::optional<ActionsDAG> remapListingFilterInputsToStorageColumns(
+    const ActionsDAG & filter,
+    const StorageSnapshotPtr & storage_snapshot)
+{
+    std::unordered_map<std::string, ColumnWithTypeAndName> replacements;
+    bool has_storage_input = false;
+
+    for (const auto * input : filter.getInputs())
+    {
+        if (input->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        String physical{stripAnalyzerTableQualifier(input->result_name)};
+        if (!isStorageColumnName(storage_snapshot, physical))
+            physical = input->result_name;
+        if (!isStorageColumnName(storage_snapshot, physical))
+            continue;
+
+        has_storage_input = true;
+        replacements.emplace(input->result_name, ColumnWithTypeAndName(nullptr, input->result_type, physical));
+    }
+
+    if (!has_storage_input)
+        return {};
+
+    /// Rebuild so listing inputs are storage names (`bid`), not analyzer
+    /// identifiers (`__table1.bid`). Iceberg min/max lookup is by schema name.
+    return ActionsDAG::buildFilterActionsDAG({filter.getOutputs().at(0)}, replacements);
+}
+
+}
+
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
@@ -60,21 +129,23 @@ IStorageCluster::IStorageCluster(
 {
 }
 
-void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
-    const ActionsDAG::Node * predicate = nullptr;
-    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
-    if (filter)
-        predicate = filter->getOutputs().at(0);
-
-    createExtension(predicate);
-}
-
 void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
     const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
+
+    listing_filter_dag.reset();
+    if (filter)
+    {
+        if (auto remapped = remapListingFilterInputsToStorageColumns(*filter, storage_snapshot))
+        {
+            listing_filter_dag = std::move(*remapped);
+            filter = &*listing_filter_dag;
+            predicate = filter->getOutputs().at(0);
+        }
+        else if (!predicate)
+            predicate = filter->getOutputs().at(0);
+    }
+
     const UInt64 filter_hash = filter ? filter->getHash() : 0;
     const bool has_predicate = predicate != nullptr;
 
