@@ -61,9 +61,9 @@ TTLCalcTransform::TTLCalcTransform(
     {
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
-            /// A rule about an absent column keeps its old info: rebuilt from defaults it would
-            /// describe a column the part does not store, as fresh and unfinished.
-            if (!header_->has(name))
+            /// Preserve only for caller-declared expired columns, which the part no longer stores.
+            /// A column merely absent from this stream (recalculation reads only inputs) is rebuilt.
+            if (!header_->has(name) && expired_columns.contains(name))
             {
                 preserved_column_ttls.emplace_back(name, old_ttl_infos.columns_ttl[name]);
                 continue;
