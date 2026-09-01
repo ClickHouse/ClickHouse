@@ -8551,6 +8551,11 @@ Log one line per merged bucket of the final merge of two-level aggregation, with
 `PerBucketMergeTiming: bucket=<N> actual_us=<U> instance=<I>`, where `instance` is the index of the merging source that processed the bucket.
 Purely an instrument for analyzing the skew between bucket merge costs; it does not change the execution in any way.
 )", 0) \
+    DECLARE(Bool, enable_multi_way_keyed_merge, false, R"(
+In the final merge of two-level aggregation, merge each destination key's aggregate states from all source threads in one multi-way wave instead of folding the sources in pairwise, one source at a time.
+The routing of the source hash tables into the destination table runs first and only records which source states collide on which destination state. Then, for aggregate functions that support parallel merge (currently `uniqExact`) and destination keys with at least 3 collided source states, all of the key's states are merged in a single bucket-parallel wave (`parallelizeMergeMulti`, with `parallelizeMergePrepare` converting the participants to two-level sets in parallel when worthwhile), and the merged source states are freed immediately, key by key. Aggregate functions without parallel merge support (including combinator-wrapped forms such as `-If` and `-State`) and keys with fewer collided sources keep the existing pairwise merge.
+The per-key merge order is unchanged, so the result is identical with the setting on and off.
+)", 0) \
     DECLARE(Bool, enable_packed_string_keys_in_aggregation, true, R"(
 Use a hash table keyed by 16-byte packed string references (`PackedStringRef`) for `GROUP BY` with a single non-nullable `String` key. Keys of up to 11 bytes are stored inline in the packed reference; longer keys are referenced in an arena.
 This is faster for most workloads, but can be slower than the legacy method for `GROUP BY` with very few distinct keys longer than 11 bytes (most noticeably 12..24 bytes), where the legacy hash table keeps keys inline in the cell while the packed one dereferences the arena pointer on every probe.

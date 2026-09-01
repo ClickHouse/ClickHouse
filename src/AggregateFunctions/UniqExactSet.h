@@ -8,6 +8,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <base/defines.h>
 #include <base/getL2CacheSize.h>
 
 #include <atomic>
@@ -208,6 +209,18 @@ public:
         }
 
         /// All sets are two-level, perform parallel bucket-wise merge.
+        ///
+        /// Every participant is materialized through `asTwoLevelChecked()` below, so a shared
+        /// pointee here would silently take the serial 256-sub-table deep copy in
+        /// `doDeepCopyIfNeeded` inside the wave. Callers must hand in exclusively owned states
+        /// (the keyed and without-key merge paths do: their states come straight from the
+        /// aggregation hash tables and never escape before the merge).
+        for (size_t i = 0; i < places.size(); ++i)
+            chassert(
+                !accessor(places[i])->hasSharedTwoLevelPointee(),
+                "UniqExactSet::parallelizeMergeMulti: a participating state's two-level pointee is shared; "
+                "the deep copy in doDeepCopyIfNeeded must not fire inside the merge wave");
+
         auto & first_two_level = first->asTwoLevelChecked();
         constexpr size_t NUM_BUCKETS = TwoLevelSet::NUM_BUCKETS;
 
@@ -432,6 +445,16 @@ public:
 
     bool isSingleLevel() const { return !two_level_set; }
     bool isTwoLevel() const { return !!two_level_set; }
+
+    /// True when this set holds a two-level pointee that has escaped to another holder (`is_shared`
+    /// set by `getTwoLevelSet`, e.g. when an empty destination adopted it in `merge`): the next
+    /// mutating access through `asTwoLevelChecked` forks it - the serial 256-sub-table deep copy in
+    /// `doDeepCopyIfNeeded` - instead of mutating in place. `parallelizeMergeMulti` asserts this is
+    /// false for every participant, so that the deep copy never silently fires inside the wave.
+    bool hasSharedTwoLevelPointee() const
+    {
+        return two_level_set && two_level_set->is_shared.load(std::memory_order_acquire);
+    }
 
 private:
     static constexpr size_t insert_prefetch_look_ahead = 16;

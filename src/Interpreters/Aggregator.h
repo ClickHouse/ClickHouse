@@ -172,6 +172,14 @@ public:
         /// with the instrument off, which is the safe direction (it never changes results).
         bool log_per_bucket_merge_timings = false;
 
+        /// In the two-level final merge, merge each destination key's parallelizable aggregate
+        /// states (currently uniqExact) from all source variants in one multi-way wave instead of
+        /// folding the sources in pairwise (see `Aggregator::mergeBucketMultiWayImpl`). Kept out
+        /// of the constructor and of the plan serialization deliberately, like `bucket_top_k`:
+        /// the merge order never changes the result, and a deserialized plan re-running at the
+        /// default (off) is the safe direction.
+        bool enable_multi_way_keyed_merge = false;
+
         /// Merge the per-thread single-level hash tables in parallel, partitioned by the key hash,
         /// instead of the serial merge.
         bool enable_parallel_single_level_merge = false;
@@ -1153,6 +1161,15 @@ private:
     template <typename Method>
     void mergeBucketImpl(
         ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> & is_cancelled) const;
+
+    /// Multi-way variant of the bucket merge (`enable_multi_way_keyed_merge`): phase 1 routes
+    /// every source table into the destination and groups the colliding source states per
+    /// destination state; phase 2 merges each destination key's states in one multi-way wave
+    /// for aggregate functions that support parallel merge, pairwise otherwise.
+    template <typename Method>
+    requires MapAggregationMethod<Method>
+    void mergeBucketMultiWayImpl(
+        ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, bool prefetch, std::atomic<bool> & is_cancelled) const;
 
     template <typename Method>
     void convertBlockToTwoLevelImpl(
