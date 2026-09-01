@@ -1,7 +1,8 @@
 -- Asserts that the top-K threshold merge engages (and prunes) exactly for the query shapes it
 -- serves, via its profile events. The plan shape and the merge path are pinned: no parallel
 -- replicas (the dataflow-statistics updater forces the ordinary merge on purpose), no plan
--- serialization (the parameter deliberately does not survive it), forced two-level states over
+-- serialization (it would make the local plan shape depend on the round trip; the last case below
+-- covers a shard-local final aggregation with it on), forced two-level states over
 -- a single deterministic scan stream (the threshold merge serves the two-level final merge,
 -- which still runs on several threads, one bucket per worker).
 
@@ -61,6 +62,11 @@ SELECT k, countIf(u >= 2) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c
 SELECT k, uniqExact(nullIf(u, 0)) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_g_uniq_exact_null' FORMAT Null;
 
+-- A lone `count` with an argument has the same state as `count()`, so it stays on the cheaper
+-- conversion-stage selection too.
+SELECT k, count(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_n_count_argument' FORMAT Null;
+
 -- Shapes the threshold merge must not serve.
 -- The estimating uniq: its estimate is not exactly subadditive.
 SELECT k, uniq(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
@@ -82,6 +88,18 @@ SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC, k
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_m_disabled', enable_aggregation_top_k_threshold_merge = 0 FORMAT Null;
 
+-- Shard-local final aggregation with the query plan serialized. The parameter is not on the wire,
+-- and does not need to be: the optimization is a property of the plan shape, and the side that
+-- runs the aggregation derives it from its own plan (a deserialized plan is optimized again in
+-- `executeQuery` before it is turned into a pipeline). The session pins `serialize_query_plan = 0`
+-- above only to keep the local plan shape deterministic, not because the merge cannot survive it.
+CREATE TABLE threshold_top_k_events_dist AS threshold_top_k_events
+    ENGINE = Distributed(test_shard_localhost, currentDatabase(), threshold_top_k_events, k);
+
+SELECT k, uniqExact(u) AS c FROM threshold_top_k_events_dist GROUP BY k ORDER BY c DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_dist_serialized', serialize_query_plan = 1,
+        distributed_group_by_no_merge = 2, prefer_localhost_replica = 0 FORMAT Null;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
@@ -92,6 +110,23 @@ SELECT
     ProfileEvents['AggregationBucketTopKConversions'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05043\_ttkm\_%'
+    AND log_comment != '05043_ttkm_dist_serialized'
 ORDER BY log_comment;
 
+-- The shard's own query: the merge engages there exactly as it does locally.
+SELECT
+    'dist_serialized',
+    ProfileEvents['AggregationThresholdTopKMerges'] > 0,
+    ProfileEvents['AggregationThresholdTopKMergedGroups'] > 0,
+    ProfileEvents['AggregationThresholdTopKPrunedCells'] > 0,
+    ProfileEvents['AggregationBucketTopKConversions'] > 0
+FROM system.query_log
+-- The shard's own row runs on the connection's database, not on the test one; the test database
+-- is in the rewritten query text instead, and scopes this row to this copy of the test.
+WHERE type = 'QueryFinish' AND NOT is_initial_query AND log_comment = '05043_ttkm_dist_serialized'
+    AND query LIKE concat('%', currentDatabase(), '%')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+DROP TABLE threshold_top_k_events_dist;
 DROP TABLE threshold_top_k_events;

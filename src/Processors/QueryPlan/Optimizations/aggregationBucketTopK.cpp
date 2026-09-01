@@ -150,7 +150,12 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         if (!settings.aggregation_bucket_top_k)
             return 0;
 
-        if (aggregate.function->getName() != "count" || !aggregate.argument_names.empty() || !aggregate.parameters.empty())
+        /// Any lone `count`: `count()`, and `count(x)` in both of its forms (the plain one for a
+        /// non-nullable argument, `AggregateFunctionCountNotNullUnary` for a nullable one). All three
+        /// keep the count in the leading `UInt64` of `AggregateFunctionCountData`, which is what the
+        /// conversion-stage selection reads (`Aggregator::convertOneBucketToChunkTopK`), so the
+        /// argument makes no difference to it. No parameters: a parametric `count` is another function.
+        if (aggregate.function->getName() != "count" || !aggregate.parameters.empty())
             return 0;
 
         /// The conversion-stage selection by the count (`bucket_top_k`) and the threshold merge

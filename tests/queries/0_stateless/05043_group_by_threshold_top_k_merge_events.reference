@@ -11,3 +11,5 @@ j_string	0	0	0	0
 k_having	0	0	0	0
 l_two_columns	0	0	0	0
 m_disabled	0	0	0	1
+n_count_argument	0	0	0	1
+dist_serialized	1	1	1	0

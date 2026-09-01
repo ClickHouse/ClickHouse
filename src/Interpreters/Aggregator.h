@@ -158,8 +158,9 @@ public:
         /// `ORDER BY <the lone count() output> LIMIT n`: each two-level bucket materializes
         /// only its n best cells by that count. Exact, because a group outside its own
         /// bucket's best n has at least n groups ahead of it globally. Zero disables. Kept
-        /// out of the constructor and of the plan serialization deliberately: a deserialized
-        /// plan re-runs without the optimization, which is the safe direction.
+        /// out of the constructor and off the wire deliberately: it is a property of the plan
+        /// shape, and the side that runs the aggregation derives it from its own plan (a
+        /// deserialized plan is optimized again before it is turned into a pipeline).
         size_t bucket_top_k = 0;
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_count_index = 0;
@@ -172,8 +173,8 @@ public:
         /// values of that aggregate and stops as soon as no unseen group can rank among the
         /// bucket's n best, so only the candidate groups are merged and materialized. Exact for
         /// the same reason as `bucket_top_k`: a group outside its own bucket's best n has at
-        /// least n groups ahead of it globally. Kept out of the constructor and of the plan
-        /// serialization deliberately, like `bucket_top_k`.
+        /// least n groups ahead of it globally. Kept out of the constructor and off the wire
+        /// deliberately, like `bucket_top_k`.
         struct ThresholdTopKParams
         {
             size_t k = 0;
