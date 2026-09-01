@@ -372,14 +372,12 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `s3_max_put_burst`                              | Максимальное число одновременных PUT-запросов до достижения лимита RPS.                                                                                                                                                                                                                                                                                       | То же, что и `s3_max_put_rps`            |
 | `s3_max_get_rps`                                | Максимальное число GET-запросов в секунду до применения ограничения скорости.                                                                                                                                                                                                                                                                                 | `0` (без ограничений)                    |
 | `s3_max_get_burst`                              | Максимальное число одновременных GET-запросов до достижения лимита RPS.                                                                                                                                                                                                                                                                                       | То же, что и `s3_max_get_rps`            |
-| `read_resource`                                 | Имя ресурса для [планирования](/ru/concepts/features/configuration/server-config/workload-scheduling) запросов чтения.                                                                                                                                                                                                                                           | Пустая строка (отключено)                |
-| `write_resource`                                | Имя ресурса для [планирования](/ru/concepts/features/configuration/server-config/workload-scheduling) запросов записи.                                                                                                                                                                                                                                           | Пустая строка (отключено)                |
 | `key_template`                                  | Определяет формат генерации ключей объектов с использованием синтаксиса [re2](https://github.com/google/re2/wiki/Syntax). Требует флага `storage_metadata_write_full_object_key`. Несовместим с `root path` в `endpoint`. Требует `key_compatibility_prefix`.                                                                                                 | -                                        |
 | `key_compatibility_prefix`                      | Требуется вместе с `key_template`. Указывает предыдущий `root path` из `endpoint` для чтения старых версий метаданных.                                                                                                                                                                                                                                        | -                                        |
 | `read_only`                                     | Разрешает только чтение с диска.                                                                                                                                                                                                                                                                                                                              | -                                        |
 
 <Note>
-  Google Cloud Storage (GCS) также поддерживается с типом `s3`. См. [MergeTree с хранилищем GCS](/ru/integrations/connectors/data-sources/gcs).
+  Google Cloud Storage (GCS) также поддерживается при использовании типа `s3`. См. [GCS backed MergeTree](/ru/integrations/connectors/data-sources/gcs).
 </Note>
 
 <div id="plain-storage">
@@ -530,20 +528,18 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   #### Другие параметры
 </div>
 
-| Параметр                         | Описание                                                                                                               | Значение по умолчанию                    |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `metadata_path`                  | Путь в локальной файловой системе для хранения файлов метаданных Blob Storage.                                         | `/var/lib/clickhouse/disks/<disk_name>/` |
-| `skip_access_check`              | Если `true`, пропускает проверку доступа к диску при запуске.                                                          | `false`                                  |
-| `read_resource`                  | Имя ресурса для [планирования](/ru/concepts/features/configuration/server-config/workload-scheduling) запросов на чтение. | Пустая строка (отключено)                |
-| `write_resource`                 | Имя ресурса для [планирования](/ru/concepts/features/configuration/server-config/workload-scheduling) запросов на запись. | Пустая строка (отключено)                |
-| `metadata_keep_free_space_bytes` | Объём свободного места на диске метаданных, который нужно зарезервировать.                                             | -                                        |
+| Параметр                         | Описание                                                                       | Значение по умолчанию                    |
+| -------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------- |
+| `metadata_path`                  | Путь в локальной файловой системе для хранения файлов метаданных Blob Storage. | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`              | Если `true`, пропускает проверку доступа к диску при запуске.                  | `false`                                  |
+| `metadata_keep_free_space_bytes` | Объём свободного места на диске метаданных, который нужно зарезервировать.     | -                                        |
 
 Примеры рабочих конфигураций можно найти в каталоге интеграционных тестов (см., например, [test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) или [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
 
 <Info>
   **Репликация zero-copy не готова к промышленной эксплуатации**
 
-  В ClickHouse версии 22.8 и выше репликация zero-copy по умолчанию отключена. Эта возможность не рекомендуется для использования в production.
+  В ClickHouse версии 22.8 и выше репликация zero-copy по умолчанию отключена. Эта возможность не рекомендуется для использования в продакшне.
 </Info>
 
 <div id="using-hdfs-storage-unsupported">

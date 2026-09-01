@@ -14,7 +14,7 @@ This section outlines the pricing model for Change Data Capture (CDC) connectors
 | Connector        | Feature lifecycle         | Billing status |
 |------------------|---------------------------|----------------|
 | **Postgres CDC** | General Availability (GA) | Billed according to the listed [pricing dimensions](#pricing-dimensions-oltp). |
-| **MySQL CDC**    | Public Beta               | **Free** during Public Beta. Billing will start when the connector is promoted to General Availability (GA) on **September 1st, 2026**, according to the listed [pricing dimensions](#pricing-dimensions-oltp). |
+| **MySQL CDC**    | General Availability (GA) | Billed according to the listed [pricing dimensions](#pricing-dimensions-oltp) as of September 1st, 2026. |
 | **MongoDB CDC**  | Public Beta               | **Free** during Public Beta. Billing will start when the connector is promoted to General Availability (GA), according to the listed [pricing dimensions](#pricing-dimensions-oltp). |
 
 ### Pricing dimensions {#pricing-dimensions-oltp}
@@ -48,7 +48,7 @@ Because compute is shared, this pricing component remains **flat** per service a
 ### Example {#example-oltp}
 
 <Note>
-This example combines multiple connectors to illustrate the shared-compute pricing model for CDC ClickPipes. Note that [MySQL CDC is free during Public Beta](#cdc-oltp).
+This example combines multiple connectors to illustrate the shared-compute pricing model for CDC ClickPipes.
 </Note>
 
 Consider a service in the **Scale** tier with the following setup:
