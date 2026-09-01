@@ -230,15 +230,20 @@ bool S3TablesCatalog::tryGetTableMetadata(
     return true;
 }
 
-void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data, bool /*if_exists*/) const
+void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data, bool if_exists) const
 {
     /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-delete.html
     if (!delete_data)
+    {
+        if (if_exists && !existsTable(namespace_name, table_name))
+            return;
+
         throw DB::Exception(
             DB::ErrorCodes::SUPPORT_IS_DISABLED,
             "S3 Tables cannot drop table {}.{} without deleting its data, and `iceberg_delete_data_on_drop` is disabled. "
             "Enable `iceberg_delete_data_on_drop` to drop the table together with its data",
             namespace_name, table_name);
+    }
 
     const auto state_snapshot = state.get();
     const std::string endpoint
