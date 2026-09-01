@@ -6,9 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Session-mutating statements (`SET`, `SET ROLE`, `USE`, `BEGIN` / `COMMIT` / `ROLLBACK` /
 # `SET TRANSACTION SNAPSHOT`) run under the `readonly = 2` mode that the HTTP execution path sets for safe
-# methods, so the runtime `readonly` enforcement cannot fence them off. But they change session or transaction
-# state that persists across requests when `session_id` is in use, and HTTP requires safe methods to be
-# side-effect-free: a handler declared for GET is also served for HEAD, where the suppressed response body
+# methods, so the runtime `readonly` enforcement cannot be relied on to fence them off. But they change session
+# or transaction state that persists across requests when `session_id` is in use, and HTTP requires safe methods
+# to be side-effect-free: a handler declared for GET is also served for HEAD, where the suppressed response body
 # would hide the effect entirely. So such a handler must list only mutating methods (POST, PUT, DELETE) -
 # both at CREATE and at ALTER time.
 
