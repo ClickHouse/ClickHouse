@@ -33,6 +33,11 @@ struct PrometheusQueryEvaluationSettings
     String cluster_name;
     StorageID remote_time_series_storage_id = StorageID::createEmpty();
 
+    /// The read context's shard-skipping semantics, pinned into the generated cluster() read:
+    /// cluster table functions otherwise force skip_unavailable_shards = 1 (IStorageCluster).
+    bool skip_unavailable_shards = false;
+    String skip_unavailable_shards_mode;
+
     /// Data types of the corresponding columns in the TimeSeries table.
     /// We use these data types for the columns we read from table function prometheusQuery().
     DataTypePtr timestamp_data_type;
