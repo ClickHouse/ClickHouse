@@ -182,29 +182,31 @@ void collectTupleCodecs(
 
 size_t countTupleCodecAnnotations(const ASTPtr & type_ast)
 {
-    const auto * data_type = type_ast ? type_ast->as<ASTDataType>() : nullptr;
-    if (!data_type)
+    if (!type_ast)
         return 0;
+
     size_t count = 0;
     if (const auto * tuple = type_ast->as<ASTTupleDataType>())
         count += std::count_if(tuple->element_codecs.begin(), tuple->element_codecs.end(), [](const auto & codec) { return codec != nullptr; });
-    if (auto arguments = data_type->getArguments())
-        for (const auto & argument : arguments->children)
-            count += countTupleCodecAnnotations(argument);
+    /// Walk every AST child: Nested and typed JSON interpose ASTNameTypePair and
+    /// ASTObjectTypeArgument nodes, which must not hide tuple codec annotations.
+    for (const auto & child : type_ast->children)
+        count += countTupleCodecAnnotations(child);
     return count;
 }
 
 size_t countTupleCodecRemovals(const ASTPtr & type_ast)
 {
-    const auto * data_type = type_ast ? type_ast->as<ASTDataType>() : nullptr;
-    if (!data_type)
+    if (!type_ast)
         return 0;
+
     size_t count = 0;
     if (const auto * tuple = type_ast->as<ASTTupleDataType>())
         count += std::count(tuple->element_codec_removals.begin(), tuple->element_codec_removals.end(), true);
-    if (auto arguments = data_type->getArguments())
-        for (const auto & argument : arguments->children)
-            count += countTupleCodecRemovals(argument);
+    /// Walk every AST child: Nested and typed JSON interpose ASTNameTypePair and
+    /// ASTObjectTypeArgument nodes, which must not hide tuple codec operations.
+    for (const auto & child : type_ast->children)
+        count += countTupleCodecRemovals(child);
     return count;
 }
 

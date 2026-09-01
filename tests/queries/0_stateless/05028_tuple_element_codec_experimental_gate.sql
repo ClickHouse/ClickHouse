@@ -1,0 +1,63 @@
+DROP TABLE IF EXISTS tuple_element_codec_gate;
+DROP TABLE IF EXISTS tuple_element_codec_root_only;
+
+-- Root-only codecs are outside the experimental gate.
+CREATE TABLE tuple_element_codec_root_only
+(
+    value Tuple(number UInt64, text String) CODEC(ZSTD)
+)
+ENGINE = MergeTree ORDER BY tuple();
+DROP TABLE tuple_element_codec_root_only;
+
+CREATE TABLE tuple_element_codec_gate
+(
+    id UInt64,
+    value Tuple(number UInt64 CODEC(Delta, ZSTD), text String)
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+SET allow_experimental_tuple_element_codecs = 1;
+
+CREATE TABLE tuple_element_codec_gate
+(
+    id UInt64,
+    value Tuple(number UInt64 CODEC(Delta, ZSTD), text String)
+)
+ENGINE = MergeTree ORDER BY id;
+
+SET allow_experimental_tuple_element_codecs = 0;
+
+-- Loading persisted metadata is compatibility-safe and must not require the session gate.
+INSERT INTO tuple_element_codec_gate VALUES (1, (1, 'one'));
+DETACH TABLE tuple_element_codec_gate;
+ATTACH TABLE tuple_element_codec_gate;
+SELECT value.number FROM tuple_element_codec_gate FORMAT Null;
+
+-- Restating an existing declaration is not an introduction and remains allowed.
+ALTER TABLE tuple_element_codec_gate
+    MODIFY COLUMN value Tuple(number UInt64 CODEC(Delta, ZSTD), text String);
+
+-- Property-only changes retain the already-persisted tuple codec metadata.
+ALTER TABLE tuple_element_codec_gate MODIFY COLUMN value COMMENT 'retained';
+ALTER TABLE tuple_element_codec_gate MODIFY COLUMN value DEFAULT tuple(0, '');
+ALTER TABLE tuple_element_codec_gate MODIFY COLUMN value SETTINGS (max_compress_block_size = 65536);
+
+-- Root codec changes also remain independent of the tuple-element gate.
+ALTER TABLE tuple_element_codec_gate MODIFY COLUMN value CODEC(ZSTD);
+
+ALTER TABLE tuple_element_codec_gate
+    MODIFY COLUMN value Tuple(number UInt64 CODEC(LZ4), text String); -- { serverError BAD_ARGUMENTS }
+
+ALTER TABLE tuple_element_codec_gate ADD COLUMN
+    added Tuple(number UInt64 CODEC(ZSTD), text String); -- { serverError BAD_ARGUMENTS }
+
+SET allow_experimental_tuple_element_codecs = 1;
+ALTER TABLE tuple_element_codec_gate ADD COLUMN
+    added Tuple(number UInt64 CODEC(ZSTD), text String);
+SET allow_experimental_tuple_element_codecs = 0;
+
+-- Removal does not introduce metadata and remains allowed with the gate disabled.
+ALTER TABLE tuple_element_codec_gate
+    MODIFY COLUMN value Tuple(number UInt64 REMOVE CODEC, text String);
+
+DROP TABLE tuple_element_codec_gate;

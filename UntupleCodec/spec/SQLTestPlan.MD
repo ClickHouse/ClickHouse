@@ -18,6 +18,7 @@ The initial suite consists of these files:
 | `05028_tuple_element_codecs_compact.sql` | Compact-part stream construction, reads, merges, and mutations |
 | `05028_tuple_element_codec_experimental_gate.sql` | Default-off compatibility gate for CREATE/ADD/MODIFY, plus retained/removal/root-only controls |
 | `05028_tuple_element_codecs_shared_nested_offsets.sql` | Legacy flattened-`Nested` sibling codecs and canonical shared offsets in Wide and Compact parts |
+| `05028_tuple_element_codecs_wrapped_ast_nodes.sql` | Explicit rejection below `Nested` name/type and typed-`JSON` object-argument AST wrappers |
 
 All tests use unique table names, begin with `DROP TABLE IF EXISTS` cleanup, and drop successfully created tables at the end. Output queries select only stable fields and use an explicit `ORDER BY` wherever row order is relevant.
 
@@ -240,6 +241,8 @@ ORDER BY tuple();
 ```
 
 Add controls showing that a root codec on each wrapper column remains legal, for example `Array(Tuple(id UInt64, text String)) CODEC(ZSTD)`.
+
+`05028_tuple_element_codecs_wrapped_ast_nodes.sql` covers two parser-specific forms of the same boundary. `Nested(...)` stores its child types below `ASTNameTypePair`, while typed paths in `JSON(...)` store them below `ASTObjectTypeArgument`. Tuple-element annotations in either context must be counted and rejected for `CREATE TABLE`, `ADD COLUMN`, and typed `MODIFY COLUMN`; these wrapper nodes must not hide annotations from validation. A direct nested-`Tuple` chain remains the positive control.
 
 ### Invalid element operations
 

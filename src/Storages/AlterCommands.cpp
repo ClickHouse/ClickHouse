@@ -166,8 +166,7 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
 
 size_t countTupleCodecPatchOperations(const ASTPtr & type_ast)
 {
-    const auto * data_type = type_ast ? type_ast->as<ASTDataType>() : nullptr;
-    if (!data_type)
+    if (!type_ast)
         return 0;
 
     size_t count = 0;
@@ -177,9 +176,10 @@ size_t countTupleCodecPatchOperations(const ASTPtr & type_ast)
             tuple->element_codecs.begin(), tuple->element_codecs.end(), [](const auto & codec) { return codec != nullptr; });
         count += std::count(tuple->element_codec_removals.begin(), tuple->element_codec_removals.end(), true);
     }
-    if (auto arguments = data_type->getArguments())
-        for (const auto & argument : arguments->children)
-            count += countTupleCodecPatchOperations(argument);
+    /// Walk every AST child: Nested and typed JSON interpose ASTNameTypePair and
+    /// ASTObjectTypeArgument nodes, which must not hide tuple codec patch operations.
+    for (const auto & child : type_ast->children)
+        count += countTupleCodecPatchOperations(child);
     return count;
 }
 

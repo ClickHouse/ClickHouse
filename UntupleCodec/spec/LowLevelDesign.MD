@@ -12,7 +12,7 @@ This document describes the metadata and storage changes needed to implement the
 
 The implementation must not recover paths by splitting a formatted identifier on dots. It must not place codec state in `IColumn`, in `IDataType::equals`, or in a pooled `ISerialization` object.
 
-The first implementation restricts declarations to an owning `Tuple` column and elements reached through a direct chain of nested `Tuple` elements. An annotation reached through `Array`, `Map`, `Nullable`, or another non-`Tuple` wrapper is rejected. Physical subcolumns such as array sizes, null maps, dictionary indexes, `Dynamic` paths, and `JSON` paths are not declaration targets. They still inherit the policy of the nearest containing tuple element.
+The first implementation restricts declarations to an owning `Tuple` column and elements reached through a direct chain of nested `Tuple` elements. An annotation reached through `Array`, `Map`, `Nullable`, or another non-`Tuple` wrapper is rejected. This includes `Nested(...)` child declarations represented by `ASTNameTypePair` and typed `JSON(...)` paths represented by `ASTObjectTypeArgument`; validation must traverse those wrapper AST nodes so an annotation cannot be silently omitted. Physical subcolumns such as array sizes, null maps, dictionary indexes, `Dynamic` paths, and `JSON` paths are not declaration targets. They still inherit the policy of the nearest containing tuple element.
 
 ## Metadata representation
 
