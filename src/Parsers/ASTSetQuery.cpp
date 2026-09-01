@@ -377,8 +377,10 @@ bool ASTSetQuery::hasSecretParts() const
         if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
             return true;
         for (const auto * settings_to_hide : engineSettingsToHide())
+        {
             if (settings_to_hide->contains(change.name))
                 return true;
+        }
 
         /// Secret only if there is actually a password embedded in it. The value need not be a
         /// String: a valueless `SETTINGS format_avro_schema_registry_url` carries Bool `true`,
