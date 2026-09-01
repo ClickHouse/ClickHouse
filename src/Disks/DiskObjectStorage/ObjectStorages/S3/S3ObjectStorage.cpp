@@ -758,6 +758,22 @@ void S3ObjectStorage::applyNewSettings(
     s3_settings.set(std::move(modified_settings));
 }
 
+ObjectStoragePtr S3ObjectStorage::clone() const
+{
+    /// `S3::Client::clone` builds an equivalent client sharing no mutable state with the
+    /// original, so the copy can later rebuild its client without affecting this storage.
+    return std::make_shared<S3ObjectStorage>(
+        client.get()->clone(),
+        std::make_unique<S3Settings>(*s3_settings.get()),
+        uri,
+        s3_capabilities,
+        key_generator,
+        disk_name,
+        for_disk_s3,
+        credentials_refresh_callback,
+        client_restricts_server_credentials.load());
+}
+
 ObjectStorageKeyGeneratorPtr S3ObjectStorage::createKeyGenerator() const
 {
     if (!key_generator)

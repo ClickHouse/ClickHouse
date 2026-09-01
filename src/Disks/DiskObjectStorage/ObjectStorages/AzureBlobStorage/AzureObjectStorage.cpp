@@ -146,6 +146,21 @@ AzureObjectStorage::AzureObjectStorage(
 {
 }
 
+ObjectStoragePtr AzureObjectStorage::clone() const
+{
+    /// `ContainerClient` is a thin copyable wrapper around the Azure SDK client, so the copy
+    /// can later replace its client without affecting this storage.
+    return std::make_shared<AzureObjectStorage>(
+        name,
+        auth_method,
+        std::make_unique<AzureBlobStorage::ContainerClient>(*client.get()),
+        std::make_unique<AzureBlobStorage::RequestSettings>(*settings.get()),
+        connection_params,
+        object_namespace,
+        description,
+        common_key_prefix);
+}
+
 ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
 {
     return createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");

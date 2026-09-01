@@ -129,6 +129,8 @@ public:
         return connection_params;
     }
 
+    ObjectStoragePtr clone() const override;
+
 private:
     void removeObjectImpl(
         const StoredObject & object,

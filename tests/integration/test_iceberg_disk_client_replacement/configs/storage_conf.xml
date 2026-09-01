@@ -8,8 +8,14 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3_disk_repro>
+            <s3_cache_repro>
+                <type>cache</type>
+                <disk>s3_disk_repro</disk>
+                <path>/tmp/s3_cache_repro/</path>
+                <max_size>1000000000</max_size>
+            </s3_cache_repro>
         </disks>
     </storage_configuration>
 
-    <allowed_disks_for_table_engines>s3_disk_repro</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>s3_disk_repro,s3_cache_repro</allowed_disks_for_table_engines>
 </clickhouse>

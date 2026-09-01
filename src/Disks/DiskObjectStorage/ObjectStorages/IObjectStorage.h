@@ -466,6 +466,17 @@ public:
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 
+    /// Creates a private copy of this object storage: same settings and an equivalent client, but
+    /// no shared mutable state, so `applyNewSettings` on the copy cannot affect the original.
+    /// Decorators (e.g. `CachedObjectStorage`) clone the wrapped storage and keep sharing the
+    /// immutable parts (the file cache object itself). Used by data-lake tables created on top of
+    /// a server disk (`SETTINGS disk = '...'`): the table works through a copy of the disk's
+    /// object storage, so per-table setting updates cannot corrupt the disk.
+    virtual ObjectStoragePtr clone() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'clone' is not implemented for {}", getName());
+    }
+
 private:
     mutable std::mutex io_scheduling_mutex;
     String read_resource_name;

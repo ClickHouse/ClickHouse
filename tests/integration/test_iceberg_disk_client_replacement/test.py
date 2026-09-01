@@ -80,3 +80,56 @@ def test_disk_config_change_propagates(started_cluster):
     assert node.query("SELECT count() FROM t_ice2").strip() == "1"
 
     node.query("DROP TABLE t_ice2 SYNC")
+
+
+def test_iceberg_on_cached_disk_uses_cache(started_cluster):
+    node.query("DROP TABLE IF EXISTS t_ice_cached SYNC")
+    node.query(
+        "CREATE TABLE t_ice_cached (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl_cached') "
+        "SETTINGS disk = 's3_cache_repro'"
+    )
+
+    node.query("SYSTEM DROP FILESYSTEM CACHE")
+    node.query(
+        "INSERT INTO t_ice_cached VALUES (1)", settings={"allow_insert_into_iceberg": 1}
+    )
+    assert node.query("SELECT k FROM t_ice_cached").strip() == "1"
+
+    # The table works through a copy of the disk's object storage with the cache layer
+    # preserved, so reads must populate the disk's filesystem cache.
+    cached_entries = int(
+        node.query("SELECT count() FROM system.filesystem_cache").strip()
+    )
+    assert cached_entries > 0
+
+    node.query("DROP TABLE t_ice_cached SYNC")
+
+
+def test_disk_config_change_propagates_through_cache_disk(started_cluster):
+    config_path = "/etc/clickhouse-server/config.d/storage_conf.xml"
+
+    node.query("DROP TABLE IF EXISTS t_ice3 SYNC")
+    node.query(
+        "CREATE TABLE t_ice3 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl3') "
+        "SETTINGS disk = 's3_cache_repro'"
+    )
+    node.query("INSERT INTO t_ice3 VALUES (1)", settings={"allow_insert_into_iceberg": 1})
+    assert node.query("SELECT count() FROM t_ice3").strip() == "1"
+
+    try:
+        node.replace_in_config(config_path, "ClickHouse_Minio_P@ssw0rd", "broken_secret")
+        node.query("SYSTEM RELOAD CONFIG")
+        # Make sure the next read cannot be served from the filesystem cache.
+        node.query("SYSTEM DROP FILESYSTEM CACHE")
+
+        # The credentials change must reach the backend storage of the table's cache-wrapped
+        # object storage (the settings live in the section of the wrapped S3 disk).
+        error = node.query_and_get_error("SELECT count() FROM t_ice3")
+        assert "S3_ERROR" in error or "Access Denied" in error or "SignatureDoesNotMatch" in error
+    finally:
+        node.replace_in_config(config_path, "broken_secret", "ClickHouse_Minio_P@ssw0rd")
+        node.query("SYSTEM RELOAD CONFIG")
+
+    assert node.query("SELECT count() FROM t_ice3").strip() == "1"
+
+    node.query("DROP TABLE t_ice3 SYNC")

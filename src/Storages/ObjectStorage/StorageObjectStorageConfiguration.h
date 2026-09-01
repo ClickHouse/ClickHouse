@@ -212,6 +212,12 @@ public:
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
+    /// For a table created on top of a server disk: the config section of the disk that holds the
+    /// backend object storage settings. Follows `disk` references of layered disk configs (e.g. a
+    /// cache disk over an S3 disk resolves to the S3 disk's section). Returns std::nullopt when
+    /// the disk is not present in the config (e.g. a custom disk created from SQL).
+    static std::optional<String> tryGetDiskConfigurationPrefix(const Poco::Util::AbstractConfiguration & config, const String & disk_name);
+
     virtual void create(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
