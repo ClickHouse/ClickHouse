@@ -24,6 +24,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -98,6 +100,11 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char zk_send_thread_request_window_throw[];
 }
 
 }
