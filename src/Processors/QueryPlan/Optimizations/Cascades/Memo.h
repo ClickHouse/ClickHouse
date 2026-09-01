@@ -66,7 +66,9 @@ public:
 private:
     /// One interned logical expression. `insertion_time_fingerprint` is the key it was filed
     /// under, kept so an entry is never looked up or removed by a recomputed fingerprint: lazily
-    /// populated analysis state can change a step's digest over its lifetime.
+    /// populated analysis state can change a step's digest over its lifetime. A `ReadFromMergeTree`
+    /// is the one step whose *logical* digest is stable across that - its mutable analysis members
+    /// are excluded from it - but the rule governs the index regardless of the step type.
     struct LogicalExpressionIndexEntry
     {
         UInt128 insertion_time_fingerprint;

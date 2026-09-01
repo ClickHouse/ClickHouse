@@ -664,12 +664,47 @@ through a `shared_ptr` (`StepDigestWriter::addWitness`). An equal address means 
 object, hence equal content; a different address makes the two steps unequal even when their contents
 match, which costs a deduplication but never produces a wrong one. This is sound only because
 equality is decided by re-digesting two live steps, so no address can be recycled behind the
-comparison. The expected consequence is a narrow merge scope: for `ReadFromMergeTree`, only reads
-that have not been analyzed yet and that share the part, mutation and metadata snapshots can merge.
+comparison. The expected consequence is a narrow merge scope: in the *full* digest of a
+`ReadFromMergeTree`, only reads that have not been analyzed yet and that share the part, mutation and
+metadata snapshots can merge.
 
 The same mechanism at whole-object scale is the base `writeFullDigest` default
 (`addWholeObjectWitness`), which uses a reserved tag out of the range of any step's own tags, so a
 witness digest can never collide with a content digest of the same step type.
+
+**The read's logical digest: content where the full digest witnesses.** Two table expressions over
+one table build their own `SelectQueryInfo`, their own storage snapshot and their own part-list
+object, so witnesses can never merge them - which is why a self-join never deduplicated. The logical
+digest therefore describes the relation-defining state as content: the storage identity, the metadata
+version, and a digest of the part list - per part its name, data and metadata version, query-wide
+numbering and mark ranges. The soundness basis is that a part name identifies the part's content on
+one server within one query (every merge, mutation and lightweight update writes a part under a new
+name, and block numbers are never reused); it costs O(parts) per encoding, which runs on intern and
+on confirmation, not per row. Witnesses remain only for state that decides rows and has no canonical
+encoding: the context (from which the reader settings and the sampling decision derive), the storage
+settings, the storage limits list, the metadata object, the storage object, and the two rewrite hooks
+(`lazy_materializing_rows`, `virtual_row_conversion`, both null on an ordinary read). They set the
+merge scope: the metadata, storage and settings objects are shared table-wide, but the context and
+the limits list are per **query block**, so the table expressions of one block merge (the self-join
+case) while two identical subqueries do not - each subquery is planned with a context copy of its
+own. Encoding the truncating size limits and the read-relevant settings as content is what would
+widen that.
+
+Two consequences worth knowing. First, pruning is relation-defining for a read even though it is
+"only" pruning: skipping a granule drops rows that fail a filter which the read's own output is
+expected to still contain, so both pushed-down filter DAGs, the runtime-filter descriptors, the TopK
+stamp, the vector-search parameters and the partition-pruning flag are all in. What is excluded is
+the *memoized* result of pruning (`indexes`, `analyzed_result_ptr`): it is a function of state that is
+in the digest, and the cases where granule skipping is not transparent are gated or encoded instead.
+Second, that exclusion is what makes a read's logical digest stable over its lifetime, while its full
+digest is not: the memoized analysis members are the only ones that populate lazily. The
+insertion-time-fingerprint rule of the memo index still holds for every step type.
+
+The read's instance gates (`hasLogicalDigest`) are the full digest's read-shape guards plus: a pinned
+block-number boundary, a mutations snapshot carrying patch parts or pending data/alter/metadata
+mutations (state that the part list cannot express - a patch part is a part of its own that changes
+the rows of an unchanged part list), a part list carrying analysis residue, and a read whose SAMPLE
+could still be hiding in the select AST.
 
 ### Memo-wide group deduplication
 
@@ -718,9 +753,8 @@ creates a group unconditionally, exactly as before.
   `CascadesStepDigests` / `CascadesStepDigestBytes` / `CascadesStepDigestConfirmations`
   ProfileEvents ship the digest counters, but the wall-time measurement and the threshold it has
   to clear do not exist yet.
-- `ReadFromMergeTree` keeps `hasLogicalDigest() == false` until its content snapshot identity lands,
-  so reads never merge and no parent of a read merges either. Until then deduplication reuses almost
-  no group on a real query, and `groups_reused` reports that.
+- Group merging (a rule inserting into group A an expression that proves A equal to B) is still only
+  detected and counted, so a duplicate group that deduplication cannot prevent up front stays.
 
 **Key files**: `StepIdentity.h/cpp`, `Processors/QueryPlan/StepIdentity.h/cpp`, `Memo.h/cpp`, and the
 `writeFullDigest` override and `hasLogicalDigest` / `writeLogicalDigest` pair of each audited step

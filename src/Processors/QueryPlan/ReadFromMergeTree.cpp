@@ -6843,6 +6843,348 @@ void ReadFromMergeTree::writeFullDigest(StepDigestWriter & writer) const
     }
 }
 
+namespace
+{
+/// Logical digest tags for `ReadFromMergeTree`, a separate enum from the full digest's: unique
+/// within this writer, never reused.
+enum ReadFromMergeTreeLogicalDigestTag : UInt64
+{
+    LOGICAL_STORAGE_UUID_TAG = 1,
+    LOGICAL_STORAGE_WITNESS_TAG = 2,
+    LOGICAL_METADATA_VERSION_TAG = 3,
+    LOGICAL_METADATA_WITNESS_TAG = 4,
+    LOGICAL_PART_LIST_TAG = 5,
+    LOGICAL_LIGHTWEIGHT_DELETED_MASK_TAG = 6,
+    LOGICAL_STEP_FILTER_ACTIONS_DAG_TAG = 7,
+    LOGICAL_QUERY_INFO_FILTER_ACTIONS_DAG_TAG = 8,
+    LOGICAL_ROW_LEVEL_FILTER_DAG_TAG = 9,
+    LOGICAL_ROW_LEVEL_FILTER_PARAMS_TAG = 10,
+    LOGICAL_PREWHERE_DAG_TAG = 11,
+    LOGICAL_PREWHERE_PARAMS_TAG = 12,
+    LOGICAL_DEFERRED_ROW_LEVEL_FILTER_DAG_TAG = 13,
+    LOGICAL_DEFERRED_ROW_LEVEL_FILTER_PARAMS_TAG = 14,
+    LOGICAL_DEFERRED_PREWHERE_DAG_TAG = 15,
+    LOGICAL_DEFERRED_PREWHERE_PARAMS_TAG = 16,
+    LOGICAL_IS_FINAL_TAG = 17,
+    LOGICAL_SAMPLING_TAG = 18,
+    LOGICAL_TRIVIAL_LIMIT_TAG = 19,
+    LOGICAL_LIMIT_TAG = 20,
+    LOGICAL_ALL_COLUMN_NAMES_TAG = 21,
+    LOGICAL_REQUIRED_SOURCE_COLUMNS_TAG = 22,
+    LOGICAL_JOIN_RUNTIME_FILTERS_TAG = 23,
+    LOGICAL_TOP_K_FILTER_INFO_TAG = 24,
+    LOGICAL_VECTOR_SEARCH_PARAMETERS_TAG = 25,
+    LOGICAL_INPUT_ORDER_SORT_DESCRIPTION_TAG = 26,
+    LOGICAL_INPUT_ORDER_PARAMS_TAG = 27,
+    LOGICAL_RESULT_SORT_DESCRIPTION_TAG = 28,
+    LOGICAL_SKIP_PARTITION_PRUNING_TAG = 29,
+    LOGICAL_ALLOW_QUERY_CONDITION_CACHE_TAG = 30,
+    LOGICAL_IS_INTERNAL_TAG = 31,
+    LOGICAL_STORAGE_LIMITS_WITNESS_TAG = 32,
+    LOGICAL_CONTEXT_WITNESS_TAG = 33,
+    LOGICAL_DATA_SETTINGS_WITNESS_TAG = 34,
+    LOGICAL_LAZY_MATERIALIZING_ROWS_WITNESS_TAG = 35,
+    LOGICAL_VIRTUAL_ROW_CONVERSION_WITNESS_TAG = 36,
+};
+
+std::vector<ReadFromMergeTree::LogicalPartIdentity> collectLogicalPartIdentities(const RangesInDataParts & parts)
+{
+    std::vector<ReadFromMergeTree::LogicalPartIdentity> result;
+    result.reserve(parts.size());
+    for (const auto & part : parts)
+    {
+        result.push_back({
+            .name = part.data_part->name,
+            .parent_name = part.parent_part ? part.parent_part->name : String{},
+            .data_version = part.data_part->info.getDataVersion(),
+            .metadata_version = part.data_part->getMetadataVersion(),
+            .index_in_query = part.part_index_in_query,
+            .starting_offset_in_query = part.part_starting_offset_in_query,
+            .ranges = part.ranges,
+        });
+    }
+    return result;
+}
+
+String encodeSampling(const std::optional<TableExpressionModifiers> & modifiers)
+{
+    WriteBufferFromOwnString payload;
+    writeBinary(static_cast<UInt8>(modifiers.has_value()), payload);
+    if (modifiers)
+    {
+        writeBinary(static_cast<UInt8>(modifiers->hasSampleSizeRatio()), payload);
+        if (const auto ratio = modifiers->getSampleSizeRatio())
+            serializeRational(*ratio, payload);
+        writeBinary(static_cast<UInt8>(modifiers->hasSampleOffsetRatio()), payload);
+        if (const auto ratio = modifiers->getSampleOffsetRatio())
+            serializeRational(*ratio, payload);
+    }
+    return payload.str();
+}
+}
+
+/// A part name identifies the part's content on one server within one query: a merge, a mutation and
+/// a lightweight update all produce a part under a new name, and block numbers are never reused, so
+/// two reads listing the same names read the same rows. That is the whole soundness basis of merging
+/// two independently taken storage snapshots. The data and metadata versions are encoded next to the
+/// name anyway, because an alter-metadata mutation bumps a part's metadata version in place without
+/// renaming it, and the query-wide numbering because `_part_index` and `_part_offset` expose it as
+/// column values.
+String ReadFromMergeTree::encodeLogicalPartIdentities(std::vector<LogicalPartIdentity> parts)
+{
+    /// Canonical order, so the encoding does not depend on the order the part list happens to be in.
+    /// Two lists that differ only in order still encode differently: the numbering travels inside the
+    /// entries and does not survive the sort.
+    std::sort(parts.begin(), parts.end(), [](const LogicalPartIdentity & lhs, const LogicalPartIdentity & rhs)
+    {
+        return std::tie(lhs.name, lhs.parent_name, lhs.index_in_query) < std::tie(rhs.name, rhs.parent_name, rhs.index_in_query);
+    });
+
+    WriteBufferFromOwnString payload;
+    writeVarUInt(parts.size(), payload);
+    for (const auto & part : parts)
+    {
+        writeStringBinary(part.name, payload);
+        writeStringBinary(part.parent_name, payload);
+        writeVarInt(part.data_version, payload);
+        writeVarInt(part.metadata_version, payload);
+        writeVarUInt(part.index_in_query, payload);
+        writeVarUInt(part.starting_offset_in_query, payload);
+        writeVarUInt(part.ranges.size(), payload);
+        for (const auto & range : part.ranges)
+        {
+            writeVarUInt(range.begin, payload);
+            writeVarUInt(range.end, payload);
+        }
+    }
+    return payload.str();
+}
+
+/// `prepared_parts` is the pre-analysis part set, normally the storage snapshot's immutable part
+/// list. Everything an analysis attaches to a part beyond its mark ranges - the exact ranges, the
+/// primary-key range snapshot, the parent offset ranges, the read hints (vector-search candidates,
+/// prebuilt index granules) - has no canonical encoding here, so a part carrying any of them opts
+/// the whole instance out.
+bool ReadFromMergeTree::arePreparedPartsLogicallyEncodable() const
+{
+    for (const auto & part : *prepared_parts)
+    {
+        if (!part.data_part)
+            return false;
+        if (!part.exact_ranges.empty() || part.ranges_snapshot_after_pk_analysis.has_value() || !part.parent_ranges.empty())
+            return false;
+        if (part.read_hints.vector_search_results.has_value() || part.read_hints.use_vector_search_result_filter
+            || !part.read_hints.index_granules.empty())
+            return false;
+    }
+    return true;
+}
+
+/// The gates of the logical digest. Every guard of the full digest applies verbatim: each one is a
+/// read-shape gate (STREAM, pending filters, parallel replicas, a bucketed distributed read, direct
+/// index or projection read tasks) or a correlated `PLACEHOLDER` in one of the six DAG slots, which
+/// this writer serializes too. On top of that come the gates for the state the logical digest
+/// describes as content instead of witnessing.
+bool ReadFromMergeTree::hasLogicalDigest() const
+{
+    if (!canWriteContentDigest())
+        return false;
+
+    if (!prepared_parts || !arePreparedPartsLogicallyEncodable())
+        return false;
+
+    if (!storage_snapshot || !storage_snapshot->metadata)
+        return false;
+
+    /// A pinned coordinator-side block-number boundary (e.g. `select_sequential_consistency`) filters
+    /// parts during analysis, i.e. after the part list this digest encodes.
+    if (max_block_numbers_to_read)
+        return false;
+
+    /// Ruling 7a - the mutation state that `(part name, data version, metadata version)` does not
+    /// identify. A patch part is a data part of its own, held by the snapshot and applied while
+    /// reading the parts it patches (`getPatchesForPart`), so it changes the rows of an unchanged part
+    /// list without appearing in that list; a pending data, alter or metadata mutation is likewise a
+    /// property of the snapshot's mutation list (`getOnFlyMutationCommandsForPart`), and two snapshots
+    /// taken at different moments of one query can disagree about it. Neither is encodable from the
+    /// part list, so an instance carrying any of them never merges. A null snapshot (no on-the-fly
+    /// mutations at all) is encoded as such and does merge with another null one.
+    if (mutations_snapshot
+        && (mutations_snapshot->hasPatchParts() || mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+            || mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    /// With no table expression modifiers `isQueryWithSampling` falls back to the select AST, whose
+    /// SAMPLE clause this digest does not encode - so the absent-modifiers slot may only mean "no
+    /// sampling" if the AST agrees. `isFinal()` consults the AST in the same situation, but its value
+    /// is encoded, so only sampling needs a gate. An AST that is not a select at all is rejected too,
+    /// although `isFinal()` in the constructor has already cast it.
+    if (!query_info.table_expression_modifiers && query_info.query)
+    {
+        const auto * select = query_info.query->as<ASTSelectQuery>();
+        if (!select || select->sampleSize() || select->sampleOffset())
+            return false;
+    }
+
+    return true;
+}
+
+void ReadFromMergeTree::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The table. The UUID is its portable identity, but it is `Nil` for a table in an `Ordinary`
+    /// database, so the storage object is witnessed as well - two reads of one table always point at
+    /// the same `MergeTreeData`.
+    {
+        const auto uuid = data.getStorageID().uuid.toUnderType();
+        WriteBufferFromOwnString payload;
+        writeVarUInt(static_cast<UInt64>(uuid.items[0]), payload);
+        writeVarUInt(static_cast<UInt64>(uuid.items[1]), payload);
+        writer.addString(LOGICAL_STORAGE_UUID_TAG, payload.str());
+    }
+    writer.addWitness(LOGICAL_STORAGE_WITNESS_TAG, &data);
+
+    /// The schema the read resolves against. `metadata_version` is bumped by a replicated `ALTER`
+    /// only, so it does not identify the metadata of a plain `MergeTree` table; the metadata object is
+    /// witnessed for that, and two reads of one table in one query share it (`MultiVersion` hands out
+    /// the same object until an `ALTER` replaces it).
+    writer.addVarUInt(LOGICAL_METADATA_VERSION_TAG, static_cast<UInt64>(storage_snapshot->metadata->getMetadataVersion()));
+    writer.addWitness(LOGICAL_METADATA_WITNESS_TAG, storage_snapshot->metadata.get());
+
+    /// The rows of the relation, as content: this replaces the part, mutation and snapshot witnesses
+    /// of the full digest and is what lets two independently built reads of one table merge. O(parts)
+    /// per encoding, which is acceptable because encoding runs on intern and on comparison, not per
+    /// row. Deliberately the pre-analysis set, not `getParts()`: see the analysis-state exclusion
+    /// below.
+    writer.addString(LOGICAL_PART_LIST_TAG, encodeLogicalPartIdentities(collectLogicalPartIdentities(*prepared_parts)));
+
+    /// All that is left of the mutations snapshot once the gate rejected every instance with
+    /// on-the-fly mutation state: whether some part carries a lightweight-delete mask, which the
+    /// reader applies as `_row_exists`. It is derived from the part set, so it is written only so that
+    /// a divergence costs a merge instead of rows.
+    if (mutations_snapshot)
+        writer.addBool(LOGICAL_LIGHTWEIGHT_DELETED_MASK_TAG, mutations_snapshot->hasLightweightDeletedMask());
+    else
+        writer.addAbsent(LOGICAL_LIGHTWEIGHT_DELETED_MASK_TAG);
+
+    /// Every filter carrier, all as full DAG payloads. The two pushed-down filters are separate
+    /// carriers (`applyFilters` copies the step-level one into `query_info` only when it is non-null,
+    /// and index analysis reads the `query_info` one) and they are relation-defining even though they
+    /// only prune: pruning drops rows that fail the filter, and the read's own output is expected to
+    /// still contain them. Prewhere and the row-level filter drop rows inside the read outright; the
+    /// deferred variants move that past the FINAL merge, which changes both the pruning and the rows.
+    writer.addDAG(LOGICAL_STEP_FILTER_ACTIONS_DAG_TAG, getFilterActionsDAG().get());
+    writer.addDAG(LOGICAL_QUERY_INFO_FILTER_ACTIONS_DAG_TAG, query_info.filter_actions_dag.get());
+    addRowLevelFilter(writer, LOGICAL_ROW_LEVEL_FILTER_DAG_TAG, LOGICAL_ROW_LEVEL_FILTER_PARAMS_TAG, query_info.row_level_filter);
+    addPrewhereInfo(writer, LOGICAL_PREWHERE_DAG_TAG, LOGICAL_PREWHERE_PARAMS_TAG, query_info.prewhere_info);
+    addRowLevelFilter(
+        writer, LOGICAL_DEFERRED_ROW_LEVEL_FILTER_DAG_TAG, LOGICAL_DEFERRED_ROW_LEVEL_FILTER_PARAMS_TAG, deferred_row_level_filter);
+    addPrewhereInfo(writer, LOGICAL_DEFERRED_PREWHERE_DAG_TAG, LOGICAL_DEFERRED_PREWHERE_PARAMS_TAG, deferred_prewhere_info);
+
+    /// FINAL folds one part set into one row per primary key; `isFinal()` covers both the modifier and
+    /// the query-level fallback. Sampling keeps a fraction of the rows.
+    writer.addBool(LOGICAL_IS_FINAL_TAG, query_info.isFinal());
+    writer.addString(LOGICAL_SAMPLING_TAG, encodeSampling(query_info.table_expression_modifiers));
+
+    /// Both bound how much is read, i.e. they truncate the relation.
+    writer.addVarUInt(LOGICAL_TRIVIAL_LIMIT_TAG, query_info.trivial_limit);
+    if (limit)
+        writer.addVarUInt(LOGICAL_LIMIT_TAG, *limit);
+    else
+        writer.addAbsent(LOGICAL_LIMIT_TAG);
+
+    /// The columns. `all_column_names` is the read list - the one the vector-search and lazy-read
+    /// rewrites change - and `required_source_columns` is what the plan asked for; the output header
+    /// in the digest preamble is derived from the first.
+    writer.addStrings(LOGICAL_ALL_COLUMN_NAMES_TAG, all_column_names);
+    writer.addStrings(LOGICAL_REQUIRED_SOURCE_COLUMNS_TAG, required_source_columns);
+
+    /// Runtime filters published by a join above prune granules of this read, i.e. they drop rows the
+    /// read is otherwise expected to return.
+    writer.addString(
+        LOGICAL_JOIN_RUNTIME_FILTERS_TAG, encodeRuntimeFilterIndexAnalysisDescriptors(join_runtime_filters_for_index_analysis));
+
+    /// A TopK read keeps only the granules that can hold the top rows, and a vector-search read only
+    /// the nearest-neighbour candidates (and replaces the vector column with `_distance`): both make
+    /// the read return fewer rows than the same read without them.
+    if (top_k_filter_info)
+        writer.addString(LOGICAL_TOP_K_FILTER_INFO_TAG, encodeTopKFilterInfo(*top_k_filter_info));
+    else
+        writer.addAbsent(LOGICAL_TOP_K_FILTER_INFO_TAG);
+
+    if (vector_search_parameters)
+        writer.addString(LOGICAL_VECTOR_SEARCH_PARAMETERS_TAG, encodeVectorSearchParameters(*vector_search_parameters));
+    else
+        writer.addAbsent(LOGICAL_VECTOR_SEARCH_PARAMETERS_TAG);
+
+    /// Read-in-order: `limit` truncates the read, and the prefix and direction are the order claim
+    /// `getSortDescription()` reports to the optimizer as a physical property of this expression.
+    if (const auto & input_order_info = query_info.input_order_info)
+    {
+        writer.addSortDescription(LOGICAL_INPUT_ORDER_SORT_DESCRIPTION_TAG, input_order_info->sort_description_for_merging);
+
+        WriteBufferFromOwnString payload;
+        writeVarUInt(input_order_info->used_prefix_of_sorting_key_size, payload);
+        writeVarInt(static_cast<Int64>(input_order_info->direction), payload);
+        writeVarUInt(input_order_info->limit, payload);
+        writer.addString(LOGICAL_INPUT_ORDER_PARAMS_TAG, payload.str());
+    }
+    else
+    {
+        writer.addAbsent(LOGICAL_INPUT_ORDER_SORT_DESCRIPTION_TAG);
+        writer.addAbsent(LOGICAL_INPUT_ORDER_PARAMS_TAG);
+    }
+
+    writer.addSortDescription(LOGICAL_RESULT_SORT_DESCRIPTION_TAG, result_sort_description);
+
+    /// Two pruning gates, in against the brief's exclusion, fail-closed: partition pruning under a
+    /// FINAL that merges across partitions drops rows that would have participated in the merge -
+    /// which is why `defer_partition_pruning_after_final` sets this flag at all - and the
+    /// query-condition cache skips granules recorded by another query. Both are derived from state
+    /// that already has to match for two reads to be logically equal (the settings, the metadata, the
+    /// FINAL flag), so including them costs no merge in practice.
+    writer.addBool(LOGICAL_SKIP_PARTITION_PRUNING_TAG, skip_partition_pruning);
+    writer.addBool(LOGICAL_ALLOW_QUERY_CONDITION_CACHE_TAG, allow_query_condition_cache);
+
+    writer.addBool(LOGICAL_IS_INTERNAL_TAG, query_info.is_internal);
+
+    /// Witnesses for state that has no canonical encoding but does decide rows: the truncating storage
+    /// limits (`read_overflow_mode = break`), the settings context, and the storage settings. The
+    /// context and the limits list are shared by the table expressions of one query block, which is
+    /// the case the merge is for; a subquery gets a context copy and a limits list of its own, so two
+    /// reads in different query blocks do not merge yet - encoding the truncating size limits and the
+    /// read-relevant settings as content is the follow-up that would widen that. `data_settings` is
+    /// one `MultiVersion` object per table. The reader settings, the expression-actions settings and
+    /// the sampling decision of `isQueryWithSampling` all derive from the context, which is why they
+    /// need no tag of their own.
+    writer.addWitness(LOGICAL_STORAGE_LIMITS_WITNESS_TAG, query_info.storage_limits.get());
+    writer.addWitness(LOGICAL_CONTEXT_WITNESS_TAG, context.get());
+    writer.addWitness(LOGICAL_DATA_SETTINGS_WITNESS_TAG, data_settings.get());
+
+    /// Neither is carried by `clone` and both change what the pipeline produces: lazy materialization
+    /// defers columns to a later read, and the virtual-row conversion injects a row per part for the
+    /// read-in-order merge. Null on every ordinary read, so the absent slots still merge.
+    writer.addWitness(LOGICAL_LAZY_MATERIALIZING_ROWS_WITNESS_TAG, lazy_materializing_rows.get());
+    writer.addWitness(LOGICAL_VIRTUAL_ROW_CONVERSION_WITNESS_TAG, virtual_row_conversion.get());
+
+    /// Out - the memoized analysis state (ruling 7b): `indexes` and `analyzed_result_ptr` are a
+    /// function of state that is in the digest, and what they do is skip granules that cannot match a
+    /// filter which is itself in the digest and still applied by the plan (prewhere and the row-level
+    /// filter exactly, the pushed-down DAGs by the filter step they were copied from). The instances
+    /// where granule skipping is not transparent are gated instead: deferred-FINAL filters and the
+    /// partition-pruning flag are in the digest, `use_skip_indexes_if_final_exact_mode` is decided by
+    /// the witnessed context. This exclusion is also what makes a read's logical digest stable while
+    /// it is costed: the two mutable members are the only ones that populate lazily.
+    /// Out, execution-only: `enable_vertical_final` (a FINAL algorithm over the same rows),
+    /// `output_each_partition_through_separate_port` and `output_streams_limit` (port shaping),
+    /// `requested_num_streams`, `query_task_size_limit`, `block_size`, `reader_settings`,
+    /// `actions_settings`.
+    /// Out, derived or display-only: `shared_virtual_fields` (filled at pipeline build from the
+    /// storage id and the sampling factor), `selected_parts` / `selected_rows` / `selected_marks`,
+    /// `log`, `query_info.local_storage_limits` (this step applies `storage_limits`).
+    /// Out by gate: the read shapes of `canWriteContentDigest`, plus `max_block_numbers_to_read`, the
+    /// mutations snapshot's on-the-fly state and an AST-path SAMPLE - see `hasLogicalDigest`.
+}
+
 std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
 {
     String database_name;

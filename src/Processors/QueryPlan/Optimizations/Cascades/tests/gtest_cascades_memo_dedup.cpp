@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/tests/gtest_merge_tree_read_fixture.h>
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
@@ -47,6 +48,15 @@ GroupExpressionPtr expressionOver(QueryPlanStepPtr step, std::vector<GroupId> in
     for (GroupId input_group_id : input_group_ids)
         expression->inputs.push_back({.group_id = input_group_id, .required_properties = {}});
     return expression;
+}
+
+/// A projection over the read fixture's column `a`, so an `ExpressionStep` can sit on top of a read.
+ActionsDAG readDag()
+{
+    auto type = std::make_shared<DataTypeUInt64>();
+    ActionsDAG dag(NamesAndTypesList{{"a", type}});
+    dag.getOutputs().push_back(&dag.addColumn(type->createColumnConst(1, Field(UInt64(1))), type, "c"));
+    return dag;
 }
 
 GroupExpressionPtr projection(const SharedHeader & header, UInt64 constant)
@@ -328,4 +338,48 @@ TEST(CascadesMemoDedup, RepeatedTwoStageSplitDuplicatesWithoutDeduplication)
     EXPECT_EQ(memo.getGroupCount(), 4u);
     EXPECT_EQ(memo.getGroup(source_group_id)->logical_expressions.size(), 3u);
     EXPECT_EQ(memo.countGroupsUnreachableFrom(source_group_id), 0u);
+}
+
+/// Stage D, end to end at memo level: two reads of one table built the way the two table expressions
+/// of a self-join are (their own query info, storage snapshot and part list) intern into ONE group,
+/// and a parent over that group then interns too - the merged read is what makes its consumers
+/// mergeable at all.
+TEST(CascadesMemoDedup, IndependentlyBuiltReadsOfOneTableInternIntoOneGroup)
+{
+    MergeTreeReadFixture fixture("memo_dedup_reads");
+    auto memo = makeMemo(/*deduplicate=*/true);
+
+    auto first_read = fixture.makeIndependentRead();
+    auto second_read = fixture.makeIndependentRead();
+    ASSERT_TRUE(first_read->hasLogicalDigest());
+    auto read_header = first_read->getOutputHeader();
+
+    const GroupId read_group = memo.internExpression(expressionOver(std::move(first_read)));
+    EXPECT_EQ(memo.internExpression(expressionOver(std::move(second_read))), read_group);
+
+    /// Two identical projections over that one read group.
+    auto projection_over_read = [&] { return expressionOver(std::make_unique<ExpressionStep>(read_header, readDag()), {read_group}); };
+
+    const GroupId projection_group = memo.internExpression(projection_over_read());
+    EXPECT_EQ(memo.internExpression(projection_over_read()), projection_group);
+    EXPECT_NE(projection_group, read_group);
+
+    EXPECT_EQ(memo.getGroupCount(), 2u);
+    EXPECT_EQ(memo.getContext().memo_counters.groups_created, 2u);
+    EXPECT_EQ(memo.getContext().memo_counters.groups_reused, 2u);
+    EXPECT_EQ(memo.countGroupsUnreachableFrom(projection_group), 0u);
+}
+
+/// With the setting off a read behaves like everything else: a group each, and the parents cannot
+/// match either, because their input group ids differ.
+TEST(CascadesMemoDedup, ReadsDoNotMergeWithDeduplicationOff)
+{
+    MergeTreeReadFixture fixture("memo_dedup_reads_off");
+    auto memo = makeMemo(/*deduplicate=*/false);
+
+    EXPECT_NE(
+        memo.internExpression(expressionOver(fixture.makeIndependentRead())),
+        memo.internExpression(expressionOver(fixture.makeIndependentRead())));
+    EXPECT_EQ(memo.getGroupCount(), 2u);
+    EXPECT_EQ(memo.getContext().memo_counters.groups_reused, 0u);
 }

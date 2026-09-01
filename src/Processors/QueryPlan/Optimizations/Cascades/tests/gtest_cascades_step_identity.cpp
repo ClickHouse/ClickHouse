@@ -15,6 +15,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -33,6 +36,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StepDigestCounters.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StepIdentity.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/tests/gtest_merge_tree_read_fixture.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/StepIdentity.h>
 #include <Storages/KeyDescription.h>
@@ -1120,111 +1124,6 @@ TEST(CascadesStepIdentity, JoinStepLogicalWithCorrelatedExpressionsDigestsAsWitn
 namespace
 {
 
-/// The smallest storage a `ReadFromMergeTree` can be built over: one `UInt64` column `a`, `ORDER BY a`,
-/// no partition key, attached (so no sanity checks) and with no data on disk.
-struct MergeTreeReadFixture
-{
-    ContextMutablePtr context;
-    std::shared_ptr<StorageMergeTree> storage;
-    StorageMetadataPtr metadata_snapshot;
-    StorageSnapshotPtr storage_snapshot;
-    MergeTreeSettingsPtr data_settings;
-    RangesInDataPartsPtr parts;
-    String relative_data_path;
-
-    explicit MergeTreeReadFixture(const String & table_name)
-        : relative_data_path("store/test_cascades_step_identity_" + table_name + "/")
-    {
-        MainThreadStatus::getInstance();
-        tryRegisterFunctions();
-        /// `getMinMaxCountProjection` below builds `min`/`max`/`count` over the partition key.
-        tryRegisterAggregateFunctions();
-
-        getActivePartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getOutdatedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getUnexpectedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getPartsCleaningThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-
-        context = Context::createCopy(getContext().context);
-
-        StorageInMemoryMetadata metadata;
-
-        ColumnsDescription columns;
-        columns.add(ColumnDescription("a", std::make_shared<DataTypeUInt64>()));
-        metadata.setColumns(columns);
-
-        ASTPtr order_by_ast = make_intrusive<ASTIdentifier>("a");
-        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
-        metadata.primary_key = metadata.sorting_key;
-        metadata.primary_key.definition_ast = nullptr;
-        metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, {}, context);
-
-        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key = metadata.partition_key.expression_list_ast->clone();
-        metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
-
-        auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
-        storage = std::make_shared<StorageMergeTree>(
-            StorageID("test_cascades_identity", table_name),
-            relative_data_path,
-            metadata,
-            LoadingStrictnessLevel::ATTACH,
-            context,
-            /*date_column_name=*/ "",
-            MergeTreeData::MergingParams{},
-            std::move(storage_settings));
-
-        /// The handle only converts to a `StorageMetadataPtr` as an lvalue.
-        const StorageMetadataHandle metadata_handle = storage->getInMemoryMetadataPtr(context, false);
-        metadata_snapshot = metadata_handle;
-        storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
-        data_settings = storage->getSettings();
-        parts = std::make_shared<RangesInDataParts>();
-    }
-
-    ~MergeTreeReadFixture()
-    {
-        /// Capture the on-disk paths before shutdown, then remove them: `StorageMergeTree` never
-        /// deletes its own directory, so a bare `flushAndShutdown` leaves `relative_data_path` behind
-        /// on every run.
-        const auto data_paths = storage->getDataPaths();
-        storage->flushAndShutdown();
-        for (const auto & path : data_paths)
-            std::filesystem::remove_all(path);
-    }
-
-    /// `table_expression_modifiers` must be present: with no modifiers and no query tree `isFinal()`
-    /// falls back to the (absent) select AST. Note that every call allocates its own `PreparedSets`,
-    /// which the full digest witnesses - reads meant to differ in one field only must share one
-    /// `SelectQueryInfo` (copies share the pointer).
-    static SelectQueryInfo makeQueryInfo()
-    {
-        SelectQueryInfo query_info;
-        query_info.table_expression_modifiers.emplace(/*has_final_=*/ false, std::nullopt, std::nullopt);
-        return query_info;
-    }
-
-    std::unique_ptr<ReadFromMergeTree> makeRead(const SelectQueryInfo & query_info) const
-    {
-        return std::make_unique<ReadFromMergeTree>(
-            parts,
-            MergeTreeData::MutationsSnapshotPtr{},
-            Names{"a"},
-            *storage,
-            data_settings,
-            query_info,
-            storage_snapshot,
-            context,
-            /*max_block_size_=*/ 8192,
-            /*num_streams_=*/ 1,
-            /*max_block_numbers_to_read_=*/ nullptr,
-            getLogger("CascadesStepIdentityTest"),
-            /*analyzed_result_ptr_=*/ nullptr,
-            /*enable_parallel_reading_=*/ false);
-    }
-};
-
 /// A filter over an `UInt8` input column, so `applyFilters` has a non-constant node to fold into
 /// `filter_actions_dag`.
 ActionsDAG makeReadFilterDag()
@@ -1582,21 +1481,6 @@ TEST(CascadesStepIdentity, LogicalDigestWithoutOptInNeverMerges)
     GroupExpression shared_step_copy(*a);
     ASSERT_EQ(shared_step_copy.plan_step, a->plan_step);
     EXPECT_FALSE(a->logicallyEqualTo(shared_step_copy));
-}
-
-/// Stage D (`ReadFromMergeTree` content identity) has not landed, so reads stay fail-closed.
-TEST(CascadesStepIdentity, LogicalDigestExcludesReadFromMergeTree)
-{
-    MergeTreeReadFixture fixture("logical_read");
-    auto query_info = MergeTreeReadFixture::makeQueryInfo();
-
-    auto a_step = fixture.makeRead(query_info);
-    EXPECT_FALSE(a_step->hasLogicalDigest());
-
-    auto [a, b] = logicalPair(std::move(a_step), fixture.makeRead(query_info));
-
-    EXPECT_EQ(a->cachedStepLogicalFingerprint(), nullptr);
-    EXPECT_FALSE(a->logicallyEqualTo(*b));
 }
 
 /// The expression-level frame: own properties and the ordered inputs, each with its group id and its
@@ -2355,4 +2239,361 @@ TEST(CascadesStepIdentity, LogicalDigestJoinRuntimeFilterDescriptorsAreRelationD
     auto [a, b] = logicalPair(makeJoinStepLogical(), std::move(filtering));
 
     expectLogicallyUnequal(*a, *b);
+}
+
+/// Logical digest: `ReadFromMergeTree`
+///
+/// The read is where the two levels differ the most. The full digest witnesses the objects a read was
+/// built from (the part list, the mutations and storage snapshots, every pointer of `SelectQueryInfo`),
+/// so two reads of one table merge only when they literally share them. The logical digest describes
+/// the part set as content instead, which is what makes the self-join case merge - and what makes
+/// every gate below load-bearing.
+
+/// THE payoff: two reads of one table built the way two table expressions of a self-join are - their
+/// own `SelectQueryInfo` (hence their own `PreparedSets`), their own storage snapshot, their own
+/// part-list object - compute the same relation, while the full digest cannot see past the witnesses.
+TEST(CascadesStepIdentity, LogicalDigestIndependentlyBuiltReadsOfOneTableAreEqual)
+{
+    MergeTreeReadFixture fixture("logical_self_join");
+
+    auto left = fixture.makeIndependentRead();
+    auto right = fixture.makeIndependentRead();
+    ASSERT_TRUE(left->hasLogicalDigest());
+    ASSERT_TRUE(right->hasLogicalDigest());
+    ASSERT_NE(left->getStorageSnapshot(), right->getStorageSnapshot());
+    ASSERT_NE(left->getQueryInfo().prepared_sets, right->getQueryInfo().prepared_sets);
+
+    auto [a, b] = logicalPair(std::move(left), std::move(right));
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// Both pushed-down filter carriers, separately. They only prune, but pruning drops rows that fail
+/// the filter and the read's own output is expected to still contain them.
+TEST(CascadesStepIdentity, LogicalDigestReadFilterCarriersAreRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_filters");
+
+    /// The step-level carrier. `applyFilters` also leaves a copy in `query_info`, so this flip moves
+    /// both carriers at once; the second half of the test isolates the `query_info` one.
+    auto filtered = fixture.makeRead(MergeTreeReadFixture::makeQueryInfo());
+    filtered->addFilter(makeReadFilterDag(), "f");
+    filtered->SourceStepWithFilterBase::applyFilters();
+    ASSERT_NE(filtered->getFilterActionsDAG(), nullptr);
+
+    auto [plain, with_step_filter] = logicalPair(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), std::move(filtered));
+    expectLogicallyUnequal(*plain, *with_step_filter);
+
+    /// The `query_info` carrier alone - the DAG index analysis reads - with no step-level DAG on
+    /// either side.
+    auto query_info = MergeTreeReadFixture::makeQueryInfo();
+    query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(makeFilterDag(1));
+
+    auto plain_read = fixture.makeRead(MergeTreeReadFixture::makeQueryInfo());
+    auto filtered_read = fixture.makeRead(query_info);
+    ASSERT_EQ(plain_read->getFilterActionsDAG(), nullptr);
+    ASSERT_EQ(filtered_read->getFilterActionsDAG(), nullptr);
+
+    auto [c, with_query_info_filter] = logicalPair(std::move(plain_read), std::move(filtered_read));
+    expectLogicallyUnequal(*c, *with_query_info_filter);
+}
+
+/// The exact filters of the read: they drop rows inside the read itself.
+TEST(CascadesStepIdentity, LogicalDigestReadPrewhereAndRowLevelFilterAreRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_prewhere");
+
+    /// The predicate is over the table's own column and its column is removed again, so the read
+    /// header - and with it the digest preamble - is the same on both sides of every comparison.
+    auto predicate_over_a = []
+    {
+        auto type = std::make_shared<DataTypeUInt64>();
+        auto filter_type = std::make_shared<DataTypeUInt8>();
+        ActionsDAG dag(NamesAndTypesList{{"a", type}});
+        dag.getOutputs().push_back(&dag.addColumn(filter_type->createColumnConst(1, Field(static_cast<UInt8>(1))), filter_type, "f"));
+        return dag;
+    };
+
+    auto with_prewhere = MergeTreeReadFixture::makeQueryInfo();
+    with_prewhere.prewhere_info = std::make_shared<PrewhereInfo>(predicate_over_a(), "f");
+    with_prewhere.prewhere_info->remove_prewhere_column = true;
+
+    auto plain_read = fixture.makeRead(MergeTreeReadFixture::makeQueryInfo());
+    auto prewhere_read = fixture.makeRead(with_prewhere);
+    ASSERT_EQ(plain_read->getOutputHeader()->dumpStructure(), prewhere_read->getOutputHeader()->dumpStructure());
+
+    auto [plain, prewhere] = logicalPair(std::move(plain_read), std::move(prewhere_read));
+    expectLogicallyUnequal(*plain, *prewhere);
+
+    auto with_row_level = MergeTreeReadFixture::makeQueryInfo();
+    with_row_level.row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo{predicate_over_a(), "f", true});
+
+    auto [plain_2, row_level] = logicalPair(
+        fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), fixture.makeRead(with_row_level));
+    expectLogicallyUnequal(*plain_2, *row_level);
+}
+
+/// FINAL folds a part set into one row per primary key, and a sample keeps a fraction of the rows.
+TEST(CascadesStepIdentity, LogicalDigestReadFinalAndSamplingAreRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_final");
+
+    auto final_query_info = MergeTreeReadFixture::makeQueryInfo();
+    final_query_info.table_expression_modifiers.emplace(/*has_final_=*/ true, std::nullopt, std::nullopt);
+
+    auto [plain, with_final]
+        = logicalPair(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), fixture.makeRead(final_query_info));
+    expectLogicallyUnequal(*plain, *with_final);
+
+    auto sampled_query_info = MergeTreeReadFixture::makeQueryInfo();
+    sampled_query_info.table_expression_modifiers.emplace(
+        /*has_final_=*/ false, TableExpressionModifiers::Rational{1, 2}, std::nullopt);
+
+    auto [plain_2, sampled]
+        = logicalPair(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), fixture.makeRead(sampled_query_info));
+    expectLogicallyUnequal(*plain_2, *sampled);
+}
+
+/// Both truncations of the read.
+TEST(CascadesStepIdentity, LogicalDigestReadLimitsAreRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_limits");
+
+    auto trivial_limit_query_info = MergeTreeReadFixture::makeQueryInfo();
+    trivial_limit_query_info.trivial_limit = 10;
+
+    auto [plain, trivially_limited]
+        = logicalPair(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), fixture.makeRead(trivial_limit_query_info));
+    expectLogicallyUnequal(*plain, *trivially_limited);
+
+    auto limited = fixture.makeRead(MergeTreeReadFixture::makeQueryInfo());
+    limited->setLimit(10);
+
+    auto [plain_2, with_limit] = logicalPair(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), std::move(limited));
+    expectLogicallyUnequal(*plain_2, *with_limit);
+}
+
+/// The read list: what the read returns, column for column.
+TEST(CascadesStepIdentity, LogicalDigestReadColumnListIsRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_columns");
+
+    auto with_extra_column = fixture.makeRead(MergeTreeReadFixture::makeQueryInfo());
+    with_extra_column->addReadColumn("_part");
+    ASSERT_EQ(with_extra_column->getAllColumnNames(), Names({"a", "_part"}));
+
+    auto [plain, wider] = logicalPair(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), std::move(with_extra_column));
+    expectLogicallyUnequal(*plain, *wider);
+}
+
+/// Two reads of two different tables in one context: the table identity itself is in the digest. Both
+/// tables have a `Nil` UUID here (no database attached them), which is exactly the case the storage
+/// witness exists for.
+TEST(CascadesStepIdentity, LogicalDigestReadsOfDifferentTablesAreUnequal)
+{
+    MergeTreeReadFixture left_table("logical_table_left");
+    MergeTreeReadFixture right_table("logical_table_right", left_table.context);
+    ASSERT_EQ(left_table.storage->getStorageID().uuid, right_table.storage->getStorageID().uuid);
+
+    auto [a, b] = logicalPair(
+        left_table.makeRead(MergeTreeReadFixture::makeQueryInfo()), right_table.makeRead(MergeTreeReadFixture::makeQueryInfo()));
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// Runtime filters published by a join above prune granules of this read.
+TEST(CascadesStepIdentity, LogicalDigestReadJoinRuntimeFilterDescriptorsAreRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_runtime_filter");
+
+    auto filtering = fixture.makeRead(MergeTreeReadFixture::makeQueryInfo());
+    filtering->addJoinRuntimeFilterIndexAnalysisOnDataRead("filter_1", "a", std::make_shared<DataTypeUInt64>());
+
+    auto [plain, with_runtime_filter] = logicalPair(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), std::move(filtering));
+    expectLogicallyUnequal(*plain, *with_runtime_filter);
+}
+
+/// Read-in-order both truncates (`limit`) and installs the order claim `getSortDescription` reports.
+TEST(CascadesStepIdentity, LogicalDigestReadInputOrderIsRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_in_order");
+
+    SortDescription sorting_key;
+    sorting_key.emplace_back(SortColumnDescription("a", "a", /*direction_=*/ 1));
+
+    auto in_order_query_info = MergeTreeReadFixture::makeQueryInfo();
+    in_order_query_info.input_order_info
+        = std::make_shared<const InputOrderInfo>(sorting_key, /*used_prefix_of_sorting_key_size_=*/ 1, /*direction_=*/ 1, /*limit_=*/ 10);
+
+    auto in_order = fixture.makeRead(in_order_query_info);
+    ASSERT_NE(in_order->getInputOrder(), nullptr);
+
+    auto [plain, ordered] = logicalPair(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo()), std::move(in_order));
+    expectLogicallyUnequal(*plain, *ordered);
+}
+
+/// The part-list component, pinned on the encoder directly: the fixture's table has no data, and a
+/// `RangesInDataPart` needs a real on-disk part, so the mutation sensitivity of the part list cannot
+/// be driven through a read. Each flip below is a way for two part lists to disagree.
+TEST(CascadesStepIdentity, LogicalDigestPartListEncodesNamesVersionsAndNumbering)
+{
+    using PartIdentity = ReadFromMergeTree::LogicalPartIdentity;
+
+    auto part = [](String name, Int64 data_version, size_t index_in_query, size_t starting_offset_in_query)
+    {
+        PartIdentity identity;
+        identity.name = std::move(name);
+        identity.data_version = data_version;
+        identity.index_in_query = index_in_query;
+        identity.starting_offset_in_query = starting_offset_in_query;
+        return identity;
+    };
+
+    const std::vector<PartIdentity> base{part("all_1_1_0", 1, 0, 0), part("all_2_2_0", 2, 1, 10)};
+    const auto base_encoding = ReadFromMergeTree::encodeLogicalPartIdentities(base);
+
+    /// Same multiset, listed the other way round: the encoding is canonical in the list order, and the
+    /// query-wide numbering travels inside the entries, so it survives the sort.
+    EXPECT_EQ(ReadFromMergeTree::encodeLogicalPartIdentities({base[1], base[0]}), base_encoding);
+    EXPECT_EQ(ReadFromMergeTree::encodeLogicalPartIdentities(base), base_encoding);
+
+    auto with = [&](auto && tweak)
+    {
+        auto parts = base;
+        tweak(parts);
+        return ReadFromMergeTree::encodeLogicalPartIdentities(parts);
+    };
+
+    /// A mutation rewrote the part: new name, new data version.
+    EXPECT_NE(with([](auto & parts) { parts[0].name = "all_1_1_0_3"; parts[0].data_version = 3; }), base_encoding);
+    /// Defensively, each of the two on its own.
+    EXPECT_NE(with([](auto & parts) { parts[0].name = "all_1_1_0_3"; }), base_encoding);
+    EXPECT_NE(with([](auto & parts) { parts[0].data_version = 3; }), base_encoding);
+    /// An alter-metadata mutation bumps a part's metadata version in place, without renaming it.
+    EXPECT_NE(with([](auto & parts) { parts[0].metadata_version = 1; }), base_encoding);
+    /// `_part_index` and `_part_offset` are column values.
+    EXPECT_NE(with([](auto & parts) { std::swap(parts[0].index_in_query, parts[1].index_in_query); }), base_encoding);
+    EXPECT_NE(with([](auto & parts) { parts[1].starting_offset_in_query = 11; }), base_encoding);
+    /// A projection part of the same name under another parent is another relation.
+    EXPECT_NE(with([](auto & parts) { parts[0].parent_name = "all_3_3_0"; }), base_encoding);
+    /// A part more, and pinned mark ranges.
+    EXPECT_NE(with([&](auto & parts) { parts.push_back(part("all_3_3_0", 3, 2, 20)); }), base_encoding);
+    EXPECT_NE(with([](auto & parts) { parts[0].ranges = MarkRanges{MarkRange{0, 4}}; }), base_encoding);
+    EXPECT_NE(
+        with([](auto & parts) { parts[0].ranges = MarkRanges{MarkRange{0, 5}}; }),
+        with([](auto & parts) { parts[0].ranges = MarkRanges{MarkRange{0, 4}}; }));
+}
+
+/// The instance gates, all fail-closed: no logical digest at all, so the read gets a group of its own
+/// and never merges.
+TEST(CascadesStepIdentity, LogicalDigestReadGatesFailClosed)
+{
+    MergeTreeReadFixture fixture("logical_read_gates");
+    ASSERT_TRUE(fixture.makeRead(MergeTreeReadFixture::makeQueryInfo())->hasLogicalDigest());
+
+    /// A STREAM read: its index analysis lives in `MergeTreeCommitOrderSource` entirely.
+    auto stream_query_info = MergeTreeReadFixture::makeQueryInfo();
+    stream_query_info.table_expression_modifiers.emplace(/*has_final_=*/ false, std::nullopt, std::nullopt, StreamSettings{});
+    EXPECT_FALSE(fixture.makeRead(stream_query_info)->hasLogicalDigest());
+
+    /// Filters added but not yet folded in: `applyFilters` would still change the pruning.
+    auto pending = fixture.makeRead(MergeTreeReadFixture::makeQueryInfo());
+    pending->addFilter(makeReadFilterDag(), "f");
+    ASSERT_TRUE(pending->hasPendingFilters());
+    EXPECT_FALSE(pending->hasLogicalDigest());
+
+    /// A pinned block-number boundary filters parts during analysis, after the part list.
+    EXPECT_FALSE(fixture
+                     .makeReadWith([](MergeTreeReadFixture::ReadOptions & options)
+                                   { options.max_block_numbers_to_read = std::make_shared<PartitionIdToMaxBlock>(); })
+                     ->hasLogicalDigest());
+
+    /// Ruling 7a: on-the-fly mutation state the part list does not identify. Patch parts and pending
+    /// data, alter or metadata mutations share this gate; the counters are what it reads.
+    auto read_with_mutation_counters = [&](MutationCounters counters)
+    {
+        return fixture.makeReadWith([&](MergeTreeReadFixture::ReadOptions & options)
+                                    { options.mutations_snapshot = std::make_shared<TestMutationsSnapshot>(counters); });
+    };
+
+    EXPECT_TRUE(read_with_mutation_counters({})->hasLogicalDigest());
+    EXPECT_FALSE(read_with_mutation_counters({.num_data = 1, .num_alter = 0, .num_metadata = 0})->hasLogicalDigest());
+    EXPECT_FALSE(read_with_mutation_counters({.num_data = 0, .num_alter = 1, .num_metadata = 0})->hasLogicalDigest());
+    EXPECT_FALSE(read_with_mutation_counters({.num_data = 0, .num_alter = 0, .num_metadata = 1})->hasLogicalDigest());
+
+    /// Without table expression modifiers, sampling is decided by the select AST. That is the shape a
+    /// real analyzer query has (the planner leaves the modifiers unset when a table expression carries
+    /// neither FINAL nor SAMPLE), so a plain select must keep its digest and only a SAMPLE - or an AST
+    /// that is not a select at all - takes it away.
+    auto read_over_ast = [&](ASTPtr query)
+    {
+        SelectQueryInfo ast_query_info;
+        ast_query_info.query = std::move(query);
+        return fixture.makeReadWith([&](MergeTreeReadFixture::ReadOptions & options) { options.query_info = ast_query_info; });
+    };
+
+    EXPECT_TRUE(read_over_ast(make_intrusive<ASTSelectQuery>())->hasLogicalDigest());
+
+    /// `ASTSelectQuery::sampleSize` reads the first table expression, so the SAMPLE has to be hung
+    /// where the parser would put it.
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->sample_size = make_intrusive<ASTSampleRatio>(ASTSampleRatio::Rational{1, 2});
+    table_expression->children.push_back(table_expression->sample_size);
+
+    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    tables_element->table_expression = table_expression;
+    tables_element->children.push_back(table_expression);
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(tables_element);
+
+    auto sampled_select = make_intrusive<ASTSelectQuery>();
+    sampled_select->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+    ASSERT_NE(sampled_select->sampleSize(), nullptr);
+    EXPECT_FALSE(read_over_ast(sampled_select)->hasLogicalDigest());
+
+    /// The predicate also rejects an AST that is not a select at all, which no test can construct: the
+    /// step's own constructor casts it to `ASTSelectQuery` first (through `isFinal()`).
+
+    /// A correlated `PLACEHOLDER` in any DAG the writer serializes.
+    ActionsDAG correlated_dag(NamesAndTypesList{{"a", std::make_shared<DataTypeUInt64>()}});
+    correlated_dag.addPlaceholder("correlated", std::make_shared<DataTypeUInt64>());
+
+    auto correlated_query_info = MergeTreeReadFixture::makeQueryInfo();
+    correlated_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(std::move(correlated_dag));
+    ASSERT_TRUE(correlated_query_info.filter_actions_dag->hasCorrelatedColumns());
+    EXPECT_FALSE(fixture.makeRead(correlated_query_info)->hasLogicalDigest());
+}
+
+/// A mutations snapshot with no mutation state still has to match: a read with one is not a read
+/// without one, and a lightweight-delete mask changes the rows.
+TEST(CascadesStepIdentity, LogicalDigestReadMutationsSnapshotPresenceIsRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_mutations");
+
+    auto [without, with_empty] = logicalPair(
+        fixture.makeIndependentRead(),
+        fixture.makeReadWith([](MergeTreeReadFixture::ReadOptions & options)
+                             { options.mutations_snapshot = std::make_shared<TestMutationsSnapshot>(MutationCounters{}); }));
+    expectLogicallyUnequal(*without, *with_empty);
+}
+
+/// The two mutable members that populate while a read is costed are out of the logical digest, so a
+/// read's logical identity does not drift over its lifetime - unlike its full identity.
+TEST(CascadesStepIdentity, LogicalDigestReadIsBlindToLazyAnalysisState)
+{
+    MergeTreeReadFixture fixture("logical_read_analysis_state");
+
+    auto analyzed = fixture.makeIndependentRead();
+    auto * analyzed_read = analyzed.get();
+
+    auto [a, b] = logicalPair(fixture.makeIndependentRead(), std::move(analyzed));
+    ASSERT_EQ(a->logicalFingerprint(), b->logicalFingerprint());
+    const auto fingerprint_before = b->logicalFingerprint();
+
+    /// Pinning an analysis result is a full-digest difference (`getParts()` then returns it) and no
+    /// logical one.
+    analyzed_read->setAnalyzedResult(std::make_shared<ReadFromMergeTree::AnalysisResult>());
+
+    EXPECT_EQ(b->logicalFingerprint(), fingerprint_before);
+    EXPECT_TRUE(a->logicallyEqualTo(*b));
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
