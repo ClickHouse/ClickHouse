@@ -143,9 +143,8 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
             return;
     }
 
-    /// `currentDatabase()` is folded on the initiator unless the body is left unanalysed there,
-    /// which is exactly what `view()` does - so with no declared remote database the predicate
-    /// resolves to each shard's own default rather than to this node's.
+    /// `view()` leaves the body unanalysed on the initiator, so an undeclared remote database
+    /// resolves to each shard's own default; bare `currentDatabase()` would fold to this node's.
     const String database_predicate = remote_id.database_name.empty()
         ? "currentDatabase()"
         : quoteString(remote_id.database_name);
