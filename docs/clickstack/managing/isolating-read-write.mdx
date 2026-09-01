@@ -120,16 +120,11 @@ SELECT
 FROM clusterAllReplicas('default', system.query_log)
 WHERE event_time > now() - toIntervalMinute(10) 
   AND type = 'QueryFinish'
-  AND arrayExists(
-      t -> splitByChar('.', t)[-1] IN ('otel_logs', 'otel_traces', 'hyperdx_sessions')
-           OR splitByChar('.', t)[-1] LIKE 'otel_metrics%', 
-      tables
-  )
 GROUP BY ALL
 ORDER BY count() DESC;
 ```
 
-The filter on `tables` keeps the result to queries that touched the ClickStack tables, and `http_user_agent` distinguishes the UI from anything else connecting to the endpoint.
+Grouping by `user` and `http_user_agent` is what attributes the traffic: it distinguishes the UI from the SQL console and from anything else connecting to the endpoint, whatever tables your sources point at.
 
 On the **read-write** service, the same query should show inserts from the ingestion user and no ClickStack query traffic.
 
@@ -143,11 +138,6 @@ SELECT
 FROM clusterAllReplicas('all_groups.default', system.query_log)
 WHERE event_time > now() - toIntervalMinute(10) 
   AND type = 'QueryFinish'
-  AND arrayExists(
-      t -> splitByChar('.', t)[-1] IN ('otel_logs', 'otel_traces', 'hyperdx_sessions')
-           OR splitByChar('.', t)[-1] LIKE 'otel_metrics%', 
-      tables
-  )
 GROUP BY ALL;
 ```
 
@@ -242,7 +232,7 @@ Any MCP client can carry the header - see [targeting a specific service](/clicks
 <Warning>
 **MCP writes state to the service it targets**
 
-The MCP server can create dashboards, alerts and saved searches as well as run queries, and that state is scoped to the service the request was routed to, like all [ClickStack state](#point-clickstack). A dashboard an agent creates on the agent service won't appear in the ClickStack UI launched from the service serving your engineers, and an alert it creates there is evaluated on that service's compute - so it won't evaluate at all while an idling agent service is asleep. Route agents that are expected to create durable artifacts to the same service your team uses.
+The MCP server can create dashboards, alerts and saved searches as well as run queries, and that state is scoped to the service the request was routed to, like all [ClickStack state](#point-clickstack). A dashboard an agent creates on the agent service won't appear in the ClickStack UI launched from the service serving your engineers, and an alert it creates there is evaluated on that service's compute - where an idling agent service will delay or miss the evaluations, as [below](#isolating-alerts). Route agents that are expected to create durable artifacts to the same service your team uses.
 </Warning>
 
 ## Alerts {#alerts}
@@ -272,7 +262,7 @@ What you can isolate is the alerts you own centrally - the ones a platform team 
 <Warning>
 **Disable auto-idling on the alerting service**
 
-A service whose only workload is alert evaluation can still idle, and alerts don't evaluate while it's idled - so an alerting service left with auto-idling enabled can silently stop alerting. Turn auto-idling off on that service and plan for it to be always-on. The same applies wherever your alerts are evaluated: if they run on the service serving the UI, that service can't be left to idle either.
+Having alerts configured on a service doesn't keep it awake. Alert evaluations that land on an idled service are delayed by the wake-up or fail outright, so an alerting service left with auto-idling enabled can miss evaluations. Turn auto-idling off on that service and plan for it to be always-on. The same applies wherever your alerts are evaluated: if they run on the service serving the UI, that service can't be left to idle either.
 </Warning>
 
 The remaining trade-offs are the ones that follow from state being per service:
