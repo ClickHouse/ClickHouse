@@ -11,6 +11,13 @@ struct PositionDeleteObject
     String file_format;
     std::optional<String> reference_data_file_path; // now it is always std::nullopt. Exists for compatibility reasons of the iceberg cluster function.
     Int64 sequence_number = 0;
+    std::optional<Int64> content_offset;
+    std::optional<Int64> content_size_in_bytes;
+    UInt64 record_count = 0;
+
+    bool isDeletionVector() const
+    {
+        return content_offset.has_value();
+    }
 };
 }
-

@@ -607,7 +607,8 @@ roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 k
     }
 }
 
-void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_cardinality, ColumnUInt64 & positions)
+template <typename OnPosition>
+void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_cardinality, OnPosition && on_position)
 {
     if (bytes.size() < sizeof(Int64))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
@@ -669,7 +670,7 @@ void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_ca
             const UInt64 position = positionFromKeyAndSubPosition(static_cast<UInt32>(key), sub_position);
             if (position > static_cast<UInt64>(DELETION_VECTOR_MAX_POSITION))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector position {} is out of supported range", position);
-            positions.insertValue(position);
+            on_position(position);
         }
 
         ptr += bitmap_size;
@@ -730,7 +731,11 @@ void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinal
             expected_cardinality,
             PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
 
-    deserializeRoaringPositionBitmap(extractDeletionVectorPayload(blob), expected_cardinality, positions);
+    deserializeRoaringPositionBitmap(
+        extractDeletionVectorPayload(blob),
+        expected_cardinality,
+        [&](UInt64 position) { positions.insertValue(position); }
+    );
 }
 
 NamesAndTypesList getPuffinMetadataSchema()
@@ -800,6 +805,14 @@ void checkPuffinHeader(const Block & header)
     checkPuffinFormatHeader(header, getPuffinSchema(), "Puffin");
 }
 
+}
+
+void forEachDeletionVectorPosition(
+    std::string_view blob,
+    UInt64 expected_cardinality,
+    const std::function<void(UInt64)> & on_position)
+{
+    deserializeRoaringPositionBitmap(extractDeletionVectorPayload(blob), expected_cardinality, on_position);
 }
 
 PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_)

@@ -19,6 +19,7 @@
 
 namespace DB::ErrorCodes
 {
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int NOT_IMPLEMENTED;
 extern const int UNKNOWN_PROTOCOL;
 }
@@ -103,16 +104,28 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
 
 void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path)
 {
-    if (Poco::toUpper(info.file_format) != "PARQUET")
+    const auto & parsed_entry = *position_delete_object->parsed_entry;
+    const bool is_puffin = Poco::toUpper(parsed_entry.file_format) == "PUFFIN";
+
+    if (is_puffin != (parsed_entry.content_offset.has_value() && parsed_entry.content_size_in_bytes.has_value()))
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
-            info.file_format);
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Position delete file `{}` of format {} has {} `content_offset`/`content_size_in_bytes`, which is required for and "
+            "exclusive to deletion vectors",
+            parsed_entry.file_path_key.serialize(),
+            parsed_entry.file_format,
+            is_puffin ? "no" : "unexpected");
     }
+
     info.position_deletes_objects.emplace_back(
-        resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt,
-        position_delete_object->sequence_number);
+        resolved_storage_path,
+        parsed_entry.file_format,
+        std::nullopt,
+        position_delete_object->sequence_number,
+        parsed_entry.content_offset,
+        parsed_entry.content_size_in_bytes,
+        parsed_entry.record_count);
 }
 
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path)
@@ -148,6 +161,30 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
             else
             {
                 writeVarUInt(0, out);
+            }
+            if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS)
+            {
+                if (pos_delete_obj.isDeletionVector())
+                {
+                    writeVarUInt(1, out);
+                    writeVarInt(*pos_delete_obj.content_offset, out);
+                    writeVarInt(*pos_delete_obj.content_size_in_bytes, out);
+                    writeVarInt(pos_delete_obj.record_count, out);
+                }
+                else
+                {
+                    writeVarUInt(0, out);
+                }
+            }
+            else if (pos_delete_obj.isDeletionVector())
+            {
+                /// The reader would have no way to locate the blob and would return deleted rows.
+                throw Exception(
+                    ErrorCodes::UNKNOWN_PROTOCOL,
+                    "Cannot send Iceberg deletion vector `{}` over cluster function protocol version {}, at least version {} is required",
+                    pos_delete_obj.file_path,
+                    protocol_version,
+                    DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
             }
         }
     }
@@ -246,6 +283,21 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
                 String reference_path;
                 readStringBinary(reference_path, in);
                 pos_delete_obj.reference_data_file_path = reference_path;
+            }
+            if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS)
+            {
+                size_t is_deletion_vector = 0;
+                readVarUInt(is_deletion_vector, in);
+                if (is_deletion_vector)
+                {
+                    Int64 content_offset = 0;
+                    Int64 content_size_in_bytes = 0;
+                    readVarInt(content_offset, in);
+                    readVarInt(content_size_in_bytes, in);
+                    readVarInt(pos_delete_obj.record_count, in);
+                    pos_delete_obj.content_offset = content_offset;
+                    pos_delete_obj.content_size_in_bytes = content_size_in_bytes;
+                }
             }
         }
     }
