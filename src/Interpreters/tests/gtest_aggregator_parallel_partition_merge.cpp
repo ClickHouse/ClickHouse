@@ -4,6 +4,7 @@
 #include <limits>
 #include <map>
 #include <type_traits>
+#include <unordered_set>
 #include <vector>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -135,12 +136,12 @@ struct Scenario
     std::map<String, String> mergePartitions(std::vector<AggregatedDataVariantsPtr> sources, size_t num_partitions) const
     {
         ManyAggregatedDataVariants many(sources.begin(), sources.end());
-        auto prepared = aggregator.prepareVariantsToMerge(std::move(many), /*adaptive_session=*/nullptr);
+        std::atomic<bool> cancelled{false};
+        auto prepared = aggregator.prepareVariantsToMerge(std::move(many), cancelled, /*adaptive_session=*/nullptr);
         EXPECT_FALSE(prepared.empty());
         EXPECT_FALSE(prepared.at(0)->isTwoLevel());
         EXPECT_TRUE(aggregator.canMergeSingleLevelInPartitions(*prepared.at(0)));
 
-        std::atomic<bool> cancelled{false};
         size_t max_table_size = 0;
         for (const auto & variants : prepared)
             max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
@@ -163,9 +164,9 @@ struct Scenario
     std::map<String, String> mergePartitionsNonFinal(std::vector<AggregatedDataVariantsPtr> sources, size_t num_partitions) const
     {
         ManyAggregatedDataVariants many(sources.begin(), sources.end());
-        auto prepared = aggregator.prepareVariantsToMerge(std::move(many), /*adaptive_session=*/nullptr);
-
         std::atomic<bool> cancelled{false};
+        auto prepared = aggregator.prepareVariantsToMerge(std::move(many), cancelled, /*adaptive_session=*/nullptr);
+
         size_t max_table_size = 0;
         for (const auto & variants : prepared)
             max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
@@ -416,6 +417,58 @@ TEST_F(AggregatorParallelPartitionMerge, LowCardinalityStringKey)
     EXPECT_EQ(scenario.mergePartitions({scenario.aggregate(block_a), scenario.aggregate(block_b)}, 4), expected);
 }
 
+TEST_F(AggregatorParallelPartitionMerge, LowCardinalityNormalizationSplitDistinctArenas)
+{
+    const DataTypePtr lc_type = std::make_shared<DataTypeLowCardinality>(uint64_type);
+    auto params = makeParams({"k"}, {makeAggregate("sum", {"v"}, {uint64_type})});
+    params.max_threads = 4;
+    params.group_by_two_level_threshold = 1;
+    Scenario scenario(makeHeader(lc_type), params);
+
+    /// Exceed the normal splitting threshold without a failpoint. The source's two shards
+    /// retain the same aggregate-state arena but use separate arenas for normalization.
+    constexpr size_t num_keys = 200'001;
+    auto keys = ColumnUInt64::create(num_keys);
+    auto indexes = ColumnUInt64::create(num_keys);
+    for (size_t i = 0; i < num_keys; ++i)
+        keys->getData()[i] = indexes->getData()[i] = i;
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*uint64_type, std::move(keys));
+    auto key_column = ColumnLowCardinality::create(
+        std::move(dictionary), std::move(indexes), /*is_shared=*/true, /*has_single_dictionary_for_part=*/true);
+    auto source = scenario.aggregate({{std::move(key_column), ColumnUInt64::create(num_keys, 1)}});
+    ASSERT_EQ(source->type, AggregatedDataVariants::Type::low_cardinality_single_dictionary_two_level);
+
+    /// A value-key variant forces normalization before the final merge.
+    auto other = scenario.aggregate({{makeColumn(lc_type, {UInt64(1)}), makeColumn(uint64_type, {UInt64(1)})}});
+    ASSERT_FALSE(other->isSingleLowCardinalityDictionary());
+    ManyAggregatedDataVariants sources{source, other};
+    std::atomic<bool> cancelled{false};
+    auto prepared = scenario.aggregator.prepareVariantsToMerge(std::move(sources), cancelled, /*adaptive_session=*/nullptr);
+    ASSERT_EQ(prepared.size(), 3u);
+
+    /// Check the worker-arena invariant directly instead of relying on a race to corrupt states.
+    /// Concatenating the sibling lists would assign the same arena to workers 0 and 2.
+    const auto & pools = prepared.front()->aggregates_pools;
+    ASSERT_GE(pools.size(), params.max_threads);
+    std::unordered_set<Arena *> unique_pools;
+    for (const auto & pool : pools)
+    {
+        ASSERT_TRUE(pool);
+        EXPECT_TRUE(unique_pools.insert(pool.get()).second);
+    }
+
+    size_t rows = 0;
+    for (const auto & data : prepared)
+    {
+        EXPECT_TRUE(data->isTwoLevel());
+        EXPECT_TRUE(unique_pools.contains(data->aggregates_pool));
+        for (const auto & pool : data->aggregates_pools)
+            EXPECT_TRUE(unique_pools.contains(pool.get()));
+        rows += data->sizeWithoutOverflowRow();
+    }
+    EXPECT_EQ(rows, num_keys + 1);
+}
+
 TEST_F(AggregatorParallelPartitionMerge, LowCardinalityNormalizationPreservesFloatEncodings)
 {
     auto check = []<typename Float, typename Bits>(bool nullable, bool two_level, size_t batch_size)
@@ -464,7 +517,8 @@ TEST_F(AggregatorParallelPartitionMerge, LowCardinalityNormalizationPreservesFlo
         auto other = scenario.aggregate({{makeColumn(lc_type, {Float64(1)}), makeColumn(uint64_type, {UInt64(1)})}});
         ASSERT_FALSE(other->isSingleLowCardinalityDictionary());
         ManyAggregatedDataVariants sources{source, other};
-        auto prepared = scenario.aggregator.prepareVariantsToMerge(std::move(sources), /*adaptive_session=*/nullptr);
+        std::atomic<bool> cancelled{false};
+        auto prepared = scenario.aggregator.prepareVariantsToMerge(std::move(sources), cancelled, /*adaptive_session=*/nullptr);
         ASSERT_EQ(prepared.size(), 2u);
 
         auto check_table = [&](const auto & method)
@@ -686,8 +740,9 @@ TEST_F(AggregatorParallelPartitionMerge, InitializedEmptyTwoLevelSingleDictionar
     initialized_empty->convertToTwoLevel();
 
     ManyAggregatedDataVariants sources{live, initialized_empty};
+    std::atomic<bool> cancelled{false};
     auto prepared = scenario.aggregator.prepareVariantsToMerge(
-        std::move(sources), /*adaptive_session=*/nullptr, /*require_stable_bucket_hash=*/true);
+        std::move(sources), cancelled, /*adaptive_session=*/nullptr, /*require_stable_bucket_hash=*/true);
 
     ASSERT_EQ(prepared.size(), 2u);
     for (const auto & variants : prepared)

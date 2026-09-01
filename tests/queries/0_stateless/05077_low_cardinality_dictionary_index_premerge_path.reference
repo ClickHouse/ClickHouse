@@ -1,0 +1,14 @@
+order-independent, two-level threshold 0
+shared	3	60	[10,20,30]
+Merged 2 single-dictionary variants in 1 dictionary groups by index into 1 variants: 2 rows to 1 rows
+two-level aggregation: 0
+order-dependent, two-level threshold 0
+shared	3	60	[10,20,30]
+two-level aggregation: 0
+order-independent, two-level threshold 1
+shared	3	60	[10,20,30]
+Merged 2 single-dictionary variants in 1 dictionary groups by index into 1 variants: 2 rows to 1 rows
+two-level aggregation: 1
+order-dependent, two-level threshold 1
+shared	3	60	[10,20,30]
+two-level aggregation: 1
