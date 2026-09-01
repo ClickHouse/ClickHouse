@@ -24,7 +24,6 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/joinEquivalentSets.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -333,6 +332,19 @@ public:
         return root_a;
     }
 
+    bool connected(JoinActionRef a, JoinActionRef b)
+    {
+        return findOrAdd(a) == findOrAdd(b);
+    }
+
+    std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> getClasses()
+    {
+        std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> classes;
+        for (auto & [ref, _] : parent)
+            classes[findOrAdd(ref)].push_back(ref);
+        return classes;
+    }
+
     std::vector<JoinActionRef> getClass(JoinActionRef ref)
     {
         std::vector<JoinActionRef> res;
@@ -349,6 +361,8 @@ private:
     std::unordered_map<JoinActionRef, JoinActionRef> parent;
     std::unordered_map<JoinActionRef, size_t> rank;
 };
+
+using JoinActionRefPair = std::pair<JoinActionRef, JoinActionRef>;
 
 struct JoinActionRefPairHash
 {

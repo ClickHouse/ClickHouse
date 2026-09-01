@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/joinEquivalentSets.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -29,6 +28,29 @@ namespace
 {
 
 using SubstitutionMap = std::unordered_map<std::string, ColumnWithTypeAndName>;
+
+/// Equi-key pairs of this join, left expression first. A pair whose sides have different types is
+/// skipped: the JOIN casts them itself, so substituting one for the other would change the atom
+std::vector<std::pair<JoinActionRef, JoinActionRef>> getEquiJoinKeyPairs(const JoinOperator & join_operator)
+{
+    std::vector<std::pair<JoinActionRef, JoinActionRef>> pairs;
+    for (const auto & predicate : join_operator.expression)
+    {
+        auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+            continue;
+
+        if (lhs.fromRight() && rhs.fromLeft())
+            std::swap(lhs, rhs);
+        else if (!lhs.fromLeft() || !rhs.fromRight())
+            continue;
+
+        if (!lhs.getColumn().type->equals(*rhs.getColumn().type))
+            continue;
+        pairs.emplace_back(lhs, rhs);
+    }
+    return pairs;
+}
 
 /// Steps a lifted filter can sit above and still reach index analysis. Keep in sync with the steps
 /// `optimizePrimaryKeyConditionAndLimit` walks up through, or the copied conjunct never prunes
@@ -278,7 +300,7 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
 
     /// Only the keys of this join: a key proven equal through a nested join is of no use here,
     /// because first-pass pushdown has already sunk any liftable filter below that nested join
-    auto equi_pairs = getJoiningKeysForJoinStep(op);
+    auto equi_pairs = getEquiJoinKeyPairs(op);
     if (equi_pairs.empty())
         return 0;
 
