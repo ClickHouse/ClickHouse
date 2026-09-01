@@ -22,7 +22,9 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Common/FailPoint.h>
 #include <Common/ThrottlerArray.h>
+#include <base/sleep.h>
 
 namespace DB
 {
@@ -30,6 +32,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_sequential_source_sleep_before_read[];
 }
 
 namespace Setting
@@ -225,6 +232,10 @@ try
     if (isCancelled())
         return {};
 
+    /// Used in tests to emulate a merge whose single reading step is very slow
+    /// (e.g. applying huge patch parts), to check that shutdown does not wait for it.
+    fiu_do_on(FailPoints::merge_tree_sequential_source_sleep_before_read, { sleepForSeconds(10); });
+
     auto read_result = readers_chain.read(current_rows_to_read, mark_ranges, patch_ranges);
     if (!read_result.num_rows)
         return {};
@@ -334,6 +345,9 @@ Pipe createMergeTreeSequentialSource(
     info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
     info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
+    /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value
+    /// `ReadFromMergeTree` publishes for a query without `SAMPLE`.
+    info->const_virtual_fields.emplace("_sample_factor", 1.0);
 
     /// The part might have some rows masked by lightweight deletes
     bool has_lightweight_delete = info->data_part_info->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
@@ -483,6 +497,25 @@ public:
             prefetch);
 
         pipeline.init(Pipe(std::move(source)));
+    }
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromPart>(
+            type,
+            storage,
+            storage_snapshot,
+            data_part,
+            alter_conversions,
+            merged_part_offsets,
+            columns_to_read,
+            filtered_rows_count,
+            apply_deleted_mask,
+            filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
+            read_with_direct_io,
+            prefetch,
+            context,
+            log);
     }
 
 private:

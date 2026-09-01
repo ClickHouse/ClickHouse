@@ -19,10 +19,10 @@ doc_type: 'reference'
 与 [`TabSeparated`](/zh/reference/formats/TabSeparated/TabSeparated) 格式不同的是，该格式会将列名写入第一行，将列类型写入第二行。
 
 <Note>
-  * 如果将设置 [`input_format_with_names_use_header`](/zh/reference/settings/formats#input_format_with_names_use_header) 设为 `1`，
-    则会根据名称将输入数据中的列映射到表中的列上；如果将设置 [`input_format_skip_unknown_fields`](/zh/reference/settings/formats#input_format_skip_unknown_fields) 设为 1，则会跳过名称未知的列。
+  * 如果将设置 [`input_format_with_names_use_header`](/zh/reference/settings/formats/input-format#input_format_with_names_use_header) 设为 `1`，
+    则会根据名称将输入数据中的列映射到表中的列上；如果将设置 [`input_format_skip_unknown_fields`](/zh/reference/settings/formats/input-format#input_format_skip_unknown_fields) 设为 1，则会跳过名称未知的列。
     否则，第一行会被跳过。
-  * 如果将设置 [`input_format_with_types_use_header`](/zh/reference/settings/formats#input_format_with_types_use_header) 设为 `1`，
+  * 如果将设置 [`input_format_with_types_use_header`](/zh/reference/settings/formats/input-format#input_format_with_types_use_header) 设为 `1`，
     则会将输入数据中的类型与表中对应列的类型进行比较。否则，第二行会被跳过。
 </Note>
 

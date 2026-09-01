@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 760" font-family="Inter, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="ah-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7d7d7d"/>
+    </marker>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+
+  <!-- ===== Boundaries ===== -->
+  <rect x="40" y="50" width="700" height="630" rx="14" fill="#8a8a8a" fill-opacity="0.06" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="64" y="86" font-size="16" font-weight="700" fill="#7d7d7d">Your environment</text>
+
+  <rect x="1020" y="50" width="260" height="630" rx="14" fill="#8a8a8a" fill-opacity="0.06" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="1044" y="86" font-size="16" font-weight="700" fill="#7d7d7d">ClickHouse Cloud</text>
+
+  <!-- ===== Scraper ===== -->
+  <rect x="80" y="140" width="230" height="100" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="195" y="180" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Scraper</text>
+  <text x="195" y="202" text-anchor="middle" font-size="11" fill="#7d7d7d">reads an allowlisted set</text>
+  <text x="195" y="218" text-anchor="middle" font-size="11" fill="#7d7d7d">of system tables</text>
+
+  <!-- ===== Troubleshooter ===== -->
+  <rect x="80" y="338" width="230" height="100" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="195" y="378" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Troubleshooter</text>
+  <text x="195" y="400" text-anchor="middle" font-size="11" fill="#7d7d7d">support session output</text>
+
+  <!-- ===== Fan from scraper to leaving items ===== -->
+  <path d="M310 190 L340 190" fill="none" stroke="#7d7d7d" stroke-width="1.75"/>
+  <path d="M340 168 L340 302" fill="none" stroke="#7d7d7d" stroke-width="1.75"/>
+  <path d="M340 168 L388 168" fill="none" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <path d="M340 238 L388 238" fill="none" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <path d="M340 302 L388 302" fill="none" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+
+  <!-- ===== Troubleshooter -> redaction filter -> item ===== -->
+  <line x1="310" y1="388" x2="343" y2="388" stroke="#7d7d7d" stroke-width="1.75"/>
+  <path d="M345 372 L375 372 L364 390 L364 404 L356 404 L356 390 Z" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <line x1="377" y1="388" x2="388" y2="388" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="360" y="428" text-anchor="middle" font-size="11" font-weight="600" fill="#7d7d7d">redaction filter</text>
+
+  <!-- ===== Leaving items ===== -->
+  <rect x="394" y="140" width="266" height="56" rx="8" fill="#3b82f6" fill-opacity="0.08" stroke="#3b82f6" stroke-width="1.25"/>
+  <text x="527" y="164" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7d7d7d">metrics from an allowlisted set</text>
+  <text x="527" y="181" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7d7d7d">of system tables</text>
+
+  <rect x="394" y="216" width="266" height="44" rx="8" fill="#3b82f6" fill-opacity="0.08" stroke="#3b82f6" stroke-width="1.25"/>
+  <text x="527" y="243" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7d7d7d">infrastructure metadata</text>
+
+  <rect x="394" y="280" width="266" height="44" rx="8" fill="#3b82f6" fill-opacity="0.08" stroke="#3b82f6" stroke-width="1.25"/>
+  <text x="527" y="307" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7d7d7d">health signals</text>
+
+  <rect x="394" y="360" width="266" height="56" rx="8" fill="#3b82f6" fill-opacity="0.08" stroke="#3b82f6" stroke-width="1.25"/>
+  <text x="527" y="384" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7d7d7d">support session output</text>
+  <text x="527" y="401" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7d7d7d">after redaction</text>
+
+  <!-- ===== Bus and outbound channel ===== -->
+  <line x1="660" y1="168" x2="700" y2="168" stroke="#3b82f6" stroke-width="1.75"/>
+  <line x1="660" y1="238" x2="700" y2="238" stroke="#3b82f6" stroke-width="1.75"/>
+  <line x1="660" y1="302" x2="700" y2="302" stroke="#3b82f6" stroke-width="1.75"/>
+  <line x1="660" y1="388" x2="700" y2="388" stroke="#3b82f6" stroke-width="1.75"/>
+  <line x1="700" y1="168" x2="700" y2="388" stroke="#3b82f6" stroke-width="1.75"/>
+  <line x1="700" y1="270" x2="1044" y2="270" stroke="#3b82f6" stroke-width="2.5" marker-end="url(#ah-a)"/>
+  <text x="880" y="250" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">authenticated outbound channel</text>
+  <text x="880" y="292" text-anchor="middle" font-size="11" fill="#3b82f6">HTTPS, mTLS + request signing</text>
+
+  <!-- ===== Connector API endpoint (cloud) ===== -->
+  <rect x="1050" y="200" width="200" height="140" rx="10" fill="#3b82f6" fill-opacity="0.10" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="1150" y="265" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Connector API endpoint</text>
+  <text x="1150" y="288" text-anchor="middle" font-size="11" fill="#7d7d7d">your dedicated HTTPS endpoint</text>
+
+  <!-- ===== Never leaves ===== -->
+  <rect x="80" y="490" width="580" height="150" rx="12" fill="#e05252" fill-opacity="0.06" stroke="#e05252" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="370" y="522" text-anchor="middle" font-size="13" font-weight="700" fill="#e05252">Never leaves your environment</text>
+
+  <rect x="105" y="545" width="175" height="64" rx="8" fill="#e05252" fill-opacity="0.08" stroke="#e05252" stroke-width="1.25"/>
+  <text x="192" y="571" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">query history (query_log)</text>
+  <text x="192" y="590" text-anchor="middle" font-size="11" font-weight="600" fill="#e05252">stays by default</text>
+
+  <rect x="300" y="545" width="155" height="64" rx="8" fill="#e05252" fill-opacity="0.08" stroke="#e05252" stroke-width="1.25"/>
+  <text x="377" y="571" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">credentials</text>
+  <text x="377" y="590" text-anchor="middle" font-size="11" font-weight="600" fill="#e05252">always stays</text>
+
+  <rect x="475" y="545" width="165" height="64" rx="8" fill="#e05252" fill-opacity="0.08" stroke="#e05252" stroke-width="1.25"/>
+  <text x="557" y="571" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">raw table data</text>
+  <text x="557" y="590" text-anchor="middle" font-size="11" font-weight="600" fill="#e05252">always stays</text>
+
+  <!-- Blocked exit cue -->
+  <line x1="660" y1="565" x2="722" y2="565" stroke="#e05252" stroke-width="1.75" stroke-dasharray="6 5"/>
+  <circle cx="740" cy="565" r="12" fill="none" stroke="#e05252" stroke-width="2"/>
+  <line x1="731.5" y1="556.5" x2="748.5" y2="573.5" stroke="#e05252" stroke-width="2"/>
+
+  <!-- ===== Legend ===== -->
+  <g>
+    <line x1="64" y1="725" x2="112" y2="725" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+    <text x="124" y="729" font-size="12" fill="#7d7d7d">leaves via the authenticated outbound channel</text>
+    <line x1="470" y1="725" x2="518" y2="725" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+    <text x="530" y="729" font-size="12" fill="#7d7d7d">local, inside your environment</text>
+    <rect x="770" y="717" width="16" height="16" rx="4" fill="#e05252" fill-opacity="0.08" stroke="#e05252" stroke-width="1.25" stroke-dasharray="4 3"/>
+    <text x="796" y="729" font-size="12" fill="#7d7d7d">never leaves your environment</text>
+  </g>
+</svg>

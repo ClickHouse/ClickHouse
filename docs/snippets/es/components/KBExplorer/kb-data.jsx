@@ -93,14 +93,6 @@ export const kbIndex = {
       tags: ["Data Modelling"]
     },
     {
-      id: "tables-schema/schema-migration-tools",
-      title: "Automatic schema migration tools for ClickHouse",
-      description: "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time.",
-      href: "/es/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
-      category: "Tables & schema",
-      tags: ["Tools and Utilities"]
-    },
-    {
       id: "cloud-services/aws-privatelink-setup-for-msk-clickpipes",
       title: "AWS PrivateLink setup to expose MSK for ClickPipes",
       description: "Setup steps to expose a private MSK via MSK multi-VPC connectivity to ClickPipes.",
@@ -176,7 +168,7 @@ export const kbIndex = {
     {
       id: "configuration-settings/change-the-prompt-in-clickhouse-client",
       title: "Change the prompt in clickhouse-client",
-      description: "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      description: "Este artículo explica cómo cambiar el prompt de :) a un prefijo seguido de :) en la ventana de terminal de su cliente de ClickHouse y de clickhouse-local",
       href: "/es/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       category: "Configuration & settings",
       tags: ["Settings", "Native Clients and Interfaces"]
@@ -194,16 +186,8 @@ export const kbIndex = {
       title: "Comparación de métricas entre consultas en decibelios",
       description: "Una consulta para comparar métricas entre dos consultas en ClickHouse.",
       href: "/es/resources/support-center/knowledge-base/queries-sql/comparing-metrics-between-queries",
-      category: "Consultas y SQL",
+      category: "Queries & SQL",
       tags: ["Performance and Optimizations"]
-    },
-    {
-      id: "configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      title: "Configuración de las capacidades CAP_IPC_LOCK y CAP_SYS_NICE en Docker",
-      description: "Aprenda a resolver las advertencias de capacidad de Docker para `CAP_IPC_LOCK` y `CAP_SYS_NICE` al ejecutar ClickHouse en un contenedor.",
-      href: "/es/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      category: "Configuración y ajustes",
-      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -251,7 +235,7 @@ export const kbIndex = {
       title: "¿Tiene ClickHouse un optimizador basado en costos?",
       description: "ClickHouse cuenta con ciertos mecanismos de optimización basados en costos",
       href: "/es/resources/support-center/knowledge-base/general-faqs/cost-based",
-      category: "General y preguntas frecuentes",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -259,7 +243,7 @@ export const kbIndex = {
       title: "¿ClickHouse admite lagos de datos?",
       description: "ClickHouse admite lagos de datos, incluidos Iceberg, Delta Lake, Apache Hudi, Apache Paimon, Hive",
       href: "/es/resources/support-center/knowledge-base/general-faqs/datalake",
-      category: "General y preguntas frecuentes",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -267,7 +251,7 @@ export const kbIndex = {
       title: "¿ClickHouse admite JOIN distribuido?",
       description: "ClickHouse admite JOIN distribuido",
       href: "/es/resources/support-center/knowledge-base/general-faqs/distributed-join",
-      category: "General y preguntas frecuentes",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -275,7 +259,7 @@ export const kbIndex = {
       title: "¿ClickHouse admite consultas federadas?",
       description: "ClickHouse admite una amplia gama de consultas federadas e híbridas",
       href: "/es/resources/support-center/knowledge-base/general-faqs/federated",
-      category: "General y preguntas frecuentes",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -283,7 +267,7 @@ export const kbIndex = {
       title: "¿ClickHouse admite consultas frecuentes y concurrentes?",
       description: "ClickHouse admite alto QPS y alta concurrencia",
       href: "/es/resources/support-center/knowledge-base/general-faqs/concurrency",
-      category: "General y preguntas frecuentes",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -299,7 +283,7 @@ export const kbIndex = {
       title: "¿ClickHouse admite actualizaciones en tiempo real?",
       description: "ClickHouse admite actualizaciones en tiempo real ligeras",
       href: "/es/resources/support-center/knowledge-base/general-faqs/updates",
-      category: "General y preguntas frecuentes",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -339,7 +323,7 @@ export const kbIndex = {
       title: "¿Cómo puedo realizar escrituras particionadas por año y mes en S3?",
       description: "Aprenda a escribir datos particionados por año y mes en un bucket de S3 en ClickHouse, usando una estructura de ruta personalizada para organizar los datos.",
       href: "/es/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders",
-      category: "Importación y exportación de datos",
+      category: "Data import & export",
       tags: ["Data Export", "Native Clients and Interfaces"]
     },
     {
@@ -395,7 +379,7 @@ export const kbIndex = {
       title: "¿Cómo instalo ClickHouse en Windows 10?",
       description: "Learn how to install and test ClickHouse on Windows 10 using WSL 2. Includes setup, troubleshooting, and running a test environment.",
       href: "/es/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
-      category: "Setup & installation",
+      category: "Configuración e instalación",
       tags: ["Tools and Utilities"]
     },
     {
@@ -403,7 +387,7 @@ export const kbIndex = {
       title: "How do I remove the default user?",
       description: "Learn how to remove the default user when running ClickHouse Server.",
       href: "/es/resources/support-center/knowledge-base/security/remove-default-user",
-      category: "Security & access control",
+      category: "Seguridad y control de acceso",
       tags: ["Server Admin"]
     },
     {
@@ -452,7 +436,7 @@ export const kbIndex = {
       title: "How to build LLVM and clang on Linux",
       description: "Commands to build LLVM and clang on Linux.",
       href: "/es/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-      category: "Setup & installation",
+      category: "Configuración e instalación",
       tags: ["Community", "Tools and Utilities"]
     },
     {
@@ -468,7 +452,7 @@ export const kbIndex = {
       title: "How to Check Users Assigned to Roles and Vice Versa",
       description: "Learn how to query ClickHouse's `system.role_grants` to find users assigned to roles and roles assigned to specific users.",
       href: "/es/resources/support-center/knowledge-base/security/check-users-roles",
-      category: "Security & access control",
+      category: "Seguridad y control de acceso",
       tags: ["Server Admin", "System Tables", "Managing Cloud"]
     },
     {
@@ -542,7 +526,7 @@ export const kbIndex = {
       title: "Cómo habilitar SSL con Let's Encrypt en un único servidor ClickHouse",
       description: "Aprenda a configurar SSL para un único servidor ClickHouse usando Let's Encrypt, incluyendo la emisión de certificados, la configuración y la validación.",
       href: "/es/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
-      category: "Setup & installation",
+      category: "Configuración e instalación",
       tags: ["Security and Authentication"]
     },
     {
@@ -606,7 +590,7 @@ export const kbIndex = {
       title: "Cómo aumentar el número de hilos en ClickHouse",
       description: "Aprenda a configurar el grupo de hilos global en ClickHouse ajustando parámetros como `max_thread_pool_size`, `thread_pool_queue_size` y `max_thread_pool_free_size`.",
       href: "/es/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
-      category: "Setup & installation",
+      category: "Configuración e instalación",
       tags: ["Performance and Optimizations"]
     },
     {
@@ -670,7 +654,7 @@ export const kbIndex = {
       title: "Cómo recuperarse de un snapshot de Keeper corrupto",
       description: "Artículo que describe cómo recuperarse de un snapshot de Keeper corrupto: cómo se manifiesta el problema, qué es un snapshot y dónde encontrarlo, y las posibles estrategias de recuperación.",
       href: "/es/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
-      category: "Troubleshooting & errors",
+      category: "Solución de problemas y errores",
       tags: ["Troubleshooting"]
     },
     {
@@ -678,7 +662,7 @@ export const kbIndex = {
       title: "Cómo restaurar una réplica tras un fallo de almacenamiento",
       description: "Este artículo explica cómo recuperar datos cuando se usan tablas replicadas en bases de datos atómicas en ClickHouse y los discos o el almacenamiento de una de las réplicas se pierden o dañan.",
       href: "/es/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure",
-      category: "Troubleshooting & errors",
+      category: "Solución de problemas y errores",
       tags: ["Deployments and Scaling"]
     },
     {
@@ -739,7 +723,7 @@ export const kbIndex = {
     },
     {
       id: "performance-optimization/finding-expensive-queries-by-memory-usage",
-      title: "Identifying Expensive Queries by Memory Usage in ClickHouse",
+      title: "Identificación de consultas costosas según el uso de memoria en ClickHouse",
       description: "Learn how to use the `system.query_log` table to find the most memory-intensive queries in ClickHouse, with examples for clustered and standalone setups.",
       href: "/es/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
       category: "Performance & optimization",
@@ -822,7 +806,7 @@ export const kbIndex = {
       title: "Mapping Windows Active Directory security groups to ClickHouse roles",
       description: "Example of mapping Windows Active Directory security groups to ClickHouse roles",
       href: "/es/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles",
-      category: "Security & access control",
+      category: "Seguridad y control de acceso",
       tags: ["Tools and Utilities"]
     },
     {
@@ -874,27 +858,27 @@ export const kbIndex = {
       tags: ["Errors and Exceptions", "Data Formats"]
     },
     {
-      id: "troubleshooting/exception-too-many-parts",
-      title: 'Resolving "Too Many Parts" error in ClickHouse',
-      description: 'Learn how to address the "Too many parts" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.',
-      href: "/es/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
-      category: "Troubleshooting & errors",
-      tags: ["Errors and Exceptions"]
-    },
-    {
       id: "troubleshooting/certificate-verify-failed-error",
-      title: "Resolving SSL Certificate Verify Error in ClickHouse",
+      title: "Resolución del error de verificación de certificados SSL en ClickHouse",
       description: "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
       href: "/es/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
-      category: "Troubleshooting & errors",
+      category: "Solución de problemas y errores",
       tags: ["Security and Authentication", "Errors and Exceptions"]
+    },
+    {
+      id: "troubleshooting/exception-too-many-parts",
+      title: 'Cómo resolver la excepción "Too many parts" en ClickHouse',
+      description: 'Aprenda a diagnosticar y resolver la excepción "Too many parts" agrupando las inserciones en lotes, usando inserciones asíncronas y eligiendo una clave de particionamiento adecuada.',
+      href: "/es/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+      category: "Solución de problemas y errores",
+      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/connection-timeout-remote-remoteSecure",
       title: "Resolving Timeout Errors with `remote` and `remoteSecure` Table Functions",
       description: "Learn how to fix timeout errors when using `remote` or `remoteSecure` table functions in ClickHouse by adjusting the connection timeout settings.",
       href: "/es/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
-      category: "Troubleshooting & errors",
+      category: "Solución de problemas y errores",
       tags: ["Errors and Exceptions"]
     },
     {
@@ -906,12 +890,28 @@ export const kbIndex = {
       tags: ["Runbooks", "Data Modelling"]
     },
     {
+      id: "tables-schema/schema-migration-tools",
+      title: "Herramientas de migración de esquemas para ClickHouse",
+      description: "Conozca las herramientas de migración de esquemas para ClickHouse y cómo gestionar los cambios en los esquemas de las bases de datos a lo largo del tiempo.",
+      href: "/es/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+      category: "Tables & schema",
+      tags: ["Tools and Utilities"]
+    },
+    {
       id: "tables-schema/search-across-node-for-tables-with-a-wildcard",
       title: "Searching across nodes for tables with a wildcard",
       description: "Learn how to search across nodes for tables with a wildcard.",
       href: "/es/resources/support-center/knowledge-base/tables-schema/search-across-node-for-tables-with-a-wildcard",
       category: "Tables & schema",
       tags: ["Deployments and Scaling"]
+    },
+    {
+      id: "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      title: "Configura el servidor MCP de la documentación de ClickHouse",
+      description: "Conecta herramientas de IA con la documentación de ClickHouse mediante el Model Context Protocol.",
+      href: "/es/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      category: "Setup & installation",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "performance-optimization/query-max-execution-time",
@@ -1064,7 +1064,7 @@ export const kbIndex = {
       title: "Which ClickHouse version to use in production?",
       description: "This page provides guidance on which ClickHouse version to use in production",
       href: "/es/resources/support-center/knowledge-base/setup-installation/production",
-      category: "Setup & installation",
+      category: "Configuración e instalación",
       tags: []
     },
     {
@@ -1074,6 +1074,14 @@ export const kbIndex = {
       href: "/es/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
       category: "General & FAQs",
       tags: []
+    },
+    {
+      id: "security/set-role-not-persisting-in-sql-console",
+      title: "Por qué `SET ROLE` no se conserva en la SQL Console de ClickHouse Cloud",
+      description: "Descubra por qué `SET ROLE` no se conserva en la SQL Console de ClickHouse Cloud y cómo asignar permisos persistentes a cada usuario.",
+      href: "/es/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
+      category: "Seguridad y control de acceso",
+      tags: ["Security and Authentication", "Managing Cloud", "Troubleshooting"]
     },
     {
       id: "data-management/dictionaries-consistent-state",

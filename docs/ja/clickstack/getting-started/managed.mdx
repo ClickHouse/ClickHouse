@@ -9,46 +9,418 @@ keywords: ['Managed ClickStack', 'はじめに', 'ClickHouse Cloud']
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-import SetupManagedIngestion from '/snippets/ja/clickstack/_setup_managed_ingestion.mdx';
-import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
-import NavigateClickStackUI from '/snippets/ja/clickstack/_navigate_managed.mdx';
+import ExampleOTelConfig from '/snippets/ja/clickstack/_config_example_otel.mdx';
 
-開始する最も簡単な方法は、**ClickHouse Cloud** に **Managed ClickStack** をデプロイすることです。これにより、インジェスト、スキーマ、オブザーバビリティのワークフローを完全に制御したまま、完全マネージド型で安全なバックエンドを利用できます。ClickHouse を自分で運用する必要がなくなり、次のような利点が得られます。
+ClickHouse Cloud に Managed ClickStack をデプロイし、インジェストパイプラインを通じてテストイベントを送信して、そのイベントが ClickStack UI で利用できることを確認します。
+
+ClickHouse Cloud は ClickHouse バックエンドを運用し、ユーザーはインジェストパイプラインとスキーマを完全に制御できます。Managed ClickStack では、次の機能を利用できます。
 
 * ストレージから独立したコンピュートの自動スケーリング
-* オブジェクトストレージをベースにした、低コストかつ実質無制限の保持
-* ウェアハウスによって、読み取りワークロードと書き込みワークロードを個別に分離可能
+* オブジェクトストレージをベースにした、低コストかつ実質無制限の保持期間
+* [ウェアハウス](/ja/products/cloud/features/infrastructure/warehouses)による、読み取りワークロードと書き込みワークロードの個別の分離
 * 統合認証
 * 自動バックアップ
 * セキュリティ機能とコンプライアンス機能
 * シームレスなアップグレード
 
-<Steps>
-  <Step title="ClickHouse Cloud に登録" id="signup-to-clickhouse-cloud">
-    [ClickHouse Cloud](https://console.clickhouse.cloud) で Managed ClickStack サービスを作成するには、まず [ClickHouse Cloud クイックスタートガイド](/ja/get-started/setup/cloud) の**最初のステップ**を完了してください。
+<div id="before-you-begin">
+  ## 始める前に
+</div>
 
-    <ProviderSelection />
-  </Step>
+[サポート対象のインテグレーション](/ja/integrations/home)と独自のスキーマを使用して、データをClickHouseに直接送信することもできます。
 
-  <Step title="インジェストを設定" id="setup-ingestion">
-    サービスのプロビジョニングが完了したら、対象のサービスが選択されていることを確認し、左側のメニューで &quot;ClickStack&quot; をクリックします。
+<div id="create-a-managed-clickstack-service">
+  ### ClickHouse Cloud サービスを作成する
+</div>
 
-    <SetupManagedIngestion />
-  </Step>
+ClickHouse Cloud のクイックスタートにある[ClickHouse サービスの作成](/ja/get-started/setup/cloud#1-create-a-clickhouse-service)を完了します。続行する前に、サービスが稼働中であることを確認してください。
 
-  <Step title="ClickStack UI に移動" id="navigate-to-clickstack-ui-cloud">
-    <NavigateClickStackUI />
-  </Step>
+<View title="OpenTelemetry">
+  <Tip>
+    このページでは、**OpenTelemetry** の手順を説明します。ガイド上部のセレクターで、**OpenTelemetry** (推奨) と **Vector** を切り替えられます。
+  </Tip>
 
-  <Step title="次のステップ" id="next-steps">
-    <Warning>
-      **デフォルトの認証情報を記録**
+  ### インジェスト環境を準備する
 
-      上記の手順でデフォルトの認証情報を記録していない場合は、サービスに移動して `Connect` を選択し、パスワードと HTTP/native エンドポイントを記録してください。これらの管理者認証情報は安全に保管し、以降のガイドで再利用できます。
-    </Warning>
+  * 新しい[OpenTelemetry Collector](/ja/clickstack/ingesting-data/collector)を起動するには、[Docker](https://docs.docker.com/get-docker/)をインストールします。Kubernetes では、[Helm](/ja/clickstack/ingesting-data/collector#configuring-the-collector)を使用して collector をデプロイします。
+  * 既存の collector を使用するには、[ゲートウェイロール](/ja/clickstack/ingesting-data/collector#collector-roles)として実行し、そのディストリビューションに [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)が含まれていることを確認します。必要な設定は、このガイドで追加します。
 
-    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
+  ## Managed ClickStack をセットアップする
 
-    新しいユーザーのプロビジョニングや追加のデータソースの追加などを行うには、[Managed ClickStack のデプロイガイド](/ja/clickstack/deployment/managed#additional-tasks) を参照してください。
-  </Step>
-</Steps>
+  <Steps titleSize="h3">
+    <Step title="インジェストソースとcollectorの構成を選択する" id="choose-an-ingestion-source">
+      ClickHouse Cloud サービスから ClickStack を起動します。ClickStack の**はじめに**ページで、**インジェストを開始**を選択します。
+
+      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="インジェストを開始" border />
+
+      **インジェストソースを選択**ページで、[OpenTelemetry](https://opentelemetry.io/) を選択します。
+
+      <Info>
+        **OpenTelemetry を推奨**
+
+        OpenTelemetry には、ログ、トレース、メトリクス、セッション用のスキーマがあらかじめ設定されています。
+      </Info>
+
+      <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="インジェストソースとして OpenTelemetry を選択" border />
+
+      <Tabs>
+        <Tab title="新しい collector を開始">
+          ClickStack は、`default` 管理者の認証情報を使用した collector コマンドを生成します。インジェスト用のアクセス権を管理用のアクセス権から分離し、管理者パスワードへの依存を避けるため、専用のインジェスト認証情報を使用することを推奨します。
+
+          <Accordion title="専用のインジェスト認証情報を作成する（推奨）">
+            ClickHouse Cloud でサービスの SQL コンソールを開き、次を実行します。
+
+            ```sql
+            CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+            GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON default.* TO `clickstack-ingest`;
+            ```
+
+            生成されたコマンドで、`CLICKHOUSE_USER="default"` を `CLICKHOUSE_USER="clickstack-ingest"` に置き換え、`CLICKHOUSE_PASSWORD` に専用ユーザーのパスワードを設定します。
+          </Accordion>
+
+          `default` 管理者認証情報を使用して続行するには、**Collector を開始**タブからコマンドをコピーします。ClickStack によりサービスエンドポイントが事前入力されます。パスワードのプレースホルダーをサービスのパスワードに置き換えます。パスワードが手元にない場合は、[接続詳細を確認またはリセット](/ja/products/cloud/guides/sql-console/connection-details)してください。
+
+          コマンドは次の形式です。
+
+          ```shell
+          docker run -e CLICKHOUSE_ENDPOINT="https://<host>:8443" \
+              -e CLICKHOUSE_USER="default" \
+              -e CLICKHOUSE_PASSWORD="<your_password_here>" \
+              -p 4317:4317 -p 4318:4318 \
+              clickhouse/clickstack-otel-collector:latest
+          ```
+
+          `<host>` と `<your_password_here>` を ClickHouse Cloud サービスの値に置き換えてから、コマンドを実行します。
+
+          collector はフォアグラウンドで実行されます。この端末は開いたままにし、このガイドの残りのコマンドは別の端末で実行します。
+
+          <Note>
+            このコマンドは認証なしで OTLP ポートを公開するため、ローカルでの評価を目的としています。本番トラフィックを送信する前に、[collector を保護](/ja/clickstack/ingesting-data/collector#securing-the-collector)してください。
+          </Note>
+        </Tab>
+
+        <Tab title="既存の collector を使用">
+          **既存の collector を設定**を選択し、collector の設定を調整します。
+
+          アプリケーションと ClickHouse Cloud の間のゲートウェイとして collector を実行します。以下の設定により、必要な ClickHouse exporter とシグナルパイプラインが追加されます。
+
+          この例では、ClickStack によって生成された `default` 認証情報を使用します。専用のインジェスト認証情報を使用するには、**新しい collector を開始**タブにある任意の設定手順に従ってください。両方の ClickHouse exporter ブロックで、`username: default` を `username: clickstack-ingest` に置き換え、`password` に専用ユーザーのパスワードを設定します。
+
+          関係のない receiver、プロセッサ、エクスポーター、拡張機能を置き換えるのではなく、以下のコンポーネントを既存の設定にマージしてください。
+
+          <Info>
+            **必要な collector コンポーネント**
+
+            collector ディストリビューションには、[ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) と [routing connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/routingconnector) が含まれている必要があります。OpenTelemetry Collector Contrib ディストリビューションには、両方のコンポーネントが含まれています。
+          </Info>
+
+          この例では、OTLP receiver、バッチ処理とメモリ制限、セッションリプレイのルーティング、ClickHouse exporter を追加します。
+
+          <ExampleOTelConfig />
+
+          既存の OTLP receiver を再利用し、その認証および TLS 設定は維持してください。設定ですでに例と同じコンポーネント ID またはパイプライン ID を使用している場合は、重複した ID を作成するのではなく、マージするか名前を変更してください。ポート `4317` と `4318` で 2 つの receiver を実行すると、ポート競合が発生します。
+
+          設定をマージした後、既存のデプロイメントプロセスに従って collector を再読み込みまたは再起動します。
+
+          OpenTelemetry collector の設定に関する詳細は、[OpenTelemetry を使用したインジェスト](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+        </Tab>
+      </Tabs>
+    </Step>
+
+    <Step title="テストデータを送信する" id="send-test-data">
+      現在のタイムスタンプを含むテストログを送信します。
+
+      ```shell
+      NOW_NANO="$(date +%s)000000000"
+
+      curl -i "http://localhost:4318/v1/logs" \
+        -H "Content-Type: application/json" \
+        --data-binary @- <<EOF
+      {
+        "resourceLogs": [{
+          "resource": {
+            "attributes": [{
+              "key": "service.name",
+              "value": {"stringValue": "clickstack-docs-test"}
+            }]
+          },
+          "scopeLogs": [{
+            "scope": {"name": "clickstack-docs-test"},
+            "logRecords": [{
+              "timeUnixNano": "${NOW_NANO}",
+              "severityText": "INFO",
+              "body": {"stringValue": "ClickStack ingestion test"}
+            }]
+          }]
+        }]
+      }
+      EOF
+      ```
+
+      既存のcollectorを使用する場合は、`http://localhost:4318`をそのOTLP HTTPエンドポイントに置き換えてください。receiverで認証が必要な場合は、必要なheaderを`curl`コマンドに追加してください。
+
+      リクエストが成功すると、`HTTP/1.1 200 OK`が返されます。
+    </Step>
+
+    <Step title="データの探索を開始し、インジェストを確認する" id="open-clickstack-and-confirm-ingestion">
+      ClickStack が OpenTelemetry のデータソースを検出したら、**Start exploring** を選択して **Search** ビューを開きます。`ClickStack ingestion test` を検索します。
+
+      検索結果には、サービス名が `clickstack-docs-test` のテストイベントが表示されます。
+
+      <Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack ingestion testイベントを表示したClickStackのログビュー" border />
+    </Step>
+  </Steps>
+</View>
+
+<View title="Vector">
+  ### インジェスト環境を準備する
+
+  ClickHouse にデータを送信できる[既存の Vector パイプライン](/ja/clickstack/ingesting-data/vector)を起点とします。
+
+  ## Managed ClickStack をセットアップする
+
+  <Steps titleSize="h3">
+    <Step title="Vector を選択し、インジェストを設定する" id="choose-an-ingestion-source-vector">
+      ClickHouse Cloud サービスから ClickStack を起動します。ClickStack の **Getting Started** ページで **Start ingestion** を選択します。
+
+      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="インジェストを開始する" border />
+
+      **Choose an ingestion source** ページで、[Vector](https://vector.dev/) を選択します。
+
+      <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="インジェストソースとして Vector を選択" border />
+
+      [Vector](https://vector.dev) は、高性能かつベンダーニュートラルなオブザーバビリティ向けデータパイプラインであり、柔軟性の高さとリソース消費の少なさから、特にログのインジェスト用途で広く利用されています。
+
+      Vector を ClickStack と組み合わせて使用する場合、スキーマはユーザー自身で定義します。OpenTelemetry の規約に従うことも、イベントに固有のフィールドを使用することもできます。
+
+      <Info>
+        **既存の Vector パイプラインが必要です**
+
+        入力パイプラインを使用して Vector をすでに実行している場合は、このガイドを続けてください。パイプラインを通じて送信されるデータには、**timestamp カラム**または同等の時刻フィールドが含まれている必要があります。これは、ClickStack UI でログソースを設定する際に選択します。
+
+        以下の手順では、既存のパイプラインに ClickHouse sink を追加します。
+      </Info>
+
+      #### データベースとテーブルを作成する
+
+      Vector のシンクを設定する前に、データベースとテーブルを作成してください。
+
+      ClickHouse Cloud で、対象の service の SQL Console を開き、database を作成します。
+
+      たとえば、logs 用の database を次のように作成します。
+
+      ```sql
+      CREATE DATABASE IF NOT EXISTS logs
+      ```
+
+      次に、ログデータの構造に合致するスキーマを持つテーブルを作成します。以下の例では、典型的な Nginx アクセスログのフォーマットを前提としています:
+
+      ```sql
+      CREATE TABLE logs.nginx_logs
+      (
+          `time_local` DateTime,
+          `remote_addr` IPv4,
+          `remote_user` LowCardinality(String),
+          `request` String,
+          `status` UInt16,
+          `body_bytes_sent` UInt64,
+          `http_referer` String,
+          `http_user_agent` String,
+          `http_x_forwarded_for` LowCardinality(String),
+          `request_time` Float32,
+          `upstream_response_time` Float32,
+          `http_host` String
+      )
+      ENGINE = MergeTree
+      ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+      ```
+
+      テーブルは、Vector が生成する出力スキーマと一致している必要があります。推奨される[スキーマのベストプラクティス](/ja/concepts/best-practices/select-data-type)に従い、扱うデータに合わせてスキーマを調整してください。
+
+      ClickHouse における[主キー](/ja/concepts/core-concepts/primary-indexes)の仕組みを理解した上で、アクセスパターンに基づいてソートキーを選択することを強く推奨します。主キーの選び方については、[ClickStack 固有](/ja/clickstack/managing/performance-tuning#choosing-a-primary-key)のガイダンスを参照してください。
+
+      #### ClickHouse sink を設定する
+
+      テーブルを作成したら、Vectorの設定にClickHouseシンクを追加します。
+
+      ```yaml
+      sinks:
+        clickhouse:
+          type: clickhouse
+          inputs:
+            - your_input
+          endpoint: "https://<host>:8443"
+          database: logs
+          table: nginx_logs
+          format: json_each_row
+          skip_unknown_fields: true
+          auth:
+            strategy: basic
+            user: default
+            password: "<your_password_here>"
+      ```
+
+      `your_input` は、既存のパイプラインの入力に置き換えてください。`<host>` と `<your_password_here>` は、ご利用の ClickHouse Cloud サービスの値に置き換えてください。必要に応じて、移行先データベースまたはテーブルを変更してください。
+
+      <Accordion title="専用のインジェスト認証情報を使用する（推奨）">
+        本番環境では、専用のユーザーを作成し、Vectorターゲットテーブルへのアクセス権を付与します。ClickHouse CloudでサービスのSQLコンソールを開き、次を実行します。
+
+        ```sql
+        CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+        GRANT SELECT, INSERT ON logs.nginx_logs TO `clickstack-ingest`;
+        ```
+
+        Vector sink の `default` を `clickstack-ingest` に置き換え、`password` には専用ユーザーのパスワードを設定します。
+      </Accordion>
+
+      更新した設定を保存し、既存のデプロイメントプロセスに従って Vector をリロードまたは再起動します。
+
+      Vector を使用したデータ取り込みのその他の例については、[Vector による取り込み](/ja/clickstack/ingesting-data/vector)を参照してください。高度なオプションについては、[Vector ClickHouse sink ドキュメント](https://vector.dev/docs/reference/configuration/sinks/clickhouse/)を参照してください。
+
+      #### ClickStack のデータソースを作成する
+
+      Vector パイプラインでデータが投入されたテーブル用のログソースを作成します。ClickStack では、初回ログイン時にログソースの作成が求められます。
+
+      フォームには、デフォルトの OpenTelemetry スキーマ用の式があらかじめ入力されています。本ガイドで作成した Nginx テーブルの場合は、次の値でログソースを設定します。
+
+      | 設定                 | 値                                                                                                               |
+      | ------------------ | --------------------------------------------------------------------------------------------------------------- |
+      | **名前**             | `Nginx ログ`                                                                                                      |
+      | **ログソースのデータ型**     | ログ                                                                                                              |
+      | **サーバー接続**         | `デフォルト`                                                                                                         |
+      | **データベース**         | `logs`                                                                                                          |
+      | **テーブル**           | `nginx_logs`                                                                                                    |
+      | **タイムスタンプカラム**     | `time_local`                                                                                                    |
+      | **デフォルトのSELECT文**  | `time_local, remote_addr, status, request`                                                                      |
+      | **サービス名の式**        | `'nginx'`                                                                                                       |
+      | **ログレベルの式**        | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')`                                                |
+      | **ログ属性の式**         | `map('http.remote_addr', toString(remote_addr), 'http.status_code', toString(status), 'http.request', request)` |
+      | **リソース属性の式**       | `map('service.name', 'nginx')`                                                                                  |
+      | **表示するタイムスタンプカラム** | `time_local`                                                                                                    |
+      | **トレース ID の式**     | `''`                                                                                                            |
+      | **Span ID 式**      | `''`                                                                                                            |
+      | **暗黙的カラム式**        | `リクエスト`                                                                                                         |
+
+      Nginx のテーブルには `Body` カラムが存在しません。**Body Expression** には次を設定します:
+
+      ```sql
+      concat(
+        remote_addr, ' ',
+        remote_user, ' ',
+        '[', formatDateTime(time_local, '%d/%b/%Y:%H:%i:%S %z'), '] ',
+        '"', request, '" ',
+        toString(status), ' ',
+        toString(body_bytes_sent), ' ',
+        '"', http_referer, '" ',
+        '"', http_user_agent, '" ',
+        '"', http_x_forwarded_for, '" ',
+        toString(request_time), ' ',
+        toString(upstream_response_time), ' ',
+        '"', http_host, '"'
+      )
+      ```
+
+      その他のログソース設定については、[ClickStack 設定リファレンス](/ja/clickstack/managing/config)を参照してください。
+    </Step>
+
+    <Step title="テストデータを送信する" id="send-test-data-vector">
+      既存のVectorパイプラインの入力に、代表的なイベントを送信します。
+
+      Vectorのログソースと変換のその他の例については、[Vectorを使用した取り込み](/ja/clickstack/ingesting-data/vector)を参照してください。
+    </Step>
+
+    <Step title="データを探索し、インジェストを確認する" id="open-clickstack-and-confirm-ingestion-vector">
+      ログソースを作成したら、**探索を開始** を選択して **Search** ビューを開きます。テーブルのログソースを選択し、送信したイベントが含まれていることを確認します。
+
+      <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI のログ" />
+    </Step>
+  </Steps>
+</View>
+
+これで、Managed ClickStack サービス、機能するインジェストパス、および ClickStack で確認できるテストイベントが用意されました。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+別のガイドで ClickHouse Cloud エンドポイントまたはパスワードが必要な場合は、続行する前に[接続情報を確認またはリセットしてください](/ja/products/cloud/guides/sql-console/connection-details)。
+
+<div id="send-application-and-infrastructure-data">
+  ### アプリケーションとインフラストラクチャのデータを送信する
+</div>
+
+ClickStack に送信するデータに応じて、ガイドを選択してください。
+
+<CardGroup cols={2}>
+  <Card title="アプリケーションをインストルメントする" icon="code" href="/ja/clickstack/ingesting-data/sdks/index">
+    サポート対象の OpenTelemetry SDK を使用して、アプリケーションのトレースとログを送信します。
+  </Card>
+
+  <Card title="ホストログを収集する" icon="server" href="/ja/clickstack/integration-examples/host-logs">
+    エージェントの役割で実行されている OpenTelemetry Collector からホストログを転送します。
+  </Card>
+
+  <Card title="Kubernetes を監視する" icon="cubes" href="/ja/clickstack/integration-examples/kubernetes">
+    Kubernetes クラスターからログ、メトリクス、トレースを収集します。
+  </Card>
+
+  <Card title="その他のインテグレーションを確認する" icon="plug" href="/ja/clickstack/integration-examples/index">
+    その他のアプリケーションやテレメトリーソースのガイドを確認します。
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### サンプルデータを探索する
+</div>
+
+サンプルデータセットを使用して、より充実したテレメトリーとともに ClickStack を探索します。
+
+<CardGroup cols={2}>
+  <Card title="サンプルのログ、トレース、メトリクス" href="/ja/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    公開デモからデータを読み込み、問題を診断します。このガイドでは、新しいローカルの OpenTelemetry Collector を起動していることを前提としています。既存の collector を設定している場合は、デプロイメントに合わせて エンドポイント と認証設定を調整してください。
+  </Card>
+
+  <Card title="ローカルログとメトリクス" href="/ja/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    macOS または Linux 上でローカルファイルとシステムメトリクスを収集します。
+  </Card>
+</CardGroup>
+
+<div id="generate-synthetic-data">
+  ### 合成データを生成する
+</div>
+
+既存のアプリケーションやデータセットがない場合は、ジェネレーターを使用してインジェストをテストできます。
+
+<CardGroup cols={2}>
+  <Card title="otelgen でデータを生成する" icon="terminal" href="/ja/clickstack/example-datasets/otelgen">
+    合成 OTLP ログ、トレース、メトリクスを短時間にまとめて送信します。
+  </Card>
+
+  <Card title="telemetrygen でデータを生成する" icon="terminal" href="/ja/clickstack/example-datasets/telemetrygen">
+    複数のサービスにわたって、設定可能な OpenTelemetry シグナルを生成します。
+  </Card>
+</CardGroup>
+
+[ClickStack のすべてのサンプルデータとデモ](/ja/clickstack/example-datasets/index)を参照してください。
+
+<div id="prepare-for-production">
+  ### 本番環境に向けた準備
+</div>
+
+ClickStack を継続的なワークロードで使用する前に、本番運用とサイジングに関するガイダンスを確認してください。
+
+<CardGroup cols={2}>
+  <Card title="本番環境への移行" icon="shield" href="/ja/clickstack/managing/production">
+    インジェスト認証情報、セキュリティ、保持期間、運用に関するガイダンスを確認します。
+  </Card>
+
+  <Card title="リソースの見積もり" icon="chart-line" href="/ja/clickstack/managing/estimating-resources">
+    想定されるインジェスト量に応じてコンピュートをサイジングします。
+  </Card>
+</CardGroup>
+
+デプロイメントのタスクについては、[Managed ClickStack デプロイメントガイド](/ja/clickstack/deployment/managed#additional-tasks)を参照してください。

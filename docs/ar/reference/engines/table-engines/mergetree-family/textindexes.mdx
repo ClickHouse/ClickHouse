@@ -7,6 +7,8 @@ title: 'البحث النصي الكامل باستخدام الفهارس ال�
 doc_type: 'مرجع'
 ---
 
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 تتيح الفهارس النصية (المعروفة أيضًا باسم [الفهارس المعكوسة](https://en.wikipedia.org/wiki/Inverted_index)) إجراء بحث نصي كامل سريع في البيانات النصية.
 يخزن الفهرس النصي تعيينًا من الرموز إلى أرقام الصفوف التي تحتوي على كل رمز.
 وتُنشأ الرموز عبر عملية تُسمى تقسيم النص إلى رموز.
@@ -67,7 +69,7 @@ two    : [3]
 نوصي بشدة باستخدام إصدارات ClickHouse ‏&gt;= 26.2 في بيئات الإنتاج.
 
 <Note>
-  يمكن استخدام الفهارس النصية مع أي إصدار من ClickHouse ‏&gt;= 26.2، بغض النظر عن إعداد [التوافق](/ar/reference/settings/session-settings#compatibility).
+  يمكن استخدام الفهارس النصية مع أي إصدار من ClickHouse ‏&gt;= 26.2، بغض النظر عن إعداد [التوافق](/ar/reference/settings/session-settings/compatibility#compatibility).
 </Note>
 
 لإنشاء فهرس نصي، استخدم الصياغة التالية:
@@ -81,7 +83,11 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
+                                            | chinese[(granularity)]
+                                            | icu(locale)
+                                            | japanese
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -117,7 +123,11 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
+                                            | chinese[(granularity)]
+                                            | icu(locale)
+                                            | japanese
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -134,7 +144,7 @@ ALTER TABLE table
 
 ```
 
-إذا أضفت فهرسًا إلى جدول موجود، فنوصي بإنشاء الفهرس فعليًا لأجزاء الجدول الحالية (وإلا فسيعتمد البحث في الأجزاء التي لا تحتوي على فهرس على عمليات مسح شاملة بطيئة).
+إذا أضفت فهرسًا إلى جدول موجود، فنوصي بإنشاء الفهرس فعليًا لأجزاء الجدول الحالية (وإلا فسيعتمد البحث في الأجزاء التي لا تحتوي على فهرس على عمليات مسح بالقوة الغاشمة بطيئة).
 
 ```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
@@ -153,7 +163,16 @@ ALTER TABLE table DROP INDEX text_idx;
   يمكن تحديد الفواصل باستخدام معلمة اختيارية، على سبيل المثال: `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   لاحظ أن كل سلسلة يمكن أن تتكون من عدة محارف (`', '` في المثال).
   قائمة الفواصل الافتراضية، إذا لم تُحدَّد صراحةً (على سبيل المثال: `tokenizer = splitByString`)، هي مسافة بيضاء واحدة `[' ']`.
+* `splitByRegexp(re)` يقسم السلاسل النصية باستخدام فاصل تعبير نمطي `re` يحدده المستخدم (راجع الدالة [splitByRegexp](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  الوسيطة `re` إلزامية، على سبيل المثال: `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
+  بخلاف سلاسل الفواصل الثابتة في `splitByString`، يمكن لفاصل التعبير النمطي الاحتفاظ بالرموز التي تحتوي على محارف خاصة (مثل `C++` أو `C#`) والتي ستقسمها مُقسِّمات الرموز الأخرى.
 * `asciiCJK` يقسم السلاسل النصية إلى رموز وفقًا لقواعد حدود الكلمات في Unicode (على غرار [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). وتُشكِّل محارف ASCII الأبجدية الرقمية والشرطات السفلية رموزًا مع الموصلات (ASCII `:` للحروف، و`.` و`'` للمحارف من النوع نفسه). أما محارف Unicode غير التابعة لـ ASCII، بما في ذلك محارف [CJK](https://en.wikipedia.org/wiki/CJK_characters)، فتصبح رموزًا من محرف واحد.
+* `chinese[(granularity)]` يقسم النص الصيني إلى كلمات باستخدام قاموس ونموذج ماركوف مخفي (تتبع الخوارزمية [jieba](https://github.com/fxsjy/jieba)؛ وتُشتق بيانات القاموس والنموذج المضمّنة من [cppjieba](https://github.com/yanyiwu/cppjieba)). وبخلاف `asciiCJK`، الذي يعامل كل محرف غير ASCII كرمز من محرف واحد، يجمع `chinese` المحارف الصينية المتتالية في كلمات (على سبيل المثال، تصبح `北京大学` رمزًا واحدًا `北京大学` بدلًا من أربعة رموز من محرف واحد). ينتج عن ذلك رموز أكثر معنى للنص الصيني وجودة بحث أعلى. للنص العام/المختلط، يُرجى استخدام `asciiCJK`، وللنص الصيني فقط، يُرجى استخدام `chinese`. تكون معلمة `granularity` الاختيارية إما `'coarse_grained'` (القيمة الافتراضية إذا لم تُحدَّد) أو `'fine_grained'`. ويُعدِّد الأخير أيضًا الكلمات الفرعية المتداخلة؛ فعلى سبيل المثال، تُنتج `北京邮电大学` أيضًا `北京` و`邮电` و`大学`. يحسّن تقسيم الرموز الدقيق الاسترجاع على حساب فهرس أكبر.
+  ابحث في فهرس نصي `chinese` باستخدام [hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens) (اللذين يقسمان needle إلى رموز باستخدام مُقسِّم الرموز `chinese`)، وليس `hasToken` (الذي يقسم باستخدام فواصل ASCII فقط).
+* `icu(locale)` يقسم السلاسل النصية إلى رموز كلمات باستخدام تقسيم الكلمات في Unicode ‏(UAX #29) الخاص بمكتبة [ICU](https://icu.unicode.org/). بالنسبة إلى أنظمة الكتابة التي لا تستخدم مسافات بيضاء بين الكلمات (مثل الصينية واليابانية والتايلاندية)، تطبق ICU تقسيمًا قائمًا على القواميس، لذلك — بخلاف `asciiCJK` — يُقسَّم هذا النص إلى كلمات مفيدة متعددة المحارف بدلًا من محارف مفردة. ويعني &quot;القاموس&quot; هنا قوائم الكلمات المضمّنة في ICU لتلك أنظمة الكتابة (راجع [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries))؛ إذ تختار ICU التقسيم الأكثر احتمالًا لهذه الكلمات.
+  `locale` هي اللغة المحلية لـ ICU التي تُمرَّر إلى المُقسِّم؛ ويعتمد التقسيم أساسًا على نظام الكتابة والقاموس، وتحدد اللغة المحلية تخصيص ICU الخاص بها. وهي معلمة إلزامية، على سبيل المثال: `tokenizer = icu('ja')` أو `tokenizer = icu('zh')`.
+  يمكن إدراج اللغات المحلية المتاحة باستخدام `SELECT * FROM system.collations`.
+* `japanese` يقسم النص الياباني إلى كلمات باستخدام المحلل الصرفي [MeCab](https://github.com/taku910/mecab). وبخلاف `asciiCJK`، الذي يُنتج رموزًا من محرف واحد لمدخلات CJK، يُجري مُقسِّم الرموز هذا تقسيمًا صحيحًا للكلمات. ويتطلب قاموسًا يُحمَّل في وقت التشغيل من تهيئة الخادم (راجع [قاموس مُقسِّم الرموز الياباني](#japanese-tokenizer-dictionary)).
 * `ngrams(N)` يقسم السلاسل النصية إلى n-grams متساوية الحجم بطول `N` (راجع الدالة [ngrams](/ar/reference/functions/regular-functions/splitting-merging-functions#ngrams)).
   يمكن تحديد طول ngram باستخدام معلمة عدد صحيح اختيارية بين 1 و8، على سبيل المثال: `tokenizer = ngrams(3)`.
   حجم ngram الافتراضي، إذا لم يُحدَّد صراحةً (على سبيل المثال: `tokenizer = ngrams`)، هو 3.
@@ -162,9 +181,73 @@ ALTER TABLE table DROP INDEX text_idx;
   إذا تم توفير المعلمة `min_cutoff_length`، فلن تُعاد إلا n-grams التي يكون طولها أكبر من أو مساويًا لـ `min_cutoff_length`.
   مقارنةً بـ `ngrams(N)`، يُنتج مُقسِّم الرموز `sparseGrams` ‏N-grams متغيرة الطول، مما يتيح تمثيلًا أكثر مرونة للنص الأصلي.
   على سبيل المثال، `tokenizer = sparseGrams(3, 5, 4)` يُنشئ داخليًا 3- و4- و5-grams من سلسلة الإدخال، لكن لا تُعاد إلا 4- و5-grams.
-* `array` لا يُجري أي تقسيم إلى رموز، أي إن كل قيمة في row هي رمز (راجع الدالة [array](/ar/reference/functions/regular-functions/array-functions#array)).
+* `array` لا يُجري أي تقسيم إلى رموز، أي إن كل قيمة في row هي رمز (راجع الدالة [array](/ar/reference/functions/regular-functions/array-functions#array)). للتوافق مع الأنظمة الأخرى، يتوفر `keyword` كاسم مستعار لـ `array`.
 
 جميع مُقسِّمات الرموز المتاحة مُدرجة في [system.tokenizers](/ar/reference/system-tables/tokenizers).
+
+<div id="japanese-tokenizer-dictionary">
+  ### قاموس مُقسِّم الرموز الياباني
+</div>
+
+<CloudNotSupportedBadge />
+
+يحتاج مُقسِّم الرموز `japanese` إلى قاموس MeCab، وهو غير مُضمَّن مع ClickHouse. وفِّر قاموسًا في إعدادات الخادم:
+
+```xml
+<tokenizer>
+    <japanese>
+        <dictionary_location>https://example.com/dictionary.tar.zst</dictionary_location>
+        <dictionary_sha>0123...cdef</dictionary_sha>
+    </japanese>
+</tokenizer>
+```
+
+* `dictionary_location` هو موقع أرشيف لقاموس MeCab مُصرَّف. يمكن استخدام أي قاموس رسمي، مثل [IPADIC](https://github.com/taku910/mecab) أو [UniDic](https://clrd.ninjal.ac.jp/unidic/). يجب أن ينتهي الموقع بامتداد أرشيف مدعوم (مثل `.tar.gz` أو `.tar.zst` أو `.zip`) — إذ يُكتشف منه نوع الأرشيف — لذا يُرفض أي URL لا يحتوي على هذا الامتداد (مثل `https://example.com/download`). المواقع المدعومة:
+  * مسار محلي من نوع `file://`؛
+  * URL من نوع `http(s)://`، يُجلب بتنزيل عادي (استخدمه لكائن عام أو موقّع مسبقًا)؛
+  * مخزن كائنات متوافق مع S3 — مثل AWS S3 أو GCS أو MinIO أو مخزن محلي، وغيرها (وليس AWS فقط) — يُعنون بصيغة `s3://`/`gs://`/`oss://` أو كـ URL كامل بالشكل `http(s)://endpoint/bucket/key`. بالنسبة إلى bucket خاص، وفّر بيانات اعتماد S3 كعناصر فرعية من `<japanese>` (راجع المثال أدناه).
+* `dictionary_sha` هو قيمة SHA-256 لذلك الأرشيف. يتم التحقق منها قبل تحميل القاموس؛ وعند عدم التطابق، لا يُحمَّل القاموس ويُثار خطأ.
+
+يُنزَّل الأرشيف ويُستخرج مرة واحدة، ثم يُخزَّن مؤقتًا محليًا. ولأن القاموس يحدد كيفية تقسيم المستندات إلى رموز، يجب تهيئة `dictionary_sha` نفسه على جميع النسخ المتماثلة.
+
+للقراءة من bucket خاص متوافق مع S3، أضف إعدادات S3 كعناصر فرعية من `<japanese>`، بجوار `dictionary_location` و`dictionary_sha`:
+
+```xml
+<tokenizer>
+    <japanese>
+        <dictionary_location>s3://my-bucket/dictionary.tar.zst</dictionary_location>
+        <dictionary_sha>0123...cdef</dictionary_sha>
+        <access_key_id>...</access_key_id>
+        <secret_access_key>...</secret_access_key>
+        <region>us-east-1</region>
+    </japanese>
+</tokenizer>
+```
+
+إعدادات مصادقة S3 المعروفة (`access_key_id` و`secret_access_key` و`region` و`no_sign_request` و`use_environment_credentials`، ...) هي نفسها المستخدمة في مواضع أخرى في ClickHouse. ويؤدي وجودها أيضًا إلى جلب عنوان URL بصيغة `http(s)://` عبر عميل S3 (لتوقيع الطلبات) بدلًا من تنزيله تنزيلًا عاديًا.
+
+بعد تهيئة Dictionary، يمكن استخدام مُقسِّم الرموز `japanese` على النحو التالي:
+
+```sql title="Query"
+CREATE TABLE docs
+(
+    id UInt64,
+    body String,
+    INDEX body_idx body TYPE text(tokenizer = 'japanese')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO docs VALUES (1, '日本語の形態素解析エンジン'), (2, 'これはテストの文章です');
+
+SELECT id FROM docs WHERE hasAllTokens(body, '形態 解析', 'japanese') ORDER BY id;
+```
+
+```text title="Response"
+┌─id─┐
+│  1 │
+└────┘
+```
 
 <Note>
   يطبّق مُقسِّم الرموز `splitByString` فواصل التقسيم من اليسار إلى اليمين.
@@ -188,12 +271,15 @@ SELECT tokens('abc def', 'ngrams', 3);
 ```
 
 *العمل مع مدخلات غير ASCII.*
-يمكن إنشاء فهرس نصي على بيانات نصية بأي لغة وبأي مجموعة محارف.
-بالنسبة إلى النصوص غير ASCII، يُوصى باستخدام مُقسِّم الرموز `asciiCJK` لأنه يتعامل بشكل صحيح مع حدود الكلمات في Unicode، بما في ذلك محارف CJK.
+يمكن إنشاء فهارس نصية لبيانات نصية بأي لغة ومجموعة محارف.
+بالنسبة إلى النصوص غير ASCII، يُوصى باستخدام مُقسِّم الرموز `asciiCJK` لأنه يتعامل بصورة صحيحة مع حدود الكلمات في Unicode، بما في ذلك محارف CJK.
+بالنسبة إلى اللغات التي لا تفصل الكلمات بمسافات بيضاء (مثل الصينية أو اليابانية أو التايلاندية)، ينتج مُقسِّم الرموز `icu(locale)` رموزًا لكلمات متعددة المحارف ذات معنى عبر تجزئة الكلمات المعتمدة على قاموس ICU.
+وبالنسبة إلى اليابانية تحديدًا، يقسم مُقسِّم الرموز `japanese` ‏(MeCab) النص إلى كلمات بدلًا من محارف مفردة، ويعطي عمومًا نتائج بحث أفضل.
+وبالنسبة إلى الصينية تحديدًا، يقسم مُقسِّم الرموز `chinese` ‏(jieba) النص إلى كلمات بدلًا من محارف مفردة، ويعطي عمومًا نتائج بحث أفضل.
 
 <a id="preprocessor-argument-optional" />**وسيطة المعالج المسبق (اختيارية)**. يشير المعالج المسبق إلى تعبير يُطبَّق على سلسلة الإدخال قبل التقسيم إلى رموز.
 
-تشمل حالات الاستخدام الشائعة لوسيطة المعالج المسبق
+تشمل حالات الاستخدام الشائعة لوسيطة المعالج المسبق ما يلي:
 
 1. تحويل الأحرف إلى صغيرة/كبيرة، أو طيّ الحالة لتمكين المطابقة غير الحساسة لحالة الأحرف، مثل [lower](/ar/reference/functions/regular-functions/string-functions#lower)، [lowerUTF8](/ar/reference/functions/regular-functions/string-functions#lowerUTF8)، [caseFoldUTF8](/ar/reference/functions/regular-functions/string-functions#caseFoldUTF8).
 2. تطبيع UTF-8، مثل [normalizeUTF8NFC](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFC)، [normalizeUTF8NFD](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFD)، [normalizeUTF8NFKC](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFKC)، [normalizeUTF8NFKD](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFKD)، [normalizeUTF8NFKCCasefold](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFKCCasefold)، [toValidUTF8](/ar/reference/functions/regular-functions/string-functions#toValidUTF8).
@@ -227,8 +313,8 @@ SELECT tokens('abc def', 'ngrams', 3);
   لذلك، ولأفضل تجربة استخدام، نوصي باستخدام تعبيرات المعالج المسبق.
 </Note>
 
-تستخدم الدوال [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken)، و[hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)، و[hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)، و[hasPhrase](/ar/reference/functions/regular-functions/string-search-functions#hasPhrase) المعالج المسبق لتحويل مصطلح البحث أولًا قبل تقسيمه إلى رموز.
-لاحظ أنه نظرًا إلى أن المعالج المسبق لا يُطبَّق إلا على مسار الفهرس النصي، فقد تختلف نتائج هذه الدوال بين الاستعلامات التي تستخدم الفهرس النصي والاستعلامات التي لا تستخدمه (مثل `SETTINGS use_skip_indexes = 0`).
+تستخدم الدوال [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken) و[hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens) و[hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens) و[hasPhrase](/ar/reference/functions/regular-functions/string-search-functions#hasPhrase) المعالج المسبق لتحويل مصطلح البحث أولًا قبل تجزئته إلى رموز.
+لاحظ أنه نظرًا إلى أن المعالج المسبق يُطبَّق فقط على مسار الفهرس النصي، فقد تختلف نتائج هذه الدوال بين الاستعلامات التي تستخدم الفهرس النصي وتلك التي لا تستخدمه (مثلًا `SETTINGS use_skip_indexes = 0`).
 
 على سبيل المثال،
 
@@ -244,7 +330,7 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasToken(str, 'Foo');
 ```
 
-يعادل ما يلي:
+وهو مكافئ لـ:
 
 ```sql title="Query"
 CREATE TABLE table
@@ -307,34 +393,34 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 2. **إزالة الطابع الزمني**. كثيرًا ما تبدأ أسطر السجل بطابع زمني منظَّم مثل `2024-01-15T10:23:45` أو تتضمنه.
    تؤدي فهرسة رموز الطابع الزمني إلى تضخيم الفهرس بسلاسل لا تحمل أي صلة بالبحث.
    توجد طريقتان متكاملتان لتجاهل الطوابع الزمنية:
-   * **نهج المعالج اللاحق**: استخدم مُجزِّئ ‏`splitByString` (التقسيم حسب المسافات البيضاء) بحيث يصبح الطابع الزمني بالكامل رمزًا واحدًا، ثم استخدم `parseDateTimeOrNull` لاكتشافه واستبعاده.
+   * **نهج المعالج اللاحق**: استخدم مُقسِّم الرموز ‏`splitByString` (التقسيم حسب المسافات البيضاء) بحيث يصبح الطابع الزمني بالكامل رمزًا واحدًا، ثم استخدم `parseDateTimeOrNull` لاكتشافه واستبعاده.
      مثال: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
      بالنسبة إلى الطوابع الزمنية التي تتضمن إزاحات timezone أو أجزاءً من الثانية، استخدم `parseDateTimeBestEffortOrNull(str)` من دون سلسلة format صريحة.
-   * **نهج المعالج المسبق**: أزل الطابع الزمني من سطر السجل الكامل *قبل* عملية tokenization باستخدام regular expression.
+   * **نهج المعالج المسبق**: أزل الطابع الزمني من سطر السجل الكامل *قبل* التقسيم إلى رموز باستخدام regular expression.
      مثال: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
-     ينجح هذا مع أي مُجزِّئ ويكون أكثر كفاءة لأن أحرف الطابع الزمني لا تخضع لعملية tokenization أصلًا.
+     ينجح هذا مع أي مُقسِّم للرموز ويكون أكثر كفاءة لأن أحرف الطابع الزمني لا تخضع لعملية التقسيم إلى رموز أصلًا.
      ويمكن الجمع بين النهجين: إذ يزيل المعالج المسبق الطابع الزمني، بينما يُطبِّع المعالج اللاحق الـرموز المتبقية أو يصفّيها (مثل التحويل إلى أحرف صغيرة + حذف كلمات الشدة مثل `ERROR` أو `INFO`).
 3. **التجذير**. يؤدي ربط كل رمز بجذره إلى تحسين شمولية البحث عبر مطابقة المتغيرات الصرفية التي تشترك في الجذر نفسه.
    على سبيل المثال، عند استخدام التجذير للغة الإنجليزية، فإن &quot;running&quot; و&quot;runs&quot; و&quot;run&quot; جميعها تُختزل إلى &quot;run&quot;، لذا فإن query عن أي من هذه المتغيرات يطابقها جميعًا.
    يوفّر ClickHouse الدالة [stem](/ar/reference/functions/regular-functions/nlp-functions#stem) مدمجة لعدة لغات.
    مثال: `stem(str, 'en')`
-4. **تطبيع حالة الأحرف**. تحويل الـرموز إلى أحرف صغيرة أو كبيرة لتمكين case-insensitive matching، مثل [lower](/ar/reference/functions/regular-functions/string-functions#lower) و[lowerUTF8](/ar/reference/functions/regular-functions/string-functions#lowerUTF8).
+4. **تطبيع حالة الأحرف**. تحويل الـرموز إلى أحرف صغيرة أو كبيرة لتمكين مطابقة غير حساسة لحالة الأحرف، مثل [lower](/ar/reference/functions/regular-functions/string-functions#lower) و[lowerUTF8](/ar/reference/functions/regular-functions/string-functions#lowerUTF8).
    بالنسبة إلى التحويل إلى الأحرف الصغيرة أو الكبيرة، نوصي باستخدام معالج مسبق بدلًا من معالج لاحق.
 
-يُحوِّل تعبير المُعالج اللاحق الرموز المميزة من نوع [String](/ar/reference/data-types/string) إلى رموز مميزة من النوع ذاته.
-كما يجب أن يشير تعبير المُعالج اللاحق فقط إلى العمود أو التعبير الذي يُعرَّف فوقه فهرس النص.
-وعندما يكون العمود من نوع `Array(String)`، يظل المُعالج اللاحق يعمل على الرموز المميزة الفردية بوصفها قيمًا من نوع `String` العادي.
+يحوِّل تعبير المعالج اللاحق الرموز من النوع [String](/ar/reference/data-types/string) إلى رموز من النوع نفسه.
+كذلك، يجب ألا يشير تعبير المعالج اللاحق إلا إلى العمود أو التعبير الذي يُعرَّف عليه الفهرس النصي.
+عندما يكون العمود من النوع `Array(String)`، يظل المعالج اللاحق يعمل على الرموز الفردية بوصفها قيم `String` عادية.
 
-يُحظر استخدام الدوال غير الحتمية.
+لا يُسمح باستخدام الدوال غير الحتمية.
 
-يُطبَّق المُعالج اللاحق على كل رمز مميّز يُولَّد أثناء إنشاء الفهرس (وبالنسبة إلى المُجزِّئ `array`، يُعدّ كل عنصر في المصفوفة رمزًا مميّزًا). وعند وقت تنفيذ الاستعلام، يعتمد السلوك على الدالة:
+يُطبَّق المعالج اللاحق على كل رمز مُولَّد أثناء إنشاء الفهرس (بالنسبة إلى مُقسِّم الرموز `array`، يكون كل عنصر في المصفوفة رمزًا). وعند تنفيذ الاستعلام، يعتمد السلوك على الدالة:
 
-* بالنسبة إلى `hasToken` و`hasAllTokens` و`hasAnyTokens` و`hasPhrase` (مع أي مُجزِّئ مدعوم): يُطبَّق المُعالج اللاحق على كلٍّ من الرموز المميزة في النص المراد البحث داخله وعبارة البحث، مما يتيح مطابقة مُطبَّعة بالكامل (مثل البحث غير الحسّاس لحالة الأحرف). وبالنسبة إلى `hasPhrase`، تُرتَّب الرموز المميزة بعد المعالجة اللاحقة بشكل متجاور، لذا فإن أي رمز مميّز يحذفه المُعالج اللاحق لا يترك فجوة موضعية، وتظل العبارة مطابقة عبره — على سبيل المثال، مع مُعالج لاحق لكلمات التوقف يحذف `the`، فإن `hasPhrase(col, 'see cat')` يطابق المستند `see the cat`.
-* بالنسبة إلى جميع الدوال الأخرى (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): لا تُطبَّق المعالجة اللاحقة إلا على عبارة البحث لأغراض lookup لتلميح الفهرس؛ بينما يظل المسند على مستوى الصف يقارن بقيم العمود الأصلية.
+* بالنسبة إلى `hasToken` و`hasAllTokens` و`hasAnyTokens` و`hasPhrase` (مع أي مُقسِّم للرموز مدعوم): يُطبَّق المعالج اللاحق على كلٍّ من رموز النص المُبحَث فيه وإبرة البحث، مما يتيح مطابقة مطبَّعة بالكامل (مثل البحث غير الحساس لحالة الأحرف). بالنسبة إلى `hasPhrase`، تُرتَّب الرموز بعد المعالجة اللاحقة بشكل متتالٍ، لذلك لا يترك الرمز الذي يستبعده المعالج اللاحق فجوة موضعية، وتظل العبارة متطابقة عبره — على سبيل المثال، مع معالج لاحق لكلمات التوقف يستبعد `the`، فإن `hasPhrase(col, 'see cat')` يطابق مستندًا يحتوي على `see the cat`. الاستثناء الوحيد هو `hasPhrase` على فهرس `splitByRegexp`، إذ لا يدعم معالجًا لاحقًا (ويُرفض الجمع بينهما باستثناء).
+* بالنسبة إلى جميع الدوال الأخرى (`=` و`IN` و`has` و`hasAny` و`hasAll` و`mapContains*`): لا تخضع للمعالجة اللاحقة سوى إبرة البحث لأغراض البحث باستخدام تلميح الفهرس؛ بينما يظل الشرط على مستوى الصف يقارن بقيم العمود الأصلية.
 
 أمثلة:
 
-* إزالة كلمات التوقف باستخدام تعبير مُعالج لاحق:
+* أزل كلمات التوقف باستخدام تعبير معالج لاحق:
 
 ```sql
 CREATE TABLE table
@@ -349,7 +435,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-* أزِل الطوابع الزمنية باستخدام تعبير المعالجة اللاحقة:
+* أزِل الطوابع الزمنية باستخدام تعبير معالج لاحق:
 
 ```sql
 -- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
@@ -437,51 +523,53 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 بالنسبة إلى الشروط التي تستعين بالفهرس النصي، تُطبَّق المعالجة المسبقة والمعالجة اللاحقة على قيمة البحث قبل الفحص على مستوى granule، بحيث يستخدم البحث في الفهرس الرموز نفسها التي خُزِّنت عند إنشاء الفهرس.
 في معظم الدوال (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`)، لا يُستخدم الفهرس النصي إلا لتخطي كتل البيانات غير ذات الصلة؛ ويظل ClickHouse يتحقق من كل صف متبقٍّ باستخدام الشرط الأصلي على بيانات العمود الأصلية.
 بالنسبة إلى دوال البحث عن الرموز (`hasToken`, `hasAllTokens`, `hasAnyTokens`)، يكون الفهرس النصي هو مسار التقييم الأساسي: يطبّع ClickHouse الـ needle باستخدام المعالجة المسبقة نفسها، ومُقسِّم الرموز، والمعالجة اللاحقة التي طُبِّقت عند إنشاء الفهرس، ويستخدم هذه الصيغة المُطبَّعة لكلٍّ من أجزاء الجدول المفهرسة وغير المفهرسة. ومع وجود معالجة لاحقة، تُطبَّع أيضًا رموز الـ haystack وقت الاستعلام (مع أي مُقسِّم رموز، وليس فقط `array`)، بحيث يخضع جانبا المقارنة للتحويل نفسه على نحو متسق، ولا تعتمد النتيجة على ما إذا كان الفهرس يُقرأ مباشرةً (الإعداد `query_plan_direct_read_from_text_index`) أو ما إذا كان جزء معيّن يحتوي على فهرس materialized — على سبيل المثال، تمكين المطابقة غير الحساسة لحالة الأحرف في `hasAllTokens(col, ['FOO'])` باستخدام معالجة لاحقة `lower`.
-من دون `support_phrase_search`، تستخدم `hasPhrase` الفهرس على سبيل الاستدلال فقط، وتتحقق من كل صف متبقٍّ باستخدام الشرط الأصلي؛ وتقوم المعالجة اللاحقة أيضًا بتطبيع كلٍّ من العبارة ورموز الـ haystack بالطريقة نفسها، بحيث تكون النتيجة مستقلة عن مسار القراءة، ولا تؤدي الرموز التي تُسقطها المعالجة اللاحقة إلى كسر تجاور العبارة. ومع `support_phrase_search = 1`، تستخدم `hasPhrase` قراءات مباشرة دقيقة (مع الاستمرار في تطبيق المعالجة اللاحقة، إن وُجدت).
+من دون `support_phrase_search`، تستخدم `hasPhrase` الفهرس على سبيل الاستدلال فقط، وتتحقق من كل صف متبقٍّ باستخدام الشرط الأصلي؛ وتقوم المعالجة اللاحقة أيضًا بتطبيع كلٍّ من العبارة ورموز الـ haystack بالطريقة نفسها، بحيث تكون النتيجة مستقلة عن مسار القراءة، ولا تؤدي الرموز التي تُسقطها المعالجة اللاحقة إلى كسر تجاور العبارة. ومع `support_phrase_search = 1`، تستخدم `hasPhrase` قراءات مباشرة دقيقة (مع الاستمرار في تطبيق المعالجة اللاحقة، إن وُجدت). لا يمتد دعم المعالجة اللاحقة هذا إلى مُقسِّم الرموز `splitByRegexp`: يُرفض استخدام `hasPhrase` على فهرس `splitByRegexp` مدمج مع معالجة لاحقة (انظر الحاشية السفلية ³ أدناه).
 تُتجاهل رموز البحث التي تحوّلها المعالجة اللاحقة إلى سلسلة فارغة، أي تُعامَل على أنها غير موجودة في عبارة البحث.
 
-| الدالة                                                                                                  | يدعم معالجًا مسبقًا                      | مُقسِّمات الرموز المتوافقة                               | يدعم معالجًا لاحقًا |
-| ------------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------- | ------------------- |
-| `=`                                                                                                     | نعم                                      | جميعها                                                   | نعم                 |
-| `IN`                                                                                                    | نعم                                      | جميعها                                                   | نعم                 |
-| [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken)                     | نعم                                      | جميعها (مصمَّم لـ `splitByNonAlpha`)                     | نعم                 |
-| [hasAnyTokens(col, str)](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | نعم                                      | جميعها                                                   | نعم                 |
-| [hasAllTokens(col, str)](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | نعم                                      | جميعها                                                   | نعم                 |
-| [hasAnyTokens(col, arr)](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | لا (تُعامَل عناصر المصفوفة كرموز كما هي) | جميعها                                                   | نعم                 |
-| [hasAllTokens(col, arr)](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | لا (تُعامَل عناصر المصفوفة كرموز كما هي) | جميعها                                                   | نعم                 |
-| [hasPhrase](/ar/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | نعم                                      | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | نعم                 |
-| [startsWith](/ar/reference/functions/regular-functions/string-functions#startsWith)                        | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | نعم                 |
-| [endsWith](/ar/reference/functions/regular-functions/string-functions#endsWith)                            | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | نعم                 |
-| [like](/ar/reference/functions/regular-functions/string-search-functions#like)                             | نعم¹                                     | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | نعم¹                |
-| [match](/ar/reference/functions/regular-functions/string-search-functions#match)                           | نعم¹                                     | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | نعم¹                |
-| [ilike](/ar/reference/functions/regular-functions/string-search-functions#like)                            | نعم² (`lower`/`upper` فقط)               | `splitByNonAlpha`, `array`²                              | لا²                 |
-| [mapContainsKey](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | نعم                                      | جميعها                                                   | نعم                 |
-| [mapContainsValue](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | نعم                                      | جميعها                                                   | نعم                 |
-| [mapContainsKeyLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | نعم                 |
-| [mapContainsValueLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | نعم                 |
-| [has](/ar/reference/functions/regular-functions/array-functions#has)                                       | نعم                                      | `array`                                                  | نعم                 |
-| [hasAny](/ar/reference/functions/regular-functions/array-functions#hasAny)                                 | نعم                                      | `array`                                                  | نعم                 |
-| [hasAll](/ar/reference/functions/regular-functions/array-functions#hasAll)                                 | نعم                                      | `array`                                                  | نعم                 |
+| الدالة                                                                                                  | يدعم معالجًا مسبقًا                      | مُقسِّمات الرموز المتوافقة                                                        | يدعم معالجًا لاحقًا |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------- | ------------------- |
+| `=`                                                                                                     | نعم                                      | جميعها                                                                            | نعم                 |
+| `IN`                                                                                                    | نعم                                      | جميعها                                                                            | نعم                 |
+| [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken)                     | نعم                                      | جميعها (مصمَّم لـ `splitByNonAlpha`)                                              | نعم                 |
+| [hasAnyTokens(col, str)](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | نعم                                      | جميعها                                                                            | نعم                 |
+| [hasAllTokens(col, str)](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | نعم                                      | جميعها                                                                            | نعم                 |
+| [hasAnyTokens(col, arr)](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | لا (تُعامَل عناصر المصفوفة كرموز كما هي) | جميعها                                                                            | نعم                 |
+| [hasAllTokens(col, arr)](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | لا (تُعامَل عناصر المصفوفة كرموز كما هي) | جميعها                                                                            | نعم                 |
+| [hasPhrase](/ar/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | نعم                                      | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | نعم³                |
+| [startsWith](/ar/reference/functions/regular-functions/string-functions#startsWith)                        | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | نعم                 |
+| [endsWith](/ar/reference/functions/regular-functions/string-functions#endsWith)                            | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | نعم                 |
+| [like](/ar/reference/functions/regular-functions/string-search-functions#like)                             | نعم¹                                     | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | نعم¹                |
+| [match](/ar/reference/functions/regular-functions/string-search-functions#match)                           | نعم¹                                     | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | نعم¹                |
+| [ilike](/ar/reference/functions/regular-functions/string-search-functions#like)                            | نعم² (`lower`/`upper` فقط)               | `splitByNonAlpha`, `array`²                                                       | لا²                 |
+| [mapContainsKey](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | نعم                                      | جميعها                                                                            | نعم                 |
+| [mapContainsValue](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | نعم                                      | جميعها                                                                            | نعم                 |
+| [mapContainsKeyLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | نعم                 |
+| [mapContainsValueLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | نعم                 |
+| [has](/ar/reference/functions/regular-functions/array-functions#has)                                       | نعم                                      | `array`                                                                           | نعم                 |
+| [hasAny](/ar/reference/functions/regular-functions/array-functions#hasAny)                                 | نعم                                      | `array`                                                                           | نعم                 |
+| [hasAll](/ar/reference/functions/regular-functions/array-functions#hasAll)                                 | نعم                                      | `array`                                                                           | نعم                 |
 
-¹ يستخدم `LIKE` و`match` القراءة المباشرة كتلميح مع مُقسِّمات الرموز المذكورة، وإلا فيلجآن إلى المسح الشامل.
+¹ يستخدم `LIKE` و`match` القراءة المباشرة كتلميح مع مُقسِّمات الرموز المذكورة، وإلا فيلجآن إلى مسح بالقوة الغاشمة.
 ويدعم `LIKE` أيضًا *القراءة المباشرة (من دون تلميح)* (مفعّلة عبر `use_text_index_like_evaluation_by_dictionary_scan`) مع مُقسِّمَي الرموز `splitByNonAlpha` و`array` من دون معالج مسبق أو لاحق.
 
 ² لا يدعم `ILIKE` إلا عبر القراءة المباشرة (من دون تلميح) (`use_text_index_like_evaluation_by_dictionary_scan = 1`، مع مُقسِّم الرموز `splitByNonAlpha` أو `array`).
 ولا يوجد مسار بديل لاستخدام الفهرس كتلميح: إذا كان هذا الإعداد معطّلًا أو لم يكن مُقسِّم الرموز ضمن المجموعة المدعومة، فلن يُستخدَم الفهرس مع `ILIKE`.
 ويجب أن يكون المعالج المسبق، إن وُجد، هو `lower` أو `upper`؛ أما المعالجات اللاحقة فغير مدعومة.
 
+³ لا تدعم `hasPhrase` على فهرس نصي من نوع `splitByRegexp` معالجًا لاحقًا: يُرفَض هذا الجمع باستثناء، لأن إعادة الكتابة على مستوى الصف للمعالج اللاحق تفترض رموزًا بأسلوب `splitByNonAlpha` مقسَّمة وفق المسافات البيضاء. وبدون معالج لاحق، يكون `splitByRegexp` مدعومًا بالكامل بواسطة `hasPhrase`.
+
 **تجريبي: دعم وسيطة البحث عن العبارة (اختيارية)**.
 
-المعلمة التجريبية `support_phrase_search` (الافتراضي: `0`) تتحكم في ما إذا كان الفهرس يخزّن مواضع الـtoken.
+المعلمة التجريبية `support_phrase_search` (الافتراضي: `0`) تتحكم في ما إذا كان الفهرس يخزّن مواضع الرموز.
 عند ضبطها على `1`، يخزّن الفهرس أيضًا بيانات المواضع (في ملف `.pos`)، مما يتيح المطابقة الدقيقة للعبارات عبر القراءات المباشرة للدالة [`hasPhrase`](#functions-example-hasphrase).
 يؤدي تخزين المواضع إلى زيادة حجم الفهرس على القرص ورفع تكلفة الكتابة، لذا فهو خيار اختياري.
 تنسيق التخزين على القرص ليس مستقرًا بعد، لذلك فهذه المعلمة تجريبية وقد تتغير في إصدار مستقبلي.
-لذلك، يتطلب إنشاء فهرس مع `support_phrase_search = 1` تمكين إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+لذلك، يتطلب إنشاء فهرس مع `support_phrase_search = 1` تمكين إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 اضبط `support_phrase_search = 0` (الافتراضي) للاحتفاظ بتخزين يعتمد على قائمة الترحيل فقط؛ وتبقى الفهارس النصية التي أُنشئت دون هذه الوسيطة بلا مواضع.
 
 <Warning>
   هذه الوسيطة تجريبية ويجب استخدامها للاختبار فقط.
-  اضبط إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) لتمكين تخزين المواضع.
+  اضبط إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) لتمكين تخزين المواضع.
 </Warning>
 
 <details markdown="1">
@@ -501,7 +589,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
   * `none` - تُخزَّن قوائم الترحيل من دون ضغط إضافي.
   * `bitpacking` - يطبّق [الترميز التفاضلي (delta)](https://en.wikipedia.org/wiki/Delta_encoding)، ثم [حزم البتات](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (وذلك داخل كتل ثابتة الحجم). يبطئ استعلامات SELECT، ولا يُنصح به حاليًا.
 
-  يمكن أيضًا ضبط المعلمات المتقدمة المذكورة أعلاه على مستوى الجدول عبر إعدادات MergeTree المقابلة: [`text_index_dictionary_block_size`](/ar/reference/settings/merge-tree-settings#text_index_dictionary_block_size)، و[`text_index_dictionary_block_frontcoding_compression`](/ar/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression)، و[`text_index_posting_list_block_size`](/ar/reference/settings/merge-tree-settings#text_index_posting_list_block_size)، و[`text_index_posting_list_codec`](/ar/reference/settings/merge-tree-settings#text_index_posting_list_codec).
+  يمكن أيضًا ضبط المعلمات المتقدمة المذكورة أعلاه على مستوى الجدول عبر إعدادات MergeTree المقابلة: [`text_index_dictionary_block_size`](/ar/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size)، و[`text_index_dictionary_block_frontcoding_compression`](/ar/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression)، و[`text_index_posting_list_block_size`](/ar/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size)، و[`text_index_posting_list_codec`](/ar/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   وتُطبَّق هذه الإعدادات على كل فهرس نصي في الجدول لا يحدد المعلمة صراحةً.
 
   تتمثل أبرز حالات استخدام الإعدادات على مستوى الجدول في تغيير معلمات الفهرس لجدول موجود من دون حذف الفهرس النصي وإعادة إنشائه على جميع أجزاء الجدول.
@@ -754,9 +842,9 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 تُطابِق الدالة [hasPhrase](/ar/reference/functions/regular-functions/string-search-functions#hasPhrase) عبارةً ما: إذ يجب أن تظهر جميع الرموز بشكل متتالٍ وبالترتيب نفسه كما في سلسلة البحث.
 
 وعلى خلاف `hasAllTokens`، التي تشترط فقط وجود جميع الرموز في أي موضع، فإن `hasPhrase` تشترط أن تظهر كتسلسل متصل.
-تُجزَّأ عبارة البحث إلى رموز باستخدام المجزئ نفسه المُعدّ لعمود الفهرس.
+تُجزَّأ عبارة البحث إلى رموز باستخدام مُقسِّم الرموز نفسه المُعدّ لعمود الفهرس.
 وعندما يستخدم فهرس النص معالجًا لاحقًا، تُطبَّع عبارة البحث أيضًا قبل البحث في الفهرس.
-لاحظ أن الدالة تتطلب أحد مجزئات `splitByNonAlpha` أو `splitByString` أو `ngrams` أو `asciiCJK`.
+لاحظ أن الدالة تتطلب أحد مُقسِّمات الرموز `splitByNonAlpha` أو `splitByString` أو `splitByRegexp` أو `ngrams` أو `asciiCJK` أو `icu`.
 
 مثال:
 
@@ -1176,10 +1264,10 @@ FROM tab
 WHERE hasAllTokens(col, 'weather in Tokyo')
 ```
 
-يطابق جميع الصفوف التي تحتوي على التوكنات المحددة بأي ترتيب.
+يطابق جميع الصفوف التي تحتوي على الرموز المحددة بأي ترتيب.
 في المثال، يطابق الصف `While she stayed in Tokyo, the weather was great.` شرط التصفية.
 
-في المقابل، يعني البحث بالعبارة مطابقة التوكنات بالترتيب المحدد.
+في المقابل، يعني البحث بالعبارة مطابقة الرموز بالترتيب المحدد.
 على سبيل المثال،
 
 ```sql
@@ -1195,7 +1283,7 @@ WHERE hasPhrase(col, 'weather in Tokyo')
 هذه العملية مكلفة نسبيًا وأبطأ من استعلامات البحث النصي العادية.
 لتسريع استعلامات البحث عن العبارات، يُرجى تمكين تخزين المواضع في الفهرس النصي (راجع `Optional parameters` أعلاه).
 
-يمكن استخدام `hasPhrase` مع مُقسِّمات الرموز `splitByNonAlpha` و`splitByString` و`ngrams` و`asciiCJK`.
+يمكن استخدام `hasPhrase` مع مُقسِّمات الرموز `splitByNonAlpha` و`splitByString` و`splitByRegexp` و`ngrams` و`asciiCJK` و`icu`.
 تُقسَّم سلسلة العبارة المعطاة إلى رموز باستخدام مُقسِّم الرموز الخاص بالفهرس.
 تُتجاهل أحرف الفصل في العبارة: `hasPhrase(text, 'quick+brown')` مكافئ لـ `hasPhrase(text, 'quick brown')`، بافتراض استخدام `splitByNonAlpha` كمُقسِّم للرموز.
 
@@ -1249,18 +1337,18 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-تُجيب آلية تحسين `direct read` عن الاستعلام بالاعتماد حصريًا على فهرس النص (أي من خلال عمليات lookup في فهرس النص) من دون الوصول إلى عمود النص الأساسي.
-وتقرأ عمليات lookup في فهرس النص قدرًا قليلًا نسبيًا من البيانات، لذا فهي أسرع بكثير من فهارس التخطي المعتادة في ClickHouse (التي تُجري lookup في فهرس التخطي، ثم تحميل الحبيبات المتبقية وتصفيتها).
+تُجيب آلية تحسين `direct read` عن الاستعلام بالاعتماد حصريًا على الفهرس النصي (أي من خلال عمليات lookup في الفهرس النصي) من دون الوصول إلى عمود النص الأساسي.
+وتقرأ عمليات lookup في الفهرس النصي قدرًا قليلًا نسبيًا من البيانات، لذا فهي أسرع بكثير من فهارس التخطي المعتادة في ClickHouse (التي تُجري lookup في فهرس التخطي، ثم تحميل الحبيبات المتبقية وتصفيتها).
 
 يُتحكَّم في `direct read` عبر إعدادين:
 
-* الإعداد [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings#query_plan_direct_read_from_text_index) (وقيمته الافتراضية true) الذي يحدد ما إذا كانت `direct read` مفعّلة بشكل عام.
-* كان الإعداد [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ar/reference/settings/session-settings#use_skip_indexes_on_data_read) شرطًا مسبقًا لـ `direct read` في إصدارات ClickHouse الأقدم من &lt; 26.4.
+* الإعداد [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (وقيمته الافتراضية true) الذي يحدد ما إذا كانت `direct read` مفعّلة بشكل عام.
+* كان الإعداد [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ar/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) شرطًا مسبقًا لـ `direct read` في إصدارات ClickHouse الأقدم من &lt; 26.4.
 
 **الدوال المدعومة**
 
 تدعم آلية تحسين `direct read` الدوال `hasToken` و`hasAllTokens` و`hasAnyTokens`.
-إذا كان فهرس النص معرّفًا باستخدام المُجزِّئ `array`، فإن `direct read` تدعم أيضًا الدوال `equals` و`has` و`hasAny` و`hasAll` و`mapContainsKey` و`mapContainsValue`.
+إذا كان الفهرس النصي معرّفًا باستخدام المُجزِّئ `array`، فإن `direct read` تدعم أيضًا الدوال `equals` و`has` و`hasAny` و`hasAll` و`mapContainsKey` و`mapContainsValue`.
 ويمكن أيضًا دمج هذه الدوال باستخدام عوامل التشغيل `AND` و`OR` و`NOT`.
 كما يمكن أن تتضمن عبارتا `WHERE` أو `PREWHERE` عوامل تصفية إضافية لا تتعلق بدوال البحث النصي (لأعمدة النص أو الأعمدة الأخرى) - وفي هذه الحالة ستظل آلية تحسين `direct read` مستخدمة، ولكن بفعالية أقل (إذ إنها تنطبق فقط على دوال البحث النصي المدعومة).
 
@@ -1275,7 +1363,7 @@ WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
 ```
 
-القيمة المُعادة
+القيم المعادة
 
 ```text
 [...]
@@ -1297,7 +1385,7 @@ WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
 ```
 
-القيمة المعادة
+القيم المعادة
 
 ```text
 [...]
@@ -1317,14 +1405,14 @@ Positions:
 
 **القراءة المباشرة كتلميح**
 
-تعتمد القراءة المباشرة كتلميح على المبادئ نفسها التي تعتمد عليها القراءة المباشرة العادية، لكنها تضيف بدلًا من ذلك عامل تصفية إضافيًا مُنشأً من بيانات فهرس النص، من دون الاستغناء عن العمود النصي الأساسي.
-وتُستخدم مع الدوال التي قد تؤدي فيها القراءة من فهرس النص فقط إلى مطابقات إيجابية كاذبة.
+تعتمد القراءة المباشرة كتلميح على المبادئ نفسها التي تعتمد عليها القراءة المباشرة العادية، لكنها تضيف بدلًا من ذلك عامل تصفية إضافيًا مُنشأً من بيانات الفهرس النصي، من دون الاستغناء عن العمود النصي الأساسي.
+وتُستخدم مع الدوال التي قد تؤدي فيها القراءة من الفهرس النصي فقط إلى مطابقات إيجابية كاذبة.
 
 الدوال المدعومة هي: `like`, `startsWith`, `endsWith`, `equals`, `has`, `hasPhrase`, `mapContainsKey`, و `mapContainsValue`.
 
 يمكن لعامل التصفية الإضافي أن يوفّر انتقائية إضافية لتقييد مجموعة النتائج بدرجة أكبر عند دمجه مع عوامل تصفية أخرى، مما يساعد على تقليل كمية البيانات المقروءة من الأعمدة الأخرى.
 
-تخضع القراءة المباشرة كتلميح للإعداد [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ar/reference/settings/session-settings#query_plan_text_index_add_hint) (مُمكّن افتراضيًا).
+تخضع القراءة المباشرة كتلميح للإعداد [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ar/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (مُمكّن افتراضيًا).
 
 مثال على استعلام من دون تلميح:
 
@@ -1372,28 +1460,63 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
   ### استعلامات LIKE/ILIKE
 </div>
 
-عندما يكون نمط استعلام LIKE/ILIKE هو `%<alpha-numeric-characters-without-spaces>%` ويكون مُجزِّئ لفهرس النص `text index` هو `splitByNonAlpha` أو `array`، يستفيد ClickHouse من الفهرس المعكوس `inverted index` لتسريع استعلامات LIKE/ILIKE بشكل كبير. ولتحقيق ذلك، يفحص ClickHouse القاموس `Dictionary` الخاص بالفهرس المعكوس بدلًا من إجراء فحص كامل للجدول للعثور على النمط المطابق.
+عندما يكون نمط استعلام LIKE/ILIKE هو `%<alpha-numeric-characters-without-spaces>%` ويكون مُقسِّم الرموز للفهرس النصي `text index` هو `splitByNonAlpha` أو `array`، يستفيد ClickHouse من الفهرس المعكوس `inverted index` لتسريع استعلامات LIKE/ILIKE بشكل كبير. ولتحقيق ذلك، يفحص ClickHouse القاموس `Dictionary` الخاص بالفهرس المعكوس بدلًا من إجراء فحص كامل للجدول للعثور على النمط المطابق.
 
 عند تمكين هذا التحسين، يُفترض أن تصبح استعلامات LIKE/ILIKE أسرع بكثير من الفحص الكامل للجدول. ومع ذلك، إذا كان النمط يطابق معظم الرموز `tokens` في القاموس، فقد يصبح الأداء أسوأ مقارنةً بالفحص الكامل للجدول. ولحسن الحظ، توجد آلية احتياطية `fallback` تمنع ذلك.
 
 يخضع هذا التحسين لإعداد واحد:
 
-* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ar/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ar/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 وتخضع الآلية الاحتياطية `fallback` لإعدادين:
 
-* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ar/reference/settings/session-settings#text_index_like_min_pattern_length)
-* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ar/reference/settings/session-settings#text_index_like_max_postings_to_read)
+* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ar/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ar/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 لا يدعم هذا التحسين إلا الدالتين `like` و `ilike`.
+
+<div id="count-queries-perf">
+  ### استعلامات العد البسيطة
+</div>
+
+استعلام يقتصر على عدّ الصفوف المطابقة لشرط بحث نصي
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+تُجاب من فهرس نصي دون قراءة الصفوف المطابقة.
+يستمد ClickHouse العدد من عددية قوائم الإسناد في الفهرس، متجاوزًا العمود الافتراضي الذي يعلّم الصفوف المطابقة واحتساب التجميع عليه. يحتاج الرمز الواحد إلى عددية قاموسه فقط، لذا لا تُقرأ أي قائمة إسناد؛ أما المسندات متعددة الرموز فتقرأ قوائم الإسناد فقط لإجراء الاتحاد (`hasAnyTokens`) أو التقاطع (`hasAllTokens`) بينها. وبما أن فهرس نصي يغطي الجزء بأكمله، يكون العدد دقيقًا ويظل سريعًا حتى مع الأجزاء الكبيرة جدًا.
+
+ينطبق هذا التحسين على `count()` وحدها عند تصفيتها بمسند واحد من `hasToken` أو `hasAnyTokens` أو `hasAllTokens` (أو ما يكافئها في `Array`/`Map`). أما المسندات المدمجة باستخدام `AND`/`OR`/`NOT`، أو عامل تصفية إضافي (مثل `... AND id > 10`)، أو مسند في وضع التلميح مثل `m['key'] = 'value'`، أو اختيار أي شيء غير العدد، أو البحث عن عبارة أو باستخدام `LIKE`/نمط، فتجعل الاستعلام يقرأ الصفوف بدلًا من ذلك. وتظل الأجزاء التي لا تحتوي على فهرس مُجسَّد تُحتسب بشكل صحيح عبر قراءة صفوفها.
+
+للتأكد من تفعيل التحسين، تحقق من وجود `ReadFromTextIndexCount` في خطة الاستعلام:
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+يُتحكَّم في هذا التحسين عبر [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (وهو مفعّل افتراضيًا). ويستند إلى [القراءة المباشرة](#direct-read)، لذا يجب أيضًا تفعيل [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) و[use&#95;skip&#95;indexes](/ar/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) و[optimize&#95;trivial&#95;count&#95;query](/ar/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) (وجميعها مفعّلة افتراضيًا).
 
 <div id="caching">
   ### التخزين المؤقت
 </div>
 
 توجد ذاكرات تخزين مؤقت مختلفة على مستوى الخادم للاحتفاظ بأجزاء من الفهرس النصي في الذاكرة (انظر قسم [تفاصيل التنفيذ](#implementation)):
-توجد حالياً ذاكرات تخزين مؤقت للترويسات بعد فك تسلسلها، والرموز، وقوائم الترحيل الخاصة بالفهرس النصي لتقليل عمليات الإدخال/الإخراج.
-استخدم الإعدادات [use&#95;text&#95;index&#95;header&#95;cache](/ar/reference/settings/session-settings#use_text_index_header_cache) و[use&#95;text&#95;index&#95;tokens&#95;cache](/ar/reference/settings/session-settings#use_text_index_tokens_cache) و[use&#95;text&#95;index&#95;postings&#95;cache](/ar/reference/settings/session-settings#use_text_index_postings_cache) لتعطيل قراءة الاستعلامات من كل ذاكرة تخزين مؤقت على حدة والكتابة إليها.
+توجد حالياً ذاكرات تخزين مؤقت للترويسات بعد فك تسلسلها، والرموز، والترحيلات الخاصة بالفهرس النصي لتقليل عمليات الإدخال/الإخراج.
+استخدم الإعدادات [use&#95;text&#95;index&#95;header&#95;cache](/ar/reference/settings/session-settings/use-text#use_text_index_header_cache)، و[use&#95;text&#95;index&#95;tokens&#95;cache](/ar/reference/settings/session-settings/use-text#use_text_index_tokens_cache)، و[use&#95;text&#95;index&#95;postings&#95;cache](/ar/reference/settings/session-settings/use-text#use_text_index_postings_cache) لتعطيل قراءة الاستعلامات من كل ذاكرة تخزين مؤقت على حدة والكتابة إليها.
+يكون التخزين المؤقت للرموز غير الموجودة في جزء بيانات مفعّلاً افتراضياً، ويمكن التحكم فيه بشكل مستقل باستخدام [`use_text_index_negative_tokens_cache`](/ar/reference/settings/session-settings/use-text).
 
 لمسح ذاكرات التخزين المؤقت، استخدم العبارة [SYSTEM CLEAR TEXT INDEX CACHES](/ar/reference/statements/system#drop-text-index-caches)
 
@@ -1403,34 +1526,34 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
   #### إعدادات ذاكرة التخزين المؤقت لرموز الفهرس النصي
 </div>
 
-| الإعداد                                                                                                                                     | الوصف                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_tokens_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لرموز الفهرس النصي.                                                            |
-| [text&#95;index&#95;tokens&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_tokens_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                |
-| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries) | الحد الأقصى لعدد الرموز بعد إلغاء تسلسلها في ذاكرة التخزين المؤقت.                                            |
-| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لرموز الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
+| الإعداد                                                                                                                                                | الوصف                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لرموز الفهرس النصي.                                                            |
+| [text&#95;index&#95;tokens&#95;cache&#95;size](/ar/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                |
+| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | الحد الأقصى لعدد الرموز بعد فك التسلسل في ذاكرة التخزين المؤقت.                                               |
+| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لرموز الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
 
 <div id="caching-header">
   #### إعدادات ذاكرة التخزين المؤقت للترويسات
 </div>
 
-| الإعداد                                                                                                                                     | الوصف                                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;header&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_header_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لترويسات الفهرس النصي.                                                            |
-| [text&#95;index&#95;header&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_header_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                   |
-| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | الحد الأقصى لعدد الترويسات بعد إلغاء تسلسلها في ذاكرة التخزين المؤقت.                                            |
-| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لترويسات الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
+| الإعداد                                                                                                                                                | الوصف                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لترويسات الفهرس النصي.                                                            |
+| [text&#95;index&#95;header&#95;cache&#95;size](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                   |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | الحد الأقصى لعدد الترويسات بعد فك التسلسل في ذاكرة التخزين المؤقت.                                               |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لترويسات الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
 
 <div id="caching-posting-lists">
   #### إعدادات ذاكرة التخزين المؤقت لقوائم الترحيل
 </div>
 
-| Setting                                                                                                                                         | Description                                                                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;postings&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لقوائم الترحيل في الفهرس النصي.                                                            |
-| [text&#95;index&#95;postings&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                            |
-| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | الحد الأقصى لعدد قوائم الترحيل التي فُكّ تسلسلها في ذاكرة التخزين المؤقت.                                                 |
-| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لقوائم الترحيل في الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
+| Setting                                                                                                                                                    | Description                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت للترحيلات في الفهرس النصي.                                                               |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/ar/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                            |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | الحد الأقصى لعدد الترحيلات بعد فك التسلسل في ذاكرة التخزين المؤقت.                                                      |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت للترحيلات في الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.    |
 
 <div id="limitations">
   ## القيود
@@ -1441,6 +1564,14 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 * قد يستهلك البناء المادي للفهرسة النصية التي تحتوي على عدد كبير من الرموز (مثلًا 10 مليارات رمز) كميات كبيرة من الذاكرة. ويمكن أن يحدث
   البناء المادي للفهرس النصي مباشرةً (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) أو بصورة غير مباشرة أثناء عمليات دمج الأجزاء.
 * لا يمكن إجراء البناء المادي للفهرسة النصية على الأجزاء التي تحتوي على أكثر من 4.294.967.296 (= 2^32 = نحو 4.2 مليارات) صف. ومن دون فهرس نصي مُنشأ ماديًا، تلجأ الاستعلامات إلى البحث البطيء بالقوة الغاشمة داخل الجزء. وكتقدير لأسوأ الاحتمالات، افترض أن جزءًا يحتوي على عمود واحد من النوع String وأن إعداد MergeTree `max_bytes_to_merge_at_max_space_in_pool` (القيمة الافتراضية: 150 جيجابايت) لم يتغير. في هذه الحالة، يحدث ذلك إذا كان العمود يحتوي في المتوسط على أقل من 29.5 حرفًا لكل صف. وعمليًا، تحتوي الجداول أيضًا على أعمدة أخرى، وتكون العتبة أقل من ذلك بعدة مرات (بحسب عدد الأعمدة الأخرى ونوعها وحجمها).
+
+<div id="upgrade-notes">
+  ## ملاحظات الترقية
+</div>
+
+يتحكم إعداد مستوى الجدول [`text_index_serialization_version`](/ar/reference/settings/merge-tree-settings/text-index) (القيمة الافتراضية: `v2_with_positions`) في إصدار تنسيق الفهارس النصية المخزنة على القرص.
+هذا الإعداد تفضيل وليس قيدًا صارمًا: فإذا تعذر على الإصدار المُهيأ تمثيل فهرس، يُختار تلقائيًا إصدار أحدث قادر على تمثيله، لذا لا تفشل كتابة فهرس نصي بسبب هذا الإعداد.
+أثناء الترقية المتتابعة، ثبّت التنسيق باستخدام إعداد [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility) على الخوادم التي تمت ترقيتها بالفعل: فعند ضبطه على إصدار أقدم من الإصدار الذي أُضيف فيه التنسيق المقابل، يعود `text_index_serialization_version` تلقائيًا إلى قيمة أقدم، وتواصل الخوادم الأحدث كتابة التنسيق الذي لا تزال الخوادم الأقدم قادرة على قراءته.
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## فهارس النص مقابل الفهارس المعتمدة على Bloom filter

@@ -80,7 +80,7 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
-    , startup_task(getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
+    , startup_task(getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
 {
 }
 
@@ -749,25 +749,33 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         {
             /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
             /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, /*storage_settings=*/ nullptr, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(
+                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false);
         }
         else
         {
-            if (engine_args.size() != 4)
+            /// The TLS/SSL parameters are trailing `key = value` arguments; the copy keeps them in
+            /// the stored `CREATE DATABASE` query, where they are masked when it is formatted.
+            ASTs positional_arguments = engine_args;
+            configuration.ssl = StoragePostgreSQL::extractSSLParamsFromArguments(positional_arguments, args.context);
+
+            if (positional_arguments.size() != 4)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password`.");
+                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password` "
+                                "(optionally followed by sslmode = '...', sslrootcert_pem = '...', "
+                                "sslcert_pem = '...', sslkey_pem = '...').");
 
-            for (auto & engine_arg : engine_args)
-                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+            for (auto & positional_argument : positional_arguments)
+                positional_argument = evaluateConstantExpressionOrIdentifierAsLiteral(positional_argument, args.context);
 
-            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(engine_args[0], engine_name), 5432);
+            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(positional_arguments[0], engine_name), 5432);
 
             configuration.host = parsed_host_port.first;
             configuration.port = parsed_host_port.second;
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
         }
 
         /// An internal metadata replay (server startup / restore, the same distinction
@@ -813,17 +821,18 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
+        auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
+        if (engine_define->settings)
+            postgresql_replica_settings->loadFromQuery(*engine_define);
+
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
             configuration.port,
             configuration.username,
             configuration.password,
-            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
-
-        auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
-        if (engine_define->settings)
-            postgresql_replica_settings->loadFromQuery(*engine_define);
+            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
+            configuration.ssl);
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,
@@ -847,7 +856,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <CloudNotSupportedBadge/>
 
 :::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
 :::
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
@@ -989,7 +998,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 :::note
-Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+[**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
 :::
 
 ## Settings {#settings}
@@ -1057,6 +1066,22 @@ Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Dat
 If set to `0`, the narrower `Date` and `DateTime` types are used instead (values outside their range or with sub-second precision are not representable).
 
 This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
+
+## TLS/SSL {#tls-ssl}
+
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
+
+Example of connecting to a PostgreSQL server that enforces TLS, verifying the server certificate:
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
+The TLS/SSL parameters are part of the PostgreSQL connection parameters, which are fixed when the database is created; recreate the database to change them.
 
 ## Notes {#notes}
 
