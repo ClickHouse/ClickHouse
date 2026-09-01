@@ -1,17 +1,5 @@
 -- Verify how query plans containing `Limit` and `Offset` steps interact with the automatic parallel
 -- replicas optimization.
---
--- 1. `OffsetStep` did not support dataflow statistics collection, and since
---    `considerEnablingParallelReplicas` uses that predicate as a whole-plan gate, any plan carrying a
---    bare `OffsetStep` was rejected outright (`optimizeTree: Some steps in the plan don't support
---    dataflow statistics collection ... Unsupported steps: Offset_...`) and no statistics were
---    gathered. `LIMIT n OFFSET m` is unaffected - the planner folds it into a single `LimitStep` - so
---    only an `OFFSET` without a `LIMIT` produces such a plan.
---
--- 2. The cost model divides the boundary's `output_bytes` by the number of replicas, which assumes the
---    replicas partition that output between them. A row-limiting boundary is replicated instead: a
---    shard `LIMIT n` makes every replica emit up to `n` rows, so each of them ships the full
---    `output_bytes`. Dividing anyway underestimated the parallel-replicas plan by `max_parallel_replicas`.
 
 DROP TABLE IF EXISTS t;
 
