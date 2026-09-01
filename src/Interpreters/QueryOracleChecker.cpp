@@ -51,55 +51,6 @@
 namespace ProfileEvents
 {
 extern const Event ASTFuzzerOracleChecks;
-extern const Event ASTFuzzerOracleTLPWhereChecks;
-extern const Event ASTFuzzerOracleNoRECChecks;
-extern const Event ASTFuzzerOracleTLPAggregateChecks;
-extern const Event ASTFuzzerOracleTLPDistinctChecks;
-extern const Event ASTFuzzerOracleTLPGroupByChecks;
-extern const Event ASTFuzzerOracleTLPHavingChecks;
-extern const Event ASTFuzzerOracleDQPChecks;
-extern const Event ASTFuzzerOracleIdentityWhereChecks;
-extern const Event ASTFuzzerOracleSubqueryWrapChecks;
-extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
-extern const Event ASTFuzzerOracleDistinctViaGroupByChecks;
-extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
-extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
-extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
-extern const Event ASTFuzzerOracleCodecRoundtripChecks;
-extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
-extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
-extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
-extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
-extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
-extern const Event ASTFuzzerOracleAggregateIfIdentityChecks;
-extern const Event ASTFuzzerOracleNullIdentityChecks;
-extern const Event ASTFuzzerOracleCastRoundtripChecks;
-extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
-extern const Event ASTFuzzerOracleTupleSummingChecks;
-extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
-extern const Event ASTFuzzerOracleDeleteMutationChecks;
-extern const Event ASTFuzzerOracleUpdateMutationChecks;
-extern const Event ASTFuzzerOracleMaterializeIndexChecks;
-extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
-extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
-extern const Event ASTFuzzerOracleGroupingSetsChecks;
-extern const Event ASTFuzzerOracleRowPolicyChecks;
-extern const Event ASTFuzzerOracleFinalMergeChecks;
-extern const Event ASTFuzzerOracleWithFillChecks;
-extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
-extern const Event ASTFuzzerOracleDictGetChecks;
-extern const Event ASTFuzzerOracleMaterializedColumnChecks;
-extern const Event ASTFuzzerOracleAlterModifyChecks;
-extern const Event ASTFuzzerOracleLightweightUpdateChecks;
-extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
-extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
-extern const Event ASTFuzzerOracleSequenceFunnelChecks;
-extern const Event ASTFuzzerOracleSubcolumnChecks;
-extern const Event ASTFuzzerOracleViewTtlChecks;
-extern const Event ASTFuzzerOracleCorrelatedSubqueryChecks;
-extern const Event ASTFuzzerOracleCardinalityChecks;
-extern const Event ASTFuzzerOraclePivotContainmentChecks;
-extern const Event ASTFuzzerOracleMismatches;
 }
 
 namespace DB
@@ -113,8 +64,6 @@ extern const SettingsBool ast_fuzzer_oracle;
 namespace ErrorCodes
 {
 extern const int AST_FUZZER_ORACLE_MISMATCH;
-extern const int TOO_MANY_ROWS;
-extern const int TOO_MANY_BYTES;
 }
 
 
@@ -1324,7 +1273,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
             }
         }
 
-        raiseOracleMismatch(fmt::format( "{}", message), context);
+        raiseOracleMismatch(fmt::format("{}", message), context);
     }
 
     LOG_TRACE(logger, "TLP WHERE oracle passed ({} rows)", ref_rows.size());
