@@ -1081,7 +1081,7 @@ Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> ·
 - `sort time <sort_time>` — the time spent sorting the right table (on the build stage) and each incoming left block (on the probe stage).
 - `sort share <sort_share>%` — `sort time` as a share of *that stage's own busy time* (the sum of its processors' elapsed time), unlike the stage `time` percentage, which is a share of the *whole query's execution time*.
 
-For `full_sorting_merge` and `sorted_merge` joins only the common `Left:` and `Right:` lines are printed. Their parallel variants also print `Sharding: [<ranges>]` when the optimizer partitions an eligible equality join into independent primary-key ranges. `ASOF` joins are not partitioned, so the line is absent for them.
+For `full_sorting_merge` and `sorted_merge` joins only the common `Left:` and `Right:` lines are printed. Their parallel variants also print `Sharding: [(<left_key> = <right_key>), ...]`, listing the join keys the join was partitioned by, when the optimizer splits an eligible equality join into independent per-shard joins. How the partitioning is done differs between them: `parallel_full_sorting_merge` scatters both sides by the hash of the join keys, while `parallel_sorted_merge` splits the primary-key-ordered reads into disjoint primary-key ranges without a shuffle. `ASOF` joins are never partitioned, because their trailing key is an inequality, so the line is absent for them.
 
 For `direct` join only the `Left:` line is printed, since the right side is a key-value store that is looked up directly rather than materialized into rows.
 
