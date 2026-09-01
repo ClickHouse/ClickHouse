@@ -19,6 +19,9 @@ namespace DB
 class SSHKey
 {
 public:
+    /// Loads the same identity from a local key file, when the ssh-agent cannot sign with it.
+    using FallbackKeyLoader = std::function<SSHKey(const String & agent_error)>;
+
     SSHKey() = default;
     ~SSHKey();
 
@@ -52,6 +55,10 @@ private:
     /// It is the public key of the key held by the agent, in the SSH wire format.
     String agent_key_blob;
     String agent_socket_path;
+    /// The ssh-agent is only an optimization: if it refuses to sign - a confirmation-required key,
+    /// a restarted agent, an agent that cannot produce the required signature type - the same
+    /// identity is loaded from its local key file instead. Empty if there is no local file to use.
+    FallbackKeyLoader agent_fallback_loader;
     bool needs_deallocation = true;
 };
 
@@ -68,11 +75,15 @@ public:
     /// If the key is encrypted and `passphrase` is not set, `ask_passphrase` is called to obtain it.
     static SSHKey makePrivateKeyFromFile(const String & filename, const std::optional<String> & passphrase, PassphraseCallback ask_passphrase = {});
     static SSHKey makePublicKeyFromFile(String filename);
+    /// Reads a private key file that is not protected by a passphrase, without ever asking for one.
+    /// Returns `nullopt` if the file cannot be read this way. Only the public part of the result is
+    /// meaningful: it is used to check that a `.pub` file really belongs to the key file next to it.
+    static std::optional<SSHKey> tryMakePrivateKeyFromFileWithoutPassphrase(const String & filename);
     static SSHKey makePublicKeyFromBase64(String base64_key, String type_name);
 
     /// A key that is held by the ssh-agent: only the public key `key_blob` (in the SSH wire format) is known here,
     /// and every signature is made by the agent.
-    static SSHKey makeKeyFromSSHAgent(String key_blob, String agent_socket_path);
+    static SSHKey makeKeyFromSSHAgent(String key_blob, String agent_socket_path, SSHKey::FallbackKeyLoader fallback_loader = {});
 };
 
 /// The parts of the `ssh` client configuration that decide which key to authenticate with.

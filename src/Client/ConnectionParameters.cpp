@@ -58,8 +58,8 @@ namespace fs = std::filesystem;
 
 /// The public key that `ssh-keygen` writes next to a private key, in the SSH wire format.
 /// It is only used to recognize the key among the ones the ssh-agent holds, so a `.pub` file that is
-/// missing, unreadable, or malformed simply means "this key cannot be matched against the agent":
-/// it must not prevent the private key itself from being used.
+/// missing, unreadable, malformed, or stale simply means "this key cannot be matched against the agent":
+/// it must not prevent the private key itself from being used, and it must never select a different key.
 String readPublicKeyBlob(const String & private_key_filename)
 {
     String filename = private_key_filename + ".pub";
@@ -81,13 +81,30 @@ String readPublicKeyBlob(const String & private_key_filename)
 
     String key = contents.substr(key_begin, key_end - key_begin);
 
-    /// `base64Decode` throws on anything outside the alphabet, and a malformed key is not an error here.
+    /// `base64Decode` throws on anything outside the alphabet, as well as on misplaced padding
+    /// (such as `Zm9vYmF=Zm9v`), and a malformed key is not an error here.
     static constexpr std::string_view base64_alphabet
-        = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-    if (key.empty() || key.size() % 4 != 0 || key.find_first_not_of(base64_alphabet) != String::npos)
+        = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (key.empty() || key.size() % 4 != 0)
+        return {};
+    size_t padding = 0;
+    while (padding < key.size() && key[key.size() - 1 - padding] == '=')
+        ++padding;
+    if (padding > 2 || padding == key.size())
+        return {};
+    if (std::string_view(key).substr(0, key.size() - padding).find_first_not_of(base64_alphabet) != String::npos)
         return {};
 
-    return base64Decode(key);
+    String blob = base64Decode(key);
+
+    /// A `.pub` file that does not belong to the key file next to it must not decide which key we
+    /// authenticate with. It can only be checked when the private key is readable without a passphrase;
+    /// an encrypted key - exactly the case the agent is useful for - has to be taken on trust, as `ssh` does.
+    if (std::optional<SSHKey> private_key = SSHKeyFactory::tryMakePrivateKeyFromFileWithoutPassphrase(private_key_filename))
+        if (base64Decode(private_key->getBase64()) != blob)
+            return {};
+
+    return blob;
 }
 
 String askPassphrase(const String & key_name)
@@ -142,22 +159,43 @@ std::optional<SSHAgent::Identity> findIdentityInSSHAgent(const std::vector<Strin
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
+/// Preferring the ssh-agent for an identity must not throw away its local key file: if the agent
+/// refuses to sign - a confirmation-required key, a restarted agent, an agent that lists the key but
+/// cannot produce the required signature type - the key file of the same identity is used instead.
+SSHKey::FallbackKeyLoader makeKeyFileFallback(const String & filename, const std::optional<String> & passphrase)
+{
+    if (!fs::is_regular_file(filename))
+        return {};
+
+    return [filename, passphrase](const String & agent_error)
+    {
+        fmt::print(stderr, "The ssh-agent could not sign with the selected key ({}). Using the key file {} instead.\n", agent_error, filename);
+        return loadPrivateKey(filename, passphrase);
+    };
+}
+
 /// Finds the key to authenticate with: the one that `ssh` would use for this host,
 /// either from the ssh-agent, or from a file in `~/.ssh`, unless the file name is given explicitly.
 SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const String & filename, const std::optional<String> & passphrase)
 {
-    SSHClientConfiguration configuration = getSSHClientConfiguration(host, user, port);
-    String agent_socket_path = configuration.agent_socket_path.value_or(SSHAgent::getSocketPath());
-
+    /// An explicitly named key file does not depend on the ssh configuration at all: the configuration
+    /// cannot change which key is used here, so a syntax error in an unrelated `Match` or `Include`
+    /// stanza of `~/.ssh/config` must not prevent the named file from being used.
     if (!filename.empty())
     {
+        String explicit_agent_socket_path = SSHAgent::getSocketPath();
+
         /// If the key is also held by the ssh-agent, use the agent: this way the passphrase is not needed.
         if (!passphrase.has_value())
-            if (auto identity = findIdentityInSSHAgent({filename}, agent_socket_path))
-                return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob, agent_socket_path);
+            if (auto identity = findIdentityInSSHAgent({filename}, explicit_agent_socket_path))
+                return SSHKeyFactory::makeKeyFromSSHAgent(
+                    identity->key_blob, explicit_agent_socket_path, makeKeyFileFallback(filename, passphrase));
 
         return loadPrivateKey(filename, passphrase);
     }
+
+    SSHClientConfiguration configuration = getSSHClientConfiguration(host, user, port);
+    String agent_socket_path = configuration.agent_socket_path.value_or(SSHAgent::getSocketPath());
 
     /// The configured identities are tried in order: the first available one is used.
     /// For each identity, its copy held by the ssh-agent is preferred: it does not need a passphrase.
@@ -191,7 +229,8 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
                     if (identity.key_blob == key_blob)
                     {
                         fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identity.comment);
-                        return SSHKeyFactory::makeKeyFromSSHAgent(identity.key_blob, agent_socket_path);
+                        return SSHKeyFactory::makeKeyFromSSHAgent(
+                            identity.key_blob, agent_socket_path, makeKeyFileFallback(identity_file, passphrase));
                     }
                 }
             }

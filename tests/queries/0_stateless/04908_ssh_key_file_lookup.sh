@@ -78,6 +78,15 @@ echo '--- A dead ssh-agent socket does not prevent an explicit key file from bei
 SSH_AUTH_SOCK="${SSH_HOME}/missing-agent.sock" HOME="${SSH_HOME}" ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --ssh-key-file "${SSH_HOME}/.ssh/id_ed25519" \
     --query "SELECT currentUser() = '${USER_NAME}'" 2>&1 | sed "s|${SSH_HOME}|\$HOME|g"
 
+echo '--- A malformed ssh config does not prevent an explicit key file from being used'
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+Match host
+    IdentityFile
+EOF
+HOME="${SSH_HOME}" ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --ssh-key-file "${SSH_HOME}/.ssh/id_ed25519" \
+    --query "SELECT currentUser() = '${USER_NAME}'" 2>&1 | sed "s|${SSH_HOME}|\$HOME|g"
+rm "${SSH_HOME}/.ssh/config"
+
 cat > "${SSH_HOME}/.ssh/config" <<'EOF'
 IdentityAgent ${CLICKHOUSE_TEST_UNSET_AGENT_SOCKET}
 EOF
@@ -95,6 +104,21 @@ mv "${SSH_HOME}/.ssh/id_ed25519.pub" "${SSH_HOME}/.ssh/id_ed25519.pub.saved"
 echo 'ssh-ed25519 this-is-not-base64!' > "${SSH_HOME}/.ssh/id_ed25519.pub"
 run_client
 mv "${SSH_HOME}/.ssh/id_ed25519.pub.saved" "${SSH_HOME}/.ssh/id_ed25519.pub"
+
+echo '--- A public key file with misplaced base64 padding does not prevent the private key from being used'
+mv "${SSH_HOME}/.ssh/id_ed25519.pub" "${SSH_HOME}/.ssh/id_ed25519.pub.saved"
+echo 'ssh-ed25519 Zm9vYmF=Zm9v the ed25519 key' > "${SSH_HOME}/.ssh/id_ed25519.pub"
+run_client
+mv "${SSH_HOME}/.ssh/id_ed25519.pub.saved" "${SSH_HOME}/.ssh/id_ed25519.pub"
+
+# The public key file names the rsa key, which the agent also holds, but the private key next to it is the ed25519 key.
+echo '--- A stale public key file does not select a different key from the ssh-agent'
+ssh-add -q "${SSH_HOME}/.ssh/id_rsa" 2>/dev/null
+mv "${SSH_HOME}/.ssh/id_ed25519.pub" "${SSH_HOME}/.ssh/id_ed25519.pub.saved"
+cp "${SSH_HOME}/.ssh/id_rsa.pub" "${SSH_HOME}/.ssh/id_ed25519.pub"
+run_client
+mv "${SSH_HOME}/.ssh/id_ed25519.pub.saved" "${SSH_HOME}/.ssh/id_ed25519.pub"
+ssh-add -qd "${SSH_HOME}/.ssh/id_rsa" 2>/dev/null
 
 # Both keys exist locally, but only the ed25519 key is in the ssh-agent.
 echo '--- The first configured identity wins even when only a later one is in the ssh-agent'

@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LIBSSH_ERROR;
+    extern const int SSH_AGENT_ERROR;
 }
 
 namespace
@@ -271,6 +272,15 @@ SSHKey SSHKeyFactory::makePrivateKeyFromFile(const String & filename, const std:
     return SSHKey(key);
 }
 
+std::optional<SSHKey> SSHKeyFactory::tryMakePrivateKeyFromFileWithoutPassphrase(const String & filename)
+{
+    ssh_key key = nullptr;
+    /// A non-null passphrase means that the callback asking the user for one is never invoked.
+    if (int rc = ssh_pki_import_privkey_file(filename.c_str(), "", nullptr, nullptr, &key); rc != SSH_OK)
+        return {};
+    return SSHKey(key);
+}
+
 SSHKey SSHKeyFactory::makePublicKeyFromFile(String filename)
 {
     ssh_key key = nullptr;
@@ -291,7 +301,7 @@ SSHKey SSHKeyFactory::makePublicKeyFromBase64(String base64_key, String type_nam
     return SSHKey(key);
 }
 
-SSHKey SSHKeyFactory::makeKeyFromSSHAgent(String key_blob, String agent_socket_path)
+SSHKey SSHKeyFactory::makeKeyFromSSHAgent(String key_blob, String agent_socket_path, SSHKey::FallbackKeyLoader fallback_loader)
 {
     /// The agent signs with a key we never import into OpenSSL, so apply the same FIPS restriction here.
     if (OpenSSLInitializer::instance().isFIPSEnabled()
@@ -301,6 +311,7 @@ SSHKey SSHKeyFactory::makeKeyFromSSHAgent(String key_blob, String agent_socket_p
     SSHKey key;
     key.agent_key_blob = std::move(key_blob);
     key.agent_socket_path = std::move(agent_socket_path);
+    key.agent_fallback_loader = std::move(fallback_loader);
     return key;
 }
 
@@ -309,6 +320,7 @@ SSHKey::SSHKey(const SSHKey & other)
     key = ssh_key_dup(other.key);
     agent_key_blob = other.agent_key_blob;
     agent_socket_path = other.agent_socket_path;
+    agent_fallback_loader = other.agent_fallback_loader;
 }
 
 SSHKey::SSHKey(SSHKey && other) noexcept
@@ -317,6 +329,7 @@ SSHKey::SSHKey(SSHKey && other) noexcept
     other.key = nullptr;
     agent_key_blob = std::move(other.agent_key_blob);
     agent_socket_path = std::move(other.agent_socket_path);
+    agent_fallback_loader = std::move(other.agent_fallback_loader);
 }
 
 SSHKey & SSHKey::operator=(const SSHKey & other)
@@ -327,6 +340,7 @@ SSHKey & SSHKey::operator=(const SSHKey & other)
     key = ssh_key_dup(other.key);
     agent_key_blob = other.agent_key_blob;
     agent_socket_path = other.agent_socket_path;
+    agent_fallback_loader = other.agent_fallback_loader;
     return *this;
 }
 
@@ -337,6 +351,7 @@ SSHKey & SSHKey::operator=(SSHKey && other) noexcept
     other.key = nullptr;
     agent_key_blob = std::move(other.agent_key_blob);
     agent_socket_path = std::move(other.agent_socket_path);
+    agent_fallback_loader = std::move(other.agent_fallback_loader);
     return *this;
 }
 
@@ -354,7 +369,23 @@ bool SSHKey::isEqual(const SSHKey & other) const
 String SSHKey::signString(std::string_view input) const
 {
     if (!agent_key_blob.empty())
-        return SSHAgent::signString(agent_key_blob, input, SIGNATURE_NAMESPACE, agent_socket_path);
+    {
+        if (!agent_fallback_loader)
+            return SSHAgent::signString(agent_key_blob, input, SIGNATURE_NAMESPACE, agent_socket_path);
+
+        /// The agent was only preferred because it saves the passphrase. If it cannot sign after all,
+        /// the local key file of the same identity is still there, and `ssh` would use it as well.
+        try
+        {
+            return SSHAgent::signString(agent_key_blob, input, SIGNATURE_NAMESPACE, agent_socket_path);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::SSH_AGENT_ERROR)
+                throw;
+            return agent_fallback_loader(e.message()).signString(input);
+        }
+    }
 
     char * signature = nullptr;
     if (int rc = sshsig_sign(input.data(), input.size(), key, nullptr, SIGNATURE_NAMESPACE, SSHSIG_DIGEST_SHA2_256, &signature); rc != SSH_OK)

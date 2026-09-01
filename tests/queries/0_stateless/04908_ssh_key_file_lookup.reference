@@ -15,9 +15,17 @@ Using the SSH key from $HOME/.ssh/id_ed25519.
 No usable SSH key found: none of these files contains a key that could be used: $HOME/.ssh/broken_id
 --- A dead ssh-agent socket does not prevent an explicit key file from being used
 1
+--- A malformed ssh config does not prevent an explicit key file from being used
+1
 --- An unset IdentityAgent environment variable does not prevent an explicit key file from being used
 1
 --- A malformed public key file does not prevent the private key from being used
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- A public key file with misplaced base64 padding does not prevent the private key from being used
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- A stale public key file does not select a different key from the ssh-agent
 Using the SSH key from $HOME/.ssh/id_ed25519.
 1
 --- The first configured identity wins even when only a later one is in the ssh-agent
