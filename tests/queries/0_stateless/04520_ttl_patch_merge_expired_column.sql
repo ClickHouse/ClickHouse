@@ -71,3 +71,29 @@ SELECT 'rows kept while blocked', count() FROM t_ttl_patch_rows_where WHERE y = 
 
 SYSTEM START TTL MERGES t_ttl_patch_rows_where;
 DROP TABLE t_ttl_patch_rows_where;
+
+-- An index reading the expired column keeps it in the merge header (MergeTask's
+-- merge_required_columns), so the preserve decision cannot key on header presence.
+DROP TABLE IF EXISTS t_ttl_patch_indexed SYNC;
+
+CREATE TABLE t_ttl_patch_indexed (d DateTime, x DateTime TTL x + INTERVAL 1 SECOND, y Int32,
+    INDEX idx_x (x, y) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_ttl_patch_indexed VALUES (now() - INTERVAL 1 HOUR, now() - INTERVAL 1 HOUR, 1);
+
+OPTIMIZE TABLE t_ttl_patch_indexed FINAL;
+
+SYSTEM STOP TTL MERGES t_ttl_patch_indexed;
+UPDATE t_ttl_patch_indexed SET y = 2 WHERE TRUE;
+OPTIMIZE TABLE t_ttl_patch_indexed FINAL;
+
+-- The part does not store x any more, so its rule keeps the finished pre-merge info rather than a
+-- fresh unfinished one that would reselect the part for TTL forever.
+SELECT 'indexed expired column keeps its info', countIf(columns_ttl_info.max[indexOf(columns_ttl_info.column, 'x')] > 0)
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_patch_indexed' AND active AND partition_id NOT LIKE 'patch-%';
+
+SYSTEM START TTL MERGES t_ttl_patch_indexed;
+DROP TABLE t_ttl_patch_indexed;
