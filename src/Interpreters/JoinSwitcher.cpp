@@ -6,11 +6,23 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char join_switcher_throw_after_hash_release[];
+}
 
 namespace
 {
@@ -116,16 +128,26 @@ bool JoinSwitcher::switchJoin()
         "Memory limit reached with HashJoin ({} bytes, {} rows), switching to PartialMergeJoin",
         hash_join->getTotalByteCount(),
         hash_join->getTotalRowCount());
-    BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
 
-    /// Destroy old join & create new one.
-    join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
+    /// Construct first so a throw here leaves `join` as a live HashJoin with `switched == false`.
+    auto merge_join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
+
+    /// Keep the old table alive for the drain. Publish `MergeJoin` before releasing so a throw
+    /// cannot send waiters back onto a drained HashJoin.
+    auto old_join = std::move(join);
+    switched.store(true, std::memory_order_release);
+    join = merge_join;
+
+    BlocksList right_blocks = assert_cast<HashJoin *>(old_join.get())->releaseJoinedBlocks(true);
+
+    fiu_do_on(FailPoints::join_switcher_throw_after_hash_release, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after HashJoin data was released");
+    });
 
     bool success = true;
     for (const Block & saved_block : right_blocks)
-        success = success && join->addBlockToJoin(saved_block, saved_block.rows(), /* worker_id = */ 0, true);
+        success = success && merge_join->addBlockToJoin(saved_block, saved_block.rows(), /* worker_id = */ 0, true);
 
-    switched.store(true, std::memory_order_release);
     return success;
 }
 

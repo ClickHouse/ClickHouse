@@ -170,6 +170,7 @@ public:
 private:
     JoinPtr join;
     SizeLimits limits;
+    /// True once HashJoin is no longer concurrently fillable (drain has started).
     std::atomic<bool> switched{false};
     mutable SharedMutex switch_mutex;
     std::shared_ptr<TableJoin> table_join;
@@ -178,9 +179,9 @@ private:
     const bool use_parallel_layout;
     bool supports_parallel_non_joined_blocks_processing = false;
 
-    /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
-    /// Throws an error if join-on-disk do not support JOIN kind or strictness.
-    /// Caller holds an exclusive `switch_mutex`.
+    /// Drain HashJoin onto MergeJoin. Caller holds exclusive `switch_mutex`.
+    /// `MergeJoin` is built first; `join` and `switched` are published before the hash
+    /// table is released so a throw cannot send fillers back onto a drained HashJoin.
     bool switchJoin();
 };
 
