@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -201,6 +202,15 @@ static CoreAnalysisResult buildExpressionCoreDAG(
         auto subquery_tree = subquery_set->detachQueryTree();
         if (subquery_tree)
         {
+            /// The expression is resolved by running `QueryAnalyzer` directly rather than the whole
+            /// `QueryAnalysisPass`, so the unique `__tableN` table aliases that pass appends at the
+            /// end were never created.  Without them `GlobalPlannerContext::createColumnIdentifier`
+            /// derives the identifier from the bare column name, and a set subquery reading the same
+            /// column name from two sources (e.g. `x IN (SELECT id FROM (SELECT id FROM t))`) makes
+            /// the planner throw "Column identifier id is already registered".  Assign the aliases
+            /// here, exactly like the other places that plan a detached set subquery.
+            createUniqueAliasesIfNecessary(subquery_tree, execution_context);
+
             auto subquery_options = SelectQueryOptions{}.subquery();
             /// Mirror `Planner::addBuildSubqueriesForSetsStepIfNeeded`: the set is built
             /// here (via `buildSetInplace`) before the surrounding query materializes its
