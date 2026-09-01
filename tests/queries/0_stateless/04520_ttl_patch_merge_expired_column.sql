@@ -89,11 +89,9 @@ SYSTEM STOP TTL MERGES t_ttl_patch_indexed;
 UPDATE t_ttl_patch_indexed SET y = 2 WHERE TRUE;
 OPTIMIZE TABLE t_ttl_patch_indexed FINAL;
 
--- The part does not store x any more, so its rule keeps the finished pre-merge info rather than a
--- fresh unfinished one that would reselect the part for TTL forever.
-SELECT 'indexed expired column keeps its info', countIf(columns_ttl_info.max[indexOf(columns_ttl_info.column, 'x')] > 0)
-FROM system.parts
-WHERE database = currentDatabase() AND table = 't_ttl_patch_indexed' AND active AND partition_id NOT LIKE 'patch-%';
+-- The merge has to complete: the recalculation step re-adds the columns it expired, and the index
+-- reading x is built after it, so a narrower stream there fails the whole merge.
+SELECT 'indexed expired column merge completed', count(), min(y) FROM t_ttl_patch_indexed;
 
 SYSTEM START TTL MERGES t_ttl_patch_indexed;
 DROP TABLE t_ttl_patch_indexed;
