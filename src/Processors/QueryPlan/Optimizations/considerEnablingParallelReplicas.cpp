@@ -351,6 +351,22 @@ bool shouldShipJoinPredicate(const JoinAboveFragment & join, size_t rows_to_read
     return rows_saved_per_replica > *build_side_rows;
 }
 
+/// Whether re-running index analysis with the shipped predicate could actually restrict what the replicas
+/// read. Only the key condition knows: the predicate prunes when its column is usable by the primary key,
+/// and nothing else about it - not its selectivity, not the data - decides that.
+///
+/// When it cannot prune, the single-node index analysis is still exactly right for this read, so it is
+/// reused and the expensive part is skipped. The predicate is still applied, wherever the optimizer put it:
+/// moved into PREWHERE, or left as a filter above the read. Only the range selection is avoided.
+bool shippedPredicateCanRestrictRanges(const ReadFromMergeTree & read)
+{
+    const auto & indexes = read.getIndexes();
+    if (!indexes || !indexes->key_condition)
+        return false;
+
+    return !indexes->key_condition->generateUnsubstituted().alwaysUnknownOrTrue();
+}
+
 /// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas
 void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
@@ -613,11 +629,12 @@ void considerEnablingParallelReplicas(
                 /// reusing it would fix the mark ranges before the set exists - throwing away the granule
                 /// pruning that is most of what shipping buys. Let the branch read analyze itself instead,
                 /// once the set is there.
-                if (shipped_join_predicate)
+                if (shipped_join_predicate && shippedPredicateCanRestrictRanges(*local_replica_plan_reading_step))
                 {
                     LOG_DEBUG(
                         getLogger("optimizeTree"),
-                        "Not reusing the single-node index analysis: the shipped predicate has to be analyzed with");
+                        "Not reusing the single-node index analysis: the shipped predicate can restrict the key range, "
+                        "and the analysis to reuse was made before the predicate existed");
                 }
                 else if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
