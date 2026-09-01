@@ -17,15 +17,18 @@ DROP TABLE IF EXISTS t_infer_r;
 CREATE TABLE t_infer_l (id UInt64, lk UInt64, lv UInt64) ENGINE = MergeTree ORDER BY lk;
 CREATE TABLE t_infer_r (id UInt64, rk UInt64, rv UInt64) ENGINE = MergeTree ORDER BY rk;
 
-INSERT INTO t_infer_l SELECT number, number % 100, number FROM numbers(10000);
-INSERT INTO t_infer_r SELECT number, number, number FROM numbers(100);
+-- The two key ranges overlap in [50, 119] only, so 5000 left rows and 30 right rows have no match. A filter
+-- pushed into the side an outer join does not preserve would drop them, which the result rows below see.
+-- The probed key 80 is matched on both sides.
+INSERT INTO t_infer_l SELECT number, number % 120, number FROM numbers(12000);
+INSERT INTO t_infer_r SELECT number, 50 + number, number FROM numbers(100);
 
 SELECT '-- LEFT JOIN, predicate on the right key only, join_use_nulls = 1: lk is inferred';
 SELECT substring(explain, position(explain, 'Condition:')) FROM (
     EXPLAIN PLAN indexes = 1
     SELECT count() FROM t_infer_l AS l
     LEFT JOIN t_infer_r AS r ON l.lk = r.rk
-    WHERE r.rk = 42
+    WHERE r.rk = 80
     SETTINGS join_use_nulls = 1
 ) WHERE explain LIKE '%Condition:%';
 
@@ -34,7 +37,7 @@ SELECT substring(explain, position(explain, 'Condition:')) FROM (
     EXPLAIN PLAN indexes = 1
     SELECT count() FROM t_infer_l AS l
     LEFT JOIN t_infer_r AS r ON l.lk = r.rk
-    WHERE r.rk = 42
+    WHERE r.rk = 80
     SETTINGS join_use_nulls = 0
 ) WHERE explain LIKE '%Condition:%';
 
@@ -43,34 +46,69 @@ SELECT substring(explain, position(explain, 'Condition:')) FROM (
     EXPLAIN PLAN indexes = 1
     SELECT count() FROM t_infer_l AS l
     RIGHT JOIN t_infer_r AS r ON l.lk = r.rk
-    WHERE l.lk = 42
+    WHERE l.lk = 80
     SETTINGS join_use_nulls = 1
 ) WHERE explain LIKE '%Condition:%';
 
-SELECT '-- FULL JOIN converted to INNER, join_use_nulls = 1: both keys are inferred';
+-- A predicate on the right key alone admits a right-only row, whose left side is null, so the left not
+-- matched rows may be dropped but the right ones may not: FULL becomes RIGHT. The join kind is read off the
+-- plan next to each condition, because the conditions alone do not distinguish RIGHT from INNER.
+SELECT '-- FULL JOIN converted to RIGHT, join_use_nulls = 1: lk is inferred, rk is filtered directly';
 SELECT substring(explain, position(explain, 'Condition:')) FROM (
     EXPLAIN PLAN indexes = 1
     SELECT count() FROM t_infer_l AS l
     FULL JOIN t_infer_r AS r ON l.lk = r.rk
-    WHERE r.rk = 42
+    WHERE r.rk = 80
     SETTINGS join_use_nulls = 1
 ) WHERE explain LIKE '%Condition:%';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_infer_l AS l
+    FULL JOIN t_infer_r AS r ON l.lk = r.rk
+    WHERE r.rk = 80
+    SETTINGS join_use_nulls = 1
+) WHERE trim(explain) LIKE 'Type:%';
 
 SELECT '-- FULL JOIN converted to LEFT, join_use_nulls = 1: rk is inferred, lk is filtered directly';
 SELECT substring(explain, position(explain, 'Condition:')) FROM (
     EXPLAIN PLAN indexes = 1
     SELECT count() FROM t_infer_l AS l
     FULL JOIN t_infer_r AS r ON l.lk = r.rk
-    WHERE l.lk = 42
+    WHERE l.lk = 80
     SETTINGS join_use_nulls = 1
 ) WHERE explain LIKE '%Condition:%';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_infer_l AS l
+    FULL JOIN t_infer_r AS r ON l.lk = r.rk
+    WHERE l.lk = 80
+    SETTINGS join_use_nulls = 1
+) WHERE trim(explain) LIKE 'Type:%';
+
+-- Null rejecting on both sides, so both kinds of not matched row may be dropped: FULL becomes INNER. This is
+-- the only shape in which both keys are converted and reachable at once, so both casts are built in one pass.
+SELECT '-- FULL JOIN converted to INNER, join_use_nulls = 1: each key is inferred next to its own predicate';
+SELECT substring(explain, position(explain, 'Condition:')) FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT count() FROM t_infer_l AS l
+    FULL JOIN t_infer_r AS r ON l.lk = r.rk
+    WHERE l.lk = 80 AND r.rk = 80
+    SETTINGS join_use_nulls = 1
+) WHERE explain LIKE '%Condition:%';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_infer_l AS l
+    FULL JOIN t_infer_r AS r ON l.lk = r.rk
+    WHERE l.lk = 80 AND r.rk = 80
+    SETTINGS join_use_nulls = 1
+) WHERE trim(explain) LIKE 'Type:%';
 
 SELECT '-- a predicate on a non-key column infers nothing, so lk stays unconstrained';
 SELECT substring(explain, position(explain, 'Condition:')) FROM (
     EXPLAIN PLAN indexes = 1
     SELECT count() FROM t_infer_l AS l
     LEFT JOIN t_infer_r AS r ON l.lk = r.rk
-    WHERE r.rv = 42
+    WHERE r.rv = 80
     SETTINGS join_use_nulls = 1
 ) WHERE explain LIKE '%Condition:%';
 
@@ -96,34 +134,79 @@ SELECT trim(explain) FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_infer_l AS l
     LEFT JOIN t_infer_r AS r ON l.lk = r.rk
-    WHERE r.rk = 42
+    WHERE r.rk = 80
     SETTINGS join_use_nulls = 1
 ) WHERE trim(explain) LIKE 'Type:%';
 
 SELECT '-- results do not depend on join_use_nulls or on the conversion';
 SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
-LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 42
+LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 80
 SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1;
 SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
-LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 42
+LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 80
 SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 0;
 SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
-LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 42
+LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 80
 SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 1;
 SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
-LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 42
+LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 80
 SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
 
 SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
-RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 42
+RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
 SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1;
 SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
-RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 42
+RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
 SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 0;
 SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
-RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 42
+RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
 SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
 
+-- The not preserved side of a FULL join contributes rows whose columns are null under join_use_nulls = 1 and
+-- default under 0, so `coalesce` is what makes the two settings comparable at all.
+SELECT '-- FULL JOIN converted to RIGHT: unmatched rows survive every setting';
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 0;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
+
+SELECT '-- FULL JOIN converted to LEFT';
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 0;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
+
+SELECT '-- FULL JOIN converted to INNER';
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80 AND r.rk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80 AND r.rk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 0;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80 AND r.rk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0)) FROM t_infer_l AS l
+FULL JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80 AND r.rk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
+
+SELECT '-- the left rows with no match, which a pushed down predicate would have dropped';
 SELECT count() FROM t_infer_l AS l
 LEFT JOIN t_infer_r AS r ON l.lk = r.rk WHERE r.rk IS NULL
 SETTINGS join_use_nulls = 1;
@@ -172,6 +255,26 @@ CREATE TABLE t_infer_tup_r (trk Tuple(UInt64, String)) ENGINE = MergeTree ORDER 
 
 INSERT INTO t_infer_tup_l SELECT (number % 100, toString(number % 100)) FROM numbers(10000);
 INSERT INTO t_infer_tup_r SELECT (number, toString(number)) FROM numbers(100);
+
+-- Casting the left key to the widened type is what proves the inferred predicate reached the left input,
+-- since the condition below cannot show it.
+SELECT '-- Tuple key: the left key is cast to the widened type, so the inferred predicate is pushed';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_infer_tup_l AS l
+    LEFT JOIN t_infer_tup_r AS r ON l.tlk = r.trk
+    WHERE r.trk = (42, '42')
+    SETTINGS join_use_nulls = 1
+) WHERE explain LIKE '%CAST(tlk %Nullable(Tuple(UInt64, String))%';
+
+SELECT '-- and it prunes nothing: the left condition stays true';
+SELECT substring(explain, position(explain, 'Condition:')) FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT count() FROM t_infer_tup_l AS l
+    LEFT JOIN t_infer_tup_r AS r ON l.tlk = r.trk
+    WHERE r.trk = (42, '42')
+    SETTINGS join_use_nulls = 1
+) WHERE explain LIKE '%Condition:%';
 
 SELECT '-- Tuple key, join_use_nulls 1 then 0';
 SELECT count() FROM t_infer_tup_l AS l

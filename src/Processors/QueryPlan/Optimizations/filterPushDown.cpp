@@ -695,24 +695,29 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         const ColumnWithTypeAndName & replacement,
         bool replaced_side_push_down_available)
     {
+        /// Every member of an equivalence class holds the same value on a matched row, so a second
+        /// substitution for one name would be as valid, and registering it would leave the first unused.
+        if (equivalent_columns.contains(replaced_name))
+            return;
+
         /// A name keyed substitution has nothing to apply to unless the name is in the JOIN output, which
         /// a key pruned out of it is not, and an expression key never is.
         const auto * replaced = join_header->findByName(replaced_name);
         if (!replaced)
             return;
 
-        /// This key is not converted, some other key of the same condition is. The invariant holds for it
-        /// as it stands, exactly as on a side that is not type changing.
+        /// A JOIN that still emits not matched rows on this side does not let a predicate over it be
+        /// pushed down, and therefore does not let one be inferred from it either.
+        if (!replaced_side_push_down_available)
+            return;
+
+        /// This key is not converted, some other key of the same condition is, so the replacement already
+        /// carries the type the name has in the JOIN output.
         if (replaced->type->equals(*source.getType()))
         {
             equivalent_columns[replaced_name] = replacement;
             return;
         }
-
-        /// A JOIN that still emits not matched rows on this side does not let a predicate over it be
-        /// pushed down, and therefore does not let one be inferred from it either.
-        if (!replaced_side_push_down_available)
-            return;
 
         /// Accept only the widening `join_use_nulls` itself adds. `Safe` leaves a type that cannot be
         /// inside `Nullable` unchanged, which the branch above has already returned on.
