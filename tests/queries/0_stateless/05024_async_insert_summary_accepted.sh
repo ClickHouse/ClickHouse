@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# X-ClickHouse-Summary must not be all-zero for async inserts that don't wait for the flush.
 # https://github.com/ClickHouse/ClickHouse/issues/57768
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

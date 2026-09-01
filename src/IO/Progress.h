@@ -24,7 +24,7 @@ struct ProgressValues
     UInt64 written_rows = 0;
     UInt64 written_bytes = 0;
 
-    /// Rows/bytes accepted into the buffer of an asynchronous INSERT (not yet flushed to the table).
+    /// Async INSERT buffer metrics (summary-only, not in native protocol).
     UInt64 accepted_rows = 0;
     UInt64 accepted_bytes = 0;
 
@@ -37,8 +37,6 @@ struct ProgressValues
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
-    /// accepted_rows/accepted_bytes are only written when write_zero_values is set (Verbose mode):
-    /// they belong to the final X-ClickHouse-Summary, not to incremental progress updates.
     void writeJSON(WriteBuffer & out, bool write_zero_values) const;
 };
 
@@ -100,7 +98,7 @@ struct Progress
     std::atomic<UInt64> written_rows {0};
     std::atomic<UInt64> written_bytes {0};
 
-    /// See ProgressValues::accepted_rows. Not sent over the native protocol, only reported in X-ClickHouse-Summary.
+    /// See ProgressValues::accepted_rows.
     std::atomic<UInt64> accepted_rows {0};
     std::atomic<UInt64> accepted_bytes {0};
 
@@ -128,8 +126,7 @@ struct Progress
     explicit Progress(FileProgress file_progress)
         : read_bytes(file_progress.read_bytes), total_bytes_to_read(file_progress.total_bytes_to_read) {}
 
-    /// True when this update carries nothing but accepted_rows/accepted_bytes. Those are stripped
-    /// from X-ClickHouse-Progress, so emitting such an update would produce an empty progress header.
+    /// True when only accepted_* fields are set (would produce empty X-ClickHouse-Progress).
     bool onlyHasAcceptedFields() const;
 
     void read(ReadBuffer & in, UInt64 server_revision);

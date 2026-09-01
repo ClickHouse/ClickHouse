@@ -108,7 +108,6 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
     write("\"read_bytes\"", read_bytes);
     write("\"written_rows\"", written_rows);
     write("\"written_bytes\"", written_bytes);
-    /// Written only when set (asynchronous inserts) to keep the summary unchanged for other queries.
     if (write_zero_values && accepted_rows)
         write("\"accepted_rows\"", accepted_rows);
     if (write_zero_values && accepted_bytes)
@@ -171,7 +170,6 @@ bool Progress::onlyHasAcceptedFields() const
 {
     if (!accepted_rows.load(std::memory_order_relaxed) && !accepted_bytes.load(std::memory_order_relaxed))
         return false;
-
     return !read_rows.load(std::memory_order_relaxed) && !read_bytes.load(std::memory_order_relaxed)
         && !total_rows_to_read.load(std::memory_order_relaxed) && !total_bytes_to_read.load(std::memory_order_relaxed)
         && !written_rows.load(std::memory_order_relaxed) && !written_bytes.load(std::memory_order_relaxed)
@@ -306,7 +304,6 @@ void Progress::write(WriteBuffer & out, UInt64 client_revision) const
 
 void Progress::writeJSON(WriteBuffer & out, DisplayMode mode) const
 {
-    /// Verbose mode is used only for the final X-ClickHouse-Summary header.
     getValues().writeJSON(out, mode == DisplayMode::Verbose);
 }
 
