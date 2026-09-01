@@ -685,6 +685,7 @@ def test_simple_aggregate_function_type_metadata():
     _assert_schema_equal_with_metadata(schema_from_get_schema, flight_info.schema)
     _assert_schema_equal_with_metadata(flight_info.schema, table.schema)
     assert table.num_rows == 1
+    assert table.column("bool_col").to_pylist() == [True]
 
     tables_info = client.get_tables(
         db_schema_filter_pattern="default",
@@ -714,7 +715,7 @@ def test_simple_aggregate_function_type_metadata():
             b"SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC')))",
         ),
         "bool_col": (
-            pa.uint8(),
+            pa.bool_(),
             b"Bool",
             b"SimpleAggregateFunction(anyLast, Bool)",
         ),

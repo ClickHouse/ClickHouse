@@ -2,33 +2,35 @@
 
 #if USE_ARROW || USE_PARQUET
 
-#include <Core/DecimalFunctions.h>
-#include <Core/AccurateComparison.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Common/DateLUTImpl.h>
+#include <Core/AccurateComparison.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <Common/IntervalKind.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Port.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/IntervalKind.h>
+#include <Common/typeid_cast.h>
 
 #include <arrow/api.h>
 #include <arrow/builder.h>
@@ -146,6 +148,15 @@ namespace DB
         {"Int256", arrow::fixed_size_binary(sizeof(Int256))},
         {"UInt256", arrow::fixed_size_binary(sizeof(UInt256))},
     };
+
+    static bool isBoolForArrow(const DataTypePtr & type)
+    {
+        if (isBool(type))
+            return true;
+
+        const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+        return simple_aggregate_function && isBool(simple_aggregate_function->getArgumentsDataTypes().front());
+    }
 
 
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
@@ -1436,7 +1447,7 @@ namespace DB
                 break;
             case TypeIndex::UInt8:
             {
-                if (isBool(column_type))
+                if (isBoolForArrow(column_type))
                     fillArrowArrayWithBoolColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 else
                     fillArrowArrayWithNumericColumnData<UInt8, arrow::UInt8Builder>(column, null_bytemap, format_name, array_builder, start, end);
@@ -1695,7 +1706,7 @@ namespace DB
         if (isStringOrFixedString(column_type) && settings.output_string_as_string)
             return arrow::utf8();
 
-        if (isBool(column_type))
+        if (isBoolForArrow(column_type))
             return arrow::boolean();
 
         if (isIPv6(column_type))
