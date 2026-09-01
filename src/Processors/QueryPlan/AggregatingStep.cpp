@@ -76,11 +76,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-/// First query-plan serialization version with the `only_merge` flag (bit 128), set on the merge
-/// step synthesized by the Cascades aggregation pushdown. Gated on both sides so a mixed-version
-/// cluster fails at plan time.
-static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 11;
-
 static bool memoryBoundMergingWillBeUsed(
     bool should_produce_results_in_order_of_bucket_number,
     bool memory_bound_merging_of_aggregation_results_enabled,
