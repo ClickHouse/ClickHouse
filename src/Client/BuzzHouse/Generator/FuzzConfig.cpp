@@ -974,25 +974,6 @@ void FuzzConfig::loadServerConfigurations()
         "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup', 'attach_to_group_failure', "
         "'thread_group_switcher_post_attach_failure') ORDER BY rand() LIMIT 10");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
-    /// Probe which function_implementation values the server supports. They depend on how the binary
-    /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an
-    /// unsupported value raises NO_SUITABLE_FUNCTION_IMPLEMENTATION, so test each candidate. Only
-    /// default, x86-64-v3 and x86-64-v4 implementations are registered in the server's source.
-    this->function_implementations.clear();
-    for (const auto & entry : {"default", "x86-64-v3", "x86-64-v4"})
-    {
-        if (processServerQuery(
-                false, fmt::format("SELECT ignore(sipHash64(materialize(1))) SETTINGS function_implementation = '{}' FORMAT Null;", entry)))
-        {
-            this->function_implementations.emplace_back(entry);
-        }
-    }
-    LOG_INFO(
-        log,
-        "Found {} entries for function implementations{}{}",
-        this->function_implementations.size(),
-        this->function_implementations.empty() ? "" : ": ",
-        fmt::join(this->function_implementations, ", "));
     loadFunctions();
 }
 
