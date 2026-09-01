@@ -179,22 +179,29 @@ size_t tryOptimizeUseRowWrappers(
         /// `FINAL` reads may move the very same DAGs into the deferred slots (see
         /// `ReadFromMergeTree::deferFiltersAfterFinalIfNeeded`), where they still run inside this
         /// step, so the deferred carriers are excluded too.
-        std::unordered_set<String> filter_columns;
-        auto exclude_filter_columns = [&](const Names & names)
+        std::unordered_set<String> not_coverable;
+        auto keep_direct = [&](const Names & names)
         {
-            filter_columns.insert(names.begin(), names.end());
+            not_coverable.insert(names.begin(), names.end());
         };
 
         if (const auto & prewhere_info = reading->getPrewhereInfo())
-            exclude_filter_columns(prewhere_info->prewhere_actions.getRequiredColumnsNames());
+            keep_direct(prewhere_info->prewhere_actions.getRequiredColumnsNames());
         if (const auto & row_level_filter = reading->getRowLevelFilter())
-            exclude_filter_columns(row_level_filter->actions.getRequiredColumnsNames());
+            keep_direct(row_level_filter->actions.getRequiredColumnsNames());
         if (const auto & deferred_prewhere_info = reading->getDeferredPrewhereInfo())
-            exclude_filter_columns(deferred_prewhere_info->prewhere_actions.getRequiredColumnsNames());
+            keep_direct(deferred_prewhere_info->prewhere_actions.getRequiredColumnsNames());
         if (const auto & deferred_row_level_filter = reading->getDeferredRowLevelFilter())
-            exclude_filter_columns(deferred_row_level_filter->actions.getRequiredColumnsNames());
+            keep_direct(deferred_row_level_filter->actions.getRequiredColumnsNames());
 
-        auto picks = pickWrappers(reading->getAllColumnNames(), wrappers, filter_columns);
+        /// The sorting key is consumed inside the reading step too: `optimizeReadInOrder` runs after
+        /// this rewrite and matches the sorting key against the columns the step reads, and the
+        /// in-order pipeline evaluates the sorting-key expression on that same header when it merges
+        /// streams. Unpacking a key column happens only in the `ExpressionStep` spliced above the
+        /// step, so covering one would silently cost the whole read-in-order optimization.
+        keep_direct(reading->getStorageMetadata()->getColumnsRequiredForSortingKey());
+
+        auto picks = pickWrappers(reading->getAllColumnNames(), wrappers, not_coverable);
         if (picks.empty())
             continue;
 
