@@ -348,8 +348,8 @@ SELECT accurateCast(42, 'UInt16')
         )",
         R"(
 ┌─accurateCast(42, 'UInt16')─┐
-│                         42 │
-└────────────────────────────┘
+│                        42 │
+└───────────────────────────┘
         )"
     },
     {
@@ -412,6 +412,11 @@ SELECT accurateCastOrNull('abc', 'UInt32')
     factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, CAST_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, accurateCast_documentation);
     factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, accurateCastOrNull_documentation);
+}
+
+FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
+{
+    return CastOverloadResolverImpl::create(context, cast_type, false, std::move(diagnostic));
 }
 
 }

@@ -10,13 +10,12 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
-#include <Common/assert_cast.h>
-#include <Common/Exception.h>
 
 
 namespace DB
@@ -83,24 +82,6 @@ public:
         , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
         , async_insert(async_insert_)
     {
-    }
-
-    ~AliasSink() override
-    {
-        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
-        /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
-        /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
-        if (executor)
-        {
-            try
-            {
-                executor->cancel();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("AliasSink");
-            }
-        }
     }
 
     String getName() const override { return "AliasSink"; }
@@ -321,7 +302,20 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    return target_storage->updateLightweight(commands, local_context);
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto pipeline = target_storage->updateLightweight(commands, local_context);
+
+    /// The caller locks the alias, not the target, so the target needs its own share lock held
+    /// until the pipeline has committed the patch part.
+    QueryPlanResourceHolder target_resources;
+    target_resources.storage_holders.emplace_back(target_storage);
+    target_resources.table_locks.emplace_back(std::move(lock));
+    pipeline.addResources(std::move(target_resources));
+
+    return pipeline;
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
@@ -337,39 +331,6 @@ void StorageAlias::waitForMutation(const String & mutation_id, bool wait_for_ano
 void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
 {
     getTargetTable()->setMutationCSN(mutation_id, csn);
-}
-
-namespace
-{
-
-/// Holds the resolved target StoragePtr alongside its task list
-struct AliasCheckTasks : IStorage::DataValidationTasksBase
-{
-    StoragePtr target;
-    IStorage::DataValidationTasksPtr inner;
-
-    AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
-        : target(std::move(target_)), inner(std::move(inner_))
-    {
-        chassert(inner);
-    }
-
-    size_t size() const override { return inner->size(); }
-};
-
-}
-
-IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
-{
-    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
-    auto inner = target->getCheckTaskList(filter, query_context);
-    return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
-}
-
-std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
-{
-    auto * tasks = assert_cast<AliasCheckTasks *>(check_task_list.get());
-    return tasks->target->checkDataNext(tasks->inner);
 }
 
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)

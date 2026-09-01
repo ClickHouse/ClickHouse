@@ -15,8 +15,6 @@
 
 class SipHash;
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -159,27 +157,6 @@ public:
 
     void dumpTree(WriteBuffer & ostr, size_t indent = 0) const;
     std::string dumpTree(size_t indent = 0) const;
-
-    /** Serialize the AST node and its subtree to JSON.
-      * The default implementation writes: {"type":"<type>", "children":[...]}
-      * Subclasses override to include their specific properties.
-      */
-    virtual void writeJSON(WriteBuffer & out) const;
-
-    /** Deserialize the AST node from a JSON object.
-      * Called by the factory after creating the correct node type.
-      * The default implementation reads the "children" array.
-      * Subclasses override to read their specific properties (symmetric with writeJSON).
-      */
-    virtual void readJSON(const Poco::JSON::Object & json);
-
-    /** Factory: deserialize an AST tree from a JSON string with depth/element limits enforced during construction.
-      * This is the only public string entry point: callers MUST go through it so the thread-local depth/element
-      * limits are always set before parsing (the limit-less internal worker is private below). */
-    static ASTPtr createFromJSON(const String & json, size_t max_depth, size_t max_elements);
-
-    /** Factory: deserialize an AST node from a parsed JSON object. */
-    static ASTPtr createFromJSON(const Poco::JSON::Object & json);
 
     /** Check the depth of the tree.
       * If max_depth is specified and the depth is greater - throw an exception.
@@ -358,6 +335,10 @@ public:
         bool enforce_strict_identifier_format;
         /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
         bool collapse_identical_nodes_to_aliases;
+        /// Do not print the redundant parentheses that the user has written around an expression
+        /// (the `parenthesized` flag), so that `(a)` and `a` produce the same text. Used to store
+        /// and to compare table definition expressions - see `formatIgnoringRedundantParentheses`.
+        bool ignore_redundant_parentheses = false;
 
         explicit FormatSettings(
             bool one_line_,
@@ -395,7 +376,7 @@ public:
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
-        bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parens: (-...) -> -(...)
+        bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parents: (-...) -> -(...)
         size_t list_element_index = 0;
         std::string create_engine_name;
         const IAST * current_select = nullptr;
@@ -436,7 +417,8 @@ public:
         bool show_secrets,
         bool print_pretty_type_names,
         IdentifierQuotingRule identifier_quoting_rule,
-        IdentifierQuotingStyle identifier_quoting_style) const;
+        IdentifierQuotingStyle identifier_quoting_style,
+        bool ignore_redundant_parentheses = false) const;
 
     /** formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
       * behaviour is due to the fact such functions are called from Client which knows nothing about
@@ -447,6 +429,17 @@ public:
     String formatForErrorMessage() const;
     String formatWithSecretsOneLine() const;
     String formatWithSecretsMultiLine() const;
+
+    /** Same as `formatWithSecretsOneLine`, but the redundant parentheses that the user has written
+      * around an expression are not printed, so `(a)` and `a` give the same text.
+      *
+      * Use it for the definition expressions of a table (keys, `TTL`, indices, projections,
+      * constraints, column defaults) that are stored in ZooKeeper or in a part, and for comparing
+      * two such definitions: whether the parentheses were written is not a property of the table,
+      * and the servers that did not remember them (before the parentheses became a part of the AST)
+      * stored the same text this method produces.
+      */
+    String formatIgnoringRedundantParentheses() const;
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 
@@ -505,13 +498,6 @@ protected:
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;
-
-    /** Internal worker: parse a JSON string into an AST using the *currently set* thread-local
-      * depth/element limits. It does NOT set those limits itself, so it must only be reached through
-      * the public `createFromJSON(json, max_depth, max_elements)` overload (which sets them first).
-      * Keeping it private prevents an external caller from deserializing untrusted JSON with no
-      * depth/element protection. */
-    static ASTPtr createFromJSON(const String & json);
 
     friend void intrusive_ptr_add_ref(const IAST * p) noexcept;
     friend void intrusive_ptr_release(const IAST * p) noexcept;

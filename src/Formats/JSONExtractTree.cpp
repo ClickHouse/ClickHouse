@@ -58,8 +58,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
-#include <limits>
-
 namespace DB
 {
 
@@ -141,7 +139,6 @@ bool tryGetNumericValueFromJSONElement(
     bool convert_bool_to_number,
     bool allow_type_conversion,
     bool no_int_truncation_from_double,
-    bool precise_float_parsing,
     String & error)
 {
     switch (element.type())
@@ -198,8 +195,7 @@ bool tryGetNumericValueFromJSONElement(
             auto rb = ReadBufferFromMemory{element.getString()};
             if constexpr (is_floating_point<NumberType>)
             {
-                const bool parsed = precise_float_parsing ? tryReadFloatTextPrecise(value, rb) : tryReadFloatImpreciseForCompatibility(value, rb);
-                if (!parsed || !rb.eof())
+                if (!tryReadFloatText(value, rb) || !rb.eof())
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
@@ -213,8 +209,7 @@ bool tryGetNumericValueFromJSONElement(
                 /// Try to parse float and convert it to integer.
                 Float64 tmp_float = 0;
                 rb.position() = rb.buffer().begin();
-                const bool parsed = precise_float_parsing ? tryReadFloatTextPrecise(tmp_float, rb) : tryReadFloatImpreciseForCompatibility(tmp_float, rb);
-                if (!parsed || !rb.eof())
+                if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
@@ -288,7 +283,7 @@ public:
         }
 
         NumberType value{};
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, format_settings.precise_float_parsing, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -345,7 +340,7 @@ public:
         }
 
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, format_settings.precise_float_parsing, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -720,16 +715,14 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
+            if (element.isInt64() && (element.getInt64() < 0))
+            {
+                error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
+                return false;
+            }
+
             if (element.isInt64())
             {
-                /// A negative integer is a pre-epoch Unix timestamp; the final clamp below brings it into the
-                /// `DateTime` range (the epoch), matching the row input serializer, rather than rejecting it.
-                /// With `read_datetime_number_as_raw_value` (pre-26.8) a negative integer is rejected as before.
-                if (format_settings.read_datetime_number_as_raw_value && element.getInt64() < 0)
-                {
-                    error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
-                    return false;
-                }
                 value = element.getInt64();
             }
             else
@@ -738,21 +731,6 @@ public:
                 /// because values above INT64_MAX would wrap to negative on cast.
                 UInt64 raw = element.getUInt64();
                 value = static_cast<time_t>(std::min(raw, UInt64(0xFFFFFFFF)));
-            }
-        }
-        else if (insert_settings.allow_type_conversion && element.isDouble() && !format_settings.read_datetime_number_as_raw_value)
-        {
-            /// A fractional number is a Unix timestamp truncated to whole seconds. Parse its shortest round-trip
-            /// text through the shared row-input reader so precision-overflow (e.g. `1e39`) is rejected and a
-            /// negative value is clamped to the epoch, matching the row input path. Parity holds only up to
-            /// `Float64` precision: the DOM parser has already rounded the literal, so a value it cannot represent
-            /// exactly can cross the second boundary (`1703363853.9999999` arrives here as `1703363854.0`).
-            String str_value = jsonElementToString<JSONParser>(element, format_settings);
-            ReadBufferFromMemory buf(str_value);
-            if (!tryReadDateTimeAsNumber(value, buf) || !buf.eof())
-            {
-                error = fmt::format("cannot read DateTime value from JSON element: {}", str_value);
-                return false;
             }
         }
         else
@@ -952,55 +930,16 @@ public:
             if (!insert_settings.allow_type_conversion)
                 return false;
 
-            /// An unquoted number is a Unix timestamp in seconds (with optional sub-second precision), scaled to
-            /// the column precision. With `read_datetime_number_as_raw_value` (pre-26.8) an integer is instead the
-            /// raw scaled value (ticks); a fractional number was always seconds.
             switch (element.type())
             {
                 case ElementType::DOUBLE:
-                {
-                    /// Convert through decimal text rather than `Float64` arithmetic to preserve sub-second
-                    /// precision: `convertToDecimal` computes `0.58 * 100 = 57.999...` and truncates to 57 ticks,
-                    /// while parsing the text `0.58` at the column scale gives the exact 58 (as the row input path,
-                    /// `CAST` and `toDateTime64` do). Parity holds only up to the `Float64` the DOM parser rounded to.
-                    String str_value = jsonElementToString<JSONParser>(element, format_settings);
-                    ReadBufferFromMemory buf(str_value);
-                    if (!tryReadDateTime64AsNumber(value, scale, buf) || !buf.eof())
-                    {
-                        error = fmt::format("cannot read DateTime64 value from JSON element: {}", str_value);
-                        return false;
-                    }
+                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
                     break;
-                }
                 case ElementType::UINT64:
-                    if (format_settings.read_datetime_number_as_raw_value)
-                    {
-                        /// Raw ticks are stored in the `Int64` native type; a `UInt64` above `Int64` max would
-                        /// narrow to a negative timestamp, so range-check and fail on overflow rather than wrapping.
-                        const UInt64 raw = element.getUInt64();
-                        if (raw > static_cast<UInt64>(std::numeric_limits<DateTime64::NativeType>::max()))
-                        {
-                            error = fmt::format("raw DateTime64 tick value {} is out of range", raw);
-                            return false;
-                        }
-                        value.value = static_cast<DateTime64::NativeType>(raw);
-                    }
-                    /// Use the non-throwing conversion so that an out-of-range timestamp degrades to the default
-                    /// value, matching the `DOUBLE` case above and the best-effort contract of `JSONExtract`.
-                    else if (!tryConvertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale, value))
-                    {
-                        error = fmt::format("cannot convert UInt64 value {} to DateTime64", element.getUInt64());
-                        return false;
-                    }
+                    value.value = element.getUInt64();
                     break;
                 case ElementType::INT64:
-                    if (format_settings.read_datetime_number_as_raw_value)
-                        value.value = element.getInt64();
-                    else if (!tryConvertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale, value))
-                    {
-                        error = fmt::format("cannot convert Int64 value {} to DateTime64", element.getInt64());
-                        return false;
-                    }
+                    value.value = element.getInt64();
                     break;
                 default:
                     error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
@@ -2702,13 +2641,13 @@ template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTr
 #if USE_RAPIDJSON
 template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
+template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
 #endif
 
 }

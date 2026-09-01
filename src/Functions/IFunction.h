@@ -7,7 +7,6 @@
 #include <Core/ValuesWithType.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/IDataType_fwd.h>
-#include <Functions/ComparisonOrderDomain.h>
 #include <Interpreters/Context_fwd.h>
 
 #include "config.h"
@@ -246,14 +245,6 @@ public:
       */
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
 
-    /** Return the shared ordering used by this resolved comparison.
-      * An invalid domain means that composing this comparison transitively is not proven safe.
-      */
-    virtual ComparisonOrderDomain getComparisonOrderDomain() const
-    {
-        return {};
-    }
-
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().
       * Sometimes, functions are "deterministic" in scope of single query
@@ -426,13 +417,6 @@ public:
     /// Function should implement this method if its result type doesn't depend on the arguments types.
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
-    /// Overload that receives argument types for functions whose return type depends on argument types.
-    /// By default delegates to the no-argument version above.
-    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & /*arguments*/) const
-    {
-        return getReturnTypeForDefaultImplementationForDynamic();
-    }
-
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
     virtual bool allowsOmittingParentheses() const { return false; }
 
@@ -591,10 +575,6 @@ public:
 
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
-    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & /*arguments*/) const
-    {
-        return getReturnTypeForDefaultImplementationForDynamic();
-    }
 
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
@@ -604,10 +584,6 @@ public:
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
-    virtual ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & /*arguments*/) const
-    {
-        return {};
-    }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
