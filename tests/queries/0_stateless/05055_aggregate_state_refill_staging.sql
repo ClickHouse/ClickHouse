@@ -30,7 +30,9 @@ CREATE TABLE t_deserialize_allocation_bomb_chunks
     gua AggregateFunction(groupUniqArray, String)
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0,
+-- Packed storage: a full-storage stream's file buffer is one compress block, so at this size
+-- every block costs a write syscall.
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_full_part_storage = 2,
     min_compress_block_size = 4, max_compress_block_size = 4;
 
 INSERT INTO t_deserialize_allocation_bomb_chunks
