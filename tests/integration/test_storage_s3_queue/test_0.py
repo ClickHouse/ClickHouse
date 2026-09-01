@@ -1354,6 +1354,91 @@ def test_move_after_processing_versioned_foreign_alias_detected(started_cluster)
     assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
 
 
+def test_move_after_processing_versioned_missing_destination_version_tolerated(started_cluster):
+    """Pins the upgrade-tolerance contract: a destination whose provenance predates
+    clickhouse_move_source_version_id (no such key) must still be recognized as our own committed
+    copy on a versioned bucket, so interrupted moves finish across the upgrade. The trade-off - a
+    pre-upgrade archive can absorb a same-second identical re-upload without a collision report -
+    is deliberate; flipping it would strand every interrupted pre-upgrade move instead.
+    """
+    import io as _io
+    from minio.versioningconfig import VersioningConfig
+    from minio.commonconfig import ENABLED
+
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-preupgrade-{token}"
+    client = started_cluster.minio_client
+    client.make_bucket(bucket)
+    client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+
+    table_name = f"move_preupgrade_versioned_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = f"{token}_preupgrade_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    file_data = b"1,2,3\n"
+
+    def move_collisions():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueMoveCollisions' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    collisions_before = move_collisions()
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", file_data, bucket=bucket)
+
+    # Plant the pre-upgrade archived copy: full tuple provenance, but no version-id key, exactly
+    # what a build without the field left behind after an interrupted move.
+    stat = client.stat_object(bucket, f"{files_path}/{file_name}")
+    client.put_object(
+        bucket,
+        f"{processed_prefix}/{file_name}",
+        _io.BytesIO(file_data),
+        len(file_data),
+        metadata={
+            "clickhouse_move_source_path": f"{files_path}/{file_name}",
+            "clickhouse_move_source_etag": stat.etag,
+            "clickhouse_move_source_last_modified": str(int(stat.last_modified.timestamp())),
+        },
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        bucket=bucket,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    for _ in range(1000):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(0.1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    # Tuple matches and the destination has no version stamp: our own pre-upgrade copy, so the
+    # move completes - the source is deleted and no collision is reported.
+    for _ in range(100):
+        if count_minio_objects(started_cluster, bucket, files_path) == 0:
+            break
+        time.sleep(0.1)
+    assert count_minio_objects(started_cluster, bucket, files_path) == 0
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert move_collisions() == collisions_before
+
+
 def test_move_after_processing_retry_recognizes_its_own_copy_azure(started_cluster):
     """The Azure leg of the interrupted-move retry: the 409/412 recovery and the provenance lookup
     run through AzureObjectStorage::copyObject, so a backend bug there would strand the source as a
