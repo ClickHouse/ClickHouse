@@ -1,8 +1,3 @@
--- Tags: no-random-merge-tree-settings
--- Reason: randomized MergeTree settings (e.g. tiny `index_granularity`) inflate mark I/O
--- enough to time out the vertical merge under slow runners (MSan, ASan azure, ...).
--- Sibling vertical-merge tests (02981, 04041, 04145) use the same tag.
-
 DROP TABLE IF EXISTS t_lwd_vertical;
 
 CREATE TABLE t_lwd_vertical
@@ -17,7 +12,6 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,

@@ -234,7 +234,7 @@ public:
         }
     }
 
-    void mergeImpl(
+    void merge(
         AggregateDataPtr __restrict place,
         ConstAggregateDataPtr rhs,
         Arena * arena) const override
@@ -255,8 +255,7 @@ public:
     {
         nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, thread_pool, is_cancelled, arena);
         for (size_t i = row_begin; i < row_end; ++i)
-            if (places[i])
-                (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
+            (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

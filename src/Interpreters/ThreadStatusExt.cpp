@@ -28,7 +28,6 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
-#include <Common/MemorySpillScheduler.h>
 
 #if defined(OS_LINUX)
 #   include <sys/time.h>
@@ -121,19 +120,11 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
             }
             return false;
     };
-    shared_data.throw_if_query_canceled_predicate = [this] ()
-    {
-        if (auto context_locked = query_context.lock())
-        {
-            if (auto elem = context_locked->getProcessListElementSafe())
-                elem->throwIfKilled();
-        }
-    };
 }
 
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
-    : parent(std::move(parent_thread_group))
-    , master_thread_id(parent->master_thread_id)
+// c-tor for method createForMaterializedView
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
+    : master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
@@ -145,9 +136,9 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
 {
 }
 
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
-    : parent(std::move(parent_thread_group))
-    , master_thread_id(CurrentThread::get().thread_id)
+// c-tor for method createForFlushAsyncInsertQueue
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
+    : master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
@@ -162,14 +153,6 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
             return context_locked->isCurrentQueryKilled();
         }
         return false;
-    };
-    shared_data.throw_if_query_canceled_predicate = [this] ()
-    {
-        if (auto context_locked = query_context.lock())
-        {
-            if (auto elem = context_locked->getProcessListElementSafe())
-                elem->throwIfKilled();
-        }
     };
 }
 
@@ -251,7 +234,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
-        res_group = ThreadGroupPtr(new ThreadGroup(current_group));
+        res_group = std::make_shared<ThreadGroup>(current_group);
     }
     else
     {
@@ -262,14 +245,9 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
 {
-    return ThreadGroupPtr(new ThreadGroup(parent_thread_group));
-}
-
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group)
-{
-    auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent_thread_group));
+    auto res_group = std::make_shared<ThreadGroup>(context, parent);
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
@@ -325,10 +303,6 @@ void CurrentThread::attachQueryForLog(const String & query_)
 
 void ThreadStatus::applyGlobalSettings()
 {
-    /// Runs on every attach (after memory_tracker is parented to the group), so non-query threads
-    /// still pick up total_memory_tracker_sample_probability; query threads refine it in applyQuerySettings.
-    resolveMemorySampleConfig();
-
     auto global_context_ptr = global_context.lock();
     if (!global_context_ptr)
         return;
@@ -352,9 +326,7 @@ void ThreadStatus::applyQuerySettings()
         SignalUnsafeMutationGuard guard(is_query_id_usable);
         query_id = query_context_ptr->getCurrentQueryId();
     }
-
-    if (boundToOSThread())
-        initQueryProfiler();
+    initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
@@ -364,7 +336,10 @@ void ThreadStatus::applyQuerySettings()
     /// (we cannot do this for all threads, even though it is no-op, since it is a data-race)
     if (thread_group->master_thread_id == thread_id)
         configureMemoryTrackerFromSettings(query_context_ptr->hasTraceCollector(), thread_group->memory_tracker, settings);
-    resolveMemorySampleConfig();
+    auto sample_config = memory_tracker.getResolvedSampleConfig();
+    sample_probability = sample_config.probability;
+    sample_min_allocation_size = sample_config.min_allocation_size;
+    sample_max_allocation_size = sample_config.max_allocation_size;
 
 #if USE_JEMALLOC
     if (settings[Setting::jemalloc_enable_profiler])
@@ -382,8 +357,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     thread_attach_time.setUp();
 
-    if (boundToOSThread())
-        thread_group_->linkThread(thread_id);
+    thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
     try
     {
@@ -405,10 +379,9 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl");
         });
 
-        if (boundToOSThread())
-            initPerformanceCounters();
+        initPerformanceCounters();
 
-        if (boundToOSThread() && thread_group->os_threads_nice_value != 0)
+        if (thread_group->os_threads_nice_value != 0)
         {
             OSThreadNiceValue::set(thread_group->os_threads_nice_value);
         }
@@ -430,25 +403,18 @@ void ThreadStatus::detachFromGroup()
     /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
-    if (boundToOSThread())
-    {
-        finalizeQueryProfiler();
-        finalizePerformanceCounters();
-    }
+    finalizeQueryProfiler();
+    finalizePerformanceCounters();
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
-    /// Refresh the cache for the new parent so the detached thread honors
-    /// total_memory_tracker_sample_probability rather than the query's stale config.
-    resolveMemorySampleConfig();
 
-    if (boundToOSThread())
-        thread_group->unlinkThread();
+    thread_group->unlinkThread();
 
-    if (boundToOSThread() && thread_group->os_threads_nice_value != 0)
+    if (thread_group->os_threads_nice_value != 0)
     {
         OSThreadNiceValue::set(0);
     }
@@ -668,7 +634,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
-#if defined(QUERY_PROFILER_SUPPORTED)
+#if defined(SIGEV_THREAD_ID)
     /// profilers are useless without trace collector
     auto context = Context::getGlobalContextInstance();
     if (!context->hasTraceCollector())
@@ -694,7 +660,6 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
 
 void ThreadStatus::initQueryProfiler()
 {
-#if defined(QUERY_PROFILER_SUPPORTED)
     /// query profilers are useless without trace collector
     auto global_context_ptr = global_context.lock();
     if (!global_context_ptr || !global_context_ptr->hasTraceCollector())
@@ -731,7 +696,6 @@ void ThreadStatus::initQueryProfiler()
         /// QueryProfiler is optional.
         tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize QueryProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.", LogsLevel::warning);
     }
-#endif
 }
 
 void ThreadStatus::finalizeQueryProfiler()
@@ -742,50 +706,51 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {
-    thread_log.add([&](QueryThreadLogElement & element)
+    QueryThreadLogElement elem;
+
+    // construct current_time and current_time_microseconds using the same time point
+    // so that the two times will always be equal up to a precision of a second.
+    TimePoint current_time;
+    current_time.setUp();
+
+    elem.event_time = current_time.seconds();
+    elem.event_time_microseconds = current_time.microseconds();
+    elem.query_start_time = thread_attach_time.seconds();
+    elem.query_start_time_microseconds = thread_attach_time.microseconds();
+    elem.query_duration_ms = thread_attach_time.elapsedMilliseconds(current_time);
+
+    elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
+    elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
+
+    elem.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
+    elem.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
+    elem.memory_usage = memory_tracker.get();
+    elem.peak_memory_usage = memory_tracker.getPeak();
+
+    elem.thread_name = getThreadName();
+    elem.thread_id = thread_id;
+
+    elem.current_database = current_database;
+    if (thread_group)
     {
-        // construct current_time and current_time_microseconds using the same time point
-        // so that the two times will always be equal up to a precision of a second.
-        TimePoint current_time;
-        current_time.setUp();
+        elem.master_thread_id = thread_group->master_thread_id;
+        elem.query = local_data.query_for_logs;
+        elem.normalized_query_hash = local_data.normalized_query_hash;
+    }
 
-        element.event_time = current_time.seconds();
-        element.event_time_microseconds = current_time.microseconds();
-        element.query_start_time = thread_attach_time.seconds();
-        element.query_start_time_microseconds = thread_attach_time.microseconds();
-        element.query_duration_ms = thread_attach_time.elapsedMilliseconds(current_time);
+    auto query_context_ptr = query_context.lock();
+    if (query_context_ptr)
+    {
+        elem.client_info = query_context_ptr->getClientInfo();
 
-        element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
-        element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
-
-        element.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
-        element.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
-        element.memory_usage = memory_tracker.get();
-        element.peak_memory_usage = memory_tracker.getPeak();
-
-        element.thread_name = getThreadName();
-        element.thread_id = thread_id;
-
-        element.current_database = current_database;
-        if (thread_group)
+        if (query_context_ptr->getSettingsRef()[Setting::log_profile_events] != 0)
         {
-            element.master_thread_id = thread_group->master_thread_id;
-            element.query = local_data.query_for_logs;
-            element.normalized_query_hash = local_data.normalized_query_hash;
+            /// NOTE: Here we are in the same thread, so we can make memcpy()
+            elem.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
         }
+    }
 
-        auto query_context_ptr = query_context.lock();
-        if (query_context_ptr)
-        {
-            element.client_info = query_context_ptr->getClientInfo();
-
-            if (query_context_ptr->getSettingsRef()[Setting::log_profile_events] != 0)
-            {
-                /// NOTE: Here we are in the same thread, so we can make memcpy()
-                element.profile_counters = performance_counters.getPartiallyAtomicSnapshot();
-            }
-        }
-    });
+    thread_log.add(std::move(elem));
 }
 
 void CurrentThread::attachToGroup(const ThreadGroupPtr & thread_group)

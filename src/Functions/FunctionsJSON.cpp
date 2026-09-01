@@ -50,7 +50,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
-    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -695,11 +694,7 @@ public:
     explicit JSONOverloadResolver(ContextPtr context)
         : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
         , format_settings(getFormatSettings(context))
-    {
-        /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
-        /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
-        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
-    }
+    {}
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -953,11 +948,11 @@ public:
         static const std::unique_ptr<JSONExtractTreeNode<JSONParser>> node = buildJSONExtractTree<JSONParser>(std::make_shared<DataTypeNumber<NumberType>>());
     }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String & error)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String & error)
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/false, /*allow_type_conversion=*/true, /*no_int_truncation_from_double=*/false, format_settings.precise_float_parsing, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/false, /*allow_type_conversion=*/true, /*no_int_truncation_from_double=*/false, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
@@ -1300,7 +1295,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
             )",
             R"(
 1
-1
+0
             )"
         }
         };
@@ -1328,7 +1323,7 @@ SELECT isValidJSON('not JSON') = 0;
             )",
             R"(
 1
-1
+0
             )"
         },
         {
@@ -1347,7 +1342,9 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
 1
 1
 1
+1
 0
+
             )"
         }
         };
@@ -1613,9 +1610,9 @@ Parses JSON and extracts a value with given ClickHouse data type.
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') AS res;
             )",
             R"(
-┌─res──────────────────────┐
-│ ('hello',[-100,200,300]) │
-└──────────────────────────┘
+┌─res──────────────────────────────┐
+│ ('hello',[-100,200,300])         │
+└──────────────────────────────────┘
             )"
         }
         };
@@ -1641,12 +1638,12 @@ Parses key-value pairs from a JSON where the values are of the given ClickHouse 
         {
             "Usage example",
             R"(
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
-        )",
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
+            )",
             R"(
-┌─res────────────────────────┐
+┌─res────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────────┘
+└────────────────────────┘
             )"
         }
         };
@@ -1674,9 +1671,9 @@ Returns a part of JSON as unparsed string.
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') AS res;
             )",
             R"(
-┌─res────────────┐
-│ [-100,200,300] │
-└────────────────┘
+┌─res──────────────┐
+│ [-100,200.0,300] │
+└──────────────────┘
             )"
         }
         };
@@ -1704,9 +1701,9 @@ Returns an array with elements of JSON array, each represented as unparsed strin
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') AS res;
             )",
             R"(
-┌─res──────────────────────┐
-│ ['-100','200','"hello"'] │
-└──────────────────────────┘
+┌─res──────────────────────────┐
+│ ['-100','200.0','"hello"']   │
+└──────────────────────────────┘
             )"
         }
         };
@@ -1735,7 +1732,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
             )",
             R"(
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200]'),('b','"hello"')] │
+│ [('a','[-100,200.0]'),('b','"hello"')] │
 └──────────────────────────────────────┘
             )"}
         };
@@ -1763,9 +1760,9 @@ Parses a JSON string and extracts the keys.
 SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
             )",
             R"(
-┌─res───────┐
-│ ['a','b'] │
-└───────────┘
+┌─res─────────┐
+│ ['a','b']   │
+└─────────────┘
             )"
         }
         };

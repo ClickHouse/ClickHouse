@@ -15,7 +15,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
@@ -38,12 +37,6 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageQueueMetadataCacheSizeBytes;
     extern const Metric ObjectStorageQueueMetadataCacheSizeElements;
 };
-
-namespace DimensionalMetrics
-{
-    extern MetricFamily & ObjectStorageQueueNewestSeenTimestamp;
-    extern MetricFamily & ObjectStorageQueueNewestCommittedTimestamp;
-}
 
 namespace DB
 {
@@ -212,7 +205,7 @@ void ObjectStorageQueueMetadata::startup()
     if (!cleanup_task
         && (cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
     {
-        cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
+        cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
             [this] { cleanupThreadFunc(); });
 
@@ -715,34 +708,6 @@ namespace
             return info;
         }
     };
-}
-
-void ObjectStorageQueueMetadata::updateNewestSeenTimestamp(time_t timestamp, const StorageID & storage_id)
-{
-    std::lock_guard lock(pipeline_lag_watermarks_mutex);
-    auto & watermarks = pipeline_lag_watermarks[storage_id.getFullTableName()];
-    if (timestamp > watermarks.newest_seen)
-    {
-        watermarks.newest_seen = timestamp;
-        DimensionalMetrics::set(
-            DimensionalMetrics::ObjectStorageQueueNewestSeenTimestamp,
-            {storage_id.getDatabaseName(), storage_id.getTableName()},
-            static_cast<double>(timestamp));
-    }
-}
-
-void ObjectStorageQueueMetadata::updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id)
-{
-    std::lock_guard lock(pipeline_lag_watermarks_mutex);
-    auto & watermarks = pipeline_lag_watermarks[storage_id.getFullTableName()];
-    if (timestamp > watermarks.newest_committed)
-    {
-        watermarks.newest_committed = timestamp;
-        DimensionalMetrics::set(
-            DimensionalMetrics::ObjectStorageQueueNewestCommittedTimestamp,
-            {storage_id.getDatabaseName(), storage_id.getTableName()},
-            static_cast<double>(timestamp));
-    }
 }
 
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)

@@ -86,11 +86,6 @@ public:
 #else
     void doInsertFrom(const IColumn & src, size_t n) override;
 #endif
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#else
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -158,8 +153,6 @@ public:
 #endif
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
-
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     bool hasEqualValues() const override;
 
@@ -295,12 +288,6 @@ public:
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
     MutableColumnPtr cloneNullable() const;
-
-    /// Promote a non-nullable dictionary to `Nullable(T)` in place, rebuilding it with a NULL placeholder
-    /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
-    void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
-
-    void compactDictionaryInplace() { compactInplace(); }
 
     ColumnPtr cloneWithDefaultOnNull() const;
 

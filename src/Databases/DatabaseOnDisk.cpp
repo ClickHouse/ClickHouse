@@ -29,7 +29,6 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ErrnoException.h>
@@ -85,22 +84,9 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    LoadingStrictnessLevel mode,
-    bool set_attach_flag)
+    LoadingStrictnessLevel mode)
 {
-    if (set_attach_flag)
-    {
-        ast_create_query.attach = true;
-        /// Every caller of this function attaches a definition read back from metadata stored on this
-        /// server (database loading, `ATTACH DATABASE`, recovery of a dropped table), never a fresh
-        /// user-supplied one, so mark it the same way a short `ATTACH TABLE t` query is marked when it
-        /// is rewritten from stored metadata. Storage creators use this to skip the re-validation of
-        /// the definition that only a freshly introduced one needs (e.g. the `Remote` engine analyzes
-        /// its table-function target under the creating user for the access-control side effect, which
-        /// both must not run under a loading context and may fail spuriously if the target has changed
-        /// since the definition was validated).
-        ast_create_query.attach_short_syntax = true;
-    }
+    ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
@@ -116,12 +102,6 @@ std::pair<String, StoragePtr> createTableFromAST(
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
-
-        /// Re-establish the named collection dependency (if any) that `CREATE TABLE ... AS f(...)`
-        /// registered, so that `DROP NAMED COLLECTION` stays blocked after a server restart.
-        if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
-            NamedCollectionFactory::instance().addDependency(collection_name, storage->getStorageID());
-
         return {ast_create_query.getTable(), storage};
     }
 
@@ -234,7 +214,6 @@ void DatabaseOnDisk::createTable(
     const ASTPtr & query)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
-    ensurePopulated();
     auto db_disk = getDisk();
     createDirectories();
 
@@ -476,10 +455,6 @@ void DatabaseOnDisk::renameTable(
 
     createDirectories();
     waitDatabaseStarted();
-
-    ensurePopulated();
-    if (auto * to_database_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
-        to_database_with_own_tables->ensurePopulated();
 
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
