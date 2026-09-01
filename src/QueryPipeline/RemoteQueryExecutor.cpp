@@ -771,7 +771,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     }
     catch (...)
     {
-        /// A local failure while reading the fragment's data (e.g. a network error in `receivePacket`, or an unknown packet)
+        /// make sure this is finished only once
+        LockAndBlocker lock(was_cancelled_mutex);
+         /// A local failure while reading the fragment's data (e.g. a network error in `receivePacket`, or an unknown packet)
         /// is this fragment's failure: record it on the span instead of letting a later backstop mark it OK.
         finishFragmentSpanWithCurrentException();
         throw;
