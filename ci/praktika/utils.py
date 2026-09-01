@@ -362,6 +362,13 @@ class Shell:
                 return True
             return time.monotonic() - ladder_start + next_delay < retry_deadline
 
+        def _announce(matched, attempt):
+            # A reporting failure must never fail the command the retry is rescuing.
+            try:
+                on_retry(matched, attempt, retries - 1)
+            except Exception as e:  # noqa: BLE001
+                print(f"WARNING: on_retry callback failed, ex [{e}]")
+
         def _deadline_passed():
             return (
                 retry_deadline is not None
@@ -435,14 +442,11 @@ class Shell:
                     stdout_thread.start()
                     stderr_thread.start()
 
-                    if on_retry and pending_notice is not None:
-                        # Only from here is the retry certain to have started, and the
-                        # readers above keep caller code of any duration from blocking the
-                        # child on a full pipe. A reporting failure must not fail it.
-                        try:
-                            on_retry(pending_notice, retry, retries - 1)
-                        except Exception as e:  # noqa: BLE001
-                            print(f"WARNING: on_retry callback failed, ex [{e}]")
+                    if pending_notice is not None:
+                        # Only from here is a deadline-cancellable retry certain to have
+                        # started, and the readers above keep caller code of any duration
+                        # from blocking the child on a full pipe.
+                        _announce(pending_notice, retry)
                         pending_notice = None
 
                     try:
@@ -510,7 +514,12 @@ class Shell:
                         )
                     break
                 if on_retry:
-                    pending_notice = matched
+                    # Deferral is part of the deadline: without one, the attempt this
+                    # announces cannot be cancelled, so announce it where it always was.
+                    if retry_deadline is None:
+                        _announce(matched, retry + 1)
+                    else:
+                        pending_notice = matched
             except Exception as e:
                 if retry_deadline is not None and ladder_start is None:
                     ladder_start = time.monotonic()
