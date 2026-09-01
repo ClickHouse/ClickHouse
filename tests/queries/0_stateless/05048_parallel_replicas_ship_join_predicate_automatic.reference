@@ -1,0 +1,9 @@
+selective join: nothing is shipped on the run that measures it
+shipped: 0
+selective join: the predicate is shipped once the match rate is known
+shipped: 1
+join that matches everything: the predicate is not worth shipping
+shipped: 0
+the result does not depend on the decision
+17003796609112082856
+17003796609112082856

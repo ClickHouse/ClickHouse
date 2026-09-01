@@ -88,6 +88,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     StepAnalysisReport getAnalysisReport() const override;
+    std::optional<JoinProbeMatchRate> getProbeMatchRate() const override;
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
     bool supportParallelNonJoinedBlocksProcessing() const override;

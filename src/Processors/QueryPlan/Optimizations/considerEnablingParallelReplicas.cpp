@@ -134,36 +134,6 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     return replicas_plan_top_node;
 }
 
-/// Prints a plan as a tree with the cache key of every node, so a failed match can be lined up node by
-/// node against the other plan. Temporary diagnostic for the join-on-top shape.
-void dumpPlanHashes(
-    const String & title, const QueryPlan::Node & root, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
-{
-    struct Item
-    {
-        const QueryPlan::Node * node;
-        size_t depth;
-    };
-    std::vector<Item> stack{{&root, 0}};
-    while (!stack.empty())
-    {
-        const auto [node, depth] = stack.back();
-        stack.pop_back();
-
-        const auto hash_it = hashes.find(node);
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "{}: {}{} hash {}",
-            title,
-            String(depth * 2, ' '),
-            node->step->getName(),
-            hash_it == hashes.end() ? 0 : hash_it->second);
-
-        for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            stack.push_back({*it, depth + 1});
-    }
-}
-
 /// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
 /// The working principle behind automatic parallel replicas is that we use statistics collected during execution of single-node plan
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
@@ -195,7 +165,6 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
             }
         }
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan (looking for {})", it->second);
-        dumpPlanHashes("PR plan", parallel_replicas_plan_root, pr_node_hashes);
         return std::make_pair(nullptr, 0);
     }
     else
@@ -495,7 +464,6 @@ void considerEnablingParallelReplicas(
     LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
     const auto single_replica_plan_hashes = calculateHashTableCacheKeys(root);
-    dumpPlanHashes("single-node plan", root, single_replica_plan_hashes);
     const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(
             *final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), single_replica_plan_hashes);

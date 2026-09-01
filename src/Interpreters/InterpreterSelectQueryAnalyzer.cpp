@@ -265,8 +265,18 @@ static void enableJoinMatchRateCollectionIfNeeded(const ContextMutablePtr & cont
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         return;
 
-    if (hasShippableJoinPredicate(query_tree, context))
-        context->setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+    if (!hasShippableJoinPredicate(query_tree, context))
+        return;
+
+    context->setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+
+    /// The planner does not read the mode off this context but off the one stored on the query tree root
+    /// (`buildPlannerContext`), which it then shares with `PlannerContext`. Setting it there is still early
+    /// enough: the plan is built lazily, after this constructor returns.
+    if (auto * query_node = query_tree->as<QueryNode>())
+        query_node->getMutableContext()->setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+    else if (auto * union_node = query_tree->as<UnionNode>())
+        union_node->getMutableContext()->setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
 }
 
 static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)

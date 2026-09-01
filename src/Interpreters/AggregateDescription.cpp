@@ -2,6 +2,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
+
+#include <Analyzer/TableQualifiers.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
@@ -161,12 +163,12 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Arguments", std::move(args_array));
 }
 
-void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out)
+void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out, bool normalize_names)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        writeStringBinary(aggregate.column_name, out);
+        writeStringBinary(normalize_names ? normalizeGeneratedTableQualifiers(aggregate.column_name) : aggregate.column_name, out);
 
         UInt64 num_args = aggregate.argument_names.size();
         const auto & argument_types = aggregate.function->getArgumentTypes();
@@ -183,7 +185,9 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
         writeVarUInt(num_args, out);
         for (size_t i = 0; i < num_args; ++i)
         {
-            writeStringBinary(aggregate.argument_names[i], out);
+            writeStringBinary(
+                normalize_names ? normalizeGeneratedTableQualifiers(aggregate.argument_names[i]) : aggregate.argument_names[i],
+                out);
             encodeDataType(argument_types[i], out);
         }
 

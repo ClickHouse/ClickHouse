@@ -29,7 +29,10 @@ struct AggregateDescription
 
 using AggregateDescriptions = std::vector<AggregateDescription>;
 
-void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out);
+/// `normalize_names` erases the index of every analyzer-generated table qualifier in the aggregate's
+/// own name and in its argument names, for a caller building a cache key that must not depend on how
+/// this particular plan build numbered its tables. See `normalizeGeneratedTableQualifiers`.
+void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out, bool normalize_names = false);
 void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity);
 
 /// Variant for aggregates whose argument names the planner removed (the `Rollup` and `Cube` steps:

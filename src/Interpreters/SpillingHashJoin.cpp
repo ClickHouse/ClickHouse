@@ -377,6 +377,18 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
     return chosen_join->alwaysReturnsEmptySet();
 }
 
+std::optional<JoinProbeMatchRate> SpillingHashJoin::getProbeMatchRate() const
+{
+    /// Delegates exactly like `getAnalysisReport` below, for the same reason.
+    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    {
+        if (concurrent_join)
+            return concurrent_join->getProbeMatchRate();
+        return hash_join->getProbeMatchRate();
+    }
+    return chosen_join->getProbeMatchRate();
+}
+
 StepAnalysisReport SpillingHashJoin::getAnalysisReport() const
 {
     /// This method always runs after the built phase, so in principal we could have

@@ -19,6 +19,8 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+
+#include <Analyzer/TableQualifiers.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -1230,9 +1232,13 @@ void AggregatingStep::serialize(Serialization & ctx) const
         serializeSortDescription(group_by_sort_description, ctx.out);
     }
 
+    /// A grouping key is named with the analyzer's column identifier, whose table index is branch-local:
+    /// the same column is `__table1.k` in a shipped fragment and `__table2.k` in the plan enclosing it. A
+    /// cache key must not depend on that, or two builds of one query never match - see
+    /// `normalizeGeneratedTableQualifiers` and `ActionsDAG::Node::updateHash`.
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, ctx.out);
+        writeStringBinary(ctx.for_cache_key ? normalizeGeneratedTableQualifiers(key) : key, ctx.out);
 
     if (!grouping_sets_params.empty())
     {
@@ -1246,7 +1252,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
         }
     }
 
-    serializeAggregateDescriptions(params.aggregates, ctx.out);
+    serializeAggregateDescriptions(params.aggregates, ctx.out, /*normalize_names=*/ctx.for_cache_key);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
