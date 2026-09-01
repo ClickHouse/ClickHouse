@@ -58,6 +58,18 @@ SELECT value FROM t ORDER BY value OFFSET 100 FORMAT Null SETTINGS log_comment='
 SELECT value FROM t ORDER BY value LIMIT 300000 FORMAT Null SETTINGS log_comment='05055_autopr_limit_query_0';
 SELECT value FROM t ORDER BY value LIMIT 300000 FORMAT Null SETTINGS log_comment='05055_autopr_limit_query_1';
 
+-- The negative and fractional variants of LIMIT/OFFSET are separate steps, and the gate rejects a plan
+-- for any one of them that does not report support. `LIMIT -n` returns the last `n` rows, and unlike the
+-- offset variants it can be pushed to the shard (`addPreliminaryLimitStep` marks it as a shard limit), so
+-- it can be the replica-output boundary itself - which is why it carries a collector and is priced as
+-- replicated, exactly like `LIMIT n`.
+-- `automatic_parallel_replicas_mode=2` forces the statistics to be recollected on every run. Without it
+-- the two shapes whose boundary is the `Sorting` step would reuse the entry the bare-OFFSET query above
+-- already cached under the same plan hash, and would record nothing - which says nothing about the gate.
+SELECT value FROM t ORDER BY value LIMIT -3 FORMAT Null SETTINGS automatic_parallel_replicas_mode=2, log_comment='05055_autopr_negative_limit';
+SELECT value FROM t ORDER BY value OFFSET -5 FORMAT Null SETTINGS automatic_parallel_replicas_mode=2, log_comment='05055_autopr_negative_offset';
+SELECT value FROM t ORDER BY value LIMIT 0.3 OFFSET 0.2 FORMAT Null SETTINGS automatic_parallel_replicas_mode=2, log_comment='05055_autopr_fractional';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -76,6 +88,17 @@ FORMAT TSVWithNames;
 SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS stats_collected, ProfileEvents['ParallelReplicasUsedCount'] > 0 AS pr_used
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE '05055_autopr_limit_query_%') AND (type = 'QueryFinish')
+ORDER BY log_comment
+FORMAT TSVWithNames;
+
+-- All three sibling shapes now pass the "simple enough" gate and collect statistics. Before they
+-- reported support the plan was rejected outright with `Unsupported steps: NegativeLimit_...`,
+-- `NegativeOffset_...` or `FractionalLimit_...` and nothing was recorded.
+SELECT log_comment,
+       ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS input_stats_collected,
+       ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0 AS output_stats_collected
+FROM system.query_log
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment IN ('05055_autopr_negative_limit', '05055_autopr_negative_offset', '05055_autopr_fractional')) AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 

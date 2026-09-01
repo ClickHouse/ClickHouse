@@ -24,6 +24,12 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// A fractional `OFFSET` is resolved against the whole query result, so it is evaluated on the
+    /// initiator. Reporting support keeps `considerEnablingParallelReplicas` from rejecting the whole
+    /// plan (its check is a whole-plan gate); `transformPipeline` still attaches a collector so that a
+    /// boundary here would be measured rather than cached as `output_bytes = 0`.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
 

@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -411,13 +412,15 @@ void considerEnablingParallelReplicas(
             ///
             /// It does not hold for a boundary that keeps a bounded top-N *per replica*, because there
             /// every replica emits up to `n` rows and ships all of them, so each one sends the whole
-            /// `output_bytes` the single-node plan produced. That covers a shard `LIMIT n` and equally a
-            /// top-N `Sorting` (a sort carrying a limit keeps the local top `limit` rows on each node -
-            /// see `SortingStep::is_partial_top_n`), so both must skip the division. Dividing anyway
-            /// underestimates the cost of the parallel-replicas plan by a factor of `num_replicas`.
+            /// `output_bytes` the single-node plan produced. That covers a shard `LIMIT n`, a shard
+            /// `LIMIT -n` (which returns the *last* `n` rows, i.e. a top-N taken from the tail), and
+            /// equally a top-N `Sorting` (a sort carrying a limit keeps the local top `limit` rows on
+            /// each node - see `SortingStep::is_partial_top_n`), so all of them must skip the division.
+            /// Dividing anyway underestimates the parallel-replicas plan by a factor of `num_replicas`.
             const auto * boundary_step = corresponding_node_in_single_replica_plan->step.get();
             const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
             const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
+                || typeid_cast<const NegativeLimitStep *>(boundary_step)
                 || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
             const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
             const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
