@@ -178,6 +178,9 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(value) ON test_table_access TO ${acce
 echo "Test merge() structure with column-scoped target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE merge(currentDatabase(), '^test_alias_access\$');" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 
+echo "Test Merge inherited virtual columns with column-scoped target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_merge_explicit SETTINGS describe_include_virtual_columns = 1;" | awk -F'\t' '$NF == 1 { own += ($1 == "_database" || $1 == "_table"); target += ($1 == "_partition_value") } END { print own+0, target+0 }'
+
 echo "Test direct and Alias count with column-scoped target SELECT permission using the analyzer"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT

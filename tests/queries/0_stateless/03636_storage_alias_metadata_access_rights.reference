@@ -34,6 +34,8 @@ Test lifetime statistics without target permission
 1	1
 Test merge() structure with column-scoped target permission
 ACCESS_DENIED
+Test Merge inherited virtual columns with column-scoped target permission
+2 0
 Test direct and Alias count with column-scoped target SELECT permission using the analyzer
 2	2
 Test direct and Alias count with column-scoped target SELECT permission using the read path
