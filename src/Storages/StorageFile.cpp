@@ -2702,8 +2702,17 @@ static String getNextPathForSplittingBySize(
 /// more files than the current one, the leftovers have to be deleted - otherwise the stale data will be
 /// still visible both for the readers of this table and for the readers of the glob pattern over the directory.
 /// The files are written with consecutive numbers, so the removal stops at the first missing number.
-static void removeStaleSplitFiles(const String & path, size_t sequence_number)
+///
+/// The numbered names are not attributed to a particular table - the engine keeps no metadata about the files
+/// it has written. The removal is done only when the numbered names are unambiguously overwritten by this insert
+/// anyway: `engine_file_truncate_on_insert` claims the whole numbered sequence of the path, while
+/// `engine_file_allow_create_multiple_files` lets an insert step over the names taken by someone else,
+/// and then it is not known which of the files belong to this table - nothing is deleted in that case.
+static void removeStaleSplitFiles(const String & path, size_t sequence_number, bool allow_create_multiple_files)
 {
+    if (allow_create_multiple_files)
+        return;
+
     while (true)
     {
         String stale_path = setSequenceNumberInFileName(path, sequence_number);
@@ -2815,7 +2824,6 @@ public:
 
     void initialize()
     {
-        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
         if (use_table_fd)
         {
             naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
@@ -2840,24 +2848,24 @@ public:
                 "Data cannot be appended to {} because the {} format doesn't support appends",
                 use_table_fd ? "the given file descriptor" : ("file " + path), format_name);
 
-        /// The pointer is taken before the move, but it is assigned to the field only afterwards,
-        /// otherwise the lifetime analysis considers the field to be dangling.
-        auto * naked_buffer_ptr = naked_buffer.get();
-        write_buf = wrapWriteBufferWithCompressionMethod(
-            std::move(naked_buffer),
-            compression_method,
-            static_cast<int>(settings[Setting::output_format_compression_level]),
-            static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
-            settings[Setting::snappy_mode]);
-        destination_buf = naked_buffer_ptr;
+        /// The sink keeps the ownership of the buffer that writes into the file, so that the amount of the
+        /// data written into the file can be checked for splitting. The compressing wrapper, if any, is
+        /// created as a non-owning one on top of it.
+        if (compression_method != CompressionMethod::None)
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                naked_buffer.get(),
+                compression_method,
+                static_cast<int>(settings[Setting::output_format_compression_level]),
+                static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
+                settings[Setting::snappy_mode]);
 
         /// With the parallel formatting, the data is written into the buffer by a background thread,
         /// and the amount of the written data cannot be checked after every block without a data race.
         writer = split_on_write_by_size_bytes
             ? FormatFactory::instance().getOutputFormat(format_name,
-                                                        *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings)
+                                                        getWriteBuffer(), metadata_snapshot->getSampleBlock(), getContext(), format_settings)
             : FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-                                                                          *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings);
+                                                                          getWriteBuffer(), metadata_snapshot->getSampleBlock(), getContext(), format_settings);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();
@@ -2881,7 +2889,7 @@ public:
 
         /// Continue writing into a new file as soon as the current one became large enough.
         /// The current block is always written in full, so the file can be larger than the requested size.
-        if (split_on_write_by_size_bytes && bytes_in_file_before_write + destination_buf->count() >= split_on_write_by_size_bytes)
+        if (split_on_write_by_size_bytes && bytes_in_file_before_write + naked_buffer->count() >= split_on_write_by_size_bytes)
         {
             finalizeBuffers();
             releaseBuffers();
@@ -2906,7 +2914,9 @@ private:
         {
             writer->flush();
             writer->finalize();
-            write_buf->finalize();
+            if (write_buf)
+                write_buf->finalize();
+            naked_buffer->finalize();
         }
         catch (...)
         {
@@ -2920,7 +2930,7 @@ private:
     {
         writer.reset();
         write_buf.reset();
-        destination_buf = nullptr;
+        naked_buffer.reset();
     }
 
     void cancelBuffers() noexcept
@@ -2929,15 +2939,24 @@ private:
             writer->cancel();
         if (write_buf)
             write_buf->cancel();
+        if (naked_buffer)
+            naked_buffer->cancel();
+    }
+
+    /// The buffer the data is formatted into: the compressing wrapper if the data is compressed, the file buffer otherwise.
+    WriteBuffer & getWriteBuffer()
+    {
+        return write_buf ? *write_buf : *naked_buffer;
     }
 
     StorageMetadataPtr metadata_snapshot;
     String table_name_for_log;
 
+    /// The buffer that writes into the file. It is also used to count the number of bytes written to the file.
+    /// It is declared before `write_buf` so that it outlives the compressing wrapper referencing it.
+    std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
+    /// The compressing wrapper around `naked_buffer`; it is empty if the data is written uncompressed.
     std::unique_ptr<WriteBuffer> write_buf;
-    /// Non-owning pointer to the buffer that writes to the file (`write_buf` may be a compressing wrapper around it).
-    /// It is used to count the number of bytes written to the file.
-    WriteBuffer * destination_buf = nullptr;
     /// The size of the file before this insert - the data can be appended to an already existing file.
     size_t bytes_in_file_before_write = 0;
     OutputFormatPtr writer;
@@ -3003,7 +3022,10 @@ public:
         if (split_on_write_by_size_bytes)
         {
             if (settings[Setting::engine_file_truncate_on_insert])
-                removeStaleSplitFiles(filepath, getStartSequenceNumber(filepath, 1));
+                removeStaleSplitFiles(
+                    filepath,
+                    getStartSequenceNumber(filepath, 1),
+                    settings[Setting::engine_file_allow_create_multiple_files]);
 
             get_next_path = [partition_path = filepath,
                              sequence_number = getStartSequenceNumber(filepath, 1),
@@ -3147,7 +3169,10 @@ SinkToStoragePtr StorageFile::write(
         if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
         {
             paths.resize(1);
-            removeStaleSplitFiles(path, getStartSequenceNumber(path, 1));
+            removeStaleSplitFiles(
+                path,
+                getStartSequenceNumber(path, 1),
+                context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files]);
         }
 
         /// The numbering is derived per insert from the name of the file this insert starts with:

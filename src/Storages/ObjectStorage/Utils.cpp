@@ -96,11 +96,20 @@ String getNextKeyForSplittingBySize(
     }
 }
 
+/// The numbered keys are not attributed to a particular table - the storage keeps no metadata about the objects
+/// it has written. The removal is done only when the numbered keys are unambiguously overwritten by this insert
+/// anyway: `*_truncate_on_insert` claims the whole numbered sequence of the key, while `*_create_new_file_on_insert`
+/// lets an insert step over the keys taken by someone else, and then it is not known which of the objects belong
+/// to this table - nothing is deleted in that case.
 void removeStaleSplitObjects(
     IObjectStorage & object_storage,
     const String & key,
-    size_t sequence_number)
+    size_t sequence_number,
+    bool create_new_file_on_insert)
 {
+    if (create_new_file_on_insert)
+        return;
+
     while (true)
     {
         String stale_key = setSequenceNumberInFileName(key, sequence_number);

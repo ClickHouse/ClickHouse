@@ -229,7 +229,10 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     {
         if (query_settings.truncate_on_insert)
             removeStaleSplitObjects(
-                *object_storage, key_for_splitting, getStartSequenceNumber(key_for_splitting, 1));
+                *object_storage,
+                key_for_splitting,
+                getStartSequenceNumber(key_for_splitting, 1),
+                query_settings.create_new_file_on_insert);
 
         get_next_path = [storage = object_storage, config = configuration, settings = query_settings,
                          key = key_for_splitting,

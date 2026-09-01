@@ -670,6 +670,8 @@ The decision to start a new object is made after writing a block, so an object c
 
 If an object with the generated key already exists, the behavior is controlled by `s3_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused key is taken, otherwise an exception is thrown, and the objects written before that are left as is. If `s3_truncate_on_insert` is enabled, existing objects are overwritten instead.
 
+A truncating insert starts the numbering over, and the objects of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its prefix. The numbered names are not attributed to a particular table, so nothing is deleted if `s3_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the objects belong to this table.
+
 Possible values:
 - 0 — All the data is written into a single object.
 - Positive integer — The number of bytes after which a new object is started.
@@ -694,6 +696,8 @@ If the name of the first blob already contains a number in this scheme, the numb
 The decision to start a new blob is made after writing a block, so a blob can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the blob is taken into account, so for a compressed blob it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
 
 If a blob with the generated name already exists, the behavior is controlled by `azure_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the blobs written before that are left as is. If `azure_truncate_on_insert` is enabled, existing blobs are overwritten instead.
+
+A truncating insert starts the numbering over, and the blobs of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its prefix. The numbered names are not attributed to a particular table, so nothing is deleted if `azure_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the blobs belong to this table.
 
 Possible values:
 - 0 — All the data is written into a single blob.
@@ -831,6 +835,8 @@ If the name of the first file already contains a number in this scheme, the numb
 The decision to start a new file is made after writing a block, so a file can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the file is taken into account, so for a compressed file it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
 
 If a file with the generated name already exists, the behavior is controlled by `hdfs_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the files written before that are left as is. If `hdfs_truncate_on_insert` is enabled, existing files are overwritten instead.
+
+A truncating insert starts the numbering over, and the files of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its directory. The numbered names are not attributed to a particular table, so nothing is deleted if `hdfs_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the files belong to this table.
 
 Possible values:
 - 0 — All the data is written into a single file.
@@ -6430,6 +6436,8 @@ If the name of the first file already contains a number in this scheme, the numb
 The decision to start a new file is made after writing a block, so a file can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the file is taken into account, so for a compressed file it is the size of the compressed data, and for a file that already existed it also includes its initial size. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
 
 If a file with the generated name already exists, the behavior is controlled by `engine_file_allow_create_multiple_files`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the files written before that are left as is. If `engine_file_truncate_on_insert` is enabled, existing files are overwritten instead.
+
+A truncating insert starts the numbering over, and the files of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its directory. The numbered names are not attributed to a particular table, so nothing is deleted if `engine_file_allow_create_multiple_files` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the files belong to this table.
 
 Possible values:
 - 0 — All the data is written into a single file.

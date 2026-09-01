@@ -820,7 +820,11 @@ SinkToStoragePtr StorageObjectStorage::write(
     {
         paths.resize(1);
         if (settings.split_on_write_by_size_bytes)
-            removeStaleSplitObjects(*object_storage, paths.front().path, getStartSequenceNumber(paths.front().path, 1));
+            removeStaleSplitObjects(
+                *object_storage,
+                paths.front().path,
+                getStartSequenceNumber(paths.front().path, 1),
+                settings.create_new_file_on_insert);
     }
 
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(

@@ -30,10 +30,12 @@ std::string getNextKeyForSplittingBySize(
 /// more objects than the current one, the leftovers have to be deleted - otherwise the stale data will be
 /// still visible both for the readers of this table and for the readers of the glob pattern over the prefix.
 /// The objects are written with consecutive numbers, so the removal stops at the first missing number.
+/// Nothing is removed if `create_new_file_on_insert` is enabled - see the comment in the implementation.
 void removeStaleSplitObjects(
     IObjectStorage & object_storage,
     const std::string & key,
-    size_t sequence_number);
+    size_t sequence_number,
+    bool create_new_file_on_insert);
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
