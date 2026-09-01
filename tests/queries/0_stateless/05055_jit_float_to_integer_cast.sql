@@ -6,13 +6,10 @@ DROP TABLE IF EXISTS t_jit_float_cast;
 CREATE TABLE t_jit_float_cast (c0 UInt8) ENGINE = Memory;
 INSERT INTO t_jit_float_cast VALUES (230), (250);
 
--- The conversion wraps modulo 256, so `CAST(-230. AS UInt8)` is 26 and `CAST(-250. AS UInt8)` is 6:
--- `c0 / 10` (23 and 25) is below the converted value only for 230.
+-- In-range conversions are exact and identical compiled or interpreted.
 SELECT c0,
-       toFloat64(c0) / 10 <= CAST(-toFloat64(c0) AS UInt8) AS out_of_range_by_cast,
-       toFloat64(c0) / 10 <= toUInt8(-toFloat64(c0))       AS out_of_range_by_to_uint8,
-       toFloat64(c0) / 10 <= CAST(toFloat64(c0) AS UInt8)  AS in_range_by_cast,
-       CAST(toFloat64(c0) AS Decimal32(2))                 AS in_range_decimal
+       toFloat64(c0) / 10 <= CAST(toFloat64(c0) AS UInt8) AS in_range_by_cast,
+       CAST(toFloat64(c0) AS Decimal32(2))                AS in_range_decimal
 FROM t_jit_float_cast
 ORDER BY c0;
 
@@ -21,5 +18,22 @@ ORDER BY c0;
 SELECT CAST(-toFloat64(c0) * 1e9 AS Decimal32(2)) FROM t_jit_float_cast; -- { serverError DECIMAL_OVERFLOW }
 SELECT toDecimal32(-toFloat64(c0) * 1e9, 2) FROM t_jit_float_cast; -- { serverError DECIMAL_OVERFLOW }
 SELECT toUInt8(toFloat64(c0) / (toFloat64(c0) - toFloat64(c0))) FROM t_jit_float_cast; -- { serverError CANNOT_CONVERT_TYPE }
+
+-- The value a float out of the destination's range converts to is undefined and differs between
+-- architectures (`FunctionsConversion.h` notes x86 truncates where AArch64 saturates), so compare
+-- the compiled and the interpreted evaluation of the same expression instead of pinning a literal.
+CREATE TABLE t_jit_float_cast_arms (c0 UInt8, lte UInt8) ENGINE = Memory;
+
+INSERT INTO t_jit_float_cast_arms
+SELECT c0, toFloat64(c0) / 10 <= CAST(-toFloat64(c0) AS UInt8) FROM t_jit_float_cast;
+
+SET compile_expressions = 0;
+INSERT INTO t_jit_float_cast_arms
+SELECT c0, toFloat64(c0) / 10 <= CAST(-toFloat64(c0) AS UInt8) FROM t_jit_float_cast;
+SET compile_expressions = 1, min_count_to_compile_expression = 0;
+
+SELECT count() FROM (SELECT c0 FROM t_jit_float_cast_arms GROUP BY c0 HAVING uniqExact(lte) > 1);
+
+DROP TABLE t_jit_float_cast_arms;
 
 DROP TABLE t_jit_float_cast;
