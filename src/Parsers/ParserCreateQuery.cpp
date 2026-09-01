@@ -58,6 +58,12 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
     return comment;
 }
 
+void rejectNilUUIDClause(bool attach, bool has_uuid_clause, const UUID & uuid)
+{
+    if (attach && has_uuid_clause && uuid == UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ATTACH queries cannot use a Nil UUID");
+}
+
 }
 
 bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -485,6 +491,12 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
                     primary_key_from_columns = makeASTOperator("tuple");
                 auto column_identifier = make_intrusive<ASTIdentifier>(cd->name);
                 primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
+                /// The specifier's meaning has been transferred to `primary_key_from_columns`, which
+                /// `ParserCreateQuery` normalizes into the storage definition. Clear it so the final
+                /// AST is the same as for a query that spelled the primary key at the table level:
+                /// formatting prints only the storage-level PRIMARY KEY, so a kept flag would not
+                /// survive a format+parse round trip, and the tree hash would differ.
+                cd->primary_key_specifier = false;
             }
             columns->children.push_back(elem);
         }
@@ -856,11 +868,23 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     auto * table_id = table->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, table_id->has_uuid, table_id->uuid);
 
     /// A shortcut for ATTACH a previously detached table.
     bool short_attach = attach && !from_path;
     if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {
+        /// The short `ATTACH` form takes the whole table definition from the stored metadata, so it has
+        /// nowhere to keep the parsed `TO INNER UUID` value: only the presence flag would survive, and
+        /// `formatQueryImpl` prints the clause from `targets`, which this form never builds. The clause
+        /// would therefore be silently dropped by formatting - and the query is rejected downstream
+        /// anyway (`InterpreterCreateQuery` refuses to change the definition of a short `ATTACH`).
+        /// Reject it here so that no `ASTCreateQuery` that cannot be formatted back is ever produced.
+        if (to_inner_uuid)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ATTACH applies the table definition from stored metadata, so a 'TO INNER UUID' clause "
+                "cannot be specified in the query itself");
+
         auto query = make_intrusive<ASTCreateQuery>();
         node = query;
 
@@ -873,7 +897,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
         query->has_uuid_clause = table_id->has_uuid;
-        query->has_inner_uuid_clause = to_inner_uuid != nullptr;
         query->setIsTemporary(is_temporary);
 
         query->attach_as_replicated = attach_as_replicated;
@@ -1062,11 +1085,19 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->storage, storage);
     query->set(query->as_table_function, as_table_function);
 
-    if (comment)
-        query->set(query->comment, comment);
-    if (sql_security)
-        query->set(query->sql_security, sql_security);
+    /// A table created from a table function has no storage definition of its own, the same rule
+    /// that rejects an explicit `ENGINE` above, so the one synthesized below is formatted after the
+    /// table function, where the grammar has no production for it and metadata cannot be read back.
+    if (query->as_table_function && query->columns_list
+        && (query->columns_list->primary_key || query->columns_list->primary_key_from_columns))
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR, "PRIMARY KEY is not allowed in the column list of a table created from a table function");
 
+    /// Normalize a PRIMARY KEY declared inside the column list into the storage definition
+    /// before the comment child is appended: when there is no explicit ENGINE clause, the
+    /// storage node is synthesized here, and it must land in `children` where a fresh parse
+    /// of the formatted query would put it - before the comment - or the tree hash would
+    /// not survive a format+parse round trip.
     if (query->columns_list && query->columns_list->primary_key)
     {
         /// If engine is not set will use default one
@@ -1098,6 +1129,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->storage->normalizeChildrenOrder();
     }
 
+    if (comment)
+        query->set(query->comment, comment);
+    if (sql_security)
+        query->set(query->sql_security, sql_security);
+
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
@@ -1113,8 +1149,12 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (targets)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());
 
+        const UUID inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>());
+        if (inner_uuid == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID cannot use a Nil UUID");
+
         auto view_targets = make_intrusive<ASTViewTargets>();
-        view_targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+        view_targets->setInnerUUID(ViewTarget::To, inner_uuid);
 
         targets = view_targets;
     }
@@ -1128,219 +1168,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->attach_from_path = from_path->as<ASTLiteral &>().value.safeGet<String>();
         query->has_attach_from_path = true;
     }
-
-    return true;
-}
-
-
-bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword s_create(Keyword::CREATE);
-    ParserKeyword s_temporary(Keyword::TEMPORARY);
-    ParserKeyword s_attach(Keyword::ATTACH);
-    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
-    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
-    ParserKeyword s_as(Keyword::AS);
-    ParserKeyword s_view(Keyword::VIEW);
-    ParserKeyword s_window(Keyword::WINDOW);
-    ParserKeyword s_populate(Keyword::POPULATE);
-    ParserKeyword s_on(Keyword::ON);
-    ParserKeyword s_to(Keyword::TO);
-    ParserKeyword s_inner(Keyword::INNER);
-    ParserKeyword s_watermark(Keyword::WATERMARK);
-    ParserKeyword s_allowed_lateness(Keyword::ALLOWED_LATENESS);
-    ParserKeyword s_empty(Keyword::EMPTY);
-    ParserToken s_dot(TokenType::Dot);
-    ParserToken s_eq(TokenType::Equals);
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
-    ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
-    ParserStorage storage_inner{ParserStorage::TABLE_ENGINE};
-    ParserTablePropertiesDeclarationList table_properties_p;
-    ParserExpression watermark_p;
-    ParserExpression lateness_p;
-    ParserSelectWithUnionQuery select_p;
-
-    ASTPtr table;
-    ASTPtr to_table;
-    ASTPtr columns_list;
-    ASTPtr storage;
-    ASTPtr inner_storage;
-    ASTPtr watermark;
-    ASTPtr lateness;
-    ASTPtr as_database;
-    ASTPtr as_table;
-    ASTPtr select;
-
-    String cluster_str;
-    bool attach = false;
-    bool is_watermark_strictly_ascending = false;
-    bool is_watermark_ascending = false;
-    bool is_watermark_bounded = false;
-    bool allowed_lateness = false;
-    bool if_not_exists = false;
-    bool is_populate = false;
-    bool is_create_empty = false;
-
-    if (!s_create.ignore(pos, expected))
-    {
-        if (s_attach.ignore(pos, expected))
-            attach = true;
-        else
-            return false;
-    }
-
-    if (!s_window.ignore(pos, expected))
-        return false;
-
-    if (!s_view.ignore(pos, expected))
-       return false;
-
-    if (s_if_not_exists.ignore(pos, expected))
-       if_not_exists = true;
-
-    if (!table_name_p.parse(pos, table, expected))
-        return false;
-
-    if (s_on.ignore(pos, expected))
-    {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-            return false;
-    }
-
-    // TO [db.]table
-    if (s_to.ignore(pos, expected))
-    {
-        if (!table_name_p.parse(pos, to_table, expected))
-            return false;
-    }
-
-    /// Optional - a list of columns can be specified. It must fully comply with SELECT.
-    if (s_lparen.ignore(pos, expected))
-    {
-        if (!table_properties_p.parse(pos, columns_list, expected))
-            return false;
-
-        if (!s_rparen.ignore(pos, expected))
-            return false;
-    }
-
-    if (s_inner.ignore(pos, expected))
-    {
-        /// Inner table ENGINE for WINDOW VIEW
-        storage_inner.parse(pos, inner_storage, expected);
-    }
-
-    if (!to_table)
-    {
-        /// Target table ENGINE for WINDOW VIEW
-        storage_p.parse(pos, storage, expected);
-    }
-
-    boost::intrusive_ptr<ASTViewTargets> targets;
-    if (to_table || storage || inner_storage)
-    {
-        targets = make_intrusive<ASTViewTargets>();
-        if (to_table)
-            targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
-        if (storage)
-            targets->setInnerEngine(ViewTarget::To, storage);
-        if (inner_storage)
-            targets->setInnerEngine(ViewTarget::Inner, inner_storage);
-    }
-
-    // WATERMARK
-    if (s_watermark.ignore(pos, expected))
-    {
-        s_eq.ignore(pos, expected);
-
-        if (ParserKeyword(Keyword::STRICTLY_ASCENDING).ignore(pos,expected))
-            is_watermark_strictly_ascending = true;
-        else if (ParserKeyword(Keyword::ASCENDING).ignore(pos,expected))
-            is_watermark_ascending = true;
-        else if (watermark_p.parse(pos, watermark, expected))
-            is_watermark_bounded = true;
-        else
-            return false;
-    }
-
-    // ALLOWED LATENESS
-    if (s_allowed_lateness.ignore(pos, expected))
-    {
-        s_eq.ignore(pos, expected);
-        allowed_lateness = true;
-
-        if (!lateness_p.parse(pos, lateness, expected))
-            return false;
-    }
-
-    /// Accept both "POPULATE/EMPTY COMMENT" and "COMMENT POPULATE/EMPTY" orderings.
-    auto try_parse_populate_or_empty = [&is_populate, &is_create_empty, &pos, &expected, &s_populate, &s_empty]()
-    {
-        if (is_populate || is_create_empty)
-            return;
-        if (s_populate.ignore(pos, expected))
-            is_populate = true;
-        else if (s_empty.ignore(pos, expected))
-            is_create_empty = true;
-    };
-
-    try_parse_populate_or_empty();
-    auto comment = parseComment(pos, expected);
-    try_parse_populate_or_empty();
-
-    /// AS SELECT ...
-    if (!s_as.ignore(pos, expected))
-        return false;
-
-    if (!select_p.parse(pos, select, expected))
-        return false;
-
-    auto select_comment = parseComment(pos, expected);
-    if (comment && select_comment)
-        throw Exception(
-            ErrorCodes::SYNTAX_ERROR,
-            "Comment for a view cannot be specified both before and after AS SELECT; please use only one");
-    if (!comment)
-        comment = select_comment;
-
-    auto query = make_intrusive<ASTCreateQuery>();
-    node = query;
-
-    query->attach = attach;
-    query->if_not_exists = if_not_exists;
-    query->is_window_view = true;
-
-    auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
-    query->uuid = table_id->uuid;
-    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
-    query->has_uuid_clause = table_id->has_uuid;
-    query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
-    if (comment)
-        query->set(query->comment, comment);
-
-    query->set(query->columns_list, columns_list);
-
-    query->is_watermark_strictly_ascending = is_watermark_strictly_ascending;
-    query->is_watermark_ascending = is_watermark_ascending;
-    query->is_watermark_bounded = is_watermark_bounded;
-    query->set(query->watermark_function, watermark);
-    query->allowed_lateness = allowed_lateness;
-    query->set(query->lateness_function, lateness);
-    query->is_populate = is_populate;
-    query->is_create_empty = is_create_empty;
-
-    tryGetIdentifierNameInto(as_database, query->as_database);
-    tryGetIdentifierNameInto(as_table, query->as_table);
-    query->set(query->select, select);
-    query->set(query->targets, targets);
 
     return true;
 }
@@ -1548,6 +1375,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->uuid = uuid;
     query->has_uuid = uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = has_uuid_clause;
+    rejectNilUUIDClause(attach, has_uuid_clause, uuid);
     query->cluster = cluster_str;
     query->database = database;
 
@@ -1811,6 +1639,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->setIsTemporary(is_temporary);
 
     auto * table_id = table->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, table_id->has_uuid, table_id->uuid);
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
@@ -1832,6 +1661,21 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->set(query->comment, comment);
     if (sql_security)
         query->set(query->sql_security, sql_security);
+
+    /// A PRIMARY KEY declared in the column list is normalized into the storage definition below.
+    /// A plain view has no storage, and a materialized view with `TO [db].[table]` must not declare
+    /// one - the same rule that rejects an explicit `ENGINE` above. Without this check the parser
+    /// synthesizes a storage definition that formatting prints as a table-level `PRIMARY KEY`, and
+    /// the formatted query no longer parses back - which also means such a view could not be loaded
+    /// from its metadata after a restart.
+    if (query->columns_list && (query->columns_list->primary_key || query->columns_list->primary_key_from_columns))
+    {
+        if (is_ordinary_view)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "PRIMARY KEY is not allowed in the column list of a view");
+        if (to_table)
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'PRIMARY KEY'");
+    }
 
     if (query->columns_list && query->columns_list->primary_key)
     {
@@ -1877,7 +1721,12 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
         }
         if (to_inner_uuid)
-            targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+        {
+            const UUID inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>());
+            if (inner_uuid == UUIDHelpers::Nil)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID cannot use a Nil UUID");
+            targets->setInnerUUID(ViewTarget::To, inner_uuid);
+        }
         if (storage)
             targets->setInnerEngine(ViewTarget::To, storage);
     }
@@ -2046,6 +1895,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->replace_table = replace;
 
     auto * dict_id = name->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, dict_id->has_uuid, dict_id->uuid);
     query->database = dict_id->getDatabase();
     query->table = dict_id->getTable();
     query->uuid = dict_id->uuid;
@@ -2075,13 +1925,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateDatabaseQuery database_p;
     ParserCreateViewQuery view_p;
     ParserCreateDictionaryQuery dictionary_p;
-    ParserCreateWindowViewQuery window_view_p;
 
     return table_p.parse(pos, node, expected)
         || database_p.parse(pos, node, expected)
         || view_p.parse(pos, node, expected)
-        || dictionary_p.parse(pos, node, expected)
-        || window_view_p.parse(pos, node, expected);
+        || dictionary_p.parse(pos, node, expected);
 }
 
 }
@@ -2991,7 +2839,7 @@ These codecs are designed to make compression more effective by exploiting speci
 
 ### ALP {#alp}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 `ALP(variant)` — Adaptive lossless compression for floating-point data. Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
@@ -3002,7 +2850,7 @@ The codec accepts an optional variant argument:
 - `ALP(RD)` — Real Doubles variant. Reinterprets each value's bit pattern and splits it into a high part (sign + exponent + top mantissa bits) and a low part. High parts are dictionary-encoded (up to 8 entries), low parts are bit-packed. Works best when many values share the same high bits.
 
 <Note>
-This codec is experimental and requires `SET enable_alp_codec = 1` to use.
+This codec is in beta and requires `SET enable_alp_codec = 1` to use.
 </Note>
 
 ### FPC {#fpc}
@@ -3115,7 +2963,11 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge/>
 
-The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`allow_experimental_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
+
+<Note>
+Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, and `IPv4`. Other columns select between the default codec and `NONE`.
+</Note>
 
 A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.
 
@@ -3127,7 +2979,7 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;
@@ -3146,8 +2998,6 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
    └─────────┴────────────────────┘
 ```
 
-Selection currently covers integer-like columns: integers, enums, dates and times, `Decimal32`/`Decimal64`, and `IPv4`.
-
 ## Related content {#related-content}
 
 - Blog: [Optimizing ClickHouse with Schemas and Codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
@@ -3163,11 +3013,9 @@ column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
     factory.registerStatement("CREATE VIEW",
     {
         .description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/reference/statements/create/view#window-view).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), and [refreshable materialized](#refreshable-materialized-view).
 
 ## Normal View {#normal-view}
 
@@ -3619,138 +3467,6 @@ To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](/reference/statement
 Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 </Note>
 
-## Window View {#window-view}
-
-<DeprecatedBadge/>
-<CloudNotSupportedBadge/>
-
-<Warning>
-**Deprecated**
-
-Window views are deprecated and may be removed in a future release. They remain gated behind the [allow_experimental_window_view](/reference/settings/session-settings/allow-experimental#allow_experimental_window_view) setting (`SET allow_experimental_window_view = 1`) and are not recommended for new use.
-</Warning>
-
-```sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]
-AS SELECT ...
-GROUP BY time_window_function
-[COMMENT 'comment']
-```
-
-Window view can aggregate data by time window and output the results when the window is ready to fire. It stores the partial aggregation results in an inner(or specified) table to reduce latency and can push the processing result to a specified table or push notifications using the WATCH query.
-
-Creating a window view is similar to creating `MATERIALIZED VIEW`. Window view needs an inner storage engine to store intermediate data. The inner storage can be specified by using `INNER ENGINE` clause, the window view will use `AggregatingMergeTree` as the default inner engine.
-
-When creating a window view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
-
-### Time Window Functions {#time-window-functions}
-
-[Time window functions](/reference/functions/regular-functions/time-window-functions) are used to get the lower and upper window bound of records. The window view needs to be used with a time window function.
-
-### TIME ATTRIBUTES {#time-attributes}
-
-Window view supports **processing time** and **event time** process.
-
-**Processing time** allows window view to produce results based on the local machine's time and is used by default. It is the most straightforward notion of time but does not provide determinism. The processing time attribute can be defined by setting the `time_attr` of the time window function to a table column or using the function `now()`. The following query creates a window view with processing time.
-
-```sql
-CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
-```
-
-**Event time** is the time that each individual event occurred on its producing device. This time is typically embedded within the records when it is generated. Event time processing allows for consistent results even in case of out-of-order events or late events. Window view supports event time processing by using `WATERMARK` syntax.
-
-Window view provides three watermark strategies:
-
-* `STRICTLY_ASCENDING`: Emits a watermark of the maximum observed timestamp so far. Rows that have a timestamp smaller to the max timestamp are not late.
-* `ASCENDING`: Emits a watermark of the maximum observed timestamp so far minus 1. Rows that have a timestamp equal and smaller to the max timestamp are not late.
-* `BOUNDED`: WATERMARK=INTERVAL. Emits watermarks, which are the maximum observed timestamp minus the specified delay.
-
-The following queries are examples of creating a window view with `WATERMARK`:
-
-```sql
-CREATE WINDOW VIEW wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
-CREATE WINDOW VIEW wv WATERMARK=ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
-CREATE WINDOW VIEW wv WATERMARK=INTERVAL '3' SECOND AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
-```
-
-By default, the window will be fired when the watermark comes, and elements that arrived behind the watermark will be dropped. Window view supports late event processing by setting `ALLOWED_LATENESS=INTERVAL`. An example of lateness handling is:
-
-```sql
-CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTERVAL '2' SECOND AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM test.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid;
-```
-
-Note that elements emitted by a late firing should be treated as updated results of a previous computation. Instead of firing at the end of windows, the window view will fire immediately when the late event arrives. Thus, it will result in multiple outputs for the same window. Users need to take these duplicated results into account or deduplicate them.
-
-You can modify `SELECT` query that was specified in the window view by using `ALTER TABLE ... MODIFY QUERY` statement. The data structure resulting in a new `SELECT` query should be the same as the original `SELECT` query when with or without `TO [db.]name` clause. Note that the data in the current window will be lost because the intermediate state cannot be reused.
-
-### Monitoring New Windows {#monitoring-new-windows}
-
-Window view supports the [WATCH](/reference/statements/watch) query to monitoring changes, or use `TO` syntax to output the results to a table.
-
-```sql
-WATCH [db.]window_view
-[EVENTS]
-[LIMIT n]
-[FORMAT format]
-```
-
-A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
-
-### Settings {#settings-1}
-
-- `window_view_clean_interval`: The clean interval of window view in seconds to free outdated data. The system will retain the windows that have not been fully triggered according to the system time or `WATERMARK` configuration, and the other data will be deleted.
-- `window_view_heartbeat_interval`: The heartbeat interval in seconds to indicate the watch query is alive.
-- `wait_for_window_view_fire_signal_timeout`: Timeout for waiting for window view fire signal in event time processing.
-
-### Example {#example}
-
-Suppose we need to count the number of click logs per 10 seconds in a log table called `data`, and its table structure is:
-
-```sql
-CREATE TABLE data ( `id` UInt64, `timestamp` DateTime) ENGINE = Memory;
-```
-
-First, we create a window view with tumble window of 10 seconds interval:
-
-```sql
-CREATE WINDOW VIEW wv as select count(id), tumbleStart(w_id) as window_start from data group by tumble(timestamp, INTERVAL '10' SECOND) as w_id
-```
-
-Then, we use the `WATCH` query to get the results.
-
-```sql
-WATCH wv
-```
-
-When logs are inserted into table `data`,
-
-```sql
-INSERT INTO data VALUES(1,now())
-```
-
-The `WATCH` query should print the results as follows:
-
-```text
-┌─count(id)─┬────────window_start─┐
-│         1 │ 2020-01-14 16:56:40 │
-└───────────┴─────────────────────┘
-```
-
-Alternatively, we can attach the output to another table using `TO` syntax.
-
-```sql
-CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_start FROM data GROUP BY tumble(timestamp, INTERVAL '10' SECOND) as w_id
-```
-
-Additional examples can be found among stateful tests of ClickHouse (they are named `*window_view*` there).
-
-### Window View Usage {#window-view-usage}
-
-The window view is useful in the following scenarios:
-
-* **Monitoring**: Aggregate and calculate the metrics logs by time, and output the results to a target table. The dashboard can use the target table as a source table.
-* **Analyzing**: Automatically aggregate and preprocess data in the time window. This can be useful when analyzing a large number of logs. The preprocessing eliminates repeated calculations in multiple queries and reduces query latency.
-
 ## Related Content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
@@ -3823,7 +3539,7 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPOR
 ### Disallowed / limitations {#temporary-views-limitations}
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **not allowed** (use `DROP` + `CREATE`).
-* `CREATE TEMPORARY MATERIALIZED VIEW ...` / `WINDOW VIEW` → **not allowed**.
+* `CREATE TEMPORARY MATERIALIZED VIEW ...` → **not allowed**.
 * `CREATE TEMPORARY VIEW db.view AS ...` → **not allowed** (no database qualifier).
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **not allowed** (temporary objects are session-local).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, inner engines, and all MV-specific clauses → **not applicable** to temporary views.
@@ -3867,7 +3583,7 @@ AS SELECT ...
 [COMMENT 'comment']
 )",
         .parent = "CREATE",
-        .related = {"CREATE", "CREATE TABLE", "ALTER TABLE ... MODIFY QUERY", "DROP", "WATCH"},
+        .related = {"CREATE", "CREATE TABLE", "ALTER TABLE ... MODIFY QUERY", "DROP"},
     });
 
     factory.registerStatement("CREATE DICTIONARY",

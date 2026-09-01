@@ -25,7 +25,7 @@ std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObj
     return all_paths;
 }
 
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows)
+void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
@@ -33,7 +33,7 @@ void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Column
     for (size_t i = 0; i != flattened_paths.size(); ++i)
     {
         if (object_column.canAddNewDynamicPath())
-            object_column.addNewDynamicPath(flattened_paths[i], IColumn::mutate(std::move(flattened_columns[i])));
+            object_column.addNewDynamicPath(flattened_paths[i], std::move(flattened_columns[i]));
         else
             paths_for_shared_data.emplace(flattened_paths[i], std::move(flattened_columns[i]));
     }
@@ -254,10 +254,8 @@ ColumnPtr createPathsIndexesImpl(const std::unordered_map<std::string_view, size
 }
 
 template <typename T = UInt8>
-void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t rows_offset, size_t limit)
+void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t limit)
 {
-    /// Ignore first rows_offset values as we don't need them in the result.
-    istr.ignore(sizeof(T) * rows_offset);
     auto & data = paths_column.getChars();
     auto & offsets = paths_column.getOffsets();
     size_t offset = data.size();
@@ -311,23 +309,23 @@ std::pair<ColumnPtr, DataTypePtr> createPathsIndexes(const std::unordered_map<st
     }
 }
 
-void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t rows_offset, size_t limit)
+void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t limit)
 {
     auto & paths_string_column = assert_cast<ColumnString &>(paths_column);
     auto indexes_type = getSmallestIndexesType(paths.size());
     switch (indexes_type->getTypeId())
     {
         case TypeIndex::UInt8:
-            deserializeIndexesAndCollectPathsImpl<UInt8>(paths_string_column, istr, std::move(paths), rows_offset, limit);
+            deserializeIndexesAndCollectPathsImpl<UInt8>(paths_string_column, istr, std::move(paths), limit);
             break;
         case TypeIndex::UInt16:
-            deserializeIndexesAndCollectPathsImpl<UInt16>(paths_string_column, istr, std::move(paths), rows_offset, limit);
+            deserializeIndexesAndCollectPathsImpl<UInt16>(paths_string_column, istr, std::move(paths), limit);
             break;
         case TypeIndex::UInt32:
-            deserializeIndexesAndCollectPathsImpl<UInt32>(paths_string_column, istr, std::move(paths), rows_offset, limit);
+            deserializeIndexesAndCollectPathsImpl<UInt32>(paths_string_column, istr, std::move(paths), limit);
             break;
         case TypeIndex::UInt64:
-            deserializeIndexesAndCollectPathsImpl<UInt64>(paths_string_column, istr, std::move(paths), rows_offset, limit);
+            deserializeIndexesAndCollectPathsImpl<UInt64>(paths_string_column, istr, std::move(paths), limit);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column type of paths indexes: {}", indexes_type->getName());
