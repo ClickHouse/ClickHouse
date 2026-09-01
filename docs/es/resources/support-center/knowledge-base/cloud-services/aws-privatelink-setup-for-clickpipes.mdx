@@ -6,10 +6,6 @@ tags: ['Seguridad y autenticación', 'Gestión de Cloud']
 keywords: ['AWS PrivateLink', 'instancia de RDS privada', 'ClickPipes']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <div id="aws-privatelink-setup-to-expose-private-rds-for-clickpipes">
   ## Configuración de AWS PrivateLink para exponer una instancia de RDS privada a ClickPipes
 </div>
@@ -18,7 +14,7 @@ Pasos para exponer una instancia de RDS privada a ClickPipes mediante AWS Privat
 
 <Info>
   Esto utiliza AWS Endpoint Service y está pensado principalmente para el acceso entre regiones. Si necesita acceso dentro de la misma región,
-  se recomienda [crear un recurso de VPC](/es/integrations/clickpipes/aws-privatelink#vpc-resource)
+  se recomienda [crear un recurso de VPC](/es/integrations/clickpipes/networking/aws-privatelink#vpc-resource)
   en su lugar.
 </Info>
 
@@ -65,7 +61,7 @@ instancias de RDS que requieren servicios de endpoint (o si usa distintos puerto
 7. **Opcional**: Habilite la compatibilidad entre regiones si la región de su base de datos es diferente de la región de ClickPipes
    * En `Endpoint Services` de la consola de VPC, seleccione su servicio de endpoint.
    * Haga clic en el botón `Actions` y seleccione `Modify supported Regions`.
-   * Agregue las regiones en las que desea permitir el acceso al servicio de endpoint; [consulte aquí](/es/integrations/clickpipes/home#list-of-static-ips) la lista de regiones de ClickPipes.
+   * Agregue las regiones en las que desea permitir el acceso al servicio de endpoint; [consulte aquí](/es/integrations/clickpipes/networking/static-ips) la lista de regiones de ClickPipes.
 
 8. **Recomendado para MySQL**
    * Si está usando MySQL, se recomienda establecer `skip_name_resolve=1` como parámetro en la base de datos de origen.
@@ -76,7 +72,7 @@ instancias de RDS que requieren servicios de endpoint (o si usa distintos puerto
   ## Iniciar la conexión
 </div>
 
-Cuando se complete, puedes seguir la guía para [iniciar la conexión](/es/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+Cuando se complete, puedes seguir la guía para [iniciar la conexión](/es/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
 
 Una vez que el estado aparezca como `Ready` en la consola, puedes seguir la siguiente sección para crear tu ClickPipe.
 

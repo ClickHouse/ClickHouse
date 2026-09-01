@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## 지원되는 Postgres 버전
@@ -97,7 +98,17 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication에는 지정된 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+`clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제할 계획이 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블이 포함되면 Postgres에서 ClickPipes로 전송되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
+
+<div id="iam-authentication">
+  ### IAM authentication 사용(선택 사항)
+</div>
+
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+    복제에 IAM authentication을 사용하려면 `rds.iam_auth_for_replication` 매개변수를 `1`로 설정해야 합니다.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## 네트워크 액세스 설정
@@ -107,7 +118,7 @@ postgres=> SHOW rds.logical_replication ;
   ### IP 기반 접근 제어
 </div>
 
-Aurora 클러스터로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 Aurora 보안 그룹의 `Inbound rules`에 추가하십시오.
+Aurora 클러스터로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 Aurora 보안 그룹의 `Inbound rules`에 추가하십시오.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Aurora PostgreSQL에서 보안 그룹은 어디에서 찾습니까?" size="lg" border />
 

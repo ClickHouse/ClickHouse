@@ -32,7 +32,7 @@ ORDER BY (town, street)
 PARTITION BY toStartOfMonth(date)
 ```
 
-Каждый раз, когда в таблицу вставляется набор строк, вместо создания (как [минимум](/ru/reference/settings/session-settings#max_insert_block_size)) одной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), ClickHouse создает по одной новой части данных для каждого уникального значения ключа партиционирования среди вставленных строк:
+Каждый раз, когда в таблицу вставляется набор строк, вместо создания (как [минимум](/ru/reference/settings/session-settings/max-insert#max_insert_block_size)) одной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), ClickHouse создает по одной новой части данных для каждого уникального значения ключа партиционирования среди вставленных строк:
 
 <Image img="/images/bestpractices/partitions.webp" size="lg" alt="Партиции" />
 
@@ -62,7 +62,7 @@ PARTITION BY toStartOfMonth(date)
   ## Выберите ключ партиционирования с низкой мощностью
 </div>
 
-Важно понимать, что большое количество частей негативно влияет на производительность запросов. Поэтому ClickHouse будет отвечать на вставки ошибкой [«too many parts»](/ru/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts), если число частей превысит заданные ограничения — либо [общее](/ru/reference/settings/merge-tree-settings#max_parts_in_total), либо [для одной партиции](/ru/reference/settings/merge-tree-settings#parts_to_throw_insert).
+Важно понимать, что большое количество частей негативно влияет на производительность запросов. Поэтому ClickHouse будет отвечать на вставки ошибкой [«too many parts»](/ru/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts), если число частей превысит заданные ограничения — либо [общее](/ru/reference/settings/merge-tree-settings/max-parts#max_parts_in_total), либо [для одной партиции](/ru/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert).
 
 Крайне важно правильно выбрать **мощность** ключа партиционирования. Ключ партиционирования с высокой мощностью — когда число различных значений партиции велико — может привести к быстрому росту количества частей данных. Поскольку ClickHouse не выполняет слияние частей между партициями, слишком большое число партиций приведет к накоплению большого количества неслитых частей, что в итоге вызовет ошибку «Too many parts». [Слияния крайне важны](/ru/concepts/core-concepts/merges) для уменьшения фрагментации хранилища и оптимизации скорости запросов, но при партициях с высокой мощностью эта возможность теряется.
 

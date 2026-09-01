@@ -7,18 +7,18 @@ title: 'Scheduled scaling'
 doc_type: 'guide'
 ---
 
-import PrivatePreviewBadge from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
-<PrivatePreviewBadge/>
+<BetaBadge/>
 
 ClickHouse Cloud services automatically scale based on CPU and memory utilization, but many workloads follow predictable patterns — daily ingestion spikes, batch jobs that run overnight, or traffic that drops sharply on weekends. For these use cases, Scheduled Scaling lets you define exactly when your service should scale up or down, independent of real-time metrics.
 
-With Scheduled Scaling, you configure a set of time-based rules directly in the ClickHouse Cloud console. Each rule specifies a time, a recurrence (daily, weekly, or custom), and the target size — either the number of replicas (horizontal) or the memory tier (vertical). At the scheduled time, ClickHouse Cloud automatically applies the change, so your service is sized appropriately before demand arrives rather than reacting after the fact.
+With Scheduled Scaling, you configure a set of time-based rules directly in the ClickHouse Cloud console. Each rule specifies the days it is active, a start and end hour in UTC, and the settings to apply during that window — the number of replicas (horizontal), the minimum and maximum memory per replica (vertical), and whether the service is allowed to idle. While the window is active ClickHouse Cloud applies those settings, then reverts to your default scaling configuration when the window ends, so your service is sized appropriately before demand arrives rather than reacting after the fact.
 
 This is distinct from metric-based autoscaling, which responds dynamically to CPU and memory pressure. Scheduled Scaling is deterministic: you know exactly when the scaling will happen and to what size. The two approaches are complementary — a service can have a baseline scaling schedule and still benefit from autoscaling within that window if workloads fluctuate unexpectedly.
 
-Scheduled Scaling is currently available in **Private Preview**. To enable it for your organization, contact the ClickHouse support team.
+Scheduled Scaling is currently available in **Beta**.
 
 ## Setting up a scaling schedule {#setting-up-a-scaling-schedule}
 
@@ -30,11 +30,11 @@ To configure a schedule, navigate to your service in the ClickHouse Cloud consol
 
 Each rule requires:
 
-- **Time:** When the scaling action should occur (in your local timezone)
-- **Recurrence:** How often the rule repeats (e.g. every weekday, every Sunday)
-- **Target size:** The number of replicas or memory allocation to scale to
+- **Days active:** The days of the week the rule applies to
+- **Start and end time:** The window during which the rule applies, given in **UTC** and on whole hours. A window whose end hour is earlier than its start hour runs overnight into the next day
+- **Settings to apply:** The number of replicas, the minimum and maximum memory per replica, and the minimum idle time (or no idling) to use while the window is active
 
-Multiple rules can be combined to form a full weekly schedule. For example, you might scale out to 5 replicas every weekday at 6 AM and scale back to 2 replicas at 8 PM.
+Multiple rules can be combined to form a full weekly schedule, as long as their windows do not overlap. For example, a single rule covering Monday to Friday from 06:00 to 20:00 UTC can hold your service at a larger size through the working day, with your default configuration applying outside that window.
 
 ## Use cases {#use-cases}
 

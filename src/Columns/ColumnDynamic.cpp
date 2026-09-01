@@ -10,6 +10,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -17,8 +18,11 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -32,6 +36,27 @@ namespace ErrorCodes
 
 namespace
 {
+
+template <typename Container, typename Compare>
+void sortAndKeepTop(Container & container, size_t limit, Compare compare)
+{
+    if (container.size() <= limit)
+    {
+        std::sort(container.begin(), container.end(), compare);
+        return;
+    }
+
+    if (limit == 0)
+    {
+        container.clear();
+        return;
+    }
+
+    auto nth = container.begin() + limit;
+    std::nth_element(container.begin(), nth, container.end(), compare);
+    container.resize(limit);
+    std::sort(container.begin(), container.end(), compare);
+}
 
 /// Static default format settings to avoid creating it every time.
 const FormatSettings & getFormatSettings()
@@ -250,7 +275,9 @@ void ColumnDynamic::insert(const Field & x)
     }
 
     /// If we cannot insert field into current variant column, extend it with new variant for this field from its type.
-    auto field_data_type = applyVisitor(FieldToDataType(), x);
+    /// Use LeastSupertypeOnError::Dynamic so that arrays with incompatible element types (e.g. ["text", {"k":1}])
+    /// are typed as Array(Dynamic) rather than throwing NO_COMMON_TYPE. Dynamic can hold any element value.
+    auto field_data_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), x);
     auto field_data_type_name = field_data_type->getName();
     if (addNewVariant(field_data_type, field_data_type_name))
     {
@@ -315,10 +342,22 @@ void ColumnDynamic::get(size_t n, Field & res) const
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & variant_col = getVariantColumn();
-    /// Check if value is not in shared variant.
-    if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
+    const auto discr = variant_col.globalDiscriminatorAt(n);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
-        variant_col.getValueNameImpl(name_buf, n, options);
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
+        return;
+    }
+
+    /// Include the type name in the result so values of different types get different names.
+    if (options.notFull(name_buf))
+        name_buf << getTypeNameAt(n) << '_';
+
+    /// Check if value is not in shared variant.
+    if (discr != getSharedVariantDiscriminator())
+    {
+        variant_col.getVariantByGlobalDiscriminator(discr).getValueNameImpl(name_buf, variant_col.offsetAt(n), options);
         return;
     }
 
@@ -897,6 +936,244 @@ void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
+namespace
+{
+
+/// A `Dynamic` binary value starts with its binary encoded type, and one batch holds few distinct
+/// types, so values are grouped by that prefix. Decoding is deterministic in those bytes and the
+/// encoding is prefix-free, so an equal prefix means the same type and the same prefix length.
+struct SharedValueTypeGroup
+{
+    std::string_view prefix;
+    DataTypePtr type;
+    /// Null for `Nothing`, which is a serialized NULL and carries no value bytes.
+    SerializationPtr serialization;
+    size_t count = 0;
+    /// Start of this group's slice of the value order built when the batch is not single-typed.
+    size_t offset = 0;
+};
+
+/// Index of the group `value` belongs to, or `groups.size()` if it starts a new one. Runs of one
+/// type are the common case, so `hint` (the previous match) is tried before the scan.
+size_t findSharedValueTypeGroup(const VectorWithMemoryTracking<SharedValueTypeGroup> & groups, std::string_view value, size_t hint)
+{
+    if (hint < groups.size() && value.starts_with(groups[hint].prefix))
+        return hint;
+
+    for (size_t i = 0; i < groups.size(); ++i)
+    {
+        if (value.starts_with(groups[i].prefix))
+            return i;
+    }
+
+    return groups.size();
+}
+
+/// `buf` is hoisted out of the caller's loop and re-pointed at each value: constructing one read
+/// buffer per value is a measurable share of the cost once the temporary column is out of the way.
+void deserializeSharedValueBody(
+    IColumn & column, const ISerialization & serialization, ReadBufferFromMemory & buf, std::string_view value, size_t prefix_size)
+{
+    /// `ReadBuffer::set` is the external-buffer variant and leaves the working buffer empty; this needs
+    /// the plain re-point, so the base overload is named explicitly.
+    buf.BufferBase::set(const_cast<char *>(value.data()) + prefix_size, value.size() - prefix_size, 0);
+    serialization.deserializeBinary(column, buf, getFormatSettings());
+}
+
+template <typename GetValue>
+void hashSharedValuesImpl(GetValue && get_value, size_t count, UInt32 * hash_out)
+{
+    if (count == 0)
+        return;
+
+    VectorWithMemoryTracking<SharedValueTypeGroup> groups;
+    size_t hint = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const std::string_view value = get_value(i);
+        const size_t group_index = findSharedValueTypeGroup(groups, value, hint);
+        if (group_index == groups.size())
+        {
+            ReadBufferFromMemory buf(value);
+            auto type = decodeDataType(buf);
+            auto serialization = isNothing(type) ? nullptr : type->getDefaultSerialization();
+            groups.push_back(SharedValueTypeGroup{value.substr(0, buf.count()), std::move(type), std::move(serialization), 0, 0});
+        }
+
+        hint = group_index;
+        ++groups[group_index].count;
+    }
+
+    if (groups.size() == 1)
+    {
+        /// The whole batch is one type, so it deserializes in place and hashes straight into
+        /// `hash_out`: no per-value group index, no reordering, no scratch hash buffer.
+        const auto & group = groups.front();
+        if (!group.serialization)
+        {
+            /// A serialized NULL has no value bytes, so it hashes as the bare seed.
+            std::fill(hash_out, hash_out + count, WEAK_HASH32_INITIAL_VALUE);
+            return;
+        }
+
+        /// Hash the decoded values, not their serialized blobs, so they match the same values stored typed.
+        auto column = group.type->createColumn();
+        column->reserve(count);
+        ReadBufferFromMemory value_buf("", 0);
+        for (size_t i = 0; i < count; ++i)
+            deserializeSharedValueBody(*column, *group.serialization, value_buf, get_value(i), group.prefix.size());
+
+        column->computeHashInto(0, count, hash_out, /*initial=*/true);
+        return;
+    }
+
+    /// Counting sort of the value indices by group, so each group's values are visited contiguously.
+    size_t offset = 0;
+    for (auto & group : groups)
+    {
+        group.offset = offset;
+        offset += group.count;
+    }
+
+    PODArray<UInt64> cursor(groups.size());
+    for (size_t g = 0; g < groups.size(); ++g)
+        cursor[g] = groups[g].offset;
+
+    PODArray<UInt64> order(count);
+    hint = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        hint = findSharedValueTypeGroup(groups, get_value(i), hint);
+        order[cursor[hint]++] = i;
+    }
+
+    PaddedPODArray<UInt32> group_hash;
+    for (const auto & group : groups)
+    {
+        const UInt64 * group_order = order.data() + group.offset;
+
+        if (!group.serialization)
+        {
+            for (size_t k = 0; k < group.count; ++k)
+                hash_out[group_order[k]] = WEAK_HASH32_INITIAL_VALUE;
+            continue;
+        }
+
+        auto column = group.type->createColumn();
+        column->reserve(group.count);
+        ReadBufferFromMemory value_buf("", 0);
+        for (size_t k = 0; k < group.count; ++k)
+            deserializeSharedValueBody(*column, *group.serialization, value_buf, get_value(group_order[k]), group.prefix.size());
+
+        group_hash.resize(group.count);
+        column->computeHashInto(0, group.count, group_hash.data(), /*initial=*/true);
+        for (size_t k = 0; k < group.count; ++k)
+            hash_out[group_order[k]] = group_hash[k];
+    }
+}
+
+}
+
+void ColumnDynamic::hashSharedValues(const ColumnString & values, size_t first, size_t count, UInt32 * hash_out)
+{
+    hashSharedValuesImpl([&](size_t i) { return values.getDataAt(first + i); }, count, hash_out);
+}
+
+void ColumnDynamic::hashSharedValues(const ColumnString & values, const UInt64 * value_indices, size_t count, UInt32 * hash_out)
+{
+    hashSharedValuesImpl([&](size_t i) { return values.getDataAt(value_indices[i]); }, count, hash_out);
+}
+
+void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// A value must hash the same whether it sits in a typed variant or the shared variant. Typed rows
+    /// are already correct via `ColumnVariant`; only shared rows need decoding to the typed leaf hash.
+    const auto & variant_col = getVariantColumn();
+    const auto & shared_variant = getSharedVariant();
+    if (shared_variant.empty())
+    {
+        variant_col.computeHashInto(row_begin, row_end, hash_out, initial);
+        return;
+    }
+
+    const size_t n = row_end - row_begin;
+    PaddedPODArray<UInt32> value_hash(n);
+    variant_col.computeHashInto(row_begin, row_end, value_hash.data(), /*initial=*/true);
+
+    /// Gather the rows served from the shared variant and rehash them from the typed leaf value.
+    const auto shared_discr = getSharedVariantDiscriminator();
+    PODArray<UInt64> shared_value_indices;
+    PODArray<UInt64> shared_rows;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const size_t row = row_begin + i;
+        if (variant_col.globalDiscriminatorAt(row) == shared_discr)
+        {
+            shared_value_indices.push_back(variant_col.offsetAt(row));
+            shared_rows.push_back(i);
+        }
+    }
+
+    if (!shared_rows.empty())
+    {
+        PODArray<UInt32> shared_hash(shared_rows.size());
+        hashSharedValues(shared_variant, shared_value_indices.data(), shared_rows.size(), shared_hash.data());
+        for (size_t k = 0; k < shared_rows.size(); ++k)
+            value_hash[shared_rows[k]] = shared_hash[k];
+    }
+
+    if (initial)
+    {
+        memcpy(hash_out, value_hash.data(), n * sizeof(UInt32));
+    }
+    else
+    {
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(value_hash[i], hash_out[i]);
+    }
+}
+
+int ColumnDynamic::compareSerializedValues(std::string_view lhs, std::string_view rhs, int nan_direction_hint)
+{
+    /// Both values are serialized as [binary encoded type][value], with NULL encoded as the
+    /// Nothing type and no value (see SerializationDynamic::serializeBinary). Compare them
+    /// directly without materializing any wrapper column.
+
+    /// First check if both type and value are equal.
+    if (lhs == rhs)
+        return 0;
+
+    ReadBufferFromMemory buf_left(lhs);
+    auto left_data_type = decodeDataType(buf_left);
+    ReadBufferFromMemory buf_right(rhs);
+    auto right_data_type = decodeDataType(buf_right);
+
+    /// A Nothing type means the value is NULL (no value bytes follow). Order NULLs using
+    /// nan_direction_hint, exactly like the NULL_DISCRIMINATOR handling in doCompareAt.
+    bool left_is_null = isNothing(left_data_type);
+    bool right_is_null = isNothing(right_data_type);
+    if (left_is_null && right_is_null)
+        return 0;
+    if (left_is_null)
+        return nan_direction_hint;
+    if (right_is_null)
+        return -nan_direction_hint;
+
+    /// If rows have different types, we compare type names.
+    auto left_data_type_name = left_data_type->getName();
+    auto right_data_type_name = right_data_type->getName();
+    if (left_data_type_name != right_data_type_name)
+        return left_data_type_name < right_data_type_name ? -1 : 1;
+
+    /// If rows have the same type, we compare actual values by deserializing both into a single
+    /// temporary column of the concrete type.
+    auto tmp_column = left_data_type->createColumn();
+    const auto & serialization = left_data_type->getDefaultSerialization();
+    serialization->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
+    serialization->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
+    return tmp_column->compareAt(0, 1, *tmp_column, nan_direction_hint);
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnDynamic::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else
@@ -923,33 +1200,10 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     /// Check if both values are in shared variant.
     if (left_discr == left_shared_variant_discr && right_discr == right_shared_variant_discr)
     {
-        /// First check if both type and value are equal.
+        /// Both values are serialized in shared-variant binary form; compare them directly.
         auto left_value = getSharedVariant().getDataAt(left_variant.offsetAt(n));
         auto right_value = right_dynamic.getSharedVariant().getDataAt(right_variant.offsetAt(m));
-        if (left_value == right_value)
-            return 0;
-
-        /// Extract type names from both values.
-        ReadBufferFromMemory buf_left(left_value);
-        auto left_data_type = decodeDataType(buf_left);
-        auto left_data_type_name = left_data_type->getName();
-
-        ReadBufferFromMemory buf_right(right_value);
-        auto right_data_type = decodeDataType(buf_right);
-        auto right_data_type_name = right_data_type->getName();
-
-        /// If rows have different types, we compare type names.
-        if (left_data_type_name != right_data_type_name)
-            return left_data_type_name < right_data_type_name ? -1 : 1;
-
-        /// If rows have the same type, we compare actual values.
-        /// We have both values serialized in binary format, so we need to
-        /// create temporary column, insert both values into it and compare.
-        auto tmp_column = left_data_type->createColumn();
-        const auto & serialization = left_data_type->getDefaultSerialization();
-        serialization->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
-        serialization->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
-        return tmp_column->compareAt(0, 1, *tmp_column, nan_direction_hint);
+        return compareSerializedValues(left_value, right_value, nan_direction_hint);
     }
     /// Check if only left value is in shared data.
     if (left_discr == left_shared_variant_discr)
@@ -1248,14 +1502,11 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
                 variants_with_sizes.emplace_back(total_variant_sizes[variant_name], variant);
         }
 
-        std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
+        size_t variants_to_add = result_variants.size() <= max_dynamic_types ? max_dynamic_types + 1 - result_variants.size() : 0;
+        sortAndKeepTop(variants_with_sizes, variants_to_add, std::greater<>());
         /// Add the most frequent variants until we reach max_dynamic_types.
         for (const auto & [_, new_variant] : variants_with_sizes)
-        {
-            if (!canAddNewVariant(result_variants.size()))
-                break;
             result_variants.push_back(new_variant);
-        }
 
         result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
     }
@@ -1378,19 +1629,15 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
             if (variant_name != getSharedVariantTypeName())
                 variants_with_sizes.emplace_back(total_sizes[variant_name], variant_name, variant);
         }
-        std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
+        sortAndKeepTop(variants_with_sizes, max_dynamic_types, std::greater<>());
 
         /// Take first max_dynamic_types variants from sorted list.
         DataTypes result_variants;
         result_variants.reserve(max_dynamic_types + 1); /// +1 for shared variant.
         /// Add shared variant.
         result_variants.push_back(getSharedVariantDataType());
-        for (const auto & [size, variant_name, variant_type] : variants_with_sizes)
-        {
-            /// Add variant to the resulting variants list until we reach max_dynamic_types.
-            if (canAddNewVariant(result_variants.size()))
-                result_variants.push_back(variant_type);
-        }
+        for (const auto & variant_with_size : variants_with_sizes)
+            result_variants.push_back(std::get<2>(variant_with_size));
 
         result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
     }
@@ -1530,9 +1777,9 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
         candidates_with_sizes.reserve(shared_variant_candidates.size());
         for (const auto & [variant_name, size] : shared_variant_candidates)
             candidates_with_sizes.emplace_back(size, variant_name);
-        std::sort(candidates_with_sizes.begin(), candidates_with_sizes.end(), std::greater());
-        for (size_t i = 0; i < Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE; ++i)
-            new_statistics.shared_variants_statistics.emplace(candidates_with_sizes[i].second, candidates_with_sizes[i].first);
+        sortAndKeepTop(candidates_with_sizes, Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE, std::greater<>());
+        for (const auto & [size, variant_name] : candidates_with_sizes)
+            new_statistics.shared_variants_statistics.emplace(variant_name, size);
     }
 
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));

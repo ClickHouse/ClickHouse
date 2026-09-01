@@ -6,7 +6,7 @@ title: 'Shared'
 doc_type: 'reference'
 ---
 
-import CloudOnlyBadge from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge/>
 
@@ -33,5 +33,5 @@ CREATE DATABASE my_database;
 ClickHouse Cloud automatically assigns the Shared database engine to databases. Any tables created within such a database using stateless engines will automatically benefit from Shared Catalog’s replication and coordination capabilities.
 
 <Tip>
-For more information on Shared Catalog and it's benefits, see ["Shared catalog and shared database engine"](/products/cloud/features/infrastructure/shared-catalog) in the Cloud reference section.
+For more information, see [Shared catalog and shared database engine](/products/cloud/features/infrastructure/shared-catalog).
 </Tip>

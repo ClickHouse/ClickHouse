@@ -10,7 +10,7 @@ keywords: ['conjunto de datos de ejemplo', 'menús', 'datos históricos', 'datos
 
 El conjunto de datos fue creado por la New York Public Library. Contiene datos históricos sobre los menús de hoteles, restaurantes y cafés, con los platos y sus precios.
 
-Fuente: http://menus.nypl.org/data
+Fuente: https://www.nypl.org/research/support/whats-on-the-menu
 Los datos son de dominio público.
 
 Los datos proceden del archivo de la biblioteca y pueden estar incompletos y resultar difíciles de analizar estadísticamente. No obstante, también son muy apetitosos.
@@ -24,12 +24,12 @@ Ejecuta el comando:
 
 ```bash
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
-# Opción: Validar el checksum
+# Option: Validate the checksum
 md5sum 2021_08_01_07_01_17_data.tgz
-# El checksum debe ser igual a: db6126724de939a5481e3160a2d67d15
+# Checksum should be equal to: db6126724de939a5481e3160a2d67d15
 ```
 
-Sustituye el enlace por el enlace actualizado de http://menus.nypl.org/data, si es necesario.
+Sustituye el enlace por el enlace actualizado de https://www.nypl.org/research/support/whats-on-the-menu, si es necesario.
 El tamaño de la descarga es de aproximadamente 35 MB.
 
 <div id="unpack-dataset">
@@ -135,9 +135,9 @@ Usamos el formato [CSVWithNames](/es/reference/formats/CSV/CSVWithNames) porque 
 
 Deshabilitamos `format_csv_allow_single_quotes` porque solo se usan comillas dobles para los campos de datos, y las comillas simples pueden aparecer dentro de los valores y no deberían confundir al analizador de CSV.
 
-Deshabilitamos [input&#95;format&#95;null&#95;as&#95;default](/es/reference/settings/formats#input_format_null_as_default) porque nuestros datos no contienen [NULL](/es/reference/settings/formats#input_format_null_as_default). De lo contrario, ClickHouse intentará interpretar secuencias `\N` y puede confundirlas con `\` en los datos.
+Deshabilitamos [input&#95;format&#95;null&#95;as&#95;default](/es/reference/settings/formats/input-format#input_format_null_as_default) porque nuestros datos no contienen [NULL](/es/reference/settings/formats/input-format#input_format_null_as_default). De lo contrario, ClickHouse intentará interpretar secuencias `\N` y puede confundirlas con `\` en los datos.
 
-La configuración [date&#95;time&#95;input&#95;format best&#95;effort](/es/reference/settings/formats#date_time_input_format) permite interpretar campos [DateTime](/es/reference/data-types/datetime) en una amplia variedad de formatos. Por ejemplo, reconocerá ISO-8601 sin segundos, como &#39;2000-01-01 01:02&#39;. Sin esta configuración, solo se permite el formato fijo de DateTime.
+La configuración [date&#95;time&#95;input&#95;format best&#95;effort](/es/reference/settings/formats/date-time#date_time_input_format) permite interpretar campos [DateTime](/es/reference/data-types/datetime) en una amplia variedad de formatos. Por ejemplo, reconocerá ISO-8601 sin segundos, como &#39;2000-01-01 01:02&#39;. Sin esta configuración, solo se permite el formato fijo de DateTime.
 
 <div id="denormalize-data">
   ## Desnormalizar los datos

@@ -35,6 +35,21 @@ IProcessor::Status BufferChunksTransform::prepare()
         return Status::Finished;
     }
 
+    /// Do not read ahead while the downstream merge may have deferred this source
+    /// after seeing its virtual row. Resume only when data is actually demanded —
+    /// either right away (the source is not deferred) or when the merge releases
+    /// the deferred source (see `IMergingTransformBase` and `topUpPrefetch`).
+    if (wait_for_demand_after_virtual_row)
+    {
+        if (!output.canPush())
+        {
+            input.setNotNeeded();
+            return Status::PortFull;
+        }
+
+        wait_for_demand_after_virtual_row = false;
+    }
+
     if (output.canPush())
     {
         input.setNeeded();
@@ -47,6 +62,7 @@ IProcessor::Status BufferChunksTransform::prepare()
             if (isVirtualRow(chunk))
             {
                 output.push(std::move(chunk));
+                wait_for_demand_after_virtual_row = true;
                 input.setNotNeeded();
                 return Status::PortFull;
             }
@@ -63,6 +79,7 @@ IProcessor::Status BufferChunksTransform::prepare()
             output.push(std::move(chunk));
             if (virtual_row)
             {
+                wait_for_demand_after_virtual_row = true;
                 input.setNotNeeded();
                 return Status::PortFull;
             }

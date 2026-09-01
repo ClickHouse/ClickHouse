@@ -12,6 +12,7 @@
 #include <Core/Block.h>
 
 #include <pcg_random.hpp>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 
 /*
  * This file contains helper functions for debugging and testing join optimization.
@@ -26,25 +27,23 @@
 namespace DB
 {
 
-constexpr auto DUMMY_JOIN_STATS_PARAM_NAME = "_internal_join_table_stat_hints";
-
-/* Read dummy stats from query parameter
+/* Read a table statistics hint from the query parameter.
  * The parameter should be a JSON object with the following structure:
  * SET param__internal_join_table_stat_hints = '{
  *   "table_name": { "cardinality": 1000, "distinct_keys": { "column_name": 100, ... } },
  *   ...
  * }';
  */
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
-RelationStats getDummyStats(ContextPtr context, const String & table_name);
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
+RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
 RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name)
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name)
 {
     try
     {
         Poco::JSON::Parser parser;
-        Poco::Dynamic::Var result = parser.parse(dummy_stats_str);
+        Poco::Dynamic::Var result = parser.parse(stats_hint_json);
         const auto & object = result.extract<Poco::JSON::Object::Ptr>();
         if (!object)
             return {};
@@ -58,9 +57,14 @@ RelationStats getDummyStats(const String & dummy_stats_str, const String & table
 
         RelationStats stats;
         stats.table_name = table_name;
+        stats.imprecise_estimate = true;
+        stats.source = RowEstimateSource::Hint;
 
         if (stat_object->has("cardinality"))
             stats.estimated_rows = stat_object->getValue<UInt64>("cardinality");
+
+        if (stat_object->has("avg_row_bytes"))
+            stats.avg_row_bytes = stat_object->getValue<double>("avg_row_bytes");
 
         if (stat_object->isObject("distinct_keys"))
         {
@@ -68,23 +72,30 @@ RelationStats getDummyStats(const String & dummy_stats_str, const String & table
             for (const auto & [key, value] : *distinct_keys)
                 stats.column_stats[key].num_distinct_values = value.convert<UInt64>();
         }
+
+        if (stat_object->isObject("column_bytes"))
+        {
+            auto column_bytes = stat_object->getObject("column_bytes");
+            for (const auto & [key, value] : *column_bytes)
+                stats.column_stats[key].avg_bytes = value.convert<Float64>();
+        }
         LOG_DEBUG(getLogger("optimizeJoin"),
-            "Got dummy join stats for table '{}' from '{}' query parameter, it's supposed to be used only for testing, do not use it in production",
-            table_name, DUMMY_JOIN_STATS_PARAM_NAME);
+            "Got a table statistics hint for table '{}' from '{}' query parameter, it is meant for testing only, do not use it in production",
+            table_name, CascadesParams::STAT_HINTS);
         return stats;
     }
     catch (const Poco::Exception & e)
     {
-        LOG_WARNING(getLogger("optimizeJoin"), "Failed to parse '{}': {}", DUMMY_JOIN_STATS_PARAM_NAME, e.displayText());
+        LOG_WARNING(getLogger("optimizeJoin"), "Failed to parse '{}': {}", CascadesParams::STAT_HINTS, e.displayText());
         return {};
     }
 }
 
-RelationStats getDummyStats(ContextPtr context, const String & table_name)
+RelationStats parseTableStatsHint(ContextPtr context, const String & table_name)
 {
     const auto & query_params = context->getQueryParameters();
-    if (auto it = query_params.find(DUMMY_JOIN_STATS_PARAM_NAME); it != query_params.end())
-        return getDummyStats(it->second, table_name);
+    if (auto it = query_params.find(CascadesParams::STAT_HINTS); it != query_params.end())
+        return parseTableStatsHint(it->second, table_name);
     return {};
 }
 
@@ -99,6 +110,8 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
     RelationStats stats;
     stats.table_name = table_name;
     stats.estimated_rows = 1 + (hash % 10'000'000);
+    stats.imprecise_estimate = true;
+    stats.source = RowEstimateSource::Randomized;
 
     pcg64 rng(hash);
     for (const auto & col : header)

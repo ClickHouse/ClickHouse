@@ -30,6 +30,9 @@ public:
     /// cached_hash is never set. It must not be pooled: getHash() would fire "Hash is not set for serialization".
     bool supportsPooling() const override { return false; }
 
+    /// Configured from the codec, not from the type, so the identity carries the parameters.
+    String getCustomSerializationIdentity() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

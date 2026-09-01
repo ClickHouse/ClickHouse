@@ -3,9 +3,7 @@ Expression ((Project names + Projection))
     Expression ((Before GROUP BY + Change column names to column identifiers))
       ReadFromSystemNumbers
 ------------------
-SELECT number
-FROM numbers_mt(1000)
-GROUP BY number
+SELECT number\nFROM numbers_mt(1000)\nGROUP BY number
 ------------------
 Expression ((Project names + Projection))
   Aggregating

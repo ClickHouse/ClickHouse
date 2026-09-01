@@ -250,8 +250,6 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::WriteLock lockCache() const;
-
     std::vector<FileSegment::Info> sync();
 
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
@@ -306,6 +304,11 @@ private:
     /// Fed by `keep_up_free_space_ratio_task`, which collects candidates and frees their queue entries.
     std::unique_ptr<ThreadPool> eviction_pool;
 
+    /// Pool for parallel keys removal on `SYSTEM DROP FILESYSTEM CACHE`.
+    /// Keeps no idle threads, so it costs nothing between drop requests.
+    const size_t drop_cache_threads;
+    std::unique_ptr<ThreadPool> drop_cache_pool;
+
     /// Single background maintenance task: removes the priority's invalidated
     /// queue entries and, on the same ticks, evicts idle clients.
     BackgroundSchedulePoolTaskHolder background_cleanup_task;
@@ -328,6 +331,7 @@ private:
     // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
     const bool use_split_cache;
     const double split_cache_ratio;
+    const std::set<std::string> system_cache_extensions;
 
     const bool skip_cache_on_disk_failure;
     std::atomic<bool> expose_eviction_metrics;
@@ -342,7 +346,13 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
+    /// Taken exclusively (`try_lock_for`) by `doDynamicResize`, shared (`try_lock`) by
+    /// `tryReserve` and `tryIncreasePriority` - both skip it when the policy cannot resize.
+    /// This lock alone prevents growth while the resize path has the priority guards released.
     std::shared_timed_mutex dynamic_resize_lock;
+    /// Cached `main_priority->supportsDynamicResize`: non-resizable policies skip the
+    /// `dynamic_resize_lock` gate on every reservation and priority increase.
+    bool supports_dynamic_resize = false;
 
     std::atomic<size_t> cache_reserve_active_threads = 0;
 
@@ -353,8 +363,6 @@ private:
     /// Must be declared after main_priority: metadata holds iterators that reference
     /// the priority's internal state, so metadata must be destroyed first
     CacheMetadata metadata;
-    mutable CachePriorityGuard cache_guard;
-    mutable CachePriorityGuard queue_guard;
     mutable CacheStateGuard cache_state_guard;
 
     /// Random checks for cache correctness.
@@ -436,11 +444,11 @@ private:
         double slru_size_ratio = 0;
     };
     SizeLimits doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits);
+    /// Takes `cache_state_guard` itself, in several short spans; the caller must not hold it.
     bool doDynamicResizeImpl(
         const SizeLimits & prev_limits,
         const SizeLimits & desired_limits,
-        SizeLimits & result_limits,
-        CacheStateGuard::Lock &);
+        SizeLimits & result_limits);
 
     bool doTryReserve(
         FileSegment & file_segment,
@@ -458,7 +466,6 @@ private:
         const IFileCachePriority::IteratorPtr & main_priority_iterator,
         FileCacheReserveStat & reserve_stat,
         EvictionCandidates & eviction_candidates,
-        IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
         Priority * query_priority,
         std::string & failure_reason);
 

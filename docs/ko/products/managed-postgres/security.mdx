@@ -7,18 +7,18 @@ keywords: ['postgres 보안', 'IP 허용 목록', '암호화', 'tls', 'ssl', 'pr
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
-Managed Postgres는 데이터를 보호하고 컴플라이언스 요구 사항을 충족할 수 있도록 엔터프라이즈급 보안 기능을 갖추고 있습니다. 이 페이지에서는 네트워크 보안, 암호화, 백업 보존 정책을 설명합니다.
+ClickHouse Managed Postgres는 데이터를 보호하고 컴플라이언스 요구 사항을 충족할 수 있도록 엔터프라이즈급 보안 기능을 갖추고 있습니다. 이 페이지에서는 네트워크 보안, 암호화, 백업 보존 정책을 설명합니다.
 
 <div id="ip-whitelisting">
   ## IP 허용 목록
 </div>
 
-IP 필터는 Managed Postgres 인스턴스에 연결할 수 있는 소스 IP 주소를 제어하며, 인증되지 않은 연결로부터 데이터베이스를 보호하는 네트워크 수준의 액세스 제어를 제공합니다.
+IP 필터는 ClickHouse Managed Postgres 인스턴스에 연결할 수 있는 소스 IP 주소를 제어하며, 인증되지 않은 연결로부터 데이터베이스를 보호하는 네트워크 수준의 액세스 제어를 제공합니다.
 
 <Image img="/images/managed-postgres/ip-filters.webp" alt="IP 액세스 목록 구성" size="md" border />
 
@@ -55,13 +55,13 @@ IP 필터를 구성하려면:
   ## 암호화
 </div>
 
-Managed Postgres는 포괄적인 데이터 보호를 위해 저장 중과 전송 중 모두 데이터를 암호화합니다.
+ClickHouse Managed Postgres는 포괄적인 데이터 보호를 위해 저장 시과 전송 중 모두 데이터를 암호화합니다.
 
 <div id="encryption-at-rest">
   ### 저장 시 암호화
 </div>
 
-Managed Postgres에 저장되는 모든 데이터는 기반 스토리지 인프라에 대한 무단 액세스를 방지하기 위해 저장 시 암호화됩니다.
+ClickHouse Managed Postgres에 저장되는 모든 데이터는 기반 스토리지 인프라에 대한 무단 액세스를 방지하기 위해 저장 시 암호화됩니다.
 
 <div id="nvme-encryption">
   #### NVMe 스토리지 암호화
@@ -82,14 +82,14 @@ NVMe 드라이브에 저장되는 데이터베이스 파일, 트랜잭션 로그
 모든 백업 데이터는 전용의 격리된 스토리지 버킷에 저장되며, 자격 증명은 각 인스턴스별로 범위가 제한됩니다. 이를 통해 백업 데이터의 보안이 유지되며, 권한이 부여된 시스템만 액세스할 수 있습니다.
 
 <Info>
-  저장 시 암호화는 모든 Managed Postgres 인스턴스에 기본적으로 적용되며, 비활성화할 수 없습니다. 추가 구성은 필요하지 않습니다.
+  저장 시 암호화는 모든 ClickHouse Managed Postgres 인스턴스에 기본적으로 적용되며, 비활성화할 수 없습니다. 추가 구성은 필요하지 않습니다.
 </Info>
 
 <div id="encryption-in-transit">
   ### 전송 중 암호화
 </div>
 
-Managed Postgres에 대한 모든 네트워크 연결은 애플리케이션과 데이터베이스 간에 데이터가 전송되는 동안 이를 보호하기 위해 TLS(Transport Layer Security)로 보호됩니다.
+ClickHouse Managed Postgres에 대한 모든 네트워크 연결은 애플리케이션과 데이터베이스 간에 데이터가 전송되는 동안 이를 보호하기 위해 TLS(Transport Layer Security)로 보호됩니다.
 
 <div id="tls-ssl">
   #### TLS/SSL 구성
@@ -103,7 +103,7 @@ TLS 구성 및 연결 옵션에 대한 자세한 내용은 [Connection](/ko/prod
   ## Private Link
 </div>
 
-Private Link를 사용하면 Managed Postgres 인스턴스와 Virtual Private Cloud(VPC) 사이에 퍼블릭 인터넷으로 트래픽을 노출하지 않는 프라이빗 연결을 설정할 수 있습니다. 이를 통해 네트워크 격리와 보안을 한층 강화할 수 있습니다.
+Private Link를 사용하면 ClickHouse Managed Postgres 인스턴스와 Virtual Private Cloud(VPC) 사이에 퍼블릭 인터넷으로 트래픽을 노출하지 않는 프라이빗 연결을 설정할 수 있습니다. 이를 통해 네트워크 격리와 보안을 한층 강화할 수 있습니다.
 
 <Info>
   **수동 설정 필요**
@@ -115,9 +115,9 @@ Private Link를 사용하면 Managed Postgres 인스턴스와 Virtual Private Cl
   ### Private Link 설정 요청
 </div>
 
-Managed Postgres 인스턴스에서 Private Link를 활성화하려면 다음 단계를 수행하십시오.
+ClickHouse Managed Postgres 인스턴스에서 Private Link를 활성화하려면 다음 단계를 수행하십시오.
 
-1. 지원 티켓을 생성하여 **ClickHouse 지원팀에 문의합니다**
+1. **지원 티켓을 생성하여 ClickHouse 지원팀에 문의합니다**
 
 2. **다음 정보를 제공합니다**:
    * ClickHouse 조직 ID
@@ -126,7 +126,7 @@ Managed Postgres 인스턴스에서 Private Link를 활성화하려면 다음 �
      * (선택 사항) Postgres 인스턴스 리전 외에 연결하려는 다른 리전
 
 3. **ClickHouse 지원팀에서 다음 작업을 수행합니다**:
-   * Managed Postgres 측에 Private Link 엔드포인트를 프로비저닝합니다
+   * ClickHouse Managed Postgres 측에 Private Link 엔드포인트를 프로비저닝합니다
    * 엔드포인트 인터페이스를 생성하는 데 사용할 수 있도록 엔드포인트 연결 정보를 제공합니다.
 
 4. **Private Link를 설정합니다**:
@@ -137,7 +137,7 @@ Managed Postgres 인스턴스에서 Private Link를 활성화하려면 다음 �
   ## 백업 보존
 </div>
 
-Managed Postgres는 실수로 인한 삭제, 손상 및 기타 데이터 손실 상황으로부터 데이터를 보호하기 위해 자동으로 백업을 수행합니다.
+ClickHouse Managed Postgres는 실수로 인한 삭제, 손상 및 기타 데이터 손실 상황으로부터 데이터를 보호하기 위해 자동으로 백업을 수행합니다.
 
 <div id="retention-policy">
   ### 보존 정책
@@ -151,10 +151,10 @@ Managed Postgres는 실수로 인한 삭제, 손상 및 기타 데이터 손실 
   ### 백업 보안
 </div>
 
-백업은 프라이머리 데이터와 동일한 수준의 보안이 적용된 상태로 저장됩니다:
+백업은 프라이머리 데이터와 동일한 수준의 보안이 보장된 상태로 저장됩니다:
 
 * 객체 스토리지의 **저장 시 암호화**
-* 권한 범위가 제한된 자격 증명을 사용하는 인스턴스별 **격리된 스토리지 버킷**
-* 백업에 연결된 Postgres 인스턴스에만 제한되는 **접근 제어**
+* 인스턴스별 **격리된 스토리지 버킷** 및 범위가 제한된 자격 증명
+* 백업에 연결된 Postgres 인스턴스에만 허용되는 **액세스 제어**
 
-백업 전략과 특정 시점 복구에 대한 자세한 내용은 [백업 및 복원](/ko/products/managed-postgres/backup-and-restore) 페이지를 참조하십시오.
+백업 전략 및 시점 복구에 대한 자세한 내용은 [Backup and restore](/ko/products/managed-postgres/backup-and-restore) 페이지를 참조하십시오.
