@@ -76,9 +76,12 @@ DROP TABLE t_ttl_patch_rows_where;
 -- merge_required_columns), so the preserve decision cannot key on header presence.
 DROP TABLE IF EXISTS t_ttl_patch_indexed SYNC;
 
-CREATE TABLE t_ttl_patch_indexed (d DateTime, x DateTime TTL x + INTERVAL 1 SECOND, y Int32,
+-- x carries a DEFAULT far in the past, and a recompression rule reads x: if the merge saw x's
+-- stale pre-expiry values the bound would land a year from now instead.
+CREATE TABLE t_ttl_patch_indexed (d DateTime, x DateTime DEFAULT toDateTime('2000-01-01 00:00:00') TTL x + INTERVAL 1 SECOND, y Int32,
     INDEX idx_x (x, y) TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple()
+TTL x + INTERVAL 1 YEAR RECOMPRESS CODEC(ZSTD(1))
 SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
 
 INSERT INTO t_ttl_patch_indexed VALUES (now() - INTERVAL 1 HOUR, now() - INTERVAL 1 HOUR, 1);
@@ -92,6 +95,10 @@ OPTIMIZE TABLE t_ttl_patch_indexed FINAL;
 -- The merge has to complete: the recalculation step re-adds the columns it expired, and the index
 -- reading x is built after it, so a narrower stream there fails the whole merge.
 SELECT 'indexed expired column merge completed', count(), min(y) FROM t_ttl_patch_indexed;
+
+SELECT 'recompression bound built from the default', countIf(recompression_ttl_info.max[1] < now())
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_patch_indexed' AND active AND partition_id NOT LIKE 'patch-%';
 
 SYSTEM START TTL MERGES t_ttl_patch_indexed;
 DROP TABLE t_ttl_patch_indexed;
