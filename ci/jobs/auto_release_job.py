@@ -90,30 +90,6 @@ def _release_branches() -> List[str]:
     return branches
 
 
-def _assert_no_open_version_bump_prs() -> None:
-    """Refuse to release while a previous version-bump PR is still open.
-
-    Each release opens a changelog PR titled `Update version_date.tsv and
-    changelog after <tag>` (release_job.py); a lingering open one means the
-    previous release did not finish merging, so releasing again would stack
-    version bumps. Fail-close: a read failure raises too.
-
-    The match is scoped with `in:title`: the legacy guard searched the phrase
-    across all PR fields, so any unrelated PR merely mentioning
-    `Update version_date.tsv` in its body (e.g. this migration's own PR) would
-    trip it and halt every release. Restricting to the title keeps the guard
-    firing on the real bump PRs while ignoring body-only mentions."""
-    raw = GH.get_output_with_retries(
-        'gh pr list --state open --search "Update version_date.tsv in:title"'
-        " --json number,title"
-    )
-    if raw is None or raw == "":
-        raise RuntimeError("gh pr list failed while checking for open version-bump PRs")
-    prs = json.loads(raw)
-    if prs:
-        raise RuntimeError(f"Found not merged version bump PRs: {prs}")
-
-
 def _latest_release_tag(branch: str) -> Optional[str]:
     """Newest `v<branch>.*` tag by version order, or None when there is none.
 
@@ -203,8 +179,10 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
     same contract CreateRelease's `PackageDownloader` produces), so this gate
     cannot drift from what CreateRelease actually downloads."""
     version = _release_version_for_commit(commit_sha)
+    with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
+    print(f"   signed macOS artifacts expected: {with_signed_macos}")
     return release_packages.release_build_artifacts_ready(
-        S3Helper(), release_branch, commit_sha, version
+        S3Helper(), release_branch, commit_sha, version, with_signed_macos
     )
 
 
@@ -343,7 +321,6 @@ def main() -> None:
 
     info = Info()
     assert info.repo_name == "ClickHouse/ClickHouse", f"got [{info.repo_name}]"
-    _assert_no_open_version_bump_prs()
     _fetch_history()
 
     results: List[Result] = []

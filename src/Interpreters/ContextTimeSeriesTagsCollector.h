@@ -4,6 +4,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SharedMutex.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <city.h>
@@ -87,14 +88,19 @@ public:
     VectorWithMemoryTracking<String> extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract) const;
     void extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const;
 
-    /// Returns the groups assigned to the sets of tags which were added to the collector
+    /// Fills `res` with the groups assigned to the sets of tags which were added to the collector
     /// with identifiers from a column. Throws an exception if some identifier is unknown.
-    /// `id_column` must not be Nullable.
-    VectorWithMemoryTracking<Group> getGroupByID(const ColumnPtr & id_column) const;
+    /// `id_column` must not be Nullable. Any previous contents of `res` are discarded.
+    /// Dictionary-encoded (LowCardinality) id components are read through the dictionary and use
+    /// the same typed maps as plain components; only the identifiers of actual rows are looked up,
+    /// so a shared dictionary is allowed to also contain identifiers whose rows were all filtered
+    /// out and which are therefore unknown to the collector.
+    void getGroupByID(const ColumnPtr & id_column, PaddedPODArray<Group> & res) const;
 
     /// Returns the sets of tags which were added to the collector with identifiers from a column.
     /// Throws an exception if some identifier is unknown.
     /// `id_column` must not be Nullable.
+    /// Dictionary-encoded identifiers are processed the same way as in getGroupByID.
     VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const ColumnPtr & id_column) const;
 
     /// Removes a tag from a group and returns the result group.
@@ -226,7 +232,7 @@ private:
                         size_t num_rows_to_store, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
 
     template <typename IDGetter>
-    VectorWithMemoryTracking<Group> getGroupByIDTyped(const IDGetter & id_getter, const IColumn & id_data, size_t num_rows) const;
+    void getGroupByIDTyped(const IDGetter & id_getter, const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const;
 
     template <typename IDGetter>
     VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByIDTyped(const IDGetter & id_getter, const IColumn & id_data, size_t num_rows) const;
@@ -236,7 +242,7 @@ private:
     void storeTagsGeneric(const IColumn & id_data, const UInt8 * null_map,
                           size_t num_rows_to_store, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
 
-    VectorWithMemoryTracking<Group> getGroupByIDGeneric(const IColumn & id_data, size_t num_rows) const;
+    void getGroupByIDGeneric(const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const;
 
     VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByIDGeneric(const IColumn & id_data, size_t num_rows) const;
 

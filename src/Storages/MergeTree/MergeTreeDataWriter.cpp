@@ -830,22 +830,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         const UInt64 max_table_size = context->getSettingsRef()[Setting::materialize_statistics_on_insert_max_table_size];
         /// Skip building statistics on INSERT for large tables (e.g. fact tables): they materialize
-        /// statistics during merges instead, avoiding per-insert overhead. `getTotalActiveSizeInBytes`
-        /// is an O(1) atomic load of the compressed on-disk size of active parts; parts of the current
-        /// INSERT are not active yet, so we add the size of the block being written (`block.bytes()`,
-        /// the same estimate used below for the part size). The check is therefore per block, not per
-        /// INSERT: one INSERT is split into one block per partition (and into several blocks for a
-        /// streaming insert), and each of them is compared against the already active parts only, so a
-        /// single bulk load into an empty table can build statistics for all of its parts. That is
-        /// intentional - the gate is about the steady-state size of the table, and the parts of one
-        /// INSERT are not visible to each other. The block size is uncompressed (the compressed size is
-        /// unknown before the part is written), so the check is deliberately conservative by at most one
-        /// block; the only consequence of a skip is that statistics are built during merges instead.
-        /// `0` disables the limit.
+        /// statistics during merges instead, avoiding per-insert overhead.
+        /// Setting value = 0 disables the limit.
         if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-            statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+            const auto & all_columns = metadata_snapshot->getColumns();
+            statistics = ColumnsStatistics(all_columns);
+            /// A non-physical column is never present in a written block, so `build` below would
+            /// reject it. Every other absence stays an error.
+            std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });
             statistics.build(block);
         }
     }
@@ -970,7 +964,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
-    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 

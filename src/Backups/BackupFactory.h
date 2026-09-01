@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -7,6 +9,9 @@
 #include <Access/Common/AccessType.h>
 #include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
+#if CLICKHOUSE_CLOUD
+#include <Backups/BackupResumeParams.h>
+#endif
 #include <Backups/IBackup.h>
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
@@ -52,6 +57,10 @@ public:
         bool azure_attempt_to_create_container = true;
         ReadSettings read_settings;
         WriteSettings write_settings;
+#if CLICKHOUSE_CLOUD
+        /// Set only when this attempt continues an interrupted one; see `BackupResumer`.
+        std::optional<BackupResumeParams> resume;
+#endif
 
         CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
     };

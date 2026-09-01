@@ -20,6 +20,8 @@ If the array is empty, `arrayJoin` produces no rows.
 To return a single row containing the default value of the array type, you can wrap it with [emptyArrayToSingle](/reference/functions/regular-functions/array-functions#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL`). Use the [`ARRAY JOIN`](/reference/statements/select/array-join) clause for those queries.
+
 For example:
 
 ```sql title="Query"
