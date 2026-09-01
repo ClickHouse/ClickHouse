@@ -60,6 +60,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
+        max_number_of_merges_with_ttl_in_pool = 100,
         min_bytes_for_wide_part = 1;
 
     SYSTEM STOP MERGES t_ttl_drop_no_read;
@@ -113,6 +114,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
+        max_number_of_merges_with_ttl_in_pool = 100,
         min_bytes_for_wide_part = 1,
         remove_empty_parts = 0;
 
@@ -175,6 +177,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
+        max_number_of_merges_with_ttl_in_pool = 100,
         min_bytes_for_wide_part = 1;
 
     SYSTEM STOP MERGES t_ttl_drop_idx;
@@ -225,6 +228,7 @@ ${CLICKHOUSE_CLIENT} -q "
     TTL event_time + INTERVAL 1 DAY DELETE WHERE id >= 0
     SETTINGS
         merge_with_ttl_timeout = 0,
+        max_number_of_merges_with_ttl_in_pool = 100,
         min_bytes_for_wide_part = 1;
 
     SYSTEM STOP MERGES t_ttl_where_no_shortcircuit;
@@ -274,6 +278,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
+        max_number_of_merges_with_ttl_in_pool = 100,
         min_bytes_for_wide_part = 1;
 
     SYSTEM STOP MERGES t_ttl_drop_then_insert;
@@ -322,6 +327,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
+        max_number_of_merges_with_ttl_in_pool = 100,
         min_bytes_for_wide_part = 1;
 
     SYSTEM STOP MERGES t_ttl_col;
@@ -374,6 +380,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
+        max_number_of_merges_with_ttl_in_pool = 100,
         min_bytes_for_wide_part = 1;
 
     SYSTEM STOP MERGES t_ttl_groupby;
@@ -552,6 +559,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
+        max_number_of_merges_with_ttl_in_pool = 100,
         min_bytes_for_wide_part = 1;
 
     SYSTEM STOP MERGES t_ttl_stopped;
