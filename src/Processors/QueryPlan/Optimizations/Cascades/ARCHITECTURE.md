@@ -529,7 +529,21 @@ the logical digest: two subtrees that differ only in `max_threads` then land in 
 become costed alternatives, instead of one of them silently winning by entering the memo first.
 Dropping one of two expressions that differ only in a knob has to stay a decision of the cost
 model, which is why the full digest - and only it - may be used to drop an alternative.
-`fullyEqualTo` implies `logicallyEqualTo` for steps that have a logical digest.
+
+`fullyEqualTo` implies `logicallyEqualTo` for every constructible step that has a logical digest,
+but the implication is not structural: a logical writer may encode a field the wire encodes only
+conditionally (`LimitStep::description`, `SortingStep::prefix_description`), so it rests on those
+fields being empty exactly when the wire omits them - a construction invariant, not something the
+digests enforce. The direction of failure would be a missed merge, never a wrong one.
+
+A knob that is excluded from the logical digest but *gates* a relation-defining field is the one
+trap this design has. `MergingAggregatedStep::memory_efficient_aggregation` is the case: the
+memory-efficient merge path never applies `max_rows_to_group_by` or `bucket_top_k`, the plain path
+applies both. The fix is to gate, not to include - `hasLogicalDigest` rejects the instance that
+configures the truncation, so the untruncated variants still merge with each other. Same shape on
+`AggregatingStep`, where the excluded two-level thresholds gate `bucket_top_k`. When adding a
+field, check both directions: does the field change rows, and does an excluded field decide whether
+it is read at all?
 
 The wire bytes cannot be filtered down to the logical ones: they interleave relation-defining
 and physical fields with no markers, and each step's payload is a black box. So the two writers

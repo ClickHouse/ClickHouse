@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <functional>
 
 #include <Core/Block.h>
 #include <Core/Names.h>
@@ -156,6 +157,121 @@ std::unique_ptr<AggregatingStep> makeAggregatingStep(
     return step;
 }
 
+/// `overflow_row`, `max_rows_to_group_by` and `group_by_overflow_mode` are `const` members of
+/// `Aggregator::Params`, so a pin that varies one of them has to go through the full ctor. Every
+/// other value matches `makeMergingAggregatedParams`, and both sides of such a pin are built here,
+/// so the two ctors are never compared against each other.
+struct AggregationLimits
+{
+    bool overflow_row = false;
+    size_t max_rows_to_group_by = 0;
+    OverflowMode group_by_overflow_mode = OverflowMode::THROW;
+};
+
+Aggregator::Params makeLimitedAggregatedParams(const AggregationLimits & limits)
+{
+    return Aggregator::Params(
+        Names{"k"},
+        AggregateDescriptions{},
+        limits.overflow_row,
+        limits.max_rows_to_group_by,
+        limits.group_by_overflow_mode,
+        /*group_by_two_level_threshold_=*/0,
+        /*group_by_two_level_threshold_bytes_=*/0,
+        /*max_bytes_before_external_group_by_=*/0,
+        /*empty_result_for_aggregation_by_empty_set_=*/false,
+        /*tmp_data_scope_=*/nullptr,
+        /*max_threads_=*/4,
+        /*min_free_disk_space_=*/0,
+        /*compile_aggregate_expressions_=*/false,
+        /*min_count_to_compile_aggregate_expression_=*/0,
+        /*max_block_size_=*/65536,
+        /*enable_prefetch_=*/false,
+        /*only_merge_=*/true,
+        /*optimize_group_by_constant_keys_=*/false,
+        /*min_hit_rate_to_use_consecutive_keys_optimization_=*/0.5f,
+        StatsCollectingParams{},
+        /*enable_producing_buckets_out_of_order_in_aggregation_=*/true,
+        /*serialize_string_with_zero_byte_=*/false,
+        /*enable_parallel_single_level_merge_=*/false,
+        /*enable_packed_string_keys_=*/true,
+        /*enable_adaptive_aggregator_=*/false,
+        /*adaptive_aggregator_freeze_threshold_=*/0);
+}
+
+/// Knobs and flags a logical-audit pin has to vary on `AggregatingStep`. Everything not listed here
+/// keeps the value `makeAggregatingStep` uses, so a pin really compares two steps that differ in one
+/// field.
+struct AggregatingVariant
+{
+    bool group_by_use_nulls = false;
+    SortDescription group_by_sort_description = {};
+    bool results_in_bucket_order = false;
+    bool memory_bound_merging = false;
+    std::optional<AggregationLimits> limits = {};
+    std::function<void(Aggregator::Params &)> tweak_params = {};
+};
+
+std::unique_ptr<AggregatingStep> makeAggregatingVariant(const AggregatingVariant & variant)
+{
+    auto params = variant.limits ? makeLimitedAggregatedParams(*variant.limits) : makeMergingAggregatedParams(/*max_threads=*/4);
+    if (variant.tweak_params)
+        variant.tweak_params(params);
+
+    return std::make_unique<AggregatingStep>(
+        makeAggregatedHeader(),
+        std::move(params),
+        GroupingSetsParamsList{},
+        /*final=*/true,
+        /*max_block_size=*/65536,
+        /*aggregation_in_order_max_block_bytes=*/0,
+        /*merge_threads=*/4,
+        /*temporary_data_merge_threads=*/4,
+        /*storage_has_evenly_distributed_read=*/false,
+        variant.group_by_use_nulls,
+        /*sort_description_for_merging=*/SortDescription{},
+        variant.group_by_sort_description,
+        variant.results_in_bucket_order,
+        variant.memory_bound_merging,
+        /*explicit_sorting_required_for_aggregation_in_order=*/false,
+        /*enable_sharding_aggregator=*/false);
+}
+
+/// The same for `MergingAggregatedStep`.
+struct MergingAggregatedVariant
+{
+    bool memory_efficient_aggregation = false;
+    SortDescription group_by_sort_description = {};
+    bool results_in_bucket_order = false;
+    bool memory_bound_merging = false;
+    std::optional<AggregationLimits> limits = {};
+    std::function<void(Aggregator::Params &)> tweak_params = {};
+};
+
+std::unique_ptr<MergingAggregatedStep> makeMergingAggregatedVariant(const MergingAggregatedVariant & variant)
+{
+    auto params = variant.limits ? makeLimitedAggregatedParams(*variant.limits) : makeMergingAggregatedParams(/*max_threads=*/4);
+    if (variant.tweak_params)
+        variant.tweak_params(params);
+
+    auto step = std::make_unique<MergingAggregatedStep>(
+        makeAggregatedHeader(),
+        std::move(params),
+        GroupingSetsParamsList{},
+        /*final=*/true,
+        variant.memory_efficient_aggregation,
+        /*memory_efficient_merge_threads=*/4,
+        variant.results_in_bucket_order,
+        /*max_block_size=*/65536,
+        /*memory_bound_merging_max_block_bytes=*/0,
+        variant.memory_bound_merging);
+
+    if (!variant.group_by_sort_description.empty())
+        step->applyOrder(variant.group_by_sort_description);
+
+    return step;
+}
+
 SortDescription makeSortDescription()
 {
     SortDescription description;
@@ -177,6 +293,27 @@ SortingStep::Settings makeSortSettings()
 std::unique_ptr<SortingStep> makeSortingStep(const SharedHeader & header)
 {
     return std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, makeSortSettings());
+}
+
+/// The other serializable shape, `Type::FinishSorting`. Built through the `MergingSorted` ctor
+/// because that is the only one that can set `always_read_till_end`, then converted - the same path
+/// `applyOrder` takes when a distributed plan finds the input already sorted by a prefix.
+std::unique_ptr<SortingStep> makeFinishSortingStep(
+    const SharedHeader & header,
+    bool always_read_till_end = false,
+    SortDescription prefix = {},
+    bool apply_virtual_row_conversions = false)
+{
+    auto step = std::make_unique<SortingStep>(
+        header, makeSortDescription(), makeSortSettings(), /*limit_=*/10, always_read_till_end);
+    step->convertToFinishSorting(std::move(prefix), /*use_buffering_=*/false, apply_virtual_row_conversions);
+    return step;
+}
+
+/// A bounded partitioned full sort: still `Type::Full` with `scatter_partitions == 0`, so serializable.
+std::unique_ptr<SortingStep> makePartitionedSortingStep(const SharedHeader & header, const SortDescription & partition_by)
+{
+    return std::make_unique<SortingStep>(header, makeSortDescription(), partition_by, /*limit_=*/10, makeSortSettings());
 }
 
 /// A cross join over two disjoint single-column relations. Every DAG node is an `INPUT`, so the step
@@ -1763,4 +1900,333 @@ TEST(CascadesStepIdentity, LogicalDigestCountersCountDigestPasses)
     /// One pass fingerprints `b`, then both steps are re-digested to be compared byte for byte.
     EXPECT_EQ(counters.digest_confirmations, 2u);
     EXPECT_EQ(counters.digests_written, 4u);
+}
+
+/// Logical digest: an excluded knob that gates a relation-defining field
+///
+/// The one trap of the two-level design: a field is only relation-defining if something the digest
+/// keeps decides whether it is read. Both cases below are resolved by opting the instance out, not
+/// by pulling the knob into the digest - so the untruncated variants still merge with each other,
+/// which is what excluding the knob was for.
+
+TEST(CascadesStepIdentity, LogicalDigestMergingAggregatedTruncationOptsOut)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    /// `Aggregator::mergeBlocks(AggregatedChunks &, ...)` - the memory-efficient path - never calls
+    /// `checkLimits` and never reaches the `bucket_top_k` branch of `convertOneBucketToChunk`, while
+    /// the plain path applies both. So either truncation makes the excluded
+    /// `memory_efficient_aggregation` row-visible, and the instance must not participate.
+    auto rows_limited = makeMergingAggregatedVariant({.limits = AggregationLimits{.max_rows_to_group_by = 100}});
+    auto bucket_truncated
+        = makeMergingAggregatedVariant({.tweak_params = [](Aggregator::Params & params) { params.bucket_top_k = 100; }});
+
+    EXPECT_TRUE(makeMergingAggregatedVariant({})->hasLogicalDigest());
+    EXPECT_FALSE(rows_limited->hasLogicalDigest());
+    EXPECT_FALSE(bucket_truncated->hasLogicalDigest());
+
+    /// Both flips therefore also fail the comparison - no truncating merge step ever merges.
+    auto [plain, limited] = logicalPair(makeMergingAggregatedVariant({.limits = AggregationLimits{}}), std::move(rows_limited));
+    expectLogicallyUnequal(*plain, *limited);
+
+    auto [plain_2, truncated] = logicalPair(makeMergingAggregatedVariant({}), std::move(bucket_truncated));
+    expectLogicallyUnequal(*plain_2, *truncated);
+}
+
+/// The payoff of the gate: with no truncation configured, the merge strategy itself is free.
+TEST(CascadesStepIdentity, LogicalDigestExcludesMemoryEfficientMergeStrategy)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [a, b] = logicalPair(
+        makeMergingAggregatedVariant({.memory_efficient_aggregation = false}),
+        makeMergingAggregatedVariant({.memory_efficient_aggregation = true}));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// Same shape on `AggregatingStep`: `bucket_top_k` fires in `convertOneBucketToChunk`, which runs on
+/// two-level data only, and the two-level thresholds are execution-only and excluded.
+TEST(CascadesStepIdentity, LogicalDigestAggregatingBucketTopKOptsOut)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto truncated = makeAggregatingVariant({.tweak_params = [](Aggregator::Params & params) { params.bucket_top_k = 100; }});
+
+    EXPECT_TRUE(makeAggregatingVariant({})->hasLogicalDigest());
+    EXPECT_FALSE(truncated->hasLogicalDigest());
+
+    auto [a, b] = logicalPair(makeAggregatingVariant({}), std::move(truncated));
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// Logical digest: one pin per relation-defining field
+///
+/// Every field the audits classify as IN gets a flip here, so a later edit that quietly drops one
+/// from a writer fails a test instead of silently widening group membership.
+
+TEST(CascadesStepIdentity, LogicalDigestFilterColumnAndItsRemovalAreRelationDefining)
+{
+    auto header = makeHeader();
+    /// Two constant `UInt8` outputs, so the two steps can name different filter columns over one DAG.
+    auto two_condition_dag = [] {
+        auto type = std::make_shared<DataTypeUInt64>();
+        auto filter_type = std::make_shared<DataTypeUInt8>();
+        ActionsDAG dag(NamesAndTypesList{{"x", type}});
+        dag.getOutputs().push_back(&dag.addColumn(filter_type->createColumnConst(1, Field(static_cast<UInt8>(1))), filter_type, "f"));
+        dag.getOutputs().push_back(&dag.addColumn(filter_type->createColumnConst(1, Field(static_cast<UInt8>(1))), filter_type, "g"));
+        return dag;
+    };
+
+    auto [named_f, named_g] = logicalPair(
+        std::make_unique<FilterStep>(header, two_condition_dag(), "f", /*remove_filter_column_=*/false),
+        std::make_unique<FilterStep>(header, two_condition_dag(), "g", /*remove_filter_column_=*/false));
+    expectLogicallyUnequal(*named_f, *named_g);
+
+    auto [kept, removed] = logicalPair(
+        std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false),
+        std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/true));
+    expectLogicallyUnequal(*kept, *removed);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestLimitWindowFieldsAreRelationDefining)
+{
+    auto header = makeHeader();
+
+    auto [no_offset, offset] = logicalPair(std::make_unique<LimitStep>(header, 10, 0), std::make_unique<LimitStep>(header, 10, 5));
+    expectLogicallyUnequal(*no_offset, *offset);
+
+    auto [plain, with_ties] = logicalPair(
+        std::make_unique<LimitStep>(header, 10, 0),
+        std::make_unique<LimitStep>(header, 10, 0, /*always_read_till_end_=*/false, /*with_ties_=*/true, makeSortDescription()));
+    expectLogicallyUnequal(*plain, *with_ties);
+
+    /// The tie description on its own, with `with_ties` equal on both sides.
+    auto [no_desc, desc] = logicalPair(
+        std::make_unique<LimitStep>(header, 10, 0, /*always_read_till_end_=*/false, /*with_ties_=*/true, SortDescription{}),
+        std::make_unique<LimitStep>(header, 10, 0, /*always_read_till_end_=*/false, /*with_ties_=*/true, makeSortDescription()));
+    expectLogicallyUnequal(*no_desc, *desc);
+
+    /// Keeps the input running past the limit, which is what makes `totals` see every row.
+    auto [stops, drains] = logicalPair(
+        std::make_unique<LimitStep>(header, 10, 0, /*always_read_till_end_=*/false),
+        std::make_unique<LimitStep>(header, 10, 0, /*always_read_till_end_=*/true));
+    expectLogicallyUnequal(*stops, *drains);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestSortShapeIsRelationDefining)
+{
+    auto header = makeHeader();
+
+    /// `type`: both sides have an empty prefix, so only the shape differs.
+    auto [full, finish] = logicalPair(makeSortingStep(header), makeFinishSortingStep(header));
+    expectLogicallyUnequal(*full, *finish);
+
+    /// The assumed input order of a `FinishSorting`.
+    auto [no_prefix, with_prefix] = logicalPair(
+        makeFinishSortingStep(header, /*always_read_till_end=*/false, SortDescription{}),
+        makeFinishSortingStep(header, /*always_read_till_end=*/false, makeSortDescription()));
+    expectLogicallyUnequal(*no_prefix, *with_prefix);
+
+    /// A partitioned sort sorts each partition alone; under a limit that changes which rows survive.
+    auto [unpartitioned, partitioned] = logicalPair(makeSortingStep(header), makePartitionedSortingStep(header, makeSortDescription()));
+    expectLogicallyUnequal(*unpartitioned, *partitioned);
+
+    /// And skipping the scatter asserts the input is already split that way.
+    auto skipping = makePartitionedSortingStep(header, makeSortDescription());
+    skipping->skipScatterByPartition();
+    auto [scattering, not_scattering] = logicalPair(makePartitionedSortingStep(header, makeSortDescription()), std::move(skipping));
+    expectLogicallyUnequal(*scattering, *not_scattering);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestSortDrainAndVirtualRowsAreRelationDefining)
+{
+    auto header = makeHeader();
+
+    auto [stops, drains] = logicalPair(
+        makeFinishSortingStep(header, /*always_read_till_end=*/false), makeFinishSortingStep(header, /*always_read_till_end=*/true));
+    expectLogicallyUnequal(*stops, *drains);
+
+    /// Decides whether a `RemoveVirtualRowTransform` strips the read-in-order marker rows.
+    auto [keeps, converts] = logicalPair(
+        makeFinishSortingStep(header, /*always_read_till_end=*/false, SortDescription{}, /*apply_virtual_row_conversions=*/false),
+        makeFinishSortingStep(header, /*always_read_till_end=*/false, SortDescription{}, /*apply_virtual_row_conversions=*/true));
+    expectLogicallyUnequal(*keeps, *converts);
+}
+
+/// `serializeSettings` carries the sort size limits on the wire, which the logical digest does not
+/// call - so the logical writer has to write them itself: `break` truncates, `throw` fails the query.
+TEST(CascadesStepIdentity, LogicalDigestSortSizeLimitsAreRelationDefining)
+{
+    auto header = makeHeader();
+    auto sort_with = [&header](const SizeLimits & size_limits)
+    {
+        auto settings = makeSortSettings();
+        settings.size_limits = size_limits;
+        return std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, settings);
+    };
+
+    auto [unlimited, row_limited] = logicalPair(sort_with(SizeLimits{}), sort_with(SizeLimits(100, 0, OverflowMode::THROW)));
+    expectLogicallyUnequal(*unlimited, *row_limited);
+
+    auto [unlimited_2, byte_limited] = logicalPair(sort_with(SizeLimits{}), sort_with(SizeLimits(0, 4096, OverflowMode::THROW)));
+    expectLogicallyUnequal(*unlimited_2, *byte_limited);
+
+    auto [throwing, breaking]
+        = logicalPair(sort_with(SizeLimits(100, 0, OverflowMode::THROW)), sort_with(SizeLimits(100, 0, OverflowMode::BREAK)));
+    expectLogicallyUnequal(*throwing, *breaking);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestAggregatingParamsAreRelationDefining)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    /// `only_merge` is true out of the merge-only `Params` ctor; the projection path is what flips it.
+    auto [merging, aggregating] = logicalPair(
+        makeAggregatingVariant({}), makeAggregatingVariant({.tweak_params = [](Aggregator::Params & p) { p.only_merge = false; }}));
+    expectLogicallyUnequal(*merging, *aggregating);
+
+    auto [no_overflow, overflow] = logicalPair(
+        makeAggregatingVariant({.limits = AggregationLimits{}}),
+        makeAggregatingVariant({.limits = AggregationLimits{.overflow_row = true}}));
+    expectLogicallyUnequal(*no_overflow, *overflow);
+
+    auto [one_row, no_row] = logicalPair(
+        makeAggregatingVariant({}),
+        makeAggregatingVariant({.tweak_params = [](Aggregator::Params & p) { p.empty_result_for_aggregation_by_empty_set = true; }}));
+    expectLogicallyUnequal(*one_row, *no_row);
+
+    /// `checkLimits` runs on the aggregation path regardless of the hash-table method, so unlike on
+    /// `MergingAggregatedStep` this pair is a digest difference, not a predicate opt-out.
+    auto limited = makeAggregatingVariant({.limits = AggregationLimits{.max_rows_to_group_by = 100}});
+    ASSERT_TRUE(limited->hasLogicalDigest());
+    auto [unlimited, row_limited] = logicalPair(makeAggregatingVariant({.limits = AggregationLimits{}}), std::move(limited));
+    expectLogicallyUnequal(*unlimited, *row_limited);
+
+    auto [throwing, breaking] = logicalPair(
+        makeAggregatingVariant({.limits = AggregationLimits{.max_rows_to_group_by = 100}}),
+        makeAggregatingVariant(
+            {.limits = AggregationLimits{.max_rows_to_group_by = 100, .group_by_overflow_mode = OverflowMode::BREAK}}));
+    expectLogicallyUnequal(*throwing, *breaking);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestAggregatingKeyShapeAndOrderClaimAreRelationDefining)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [plain_keys, null_keys] = logicalPair(makeAggregatingVariant({}), makeAggregatingVariant({.group_by_use_nulls = true}));
+    expectLogicallyUnequal(*plain_keys, *null_keys);
+
+    auto [unordered, ordered]
+        = logicalPair(makeAggregatingVariant({}), makeAggregatingVariant({.group_by_sort_description = makeSortDescription()}));
+    expectLogicallyUnequal(*unordered, *ordered);
+
+    auto [any_order, bucket_order]
+        = logicalPair(makeAggregatingVariant({}), makeAggregatingVariant({.results_in_bucket_order = true}));
+    expectLogicallyUnequal(*any_order, *bucket_order);
+
+    auto [plain_merge, bound_merge] = logicalPair(makeAggregatingVariant({}), makeAggregatingVariant({.memory_bound_merging = true}));
+    expectLogicallyUnequal(*plain_merge, *bound_merge);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestMergingAggregatedParamsAndOrderClaimAreRelationDefining)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [no_overflow, overflow] = logicalPair(
+        makeMergingAggregatedVariant({.limits = AggregationLimits{}}),
+        makeMergingAggregatedVariant({.limits = AggregationLimits{.overflow_row = true}}));
+    expectLogicallyUnequal(*no_overflow, *overflow);
+
+    auto [one_row, no_row] = logicalPair(
+        makeMergingAggregatedVariant({}),
+        makeMergingAggregatedVariant({.tweak_params = [](Aggregator::Params & p) { p.empty_result_for_aggregation_by_empty_set = true; }}));
+    expectLogicallyUnequal(*one_row, *no_row);
+
+    auto [unordered, ordered] = logicalPair(
+        makeMergingAggregatedVariant({}), makeMergingAggregatedVariant({.group_by_sort_description = makeSortDescription()}));
+    expectLogicallyUnequal(*unordered, *ordered);
+
+    auto [any_order, bucket_order]
+        = logicalPair(makeMergingAggregatedVariant({}), makeMergingAggregatedVariant({.results_in_bucket_order = true}));
+    expectLogicallyUnequal(*any_order, *bucket_order);
+
+    auto [plain_merge, bound_merge]
+        = logicalPair(makeMergingAggregatedVariant({}), makeMergingAggregatedVariant({.memory_bound_merging = true}));
+    expectLogicallyUnequal(*plain_merge, *bound_merge);
+}
+
+/// `applyOrder` installs it after construction; it is what `getSortDescription` reports and it
+/// selects `DistinctSortedStreamTransform`, which is correct only for an input sorted this way.
+TEST(CascadesStepIdentity, LogicalDigestDistinctSortDescriptionIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto ordered = std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false);
+    ordered->applyOrder(makeSortDescription());
+
+    auto [a, b] = logicalPair(
+        std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false), std::move(ordered));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// Selects `LimitBySortedStreamTransform`, i.e. it asserts the input arrives grouped in this order.
+TEST(CascadesStepIdentity, LogicalDigestLimitBySortedColumnsAreRelationDefining)
+{
+    auto header = makeHeader();
+    auto ordered = std::make_unique<LimitByStep>(header, /*group_length_=*/1, /*group_offset_=*/0, Names{"x"});
+    ordered->applyOrder(makeSortDescription());
+
+    auto [a, b] = logicalPair(
+        std::make_unique<LimitByStep>(header, /*group_length_=*/1, /*group_offset_=*/0, Names{"x"}), std::move(ordered));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestJoinSizeLimitsAreRelationDefining)
+{
+    auto with_settings = [](auto && tweak)
+    {
+        auto step = makeJoinStepLogical();
+        tweak(step->getJoinSettings());
+        return step;
+    };
+
+    auto [a, rows] = logicalPair(makeJoinStepLogical(), with_settings([](JoinSettings & s) { s.max_rows_in_join = 100; }));
+    expectLogicallyUnequal(*a, *rows);
+
+    auto [b, bytes] = logicalPair(makeJoinStepLogical(), with_settings([](JoinSettings & s) { s.max_bytes_in_join = 4096; }));
+    expectLogicallyUnequal(*b, *bytes);
+
+    auto [c, default_bytes]
+        = logicalPair(makeJoinStepLogical(), with_settings([](JoinSettings & s) { s.default_max_bytes_in_join = 4096; }));
+    expectLogicallyUnequal(*c, *default_bytes);
+
+    auto [d, breaking]
+        = logicalPair(makeJoinStepLogical(), with_settings([](JoinSettings & s) { s.join_overflow_mode = OverflowMode::BREAK; }));
+    expectLogicallyUnequal(*d, *breaking);
+
+    /// A permission flag, but it decides between a result and an exception - kept in, fail-closed.
+    auto [e, dynamic_keys] = logicalPair(
+        makeJoinStepLogical(),
+        with_settings([](JoinSettings & s) { s.allow_dynamic_type_in_join_keys = !s.allow_dynamic_type_in_join_keys; }));
+    expectLogicallyUnequal(*e, *dynamic_keys);
+}
+
+/// `joinRuntimeFilter` sets these, and they are what makes `HashJoin` publish filters that prune the
+/// other side at all - kept in, matching the read side of plan section 8.
+TEST(CascadesStepIdentity, LogicalDigestJoinRuntimeFilterDescriptorsAreRelationDefining)
+{
+    auto filtering = makeJoinStepLogical();
+    filtering->getJoinOperator().shared_runtime_filter_descriptors.emplace_back("filter_1", "l");
+
+    auto [a, b] = logicalPair(makeJoinStepLogical(), std::move(filtering));
+
+    expectLogicallyUnequal(*a, *b);
 }

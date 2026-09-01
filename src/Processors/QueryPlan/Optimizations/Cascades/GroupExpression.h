@@ -91,7 +91,13 @@ public:
     /// relation, so it would fold into its own child group), and `description_suffix` is
     /// optimizer-side display state. Fails closed - false, and no merge, whenever either step
     /// instance has no logical digest.
-    /// `fullyEqualTo` implies `logicallyEqualTo` for steps that have a logical digest.
+    /// `fullyEqualTo` implies `logicallyEqualTo` for every constructible step that has a logical
+    /// digest - but not structurally: a logical writer may encode a field the wire encodes only
+    /// conditionally (`LimitStep::description`, written unconditionally here and on the wire only
+    /// under `with_ties`; `SortingStep::prefix_description`, on the wire only for `FinishSorting`),
+    /// so the implication rests on those fields being empty exactly when the wire omits them, which
+    /// today only the construction sites guarantee. If that ever breaks, the failure direction is a
+    /// missed merge, never a wrong one.
     size_t logicalFingerprint() const;
     bool logicallyEqualTo(const GroupExpression & other) const;
 

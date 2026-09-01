@@ -388,7 +388,9 @@ void MergingAggregatedStep::writeLogicalDigest(StepDigestWriter & writer) const
     writer.addBool(LOGICAL_OVERFLOW_ROW_TAG, params.overflow_row);
 
     /// `Aggregator::checkLimits` on the single-level sub-path of the plain merge throws, drops rows
-    /// or routes them to the overflow row.
+    /// or routes them to the overflow row. This group and the `bucket_top_k` one below are written
+    /// for completeness only: `hasLogicalDigest` rejects any instance that sets either truncation,
+    /// because the excluded `memory_efficient_aggregation` decides whether it is applied at all.
     writer.addVarUInt(LOGICAL_MAX_ROWS_TO_GROUP_BY_TAG, params.max_rows_to_group_by);
     writer.addVarUInt(LOGICAL_GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
     writer.addBool(LOGICAL_EMPTY_RESULT_FOR_EMPTY_SET_TAG, params.empty_result_for_aggregation_by_empty_set);

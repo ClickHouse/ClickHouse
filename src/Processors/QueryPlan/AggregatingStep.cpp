@@ -1399,7 +1399,11 @@ void AggregatingStep::writeLogicalDigest(StepDigestWriter & writer) const
     writer.addVarUInt(LOGICAL_GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
     writer.addBool(LOGICAL_EMPTY_RESULT_FOR_EMPTY_SET_TAG, params.empty_result_for_aggregation_by_empty_set);
 
-    /// Truncations: all three keep only some of the groups.
+    /// Truncations: each keeps only some of the groups. `limit_hint` truncates where the result is
+    /// read and `params.top_k` is the GROUP BY heap of `executeImpl`; neither depends on the
+    /// hash-table method. The `bucket_top_k` triple is written for completeness only -
+    /// `hasLogicalDigest` rejects any instance that sets it, because it fires on two-level data whose
+    /// thresholds the digest excludes.
     writer.addVarUInt(LOGICAL_LIMIT_HINT_TAG, limit_hint);
     writer.addVarUInt(LOGICAL_BUCKET_TOP_K_TAG, params.bucket_top_k);
     writer.addBool(LOGICAL_BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
@@ -1409,9 +1413,16 @@ void AggregatingStep::writeLogicalDigest(StepDigestWriter & writer) const
     else
         writer.addAbsent(LOGICAL_TOP_K_TAG);
 
-    /// Order claim, not a knob: these three decide `getSortDescription()`, i.e. the order this step
-    /// promises its consumers. `ExpressionProperties` models the delivered order of a `SortingStep`
-    /// only, so nothing else in the logical frame would carry it.
+    /// `should_produce_results_in_order_of_bucket_number` is in because
+    /// `getTraits(...).returns_single_stream` is built from it - a declared trait later passes read -
+    /// and because `transformPipeline` collapses the aggregation output to a single stream on it;
+    /// `setProduceResultsInBucketOrder` can also flip it after construction.
+    /// The other two are inert for every opted-in instance: `memoryBoundMergingWillBeUsed` and
+    /// `canUseShardedAggregation` both need a non-empty `sort_description_for_merging`, which
+    /// `isSerializable()` excludes, so `getSortDescription()` never returns `group_by_sort_description`
+    /// here (unlike in `MergingAggregatedStep`, where it does). They are written anyway, so the tag
+    /// set does not depend on that coupling and widening the predicate later cannot silently drop
+    /// them; at worst they cost a merge.
     writer.addSortDescription(LOGICAL_GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
     writer.addBool(LOGICAL_RESULTS_IN_BUCKET_ORDER_TAG, should_produce_results_in_order_of_bucket_number);
     writer.addBool(LOGICAL_MEMORY_BOUND_MERGING_TAG, memory_bound_merging_of_aggregation_results_enabled);

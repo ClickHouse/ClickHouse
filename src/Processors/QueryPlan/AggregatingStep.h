@@ -135,10 +135,15 @@ public:
     bool supportsCascadesIdentity() const override { return isSerializable(); }
     void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
 
-    /// `skip_merging` finalizes each stream on its own, which is correct only when the input streams
-    /// carry disjoint key sets - a property of the input layout that the memo does not model yet, so
-    /// such an instance stays out of group deduplication (plan section 4.2; Stage C removes this).
-    bool hasLogicalDigest() const override { return isSerializable() && !skip_merging; }
+    /// Two instance opt-outs. `skip_merging` finalizes each stream on its own, which is correct only
+    /// when the input streams carry disjoint key sets - a property of the input layout that the memo
+    /// does not model yet (plan section 4.2; Stage C removes this).
+    /// `params.bucket_top_k` truncates each bucket in `Aggregator::convertOneBucketToChunk`, which
+    /// runs on two-level data only, and whether the aggregation can go two-level is decided by
+    /// `params.group_by_two_level_threshold` / `_bytes` - execution-only thresholds the logical digest
+    /// excludes. So a step that configures the truncation stays out of group deduplication rather
+    /// than merge with a twin whose thresholds keep it single-level and untruncated.
+    bool hasLogicalDigest() const override { return isSerializable() && !skip_merging && params.bucket_top_k == 0; }
     void writeLogicalDigest(StepDigestWriter & writer) const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
