@@ -103,7 +103,7 @@ public:
 
     const JoinSettings & getSettings() const { return join_settings; }
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -117,7 +117,11 @@ public:
     }
 
     void addConditions(ActionsDAG actions_dag);
-    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const SharedHeader & stream_header);
+
+    /// Extract the part of the JOIN ON expression that can be evaluated on `side` alone, to be applied
+    /// as a filter on that input.
+    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(
+        JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header);
 
     struct ActionsDAGWithKeys
     {
@@ -173,8 +177,8 @@ public:
 
     ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
 
-    std::string_view getDummyStats() const { return dummy_stats; }
-    void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
+    std::string_view getTableStatsHint() const { return table_stats_hint; }
+    void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
@@ -183,8 +187,14 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    /// Swap left and right sides
+    void swapInputs();
+
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
+
+    UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
+    void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }
 
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
@@ -215,12 +225,13 @@ protected:
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
     bool imprecise_estimate = false;
     UInt64 right_hash_table_cache_key = 0;
+    UInt64 join_output_cache_key = 0;
 
     RelationEstimateInfo left_relation;
     RelationEstimateInfo right_relation;
 
-    /// Dummy stats retrieved from hints, used for debugging
-    String dummy_stats;
+    /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
+    String table_stats_hint;
 
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
@@ -257,6 +268,14 @@ private:
 };
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
+
+/// Whether the IEJoin algorithm is preferred for this join: `ie_join` is listed first in
+/// `join_algorithm` and the ON expression has two inequality conditions the operator can take.
+/// For optimization passes that would otherwise claim the join for a hash-family algorithm
+/// (e.g. runtime filters). The condition eligibility is the same one the conversion to the
+/// physical step applies, so `true` means IEJoin takes the join unless the right side is a
+/// prepared `Join` storage (which those passes exclude on their own).
+bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
 
 }

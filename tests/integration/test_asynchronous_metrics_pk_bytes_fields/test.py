@@ -143,7 +143,9 @@ def test_total_proj_pk_ig_in_memory_fields(started_cluster):
     )
     Engine=MergeTree()
     ORDER BY a
-    SETTINGS index_granularity=1""")
+    -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default builds basic
+    -- statistics that change cost-based projection selection, so force_optimize_projection=1 throws.
+    SETTINGS index_granularity=1, auto_statistics_types=''""")
 
     query_proj_pk_bytes = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'TotalProjectionPrimaryKeyBytesInMemory';"
     query_proj_pk_bytes_allocated = """SELECT value FROM system.asynchronous_metrics

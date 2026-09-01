@@ -426,6 +426,12 @@ enum class CompressionMethod
 
 **17.** Имена файлов с исходным кодом C++ должны иметь расширение `.cpp`. Файлы заголовков должны иметь расширение `.h`.
 
+**18.** Название продукта пишется `ClickHouse` — одним словом, с заглавными `C` и `H`. Проверка стиля `clickhouse_spelling` также допускает общепринятые варианты написания токенов `clickhouse` и `CLICKHOUSE`; все остальные варианты считаются ошибочными. Она проверяет код, комментарии, сообщения, документацию и имена файлов. Используйте `clickhouse` для токенов, состоящих только из строчных букв, например имён пакетов, бинарных файлов и хостов; `ClickHouse` — в идентификаторах CamelCase; а `CLICKHOUSE` — для макросов и переменных окружения.
+
+`ClickHouse`, `clickhouse-client`, `CLICKHOUSE_DATABASE`
+
+Не `Clickhouse`, `clickHouse`, `click_house`, `CLICK_HOUSE`, `click-house`, `Click House`
+
 <div id="how-to-write-code">
   ## Как писать код
 </div>

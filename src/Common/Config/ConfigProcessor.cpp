@@ -673,6 +673,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         }
     }
 
+    /// `std::string` ordering is lexicographical, so files from each merge directory are processed by name.
+    /// Sorting the complete paths also makes the order deterministic if multiple merge directories are present.
     ::sort(files.begin(), files.end());
 
     return files;
@@ -795,12 +797,6 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 node, zk_node_cache, zk_changed_event, &contributing_zk_paths);
 
             include_from_path = node->innerText();
-        }
-        else
-        {
-            std::string default_path = "/etc/metrika.xml";
-            if (fs::exists(default_path))
-                include_from_path = default_path;
         }
 
         /// When --try is passed and the include_from file is missing, drop the path so that

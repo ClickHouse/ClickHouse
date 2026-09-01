@@ -46,14 +46,14 @@ ENGINE = MergeTree;
 ```
 
 ```sql
--- Parse DateTime
--- - from an integer interpreted as the number of milliseconds (because of precision 3) since 1970-01-01,
--- - from a decimal interpreted as the number of seconds before the decimal part, and based on the precision after the decimal point,
+-- Parse DateTime64
+-- - from an integer interpreted as the number of seconds since 1970-01-01 (like DateTime),
+-- - from a decimal interpreted as the number of seconds, the fractional part giving sub-second precision,
 -- - from a string.
 
 INSERT INTO dt64
 VALUES
-(1546300800123, 1),
+(1546300800, 1),
 (1546300800.123, 2),
 ('2019-01-01 00:00:00', 3);
 
@@ -62,13 +62,13 @@ SELECT * FROM dt64;
 
 ```text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.000 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
 │ 2019-01-01 00:00:00.000 │        3 │
 └─────────────────────────┴──────────┘
 ```
 
-* عند إدراج `datetime` كعدد صحيح، يُتعامل معه على أنه Unix timestamp مضبوط وفق المقياس المناسب (UTC). تمثل `1546300800000` (بدقة 3) `'2019-01-01 00:00:00'` بتوقيت UTC. ومع ذلك، بما أن العمود `timestamp` محددة له المنطقة الزمنية `Asia/Istanbul` ‏(UTC+3)، فعند إخراجه كسلسلة نصية ستظهر القيمة بالشكل `'2019-01-01 03:00:00'`. أما عند إدراج `datetime` كعدد عشري، فيُتعامل معه بطريقة مماثلة للعدد الصحيح، باستثناء أن القيمة الواقعة قبل الفاصلة العشرية تكون هي Unix timestamp حتى الثواني بما فيها، بينما يُتعامل مع ما بعد الفاصلة العشرية على أنه الدقة.
+* عند إدراج `datetime` كعدد، يُتعامل معه على أنه Unix timestamp ‏(UTC) بالثواني، كما في `DateTime`. تمثل `1546300800` القيمة `'2019-01-01 00:00:00'` بتوقيت UTC. ومع ذلك، بما أن العمود `timestamp` محددة له المنطقة الزمنية `Asia/Istanbul` ‏(UTC+3)، فعند إخراجه كسلسلة نصية ستظهر القيمة بالشكل `'2019-01-01 03:00:00'`. يعمل إدراج عدد ذي جزء كسري بالطريقة نفسها: الجزء قبل الفاصلة العشرية هو Unix timestamp بالثواني، ويوفر الجزء بعدها دقة أجزاء من الثانية وفقًا لدقة العمود. (قبل الإصدار 26.8، كان العدد الصحيح المجرّد غير الموضوع بين علامتَي اقتباس في مسارات الإدخال `JSON` و`Values`/`Quoted` — ويشمل الأخير كل تنسيق يحلل الحقول باستخدام قاعدة الإفلات `Quoted`: وهي `Values` و`MySQLDump` و`Template`/`CustomSeparated`/`Regexp` المهيأة بإفلات الحقول `Quoted` — يُفسَّر بدلًا من ذلك على أنه القيمة الخام الأساسية بدقة العمود، لذا كانت `1546300800000` عند الدقة 3 تعني `'2019-01-01 00:00:00'`. لاستعادة السلوك السابق في هذه المسارات، اضبط `input_format_read_datetime_number_as_raw_value = 1` (أو `SET compatibility = '26.7'`)؛ يؤثر ذلك أيضًا في الدالة `JSONExtract` ونوع البيانات `JSON`. ينطبق إعداد التوافق على عدد صحيح مجرّد فقط: ففي تنسيق `Values`، يعود العدد الكسري، الذي يرفضه محلل البث القديم، إلى تقييم تعبير SQL ويُقرأ بالثواني — كما هو الحال في الإصدارات السابقة للإصدار 26.8. في `JSONExtract` ونوع البيانات `JSON`، تُحلل القيمة الكسرية عبر `Float64`، لذا قد يُقرَّب الطابع الزمني الذي يحتوي على أرقام أكثر مما يمكن لـ `Float64` الاحتفاظ به إلى القيمة المجاورة، بخلاف تنسيقات إدخال الصفوف التي تحلل النص الأصلي بدقة. لا يحكم هذا الإعداد تنسيقات إدخال النص المفصول بعلامات الجدولة وCSV وغيرها من تنسيقات النص ذات الإفلات، وتحتفظ بتفسيرها الحالي للعدد غير الموضوع بين علامتَي اقتباس: تُقرأ القيمة الكبيرة على أنها tick.)
 * عند إدراج قيمة نصية كسمة `datetime`، يُتعامل معها على أنها ضمن المنطقة الزمنية الخاصة بالعمود. ستُعامل `'2019-01-01 00:00:00'` على أنها ضمن المنطقة الزمنية `Asia/Istanbul`، وتُخزَّن على أنها `1546290000000`.
 
 2. التصفية على قيم `DateTime64`
@@ -96,10 +96,10 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 └─────────────────────────┴──────────┘
 ```
 
-على عكس الإدراج، ستتعامل الدالة `toDateTime64` مع جميع القيم على أنها الصيغة العشرية، لذا يجب
-تحديد الدقة بعد الفاصلة العشرية.
+كما هو الحال عند إدراج رقم، تتعامل الدالة `toDateTime64` مع الوسيط الرقمي باعتباره عددًا من الثواني، لذا يجب تحديد دقة أجزاء من الثانية
+بعد العلامة العشرية.
 
-3. الحصول على المنطقة الزمنية لقيمة من النوع `DateTime64`:
+3. الحصول على المنطقة الزمنية لقيمة من نوع `DateTime64`:
 
 ```sql
 SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
@@ -111,7 +111,7 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 └─────────────────────────┴────────────────────────────────┘
 ```
 
-4. التحويل بين المناطق الزمنية
+4. تحويل المنطقة الزمنية
 
 ```sql
 SELECT
@@ -132,10 +132,10 @@ FROM dt64;
 
 * [دوال تحويل أنواع البيانات](/ar/reference/functions/regular-functions/type-conversion-functions)
 * [دوال التعامل مع التواريخ والأوقات](/ar/reference/functions/regular-functions/date-time-functions)
-* [إعداد `date_time_input_format`](/ar/reference/settings/formats#date_time_input_format)
-* [إعداد `date_time_output_format`](/ar/reference/settings/formats#date_time_output_format)
-* [معلمة تهيئة الخادم `timezone`](/ar/reference/settings/server-settings/settings#timezone)
-* [إعداد `session_timezone`](/ar/reference/settings/session-settings#session_timezone)
+* [إعداد `date_time_input_format`](/ar/reference/settings/formats/date-time#date_time_input_format)
+* [إعداد `date_time_output_format`](/ar/reference/settings/formats/date-time#date_time_output_format)
+* [معلمة تهيئة الخادم `timezone`](/ar/reference/settings/server-settings/settings/other#timezone)
+* [إعداد `session_timezone`](/ar/reference/settings/session-settings/other#session_timezone)
 * [العوامل الخاصة بالتعامل مع التواريخ والأوقات](/ar/reference/operators/index#operators-for-working-with-dates-and-times)
 * [نوع البيانات `Date`](/ar/reference/data-types/date)
 * [نوع البيانات `DateTime`](/ar/reference/data-types/datetime)

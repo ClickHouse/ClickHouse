@@ -58,6 +58,14 @@ If it's enabled, in hedged requests we can start new connection until receiving 
 
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
 
+## allow_creating_set_partitions_independently {#allow_creating_set_partitions_independently}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to enable parallel per-partition pre-deduplication of the subquery result when building the set for `IN (subquery)`, when the partition expression is a deterministic function of the subquery output columns."}]}]}/>
+
+Enable parallel per-partition pre-deduplication of the subquery result when building the set for `IN (subquery)`, when the partition expression of the subquery's `MergeTree` table is a deterministic function of the subquery output columns. Each partition is read through a separate stream and deduplicated independently, so the single set-filling transform only hashes unique rows. Not applied with `FINAL`, parallel replicas, or `GLOBAL IN`. The optimization requests the per-partition read itself only when the data has more than one partition and the largest partition holds at most twice the rows of the average partition (see [force_creating_set_partitions_independently](/reference/settings/session-settings/force#force_creating_set_partitions_independently) to bypass the skew check); when the streams are already partition-disjoint because another per-partition feature split them (for example per-partition `LIMIT BY`), the pre-deduplication is applied regardless, since the read layout is already fixed. While the set is being built, the per-stream deduplication tables together hold roughly one extra copy of the unique keys.
+
 ## allow_custom_error_code_in_throwif {#allow_custom_error_code_in_throwif}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -69,6 +77,18 @@ Enable custom error code in function throwIf(). If true, thrown exceptions may h
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 If it is set to true, then a user is allowed to executed DDL queries.
+
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_delta_kernel_rs`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}]}]}/>
+
+Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -209,6 +229,15 @@ When enabled, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` over a set of num
 
 Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tables or columns. It must still be syntactically valid. Doesn't apply to refreshable MVs. Doesn't apply if the MV schema needs to be inferred from the SELECT query (i.e. if the CREATE has no column list and no TO table). Can be used for creating MV before its source table.
 
+## allow_metadata_only_named_tuple_alter {#allow_metadata_only_named_tuple_alter}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to control metadata-only ALTER for named Tuple subfield additions."}]}]}/>
+
+If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
+Set to false to force the old full-mutation behavior.
+
 ## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -346,5 +375,13 @@ It helps to avoid unnecessary data copy during formatting.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow unrestricted (without condition on path) reads from system.zookeeper table, can be handy, but is not safe for zookeeper
+
+## allow_window_partitions_independently {#allow_window_partitions_independently}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to evaluate window functions per partition independently (skipping the hash scatter) when the partition expression is a deterministic function of the window `PARTITION BY` columns."}]}]}/>
+
+Enable independent evaluation of window functions per partition on separate threads when the partition expression of the `MergeTree` table is a deterministic function of the window `PARTITION BY` columns. Each partition is read through a separate stream, sorted independently by the window sort description, and processed by its own window transform, skipping the hash scatter that ordinarily reshuffles every row across threads. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_window](/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_window) and [force_window_partitions_independently](/reference/settings/session-settings/force#force_window_partitions_independently). Not applied with `FINAL` or parallel replicas.
 
 {/*AUTOGENERATED_END*/}

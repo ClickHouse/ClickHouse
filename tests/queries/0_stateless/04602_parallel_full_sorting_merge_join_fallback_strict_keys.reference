@@ -1,10 +1,3 @@
-legacy using hash	String	a	1	10
-legacy using hash_fsm	Nullable(String)	a	1	10
-legacy using hash_pfsm	Nullable(String)	a	1	10
-legacy lc hash	LowCardinality(String)	a	1	10
-legacy lc hash_fsm	String	a	1	10
-legacy lc hash_pfsm	String	a	1	10
-legacy storage_join hash	a	1	10
 analyzer using hash	Nullable(String)	a	1	10
 analyzer using hash_fsm	Nullable(String)	a	1	10
 analyzer using hash_pfsm	Nullable(String)	a	1	10

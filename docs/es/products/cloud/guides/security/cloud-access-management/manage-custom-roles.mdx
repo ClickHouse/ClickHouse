@@ -8,6 +8,7 @@ keywords: ['roles personalizados', 'seguridad', 'permisos']
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Esta guía está dirigida a usuarios con el rol Admin en ClickHouse Cloud.
 
@@ -54,7 +55,7 @@ Los roles personalizados pueden incluir una combinación de permisos de organiza
     <Info>
       **Acceso a la pestaña Data Sources**
 
-      Para acceder a la pestaña **Data Sources**, el rol requiere actualmente el permiso `Manage and Delete Selected Services`.
+      Para acceder a la pestaña **Data Sources**, el rol requiere actualmente el permiso `Manage selected services`.
     </Info>
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
@@ -66,6 +67,68 @@ Los roles personalizados pueden incluir una combinación de permisos de organiza
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
   </Step>
 </Steps>
+
+<div id="manage-database-roles">
+  ## Administrar roles de base de datos (beta)
+</div>
+
+<BetaBadge />
+
+Además de los permisos de la consola, los roles personalizados pueden incluir permisos de datos que controlan el acceso a las bases de datos de los servicios seleccionados. Esto permite administrar el acceso a la consola y a las bases de datos desde un único lugar, en vez de mantener roles independientes en cada base de datos.
+
+<Note>
+  Esta función se encuentra en beta y está disponible para servicios que ejecutan ClickHouse versión 26.4 o posterior.
+</Note>
+
+Al añadir permisos de datos a un rol personalizado, ClickHouse Cloud crea un rol correspondiente en cada servicio seleccionado con el prefijo `cloud:`. Por ejemplo, un rol personalizado llamado `readonly` aparece en la base de datos como `cloud:readonly`. Los miembros del rol personalizado reciben estos permisos de base de datos al conectarse al servicio mediante la autenticación sin contraseña de SQL Console.
+
+<Tip>
+  Los roles de base de datos administrados por Cloud sustituyen los roles [`sql-console-role:<email>`](/es/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) asignados manualmente, que no son compatibles con la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### Requisitos previos
+</div>
+
+Los roles personalizados de base de datos en un servicio dependen de la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) y no se aplican mientras esté deshabilitada. Antes de añadir permisos de datos a un rol, vaya al servicio, abra `Settings` y busque la tarjeta `JWT authentication` en la sección `Security`. Asegúrese de que el interruptor `SQL Console` esté habilitado.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Tarjeta de autenticación con JWT con el interruptor SQL Console habilitado" size="lg" force />
+
+<Steps>
+  <Step title="Añadir permisos de datos a un rol" id="add-data-permissions">
+    [Cree un rol personalizado](#create-custom-role) o edite uno existente. En el cuadro de diálogo del rol, haga clic en el botón `Allow permissions` y seleccione `Data`.
+  </Step>
+
+  <Step title="Seleccionar el servicio" id="select-data-permissions-service">
+    Seleccione el servicio al que se aplicarán los permisos. Añada más servicios para aplicar los mismos permisos `Read-only` o `Admin` a varios servicios.
+  </Step>
+
+  <Step title="Elegir el nivel de acceso" id="choose-data-access-level">
+    Seleccione el acceso `Read-only`, `Admin` o `Custom`. Con el acceso `Custom`, defina permisos específicos de acceso a datos mediante sentencias [`GRANT`](/es/reference/statements/grant) de ClickHouse. El acceso `Custom` solo puede seleccionarse cuando los permisos se aplican a un único servicio; para definir permisos personalizados para varios servicios, añada un permiso `Data` independiente para cada servicio.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Cuadro de diálogo para crear un rol con permisos de datos definidos mediante sentencias GRANT personalizadas" size="md" />
+  </Step>
+
+  <Step title="Crear el rol" id="create-role-with-data-permissions">
+    Haga clic en `Create role`. Los roles de base de datos se crearán en los servicios seleccionados. Los roles pueden tardar hasta 10 minutos en propagarse a un servicio, pero los usuarios a los que se asigne el rol recibirán sus permisos inmediatamente al consultar el servicio.
+  </Step>
+</Steps>
+
+<div id="verify-database-roles">
+  ### Verificar roles de base de datos
+</div>
+
+Los roles administrados mediante la consola se crean en la base de datos con el prefijo `cloud:` y el tipo de almacenamiento `cloud`, y pueden tardar hasta 10 minutos en aparecer después de su creación. Para listarlos, consulte la tabla `system.roles` del servicio:
+
+```sql
+SELECT * FROM system.roles;
+```
+
+```response
+┌─name───────────┬─id───────────────────────────────────┬─storage─┐
+│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
+└────────────────┴──────────────────────────────────────┴─────────┘
+```
 
 <div id="update-custom-role">
   ## Actualizar roles personalizados
