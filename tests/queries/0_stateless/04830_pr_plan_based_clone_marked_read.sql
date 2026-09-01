@@ -16,7 +16,7 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_plan_based = 1;
--- Load-bearing: the second clone sits inside canUseLocalPlanForParallelReplicas, which requires it.
+-- The second clone sits inside canUseLocalPlanForParallelReplicas, which requires this setting.
 SET parallel_replicas_local_plan = 1;
 -- Pin the manual mode: CI's randomized automatic_parallel_replicas_mode can cost-decide against
 -- parallel replicas, so the plan-based split would not engage.
@@ -24,9 +24,9 @@ SET automatic_parallel_replicas_mode = 0;
 
 -- A system log is read through a fresh context built from the global context, which carries no
 -- parallel-replicas callbacks. This is the shape that reached the logical error.
--- The flush is load-bearing: an empty log has no parts, so the read is replaced with
--- ReadFromPreparedSource and never reaches the clone. `system.user_query_log` reads the backing
--- `system.query_log` table, which is what has to be flushed.
+-- Without the flush an empty log has no parts, so the read is replaced with ReadFromPreparedSource
+-- and never reaches the clone. `system.user_query_log` reads the backing `system.query_log` table,
+-- which is what has to be flushed.
 SYSTEM FLUSH LOGS query_log;
 SELECT count() > 0 FROM system.user_query_log SETTINGS log_comment = '04830_clone_marked_user_query_log';
 SELECT count() > 0 FROM merge('system', '^user_query_log$');
