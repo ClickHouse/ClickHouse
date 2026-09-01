@@ -80,8 +80,8 @@ def ch_median(times):
 MAX_EXACT_SPLIT_RUNS = 8
 SAMPLED_SPLITS = 10000
 
-# ErrorCodes::TIMEOUT_EXCEEDED, src/Common/ErrorCodes.cpp. Spelled out instead of
-# read from clickhouse_driver.errors.ErrorCodes, whose contents vary by version.
+# `ErrorCodes::TIMEOUT_EXCEEDED`, src/Common/ErrorCodes.cpp. Spelled out instead of
+# read from `clickhouse_driver.errors.ErrorCodes`, whose contents vary by version.
 TIMEOUT_EXCEEDED = 159
 
 
@@ -1155,9 +1155,9 @@ for query_index in queries_to_run:
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
                         "metrics_perf_events_enabled": 1,
-                        # Allocation sampling can cost an allocation-bound query two
-                        # orders of magnitude, so one run must not outlive the
-                        # profiling budget of the whole query.
+                        # Allocation sampling can make a query orders of magnitude
+                        # slower, so each statement of a run is bounded by the
+                        # profiling budget; a multi-statement item takes a multiple.
                         "max_execution_time": args.profile_seconds,
                         "memory_profiler_sample_probability": 0.1,
                         "jemalloc_enable_profiler": 1,
@@ -1169,8 +1169,8 @@ for query_index in queries_to_run:
                     e.args = (run_id, *e.args)
                     e.message = run_id + ": " + e.message
                     raise
-                # The samples taken before the budget ran out are in trace_log;
-                # the 'profile' row below is what joins them into the report.
+                # The samples taken before the budget ran out are in `trace_log`;
+                # the `profile` row below is what joins them into the report.
                 profile_elapsed = time.perf_counter() - run_start_seconds
                 profile_budget_reached = True
                 print(
