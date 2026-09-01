@@ -163,9 +163,10 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by;"
 
-# Rebuilt from the patched values the bound would sit 6 days out; carried across it stays expired.
+# Only `ttl_finished` is carried across; the bound itself is rebuilt, so the ten rows patched six
+# days out move it into the future while the ninety still-expired ones keep the part due via `min`.
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT max(group_by_ttl_info.max[1]) < now()
+    SELECT max(group_by_ttl_info.max[1]) > now(), min(group_by_ttl_info.min[1]) < now()
     FROM system.parts
     WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by' AND active AND rows = 100;
 "
@@ -235,3 +236,55 @@ done
 echo "rolled up after the blocked patched merge: $([[ "$sched_rows" -lt 100 ]] && echo 1 || echo 0)"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by_sched;"
+
+# Case 21: a patch moving EVERY row into the future must move the bound with them
+#
+# Carrying the pre-patch entry verbatim left a `max` no row satisfied any more. The next real TTL
+# merge seeds `ttl_finished` from that expired `max` (TTLAggregationAlgorithm), finds nothing to
+# roll up, and finalizes the rule as finished - after which the part is never selected for this
+# GROUP BY again and the rows overstay once their real deadline arrives.
+# -------------------------------------------------------------------
+echo "-- Case 21: a patch moving every row into the future moves the bound too"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_group_by_future
+    (
+        id UInt64,
+        event_time DateTime,
+        value UInt64
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY GROUP BY id SET value = max(value)
+    SETTINGS
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_group_by_future;
+
+    INSERT INTO t_ttl_patch_group_by_future SELECT number, now() - INTERVAL 2 DAY, number FROM numbers(100);
+
+    -- Every row, not just some of them.
+    UPDATE t_ttl_patch_group_by_future SET event_time = now() + INTERVAL 5 DAY WHERE TRUE
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM STOP TTL MERGES t_ttl_patch_group_by_future;
+    SYSTEM START MERGES t_ttl_patch_group_by_future;
+    OPTIMIZE TABLE t_ttl_patch_group_by_future FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_future;"
+
+# No row is due any more, so neither end of the bound may still sit in the past.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT min(group_by_ttl_info.min[1]) > now()
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by_future' AND active AND rows = 100;
+"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by_future;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by_future;"

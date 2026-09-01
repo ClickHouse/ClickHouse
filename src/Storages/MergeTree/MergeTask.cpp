@@ -2407,11 +2407,23 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
-    /// Put the carried GROUP BY entries back over whatever the recalculation step wrote for them,
-    /// so that family keeps its pre-patch (finished-correct) state while every other one is rebuilt.
+    /// The recalculation step rebuilds GROUP BY bounds like every other family, but it can never
+    /// set `ttl_finished`, so only that flag is carried over from before the patch. Restoring the
+    /// whole entry instead would keep a pre-patch `max` that no row satisfies any more: a patch
+    /// moving every row into the future would still look due, and the next real TTL merge seeds
+    /// `ttl_finished` from that expired `max` (TTLAggregationAlgorithm), finding nothing to roll
+    /// up and marking the rule finished - after which the part is never selected for it again.
     if (global_ctx->preserved_group_by_ttl)
     {
-        global_ctx->new_data_part->ttl_infos.group_by_ttl = *global_ctx->preserved_group_by_ttl;
+        auto & group_by_ttl = global_ctx->new_data_part->ttl_infos.group_by_ttl;
+        for (const auto & [name, preserved] : *global_ctx->preserved_group_by_ttl)
+        {
+            auto it = group_by_ttl.find(name);
+            if (it == group_by_ttl.end())
+                group_by_ttl.emplace(name, preserved);
+            else
+                it->second.ttl_finished = preserved.ttl_finished;
+        }
         /// The recalculation step already folded its throwaway GROUP BY values into the part's
         /// min/max, and `updatePartMinMaxTTL` only accumulates - and skips finished entries
         /// outright - so the bounds must be rebuilt rather than added to, or the part stays
