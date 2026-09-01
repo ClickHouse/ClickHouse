@@ -556,12 +556,13 @@ try
     auto cancellation = std::make_shared<DistributedQueryCancellation>();
 
     /// Just execute the distributed query plan without checking the result
-    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation);
+    auto executor = createDistributedQueryExecutor(
+        query_uuid, distributed_query_plan, nullptr, query_context, cancellation, std::make_shared<WakeupFd>());
 
     try
     {
         executor->start();
-        while (!executor->execute());
+        while (!executor->execute(/*poll_timeout_ms=*/ 100));
         executor->cleanup();
     }
     catch (...)

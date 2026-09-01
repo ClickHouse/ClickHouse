@@ -54,7 +54,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
-        const StatsCollectingParams & stats_collecting_params_ = {},
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         bool any_take_last_row_ = false);
 
     /// Concurrent mode: wraps a ConcurrentHashJoin.
@@ -66,7 +66,7 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t concurrent_slots_,
-        const StatsCollectingParams & stats_collecting_params_ = {},
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         bool any_take_last_row_ = false);
 
     ~SpillingHashJoin() override;
@@ -107,6 +107,7 @@ public:
     bool hasDelayedBlocks() const override { return true; }
 
     void onBuildPhaseFinish() override;
+    void onProbePhaseFinish(size_t matched_right_rows) override;
 
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
