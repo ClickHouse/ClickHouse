@@ -51,36 +51,34 @@ namespace
 /// A plain `DateTime` has no place for subsecond precision, so `readDateTimeText` stops in front of the
 /// dot and the fraction is dropped here; the offset is not applied either - the value is interpreted in
 /// the time zone of the ClickHouse column, as before - but neither may be treated as garbage.
+///
+/// The offset is matched exactly as PostgreSQL renders it - two-digit hours, then optionally minutes and
+/// seconds, each separated by a colon - so that a malformed tail such as `+0:` or `+::30` is rejected
+/// rather than waved through as "digits and colons in some order".
 void assertPostgreSQLDateTimeFullyParsed(ReadBuffer & in)
 {
-    if (!in.eof() && *in.position() == '.')
-    {
-        ++in.position();
-
-        bool has_digits = false;
-        while (!in.eof() && isNumericASCII(*in.position()))
-        {
-            has_digits = true;
-            ++in.position();
-        }
-
-        if (!has_digits)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the fractional seconds of a date and time value");
-    }
+    skipDateTimeFractionalSeconds(in);
 
     if (!in.eof() && (*in.position() == '+' || *in.position() == '-'))
     {
         ++in.position();
 
-        bool has_digits = false;
-        while (!in.eof() && (isNumericASCII(*in.position()) || *in.position() == ':'))
+        auto read_two_digit_group = [&in]
         {
-            has_digits |= isNumericASCII(*in.position());
-            ++in.position();
-        }
+            for (size_t i = 0; i < 2; ++i)
+            {
+                if (in.eof() || !isNumericASCII(*in.position()))
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the time zone offset of a date and time value");
+                ++in.position();
+            }
+        };
 
-        if (!has_digits)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the time zone offset of a date and time value");
+        read_two_digit_group();
+        for (size_t group = 0; group < 2 && !in.eof() && *in.position() == ':'; ++group)
+        {
+            ++in.position();
+            read_two_digit_group();
+        }
     }
 
     assertEOF(in);
