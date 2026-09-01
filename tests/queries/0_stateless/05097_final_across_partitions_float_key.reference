@@ -1,0 +1,17 @@
+1
+1
+2
+NaN payloads
+1
+1
+a non-float primary key still skips the cross-partition merge
+2
+2
+0
+1
+a float primary key still deduplicates within a partition
+2
+2
+a float partition column outside the primary key was already declined
+1
+1
