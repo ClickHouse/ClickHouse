@@ -29,6 +29,9 @@ MAIN_BRANCH = "master"
 # not-ready rather than reaching arbitrarily deep into history.
 MAX_COMMITS_TO_CONSIDER = 8
 
+# Ship the newest artifacts-ready commit even on red CI once a branch's last release is older than this.
+STALE_RELEASE_AGE_S = 7 * 24 * 3600
+
 # The dispatched release workflow, referenced by its generated YAML file name
 # (what `gh workflow run` / `gh run list --workflow` expect — the workflow *name*
 # "CreateRelease" is not accepted with a `.yml` suffix). Generated from
@@ -98,6 +101,15 @@ def _latest_release_tag(branch: str) -> Optional[str]:
     out = Shell.get_output(f"git tag -l {shlex.quote(f'v{branch}.*')} --sort=v:refname")
     tags = [t for t in out.splitlines() if t.strip()]
     return tags[-1] if tags else None
+
+
+def _release_age_seconds(tag: str) -> int:
+    """Seconds since `tag` was created (annotated-tag date, else tagged-commit date)."""
+    out = Shell.get_output_or_raise(
+        f"git for-each-ref --format='%(creatordate:unix)'"
+        f" {shlex.quote('refs/tags/' + tag)}"
+    )
+    return int(time.time()) - int(out.strip())
 
 
 def _wf_completed(sha: str) -> bool:
@@ -191,8 +203,11 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
 
     commit_sha is the newest fully-green commit within MAX_COMMITS_TO_CONSIDER
     of the branch head, excluding the version-bump commit; empty when none
-    qualifies, with `reason` explaining why. `status` is what the sub-result
-    reports: SKIPPED when not ready yet, ERROR when the branch is broken."""
+    qualifies, with `reason` explaining why. When no green commit qualifies but
+    the branch's last release is older than STALE_RELEASE_AGE_S, the newest
+    artifacts-ready commit is returned even on red CI. `status` is what the
+    sub-result reports: SKIPPED when not ready yet, ERROR when the branch is
+    broken."""
     tag = _latest_release_tag(branch)
     if not tag:
         return "", "no release tag found", Result.Status.ERROR
@@ -216,24 +231,22 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
     # the newest MAX_COMMITS_TO_CONSIDER of what remains.
     commits_to_check = commits[:-1][:MAX_COMMITS_TO_CONSIDER]
     last_failure = ""
+    # Newest completed, artifacts-ready commit whose CI is red - the fallback
+    # released only when the branch's last release has gone stale (below).
+    red_candidate = ""
     for idx, commit in enumerate(commits_to_check):
         print(f"[{branch}~{idx + 1}] check commit [{commit}] as release candidate")
         if not _wf_completed(commit):
             print("   CI in progress - check previous commit")
             continue
         failed = _failed_statuses(commit)
-        if failed:
-            print(f"   CI failed: {failed} - check previous commit")
-            last_failure = last_failure or f"failed jobs: {failed}"
-            continue
-        # CI is green, but "no failed statuses" also passes when the release
-        # build was deduplicated by the CI cache (reported `skipped`, not
-        # `failed`) so no packages were uploaded under this commit's SHA.
-        # Releasing such a commit fails later in CreateRelease's package
-        # download, so require the exact artifacts to actually be present.
+        # The artifacts gate applies to green and red commits alike: "no failed
+        # statuses" also passes when the release build was deduplicated by the CI
+        # cache (reported `skipped`, not `failed`) so no packages were uploaded
+        # under this commit's SHA, and CreateRelease's package download then 404s.
         if not _release_build_artifacts_ready(branch, commit):
             print(
-                f"   CI green but release build artifacts missing for [{commit}]"
+                f"   release build artifacts missing for [{commit}]"
                 f" - check previous commit"
             )
             last_failure = (
@@ -241,7 +254,19 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
                 or "release build artifacts missing (build skipped/cached)"
             )
             continue
-        return commit, "", Result.Status.OK
+        if not failed:
+            return commit, "", Result.Status.OK
+        print(f"   CI failed: {failed} - check previous commit")
+        last_failure = last_failure or f"failed jobs: {failed}"
+        red_candidate = red_candidate or commit
+
+    if red_candidate and _release_age_seconds(tag) > STALE_RELEASE_AGE_S:
+        print(
+            f"[{branch}]: last release {tag} older than"
+            f" {STALE_RELEASE_AGE_S // 86400}d with no green candidate"
+            f" - releasing [{red_candidate}] despite red CI"
+        )
+        return red_candidate, "", Result.Status.OK
 
     return (
         "",
