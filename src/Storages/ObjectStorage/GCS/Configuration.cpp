@@ -4,8 +4,14 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
+#include <Disks/IDisk.h>
 #include <IO/S3AuthSettings.h>
+#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
+
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
@@ -35,10 +41,70 @@ namespace S3AuthSetting
     extern const S3AuthSettingsUInt64 max_connections;
 }
 
+void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+{
+    auto disk = context->getDisk(disk_name);
+    auto object_storage = disk->getObjectStorage();
+    /// Unwrap decorator object storages (e.g. `CachedObjectStorage`) before looking at the backend,
+    /// the same way the S3 configuration does: a wrapper exposes the same interface but is a
+    /// different type.
+    while (auto inner = object_storage->getUnderlying())
+        object_storage = std::move(inner);
+
+    if (object_storage->getType() != ObjectStorageType::GCS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Disk {} is backed by {} object storage, not by native Google Cloud Storage",
+            disk_name, object_storage->getType());
+
+    disk_settings = object_storage->getGCSObjectStorageSettings();
+    backing_disk_name = disk_name;
+
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
+
+    /// The object key of the query is the disk's own prefix followed by the path the query asked for.
+    const String key = String(fs::path(disk_settings->key_prefix) / fs::path(parsing_result.path_suffix));
+    const String endpoint
+        = disk_settings->endpoint_override.empty() ? String("https://storage.googleapis.com") : disk_settings->endpoint_override;
+    url = S3::URI(fmt::format("{}/{}/{}", endpoint, disk_settings->bucket, key));
+
+    /// The native backend takes nothing from here, but the S3 code path this configuration inherits
+    /// dereferences `s3_settings` unconditionally.
+    s3_settings = std::make_unique<S3Settings>();
+
+    if (parsing_result.format.has_value())
+        format = *parsing_result.format;
+    if (parsing_result.compression_method.has_value())
+        compression_method = *parsing_result.compression_method;
+    if (parsing_result.structure.has_value())
+        structure = *parsing_result.structure;
+
+    setPathForRead(key);
+    keys = {key};
+}
+
 ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     ContextPtr context, bool /* is_readonly */, CredentialsConfigurationCallback /* refresh_credentials_callback */)
 {
     assertInitialized();
+
+    /// A configuration built from a `disk` setting takes its endpoint and its credentials from that
+    /// disk, and the `s3(...)` argument grammar contributed none of them, so none of the credential
+    /// translation below applies. The disk definition was already validated when the disk was
+    /// created, and reaching a disk by name from a table engine is gated by the
+    /// `allowed_disks_for_table_engines` server setting, so the query-level credential check that
+    /// guards the SQL surface would only reject legitimate disks here.
+    if (disk_settings)
+    {
+        GCSObjectStorageSettings gcs_settings = *disk_settings;
+        gcs_settings.key_prefix = url.key;
+        auto disk_client = getGCSClient(gcs_settings, context);
+        return std::make_shared<GCSObjectStorage>(
+            std::move(disk_client),
+            std::move(gcs_settings),
+            url.endpoint,
+            /* key_generator */ nullptr,
+            backing_disk_name);
+    }
 
     GCSObjectStorageSettings gcs_settings;
     gcs_settings.bucket = url.bucket;

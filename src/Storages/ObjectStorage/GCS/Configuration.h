@@ -5,6 +5,7 @@
 #if USE_AWS_S3 && USE_GOOGLE_CLOUD
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 
 namespace DB
 {
@@ -28,6 +29,18 @@ public:
 
     ObjectStoragePtr createObjectStorage(
         ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
+
+    /// A `disk = '...'` setting takes the whole backend from a native GCS disk. The inherited
+    /// implementation reads the disk's `S3ObjectStorage`, which a GCS disk is not, so it is replaced
+    /// rather than reused.
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
+
+private:
+    /// Set only by `fromDisk`: the settings of the disk that backs this configuration. They already
+    /// carry the endpoint and the credentials, so `createObjectStorage` uses them as they are instead
+    /// of translating the `s3(...)` argument grammar.
+    std::shared_ptr<const GCSObjectStorageSettings> disk_settings;
+    String backing_disk_name;
 };
 
 }
