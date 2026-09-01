@@ -59,6 +59,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument should be String");
         }
 
+        checkGeometryArgumentType<CartesianPoint, 0>(arguments[0], getName());
         return std::make_shared<DataTypeString>();
     }
 

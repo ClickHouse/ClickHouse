@@ -571,43 +571,93 @@ static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_
     });
 }
 
-/// Kind name that the areal predicates (`polygonsIntersect`, `polygonsWithin`) refuse at ANY
-/// argument position, or `nullptr` when the pair is accepted. Both a `Point` and the one-dimensional
-/// kinds are refused: `boost::geometry::intersects` / `within` are defined here for areal geometries
-/// only.
-template <typename Point, typename LeftConverter, typename RightConverter>
-constexpr const char * arealPredicateRejectedKindName()
+/// The geometry kinds a function refuses, as a bit set. A function's accepted argument domain is
+/// `callOnGeometryDataType`'s dispatch minus these kinds, and stating it here lets the check run
+/// during analysis instead of from inside `executeImpl`.
+enum GeoKindBits : UInt32
 {
-    if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, LeftConverter>
-                  || std::is_same_v<ColumnToPointsConverter<Point>, RightConverter>)
-        return "Point";
-    else if constexpr (
-        std::is_same_v<ColumnToLineStringsConverter<Point>, LeftConverter>
-        || std::is_same_v<ColumnToLineStringsConverter<Point>, RightConverter>)
-        return "LineString";
-    else if constexpr (
-        std::is_same_v<ColumnToMultiLineStringsConverter<Point>, LeftConverter>
-        || std::is_same_v<ColumnToMultiLineStringsConverter<Point>, RightConverter>)
-        return "MultiLineString";
-    else if constexpr (
-        std::is_same_v<ColumnToMultiPointsConverter<Point>, LeftConverter>
-        || std::is_same_v<ColumnToMultiPointsConverter<Point>, RightConverter>)
-        return "MultiPoint";
+    GeoKindPoint = 1u << 0,
+    GeoKindMultiPoint = 1u << 1,
+    GeoKindLineString = 1u << 2,
+    GeoKindMultiLineString = 1u << 3,
+    GeoKindRing = 1u << 4,
+    GeoKindPolygon = 1u << 5,
+    GeoKindMultiPolygon = 1u << 6,
+
+    /// `boost::geometry`'s areal algorithms (`union_`, `intersection`, `sym_difference`,
+    /// `intersects`, `within`) are defined for areal geometries only.
+    GeoKindNonAreal = GeoKindPoint | GeoKindMultiPoint | GeoKindLineString | GeoKindMultiLineString,
+};
+
+template <typename Point, typename Converter>
+constexpr UInt32 geoKindBitOf()
+{
+    if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, Converter>)
+        return GeoKindPoint;
+    else if constexpr (std::is_same_v<ColumnToMultiPointsConverter<Point>, Converter>)
+        return GeoKindMultiPoint;
+    else if constexpr (std::is_same_v<ColumnToLineStringsConverter<Point>, Converter>)
+        return GeoKindLineString;
+    else if constexpr (std::is_same_v<ColumnToMultiLineStringsConverter<Point>, Converter>)
+        return GeoKindMultiLineString;
+    else if constexpr (std::is_same_v<ColumnToRingsConverter<Point>, Converter>)
+        return GeoKindRing;
+    else if constexpr (std::is_same_v<ColumnToPolygonsConverter<Point>, Converter>)
+        return GeoKindPolygon;
+    else if constexpr (std::is_same_v<ColumnToMultiPolygonsConverter<Point>, Converter>)
+        return GeoKindMultiPolygon;
     else
-        return nullptr;
+        return 0;
 }
 
-/// Rejects from the argument TYPES alone what `arealPredicateRejectedKindName` refuses, plus
-/// whatever `callOnGeometryDataType` itself refuses to dispatch (a non-geometry argument, a
-/// WKB-encoded `String` payload).
+constexpr const char * geoKindBitName(UInt32 bit)
+{
+    switch (bit)
+    {
+        case GeoKindPoint: return "Point";
+        case GeoKindMultiPoint: return "MultiPoint";
+        case GeoKindLineString: return "LineString";
+        case GeoKindMultiLineString: return "MultiLineString";
+        case GeoKindRing: return "Ring";
+        case GeoKindPolygon: return "Polygon";
+        case GeoKindMultiPolygon: return "MultiPolygon";
+        default: return "";
+    }
+}
+
+/// Rejects, from the argument TYPES alone, the kinds in `rejected_kinds` plus whatever
+/// `callOnGeometryDataType` itself refuses to dispatch (any non-geometry argument).
 ///
-/// Called from `getReturnTypeImpl`, so the rejection happens during analysis, uniformly with every
-/// other function -- and, unlike a rejection raised from `executeImpl`, it cannot be turned into a
-/// silent `0` by anything that removes rows: skip-index or primary-key pruning, `PREWHERE`, an empty
-/// part. That property is what `Common/GeoBbox.h` relies on to prune granules for these predicates
-/// without having to restate their accepted domain.
-template <typename Point>
-void checkArealPredicateArgumentTypes(const DataTypePtr & left_type, const DataTypePtr & right_type, const String & function_name)
+/// Call these from `getReturnTypeImpl`, so the rejection happens during analysis, uniformly with
+/// every other function. A rejection raised from `executeImpl` instead is bound to the data path
+/// rather than to the query plan, so anything that removes every row -- an empty part, a
+/// constant-false filter, primary-key or skip-index pruning, or the `input_rows_count == 0` early
+/// return that `useDefaultImplementationForNulls` takes for a `Nullable` argument -- silently
+/// suppresses it and the function answers as if the argument had been valid.
+///
+/// `message` is a runtime format string taking the function name and the offending kind name, in that order.
+template <typename Point, UInt32 rejected_kinds>
+void checkGeometryArgumentType(
+    const DataTypePtr & type, const String & function_name, const char * message = "", int error_code = 0)
+{
+    callOnGeometryDataType<Point>(
+        type,
+        [&](const auto & arg)
+        {
+            using Converter = typename std::decay_t<decltype(arg)>::Type;
+            constexpr UInt32 bit = geoKindBitOf<Point, Converter>();
+            if constexpr ((bit & rejected_kinds) != 0)
+                throw Exception(error_code, "{}", fmt::format(fmt::runtime(message), function_name, geoKindBitName(bit)));
+        });
+}
+
+template <typename Point, UInt32 rejected_kinds>
+void checkGeometryArgumentTypes(
+    const DataTypePtr & left_type,
+    const DataTypePtr & right_type,
+    const String & function_name,
+    const char * message = "",
+    int error_code = 0)
 {
     callOnTwoGeometryDataTypes<Point>(
         left_type,
@@ -617,10 +667,13 @@ void checkArealPredicateArgumentTypes(const DataTypePtr & left_type, const DataT
             using LeftConverter = typename std::decay_t<decltype(left)>::Type;
             using RightConverter = typename std::decay_t<decltype(right)>::Type;
 
-            constexpr const char * rejected = arealPredicateRejectedKindName<Point, LeftConverter, RightConverter>();
-            if constexpr (rejected != nullptr)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be {}", function_name, rejected);
+            constexpr UInt32 left_bit = geoKindBitOf<Point, LeftConverter>();
+            constexpr UInt32 right_bit = geoKindBitOf<Point, RightConverter>();
+
+            if constexpr ((left_bit & rejected_kinds) != 0)
+                throw Exception(error_code, "{}", fmt::format(fmt::runtime(message), function_name, geoKindBitName(left_bit)));
+            else if constexpr ((right_bit & rejected_kinds) != 0)
+                throw Exception(error_code, "{}", fmt::format(fmt::runtime(message), function_name, geoKindBitName(right_bit)));
         });
 }
 

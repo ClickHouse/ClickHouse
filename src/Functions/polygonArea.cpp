@@ -46,8 +46,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        checkGeometryArgumentType<Point, GeoKindPoint>(arguments[0], getName(), "The argument of function {} must not be {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return std::make_shared<DataTypeFloat64>();
     }
 

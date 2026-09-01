@@ -54,7 +54,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        checkArealPredicateArgumentTypes<Point>(arguments[0], arguments[1], getName());
+        checkGeometryArgumentTypes<Point, GeoKindNonAreal>(
+            arguments[0], arguments[1], getName(),
+            "Any argument of function {} must not be {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return std::make_shared<DataTypeUInt8>();
     }
 
