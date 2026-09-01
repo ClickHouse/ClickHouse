@@ -116,7 +116,7 @@ public:
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
     bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override { return getTotalByteCount(); }
+    size_t getSpillableBytes() const override;
     void requestSpill() override { force_spill = true; }
 
 private:

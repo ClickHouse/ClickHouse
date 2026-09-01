@@ -546,6 +546,16 @@ size_t GraceHashJoin::getTotalRowCount() const
     return hash_join->getTotalRowCount();
 }
 
+size_t GraceHashJoin::getSpillableBytes() const
+{
+    std::lock_guard lock(hash_join_mutex);
+    /// Offer nothing once this bucket cannot be split any further, so that the scheduler moves on to a
+    /// join that can still free memory instead of asking this one again.
+    if (!canForceRepartition())
+        return 0;
+    return hash_join->getTotalByteCount();
+}
+
 size_t GraceHashJoin::getTotalByteCount() const
 {
     std::lock_guard lock(hash_join_mutex);
