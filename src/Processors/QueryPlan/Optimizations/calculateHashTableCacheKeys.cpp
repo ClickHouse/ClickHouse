@@ -249,6 +249,10 @@ void calculateHashTableCacheKeys(
         {
             const auto & table_join = join_step->getJoin()->getTableJoin();
             auto kind = table_join.kind();
+            /// Remember the original orientation: the RIGHT->LEFT remap below swaps the children, and the
+            /// per-output-column side bits mixed in further down must be expressed in the remapped
+            /// orientation to stay orientation-invariant.
+            const bool children_swapped = isRight(kind);
 
             /// Fold each physical side's equi-keys (with null-safety) and its on-clause residual
             /// condition into that side's child hash, so they travel with the child under the
@@ -326,8 +330,39 @@ void calculateHashTableCacheKeys(
             /// silently never running for an otherwise-supported shape - strictly worse than the
             /// same-type collision, which only yields a slightly-off estimate. So per the best-effort
             /// policy above we keep matching robust and accept that residual collision.
+            ///
+            /// What we do mix in per output column, instead of its name, is WHICH SIDE produced it. That
+            /// is a structural property - membership in one child's header - so it is the same in both
+            /// plan builds, while the name it is derived from never enters the key. It restores the only
+            /// discrimination the names were carrying: in a self-join `t AS l JOIN t AS r`, the plans for
+            /// `WHERE l.id > 0` and `WHERE r.id > 0` are otherwise isomorphic (same tables, same keys,
+            /// same output types, and the filter above the join sees a single `id` input either way), so
+            /// without this bit they share a statistics entry and one predicate's selectivity is served
+            /// to the other. A name present in both headers says nothing about a side, so it contributes
+            /// the `unknown` marker rather than an arbitrary choice.
+            ///
+            /// Like everything else in this key, the side bit is best-effort, and the cases it does not
+            /// separate cost nothing in correctness. A false-positive match only makes Auto-PR read a
+            /// statistics entry collected for a different-but-isomorphic plan, i.e. estimate `input_bytes`
+            /// / `output_bytes` from the wrong sample and enable or skip parallel replicas
+            /// sub-optimally. The query result is unaffected either way: these statistics feed the
+            /// decision, never the execution. So where a side cannot be determined we accept the
+            /// collision rather than reach for a discriminator that would have to be branch-local.
             for (const auto & column : *join_step->getOutputHeader())
+            {
                 frame.hash.update(column.type->getName());
+
+                const bool in_left = left_header.has(column.name);
+                const bool in_right = right_header.has(column.name);
+                UInt8 side = 2; /// produced by the join itself, or ambiguous (in both headers)
+                if (in_left != in_right)
+                {
+                    side = in_left ? 0 : 1;
+                    if (children_swapped)
+                        side = 1 - side;
+                }
+                frame.hash.update(side);
+            }
             /// `join_any_take_last_row` selects the last instead of the first matching right-side row for
             /// `ANY` joins, so the two modes can produce very different outputs (and thus very different
             /// collected `output_bytes`) for the same query shape. The physical `JoinStep` no longer
