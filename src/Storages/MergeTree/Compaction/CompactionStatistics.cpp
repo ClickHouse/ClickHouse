@@ -1061,10 +1061,18 @@ UInt64 estimateNeededMemoryForMerge(
     UInt64 remote_write_buffer_size = 0;
     std::optional<MultipartUploadMemory> guessed_s3_write_buffer_memory;
     std::optional<MultipartUploadMemory> guessed_azure_write_buffer_memory;
+    /// Whether the merge may keep delayed per-column writers alive in the vertical stage. Before the
+    /// destination disk is known, any remote disk may turn out to support parallel writes, so the guess
+    /// takes the over-pricing direction.
+    bool output_supports_parallel_write = output_on_remote_disk;
     if (!remote_write_buffer_memories.empty())
     {
+        output_supports_parallel_write = false;
         for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
+        {
             remote_write_buffer_size = std::max(remote_write_buffer_size, remote_write_buffer_memory.memory.ceiling);
+            output_supports_parallel_write |= remote_write_buffer_memory.supports_parallel_write;
+        }
     }
     else if (output_on_remote_disk)
     {
@@ -1583,10 +1591,14 @@ UInt64 estimateNeededMemoryForMerge(
     /// the eager file-buffer term on top would double-count one remote buffer per stream - up to
     /// min(max_compress_block_size, DBMS_DEFAULT_BUFFER_SIZE), on a wide remote merge enough to close
     /// the admission gate on merges that fit.
+    /// The add saturates: remote_write_buffer_size is MultipartUploadMemory::UNLIMITED (UInt64 max) for a
+    /// disk that allows an unlimited number of in-flight upload parts, and wrapping it around to a tiny
+    /// number here would turn the unbounded per-stream worst case into an under-reservation instead of
+    /// letting the data-volume bound of the enclosing std::min govern the estimate.
     const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size)
     {
         return remote_write_buffer_size != 0
-            ? remote_write_buffer_size + max_compress_block_size
+            ? saturatingAdd(remote_write_buffer_size, max_compress_block_size)
             : 2 * max_compress_block_size;
     };
     const UInt64 write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size);
@@ -1806,7 +1818,13 @@ UInt64 estimateNeededMemoryForMerge(
                 for (const auto & part : source_and_patch_parts)
                     merging_uncompressed += partReadBytes(*part, part_view_merging_columns).data_uncompressed;
 
-                const UInt64 delayed_streams = remote_write_buffer_size != 0
+                /// Exactly the condition MergeTask keeps delayed per-column writers under: it asks the
+                /// destination part storage for supportParallelWrite(), NOT whether the disk has multipart
+                /// upload buffers. The two differ on the Azure ADLS Gen2 endpoint, which advertises parallel
+                /// write while its writer has no multipart buffers (getWriteBufferMemory returns nothing),
+                /// so gating on remote_write_buffer_size would price zero delayed streams for a vertical
+                /// merge that really keeps up to max_merge_delayed_streams_for_parallel_write of them alive.
+                const UInt64 delayed_streams = output_supports_parallel_write
                     ? std::min<UInt64>(gathering_streams_total, settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write])
                     : 0;
                 const UInt64 alive_streams = merging_stream_counts.total + max_gathering_column_streams + delayed_streams;
@@ -2245,10 +2263,12 @@ DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk, const Write
         if (auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(current.get()))
         {
             const auto object_storage = object_storage_disk->getObjectStorage();
-            return DiskWriteBufferMemory{.memory = object_storage->getWriteBufferMemory(write_settings)};
+            return DiskWriteBufferMemory{
+                .memory = object_storage->getWriteBufferMemory(write_settings),
+                .supports_parallel_write = disk->supportParallelWrite()};
         }
     }
-    return {};
+    return DiskWriteBufferMemory{.memory = {}, .supports_parallel_write = disk->supportParallelWrite()};
 }
 
 UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)

@@ -26,6 +26,12 @@ struct DiskWriteBufferMemory
     /// filled plus all in-flight upload parts; the estimate narrows it to the largest tier reachable by
     /// the merge's bounded output volume.
     MultipartUploadMemory memory;
+
+    /// Whether the destination disk lets a merge keep delayed per-column writers alive during the vertical
+    /// stage (IDisk::supportParallelWrite - the same predicate MergeTask asks the part storage for). It is
+    /// NOT implied by a non-zero ceiling above: the Azure ADLS Gen2 endpoint advertises parallel write and
+    /// has no multipart upload buffers at all.
+    bool supports_parallel_write = false;
 };
 
 /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
@@ -104,7 +110,9 @@ UInt64 estimateNeededMemoryForMerge(
   * Whether the writer may upload parts in parallel is the exception: that comes from the write settings the
   * writer is created with (the merge context's), and a writer without a parallel upload scheduler runs its
   * uploads inline and cannot hold the configured number of detached buffers at once, so pass the same write
-  * settings the merge will write with.
+  * settings the merge will write with. The disk's supportParallelWrite() is reported alongside them,
+  * because it - not the presence of multipart buffers - is what decides whether a vertical merge keeps
+  * delayed per-column writers alive.
   */
 DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk, const WriteSettings & write_settings);
 
