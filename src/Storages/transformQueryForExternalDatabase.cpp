@@ -609,6 +609,8 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
 /// rejecting such a query merely loses the optimization.
 bool isRowPreservingExpression(const ASTPtr & node)
 {
+    checkStackSize();
+
     if (const auto * function = node->as<ASTFunction>())
     {
         if (function->isWindowFunction() || function->window_definition || !function->window_name.empty())
