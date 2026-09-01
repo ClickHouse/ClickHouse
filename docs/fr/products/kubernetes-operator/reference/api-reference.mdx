@@ -101,6 +101,7 @@ ClickHouseClusterSpec définit l’état souhaité de ClickHouseCluster.
 | `labels`                         | object (keys:string, values:string)                                                                                                 | Labels supplémentaires ajoutés aux ressources.                                                                                                                                                                                                                                                                    | false       |                |
 | `annotations`                    | object (keys:string, values:string)                                                                                                 | Annotations supplémentaires ajoutées aux ressources.                                                                                                                                                                                                                                                              | false       |                |
 | `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget configure le PDB créé pour chaque shard.<br />S’il n’est pas défini, l’opérateur utilise par défaut maxUnavailable=1 pour les<br />shards à réplique unique et minAvailable=1 pour les shards à plusieurs répliques.                                                                          | false       |                |
+| `networkPolicy`                  | [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)                                                                         | NetworkPolicy configure la NetworkPolicy gérée pour le cluster.                                                                                                                                                                                                                                                   | false       |                |
 | `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | Paramètres de configuration du serveur ClickHouse.                                                                                                                                                                                                                                                                | false       | &#123;  &#125; |
 | `clusterDomain`                  | string                                                                                                                              | ClusterDomain est le suffixe de domaine du cluster Kubernetes utilisé pour la résolution DNS.                                                                                                                                                                                                                     | false       | cluster.local  |
 | `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel indique le canal de publication utilisé pour les vérifications de mise à niveau majeure.<br />Lorsqu’il est vide, seules les mises à jour mineures seront proposées. Les valeurs autorisées sont : stable, lts ou une version majeure.mineure spécifique (par ex. 25.8).                           | false       |                |
@@ -133,6 +134,26 @@ ClickHouseClusterStatus définit l’état observé de ClickHouseCluster.
 Apparaît dans :
 
 * [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
+
+ClickHouseNetworkPolicySpec configure la NetworkPolicy gérée pour le cluster ClickHouse.
+La politique gérée couvre le trafic interne au cluster :
+
+* Connectivité entre les réplicas
+* Accès de l’opérateur au cluster
+
+Tout autre trafic entrant, y compris les connexions client et la collecte de métriques, nécessite des NetworkPolicies définies par l’utilisateur.
+
+| Champ    | Type                                        | Description                                                                                                                                                                                       | Obligatoire | Par défaut |
+| -------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ---------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | La politique détermine si l’opérateur gère une NetworkPolicy qui limiter le trafic entrant vers les pods du cluster.<br />Par défaut, la valeur est « Disabled » lorsqu’elle n’est pas définie. | false       | Disabled   |
+
+Apparaît dans :
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
 
 <div id="clickhousesettings">
   ## ClickHouseSettings
@@ -360,10 +381,11 @@ KeeperClusterSpec définit l’état souhaité de KeeperCluster.
 | `labels`               | object (keys:string, values:string)                                                                                                 | Labels supplémentaires ajoutés aux ressources.                                                                                                                                                                                                                                     | false       |               |
 | `annotations`          | object (keys:string, values:string)                                                                                                 | Annotations supplémentaires ajoutées aux ressources.                                                                                                                                                                                                                               | false       |               |
 | `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget configure le PDB créé pour le cluster Keeper.<br />S’il n’est pas défini, l’opérateur utilise par défaut maxUnavailable=replicas/2<br />(en préservant le quorum pour un cluster 2F+1) ; les clusters à réplique unique utilisent maxUnavailable=1.            | false       |               |
+| `networkPolicy`        | [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)                                                                                 | NetworkPolicy configure la NetworkPolicy gérée pour le cluster Keeper.                                                                                                                                                                                                             | false       |               |
 | `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | Paramètres de configuration du serveur ClickHouse Keeper.                                                                                                                                                                                                                          | false       |               |
 | `clusterDomain`        | string                                                                                                                              | ClusterDomain est le suffixe de domaine du cluster Kubernetes utilisé pour la résolution DNS.                                                                                                                                                                                      | false       | cluster.local |
 | `upgradeChannel`       | string                                                                                                                              | UpgradeChannel spécifie le canal de publication utilisé pour les vérifications de mise à niveau majeure.<br />Lorsqu’il est vide, seules les mises à jour mineures sont proposées. Les valeurs autorisées sont : stable, lts ou une version major.minor spécifique (par ex. 25.8). | false       |               |
-| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | Surcharges de VersionProbeTemplate pour le Job de détection de version.<br />Obsolète : les Jobs de sonde de version de Keeper ne sont pas utilisés ; ce champ est conservé pour la rétrocompatibilité.                                                                               | false       |               |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | Surcharges de VersionProbeTemplate pour le Job de détection de version.<br />Obsolète : les Jobs de sonde de version de Keeper ne sont pas utilisés ; ce champ est conservé pour la rétrocompatibilité.                                                                            | false       |               |
 
 Apparaît dans :
 
@@ -390,6 +412,26 @@ KeeperClusterStatus définit l’état observé de KeeperCluster.
 Apparaît dans :
 
 * [KeeperCluster](#keepercluster)
+
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
+
+KeeperNetworkPolicySpec configure la NetworkPolicy gérée pour le cluster Keeper.
+La politique gérée couvre le trafic interne au cluster :
+
+* Connectivité entre les répliques
+* Accès de l’opérateur au cluster
+* Accès depuis les clusters ClickHouse qui référencent ce cluster Keeper
+  Tout autre trafic entrant, y compris le scraping de métriques, nécessite des NetworkPolicies définies par l’utilisateur.
+
+| Champ    | Type                                        | Description                                                                                                                                                                               | Obligatoire | Par défaut |
+| -------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ---------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | La politique détermine si l’opérateur gère une NetworkPolicy qui limite le trafic entrant vers les pods Keeper.<br />La valeur par défaut est « Disabled » lorsqu’elle n’est pas définie. | false       | Disabled   |
+
+Apparaît dans :
+
+* [KeeperClusterSpec](#keeperclusterspec)
 
 <div id="keepersettings">
   ## KeeperSettings
@@ -441,6 +483,22 @@ NamedTemplateMeta définit les paramètres de métadonnées pris en charge pour 
 Apparaît dans :
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
+
+NetworkPolicyPolicy détermine si l’opérateur gère une NetworkPolicy pour le cluster.
+
+| Champ      | Description                                                                                                                      |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `Enabled`  | NetworkPolicyEnabled indique à l’opérateur de gérer une NetworkPolicy limitant le trafic entrant vers les pods du cluster.<br /> |
+| `Disabled` | NetworkPolicyDisabled désactive la NetworkPolicy gérée ; l’opérateur la supprime si elle existe.<br />                           |
+
+Apparaît dans :
+
+* [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
+* [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
 <div id="pdbpolicy">
   ## PDBPolicy

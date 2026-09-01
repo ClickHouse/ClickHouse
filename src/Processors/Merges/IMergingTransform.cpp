@@ -255,13 +255,26 @@ IProcessor::Status IMergingTransformBase::prepare()
             {
                 input.setNeeded();
             }
-            if (!input_chunk.hasRows() && !virtual_row && !input.isFinished())
+            if (!input_chunk.hasRows() && !virtual_row)
             {
-                input.setNeeded();
-                return Status::NeedData;
-            }
+                if (!input.isFinished())
+                {
+                    input.setNeeded();
+                    return Status::NeedData;
+                }
 
-            state.has_input = true;
+                /// The input finished with an empty chunk: there is nothing to consume.
+                /// Passing it to the algorithm would put an empty cursor into the sorting
+                /// queue (`Logical error: 'max_rows > 0'` in the batch merge, out-of-bounds
+                /// row access in the heap comparisons). Report the source as exhausted
+                /// instead, like the initialization path does for empty first chunks.
+                state.input_chunk.set(Chunk());
+                state.no_data = true;
+            }
+            else
+            {
+                state.has_input = true;
+            }
         }
         else
         {

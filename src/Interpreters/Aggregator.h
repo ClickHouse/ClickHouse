@@ -151,6 +151,7 @@ public:
 
         bool enable_adaptive_aggregator = false;
         UInt64 adaptive_aggregator_freeze_threshold = 0;
+        UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
 
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
@@ -232,7 +233,8 @@ public:
             bool enable_parallel_single_level_merge_,
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
-            UInt64 adaptive_aggregator_freeze_threshold_);
+            UInt64 adaptive_aggregator_freeze_threshold_,
+            UInt64 adaptive_aggregator_freeze_threshold_bytes_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -1008,6 +1010,9 @@ private:
     /// dataflow statistics must describe the untruncated aggregation output (it prices the
     /// shipping term of the parallel-replicas plan, where the partial aggregation materializes
     /// every group), so the chunk of a truncated conversion cannot be measured as is.
+    /// `full_group_count`, when non-null, receives the bucket table's group count: the group-by
+    /// limit must be enforced against the true cardinality, which the chunk's row count
+    /// understates when the Top-K conversion truncates it.
     template <typename Method>
     AggregatedChunk convertOneBucketToChunk(
         AggregatedDataVariants & data_variants,
@@ -1015,7 +1020,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        UInt64 * topk_full_key_bytes) const;
+        UInt64 * topk_full_key_bytes,
+        size_t * full_group_count) const;
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
@@ -1034,13 +1040,16 @@ private:
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
 
+    /// `full_group_count`, when non-null, receives the merged bucket's group count (see
+    /// `convertOneBucketToChunk`).
     AggregatedChunk mergeAndConvertOneBucketToChunk(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         bool final,
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+        size_t * full_group_count) const;
 
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
@@ -1173,6 +1182,17 @@ private:
         Columns columns,
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
+        AggregateFunctionInstructions & instructions,
+        NestedColumnsHolder & nested_columns_holder) const;
+
+    /// The instruction-building tail of `prepareAggregateInstructions`: the combinator
+    /// unwrapping (-State, -Array) and the batch wiring for one aggregate whose argument
+    /// pointers are already in place. Called directly for staged chunks, whose payload
+    /// columns the seal already normalized to the drain's form.
+    void buildAggregateFunctionInstruction(
+        size_t i,
+        bool has_sparse_arguments,
+        AggregateColumns & aggregate_columns,
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder) const;
 
