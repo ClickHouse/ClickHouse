@@ -1272,7 +1272,7 @@ void StorageObjectStorageQueue::commit(
         {
             ProfileEvents::increment(
                 ProfileEvents::ObjectStorageQueueRemoveObjectFailures, post_processing_failed_paths.size());
-	}
+        }
     }
     else
     {
