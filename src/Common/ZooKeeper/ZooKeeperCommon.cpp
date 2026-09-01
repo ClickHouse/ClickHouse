@@ -1372,6 +1372,10 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         response->zxid = zxid;
     }
 
+    /// The failed-multi aggregate error is not sent on the wire; derive it from the
+    /// per-operation errors just read.
+    promoteMultiResponseError(*this);
+
     /// Footer.
     {
         OpNum op_num = {};
@@ -1389,11 +1393,6 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         if (error_read != -1)
             throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
     }
-
-    /// Derive the transaction's aggregate error from the per-operation errors just read:
-    /// the wire carries a ZOK aggregate on a failed multi and the real error only in the
-    /// failing subresponse. Shared with the in-process path (KeeperOverDispatcher).
-    promoteMultiResponseError(*this);
 }
 
 void promoteMultiResponseError(MultiResponse & response)
@@ -1401,10 +1400,8 @@ void promoteMultiResponseError(MultiResponse & response)
     if (response.error != Error::ZOK)
         return;
 
-    /// A failed multi leaves the aggregate error ZOK, with the real error on the failing
-    /// operation and ZRUNTIMEINCONSISTENCY on the operations after it. Promote the first
-    /// real error to the aggregate. The wire (readImpl) and the in-process adapter
-    /// (KeeperOverDispatcher) both use this so they stay identical.
+    /// A failed multi leaves the aggregate ZOK, with the real error on the failing operation
+    /// and ZRUNTIMEINCONSISTENCY on the operations after it; promote the first real error.
     for (const auto & sub : response.responses)
     {
         if (sub->error != Error::ZOK && sub->error != Error::ZRUNTIMEINCONSISTENCY)

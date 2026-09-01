@@ -304,10 +304,8 @@ KeeperOverDispatcher::ResponseCallback KeeperOverDispatcher::promotingMultiCallb
     return [user_callback = std::move(callback)](const ZooKeeperResponsePtr & response)
     {
         auto & multi_response = dynamic_cast<MultiResponse &>(*response);
-        /// The in-process response bypasses ZooKeeperMultiResponse::readImpl, where the
-        /// TCP client derives a failed multi's aggregate error from its subresponses.
-        /// Apply the same normalization here, otherwise a rolled-back transaction is
-        /// reported with aggregate ZOK and the caller treats it as successful.
+        /// In-process responses do not pass through ZooKeeperMultiResponse::readImpl, so a
+        /// failed multi still has a ZOK aggregate here; normalize it before the user callback.
         promoteMultiResponseError(multi_response);
         user_callback(multi_response);
     };
