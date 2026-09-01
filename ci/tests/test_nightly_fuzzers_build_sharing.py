@@ -57,6 +57,9 @@ from ci.workflows.nightly_sqlancer import workflow as sqlancer_workflow  # noqa:
 from ci.workflows.release_branches import (  # noqa: E402
     workflow as release_workflow,
 )
+from ci.workflows.weekly_fuzzers_corpus import (  # noqa: E402
+    workflow as corpus_workflow,
+)
 
 _SHARED_BUILD = "Build (arm_release)"
 
@@ -278,6 +281,57 @@ class TestConsumerRequiresTheReleaseBinary:
             if path not in include_paths
         ]
         assert missing == [], missing
+
+
+class TestOnlyTheGeneratingJobNeedsTheBinary:
+    """`libfuzzer_test_check.py` also backs the weekly corpus-minimization job.
+
+    A minimization run replays an existing corpus, which libFuzzer takes no
+    dictionary for, so that job requires no release binary and its workflow
+    provides none. Generating the dictionary there would assert on a binary that
+    is not staged.
+    """
+
+    def _script_jobs(self):
+        # `ci/defs` imports praktika as `praktika`, not `ci.praktika`, so its job
+        # objects are instances of a different class object than the one imported
+        # here; matched on the attributes instead of by type.
+        candidates = []
+        for name, value in vars(JobConfigs).items():
+            if name.startswith("_"):
+                continue
+            candidates.extend(value if isinstance(value, (list, tuple)) else [value])
+        jobs = [
+            job
+            for job in candidates
+            if isinstance(getattr(job, "command", None), str)
+            and "libfuzzer_test_check.py" in job.command
+        ]
+        assert jobs, "no job runs the script: the arms below are vacuous"
+        return jobs
+
+    def test_the_binary_requirement_follows_the_minimize_only_flag(self):
+        # Enumerated over the script rather than named, so a third job that runs
+        # it has to make the same choice.
+        mismatched = [
+            job.name
+            for job in self._script_jobs()
+            if ("--minimize-only" in job.command)
+            == (ArtifactNames.CH_ARM_RELEASE in job.requires)
+        ]
+        assert mismatched == [], mismatched
+
+    def test_both_arms_of_that_pairing_exist(self):
+        # Anti-vacuity: with only one kind of job present the assertion above
+        # holds for every implementation.
+        flags = {"--minimize-only" in job.command for job in self._script_jobs()}
+        assert flags == {True, False}, flags
+
+    def test_the_minimization_workflow_provides_no_release_binary(self):
+        # The other half: a job cannot be given an artifact its workflow never
+        # produces, so this is what makes the requirement above unsatisfiable.
+        provided = {a for job in corpus_workflow.jobs for a in job.provides}
+        assert ArtifactNames.CH_ARM_RELEASE not in provided
 
 
 class TestLongRetentionTags:

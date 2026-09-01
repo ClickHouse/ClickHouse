@@ -462,7 +462,10 @@ def main():
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
                 zfd.extractall(seed_corpus_path)
 
-    generate_dictionary(fuzzers_path, repo_path, docker_image)
+    # A minimization run replays an existing corpus, which libFuzzer takes no
+    # dictionary for, and is given no release binary to generate one from.
+    if not args.minimize_only:
+        generate_dictionary(fuzzers_path, repo_path, docker_image)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
