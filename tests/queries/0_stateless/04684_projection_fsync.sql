@@ -1,5 +1,6 @@
 -- Tags: no-object-storage
 -- no-object-storage: object storage does not fsync files.
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None); merge_max_block_size=(100, None)
 
 -- Regression test for issue #111318: projection parts must be fsynced together with the part.
 -- A fully synced part fsyncs several more files when it has a projection, so the durability of
