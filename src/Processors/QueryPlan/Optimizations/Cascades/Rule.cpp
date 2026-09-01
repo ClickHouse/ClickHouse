@@ -15,15 +15,20 @@ GroupExpressionPtr IOptimizationRule::addTwoStageSplit(Memo & memo, const GroupE
     ExpressionProperties final_input_required) const
 {
     partial_expression->inputs = source_expression->inputs;
-    GroupId partial_group_id = memo.addGroup(partial_expression);
+    /// The inputs are final here, so interning is sound: a second firing of the same split finds
+    /// the partial group already in the memo, and the final expression below is then a duplicate in
+    /// the source group and is dropped - with nothing left behind, because no group was created.
+    /// Creating the partial group unconditionally instead would leak it exactly on that path; the
+    /// leak was latent only because a fresh partial group id made the final expression unique, so
+    /// the rejection below was unreachable.
+    /// (A future eager-aggregation pushdown creates its partial group through here too.)
+    GroupId partial_group_id = memo.internExpression(partial_expression);
 
     auto final_expression = std::make_shared<GroupExpression>(std::move(final_step));
     final_expression->inputs = {{partial_group_id, std::move(final_input_required)}};
     final_expression->setApplied(*this, {});
-    /// The partial group is new, so the final expression is a duplicate only when the same
-    /// split was already registered. Return nothing then, so the dropped expression is not
-    /// explored.
-    if (!memo.getGroup(source_expression->group_id)->addLogicalExpression(final_expression))
+    /// Return nothing on a duplicate, so the dropped expression is not explored.
+    if (!memo.addLogicalExpressionToGroup(source_expression->group_id, final_expression))
         return nullptr;
     return final_expression;
 }

@@ -90,6 +90,12 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
     /// Remove all known best expressions with higher cost and properties satisfied by the new expression.
     /// Only the matching distribution-shape bucket needs checking - `isSatisfiedBy` requires
     /// exact match on (node_count, is_replicated).
+    ///
+    /// At exactly equal cost the incumbent - the earlier-inserted expression - wins: the first
+    /// comparison keeps it (`<=`) and the second does not evict it (`>`). Group deduplication makes
+    /// exact ties common, since two expressions differing only in a physical knob now live in one
+    /// group and can price identically; without this rule the winner would depend on insertion
+    /// order, which is search-schedule state, and plans would move for no costed reason.
     for (auto best_it = bucket.begin(); best_it != bucket.end();)
     {
         if (expression->properties.isSatisfiedBy((*best_it)->properties) &&

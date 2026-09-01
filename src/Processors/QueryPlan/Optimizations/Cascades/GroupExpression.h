@@ -96,7 +96,9 @@ public:
     /// so the implication rests on those fields being empty exactly when the wire omits them, which
     /// today only the construction sites guarantee. If that ever breaks, the failure direction is a
     /// missed merge, never a wrong one.
-    size_t logicalFingerprint() const;
+    /// 128 bits wide, unlike `fullFingerprint`: this one keys a memo-wide index
+    /// (`Memo::internExpression`) rather than a bucket inside one group.
+    UInt128 logicalFingerprint() const;
     bool logicallyEqualTo(const GroupExpression & other) const;
 
     GroupId group_id = INVALID_GROUP_ID;

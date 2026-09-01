@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <IO/Operators.h>
 #include <base/defines.h>
+#include <Common/SipHash.h>
 #include <boost/functional/hash.hpp>
 
 namespace DB
@@ -174,31 +175,34 @@ const StepFingerprint * GroupExpression::cachedStepLogicalFingerprint() const
 }
 
 /// `logicallyEqualTo` and `logicalFingerprint` must cover the same components in the same order:
-/// properties, inputs (group and required properties), then the step's logical digest.
-size_t GroupExpression::logicalFingerprint() const
+/// properties, inputs (group and required properties), then the step's logical digest. The input
+/// count is hashed too, so an input list cannot alias the step fingerprint that follows it.
+UInt128 GroupExpression::logicalFingerprint() const
 {
     chassert(strategy == nullptr && enforced_property == EnforcedProperty::None);
 
-    size_t hash_value = ExpressionPropertiesHash()(properties);
+    SipHash hash;
+    hash.update(ExpressionPropertiesHash()(properties));
+    hash.update(inputs.size());
     for (const auto & input : inputs)
     {
-        boost::hash_combine(hash_value, input.group_id);
-        boost::hash_combine(hash_value, ExpressionPropertiesHash()(input.required_properties));
+        hash.update(input.group_id);
+        hash.update(ExpressionPropertiesHash()(input.required_properties));
     }
 
     if (const auto * fingerprint = cachedStepLogicalFingerprint())
     {
-        boost::hash_combine(hash_value, fingerprint->value.items[0]);
-        boost::hash_combine(hash_value, fingerprint->value.items[1]);
+        hash.update(fingerprint->value.items[0]);
+        hash.update(fingerprint->value.items[1]);
     }
     else
     {
         /// No logical digest means the expression never merges, so hash the pointer to keep it in a
         /// bucket of its own.
-        boost::hash_combine(hash_value, reinterpret_cast<uintptr_t>(plan_step.get()));
+        hash.update(reinterpret_cast<uintptr_t>(plan_step.get()));
     }
 
-    return hash_value;
+    return hash.get128();
 }
 
 bool GroupExpression::logicallyEqualTo(const GroupExpression & other) const

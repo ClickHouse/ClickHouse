@@ -103,6 +103,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
+    context.cascades_memo_deduplication = optimization_settings.cascades_memo_deduplication;
 
     return context;
 }
@@ -182,11 +183,26 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
 
     auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
     group_expression->inputs = std::move(inputs);
-    auto group_id = memo.addGroup(group_expression);
+    /// New group ids are handed out in order, so this is exactly "the intern created a group".
+    const GroupId next_new_group_id = memo.getGroupCount();
+    auto group_id = memo.internExpression(group_expression);
 
-    /// Set statistics on the group (shared by all expressions in the group)
+    /// Statistics belong to the group, shared by all its expressions. An interned expression that
+    /// joined an existing group keeps that group's estimate: the two compute the same relation, so
+    /// the estimates may differ only by estimator noise, which a debug assertion pins.
     auto group = memo.getGroup(group_id);
-    group->statistics = std::move(prepopulated_statistics);
+    if (group_id == next_new_group_id)
+    {
+        group->statistics = std::move(prepopulated_statistics);
+    }
+    else if (group->statistics.has_value() && prepopulated_statistics.has_value())
+    {
+        /// A loose factor: a violation is not estimator noise, it is a logical identity that
+        /// classified two different relations as equal.
+        chassert(group->statistics->estimated_row_count <= 10.0 * prepopulated_statistics->estimated_row_count + 1.0
+                && prepopulated_statistics->estimated_row_count <= 10.0 * group->statistics->estimated_row_count + 1.0,
+            "Cascades group deduplication merged two expressions with disagreeing row estimates");
+    }
 
     return {group_id, {}};
 }
@@ -344,6 +360,13 @@ void CascadesOptimizer::optimize()
     const auto & step_digest_counters = memo.getContext().step_digest_counters;
     LOG_TRACE(log, "Step digests written: {}, bytes written: {}, confirmations: {}",
         step_digest_counters.digests_written, step_digest_counters.digest_bytes_written, step_digest_counters.digest_confirmations);
+
+    /// Orphan groups are groups no extracted plan can reach; a caller that creates a group and then
+    /// drops the only expression consuming it leaves one behind. Logged, not asserted, in production.
+    const auto & memo_counters = memo.getContext().memo_counters;
+    LOG_TRACE(log, "Groups created: {}, reused: {}, duplicate group detections: {}, unreachable groups: {}",
+        memo_counters.groups_created, memo_counters.groups_reused, memo_counters.duplicate_group_detections,
+        memo.countGroupsUnreachableFrom(root_group_id));
 
     LOG_TRACE(log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
 }

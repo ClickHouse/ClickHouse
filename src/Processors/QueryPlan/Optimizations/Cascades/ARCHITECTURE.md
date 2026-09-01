@@ -671,23 +671,58 @@ The same mechanism at whole-object scale is the base `writeFullDigest` default
 (`addWholeObjectWitness`), which uses a reserved tag out of the range of any step's own tags, so a
 witness digest can never collide with a content digest of the same step type.
 
-**Preconditions for memo-wide deduplication (Stage 2).**
+### Memo-wide group deduplication
+
+`Memo::internExpression` is the group-creation entry point for plan ingestion
+(`CascadesOptimizer::addGroup`) and for every rule that splits off a stage
+(`IOptimizationRule::addTwoStageSplit`). It looks the incoming expression up in a memo-wide index
+of interned logical expressions: on a hit the expression joins the group that already computes that
+relation and that group's id is returned, on a miss a new group is created and indexed. Guarded by
+`cascades_memo_deduplication`, experimental and off by default; with the setting off the entry point
+creates a group unconditionally, exactly as before.
+
+- **The key** is `GroupExpression::logicalFingerprint`, 128 bits over the logical frame (own
+  properties, the ordered inputs with their required properties, the step's logical digest). It is
+  computed once, at insertion, and stored in the index entry: an entry is never looked up or removed
+  by a recomputed fingerprint, because lazily populated analysis state changes a step's digest over
+  its lifetime. A candidate from the fingerprint bucket is confirmed by `logicallyEqualTo`, which
+  compares the frame field by field and re-digests the two live steps, so a fingerprint collision
+  costs a comparison and can never merge two groups.
+- **Inputs must be final** before an expression is interned - ingestion recurses before inserting,
+  and a rule inherits the source expression's inputs. An input group id that changed afterwards
+  would strand the entry under a fingerprint nothing can find again.
+- **Only pure logical expressions** participate (`strategy == nullptr`, no `enforced_property`,
+  asserted): an enforcer computes its input's relation, so it would fold into its own child group.
+  Stage markers in the logical digest block the other cycle class, a partial stage folding into its
+  source group. After every hit a debug assertion walks the inserted expression's input links and
+  checks the target group is not reachable from them.
+- **Statistics** stay the existing group's on a hit; in debug builds the two independent estimates
+  are asserted to agree within a loose factor, since a real disagreement means the identity
+  classified two different relations as equal.
+- **Within the group** the incoming expression is still filtered by the full identity, so a knob
+  variant survives as a costed alternative and only a fully-equal expression is dropped. Exact cost
+  ties therefore become common, and `Group::updateBestImplementation` resolves them deterministically
+  in favour of the earlier-inserted expression.
+- **Duplicate groups are detected, not merged.** A rule inserting into group A an expression that
+  matches an interned expression of group B proves A and B equal; `Memo::addLogicalExpressionToGroup`
+  counts that event and logs both ids. Merging is a later stage.
+- **Counters**, in `MemoCounters` on `OptimizerContext` and logged at the end of the pass:
+  `groups_created`, `groups_reused`, `duplicate_group_detections`, plus the orphan count
+  (`countGroupsUnreachableFrom` over the root group), which must stay zero - interning the partial
+  group of a two-stage split is what closed the one orphan this memo had.
+
+**Remaining preconditions for enabling deduplication by default.**
 
 - The upstream `hasCorrelatedColumns` / `ActionsDAG::serialize` gap above.
 - The performance gate: per-run `StepDigestCounters` on `OptimizerContext` plus the
   `CascadesStepDigests` / `CascadesStepDigestBytes` / `CascadesStepDigestConfirmations`
   ProfileEvents ship the digest counters, but the wall-time measurement and the threshold it has
   to clear do not exist yet.
-- The insertion-time-fingerprint rule: a memo-wide index must store the fingerprint computed when
-  the expression was inserted, and must never look up or remove an expression by recomputing its
-  current fingerprint — lazily populated analysis state changes the fingerprint over a step's
-  lifetime.
+- `ReadFromMergeTree` keeps `hasLogicalDigest() == false` until its content snapshot identity lands,
+  so reads never merge and no parent of a read merges either. Until then deduplication reuses almost
+  no group on a real query, and `groups_reused` reports that.
 
-The logical digest has one more precondition of its own: `ReadFromMergeTree` keeps
-`hasLogicalDigest() == false` until its content snapshot identity lands, so reads never merge and
-no parent of a read merges either.
-
-**Key files**: `StepIdentity.h/cpp`, `Processors/QueryPlan/StepIdentity.h/cpp`, and the
+**Key files**: `StepIdentity.h/cpp`, `Processors/QueryPlan/StepIdentity.h/cpp`, `Memo.h/cpp`, and the
 `writeFullDigest` override and `hasLogicalDigest` / `writeLogicalDigest` pair of each audited step
 
 ---
