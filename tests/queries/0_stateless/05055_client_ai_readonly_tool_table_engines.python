@@ -198,10 +198,15 @@ def main():
     try:
         read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
 
-        # The temporary tables must be created in the same session the agent runs in.
+        # The temporary tables must be created in the same session the agent runs in. Every
+        # statement waits for the client to be back at the prompt: `replxx` submits everything
+        # that is already buffered when it starts reading as a single statement, so on a slow
+        # build (a sanitizer one), where the client needs more than a fixed idle period to get
+        # there, typing ahead would merge the statements with the question that follows them and
+        # the `?` would never start the agent.
         for statement in SETUP:
             os.write(master, statement.encode() + b"\n")
-            drain(master, debug_log_fd, 1.0)
+            read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
 
         os.write(master, b"? read the tables\n")
         read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)

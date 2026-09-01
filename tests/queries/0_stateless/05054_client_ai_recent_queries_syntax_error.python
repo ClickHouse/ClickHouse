@@ -141,7 +141,12 @@ def main():
         # ever started and no exception is raised, so this is the case most likely to be
         # missing from the context of the agent - and the one the user asks it to fix.
         os.write(master, b"ELECT 1\n")
-        drain(master, debug_log_fd, 1.0)
+        # Wait for the client to be back at the prompt before typing the next line. `replxx`
+        # submits everything that is already buffered when it starts reading as a single
+        # statement, so on a slow build (a sanitizer one), where the client needs more than a
+        # fixed idle period to get there, typing ahead would make `ELECT 1` and the question one
+        # query and the `?` would never start the agent.
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
 
         os.write(master, b"? fix this query\n")
         read_until(master, debug_log_fd, lambda o: ANSWER in o, TIMEOUT_SECONDS)
