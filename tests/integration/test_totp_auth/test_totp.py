@@ -2,7 +2,6 @@ import base64
 import hashlib
 import hmac
 import os
-import random
 import re
 import struct
 import time
@@ -14,7 +13,12 @@ from helpers.cluster import ClickHouseCluster
 from helpers.uclient import client, prompt
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-TOTP_SECRET = base64.b32encode(random.randbytes(random.randint(3, 64))).decode()
+# The secret must be deterministic: the flaky check runs this file on several pytest-xdist
+# workers in parallel, and `create_config` writes the shared `config/users.xml`, so all
+# workers must produce identical content. A random secret makes the last writer win and
+# the other workers' clusters reject codes generated for their own secrets.
+# The length is not a multiple of 5 bytes, so the base32 form exercises `=` padding.
+TOTP_SECRET = base64.b32encode(hashlib.sha256(b"test_totp_auth").digest()[:19]).decode()
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -38,7 +42,7 @@ def get_one_time_password(
     secret, interval=30, digits=6, sha_version=hashlib.sha1, timepoint=None
 ):
     key = base64.b32decode(secret, casefold=True)
-    time_step = int(timepoint or time.time() / interval)
+    time_step = int((timepoint or time.time()) / interval)
     msg = struct.pack(">Q", time_step)
     hmac_hash = hmac.new(key, msg, sha_version).digest()
     offset = hmac_hash[-1] & 0x0F
