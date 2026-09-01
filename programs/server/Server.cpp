@@ -1304,7 +1304,7 @@ try
         log,
         "Available RAM: {}; logical cores: {}; used cores: {}.",
         formatReadableSizeWithBinarySuffix(physical_server_memory),
-        std::thread::hardware_concurrency(),
+        getNumberOfLogicalCPUCores(),
         getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
     );
 
