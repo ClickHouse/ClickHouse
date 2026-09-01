@@ -164,6 +164,14 @@ public:
     }
 };
 
+/// `getLogger` locks a process-global mutex and looks the logger up by name, while range readers are
+/// constructed once per read step for every read task, so the lookup is cached here.
+inline LoggerPtr getMergeTreeRangeReaderLogger()
+{
+    static LoggerPtr log = getLogger("MergeTreeRangeReader");
+    return log;
+}
+
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
 /// Used generally for reading number of rows less than index granularity to decrease cache misses for fat blocks.
@@ -483,7 +491,7 @@ private:
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
     bool can_read_incomplete_granules = false; /// Combined flag: true only if ALL readers in the chain support incomplete granules
 
-    LoggerPtr log = getLogger("MergeTreeRangeReader");
+    LoggerPtr log = getMergeTreeRangeReaderLogger();
 };
 
 }
