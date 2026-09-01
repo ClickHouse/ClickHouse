@@ -22,6 +22,7 @@ arm10c extended defaults	2100	17018946187975451772	100	500	386	600	100
 arm10c defaults full_sorting_merge control	2100	17018946187975451772	100	500	386	600	100
 arm11 variant	2100	5797950847167328277	600	500	500	500
 arm11 variant full_sorting_merge control	2100	5797950847167328277	600	500	500	500
+arm11c variant local order	2100	3138948327916663685	700	700	350	350
 arm12 replicated extended	45	780770571477425318
 arm12 replicated ref lists control	45	780770571477425318
 arm13 enum in tuple	1000	14889079145796839673
@@ -35,6 +36,7 @@ arm10c_extended_defaults	12600
 arm10d_defaults_fsm	0
 arm11_variant	4200
 arm11b_variant_fsm	0
+arm11c_variant_local_order	4200
 arm12_replicated_extended	225
 arm12b_replicated_ref_lists	0
 arm13_tuple_enum	1000

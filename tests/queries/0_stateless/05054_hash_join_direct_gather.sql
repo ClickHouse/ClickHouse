@@ -28,6 +28,8 @@ DROP TABLE IF EXISTS dg_asof_probe;
 DROP TABLE IF EXISTS dg_ext;
 DROP TABLE IF EXISTS dg_ext_probe;
 DROP TABLE IF EXISTS dg_variant;
+DROP TABLE IF EXISTS dg_variant_ord1;
+DROP TABLE IF EXISTS dg_variant_ord2;
 DROP TABLE IF EXISTS dg_tuple_enum;
 DROP TABLE IF EXISTS dg_list_ext;
 
@@ -339,6 +341,43 @@ FROM dg_ext_probe LEFT JOIN dg_variant USING (k)
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
     log_comment = 'dg_arm11b_variant_fsm', ast_fuzzer_runs = 0;
 
+-- Arm 11c: the per-block part of that remap. A `Variant` read straight from `MergeTree` always has
+-- an identity local order, because `SerializationVariant` only ever writes the global one, so arm 11
+-- cannot tell a remapping gather from one that ignores the order. Widening a `Variant` by a cast
+-- renumbers the globals while the locals keep the source order, so each side of the union below
+-- stores blocks under its own order: `Variant(String, UInt64)` maps locals to globals 1, 2, 0 and
+-- `Variant(Array(UInt64), UInt64)` maps them 0, 2, 1.
+CREATE TABLE dg_variant_ord1 (k UInt64, v Variant(String, UInt64), w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_variant_ord1 SELECT
+    number,
+    multiIf(
+        number % 3 = 0, CAST(NULL, 'Variant(String, UInt64)'),
+        number % 3 = 1, CAST(concat('s', toString(number)), 'Variant(String, UInt64)'),
+        CAST(number * 1000003, 'Variant(String, UInt64)')),
+    toFixedString(leftPad(toString(number), 40, 'v'), 40)
+FROM numbers(1050);
+
+CREATE TABLE dg_variant_ord2 (k UInt64, v Variant(Array(UInt64), UInt64), w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dg_variant_ord2 SELECT
+    number,
+    multiIf(
+        number % 3 = 0, CAST(NULL, 'Variant(Array(UInt64), UInt64)'),
+        number % 3 = 1, CAST(CAST(range(number % 5), 'Array(UInt64)'), 'Variant(Array(UInt64), UInt64)'),
+        CAST(number * 1000003, 'Variant(Array(UInt64), UInt64)')),
+    toFixedString(leftPad(toString(number), 40, 'v'), 40)
+FROM numbers(1050, 1050);
+
+SELECT 'arm11c variant local order', count(), sum(cityHash64(k, toString(v), w)), countIf(v IS NULL),
+    countIf(variantType(v) = 'UInt64'), countIf(variantType(v) = 'String'), countIf(variantType(v) = 'Array(UInt64)')
+FROM dg_ext_probe LEFT JOIN (
+    SELECT k, CAST(v, 'Variant(Array(UInt64), String, UInt64)') AS v, w FROM dg_variant_ord1
+    UNION ALL
+    SELECT k, CAST(v, 'Variant(Array(UInt64), String, UInt64)') AS v, w FROM dg_variant_ord2
+) AS ord USING (k)
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
+    enable_hash_join_row_store = 0,
+    log_comment = 'dg_arm11c_variant_local_order', ast_fuzzer_runs = 0;
+
 -- Arm 12: the extended types under lazy replication (arm 7's fixture with `String`, `Array`,
 -- `Nullable` and `Tuple` payloads): every replicated column gathers through the per-block indexes.
 SELECT 'arm12 replicated extended', count(), sum(cityHash64(*)) FROM
@@ -432,6 +471,7 @@ SELECT
     replaceOne(log_comment, 'dg_', '') AS arm,
     if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval', 'dg_arm7_replicated', 'dg_arm8_row_store',
                        'dg_arm10_extended', 'dg_arm10c_extended_defaults', 'dg_arm11_variant',
+                       'dg_arm11c_variant_local_order',
                        'dg_arm12_replicated_extended', 'dg_arm13_tuple_enum', 'dg_arm14_ext_by_blocks',
                        'dg_arm14c_ext_limit_offset'),
        toString(max(ProfileEvents['HashJoinDirectGatheredValues'])),
@@ -457,5 +497,7 @@ DROP TABLE dg_asof_probe;
 DROP TABLE dg_ext;
 DROP TABLE dg_ext_probe;
 DROP TABLE dg_variant;
+DROP TABLE dg_variant_ord1;
+DROP TABLE dg_variant_ord2;
 DROP TABLE dg_tuple_enum;
 DROP TABLE dg_list_ext;
