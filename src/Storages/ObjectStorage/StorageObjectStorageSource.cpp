@@ -517,10 +517,51 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
-        // If paths is nullopt, use the glob iterator to scan all matching files.
-        // If paths contains a value, validate the extracted paths and use the key-based iterator
-        // (even if the result is empty, indicating no scanning is required).
-        if (!paths)
+        /// Validate that extracted paths match the glob pattern to prevent scanning unallowed data.
+        /// The extracted values are `_path` column values, so they need that column's formatter
+        /// inverted rather than a plain relative(). That inverse is not unique: under a non-empty
+        /// namespace a key that keeps a leading separator renders exactly like the same key without
+        /// it. When the glob accepts both spellings of a value there is no way to tell which object
+        /// was meant, and guessing would read the wrong one, so the extraction is given up on and
+        /// the listing decides - `GlobIterator` matches the keys as they really are.
+        std::optional<Strings> validated_paths;
+        if (paths)
+        {
+            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
+            if (!matcher.ok())
+                throw Exception(
+                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+
+            validated_paths.emplace();
+            for (const auto & path : paths.value())
+            {
+                std::optional<String> matched_key;
+                for (auto & candidate : candidateKeysUnderPrefix(configuration->getNamespace(), path))
+                {
+                    const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(candidate) : candidate;
+                    if (!RE2::FullMatch(path_for_matching, matcher))
+                        continue;
+
+                    if (matched_key)
+                    {
+                        matched_key.reset();
+                        validated_paths.reset();
+                        break;
+                    }
+                    matched_key = std::move(candidate);
+                }
+
+                if (!validated_paths)
+                    break;
+                if (matched_key)
+                    validated_paths->push_back(std::move(*matched_key));
+            }
+        }
+
+        // If there are no validated paths, use the glob iterator to scan all matching files.
+        // Otherwise use the key-based iterator (even if the list is empty, indicating no scanning
+        // is required).
+        if (!validated_paths)
             iterator = std::make_unique<GlobIterator>(
                 object_storage,
                 configuration,
@@ -535,27 +576,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 file_progress_callback);
         else
         {
-            // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
-            Strings validated_paths;
-            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
-            if (matcher.ok())
-            {
-                for (const auto & path : paths.value())
-                {
-                    /// `path` is a `_path` column value, so it needs that column's formatter
-                    /// inverted rather than a plain relative().
-                    const auto relative_path = relativizePathUnderPrefix(configuration->getNamespace(), path);
-                    const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
-                    if (RE2::FullMatch(path_for_matching, matcher))
-                        validated_paths.push_back(relative_path);
-                }
-            }
-            else
-                throw Exception(
-                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
-
             iterator = std::make_unique<KeysIterator>(
-                validated_paths,
+                *validated_paths,
                 object_storage,
                 virtual_columns,
                 is_archive ? nullptr : read_keys,

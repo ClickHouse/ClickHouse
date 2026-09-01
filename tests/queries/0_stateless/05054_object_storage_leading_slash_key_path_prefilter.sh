@@ -53,3 +53,16 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage(${BRACE}) WHERE _p
 
 # `_file` is derived from the same string, so it must not lose the key either.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage(${BRACE}) WHERE _file GLOBAL IN (SELECT _file FROM azureBlobStorage(${BRACE}));"
+
+# A general glob takes the third prefilter: `_path` values extracted from the filter replace the
+# listing. Inverting the `_path` formatting is ambiguous there - `container/slashed1.csv` is what
+# both `/slashed1.csv` and `slashed1.csv` render to - so the glob decides: it accepts only the
+# spelling with the separator here, and that is the object that must be read.
+GLOB_SLASHED="'${AZURE_CONN}', '${AZURE_CONT}', '/*.csv', 'CSV', 'auto', 'x UInt64'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage(${GLOB_SLASHED}) WHERE _path = '${AZURE_CONT}/slashed1.csv';"
+
+# When the glob accepts both spellings the extraction cannot pick one, so the listing must decide
+# instead of a guess reading the wrong (or a missing) blob.
+GLOB_ANY="'${AZURE_CONN}', '${AZURE_CONT}', '**.csv', 'CSV', 'auto', 'x UInt64'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage(${GLOB_ANY}) WHERE _path = '${AZURE_CONT}/slashed1.csv';"
+${CLICKHOUSE_CLIENT} -q "SELECT sum(x) FROM azureBlobStorage(${GLOB_ANY});"
