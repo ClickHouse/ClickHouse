@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/Exception.h>
@@ -22,6 +23,7 @@ public:
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
         , engine_name(std::move(engine_name_))
+        , stores_data_on_disk(engineStoresDataOnDisk(engine_name))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
@@ -85,7 +87,13 @@ public:
         return nested;
     }
 
-    bool storesDataOnDisk() const override { return true; }
+    /// Answered from the engine while the storage does not exist, like `getName`.
+    bool storesDataOnDisk() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->storesDataOnDisk() : stores_data_on_disk;
+    }
+
     bool isView() const override { return false; }
 
     /// `system.tables` reads these, so answering must not load the table. While the storage does not
@@ -291,9 +299,16 @@ public:
     }
 
 private:
+    static bool engineStoresDataOnDisk(const String & engine_name_)
+    {
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(engine_name_);
+        return features && features->stores_data_on_disk;
+    }
+
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
+    const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     LoggerPtr log;
 };

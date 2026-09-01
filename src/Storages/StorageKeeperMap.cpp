@@ -1914,6 +1914,7 @@ void registerStorageKeeperMap(StorageFactory & factory)
         {
             .supports_sort_order = true,
             .supports_parallel_insert = true,
+            .supports_deferred_load = true,
         },
         Documentation{
             .description = R"DOCS_MD(

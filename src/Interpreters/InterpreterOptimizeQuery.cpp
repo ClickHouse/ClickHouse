@@ -62,7 +62,7 @@ BlockIO InterpreterOptimizeQuery::execute()
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, CLEANUP, and DRY RUN options");
 
 #if USE_AVRO
-        auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(table.get());
+        auto object_storage_table = castStorage<StorageObjectStorage>(table, StorageResolution::Peek);
         if (!object_storage_table)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
 

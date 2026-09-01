@@ -89,23 +89,56 @@ def test_deferred_table_reports_its_engine(engine):
     assert temporary == "1"
 
 
-def test_only_mergetree_family_opts_in(started_cluster):
+def test_deferred_engines_outside_the_mergetree_family(started_cluster):
+    """An engine keeping its data elsewhere is deferred too, and answers `has_own_data` from the
+    engine while the storage does not exist."""
+    node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
+    node.query(f"CREATE DATABASE {DB} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        f"""
+        CREATE TABLE {DB}.lg (id UInt64) ENGINE = Log;
+        INSERT INTO {DB}.lg SELECT number FROM numbers(10);
+        CREATE TABLE {DB}.km (k String, v String) ENGINE = KeeperMap('/lazy_engines') PRIMARY KEY k;
+        INSERT INTO {DB}.km SELECT toString(number), toString(number) FROM numbers(10);
+        {RELOAD}
+        """
+    )
+
+    own_data = node.query(
+        f"SELECT name, is_loaded, has_own_data FROM system.tables WHERE database = '{DB}' ORDER BY name"
+    )
+    assert own_data == "km\t0\t0\nlg\t0\t1\n", own_data
+
+    assert int(node.query(f"SELECT count() FROM {DB}.lg")) == 10
+    assert int(node.query(f"SELECT count() FROM {DB}.km")) == 10
+    node.query(f"DROP DATABASE {DB} SYNC")
+
+
+def test_engines_that_work_in_the_background_stay_eager(started_cluster):
     """Deferring an engine that works in the background, like a message queue, would cancel that
     work rather than delay it, so opting in is per engine."""
-    opted_in = node.query(
-        "SELECT name FROM system.table_engines WHERE supports_deferred_load ORDER BY name"
-    ).split()
-    assert "MergeTree" in opted_in and "Set" in opted_in, opted_in
-    unexpected = [
-        name
-        for name in opted_in
-        if not name.endswith("MergeTree") and name not in {"Set", "Join", "EmbeddedRocksDB"}
-    ]
-    assert not unexpected, unexpected
+    opted_in = set(
+        node.query("SELECT name FROM system.table_engines WHERE supports_deferred_load").split()
+    )
+    assert {"MergeTree", "Set", "EmbeddedRocksDB", "Log", "S3", "MySQL", "KeeperMap"} <= opted_in
+    background = {
+        "Kafka",
+        "RabbitMQ",
+        "NATS",
+        "FileLog",
+        "S3Queue",
+        "AzureQueue",
+        "Distributed",
+        "Buffer",
+        "MaterializedPostgreSQL",
+        "MaterializedView",
+        "Dictionary",
+    }
+    assert not (opted_in & background), opted_in & background
 
 
-def test_other_engines_stay_eager(engine):
-    """Engines reached by casting to a concrete storage type must not be deferred."""
+def test_engines_that_hold_no_state_stay_eager(engine):
+    """An engine with nothing to load, and one that works in the background, is loaded at startup."""
     node.query(
         f"""
         CREATE TABLE {DB}.src (id UInt64) ENGINE = {engine} ORDER BY id;
@@ -122,10 +155,12 @@ def test_other_engines_stay_eager(engine):
         """
     )
 
-    deferred = node.query(
-        f"SELECT name FROM system.tables WHERE database = '{DB}' AND NOT is_loaded"
-    ).split()
-    assert deferred == ["src"], deferred
+    deferred = sorted(
+        node.query(
+            f"SELECT name FROM system.tables WHERE database = '{DB}' AND NOT is_loaded"
+        ).split()
+    )
+    assert deferred == ["km", "lg", "slg", "src", "tlg"], deferred
 
 
 def test_kafka_ingests_after_restart(engine):
@@ -739,3 +774,10 @@ def test_set_join_and_rocksdb_are_deferred(engine):
     ).strip() == "one"
     assert node.query(f"SELECT joinGet('{DB}.jn', 'v', toUInt64(1))").strip() == "one"
     assert node.query(f"SELECT v FROM {DB}.kv WHERE k = 'a'").strip() == "first"
+
+    # The direct join reaches a key-value engine through the `IKeyValueEntity` interface, and asking
+    # for it explicitly turns skipping it into an error rather than a slower plan.
+    node.query(RELOAD)
+    assert node.query(
+        f"SELECT v FROM (SELECT 'a' AS k) AS s JOIN {DB}.kv USING (k) SETTINGS join_algorithm = 'direct'"
+    ).strip() == "first"

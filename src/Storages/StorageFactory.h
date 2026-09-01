@@ -82,6 +82,8 @@ public:
         /// Whether a table of this engine can be deferred behind `StorageTableProxy` in a database
         /// with `lazy_load_tables`. Opting in also means listing its class in the storage-cast check.
         bool supports_deferred_load = false;
+        /// See also IStorage::storesDataOnDisk(). A deferred table answers from here until it loads.
+        bool stores_data_on_disk = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -122,6 +124,7 @@ public:
         .supports_unique_key = false,
         .supports_sql_security = false,
         .supports_deferred_load = false,
+        .stores_data_on_disk = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});

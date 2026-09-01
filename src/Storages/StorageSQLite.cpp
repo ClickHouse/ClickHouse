@@ -265,6 +265,7 @@ void registerStorageSQLite(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
+        .supports_deferred_load = true,
         .source_access_type = AccessTypeObjects::Source::SQLITE,
     },
     Documentation{

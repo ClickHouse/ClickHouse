@@ -1068,6 +1068,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .supports_ttl = true,
         .supports_parallel_insert = true,
         .supports_deferred_load = true,
+        .stores_data_on_disk = true,
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
     };
 

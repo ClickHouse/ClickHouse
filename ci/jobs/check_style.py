@@ -544,6 +544,22 @@ DEFERRABLE_STORAGE_CLASSES = (
     "StorageSet",
     "StorageJoin",
     "StorageEmbeddedRocksDB",
+    "IKeyValueEntity",
+    "StorageLog",
+    "StorageStripeLog",
+    "StorageURL",
+    "StorageObjectStorage",
+    "StorageKeeperMap",
+    "StorageMySQL",
+    "StoragePostgreSQL",
+    "StorageMongoDB",
+    "StorageRedis",
+    "StorageSQLite",
+    "StorageXDBC",
+    "StorageHive",
+    "StorageArrowFlight",
+    "StorageYTsaurus",
+    "StorageBigQuery",
 )
 
 # Casts on an operand that cannot be a catalog pointer, so no proxy can be in the way.

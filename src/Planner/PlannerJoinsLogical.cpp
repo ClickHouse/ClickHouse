@@ -604,11 +604,12 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
     auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
     if (storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
     {
+        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
         result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary());
         return result;
     }
 
-    result.storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
+    result.storage_key_value = castStorage<IKeyValueEntity>(storage, StorageResolution::Load);
     if (result.storage_key_value)
         return result;
 

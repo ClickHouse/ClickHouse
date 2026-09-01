@@ -1041,8 +1041,9 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
 
     if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
         storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
         table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
-    else if (auto storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_key_value)
+    else if (auto storage_key_value = castStorage<IKeyValueEntity>(storage, StorageResolution::Load); storage_key_value)
         table_join->setStorageJoin(storage_key_value);
 }
 

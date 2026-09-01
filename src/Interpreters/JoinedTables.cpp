@@ -370,11 +370,12 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                     return nullptr;
                 }
 
+                /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
                 auto dictionary_kv = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
                 table_join->setStorageJoin(dictionary_kv);
             }
 
-            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_kv && try_use_direct_join)
+            if (auto storage_kv = castStorage<IKeyValueEntity>(storage, StorageResolution::Load); storage_kv && try_use_direct_join)
             {
                 table_join->setStorageJoin(storage_kv);
             }
