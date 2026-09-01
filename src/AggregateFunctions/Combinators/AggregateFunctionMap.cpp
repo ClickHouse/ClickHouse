@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -283,13 +284,32 @@ public:
         for (UInt64 i = 0; i < size; ++i)
         {
             KeyType key{};
-            AggregateDataPtr nested_place = nullptr;
 
             this->data(place).readKey(key, buf);
-            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-            nested_func->create(nested_place);
-            merged_maps.emplace(key, nested_place);
-            nested_func->deserialize(nested_place, buf, std::nullopt, arena);
+
+            /// Take the slot before creating the state. `emplace` on a key that is already present
+            /// does not insert, so creating first would abandon the fresh state: nothing would
+            /// reference it and `destroyImpl` walks only `merged_maps`. `serialize` writes each key
+            /// once, so a repeated key means the state is malformed.
+            auto [it, inserted] = merged_maps.try_emplace(key, nullptr);
+            if (!inserted)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Duplicate key in the serialized state of aggregate function {}", getName());
+
+            try
+            {
+                AggregateDataPtr nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                nested_func->create(nested_place);
+                it->second = nested_place;
+            }
+            catch (...)
+            {
+                /// The slot still holds a null state, which `destroyImpl` would dereference.
+                merged_maps.erase(it);
+                throw;
+            }
+
+            nested_func->deserialize(it->second, buf, std::nullopt, arena);
         }
     }
 
