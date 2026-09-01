@@ -12,6 +12,8 @@ at weight 0 and merely round-robin distributed, so the packer is blind to it. Th
 is what broke the shard balance: with a 60000ms floor the table had grown stale enough to
 model only ~67% of the wall-clock mass, and the unmodelled remainder landed unevenly enough to
 push one shard past the session timeout while its siblings finished with 20 minutes to spare.
+The table has since been refreshed with a 1000ms floor and models ~99% of that mass; these
+assertions are what keeps it that way.
 
 What has to be guarded is therefore runtime mass, not entry count: a handful of heavy modules
 dropping out of the table barely moves the share of modules that carry an estimate, and moves
@@ -56,13 +58,13 @@ MEASURED_DURATIONS_PATH = (
 )
 
 # Share of the measured wall-clock mass the packer must be able to see. The table modelled
-# 67% of it when a shard first timed out and 96% right after the refresh that fixed it, so
+# 67% of it when a shard first timed out and 99% with the refreshed table, so
 # this sits far enough below the refreshed value to absorb a year of new tests, and far
 # enough above the broken one to fail before the packer goes blind again.
 MIN_MASS_COVERAGE = 0.85
 
 # How far the heaviest shard's measured wall-clock may stand out from the average. The stale
-# table spread the shards to 1.08 of the average; the refreshed one holds them to 1.04.
+# table spread the shards to 1.08 of the average; the refreshed one holds them to 1.03.
 MAX_SHARD_IMBALANCE = 1.06
 
 # The two pytest budgets a shard is run under, from `session_timeout_parallel` and
