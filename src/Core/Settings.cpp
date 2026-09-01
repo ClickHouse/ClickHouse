@@ -7479,7 +7479,7 @@ Name of workload to be used to access resources
 Base scheduling weight of the query within its workload, used by the `fair` workload scheduler (see the `scheduler` workload setting). Queries with a higher weight receive a proportionally larger share of a time-shared resource (CPU, IO) when they compete inside the same workload. Ignored by the default `fifo` scheduler.
 )", BETA) \
     DECLARE(Float, weight_lowering_factor, 1.0, R"(
-For the `fair` workload scheduler: once the query crosses any of the `weight_lowering_*` thresholds below, its effective weight is multiplied by this factor once (values in (0, 1) lower the weight, biasing scheduling toward shorter/newer queries). The thresholds do not combine — the first one to trip applies the full lowering. `1.0` disables lowering.
+For the `fair` workload scheduler: once the query crosses any of the `weight_lowering_*` thresholds below, its effective weight is multiplied by this factor once (values in (0, 1) lower the weight, biasing scheduling toward shorter/newer queries). The thresholds do not combine — the first one to trip applies the full lowering. `1.0` disables lowering. The value is clamped to the range `[0, 1]`, so the factor can only ever lower a query's weight, never raise it.
 )", BETA) \
     DECLARE(Float, weight_lowering_age_seconds, 0, R"(
 For the `fair` workload scheduler: once the query has been running (wall-clock) for this many seconds, its weight is lowered by `weight_lowering_factor`. `0` disables the age threshold.

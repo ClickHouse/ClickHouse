@@ -256,7 +256,7 @@ TEST(RequestQueue, Purge)
 /// reset() clears the per-request scheduling state so a reused request carries nothing stale.
 TEST(RequestQueue, ResetClearsSchedulingState)
 {
-    auto ctx = std::make_shared<ResourceSchedulingContext>(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0);
+    auto ctx = std::make_shared<ResourceSchedulingContext>(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, 0);
     TestRequest r(1, 5);
     r.scheduling_context = ctx.get();
     r.scheduling_key = {42.0, 7};
@@ -284,4 +284,19 @@ TEST(RequestQueue, NodeTypeAndSchedulerSetting)
     // Same node object (in-place swap), still a request_queue.
     EXPECT_EQ(node->getLink().queue, queue);
     EXPECT_EQ(String(node->getLink().queue->getTypeName()), "request_queue");
+}
+
+/// weight_lowering_factor is clamped to [0, 1] so it can only lower a query's weight: a factor > 1
+/// (which would otherwise RAISE the share and invert the setting) is capped at 1.0, and a negative
+/// factor is floored at 0.0. A non-positive base weight falls back to 1.0.
+TEST(RequestQueue, WeightLoweringFactorClamped)
+{
+    ResourceSchedulingContext raised(clock_gettime_ns(), 1.0, 10.0, 0, 0, 0, 0);
+    EXPECT_EQ(raised.weight_lowering_factor, 1.0);
+    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, -5.0, 0, 0, 0, 0);
+    EXPECT_EQ(negative.weight_lowering_factor, 0.0);
+    ResourceSchedulingContext normal(clock_gettime_ns(), 1.0, 0.25, 0, 0, 0, 0);
+    EXPECT_EQ(normal.weight_lowering_factor, 0.25);
+    ResourceSchedulingContext zero_weight(clock_gettime_ns(), 0.0, 1.0, 0, 0, 0, 0);
+    EXPECT_EQ(zero_weight.weight, 1.0);
 }

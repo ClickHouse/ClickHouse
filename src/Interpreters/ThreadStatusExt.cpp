@@ -149,6 +149,10 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
+    // Borrowed child pipelines (materialized views, EXPLAIN ANALYZE) belong to the same foreground
+    // query, so inherit the parent's per-query scheduling context; otherwise their CPU/IO requests
+    // would be scheduled anonymously and escape the per-query fair/las/priority service accounting.
+    scheduling_context = parent->scheduling_context;
 }
 
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
@@ -177,6 +181,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
                 elem->throwIfKilled();
         }
     };
+    // As above: a borrowed child group (e.g. async-insert-queue flush) inherits the parent's
+    // per-query scheduling context so its CPU/IO requests are accounted to the same query.
+    scheduling_context = parent->scheduling_context;
 }
 
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const

@@ -42,6 +42,18 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 {
     using NodePtr = TimeSharedNodePtr;
 
+    // The `scheduler` setting reorders CPU/IO requests by per-query identity, which only exists for
+    // `IOByte` and `CPUNanosecond` leaves. Other time-shared leaves (e.g. `QuerySlot` admission,
+    // whose request is enqueued before the query's `ResourceSchedulingContext` is created) carry no
+    // per-query context, so they always run `fifo` regardless of the workload `scheduler` setting —
+    // matching the documented CPU/IO-only scope, instead of silently degrading to anonymous FIFO.
+    static SchedulerAlgorithm schedulerFor(const WorkloadSettings & settings_, CostUnit unit)
+    {
+        if (unit == CostUnit::IOByte || unit == CostUnit::CPUNanosecond)
+            return parseSchedulerAlgorithm(settings_.scheduler);
+        return SchedulerAlgorithm::Fifo;
+    }
+
     static NodePtr makeQueue(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
         // The time-shared leaf is always a `RequestQueue`; the workload `scheduler` setting selects
@@ -49,7 +61,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         NodePtr result = std::make_shared<RequestQueue>(
             event_queue_,
             SchedulerNodeInfo{},
-            parseSchedulerAlgorithm(settings_.scheduler),
+            schedulerFor(settings_, unit),
             unit,
             settings_.getQueueLimit(unit));
         result->basename = "queue";
@@ -70,7 +82,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         // hierarchy rebuild, `ResourceLink` unchanged.
         auto & queue = static_cast<RequestQueue &>(*node);
         queue.updateQueueLimit(settings_.getQueueLimit(unit));
-        queue.setScheduler(parseSchedulerAlgorithm(settings_.scheduler));
+        queue.setScheduler(schedulerFor(settings_, unit));
     }
 
     static void purgeQueue(const NodePtr & node)

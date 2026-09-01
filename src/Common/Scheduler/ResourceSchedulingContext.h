@@ -34,7 +34,10 @@ public:
         UInt64 priority_)
         : start_ns(start_ns_)
         , weight(weight_ > 0 ? weight_ : 1.0)
-        , weight_lowering_factor(weight_lowering_factor_)
+        // Clamp to [0, 1]: the factor only ever LOWERS a query's weight. `1.0` disables lowering;
+        // a value > 1 would raise the share (inverting the setting) and a negative value is
+        // meaningless, so both ends are clamped to keep the user-facing contract monotonic.
+        , weight_lowering_factor(weight_lowering_factor_ > 1.0 ? 1.0 : (weight_lowering_factor_ < 0.0 ? 0.0 : weight_lowering_factor_))
         , weight_lowering_age_seconds(weight_lowering_age_seconds_)
         , weight_lowering_cpu_seconds(weight_lowering_cpu_seconds_)
         , weight_lowering_io_bytes(weight_lowering_io_bytes_)
