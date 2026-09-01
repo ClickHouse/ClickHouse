@@ -231,8 +231,8 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             {
                 auto type = decodeDataType(in, max_type_complexity);
                 auto serialization = type->getDefaultSerialization();
-                ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, in, &format_settings, num_rows, nullptr, nullptr);
+                auto column = type->createColumn();
+                NativeReader::readData(*serialization, *column, in, &format_settings, num_rows, nullptr, nullptr);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }

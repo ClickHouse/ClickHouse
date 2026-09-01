@@ -288,7 +288,7 @@ ORDER BY rows DESC;
 
 ### Check scan volume {#debug-query-log}
 
-Compare `read_rows` and `read_bytes` in [system.query_log](/reference/system-tables/query_log) before and after adding filters or tuning settings. ProfileEvents like `ReadBufferFromS3Bytes` and `CachedReadBufferReadFromCacheBytes` show how much data came from object storage versus the local cache. See [Query optimization](/guides/clickhouse/performance-and-monitoring/query-optimization) for a full walkthrough of query_log and EXPLAIN.
+Compare `read_rows` and `read_bytes` in [`system.query_log`](/reference/system-tables/query_log) before and after adding filters or tuning settings. `ProfileEvents` like `ReadBufferFromS3Bytes` and `CachedReadBufferReadFromCacheBytes` show how much data came from object storage versus the local cache. See [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) for a full walkthrough of `query_log` and `EXPLAIN`.
 
 Disable [enable_filesystem_cache](/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) when benchmarking so cache hits don't mask changes between runs.
 

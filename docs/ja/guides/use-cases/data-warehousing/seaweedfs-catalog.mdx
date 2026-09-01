@@ -72,7 +72,7 @@ SeaweedFS は、S3 互換ゲートウェイを備えたオープンソースの�
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -101,7 +101,7 @@ networks:
     driver: bridge
 ```
 
-`mini` コマンドは、SeaweedFS スタック全体を単一のコンテナー内で起動します。`-tableBucket=analytics` フラグは、Iceberg のwarehouseとして使用する、`analytics` という名前の S3 Tables バケットを事前に作成します。
+`mini` コマンドは、SeaweedFS スタック全体を単一のコンテナー内で起動します。`-tableBucket=analytics` フラグは、Iceberg のwarehouseとして使用する、`analytics` という名前の S3 Tables バケットを事前に作成します。`-admin.port=12646` により、SeaweedFS がそこから導出する管理用 gRPC ポートを Linux のエフェメラルポート範囲より下に保ち、起動時の接続によって先に確保される可能性を回避します。
 
 **ステップ 3:** 次のコマンドを実行してサービスを起動します。
 

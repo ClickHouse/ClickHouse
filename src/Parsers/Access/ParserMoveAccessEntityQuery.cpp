@@ -102,18 +102,32 @@ void registerStatementMoveAccessEntity(StatementFactory & factory)
 {
     factory.registerStatement("MOVE",
     {
-        .description = R"(
-Moves an access entity from one access storage to another. The available access storages are `local_directory`,
-`memory`, `replicated`, `users_xml` (read-only) and `ldap` (read-only).
+        .description = R"DOCS_MD(
+This statement allows to move an access entity from one access storage to another.
 
-**Examples**
+Syntax:
 
-**Move a user to another access storage**
-
-```sql title="Query"
-MOVE USER test TO local_directory;
+```sql
+MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO access_storage_type
 ```
-)",
+
+Currently, there are five access storages in ClickHouse:
+- `local_directory`
+- `memory`
+- `replicated`
+- `users_xml` (ro)
+- `ldap` (ro)
+
+Examples:
+
+```sql
+MOVE USER test TO local_directory
+```
+
+```sql
+MOVE ROLE test TO memory
+```
+)DOCS_MD",
         .syntax = R"(
 MOVE {USER | ROLE | QUOTA | SETTINGS PROFILE | ROW POLICY} name1 [, name2, ...] TO access_storage_type
 )",
