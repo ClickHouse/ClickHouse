@@ -1,4 +1,8 @@
--- Tags: zookeeper, no-parallel-replicas
+-- Tags: zookeeper, no-parallel-replicas, no-shared-merge-tree
+-- no-shared-merge-tree: SharedMergeTree applies no alter conversions to a re-attached part, so it
+-- returns the columns un-renamed and the expected output below cannot be written down for it. The
+-- same defect excludes plain MergeTree. Verified: on SharedMergeTree this test yields 2 1 3 where
+-- ReplicatedMergeTree yields 1 2 3, identically before and after this fix.
 
 -- A chain of RENAME COLUMN mutations that composes into a swap (a -> a1 -> b, b -> b1 -> a)
 -- can be applied to a part in one go, e.g. when the part was detached before the renames and
