@@ -520,7 +520,7 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                while (tryOptimizeUseRowWrappers(&frame_node, nodes, extra_settings))
+                while (tryOptimizeUseRowWrappers(&frame_node, nodes, optimization_settings))
                     continue;
             });
     }

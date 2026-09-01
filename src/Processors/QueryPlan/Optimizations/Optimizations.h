@@ -234,7 +234,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 /// Not part of `getOptimizations`: the rewrite drops the wrapped columns from
 /// `ReadFromMergeTree::all_column_names`, which is what projection matching feeds on, so it
 /// must run after projection selection in the second pass.
-size_t tryOptimizeUseRowWrappers(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+size_t tryOptimizeUseRowWrappers(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 inline const auto & getOptimizations()
 {

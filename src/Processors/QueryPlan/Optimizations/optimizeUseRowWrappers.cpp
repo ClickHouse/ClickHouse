@@ -6,6 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -155,7 +156,7 @@ ActionsDAG buildUnpackDAG(
 size_t tryOptimizeUseRowWrappers(
     QueryPlan::Node * parent_node,
     QueryPlan::Nodes & nodes,
-    const Optimization::ExtraSettings &)
+    const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (!parent_node || parent_node->children.empty())
         return 0;
@@ -172,6 +173,17 @@ size_t tryOptimizeUseRowWrappers(
 
         auto wrappers = collectRowWrappers(reading->getStorageMetadata()->getColumns());
         if (wrappers.empty())
+            continue;
+
+        /// `optimizeLazyFinal` runs later and only picks up a `WHERE` filter that is the immediate
+        /// parent of the reading step. The unpack `ExpressionStep` spliced below would hide the filter
+        /// from it, and a filtered `FINAL` query on `ReplacingMergeTree` would fall back from lazy
+        /// FINAL to a full `FINAL` read, which costs far more than the wrapper saves.
+        if (optimization_settings.optimize_lazy_final
+            && typeid_cast<FilterStep *>(parent_node->step.get())
+            && reading->isQueryWithFinal()
+            && reading->getMergeTreeData().merging_params.mode == MergeTreeData::MergingParams::Replacing
+            && !reading->getStorageMetadata()->getPrimaryKey().column_names.empty())
             continue;
 
         /// PREWHERE and row-level filter DAGs are applied inside the reading step and are
