@@ -2,8 +2,10 @@ plain	0
 packed-hashed-legal	10	45
 minimality-pin	10	45
 compact-legal	10	45
-t_vert_merge	1
+t_vert_merge	1	0
 t_vert_merge-check	20	90
+escape-drop-index	20	90	1
+1
 text-legal	20	1
 1
 projection-cross-directory-legal	10

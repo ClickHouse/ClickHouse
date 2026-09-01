@@ -128,23 +128,51 @@ INSERT INTO t_vert SELECT number, number, toString(number) FROM numbers(10); -- 
 DROP TABLE t_vert;
 
 -- The arm above is rejected by the insert writer, so the index must arrive after the parts exist
--- for a merge to be the first producer that sees both owners.
+-- for a merge to be the first producer that sees both owners. Merges are stopped until the index is
+-- there, or the background scheduler could merge the two parts while the pair is still legal and
+-- leave a single part for OPTIMIZE. Once the index exists no merge of those parts can succeed, so the
+-- oracle asserts outcomes rather than attempts: at least one failing vertical attempt, and no
+-- successful merge. A background attempt racing the explicit one then cannot change the result.
 CREATE TABLE t_vert_merge (k UInt64, `skp_idx_a` UInt64, s String)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          vertical_merge_algorithm_min_rows_to_activate = 1,
          vertical_merge_algorithm_min_columns_to_activate = 1,
          packed_skip_index_max_bytes = 0;
+SYSTEM STOP MERGES t_vert_merge;
 INSERT INTO t_vert_merge SELECT number, number, toString(number) FROM numbers(10);
 INSERT INTO t_vert_merge SELECT number + 10, number, toString(number + 10) FROM numbers(10);
 ALTER TABLE t_vert_merge ADD INDEX a(s) TYPE set(100) GRANULARITY 1;
+SYSTEM START MERGES t_vert_merge;
 OPTIMIZE TABLE t_vert_merge FINAL; -- { serverError INCORRECT_FILE_NAME }
 SYSTEM FLUSH LOGS part_log;
-SELECT 't_vert_merge', countIf(merge_algorithm = 'Vertical' AND error = 79)
+SELECT 't_vert_merge', countIf(merge_algorithm = 'Vertical' AND error = 79) > 0, countIf(error = 0)
 FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_vert_merge' AND event_type = 'MergeParts';
 SELECT 't_vert_merge-check', count(), sum(`skp_idx_a`) FROM t_vert_merge;
 DROP TABLE t_vert_merge;
+
+-- The check surfaces at write time, so a table can reach the colliding state and then fail every
+-- merge of those parts until one of the two owners gives up the name. Dropping the index is the way
+-- out and must work with the failing merge still pending.
+CREATE TABLE t_escape (k UInt64, `skp_idx_a` UInt64, s String)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 0;
+SYSTEM STOP MERGES t_escape;
+INSERT INTO t_escape SELECT number, number, toString(number) FROM numbers(10);
+INSERT INTO t_escape SELECT number + 10, number, toString(number + 10) FROM numbers(10);
+ALTER TABLE t_escape ADD INDEX a(s) TYPE set(100) GRANULARITY 1;
+SYSTEM START MERGES t_escape;
+OPTIMIZE TABLE t_escape FINAL; -- { serverError INCORRECT_FILE_NAME }
+ALTER TABLE t_escape DROP INDEX a;
+OPTIMIZE TABLE t_escape FINAL;
+-- The single active part is what makes this an escape rather than a no-op: the merge that kept
+-- failing above has now run.
+SELECT 'escape-drop-index', count(), sum(`skp_idx_a`),
+    (SELECT count() FROM system.parts
+     WHERE database = currentDatabase() AND table = 't_escape' AND active) FROM t_escape;
+CHECK TABLE t_escape SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_escape;
 
 -- Text indices are written by MergeTextIndexesTask, which is a third producer over the directory.
 SET allow_experimental_full_text_index = 1;

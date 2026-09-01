@@ -33,6 +33,8 @@ private:
     std::unordered_map<String, Owner> owners;
 };
 
+/// Not synchronised: the producers sharing one of these all belong to the single writer sequence of
+/// one insert, merge or mutation, and a nested directory such as `<name>.proj` gets its own instance.
 using StreamBaseManifestPtr = std::shared_ptr<StreamBaseManifest>;
 
 }

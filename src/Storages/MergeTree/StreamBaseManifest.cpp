@@ -22,7 +22,9 @@ const char * kindToString(StreamBaseManifest::Kind kind)
 
 void StreamBaseManifest::registerStreamBase(const String & base, Owner owner)
 {
-    auto [it, inserted] = owners.emplace(base, owner);
+    /// `try_emplace`, not `emplace`: only the former is specified not to move from its arguments when
+    /// the key is already present, so `owner` is still readable for the message below.
+    auto [it, inserted] = owners.try_emplace(base, std::move(owner));
     if (inserted)
         return;
 
