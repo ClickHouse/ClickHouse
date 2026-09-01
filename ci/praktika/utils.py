@@ -376,15 +376,7 @@ class Shell:
                 if verbose:
                     print(f"Retrying in {delay}s...")
                 time.sleep(delay)
-                if on_retry and pending_notice is not None and not _deadline_passed():
-                    # A reporting failure must never fail the command the retry is rescuing.
-                    try:
-                        on_retry(pending_notice, retry, retries - 1)
-                    except Exception as e:  # noqa: BLE001
-                        print(f"WARNING: on_retry callback failed, ex [{e}]")
-                pending_notice = None
-                # Last thing before the attempt: `time.sleep` may return late, and
-                # `on_retry` is caller code that runs inside the window.
+                # Last thing before the attempt: `time.sleep` may return late.
                 if _deadline_passed():
                     if verbose:
                         print(
@@ -442,6 +434,16 @@ class Shell:
 
                     stdout_thread.start()
                     stderr_thread.start()
+
+                    if on_retry and pending_notice is not None:
+                        # Only from here is the retry certain to have started, and the
+                        # readers above keep caller code of any duration from blocking the
+                        # child on a full pipe. A reporting failure must not fail it.
+                        try:
+                            on_retry(pending_notice, retry, retries - 1)
+                        except Exception as e:  # noqa: BLE001
+                            print(f"WARNING: on_retry callback failed, ex [{e}]")
+                        pending_notice = None
 
                     try:
                         stdout_thread.join()
