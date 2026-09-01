@@ -936,10 +936,65 @@ def test_postgres_datetime_trailing_garbage(started_cluster):
         node1.query(
             f"CREATE TABLE test_datetime_garbage (ts {clickhouse_type}) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime_garbage', 'postgres', '{pg_pass}')"
         )
-        assert "CANNOT_PARSE" in node1.query_and_get_error("SELECT ts FROM test_datetime_garbage")
+        # `insertPostgreSQLValue` wraps the parsing error, so the reported code is `BAD_ARGUMENTS`
+        # and the name of the parsing error code is not part of the message.
+        assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
+            "SELECT ts FROM test_datetime_garbage"
+        )
 
     node1.query("DROP TABLE IF EXISTS test_datetime_garbage")
     cursor.execute("DROP TABLE test_datetime_garbage")
+
+
+def test_postgres_datetime_malformed_suffix(started_cluster):
+    """The only leftovers a complete PostgreSQL date and time value may carry are the fractional
+    seconds and the UTC offset as PostgreSQL renders them. A malformed tail must be rejected, not
+    waved through because it happens to consist of digits, colons and a dot."""
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_datetime_suffix")
+    cursor.execute("CREATE TABLE test_datetime_suffix (ts text)")
+
+    malformed = [
+        "2025-01-02 03:04:05+0:",
+        "2025-01-02 03:04:05+::30",
+        "2025-01-02 03:04:05+",
+        "2025-01-02 03:04:05.",
+        "2025-01-02 03:04:05+03:30:15:20",
+    ]
+    accepted = [
+        "2025-01-02 03:04:05",
+        "2025-01-02 03:04:05.6789",
+        "2025-01-02 03:04:05+00",
+        "2025-01-02 03:04:05.6789+03:30",
+        "2025-01-02 03:04:05-08:00:30",
+    ]
+
+    for value in malformed:
+        cursor.execute("TRUNCATE test_datetime_suffix")
+        cursor.execute("INSERT INTO test_datetime_suffix VALUES (%s)", (value,))
+        for clickhouse_type in ["DateTime('UTC')", "DateTime64(6, 'UTC')"]:
+            node1.query("DROP TABLE IF EXISTS test_datetime_suffix")
+            node1.query(
+                f"CREATE TABLE test_datetime_suffix (ts {clickhouse_type}) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime_suffix', 'postgres', '{pg_pass}')"
+            )
+            assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
+                "SELECT ts FROM test_datetime_suffix"
+            ), f"{value} accepted for {clickhouse_type}"
+
+    for value in accepted:
+        cursor.execute("TRUNCATE test_datetime_suffix")
+        cursor.execute("INSERT INTO test_datetime_suffix VALUES (%s)", (value,))
+        node1.query("DROP TABLE IF EXISTS test_datetime_suffix")
+        node1.query(
+            f"CREATE TABLE test_datetime_suffix (ts DateTime('UTC')) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime_suffix', 'postgres', '{pg_pass}')"
+        )
+        assert (
+            node1.query("SELECT ts FROM test_datetime_suffix").strip()
+            == "2025-01-02 03:04:05"
+        ), f"{value} rejected"
+
+    node1.query("DROP TABLE IF EXISTS test_datetime_suffix")
+    cursor.execute("DROP TABLE test_datetime_suffix")
 
 
 def test_postgres_reading_clone(started_cluster):
