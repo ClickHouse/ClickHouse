@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.mdx';
 
 ClickPipes를 사용하여 소스 Postgres 데이터베이스의 데이터를 ClickHouse Cloud로 수집할 수 있습니다. 소스 Postgres 데이터베이스는 온프레미스 환경이나 Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase 등을 포함한 클라우드 환경에서 호스팅될 수 있습니다.
 
@@ -152,15 +153,13 @@ ClickHouse Cloud 계정에 로그인했는지 확인하십시오. 아직 계정�
   ClickHouse에서 순서 지정 키를 Postgres의 기본 키와 다르게 정의하는 경우, 관련 [고려 사항](/ko/integrations/clickpipes/postgres/ordering-keys)을 반드시 읽어보십시오
 </Warning>
 
-8. 또한, 대상 [ClickHouse 테이블 파티셔닝](/ko/concepts/core-concepts/partitions)을 제어하기 위해 사용자 지정 `PARTITION BY <expr>` 표현식을 지정할 수 있습니다.
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="파티션 기준" size="lg" border />
+8. <SettingPartitionBy />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### 권한을 검토하고 ClickPipe를 시작합니다
 </div>
 
-8. 권한 드롭다운에서 &quot;Full access&quot; 역할을 선택한 다음 &quot;Complete Setup&quot;을 클릭하세요.
+9. 권한 드롭다운에서 &quot;Full access&quot; 역할을 선택한 다음 &quot;Complete Setup&quot;을 클릭하세요.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="권한 검토" size="lg" border />
 
