@@ -273,34 +273,19 @@ BlockIO InterpreterCreateTypeQuery::execute()
     query_ptr->format(query_text_buf, format_settings_for_storage);
     String create_query_string = query_text_buf.str();
 
-    try
-    {
-        udt_factory.registerType(
-            current_context,
-            type_name,
-            create.base_type,
-            type_parameters_ast,
-            input_expression_str,
-            output_expression_str,
-            default_expression_str,
-            create_query_string);
-    }
-    catch (const Exception & e)
-    {
-        LOG_ERROR(log, "Failed to register user-defined type '{}'. Error: {}", type_name, e.what());
-        if (udt_factory.isTypeRegistered(type_name, current_context))
-        {
-            try
-            {
-                udt_factory.removeType(current_context, type_name);
-            }
-            catch (const DB::Exception & remove_e)
-            {
-                LOG_ERROR(log, "Failed to rollback in-memory registration for type '{}' after persistence error. Double error: {}", type_name, remove_e.what());
-            }
-        }
-        throw;
-    }
+    /// `registerType` is the atomic authority on the name: it either registers the type and persists it,
+    /// or leaves the registry untouched (it rolls back its own in-memory entry when persistence fails).
+    /// Rolling back here as well would let a session that lost a concurrent `CREATE TYPE` race remove the
+    /// type the winning session had just created.
+    udt_factory.registerType(
+        current_context,
+        type_name,
+        create.base_type,
+        type_parameters_ast,
+        input_expression_str,
+        output_expression_str,
+        default_expression_str,
+        create_query_string);
 
     return {};
 }
