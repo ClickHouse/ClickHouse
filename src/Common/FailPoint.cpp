@@ -44,6 +44,7 @@ static struct InitFiu
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    REGULAR(remote_query_executor_local_packet_processing_error) \
     PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
     PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
     ONCE(connection_stale_on_establish) \

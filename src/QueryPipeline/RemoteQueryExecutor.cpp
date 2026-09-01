@@ -71,11 +71,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
+    extern const char remote_query_executor_local_packet_processing_error[];
     extern const char remote_query_executor_receive_packet_pause[];
     extern const char remote_query_executor_finish_drain_pause[];
 }
@@ -463,8 +465,7 @@ OpenTelemetry::SpanAttributes RemoteQueryExecutor::getFragmentSpanAttributes() c
     if (shard_scope.shard_num != 0)
         attributes.emplace_back("clickhouse.shard_num", static_cast<UInt64>(shard_scope.shard_num));
     /// `clickhouse.processed_stage` is deliberately absent here: before the query is sent, `stage`
-    /// can still be downgraded to `query_plan_fallback_stage` (see `sendQueryUnlocked`), so the
-    /// attribute is added only once the final stage is known.
+    /// can still be downgraded to `query_plan_fallback_stage`, so the attribute is added only once the final stage is known.
     const auto & client_info = context->getClientInfo();
     if (!client_info.current_query_id.empty())
         attributes.emplace_back("clickhouse.query_id", client_info.current_query_id);
@@ -859,54 +860,64 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             initial_span_id);
     }
 
-    while (true)
+    try
     {
-        LockAndBlocker lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
-
-        if (packet_in_progress)
+        while (true)
         {
-            chassert(read_context->readPacketTypeSeparately());
-            chassert(read_context->hasReadTillPacketType());
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
 
-            /// packet type is handled already, read and parse packet itself
-            if (!read_context->hasReadPacket() && !read_context->read())
+            if (packet_in_progress)
+            {
+                chassert(read_context->readPacketTypeSeparately());
+                chassert(read_context->hasReadTillPacketType());
+
+                /// packet type is handled already, read and parse packet itself
+                if (!read_context->hasReadPacket() && !read_context->read())
+                    return ReadResult(read_context->getFileDescriptor());
+
+                packet_in_progress = false;
+                auto read_result = processPacket(read_context->getPacket());
+                if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+                    return read_result;
+            }
+
+            read_context->resume();
+
+            if (isReplicaUnavailable() || needToSkipUnavailableShard())
+            {
+                /// We need to tell the coordinator not to wait for this replica.
+                /// But at this point it may lead to an incomplete result set, because
+                /// this replica committed to read some part of there data and then died.
+                if (extension && extension->parallel_reading_coordinator)
+                {
+                    chassert(extension->parallel_reading_coordinator);
+                    extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+                }
+
+                return ReadResult(Block());
+            }
+
+            /// Check if packet is not ready yet.
+            if (read_context->isInProgress())
                 return ReadResult(read_context->getFileDescriptor());
 
-            packet_in_progress = false;
+            /// if reading separately packet header and body enabled, try to read packet itself this time
+            if (read_context->readPacketTypeSeparately() && !read_context->hasReadPacket() && !read_context->read())
+                return ReadResult(read_context->getFileDescriptor());
+
             auto read_result = processPacket(read_context->getPacket());
             if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
                 return read_result;
         }
-
-        read_context->resume();
-
-        if (isReplicaUnavailable() || needToSkipUnavailableShard())
-        {
-            /// We need to tell the coordinator not to wait for this replica.
-            /// But at this point it may lead to an incomplete result set, because
-            /// this replica committed to read some part of there data and then died.
-            if (extension && extension->parallel_reading_coordinator)
-            {
-                chassert(extension->parallel_reading_coordinator);
-                extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
-            }
-
-            return ReadResult(Block());
-        }
-
-        /// Check if packet is not ready yet.
-        if (read_context->isInProgress())
-            return ReadResult(read_context->getFileDescriptor());
-
-        /// if reading separately packet header and body enabled, try to read packet itself this time
-        if (read_context->readPacketTypeSeparately() && !read_context->hasReadPacket() && !read_context->read())
-            return ReadResult(read_context->getFileDescriptor());
-
-        auto read_result = processPacket(read_context->getPacket());
-        if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
-            return read_result;
+    }
+    catch (...)
+    {
+        ///  A local failure while processing this fragment's packets on the consumer thread is this fragment's failure,
+        /// so record it on the span instead of letting the destructor mark it OK.
+        finishFragmentSpanWithCurrentException();
+        throw;
     }
 #else
     return read();
@@ -938,6 +949,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 connections->dumpAddresses());
             break;
         case Protocol::Server::Data:
+            /// A local, non-`Server::Exception` failure raised on the consumer thread while
+            /// processing a packet (as opposed to inside the read context fiber).
+            fiu_do_on(FailPoints::remote_query_executor_local_packet_processing_error,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while processing a data packet");
+            });
+
             /// Note: `packet.block.rows() > 0` means it's a header block.
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
@@ -1521,7 +1539,17 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
             return false;
 
         packet_in_progress = false;
-        processPacket(read_context->getPacket());
+        try
+        {
+            processPacket(read_context->getPacket());
+        }
+        catch (...)
+        {
+            /// Same as in `read` and `readAsync`: a local packet-processing failure on the consumer
+            /// thread is this fragment's failure and must reach the fiber-owned span.
+            finishFragmentSpanWithCurrentException();
+            throw;
+        }
         return true;
     }
 

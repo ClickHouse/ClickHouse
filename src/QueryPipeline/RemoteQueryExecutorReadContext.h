@@ -135,6 +135,7 @@ public:
     void cancel() {}
     void setTimer() {}
     bool addSpanAttribute(OpenTelemetry::SpanAttribute) noexcept { return false; }
+    void setSpanStatus(OpenTelemetry::SpanStatus, String) noexcept {}
     void skipDrainOnCancel() {}
 };
 
