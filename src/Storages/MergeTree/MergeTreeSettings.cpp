@@ -1888,6 +1888,23 @@ rows in that part have expired according to their `TTL` settings.
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 Only recalculate ttl info when MATERIALIZE TTL
 )", 0) \
+    DECLARE(UInt64, ttl_resort_max_bytes_before_external_sort, 256 * 1024 * 1024, R"(
+When a `TTL ... GROUP BY ... SET` clause assigns a column the sorting key depends
+on, the merge (and `ALTER TABLE ... MATERIALIZE TTL`) re-sorts its output by the
+sorting key so the written part stays consistent with its primary index. This
+setting bounds the memory of that re-sort: once the accumulated blocks exceed it,
+sorted runs are spilled to the temporary storage on disk and merged back in a
+streaming fashion. Set to `0` to disable spilling and keep the whole re-sort in
+memory (not recommended for large parts).
+)", 0) \
+    DECLARE(UInt64, ttl_group_by_unsorted_max_bytes_before_external_group_by, 256 * 1024 * 1024, R"(
+When an earlier `TTL ... GROUP BY ... SET` clause changes the grouping key of a
+later `GROUP BY` TTL, the later aggregation uses a hash table because its input
+is no longer ordered by that key. This setting bounds that hash table: once it
+reaches the limit, partial aggregation data is spilled to temporary storage on
+disk. Set to `0` to disable spilling and keep the whole aggregation in memory
+(not recommended for large parts).
+)", 0) \
     DECLARE(Bool, enable_mixed_granularity_parts, true, R"(
 Enables or disables transitioning to control the granule size with the
 `index_granularity_bytes` setting. Before version 19.11, there was only the

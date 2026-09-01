@@ -42,6 +42,11 @@ protected:
 
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
+    /// Parallel to `algorithms`: for a GROUP BY TTL whose group_by key was rewritten by an earlier
+    /// GROUP BY TTL's SET, the actions that refresh that key's derived (computed/subcolumn/materialized)
+    /// column in the block before the algorithm consumes it, so it groups by the post-SET value.
+    /// nullptr for every other algorithm.
+    std::vector<ExpressionActionsPtr> algorithm_key_refresh_actions;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
 

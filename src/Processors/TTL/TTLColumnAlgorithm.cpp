@@ -12,14 +12,16 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     const String & column_name_,
     const ExpressionActionsPtr & default_expression_,
     const String & default_column_name_,
-    bool is_compact_part_)
+    bool is_compact_part_,
+    bool earlier_set_can_expire_)
     : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
     , column_name(column_name_)
     , default_expression(default_expression_)
     , default_column_name(default_column_name_)
     , is_compact_part(is_compact_part_)
+    , earlier_set_can_expire(earlier_set_can_expire_)
 {
-    if (!isMinTTLExpired())
+    if (!minMayBeExpired())
     {
         new_ttl_info = old_ttl_info;
         is_fully_empty = false;
@@ -38,8 +40,10 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (!block.has(column_name))
         return;
 
-    /// Nothing to do
-    if (!isMinTTLExpired())
+    /// Nothing to do. When an earlier `GROUP BY ... SET` can move this column's expiry input into the
+    /// past in this same block, the precomputed `min` no longer proves "won't fire", so fall through to
+    /// the per-row recompute (which evaluates the TTL expression on the post-`SET` block).
+    if (!minMayBeExpired())
         return;
 
     auto & column_with_type = block.getByName(column_name);
@@ -50,7 +54,10 @@ void TTLColumnAlgorithm::execute(Block & block)
     /// path below), falling back to the type default only when the column has no `DEFAULT`.
     /// Filling the type default here would make a rebuilt projection materialize the type
     /// default (e.g. `0`) while the base reads the DDL default (e.g. `-1`) via `expired_columns`.
-    if (isMaxTTLExpired() && !is_compact_part)
+    /// Skip this whole-block-expired shortcut when an earlier `SET` can rewrite the expiry input: the
+    /// precomputed `max` (over pre-`SET` values) no longer proves the whole block is expired, so defer
+    /// to the accurate per-row loop below which recomputes expiry on the post-`SET` block.
+    if (isMaxTTLExpired() && !is_compact_part && !earlier_set_can_expire)
     {
         auto result_column = column_with_type.column->cloneEmpty();
         result_column->reserve(block.rows());
