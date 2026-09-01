@@ -20,6 +20,7 @@ ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/monacoeditor
 ${CLICKHOUSE_CURL} "${BASE_URL}/ui/console/newQuery" | gzip -d | grep -o 'ClickHouse SQL Console' | head -n1
 # SPA fallback must boot index.html for table deep links whose identifiers contain '.' (quoted ClickHouse names).
 ${CLICKHOUSE_CURL} "${BASE_URL}/ui/services/local/console/database/my.db/table/t" | gzip -d | grep -o 'ClickHouse SQL Console' | head -n1
+# Extra "/ui" prefix is not under assets/ or monacoeditorwork/, so it SPA-fallbacks to index.html.
 ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/ui/monacoeditorwork/editor.worker.bundle.js"
 ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/assets/nonexistent.js"
 # A sibling route like "/uix" must not be captured by the "/ui" handler (route-boundary check).
