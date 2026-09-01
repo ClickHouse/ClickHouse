@@ -316,7 +316,8 @@ std::optional<size_t> selectedRowsOf(const QueryPlan::Node & branch)
 /// The match rate is the join's, so it is a rate over the fragment's *output* rows - the groups an
 /// aggregating fragment produces - while the predicate filters the fragment's *input* rows. The two agree
 /// only when a key's group size does not depend on whether it matches; treat this as the estimate it is.
-bool shouldShipJoinPredicate(const JoinAboveFragment & join, size_t rows_to_read, size_t num_replicas)
+bool shouldShipJoinPredicate(
+    const JoinAboveFragment & join, size_t rows_to_read, size_t num_replicas, bool can_restrict_ranges)
 {
     /// Keyed by the join's own node hash, not by the fragment's: the same aggregated subquery can appear
     /// under different joins, and those queries share the fragment's entry.
@@ -336,14 +337,23 @@ bool shouldShipJoinPredicate(const JoinAboveFragment & join, size_t rows_to_read
 
     const double match_rate
         = static_cast<double>(join_stats->join_matched_probe_rows) / static_cast<double>(join_stats->join_probe_rows);
-    const auto rows_saved_per_replica = static_cast<size_t>((1.0 - match_rate) * static_cast<double>(rows_to_read)) / num_replicas;
+
+    /// What a filtered row is worth depends on where the predicate can act. When it can restrict the read's
+    /// key range, a row it removes is a row the replica never reads. When it cannot, the replicas read their
+    /// whole share either way - PREWHERE cannot rescue that either, since it skips a column per granule and
+    /// a key that is not in the sorting key leaves survivors in every granule - and all that is saved is the
+    /// groups the fragment no longer produces and sends back. Both are counted in rows, against the rows the
+    /// initiator scans to build the set.
+    const auto rows_saved_per_replica = static_cast<size_t>(
+        (1.0 - match_rate) * static_cast<double>(can_restrict_ranges ? rows_to_read : join_stats->join_probe_rows))
+        / num_replicas;
 
     LOG_DEBUG(
         getLogger("optimizeTree"),
-        "Shipping the join predicate would save {} of {} rows per replica against a {} row scan to build the set "
+        "Shipping the join predicate would save {} {} per replica against a {} row scan to build the set "
         "(match rate {}/{})",
         rows_saved_per_replica,
-        rows_to_read / num_replicas,
+        can_restrict_ranges ? "rows read" : "groups produced (the predicate cannot restrict the read's key range)",
         *build_side_rows,
         join_stats->join_matched_probe_rows,
         join_stats->join_probe_rows);
@@ -577,12 +587,18 @@ void considerEnablingParallelReplicas(
                 /// It is deliberately absent from the single-replica plan, which is the base the statistics
                 /// above were measured against.
                 bool shipped_join_predicate = false;
+                bool shipped_predicate_restricts_ranges = false;
                 if (!manual_ship_join_predicate)
                 {
                     const auto join_above_fragment
                         = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes);
 
-                    if (join_above_fragment && shouldShipJoinPredicate(*join_above_fragment, rows_to_read, num_replicas))
+                    /// Whether the predicate can restrict the key range is a property of the plan that ships it,
+                    /// so it is not known yet. Ask optimistically first - that answer is an upper bound on the
+                    /// benefit, so a "no" here is a "no" either way - and ask again below, once there is a plan
+                    /// to look at, if it turns out the predicate cannot prune after all.
+                    if (join_above_fragment
+                        && shouldShipJoinPredicate(*join_above_fragment, rows_to_read, num_replicas, /*can_restrict_ranges=*/true))
                     {
                         /// `globalIn`: the initiator evaluates the set once and broadcasts it. Plain `in` would
                         /// make every replica repeat the scan of the build side, which costs more than sending
@@ -590,19 +606,33 @@ void considerEnablingParallelReplicas(
                         auto plan_with_shipped_predicate = optimization_settings.query_plan_with_parallel_replicas_builder(2);
                         const auto * shipped_final_node
                             = plan_with_shipped_predicate ? findTopNodeOfReplicasPlan(plan_with_shipped_predicate->getRootNode()) : nullptr;
+                        ReadFromMergeTree * shipped_reading_step = shipped_final_node ? findReadingStep(*shipped_final_node) : nullptr;
 
-                        if (shipped_final_node)
+                        const bool can_restrict_ranges
+                            = shipped_reading_step && shippedPredicateCanRestrictRanges(*shipped_reading_step);
+
+                        if (!shipped_final_node)
+                        {
+                            LOG_DEBUG(
+                                getLogger("optimizeTree"),
+                                "The plan with the join predicate shipped has no parallel replicas fragment, keeping the plain one");
+                        }
+                        else if (can_restrict_ranges
+                                 || shouldShipJoinPredicate(
+                                     *join_above_fragment, rows_to_read, num_replicas, /*can_restrict_ranges=*/false))
                         {
                             plan_with_parallel_replicas = std::move(plan_with_shipped_predicate);
                             final_node_in_replica_plan = shipped_final_node;
                             shipped_join_predicate = true;
+                            shipped_predicate_restricts_ranges = can_restrict_ranges;
                             LOG_DEBUG(getLogger("optimizeTree"), "Shipping the join predicate into the replicas' fragment");
                         }
                         else
                         {
                             LOG_DEBUG(
                                 getLogger("optimizeTree"),
-                                "The plan with the join predicate shipped has no parallel replicas fragment, keeping the plain one");
+                                "Not shipping the join predicate after all: it cannot restrict the read's key range, and what "
+                                "it saves the replicas from aggregating does not pay for the scan that builds the set");
                         }
                     }
                 }
@@ -629,7 +659,7 @@ void considerEnablingParallelReplicas(
                 /// reusing it would fix the mark ranges before the set exists - throwing away the granule
                 /// pruning that is most of what shipping buys. Let the branch read analyze itself instead,
                 /// once the set is there.
-                if (shipped_join_predicate && shippedPredicateCanRestrictRanges(*local_replica_plan_reading_step))
+                if (shipped_join_predicate && shipped_predicate_restricts_ranges)
                 {
                     LOG_DEBUG(
                         getLogger("optimizeTree"),
