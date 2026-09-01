@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeDeduplicationLogRecord.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Disks/IDisk.h>
+#include <condition_variable>
 #include <map>
 #include <list>
 #include <mutex>
@@ -307,6 +308,19 @@ public:
 
     void setDeduplicationWindowSize(size_t deduplication_window_);
 
+    /// Stop the log: no further records can be written after this returns.
+    ///
+    /// Waits for every two-phase publication made by `addPart` to be resolved by its
+    /// caller first (see finishPartPublication). A caller that is inside its commit
+    /// step still needs a writable log: only while the log is running can
+    /// `rollbackPublishedPart` cancel the already durable ADD records of a commit that
+    /// fails, and stopping the log under it would downgrade that rollback to fencing
+    /// the whole history off - or, if the fence cannot be persisted either, leave the
+    /// ADD records durable with nothing to cancel them, so the retry of that failed
+    /// insert is wrongly deduplicated after a restart. The wait is bounded by the
+    /// commit step itself (`MergeTreeSink::commitPart` renames the part and commits
+    /// the transaction under the parts lock), because the query that runs it has
+    /// already been cancelled by the time a shutdown reaches here.
     void shutdown();
 
     ~MergeTreeDeduplicationLog();
@@ -385,6 +399,11 @@ private:
     /// until then.
     size_t published_not_confirmed = 0;
 
+    /// Signalled by `finishPartPublication` when the last in-flight publication is
+    /// resolved. `shutdown` waits on it, so that the log stays writable for as long as
+    /// a commit step may still have to roll its publication back (see `shutdown`).
+    std::condition_variable publications_resolved;
+
     /// Erase the block ids of `part_info` (restricted to `block_ids` when given) from
     /// the in-memory map and its retention bookkeeping, without touching the log. Only
     /// erases, so it never allocates and never throws. Returns how many were erased.
@@ -441,6 +460,23 @@ private:
     /// marker cannot be written, `history_fence_pending` keeps every later operation
     /// failing closed until it can. Never throws.
     void fenceOffDivergedHistory() noexcept;
+
+    /// Last resort for a diverged history that `fenceOffDivergedHistory` could neither
+    /// repair nor fence: remove the log files themselves, so that the next `load` finds
+    /// no history to replay - the same outcome the discard marker would have produced.
+    /// Only for the shutdown path, where no further record will be written: it drops
+    /// every registered file, so the log has no history left to append to.
+    ///
+    /// This is worth attempting even after writing the marker failed, because the two
+    /// failures are not the same failure: a full or read-only-quota'd disk commonly
+    /// rejects creating and flushing a new file while still allowing an unlink. It also
+    /// replaces a contract that cannot be honoured: `shutdown` is called from
+    /// `DatabaseWithOwnTablesBase::shutdown` (which logs a failure and releases the
+    /// table anyway) and from destructors, so a rejected shutdown is never actually
+    /// retried by anyone - the process-local knowledge that the history must not be
+    /// replayed has to become durable here or not at all.
+    /// Returns whether no replayable history is left on disk. Never throws.
+    bool discardHistoryFilesAtShutdown() noexcept;
 
     /// Remove a log file left behind by a failed compaction, or - if it cannot be
     /// removed - overwrite it with an empty file. A compaction snapshot is written at a

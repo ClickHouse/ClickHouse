@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <limits>
 #include <map>
 #include <unordered_set>
@@ -528,10 +530,27 @@ public:
             std::move(impl), flush_count, fail_from_flush, sync_count, fail_on_sync);
     }
 
+    void removeFile(const String & path) override
+    {
+        if (removals_broken)
+            throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected unlink failure");
+        DiskLocal::removeFile(path);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        if (removals_broken)
+            throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected unlink failure");
+        DiskLocal::removeFileIfExists(path);
+    }
+
     size_t fail_on_sync;
     size_t fail_from_flush;
     bool marker_writable = true;
     bool fail_next_log_rewrite = false;
+    /// A disk that can neither be written to nor unlinked from: the last resort of the
+    /// shutdown path (removing the diverged history) is unavailable too.
+    bool removals_broken = false;
 
 private:
     size_t flush_count = 0;
@@ -3104,18 +3123,70 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryIsFencedOnShutdown)
     }
 }
 
-/// Regression test: graceful shutdown must fail closed if the disk is still unable
-/// to persist the fence. Letting it complete would lose the process-local knowledge
-/// that the old ADD records must not be replayed after the disk recovers.
-TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryRejectsShutdown)
+/// Regression test: when a rollback has left the on-disk history diverged from the
+/// live state and neither the repair snapshot nor the discard marker can be written,
+/// a graceful shutdown must still make that knowledge durable - by removing the
+/// diverged log files, which needs no writable disk. Rejecting the shutdown instead is
+/// not enough: nobody retries it (`DatabaseWithOwnTablesBase::shutdown` logs the
+/// failure and releases the table anyway, destructors swallow it), so the next start
+/// would replay the abandoned ADD records and deduplicate the retry of the failed
+/// insert against a part that never became active.
+TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryIsDiscardedAtShutdown)
 {
-    const std::string work_dir = "tmp/gtest_dedup_log_fence_shutdown_rejected/";
+    const std::string work_dir = "tmp/gtest_dedup_log_fence_shutdown_discard/";
     std::filesystem::remove_all(work_dir);
     std::filesystem::create_directories(work_dir);
 
     const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
-    const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+    const std::string logs_dir = work_dir + "dedup_logs/";
+    const std::string marker_path = logs_dir + "deduplication_log_0.txt";
+
+    {
+        auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+            "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+        disk->marker_writable = false;
+
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+
+        /// Writing anything is still impossible, but the files can be unlinked.
+        EXPECT_NO_THROW(log.shutdown());
+
+        /// No history is left to replay, and no marker was needed to arrange that.
+        EXPECT_FALSE(std::filesystem::exists(marker_path));
+        EXPECT_EQ(std::distance(std::filesystem::directory_iterator(logs_dir), std::filesystem::directory_iterator()), 0);
+    }
+
+    {
+        auto healthy_disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog restarted("dedup_logs", /*deduplication_window=*/ 2, format_version, healthy_disk);
+        restarted.load();
+
+        /// The abandoned ADD record was never committed, so its retry must be accepted
+        /// instead of being silently deduplicated away.
+        EXPECT_TRUE(restarted.addPart({"block3"}, part("all_3_3_0")).empty());
+        restarted.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// A disk that can neither be written to nor unlinked from leaves nothing this process
+/// can do about the diverged history. The shutdown must still complete - there is no
+/// caller that would retry it - and report the state loudly, and it must not leave the
+/// log in a state where finalizing the writer aborts the process.
+TEST(MergeTreeDeduplicationLog, UnfenceableAndUnremovableDivergedHistoryCompletesShutdown)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_fence_shutdown_stuck/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
 
     auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
         "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
@@ -3126,28 +3197,77 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryRejectsShutdown)
 
     EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
     EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
-    disk->fail_on_sync = std::numeric_limits<size_t>::max();
-    disk->fail_from_flush = std::numeric_limits<size_t>::max();
 
-    EXPECT_THROW(log.shutdown(), Exception);
-    EXPECT_FALSE(std::filesystem::exists(marker_path));
-
-    /// A rejected shutdown leaves the live map available for a retry. Once the disk
-    /// recovers, retrying it rewrites the safe live snapshot before the log is stopped.
-    disk->marker_writable = true;
+    disk->removals_broken = true;
     EXPECT_NO_THROW(log.shutdown());
-    EXPECT_FALSE(std::filesystem::exists(marker_path));
+
+    /// Stopped for good: no record can be written after a shutdown, whatever it found.
+    EXPECT_ANY_THROW(log.addPart({"block5"}, part("all_5_5_0")));
+
+    disk->removals_broken = false;
+    std::filesystem::remove_all(work_dir);
+}
+
+#ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
+/// Regression test: a shutdown must not stop the log while an insert is still inside
+/// the commit step of a part whose block ids `addPart` has already published. That
+/// caller reports the outcome with `finishPartPublication` (and rolls the publication
+/// back with `rollbackPublishedPart` when the commit fails), and only a running log can
+/// cancel the already durable ADD records precisely. A log stopped under it downgrades
+/// the rollback to fencing the whole history off, which - on a disk that cannot persist
+/// the fence either - leaves those ADD records durable with nothing to cancel them, so
+/// the retry of the failed insert is deduplicated away after a restart.
+TEST(MergeTreeDeduplicationLog, ShutdownWaitsForInFlightPublications)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_shutdown_waits/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
 
     {
-        auto healthy_disk = std::make_shared<DiskLocal>("healthy", work_dir);
-        MergeTreeDeduplicationLog restarted("dedup_logs", /*deduplication_window=*/ 2, format_version, healthy_disk);
+        auto disk = std::make_shared<DiskLocal>("local", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+
+        /// The insert of "block2" is in the window between `addPart` and the end of its
+        /// commit step: its ADD record is durable and its block id is published, but
+        /// whether the part becomes active is not decided yet.
+        bool part_was_published = false;
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_2_2_0"), &part_was_published).empty());
+        EXPECT_TRUE(part_was_published);
+
+        auto shutdown_finished = std::async(std::launch::async, [&] { log.shutdown(); });
+
+        /// The shutdown cannot complete while that publication is unresolved.
+        EXPECT_EQ(shutdown_finished.wait_for(std::chrono::milliseconds(300)), std::future_status::timeout);
+
+        /// The commit failed, so the log is still writable for the precise rollback.
+        log.rollbackPublishedPart(part("all_2_2_0"), {"block2"});
+        log.finishPartPublication({"block2"});
+
+        shutdown_finished.get();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("local", work_dir);
+        MergeTreeDeduplicationLog restarted("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
         restarted.load();
-        EXPECT_TRUE(restarted.addPart({"block3"}, part("all_3_3_0")).empty());
+
+        /// The rollback was recorded precisely: the retry of the never-committed
+        /// "block2" is accepted, while the committed "block1" still deduplicates
+        /// (fencing the whole history off would have forgotten it).
+        EXPECT_TRUE(restarted.addPart({"block2"}, part("all_3_3_0")).empty());
+        EXPECT_FALSE(restarted.addPart({"block1"}, part("all_4_4_0")).empty());
         restarted.shutdown();
     }
 
     std::filesystem::remove_all(work_dir);
 }
+#endif
 
 #ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
 /// Regression test for the last-resort rollback the sink falls back to when `dropPart`

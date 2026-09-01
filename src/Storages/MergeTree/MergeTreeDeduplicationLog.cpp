@@ -813,6 +813,70 @@ void MergeTreeDeduplicationLog::fenceOffDivergedHistory() noexcept
     }
 }
 
+bool MergeTreeDeduplicationLog::discardHistoryFilesAtShutdown() noexcept
+{
+    /// The writer is about to be dropped by `shutdown` anyway, and its file is one of
+    /// the files removed below, so stop writing to it first. `cancel` is noexcept.
+    if (current_writer)
+    {
+        current_writer->cancel();
+        current_writer.reset();
+    }
+
+    bool all_removed = true;
+
+    for (auto it = existing_logs.begin(); it != existing_logs.end();)
+    {
+        try
+        {
+            disk->removeFileIfExists(it->second.path);
+            it = existing_logs.erase(it);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                __PRETTY_FUNCTION__,
+                "Cannot remove a deduplication log file whose history diverged from the in-memory state: " + it->second.path);
+            all_removed = false;
+            ++it;
+        }
+    }
+
+    /// Files a failed compaction left outside the registered map are replayable history
+    /// too, so they have to go as well (`neutralizeOrphanLog` can also empty them,
+    /// which is just as good: an empty log replays as a no-op).
+    for (auto it = orphan_logs_pending_neutralization.begin(); it != orphan_logs_pending_neutralization.end();)
+    {
+        bool neutralized = false;
+        try
+        {
+            neutralized = neutralizeOrphanLog(*it);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot neutralize an orphan deduplication log file: " + *it);
+        }
+
+        if (neutralized)
+        {
+            it = orphan_logs_pending_neutralization.erase(it);
+        }
+        else
+        {
+            all_removed = false;
+            ++it;
+        }
+    }
+
+    if (!all_removed)
+        return false;
+
+    /// Nothing is left to replay, so the live state has no on-disk counterpart to keep
+    /// track of either. The log is stopping, so this state is never written to again.
+    block_id_log_numbers.clear();
+    return true;
+}
+
 bool MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
 {
     /// Try to remove the orphan file first (see the header for why leaving a durable,
@@ -1506,6 +1570,12 @@ void MergeTreeDeduplicationLog::finishPartPublication(const std::vector<std::str
         chassert(published_not_confirmed >= block_ids.size());
         published_not_confirmed -= std::min(published_not_confirmed, block_ids.size());
 
+        /// A shutdown waits for the last in-flight publication to be resolved before it
+        /// stops the log, so that a commit step still inside its window keeps a writable
+        /// log for a precise rollback (see `shutdown`).
+        if (published_not_confirmed == 0)
+            publications_resolved.notify_all();
+
         /// The outcome of the insert is known now: either its block ids are committed
         /// and must take their place in the window, or the rollback has already erased
         /// them and the map is back within the window anyway.
@@ -1766,9 +1836,21 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
 
 void MergeTreeDeduplicationLog::shutdown()
 {
-    std::lock_guard lock(state_mutex);
+    std::unique_lock lock(state_mutex);
     if (stopped)
         return;
+
+    /// Do not stop the log while a caller of `addPart` is still inside its commit step.
+    /// Nothing else quiesces those callers - `Context::shutdown` kills the running
+    /// queries and proceeds straight into `DatabaseCatalog::shutdown` - so a sink that
+    /// has already published its block ids can still fail its commit after this point.
+    /// Only a running log lets `rollbackPublishedPart` cancel the durable ADD records
+    /// of that failed insert precisely; a stopped one leaves it fencing the whole
+    /// history off, and if the fence cannot be persisted either, the ADD records stay
+    /// durable with nothing to cancel them and the retry of the failed insert is
+    /// wrongly deduplicated after the restart. See finishPartPublication, which wakes
+    /// this up once the last publication is resolved.
+    publications_resolved.wait(lock, [this] { return published_not_confirmed == 0; });
 
     /// A rollback may have left durable records behind while neither its repair
     /// snapshot nor the marker that fences the records could be persisted. Once the
@@ -1780,17 +1862,32 @@ void MergeTreeDeduplicationLog::shutdown()
     if (history_diverged || history_fence_pending)
         fenceOffDivergedHistory();
 
-    /// Do not complete a graceful shutdown while the only indication that the
-    /// durable history diverged still lives in this process. Completing it would
-    /// turn the next start into an unsafe replay after the disk recovers. Leave the
-    /// log running, so the caller can report the shutdown failure and retry after
-    /// restoring the disk; `shutdown` will retry fencing before it closes the writer.
+    /// The only indication that the durable history diverged still lives in this
+    /// process, and this is the last moment it exists: no caller retries a rejected
+    /// shutdown (`DatabaseWithOwnTablesBase::shutdown` logs the failure and releases
+    /// the table regardless, and destructors swallow it), so the knowledge has to be
+    /// made durable here. Neither a repair snapshot nor the discard marker could be
+    /// written, but removing the diverged files outright needs no writable disk at all
+    /// and leaves the next `load` with nothing to replay - the very outcome the marker
+    /// was meant to arrange.
+    if (history_fence_pending && discardHistoryFilesAtShutdown())
+    {
+        history_fence_pending = false;
+        history_diverged = false;
+    }
+
+    /// The disk rejects writing the fence AND unlinking the diverged files. Nothing in
+    /// this process can make the next start safe anymore, so report it as loudly as
+    /// possible instead of pretending that the shutdown can be retried.
     if (history_fence_pending)
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Cannot shut down the deduplication log because its on-disk history diverged from the in-memory state and the "
-            "marker that would make the next start discard it ({}) cannot be written",
-            getCompactionMarkerPath(logs_dir));
+        LOG_ERROR(
+            getLogger("MergeTreeDeduplicationLog"),
+            "The on-disk deduplication history diverged from the in-memory state, and neither the marker that would make the next "
+            "start discard it ({}) could be written nor the diverged log files could be removed. After the next start a retry of the "
+            "insert that failed may be deduplicated against a part that never became active. Remove the directory {} manually before "
+            "starting the server to avoid it",
+            getCompactionMarkerPath(logs_dir),
+            logs_dir);
 
     /// A failed compaction can leave the history consistent while only the
     /// process-local cleanup of its marker or stale files is pending. If the disk

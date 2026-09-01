@@ -307,38 +307,29 @@ void StorageMergeTree::shutdown(bool)
     if (shutdown_called.exchange(true))
         return;
 
-    try
+    if (refresh_parts_task)
+        refresh_parts_task->deactivate();
+
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
+
+    stopOutdatedAndUnexpectedDataPartsLoadingTask();
+
+    /// Unlock all waiting mutations
     {
-        /// This can reject shutdown while the disk cannot persist the fence that
-        /// protects diverged deduplication-log history. Do it before the
-        /// irreversible shutdown preparation, so a later retry remains valid.
-        if (deduplication_log)
-            deduplication_log->shutdown();
-
-        if (refresh_parts_task)
-            refresh_parts_task->deactivate();
-
-        if (refresh_stats_task)
-            refresh_stats_task->deactivate();
-
-        stopOutdatedAndUnexpectedDataPartsLoadingTask();
-
-        /// Unlock all waiting mutations
-        {
-            std::lock_guard lock(mutation_wait_mutex);
-            mutation_wait_event.notify_all();
-        }
-
-        flushAndPrepareForShutdown();
+        std::lock_guard lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
     }
-    catch (...)
-    {
-        /// A deduplication log can reject shutdown while the disk is unable to
-        /// persist the fence that protects its divergent history. Keep shutdown
-        /// retryable so that restoring the disk can make the next attempt safe.
-        shutdown_called.store(false);
-        throw;
-    }
+
+    flushAndPrepareForShutdown();
+
+    /// Stop the deduplication log last, once nothing writes to it anymore: the
+    /// background operations that drop its records are finished by the call above, and
+    /// the log itself waits for the insert sinks that are still inside the commit step
+    /// of an already published part - they need a writable log to roll that publication
+    /// back precisely (see MergeTreeDeduplicationLog::shutdown).
+    if (deduplication_log)
+        deduplication_log->shutdown();
 }
 
 
@@ -353,9 +344,8 @@ StorageMergeTree::~StorageMergeTree()
         tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot shut down `StorageMergeTree` during destruction");
     }
 
-    /// A rejected shutdown (see above) returns before it has stopped any of the
-    /// background machinery: the deduplication log throws first, so nothing after it
-    /// ran. Members are destroyed in reverse declaration order, which destroys
+    /// A `shutdown` that threw partway through leaves some of the background machinery
+    /// running. Members are destroyed in reverse declaration order, which destroys
     /// `deduplication_log` before `cleanup_thread`; a cleanup pass still scheduled
     /// would then reach the destroyed log through `dropPartNoWaitNoThrow`. Stop all
     /// of it here, before member destruction begins. Every call is idempotent, so
