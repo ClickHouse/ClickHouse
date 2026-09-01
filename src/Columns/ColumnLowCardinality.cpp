@@ -205,6 +205,20 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
+    if (length == 0)
+        return;
+
+    /// An already shared, structurally compatible source dictionary is immutable. Reuse it when initializing
+    /// an empty column to avoid rebuilding it and keep its indexes unchanged through generic range insertions.
+    /// A private source dictionary can still be mutated in place, while an incompatible dictionary must be
+    /// rebuilt to perform conversions such as nullable promotion.
+    if (
+        empty()
+        && low_cardinality_src->isSharedDictionary()
+        && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
+        && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
+        setSharedDictionary(low_cardinality_src->getDictionaryPtr());
+
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.

@@ -107,21 +107,6 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
             new_state->flattened_states[i] = flattened_states[i] ? flattened_states[i]->clone() : nullptr;
         return new_state;
     }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (variant_state)
-            callback(variant_state);
-        if (structure_state)
-            callback(structure_state);
-        for (const auto & flattened_state : flattened_states)
-        {
-            if (flattened_state)
-                callback(flattened_state);
-        }
-        if (flattened_indexes_state)
-            callback(flattened_indexes_state);
-    }
 };
 
 void SerializationDynamic::enumerateStreams(
@@ -634,8 +619,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
 }
 
 void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
-    DB::ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -644,8 +628,7 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
     if (!state)
         return;
 
-    auto mutable_column = column->assumeMutable();
-    auto & column_dynamic = assert_cast<ColumnDynamic &>(*mutable_column);
+    auto & column_dynamic = assert_cast<ColumnDynamic &>(column);
     auto * dynamic_state = checkAndGetState<DeserializeBinaryBulkStateDynamic>(state);
     auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(dynamic_state->structure_state);
 
@@ -656,17 +639,18 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         FlattenedDynamicColumn flattened_column;
         flattened_column.types = structure_state->flattened_data_types;
         flattened_column.indexes_type = structure_state->flattened_indexes_type;
-        flattened_column.indexes_column = flattened_column.indexes_type->createColumn();
+        auto mutable_indexes_column = flattened_column.indexes_type->createColumn();
         /// First, read indexes.
         auto indexes_serialization = flattened_column.indexes_type->getDefaultSerialization();
-        indexes_serialization->deserializeBinaryBulkWithMultipleStreams(flattened_column.indexes_column, 0, limit, settings, dynamic_state->flattened_indexes_state, cache);
+        indexes_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_indexes_column, limit, settings, dynamic_state->flattened_indexes_state, cache);
+        flattened_column.indexes_column = std::move(mutable_indexes_column);
         /// Second, read data of all flattened types in corresponding order.
         auto flattened_limits = getLimitsForFlattenedDynamicColumn(*flattened_column.indexes_column, flattened_column.types.size());
         flattened_column.columns.reserve(flattened_column.types.size());
         for (size_t i = 0; i != flattened_column.types.size(); ++i)
         {
-            ColumnPtr type_column = flattened_column.types[i]->createColumn();
-            flattened_column.types[i]->getSerialization(serialization_info_settings)->deserializeBinaryBulkWithMultipleStreams(type_column, 0, flattened_limits[i], settings, dynamic_state->flattened_states[i], cache);
+            auto type_column = flattened_column.types[i]->createColumn();
+            flattened_column.types[i]->getSerialization(serialization_info_settings)->deserializeBinaryBulkWithMultipleStreams(*type_column, flattened_limits[i], settings, dynamic_state->flattened_states[i], cache);
             if (type_column->size() != flattened_limits[i])
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
@@ -680,11 +664,10 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
 
         unflattenDynamicColumn(std::move(flattened_column), column_dynamic);
-        column = std::move(mutable_column);
         return;
     }
 
-    if (mutable_column->empty())
+    if (column.empty())
     {
         column_dynamic.setMaxDynamicPaths(structure_state->num_dynamic_types);
         column_dynamic.setVariantType(structure_state->variant_type);
@@ -696,10 +679,8 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
 
     settings.path.push_back(Substream::DynamicData);
-    dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumnPtr(), rows_offset, limit, settings, dynamic_state->variant_state, cache);
+    dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumn(), limit, settings, dynamic_state->variant_state, cache);
     settings.path.pop_back();
-
-    column = std::move(mutable_column);
 }
 
 void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

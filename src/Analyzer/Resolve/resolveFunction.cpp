@@ -1842,14 +1842,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
 
                         ASTPtr sql_udf_ast;
+                        ASTPtr wasm_udf_ast;
                         if (!inner_resolver)
                         {
-                            sql_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(identifier_name);
-                            if (!sql_udf_ast || !sql_udf_ast->as<ASTCreateSQLFunctionQuery>())
-                                sql_udf_ast.reset();
+                            auto stored_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(identifier_name);
+                            if (stored_udf_ast && stored_udf_ast->as<ASTCreateSQLFunctionQuery>())
+                                sql_udf_ast = std::move(stored_udf_ast);
+                            /// A `CREATE FUNCTION ... LANGUAGE WASM` definition is kept in the same storage and
+                            /// outlives the engine that runs it: after a restart with
+                            /// `allow_experimental_webassembly_udf` turned off, or on a build without a
+                            /// WebAssembly engine at all, the definition is still stored while the registry
+                            /// probed above is empty. Rewrite the reference from the stored definition anyway,
+                            /// so that resolving the rewritten call reports that WebAssembly support is
+                            /// unavailable instead of failing as an unknown identifier.
+                            else if (stored_udf_ast && stored_udf_ast->as<ASTCreateWasmFunctionQuery>())
+                                wasm_udf_ast = std::move(stored_udf_ast);
                         }
 
-                        if (inner_resolver || sql_udf_ast)
+                        if (inner_resolver || sql_udf_ast || wasm_udf_ast)
                         {
                             /// Determine arity from the inner function itself. This handles
                             /// cases like `arrayMap(plus, arr1, arr2)` where `plus` has a
@@ -1880,6 +1890,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                     }
                                 }
                             }
+
+                            /// A WebAssembly UDF declares its arguments in the `CREATE FUNCTION` statement,
+                            /// so the stored definition carries the arity even when nothing can run it.
+                            if (const auto * wasm_udf = wasm_udf_ast ? wasm_udf_ast->as<ASTCreateWasmFunctionQuery>() : nullptr)
+                                inner_arity = wasm_udf->getNumberOfArguments();
 
                             /// Determine the lambda arity:
                             /// - Inner function with fixed arity: use it directly.
@@ -2686,9 +2701,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist. In scope {}{}",
-                            function_name, scope.scope_node->formatASTForErrorMessage(),
-                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist{}. In scope {}",
+                            function_name,
+                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)),
+                            scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -2743,6 +2759,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
         {
             UNUSED(create_function_query);
+            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
     }
@@ -2763,12 +2780,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `getTreeHash` walks the whole argument subtree, dominating analysis of deeply nested expressions.
         /// So the hash and the cache are computed only for non-deterministic functions.
         ///
-        /// `getSetting` and `rowNumberInAllBlocks` are non-deterministic but must NOT be shared: the cache
-        /// is global across scopes, and e.g. `SETTINGS` can change `getSetting`'s result for every scope.
-        if (function && !function->isDeterministic()
-            && function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
+        /// The cache is global across the whole query, so only a function that is stable inside a query
+        /// may be shared. A function that is not deterministic in the scope of a query (`getSetting`,
+        /// `getSettingOrDefault`, `blockNumber`, `rowNumberInAllBlocks`, ...) must NOT be shared: its
+        /// result depends on the scope it is evaluated in - e.g. `SETTINGS` can change what `getSetting`
+        /// returns for every scope - and a stateful function keeps counting inside the single instance
+        /// the cache hands out.
+        ///
+        /// The hash ignores aliases. An alias renames an expression and never changes the value the
+        /// `FunctionBase` captures, so `randConstant() AS x, randConstant() AS y` must share what
+        /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
+        /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
+        /// is the documented way to ask for two different constants in one query.
+        if (function && !function->isDeterministic() && !function->isStateful()
+            && function->isDeterministicInScopeOfQuery())
         {
-            auto hash = function_node_ptr->getTreeHash();
+            auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
             function_base_cache = &functions_cache[hash];
         }
     }
@@ -2804,10 +2831,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name {} does not exist. In scope {}{}",
+                "Function with name {} does not exist{}. In scope {}",
                 backQuote(function_name),
-                scope.scope_node->formatASTForErrorMessage(),
-                getHintsErrorMessageSuffix(hints));
+                getHintsErrorMessageSuffix(hints),
+                scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())

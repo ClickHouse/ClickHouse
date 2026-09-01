@@ -195,6 +195,10 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
+    /// Same as `addCast`, but the values that cannot be represented in the destination type exactly
+    /// are converted to NULL instead of being wrapped around, saturated or leading to an exception.
+    /// The result type is always Nullable, so `cast_type` must be allowed inside Nullable.
+    const Node & addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
@@ -315,6 +319,11 @@ public:
 
     /// Replace each node listed in `substitutions` (a node of this DAG) with a constant COLUMN node.
     void substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions);
+
+    /// Rewire consumers of the input named `input_name` to a constant. The input node and the output
+    /// list are unchanged, so an output that IS that input keeps the value supplied for it; an output
+    /// computed FROM it, including an alias, is a consumer and sees `replacement`.
+    void substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
     /// Special handling for logical AND: non-computable children are replaced with constant true.
