@@ -352,8 +352,8 @@ lazy_probes() {
 
 lazy_probes ""
 
-# A first access is what used to replace a lazy proxy with the real storage, so repeat the battery
-# after one: the answers must not depend on whether the table has been touched.
+# Before the fix a first access materialized the proxy's nested storage while the catalog kept
+# handing out the proxy, so repeat the battery after one: the answers must not depend on it.
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${lazy_database}.${lazy_alias_table} FORMAT Null;"
 lazy_probes " after a first access"
 
