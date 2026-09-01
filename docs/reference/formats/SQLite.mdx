@@ -52,7 +52,7 @@ When ClickHouse infers a schema from SQLite input, it uses the same mapping as t
 | `REAL`, `FLOAT`, `DOUBLE` | `Float64` |
 | Other types, including `TEXT` and `BLOB` | `String` |
 
-If a column is nullable in SQLite, ClickHouse wraps the inferred type in `Nullable`.
+By default, ClickHouse wraps the inferred type in `Nullable` if the corresponding SQLite column allows `NULL`; `NOT NULL` columns remain non-`Nullable`. You can override this behavior with the [`schema_inference_make_columns_nullable`](/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) setting.
 
 Schema inference does not preserve the original ClickHouse data types. For example, `Bool` is written as SQLite `INTEGER` and inferred as `Int64`, while `Date`, `DateTime`, `Decimal`, `UUID`, `IPv4`, `IPv6`, `Enum`, `Array`, `Tuple`, and `Map` are written as SQLite `TEXT` and inferred as `String`.
 
