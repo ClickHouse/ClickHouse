@@ -1,0 +1,19 @@
+-- enable_scoring requires the experimental MergeTree setting
+-- the setting is off
+-- direct read from the text index is off
+-- no text-search predicate at all
+-- no WHERE at all
+-- only predicates outside the three scoring functions (they filter but do not score)
+-- the index has no enable_scoring
+-- predicates on two scoring indexes are not supported
+-- also when one of the two scoring predicates stays row-wise (not direct-read)
+-- a single scoring index among two still works
+1	1
+-- a physical column named _bm25_score shadows the virtual one
+1	42.5
+-- a part without the materialized index asks for MATERIALIZE INDEX
+1	1
+2	1
+-- a table without any text index rejects the column too
+-- unless asterisk_include_virtual_columns pulls it in (kept zero-filled)
+1	0

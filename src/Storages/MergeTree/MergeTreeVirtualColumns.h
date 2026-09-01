@@ -59,6 +59,14 @@ struct PartitionValueColumn
     static DataTypePtr type(const KeyDescription * partition_key);
 };
 
+/// BM25 relevance score filled by the text index reader during the direct read
+/// from a text index created with `enable_scoring = 1`.
+struct BM25ScoreColumn
+{
+    static const String name;
+    static const DataTypePtr type;
+};
+
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection);
 
 }

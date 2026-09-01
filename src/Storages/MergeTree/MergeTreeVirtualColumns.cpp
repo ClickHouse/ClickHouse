@@ -58,6 +58,9 @@ DataTypePtr PartitionValueColumn::type(const KeyDescription * partition_key)
     return std::make_shared<DataTypeTuple>(std::move(partition_types));
 }
 
+const String BM25ScoreColumn::name = "_bm25_score";
+const DataTypePtr BM25ScoreColumn::type = std::make_shared<DataTypeFloat32>();
+
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection)
 {
     const auto & part = part_or_projection.isProjectionPart() ? *part_or_projection.getParentPart() : part_or_projection;

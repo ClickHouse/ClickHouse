@@ -42,6 +42,7 @@ _part_granule_offset	UInt64			Number of granule in the part			1
 _part_data_version	UInt64			Data version of part (either min block number or mutation version)			1
 _disk_name	LowCardinality(String)			Disk name			1
 _distance	Float32			Pre-computed distance for vector search queries			1
+_bm25_score	Float32			BM25 relevance score computed from a text index created with enable_scoring			1
 _table	LowCardinality(String)						1
 _database	LowCardinality(String)						1
 _row_exists	UInt8			Persisted mask created by lightweight delete that show whether row exists or is deleted			1
@@ -62,6 +63,7 @@ _part_granule_offset	UInt64			Number of granule in the part			1
 _part_data_version	UInt64			Data version of part (either min block number or mutation version)			1
 _disk_name	LowCardinality(String)			Disk name			1
 _distance	Float32			Pre-computed distance for vector search queries			1
+_bm25_score	Float32			BM25 relevance score computed from a text index created with enable_scoring			1
 _table	LowCardinality(String)						1
 _database	LowCardinality(String)						1
 _row_exists	UInt8			Persisted mask created by lightweight delete that show whether row exists or is deleted			1
@@ -84,6 +86,7 @@ _part_granule_offset	UInt64			Number of granule in the part			0	1
 _part_data_version	UInt64			Data version of part (either min block number or mutation version)			0	1
 _disk_name	LowCardinality(String)			Disk name			0	1
 _distance	Float32			Pre-computed distance for vector search queries			0	1
+_bm25_score	Float32			BM25 relevance score computed from a text index created with enable_scoring			0	1
 _table	LowCardinality(String)						0	1
 _database	LowCardinality(String)						0	1
 _row_exists	UInt8			Persisted mask created by lightweight delete that show whether row exists or is deleted			0	1
@@ -108,6 +111,7 @@ _part_granule_offset	UInt64			Number of granule in the part			0	1
 _part_data_version	UInt64			Data version of part (either min block number or mutation version)			0	1
 _disk_name	LowCardinality(String)			Disk name			0	1
 _distance	Float32			Pre-computed distance for vector search queries			0	1
+_bm25_score	Float32			BM25 relevance score computed from a text index created with enable_scoring			0	1
 _table	LowCardinality(String)						0	1
 _database	LowCardinality(String)						0	1
 _row_exists	UInt8			Persisted mask created by lightweight delete that show whether row exists or is deleted			0	1
@@ -160,6 +164,7 @@ _part_granule_offset	UInt64	1
 _part_data_version	UInt64	1
 _disk_name	LowCardinality(String)	1
 _distance	Float32	1
+_bm25_score	Float32	1
 _table	LowCardinality(String)	1
 _database	LowCardinality(String)	1
 _row_exists	UInt8	1
@@ -180,6 +185,7 @@ _part_granule_offset	UInt64	1
 _part_data_version	UInt64	1
 _disk_name	LowCardinality(String)	1
 _distance	Float32	1
+_bm25_score	Float32	1
 _table	LowCardinality(String)	1
 _database	LowCardinality(String)	1
 _row_exists	UInt8	1
@@ -202,6 +208,7 @@ _part_granule_offset	UInt64	0	1
 _part_data_version	UInt64	0	1
 _disk_name	LowCardinality(String)	0	1
 _distance	Float32	0	1
+_bm25_score	Float32	0	1
 _table	LowCardinality(String)	0	1
 _database	LowCardinality(String)	0	1
 _row_exists	UInt8	0	1
@@ -226,6 +233,7 @@ _part_granule_offset	UInt64	0	1
 _part_data_version	UInt64	0	1
 _disk_name	LowCardinality(String)	0	1
 _distance	Float32	0	1
+_bm25_score	Float32	0	1
 _table	LowCardinality(String)	0	1
 _database	LowCardinality(String)	0	1
 _row_exists	UInt8	0	1

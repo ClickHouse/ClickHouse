@@ -51,7 +51,5 @@ struct PostingListSegment
 };
 
 using PostingListSegmentPtr = std::shared_ptr<const PostingListSegment>;
-/// A flattened, sorted array of posting list row ids.
-using FlatPostingsPtr = std::shared_ptr<const PaddedPODArray<UInt32>>;
 
 }
