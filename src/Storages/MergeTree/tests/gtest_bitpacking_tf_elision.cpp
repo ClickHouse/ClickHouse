@@ -223,15 +223,15 @@ TEST(BitpackingTfElisionTest, AllOnesBlockEmitsExactlyOneTfByte)
     /// grew by exactly 1 byte (the elided TF header). Rather than depend on VarUInt widths, assert the
     /// lower bound (delta >= the fixed parts) and that the only block-growth is the 1-byte/block TF
     /// header (delta - header_ub - index_ub - offset_widening == num_blocks).
-    const long long delta = static_cast<long long>(enc_all_ones.size()) - static_cast<long long>(enc_no_tf.size());
+    const Int64 delta = static_cast<Int64>(enc_all_ones.size()) - static_cast<Int64>(enc_no_tf.size());
 
     /// The fixed (non-offset) additions: header UB + per-block TF header + per-block index UB.
-    const long long fixed_additions =
-        static_cast<long long>(expected_header_ub + expected_tf_subpayload + expected_index_ub);
+    const Int64 fixed_additions
+        = static_cast<Int64>(expected_header_ub) + static_cast<Int64>(expected_tf_subpayload) + static_cast<Int64>(expected_index_ub);
 
     /// Each block's payload grew by exactly 1 byte (its elided TF header), which can push a
     /// block_offsets[] VarUInt across a 7-bit boundary, adding at most 1 byte per offset entry.
-    const long long max_offset_widening = static_cast<long long>(num_blocks);
+    const Int64 max_offset_widening = static_cast<Int64>(num_blocks);
 
     EXPECT_GE(delta, fixed_additions)
         << "WITH-TF encoding must be at least the fixed UB + 1-byte/block TF header larger";
