@@ -2697,21 +2697,14 @@ TEST(SchedulerSpaceShared, SuctionReservationCapsProtectedGrowth)
     ResourceAllocation::MemoryPressurePolicy capped_suction;
     capped_suction.suction_reservation_bytes = 1000;
     ManualAllocation requester(queue, "requester", 3000, true, capped_suction);
-    auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 7000, true, capped_suction);
+    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 7000, true, capped_suction);
     requester.protectAfterPressureRounds(1);
 
     requester.increaseAsync(3000);
     requester.waitPressureCount(1);
-    releaser->decreaseAsync(3000);
-    releaser->waitSynced();
-    EXPECT_EQ(releaser->killCount(), 0u);
-
     requester.recoveryCheckpoint();
-    ASSERT_TRUE(releaser->waitKillsFor(1, std::chrono::seconds(5)));
-    EXPECT_EQ(requester.size(), 3000);
-
-    releaser.reset();
-    requester.waitSynced();
+    ASSERT_TRUE(requester.waitKillsFor(1, std::chrono::seconds(5)));
+    EXPECT_EQ(ordinary->killCount(), 0u);
 }
 
 

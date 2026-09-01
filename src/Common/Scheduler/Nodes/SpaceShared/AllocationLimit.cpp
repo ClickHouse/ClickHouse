@@ -329,14 +329,6 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     if (!reapply_constraint && increase == new_increase)
         return false;
     IncreaseRequest * old_increase = increase;
-    if (new_increase
-        && new_increase == suction_growth
-        && !new_increase->allocation.canReserveForSuction(new_increase->size))
-    {
-        processSuction();
-        increase = nullptr;
-        return increase != old_increase;
-    }
     if (new_increase)
     {
         if (allocated + new_increase->size > max_allocated)
@@ -487,7 +479,15 @@ void AllocationLimit::processSuction()
 void AllocationLimit::selectAndKill(IncreaseRequest & killer)
 {
     String details;
-    allocation_to_kill = selectAllocationToKill(killer, max_allocated, details);
+    if (killer.allocation.isSuctioned() && !killer.allocation.canReserveForSuction(killer.size))
+    {
+        if (killer.allocation.kill_requested)
+            return;
+        allocation_to_kill = &killer.allocation;
+        details = "Suction reservation is smaller than the blocked growth request.";
+    }
+    else
+        allocation_to_kill = selectAllocationToKill(killer, max_allocated, details);
     if (!allocation_to_kill)
         return;
 
