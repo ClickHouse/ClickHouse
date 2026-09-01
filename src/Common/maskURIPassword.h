@@ -153,32 +153,45 @@ inline bool maskPresignedURLParameters(std::string & url)
         return false;
     };
 
+    static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
+
     bool masked = false;
+    std::string result;
+    size_t copied = 0;
     for (size_t position = url.find_first_of("?&"); position != std::string::npos;
          position = url.find_first_of("?&", position + 1))
     {
         size_t name_begin = position + 1;
-        size_t equal_sign = url.find('=', name_begin);
-        if (equal_sign == std::string::npos)
+        /// None of the names above contains a separator, so the scan for '=' stops at the first one.
+        size_t name_end = url.find_first_of("=?&", name_begin);
+        if (name_end == std::string::npos)
             break;
+        if (url[name_end] != '=')
+            continue;
 
-        if (!is_secret_parameter(std::string_view(url).substr(name_begin, equal_sign - name_begin)))
+        if (!is_secret_parameter(std::string_view(url).substr(name_begin, name_end - name_begin)))
             continue;
 
         /// `[^&#]*` - the value.
-        size_t value_begin = equal_sign + 1;
+        size_t value_begin = name_end + 1;
         size_t value_end = url.find_first_of("&#", value_begin);
         if (value_end == std::string::npos)
             value_end = url.length();
 
-        static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
-        url.replace(value_begin, value_end - value_begin, REPLACEMENT);
+        result.append(url, copied, value_begin - copied);
+        result.append(REPLACEMENT);
+        copied = value_end;
         masked = true;
-        /// Continue after the replacement, not inside it.
-        position = value_begin + REPLACEMENT.length() - 1;
+        /// Continue after the value, not inside it.
+        position = value_end - 1;
     }
 
-    return masked;
+    if (!masked)
+        return false;
+
+    result.append(url, copied, std::string::npos);
+    url = std::move(result);
+    return true;
 }
 
 }
