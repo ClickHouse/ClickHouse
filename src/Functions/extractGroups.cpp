@@ -123,7 +123,7 @@ Extracts the capturing groups from the first substring matched by a regular expr
     FunctionDocumentation::Syntax syntax = "extractGroups(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string to extract from.", {"String", "FixedString"}},
-        {"regexp", "Regular expression. Must contain at least one capturing group. Constant.", {"const String", "const FixedString"}}
+        {"regexp", "Regular expression. Must contain between 1 and 127 capturing groups. Constant.", {"const String", "const FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"If the regular expression matches, returns an array containing the captured groups (`1` to `N`, where `N` is the number of capturing groups in `regexp`) of the first match. If there is no match, returns an empty array.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
