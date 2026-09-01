@@ -1323,7 +1323,7 @@ Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one re
 compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
 default; this setting will be removed in a future release.
 )", 0) \
-    DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
+    DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
 replica. An inactive replica becomes lost when when this number exceed.
 
@@ -2726,16 +2726,6 @@ void MergeTreeSettingsImpl::sanityCheck(
             ErrorCodes::BAD_ARGUMENTS,
             "shared_merge_tree_range_for_merge_window_size: value {} makes no sense",
             (*this)[MergeTreeSetting::shared_merge_tree_range_for_merge_window_size].value);
-    }
-
-    /// The oldest kept log record names the threshold that log pointers of inactive replicas are
-    /// compared with, so the kept window cannot be empty.
-    if ((*this)[MergeTreeSetting::max_replicated_logs_to_keep] < 1)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "max_replicated_logs_to_keep: value {} makes no sense",
-            (*this)[MergeTreeSetting::max_replicated_logs_to_keep].value);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.

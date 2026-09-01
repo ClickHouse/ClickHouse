@@ -12,7 +12,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
-    extern const MergeTreeSettingsUInt64 max_replicated_logs_to_keep;
+    extern const MergeTreeSettingsNonZeroUInt64 max_replicated_logs_to_keep;
     extern const MergeTreeSettingsUInt64 min_replicated_logs_to_keep;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window_for_async_inserts;
@@ -146,11 +146,10 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     ::sort(entries.begin(), entries.end());
 
-    /// Keep at least one entry: its name is the threshold that log pointers of inactive replicas
-    /// are compared with, so it has to name an entry that exists. Settings of a table loaded from
-    /// existing metadata are not sanity-checked, so a zero can still arrive here.
-    const UInt64 max_logs_to_keep = std::max<UInt64>((*storage_settings)[MergeTreeSetting::max_replicated_logs_to_keep], 1);
-    String min_saved_record_log_str = entries[entries.size() - std::min<UInt64>(max_logs_to_keep, entries.size())];
+    String min_saved_record_log_str = entries[
+        entries.size() > (*storage_settings)[MergeTreeSetting::max_replicated_logs_to_keep]
+            ? entries.size() - (*storage_settings)[MergeTreeSetting::max_replicated_logs_to_keep]
+            : 0];
 
     /// Replicas that were marked is_lost but are active.
     std::unordered_set<String> recovering_replicas;
