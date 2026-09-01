@@ -98,6 +98,8 @@ private:
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
+    /// Whether no input which can still send something is at `bucket` or before it.
+    bool everyLiveInputIsPastBucket(Int32 bucket);
     /// Push chunks if all inputs has single level.
     bool tryPushSingleLevelData();
     /// Push chunks from ready bucket if has one.
