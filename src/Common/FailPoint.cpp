@@ -535,29 +535,37 @@ bool FailPointInjection::waitForPause(const String & fail_point_name, std::optio
 
     auto channel = iter->second;
 
-    /// The wait predicate must also wake on a disable, so a timed-out or aborted target thread does
-    /// not leave the waiter hanging; but the *returned* success value must report only a real pause.
-    /// A disable bumps `resume_epoch` and sets `disabled` without touching `pause_epoch`, so checking
-    /// `pause_epoch > resume_epoch` alone tells the caller a thread actually re-paused since the most
-    /// recent resume. Reporting `disabled` as success would make "someone disabled the failpoint"
-    /// indistinguishable from "the target really paused there", recreating the false positive this
-    /// boolean API exists to remove.
-    auto paused = [&] {
-        return channel->pause_epoch > channel->resume_epoch;
+    /// The wait predicate must also wake on a disable, otherwise disabling a fail point that no
+    /// thread ever pauses on would leave the waiter blocking forever (e.g. `SYSTEM WAIT FAILPOINT`).
+    /// But the *returned* success value must report only a real pause: a disable bumps `resume_epoch`
+    /// and sets `disabled` without touching `pause_epoch`, so `pause_epoch > resume_epoch` alone tells
+    /// the caller a thread actually re-paused since the most recent resume. Reporting a wake caused
+    /// solely by a disable as success would make "someone disabled the failpoint" indistinguishable
+    /// from "the target really paused there", recreating the false positive this boolean API exists
+    /// to remove.
+    bool paused = false;
+    auto paused_or_disabled = [&] {
+        if (channel->pause_epoch > channel->resume_epoch)
+        {
+            paused = true;
+            return true;
+        }
+        return channel->disabled;
     };
 
-    /// Wait until a thread has paused at this failpoint after the most recent resume. `timeout_ms`
-    /// bounds the wait so a caller cannot hang forever if the target never reaches the failpoint.
+    /// Wait until a thread has paused at this failpoint after the most recent resume, or the failpoint
+    /// is disabled. `timeout_ms` bounds the wait so a caller cannot hang forever if the target never
+    /// reaches the failpoint.
     /// Returns whether the pause was actually reached (as opposed to a timeout or a premature disable).
     if (timeout_ms)
         channel->pause_cv.wait_until(
             lock,
             std::chrono::steady_clock::now() + std::chrono::milliseconds(*timeout_ms),
-            paused);
+            paused_or_disabled);
     else
-        channel->pause_cv.wait(lock, paused);
+        channel->pause_cv.wait(lock, paused_or_disabled);
 
-    return paused();
+    return paused;
 }
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
