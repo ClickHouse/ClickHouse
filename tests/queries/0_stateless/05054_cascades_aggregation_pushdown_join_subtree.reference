@@ -1,0 +1,45 @@
+-- canary 1: variant A onto the join subtree (case 1\'s query)
+1	1	1	1	1
+-- canary 2: variant B onto the subtree cascades into a second variant-A pushdown (case 2\'s query)
+1	1	1	1	1
+-- canary 3: repeated variant B through two LEFT SEMI joins (case 3\'s query)
+1	1	1
+-- 1. variant A onto the join subtree (INNER below, LEFT above)
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+-- 2. variant B onto the join subtree (INNER below, LEFT SEMI above)
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+-- 3. repeated variant B through two LEFT SEMI joins
+0	10
+1	10
+2	10
+3	10
+4	10
+5	10
+0	10
+1	10
+2	10
+3	10
+4	10
+5	10
