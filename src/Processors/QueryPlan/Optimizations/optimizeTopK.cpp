@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Functions/FunctionFactory.h>
@@ -190,13 +189,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && !isVariant(sort_column.type)
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
-
-    /// Reading `_bm25_score` requires the direct read from the text index, whose optimization
-    /// pass expects the filter right above the read step; a prewhere inserted here would break
-    /// that shape. The skip-index TopK path is kept: it does not reshape the plan.
-    if (use_dynamic_filtering
-        && std::find(read_columns.begin(), read_columns.end(), BM25ScoreColumn::name) != read_columns.end())
-        use_dynamic_filtering = false;
 
     /// When read-in-order optimization is enabled and the sort column is a prefix
     /// of the storage's sorting key, the engine will read data in sorted order.
