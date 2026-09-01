@@ -1318,7 +1318,9 @@ def test_move_after_processing_versioned_foreign_alias_detected(started_cluster)
         len(file_data),
         metadata={
             "clickhouse_move_source_path": f"{files_path}/{file_name}",
-            "clickhouse_move_source_etag": stat.etag,
+            # minio-py strips the quotes the S3 ETag header carries; the provenance comparison
+            # uses the raw header form, so restate them.
+            "clickhouse_move_source_etag": f'"{stat.etag}"',
             "clickhouse_move_source_last_modified": str(int(stat.last_modified.timestamp())),
             "clickhouse_move_source_version_id": "a-foreign-version-id",
         },
@@ -1403,7 +1405,9 @@ def test_move_after_processing_versioned_missing_destination_version_tolerated(s
         len(file_data),
         metadata={
             "clickhouse_move_source_path": f"{files_path}/{file_name}",
-            "clickhouse_move_source_etag": stat.etag,
+            # minio-py strips the quotes the S3 ETag header carries; the provenance comparison
+            # uses the raw header form, so restate them.
+            "clickhouse_move_source_etag": f'"{stat.etag}"',
             "clickhouse_move_source_last_modified": str(int(stat.last_modified.timestamp())),
         },
     )
