@@ -1,0 +1,13 @@
+-- Case 12: patch that newly expires rows forces the TTL step
+90
+-- Case 13: blocked TTL merge still recalculates patched infos
+100
+1
+-- Case 14: vertical TTL merge keeps move/recompress inputs readable
+1000
+1
+-- Case 15: patched merge does not recompress on pre-patch infos
+1
+-- Case 16: patched merge keeps rows-WHERE TTL entries live
+10
+0
