@@ -9,13 +9,6 @@
                     <table>default.prom_dist</table>
                 </handler>
             </dist_write>
-            <bad_write>
-                <url>/bad/write</url>
-                <handler>
-                    <type>write</type>
-                    <table>default.prom_dist_bad</table>
-                </handler>
-            </bad_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>
