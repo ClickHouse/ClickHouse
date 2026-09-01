@@ -9,9 +9,13 @@ doc_type: 'reference'
 Les fonctions d’IA sont des fonctions intégrées de ClickHouse que vous pouvez utiliser pour faire appel à l’IA ou générer des embeddings afin de travailler avec vos données, d’en extraire des informations, de classer des données, etc.
 
 <Note>
-  Les fonctions d’IA sont expérimentales. Définissez [`allow_experimental_ai_functions`](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) pour les activer.
+  Les fonctions d’IA sont en bêta.
 
   Les fonctions d’IA peuvent produire des résultats imprévisibles. Le résultat dépendra fortement de la qualité du prompt et du modèle utilisés.
+</Note>
+
+<Note>
+  Les fonctions d’IA ne sont pas disponibles dans les services ClickHouse Cloud pour le moment. Restez à l’écoute des mises à jour.
 </Note>
 
 <Warning>
@@ -228,6 +232,7 @@ L’un des libellés de catégorie fournis, ou la valeur par défaut du type de 
 **Classifier le sentiment**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -235,9 +240,12 @@ SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 positive
 ```
 
-**Classifier une colonne avec des informations d’identification explicites**
+**Classifier une colonne avec des identifiants explicites**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
@@ -290,18 +298,23 @@ Le vecteur d’embedding, ou un tableau vide si l’entrée est NULL ou vide, si
 **Encoder une seule chaîne (`credentials` peut être omis si le paramètre `ai_function_embedding_default_credentials` est défini)**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Avec des dimensions explicites**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **Générer des embeddings pour une colonne de textes**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (title String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
@@ -346,6 +359,7 @@ Une valeur extraite (mode instruction) ou une chaîne JSON représentant un obje
 **Instruction en texte libre**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -356,6 +370,9 @@ late and damaged package
 **Extraction du schéma**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
@@ -367,8 +384,11 @@ Introduit dans : v26.8.0
 
 Évalue une condition en langage naturel sur le texte fourni à l’aide d’un fournisseur de LLM et renvoie une valeur booléenne (`UInt8`) utilisable dans `WHERE`, `PREWHERE` et `JOIN ... ON`.
 
-La fonction demande au modèle de répondre uniquement par `true` ou `false` en minuscules. Les requêtes échouées (lorsque
-`ai_function_throw_on_error` est désactivé) et les réponses non reconnues sont mappées sur `0`, de sorte que la ligne est filtrée.
+La fonction demande au modèle de répondre uniquement par `true` ou `false` en minuscules. Toute réponse complète autre
+que `true` (y compris `false` et le texte non reconnu) est mappée sur `0`, de sorte que la ligne est filtrée. Une
+réponse incomplète signalée par le fournisseur — tronquée, filtrée par le contenu ou nécessitant une action supplémentaire — est en revanche
+traitée comme une erreur : lorsque `ai_function_throw_on_error` est activé (valeur par défaut), la requête est abandonnée ; lorsqu’il est
+désactivé, la ligne est mappée sur `0` et filtrée.
 
 **Avertissement :** Ne vous fiez pas aux résultats d’`aiFilter` sans les examiner attentivement. Les prédicats basés sur des LLM peuvent être incorrects
 ou incohérents ; utilisez-les uniquement lorsque les faux positifs et les faux négatifs sont acceptables.
@@ -402,12 +422,18 @@ aiFilter(text, condition[, params])
 **Filtrer les avis négatifs**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (body String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
 **Filtrer une colonne avec des identifiants explicites**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
@@ -421,7 +447,7 @@ Génère du contenu textuel libre à partir d’un prompt à l’aide d’un fou
 
 La fonction envoie le prompt au fournisseur d’IA configuré et renvoie le texte généré.
 
-Les informations d’identifiant (une collection nommée qui spécifie le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API)
+Les identifiants (une collection nommée qui spécifie le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API)
 sont extraites de la clé `credentials` de la map de paramètres facultative, ou du
 paramètre `ai_function_text_default_credentials` lorsque la map ne la contient pas.
 
@@ -451,6 +477,7 @@ Le texte généré, ou la valeur par défaut du type de colonne (chaîne vide) s
 **Question simple**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -461,12 +488,16 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **Avec des identifiants explicites et une instruction système**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **Résumer les valeurs d’une colonne**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
@@ -498,8 +529,9 @@ le saut de ligne et le retour chariot sont également remplacés par des espaces
 identique octet pour octet aux entrées qui en contiennent.
 
 Étant donné que `aiRedact` renvoie l’intégralité du texte d’entrée avec les PII remplacées, la sortie est environ aussi longue que l’entrée.
-Définissez `max_tokens` (valeur par défaut : `1024`) sur une valeur supérieure à la longueur de l’entrée en tokens ; une réponse tronquée en raison d’une limite trop basse
-sera incomplète.
+Définissez `max_tokens` (valeur par défaut : `1024`) sur une valeur supérieure à la longueur de l’entrée en tokens ; une réponse tronquée en raison d’une limite trop basse est
+rejetée avec `AI_PROVIDER_RESPONSE_TRUNCATED` (ou renvoie la valeur par défaut de la colonne lorsque `ai_function_throw_on_error`
+est désactivé) au lieu de renvoyer du texte partiellement masqué.
 
 **Syntaxe**
 
@@ -513,7 +545,7 @@ aiRedact(text, categories[, params])
 
 * `text` — Texte à masquer. [`String`](/fr/reference/data-types/string)
 * `categories` — Liste constante de catégories d’informations personnelles identifiables à masquer (par ex. `['name', 'ssn', 'credit_card']`). Un tableau vide utilise un ensemble par défaut de catégories courantes (nom, e-mail, numéro de téléphone, adresse, carte de crédit, adresse IP). [`Array(String)`](/fr/reference/data-types/array)
-* `params` — `Map(String, String)` constant facultatif de paramètres. Clés spécifiques à la fonction : `temperature` (température d’échantillonnage contrôlant le caractère aléatoire ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024` — comme `aiRedact` renvoie l’intégralité du texte, définissez cette valeur au-dessus de la longueur de l’entrée en tokens, faute de quoi la réponse risque d’être tronquée et incomplète), `replacement` (jeton qui remplace chaque span d’informations personnelles identifiables détecté ; valeur par défaut : `[REDACTED]`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clés spécifiques à la fonction : `temperature` (température d’échantillonnage contrôlant le caractère aléatoire ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024` — comme `aiRedact` renvoie l’intégralité du texte, définissez cette valeur au-dessus de la longueur de l’entrée en tokens ; une réponse tronquée en raison d’une limite trop basse est rejetée plutôt que de renvoyer du texte partiellement masqué), `replacement` (jeton qui remplace chaque occurrence de PII détectée ; valeur par défaut : `[REDACTED]`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
 
 **Valeur renvoyée**
 
@@ -524,6 +556,7 @@ Le texte dans lequel les informations personnelles identifiables détectées son
 **Masquer des catégories spécifiques**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -531,9 +564,12 @@ SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org
 Purchase was done by customer [REDACTED] with email [REDACTED]
 ```
 
-**Masquez les catégories d’IPI par défaut à l’aide d’un token personnalisé**
+**Masquez les catégories de PII par défaut à l’aide d’un token personnalisé**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE tickets (body String) ENGINE = Memory;
+INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
@@ -583,18 +619,25 @@ La similarité cosinus dans `[-1, 1]`, ou NULL si l’un des textes est NULL ou 
 **Comparer deux chaînes (`credentials` peut être omis si le paramètre `ai_function_embedding_default_credentials` est défini)**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Classer les avis selon leur similarité avec une requête**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE product_reviews (review String) ENGINE = Memory;
+INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
 ```
 
 **Déduplication sémantique via une auto-jointure**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
+INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
@@ -635,6 +678,7 @@ Le texte traduit, ou la valeur par défaut du type de colonne (chaîne vide) si 
 **Traduire en français**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -645,6 +689,9 @@ Bonjour le monde!
 **Traduire en japonais en suivant les consignes de style**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 

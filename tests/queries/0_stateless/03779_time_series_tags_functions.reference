@@ -34,6 +34,18 @@ timeSeriesReplaceTag (2):
 timeSeriesThrowDuplicateSeriesIf:
 0
 
+timeSeriesThrowDuplicateSeriesIf vectorized all-zero:
+0
+0
+0
+0
+
+timeSeriesThrowDuplicateSeriesIf negative zero:
+0
+0
+
+timeSeriesThrowDuplicateSeriesIf vectorized nonzero:
+
 timeSeriesRemoveTag vectorized dense groups:
 [('instance','0')]
 [('instance','1')]
