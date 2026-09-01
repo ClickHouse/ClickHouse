@@ -294,7 +294,7 @@ def test_prepared_statement_no_schema_when_null_invalid():
     assert stmt.parameter_schema is not None
     assert len(stmt.parameter_schema) == 1
 
-    with pytest.raises(flight.FlightServerError, match="Parameters were not bound"):
+    with pytest.raises(pa.lib.ArrowInvalid, match="Parameters were not bound"):
         client.get_prepared_statement_schema(stmt.handle)
 
     # Executing with a real value should work.
