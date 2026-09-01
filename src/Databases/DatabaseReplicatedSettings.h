@@ -14,6 +14,7 @@ class AbstractConfiguration;
 namespace DB
 {
 class ASTStorage;
+struct SettingChange;
 struct DatabaseReplicatedSettingsImpl;
 
 /// List of available types supported in ReplicatedSettings object
@@ -37,8 +38,10 @@ struct DatabaseReplicatedSettings
 
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+    void applyChange(const SettingChange & change);
 
     String toString() const;
+    bool has(std::string_view name) const;
 
 private:
     std::unique_ptr<DatabaseReplicatedSettingsImpl> impl;

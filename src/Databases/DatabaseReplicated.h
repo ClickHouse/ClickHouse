@@ -10,6 +10,7 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <QueryPipeline/BlockIO.h>
 #include <base/defines.h>
+#include <Common/MultiVersion.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
 
@@ -66,6 +67,7 @@ public:
         UInt32 log_ptr{};
         UInt32 total_replicas{};
         String zookeeper_exception;
+        UInt32 logs_to_keep{};
     };
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
@@ -92,6 +94,8 @@ public:
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags, DDLGuardPtr && database_guard) override;
 
     bool canExecuteReplicatedMetadataAlter() const override;
+
+    void applySettingsChanges(const SettingsChanges &, ContextPtr) override;
 
     /// RAII guard to suppress digest checks during SYSTEM RESTART REPLICA.
     /// The table is temporarily removed from the in-memory tables map during restart,
@@ -182,15 +186,17 @@ private:
     /// For Replicated database will return ATTACH for MVs with inner table
     ASTPtr tryGetCreateOrAttachTableQuery(const String & name, ContextPtr context) const;
 
-    struct
+    struct ClusterAuthInfo
     {
         String cluster_username{"default"};
         String cluster_password;
         String cluster_secret;
         bool cluster_secure_connection{false};
-    } cluster_auth_info;
+    };
 
-    void fillClusterAuthInfo(String collection_name);
+    ClusterAuthInfo cluster_auth_info;
+
+    static ClusterAuthInfo getClusterAuthInfo(const String & collection_name);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
@@ -224,6 +230,7 @@ private:
 
     ClusterPtr getClusterImpl(bool all_groups = false) const;
     void setCluster(ClusterPtr && new_cluster, bool all_groups = false);
+    void setClusterLocked(ClusterPtr && new_cluster, bool all_groups = false) TSA_REQUIRES(mutex);
 
     void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
 
@@ -268,7 +275,7 @@ private:
     const String replica_path;
 
     String replica_group_name;
-    DatabaseReplicatedSettings db_settings;
+    MultiVersion<DatabaseReplicatedSettings> db_settings;
 
     ZooKeeperPtr getZooKeeper() const;
 
