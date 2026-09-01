@@ -458,7 +458,7 @@ private:
             else
             {
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
-                doConnect(connect_time);
+                Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
             notifySocketInode();
