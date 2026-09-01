@@ -5,12 +5,12 @@
     "ru/clickstack/index",
     {
       "expanded": true,
-      "group": "Начало работы",
+      "group": "Get started",
       "pages": [
         "ru/clickstack/overview",
         {
           "expanded": true,
-          "group": "Быстрый старт",
+          "group": "Quickstarts",
           "pages": [
             "ru/clickstack/getting-started/index",
             "ru/clickstack/getting-started/managed",
@@ -18,7 +18,7 @@
           ]
         },
         {
-          "group": "Примеры датасетов",
+          "group": "Sample datasets",
           "pages": [
             "ru/clickstack/example-datasets/index",
             "ru/clickstack/example-datasets/sample-data",
@@ -37,14 +37,14 @@
       ]
     },
     {
-      "group": "Возможности",
+      "group": "Features",
       "pages": [
         {
-          "group": "Развертывание",
+          "group": "Deployment",
           "pages": [
             "ru/clickstack/deployment/overview",
             {
-              "group": "С открытым исходным кодом",
+              "group": "Open Source",
               "pages": [
                 "ru/clickstack/deployment/oss",
                 "ru/clickstack/deployment/all-in-one",
@@ -63,7 +63,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (устарело)",
+                      "group": "v1.x (deprecated)",
                       "pages": [
                         "ru/clickstack/deployment/helm-v1",
                         "ru/clickstack/deployment/helm-configuration-v1",
@@ -84,12 +84,13 @@
         },
         "ru/clickstack/features/search",
         {
-          "group": "Панели мониторинга",
+          "group": "Dashboards",
           "pages": [
             "ru/clickstack/features/dashboards/overview",
             "ru/clickstack/features/dashboards/dashboard-templates",
             "ru/clickstack/features/dashboards/sql-visualizations",
-            "ru/clickstack/features/dashboards/row-click-drilldowns"
+            "ru/clickstack/features/dashboards/row-click-drilldowns",
+            "ru/clickstack/features/dashboards/release-markers"
           ]
         },
         "ru/clickstack/notebooks",
@@ -102,12 +103,14 @@
         "ru/clickstack/mcp",
         "ru/clickstack/url-parameters",
         {
-          "group": "Демо-дни",
+          "group": "Demo days",
           "pages": [
             "ru/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
+                "ru/clickstack/demo-days/2026/2026-08-15",
+                "ru/clickstack/demo-days/2026/2026-08-07",
                 "ru/clickstack/demo-days/2026/2026-07-31",
                 "ru/clickstack/demo-days/2026/2026-07-24",
                 "ru/clickstack/demo-days/2026/2026-07-17",
@@ -132,7 +135,7 @@
     },
     {
       "expanded": true,
-      "group": "Управление ClickStack",
+      "group": "Managing ClickStack",
       "pages": [
         "ru/clickstack/managing/overview",
         "ru/clickstack/managing/admin",
@@ -146,13 +149,12 @@
       ]
     },
     {
-      "group": "Руководства",
+      "group": "Guides",
       "pages": [
         {
           "expanded": true,
-          "group": "Ингестия данных",
+          "group": "Ingesting data",
           "pages": [
-            "ru/clickstack/ingesting-data/index",
             "ru/clickstack/ingesting-data/overview",
             "ru/clickstack/ingesting-data/opentelemetry",
             "ru/clickstack/ingesting-data/vector",
@@ -161,7 +163,7 @@
             "ru/clickstack/ingesting-data/schema/map-vs-json",
             "ru/clickstack/ingesting-data/trace-sampling",
             {
-              "group": "Интеграции",
+              "group": "Integrations",
               "pages": [
                 "ru/clickstack/integration-examples/index",
                 "ru/clickstack/integration-examples/nginx-logs",
@@ -171,7 +173,7 @@
                 "ru/clickstack/integration-examples/cloudwatch",
                 "ru/clickstack/integration-examples/aws-lambda",
                 {
-                  "group": "Журналы хоста",
+                  "group": "Host logs",
                   "pages": [
                     "ru/clickstack/integration-examples/host-logs",
                     "ru/clickstack/integration-examples/host-logs/ec2"
@@ -192,7 +194,7 @@
               ]
             },
             {
-              "group": "SDK для языков программирования",
+              "group": "Language SDKs",
               "pages": [
                 "ru/clickstack/ingesting-data/sdks/index",
                 "ru/clickstack/ingesting-data/sdks/browser",
@@ -213,11 +215,11 @@
         },
         {
           "expanded": true,
-          "group": "Руководства по миграции",
+          "group": "Migration guides",
           "pages": [
             "ru/clickstack/migration/index",
             {
-              "group": "Миграция с Elastic",
+              "group": "Migrating from Elastic",
               "pages": [
                 "ru/clickstack/migration/elastic/index",
                 "ru/clickstack/migration/elastic/intro",
@@ -236,7 +238,7 @@
     },
     {
       "expanded": true,
-      "group": "Партнёры по интеграциям",
+      "group": "Integration partners",
       "pages": [
         "ru/clickstack/integration-partners/index",
         "ru/clickstack/integration-partners/bindplane",
@@ -246,7 +248,7 @@
     },
     {
       "expanded": true,
-      "group": "Справочник по API",
+      "group": "API reference",
       "openapi": {
         "directory": "ru/clickstack/api-reference",
         "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"

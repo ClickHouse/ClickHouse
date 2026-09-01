@@ -126,6 +126,16 @@ Le paramètre `min_outstreams_per_resize_after_split` garantit que la division d
 
 Pour désactiver la division des nœuds `Resize`, définissez ce paramètre sur 0. Cela empêche la division des nœuds `Resize` lors de la génération du pipeline, ce qui leur permet de conserver leur structure d&#39;origine sans être divisés en nœuds plus petits.
 
+<div id="min_rows_ratio_for_hash_join_row_store">
+  ## min_rows_ratio_for_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Double" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "Nouveau paramètre permettant de contrôler le ratio minimal estimé entre le nombre de lignes produites par la jointure et le nombre de lignes du côté build afin d'autoriser la transformation de la charge utile du hash join en format orienté lignes. 0 signifie que la transformation est toujours autorisée."}]}]} />
+
+Ratio minimal estimé entre le nombre de lignes produites par la jointure et le nombre de lignes du côté build afin d&#39;autoriser la transformation de la charge utile du hash join en format orienté lignes. 0 signifie que la transformation est toujours autorisée.
+
 <div id="min_table_rows_to_use_projection_index">
   ## min_table_rows_to_use_projection_index
 </div>
