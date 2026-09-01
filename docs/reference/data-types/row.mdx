@@ -70,12 +70,20 @@ if and only if:
    including nullability and decimal scale. A wrapper mirrors its source
    columns exactly, so `combined Row(a String) MATERIALIZED tuple(a)` against
    `a UInt64` is not a wrapper.
+5. No named source column is `EPHEMERAL`. A `MATERIALIZED` column reading an
+   `EPHEMERAL` one is never recalculated by a mutation, so an
+   `ALTER TABLE ... UPDATE` of another source column would leave the stored
+   wrapper holding the pre-mutation values.
 
-Any column not meeting all four conditions remains a normal `Row` column
+Any column not meeting all five conditions remains a normal `Row` column
 without the I/O optimization (it still works as a regular typed column).
 
 Each source column may be wrapped by at most one `Row` wrapper. Declaring
 two wrappers that share a source column is an error.
+
+Columns of the sorting key are always read directly, even when a wrapper
+covers them: reading them through the wrapper would cost the read-in-order
+optimization, which is worth more than the saved file open.
 
 ## Settings {#settings}
 

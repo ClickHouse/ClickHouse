@@ -54,6 +54,13 @@ std::optional<RowWrapperInfo> tryDescribeRowWrapper(const ColumnDescription & co
         if (!source || !source->type->equals(*field_types[i]))
             return std::nullopt;
 
+        /// A `MATERIALIZED` column reading an `EPHEMERAL` one is deliberately never recomputed by a
+        /// mutation (see `MutationsInterpreter`), so an `ALTER ... UPDATE` of another source column
+        /// would leave the stored wrapper holding the pre-mutation values while the source columns
+        /// hold the new ones. Such a `Row` cannot stand in for its sources.
+        if (source->default_desc.kind == ColumnDefaultKind::Ephemeral)
+            return std::nullopt;
+
         wrapped.push_back(id->name());
     }
 
