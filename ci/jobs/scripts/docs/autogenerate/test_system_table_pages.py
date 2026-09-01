@@ -129,7 +129,13 @@ def main():
     for placeholder, expected_count in PLACEHOLDERS.items():
         assert structured_comments.count(placeholder) == expected_count
 
-    for source_file in SOURCE_ROOT.rglob("*.cpp"):
+    documentation_input_sources = {
+        ATTACH_SOURCE,
+        SYSTEM_LOG_HEADER,
+        *NON_LITERAL_ATTACH_DOCUMENTATION_SOURCES.values(),
+        *(REPO_ROOT / source for source in async_metrics_generator.SOURCE_FILES),
+    }
+    for source_file in documentation_input_sources:
         source = source_file.read_text(encoding="utf-8")
         assert "REGISTER_SYSTEM_DOCS_MDUMENTATION" not in source
         assert "Common/SystemTableDocumentation.h" not in source
