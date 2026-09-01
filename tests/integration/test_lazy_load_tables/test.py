@@ -114,6 +114,39 @@ def test_deferred_engines_outside_the_mergetree_family(started_cluster):
     node.query(f"DROP DATABASE {DB} SYNC")
 
 
+def test_convert_to_replicated_finishes(started_cluster):
+    """The `convert_to_replicated` flag is finalized by the startup job on the real storage, so a
+    table that still carries it is loaded eagerly."""
+    node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
+    node.query(f"CREATE DATABASE {DB} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        f"""
+        CREATE TABLE {DB}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
+        INSERT INTO {DB}.t SELECT number FROM numbers(10);
+        """
+    )
+    data_path = node.query(
+        f"SELECT data_paths[1] FROM system.tables WHERE database = '{DB}' AND name = 't'"
+    ).strip()
+    node.exec_in_container(
+        ["bash", "-c", f"touch {data_path}convert_to_replicated"], user="root"
+    )
+
+    node.query(RELOAD)
+    assert node.query(
+        f"SELECT engine FROM system.tables WHERE database = '{DB}' AND name = 't'"
+    ).strip() == "ReplicatedMergeTree"
+    assert loaded("t") == "1", "a pending conversion has to be finalized at startup"
+
+    # The conversion is finished only if the metadata is in ZooKeeper: otherwise the table is read-only.
+    node.query(f"INSERT INTO {DB}.t SELECT number + 100 FROM numbers(10)")
+    assert int(node.query(f"SELECT count() FROM {DB}.t")) == 20
+    assert "convert_to_replicated" not in node.exec_in_container(
+        ["bash", "-c", f"ls {data_path}"], user="root"
+    )
+    node.query(f"DROP DATABASE {DB} SYNC")
+
+
 def test_engines_that_work_in_the_background_stay_eager(started_cluster):
     """Deferring an engine that works in the background, like a message queue, would cancel that
     work rather than delay it, so opting in is per engine."""
@@ -138,7 +171,8 @@ def test_engines_that_work_in_the_background_stay_eager(started_cluster):
 
 
 def test_engines_that_hold_no_state_stay_eager(engine):
-    """An engine with nothing to load, and one that works in the background, is loaded at startup."""
+    """An engine with nothing to load, and one that works in the background, is loaded at startup. The
+    access checks on an `Alias` identify it by its storage type, so it must never be behind a proxy."""
     node.query(
         f"""
         CREATE TABLE {DB}.src (id UInt64) ENGINE = {engine} ORDER BY id;
@@ -149,6 +183,7 @@ def test_engines_that_hold_no_state_stay_eager(engine):
         CREATE TABLE {DB}.nul (id UInt64) ENGINE = Null;
         CREATE TABLE {DB}.km (k String, v String) ENGINE = KeeperMap('/lazy_km') PRIMARY KEY k;
         CREATE TABLE {DB}.mrg (id UInt64) ENGINE = Merge('{DB}', 'src');
+        CREATE TABLE {DB}.al ENGINE = Alias(src);
         CREATE TABLE {DB}.buf (id UInt64) ENGINE = Buffer('{DB}', 'src', 1, 100, 100, 10, 100, 10000, 1000000);
         CREATE TABLE {DB}.dist (id UInt64) ENGINE = Distributed('single_shard_cluster', '{DB}', 'src');
         {RELOAD}
@@ -666,6 +701,16 @@ def test_replica_commands_on_deferred_table(engine):
     node.query(RELOAD)
     node.query(f"SYSTEM RESTART REPLICA {DB}.t")
     assert int(node.query(f"SELECT count() FROM system.replication_queue WHERE database = '{DB}'")) == 0
+
+    # Dropping a replica by its path must find the table that owns it even before it is loaded.
+    zk_path, replica = node.query(
+        f"SELECT zookeeper_path, replica_name FROM system.replicas "
+        f"WHERE database = '{DB}' AND table = 't'"
+    ).split()
+    node.query(RELOAD)
+    assert "TABLE_WAS_NOT_DROPPED" in node.query_and_get_error(
+        f"SYSTEM DROP REPLICA '{replica}' FROM ZKPATH '{zk_path}'"
+    )
 
     # The replica-divergence check is skipped for anything that is not named `Replicated*`.
     node.query(RELOAD)

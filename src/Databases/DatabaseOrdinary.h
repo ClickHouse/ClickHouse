@@ -1,5 +1,8 @@
 #pragma once
 
+#include <mutex>
+#include <unordered_set>
+
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 
@@ -119,6 +122,10 @@ private:
         const QualifiedTableName & name,
         const ASTPtr & ast,
         LoadingStrictnessLevel mode);
+
+    /// Tables whose `convert_to_replicated` flag the startup job still has to finalize.
+    mutable std::mutex converting_to_replicated_mutex;
+    std::unordered_set<String> converting_to_replicated;
 
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);

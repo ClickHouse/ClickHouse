@@ -1727,8 +1727,14 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
+                /// Only a replicated engine owns a path in Keeper, and a deferred table answers that
+                /// without being loaded, so nothing else here is materialized by the guard.
+                auto table = iterator->table();
+                if (!table || !table->supportsReplication())
+                    continue;
+
                 if (auto * storage_replicated
-                    = castStorage<StorageReplicatedMergeTree>(iterator->table(), StorageResolution::Peek).get())
+                    = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get())
                 {
                     /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
                     /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip

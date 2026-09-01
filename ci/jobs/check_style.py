@@ -545,6 +545,9 @@ DEFERRABLE_STORAGE_CLASSES = (
     "StorageJoin",
     "StorageEmbeddedRocksDB",
     "IKeyValueEntity",
+    "IStorageURLBase",
+    "IBackgroundOperation",
+    "StorageWithCommonVirtualColumns",
     "StorageLog",
     "StorageStripeLog",
     "StorageURL",
@@ -598,7 +601,11 @@ def check_storage_casts(files) -> str:
     types = "|".join(DEFERRABLE_STORAGE_CLASSES)
     cast_head = re.compile(
         r"\b(?P<cast>dynamic_cast|typeid_cast|dynamic_pointer_cast|static_pointer_cast)\s*<\s*"
-        r"(?:const\s+)?(?:" + types + r")\s*\*?\s*>\s*\("
+        r"(?:const\s+)?(?:" + types + r")\s*[*&]?\s*>\s*\("
+    )
+    # `IStorage::as<T>()` is a `typeid_cast` on the receiver, so the operand is what precedes it.
+    as_cast = re.compile(
+        r"(?P<operand>[\w.\[\]()]+(?:->|\.))as\s*<\s*(?:const\s+)?(?:" + types + r")\s*>\s*\(\s*\)"
     )
     resolvers = ("castStorage", "resolveStorageProxy", "resolveStorageProxyLoading")
 
@@ -615,8 +622,10 @@ def check_storage_casts(files) -> str:
         if not re.search("|".join(DEFERRABLE_STORAGE_CLASSES), text):
             continue
 
-        for match in cast_head.finditer(text):
-            operand = _cast_operand(text, match.end() - 1)
+        found = [(m, _cast_operand(text, m.end() - 1), m.group("cast")) for m in cast_head.finditer(text)]
+        found += [(m, m.group("operand").removesuffix("->").removesuffix("."), "as") for m in as_cast.finditer(text)]
+
+        for match, operand, cast in found:
             if not operand:
                 continue
             if any(r in operand for r in resolvers) or _NOT_A_CATALOG_POINTER.match(operand):
@@ -627,7 +636,7 @@ def check_storage_casts(files) -> str:
             if any("NOLINT(storage-cast)" in lines[i] for i in (line - 1, line - 2) if i >= 0):
                 continue
             violations.append(
-                f"{path}:{line}: {match.group('cast')} to a deferrable storage engine on "
+                f"{path}:{line}: {cast} to a deferrable storage engine on "
                 f"`{operand[:60]}`. A table in a database with `lazy_load_tables` is reached through "
                 f"StorageTableProxy, so this cast fails for the whole life of the table and whatever "
                 f"it guards is silently skipped. Use castStorage<T>(ptr, StorageResolution::Load) if "

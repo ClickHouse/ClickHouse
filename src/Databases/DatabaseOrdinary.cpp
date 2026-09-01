@@ -212,7 +212,15 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     auto & create_query = ast->as<ASTCreateQuery &>();
 
-    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree") || create_query.storage->engine->name.starts_with("Replicated") || create_query.storage->engine->name.starts_with("Shared"))
+    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree"))
+        return;
+
+    const bool already_replicated = create_query.storage->engine->name.starts_with("Replicated")
+        || create_query.storage->engine->name.starts_with("Shared");
+
+    /// A run that rewrote the metadata but did not finalize the conversion leaves the flag behind. Only
+    /// a deferring database has to look for it here, since the startup job below sees the real storage.
+    if (already_replicated && !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
         return;
 
     /// Get table's storage policy
@@ -222,11 +230,19 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
+    auto convert_to_replicated_flag_path = fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME;
 
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
+        return;
+
+    {
+        std::lock_guard lock(converting_to_replicated_mutex);
+        converting_to_replicated.insert(qualified_name.table);
+    }
+
+    if (already_replicated)
         return;
 
     if (getUUID() == UUIDHelpers::Nil)
@@ -452,6 +468,13 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
     if (!query.columns_list || !query.columns_list->columns)
         return false;
 
+    /// The startup job finalizes a pending conversion to replicated, which needs the real storage.
+    {
+        std::lock_guard lock(converting_to_replicated_mutex);
+        if (converting_to_replicated.contains(query.getTable()))
+            return false;
+    }
+
     return true;
 }
 
@@ -528,7 +551,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    auto rmt = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Peek);
     if (!rmt)
         return;
 

@@ -118,6 +118,7 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
         String database = (*col_database_to_filter)[i].safeGet<String>();
         String table = (*col_table_to_filter)[i].safeGet<String>();
 
+        /// NOLINT(storage-cast): `replicated_tables` is filled with already resolved storages.
         auto moves = dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getPartMovesBetweenShardsEntries();
 
         for (auto & entry : moves)
