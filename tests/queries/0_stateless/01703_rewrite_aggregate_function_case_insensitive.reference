@@ -1,6 +1,4 @@
 22.5
-SELECT sum(divide(number, 2))
-FROM numbers(10)
+SELECT sum(divide(number, 2))\nFROM numbers(10)
 22.5
-SELECT Sum(divide(number, 2))
-FROM numbers(10)
+SELECT Sum(divide(number, 2))\nFROM numbers(10)

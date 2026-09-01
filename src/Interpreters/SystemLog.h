@@ -23,6 +23,7 @@
     M(TextLog,               text_log,             "Contains logging entries which are normally written to a log file or to stdout.") \
     M(MetricLog,             metric_log,           "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.") \
     M(TransposedMetricLog,   transposed_metric_log,"Contains history of metrics values from tables system.metrics and system.events. Periodically flushed to disk. Transposed form of system.metric_log.") \
+    M(BucketedMetricLog,     bucketed_metric_log,  "Contains history of metrics values from tables system.metrics and system.events. Periodically flushed to disk. Single Map column form of system.metric_log with bucketed serialization.") \
     M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
     M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
     M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTree tables backed by a remote filesystem.") \

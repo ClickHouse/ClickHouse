@@ -51,6 +51,25 @@ Possible values:
 
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
 
+## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."}]}]}/>
+
+When enabled and the `FROM` clause of a query contains two or more `JOIN`s (comma-separated tables count; `ARRAY JOIN` does not), the analyzer names result columns the way the old analyzer's multiple-joins rewrite did:
+- columns produced by expanding `*`, `<table>.*` or `COLUMNS('<regexp>')` get names of the form `<alias-or-table>.<column>` (the qualifier is the table expression's alias if it has one, otherwise the table name without the database, otherwise the CTE name; columns of a joined subquery without an alias are left unqualified). Two kinds of column keep their bare name because they belong to the join rather than to a single table expression: a column produced by `ARRAY JOIN`, and a key merged by `JOIN ... USING`. Outer references such as `SELECT ll.arr` or `SELECT ll.k` therefore do not resolve in those two shapes;
+- the identifier-list form `COLUMNS(col1, col2)` is not a matcher expansion: each column keeps the name exactly as its identifier was written, so `COLUMNS(x)` produces `x` and `COLUMNS(a.x)` produces `a.x`;
+- an unaliased column reference in the `SELECT` list keeps its name exactly as written (e.g. `SELECT a.x` produces a column named `a.x` even when `x` is unambiguous).
+
+This makes outer queries that reference such columns by their qualified names work, for example:
+
+```sql
+SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
+```
+
+Takes effect only when the analyzer is enabled (`enable_analyzer = 1`).
+
 ## analyzer_compatibility_prefer_alias_over_subcolumn {#analyzer_compatibility_prefer_alias_over_subcolumn}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

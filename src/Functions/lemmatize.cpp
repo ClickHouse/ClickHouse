@@ -133,14 +133,17 @@ public:
 REGISTER_FUNCTION(Lemmatize)
 {
     FunctionDocumentation::Description description = R"(
-Performs lemmatization on a given word.
-This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
-For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/sql-reference/statements/create/dictionary/sources/local-file).
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 :::warning
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
+
+Performs lemmatization on a given word.
+This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
+For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/reference/statements/create/dictionary/sources/local-file).
 )";
     FunctionDocumentation::Syntax syntax = "lemmatize(lang, word)";
     FunctionDocumentation::Arguments arguments = {
@@ -149,7 +152,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the lemmatized form of the word", {"String"}};
     FunctionDocumentation::Examples examples = {
-        {"English lemmatization", "SELECT lemmatize('en', 'wolves')", "wolf"}
+        {"English lemmatization", "SET allow_experimental_nlp_functions = 1;\nSELECT lemmatize('en', 'wolves')", "wolf"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;

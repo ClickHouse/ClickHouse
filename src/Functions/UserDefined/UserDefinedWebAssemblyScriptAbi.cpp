@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
@@ -80,7 +81,7 @@ size_t convertUTF8ToUTF16LE(std::string_view utf8, uint8_t * out)
                 | uint32_t(data[i + 2] & 0x3F);
             /// Reject overlong (cp < 0x800, should have used a shorter form) and surrogates
             /// (U+D800..U+DFFF are forbidden as Unicode scalars per RFC 3629 §3).
-            if (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF))
+            if (cp < 0x800 || UTF8::isSurrogateCodePoint(cp))
                 cp = 0xFFFD;
             i += 3;
         }

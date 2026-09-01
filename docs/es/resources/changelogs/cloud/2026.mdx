@@ -2,29 +2,54 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Registro de cambios de Cloud - 2026'
-description: 'Registro de cambios de ClickHouse Cloud que describe las novedades de cada versión de ClickHouse Cloud'
+description: 'Registro de cambios de ClickHouse Cloud con descripciones de las novedades de cada versión de ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['registro de cambios', 'notas de la versión', 'actualizaciones', 'nuevas características', 'cambios en Cloud']
+keywords: ['changelog', 'notas de versión', 'actualizaciones', 'nuevas funcionalidades', 'cambios de Cloud']
+rss: true
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-Además de este registro de cambios de ClickHouse Cloud, consulta la página de [Cloud Compatibility](/es/products/cloud/guides/cloud-compatibility).
+Además de este registro de cambios de Cloud, consulte la página de [compatibilidad de Cloud](/es/products/cloud/guides/cloud-compatibility).
+
+<Update label="17 de agosto de 2026">
+  Las actualizaciones de esta semana amplían el alcance de la plataforma y mejoran la visibilidad operativa. Managed Postgres ya está disponible en GCP para determinados socios de diseño, los recursos de ClickStack se pueden administrar mediante el proveedor oficial de Terraform y las nuevas notificaciones de facturación avisan a los clientes con antelación antes de que los créditos caduquen o se interrumpa el servicio. También hemos mejorado el tracing de ClickHouse Agents y la experiencia de inicio de sesión con SAML.
+
+  ### Managed Postgres ya está disponible en GCP
+
+  [ClickHouse Cloud Managed Postgres](/es/products/managed-postgres/overview) ya está disponible en GCP para determinados socios de diseño en todas las regiones públicas de GCP, con `us-west1` como primera región privada. Esto amplía Managed Postgres a los clientes que desarrollan en GCP, con una vista previa privada prevista para 2026-08.
+
+  ### Administre los recursos de ClickStack con Terraform
+
+  La compatibilidad con ClickStack ya está disponible en beta a través de la versión 3.25.0 del proveedor oficial de Terraform [`ClickHouse/clickhouse`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha). Los equipos pueden crear, actualizar, importar y eliminar dashboards, alertas, fuentes, búsquedas guardadas, conexiones y webhooks mediante el flujo de trabajo estándar de `terraform plan` y `terraform apply`. La integración admite tanto Managed ClickStack como implementaciones autohospedadas.
+
+  ### Nuevas notificaciones de facturación para créditos y pagos
+
+  Las notificaciones de facturación ahora se administran mediante el Centro de notificaciones de ClickHouse Cloud y se envían a través de la consola, el correo electrónico y Slack. Los clientes reciben avisos anticipados cuando los créditos prepagados o de prueba están a punto de caducar o agotarse, así como notificaciones cuando se añaden créditos, cambian los métodos de pago o una cuenta entra en un período de gracia por falta de pago. Esto proporciona más tiempo para renovar, añadir créditos o resolver problemas de pago antes de que se interrumpa el servicio.
+
+  ### Abra las trazas de sesiones de Langfuse desde ClickHouse Agents
+
+  Los administradores de la organización ahora pueden abrir la sesión de Langfuse correspondiente directamente desde un chat de [ClickHouse Agents](/es/products/cloud/features/ai-ml/agents/index) e inspeccionar las trazas de toda la conversación. Esto facilita la investigación del comportamiento de los agentes y la depuración de ejecuciones de varios pasos. Esta mejora está disponible en Beta pública para los chats creados recientemente.
+
+  ### Las redirecciones SAML ayudan a evitar cuentas duplicadas
+
+  Cuando un usuario intenta iniciar sesión con Google o Microsoft mientras SAML está configurado para su organización, ClickHouse Cloud ahora lo redirige al flujo de inicio de sesión SAML adecuado. Esto ayuda a evitar que los usuarios creen accidentalmente una organización independiente cuando pretendían acceder a una cuenta existente.
+</Update>
 
 <Update label="13 de julio de 2026">
-  Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de object storage.
+  Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de almacenamiento de objetos.
 
-  ### Enrutamiento sticky de réplicas a través de HTTPS (private preview)
+  ### Enrutamiento sticky de réplicas a través de HTTPS (vista previa privada)
 
-  Ahora puedes fijar las queries a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre queries los objetos con alcance de session, como las tablas temporales, y ayuda a que las queries repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en private preview para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/manage/replica-aware-routing).
+  Ahora puedes fijar las consultas a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre consultas los objetos con alcance de session, como las tablas temporales, y ayuda a que las consultas repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en vista previa privada para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/es/products/cloud/features/infrastructure/replica-aware-routing).
 
   ### Fechas de inicio personalizadas para el período de facturación
 
   Ahora puedes solicitar un cambio en la fecha de facturación de tu organización, es decir, el día del mes en que comienza cada período de facturación, por ejemplo, para alinear las facturas con el mes natural. Abre un ticket de soporte con la fecha solicitada. Las fechas de facturación se aplican en UTC, y cada factura cubre el uso desde la fecha de facturación hasta la misma fecha del mes siguiente (sin incluirla).
 
-  ### Omitir la carga inicial para los ClickPipes de object storage
+  ### Omitir la carga inicial para los ClickPipes de almacenamiento de objetos
 
-  Los [ClickPipes](/es/integrations/clickpipes) de object storage (S3, GCS y Azure Blob Storage) ahora ofrecen dos formas de controlar la carga inicial al crear un pipe: **Start after**, que omite los archivos hasta una clave de object determinada, incluyéndola, y **Skip initial load**, que omite por completo los archivos preexistentes y procesa solo las notificaciones de nuevos object. Anteriormente, un pipe nuevo siempre hacía backfill de todos los archivos de la ruta. Las dos opciones son mutuamente excluyentes y permanentes para un pipe determinado: un backfill omitido no puede activarse más adelante. Disponible en la UI, en la API de Cloud y en Terraform v3.18.0 y posteriores.
+  Los [ClickPipes](/es/integrations/clickpipes/home) de almacenamiento de objetos (S3, GCS y Azure Blob Storage) ahora ofrecen dos formas de controlar la carga inicial al crear un pipe: **Start after**, que omite los archivos hasta una clave de object determinada, incluyéndola, y **Skip initial load**, que omite por completo los archivos preexistentes y procesa solo las notificaciones de nuevos object. Anteriormente, un pipe nuevo siempre hacía backfill de todos los archivos de la ruta. Las dos opciones son mutuamente excluyentes y permanentes para un pipe determinado: un backfill omitido no puede activarse más adelante. Disponible en la UI, en la API de Cloud y en Terraform v3.18.0 y posteriores.
 </Update>
 
 <Update label="30 de junio de 2026">
@@ -64,13 +89,13 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 
   ### ClickPipes ahora se ejecuta de forma nativa en GCP con Private Service Connect
 
-  La infraestructura de ClickPipes ahora se ejecuta en la misma región de GCP que tu servicio de ClickHouse Cloud para todos los nuevos servicios de GCP creados después del 26 de mayo, incluida la compatibilidad con Private Service Connect (PSC). Esto elimina los costos de salida entre nubes, reduce la latencia, mantiene los datos de forma local y te permite conectarte a fuentes de GCP a través de la red privada nativa de GCP en lugar de soluciones alternativas como el túnel SSH. Los servicios existentes pueden migrarse con la ayuda de nuestro equipo.
+  La infraestructura de ClickPipes ahora se ejecuta en la misma región de GCP que su servicio de ClickHouse Cloud para todos los nuevos servicios de GCP creados después del 26 de mayo, incluida la compatibilidad con Private Service Connect (PSC). Esto elimina los costos de salida entre nubes, reduce la latencia, mantiene los datos localmente y le permite conectarse a fuentes de GCP a través de la red privada nativa de GCP en lugar de soluciones alternativas como el túnel SSH. Los servicios existentes se pueden migrar con la ayuda de nuestro equipo.
 
-  Para más información, consulte la [lista de IPs estáticas de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips).
+  Para más información, consulte la [lista de IPs estáticas de ClickPipes](/es/integrations/clickpipes/networking/static-ips).
 
   ### ClickPipes para GCP Pub/Sub (versión preliminar privada)
 
-  ClickPipes ahora puede transmitir datos desde topics de GCP Pub/Sub directamente a ClickHouse Cloud, lo que ofrece a los equipos nativos de GCP una ruta directa para la analítica sobre datos provenientes de Cloud Logging, Cloud Monitoring, GKE y más. Disponible a través de la UI de ClickPipes, OpenAPI y Terraform; se requiere [registro previo](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview) durante la private preview.
+  ClickPipes ahora puede transmitir datos desde topics de GCP Pub/Sub directamente a ClickHouse Cloud, lo que ofrece a los equipos nativos de GCP una ruta directa para el análisis de datos procedentes de Cloud Logging, Cloud Monitoring, GKE y más. Disponible a través de la interfaz de ClickPipes, OpenAPI y Terraform; se requiere [registro](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview) durante la vista previa privada.
 
   Consulte la [documentación de ClickPipes para GCP Pub/Sub](/es/integrations/clickpipes/pubsub/overview) para obtener más información sobre la configuración.
 
@@ -80,9 +105,9 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 
   Obtenga más información en la [documentación de ClickHouse Agents](/es/products/cloud/features/ai-ml/agents/index).
 
-  ### ClickHouse Postgres (beta pública)
+  ### ClickHouse Managed Postgres (beta pública)
 
-  Postgres totalmente gestionado en almacenamiento NVMe local ya está en Public Beta, con un rendimiento superior a 5 veces más TPS que AWS RDS, y unifica OLTP y OLAP en un único stack gestionado. Un pipeline CDC nativo transmite datos directamente a ClickHouse sin infraestructura intermedia, y la extensión open-source `pg_clickhouse` permite consultar tablas de ClickHouse desde sesiones estándar de Postgres.
+  ClickHouse Managed Postgres, Postgres totalmente gestionado en almacenamiento NVMe local, ya está en versión beta pública, ofreciendo más de 5 veces más TPS que AWS RDS y unificando OLTP y OLAP en un único stack gestionado. Un pipeline CDC nativo transmite datos directamente a ClickHouse sin infraestructura intermedia, y la extensión de código abierto `pg_clickhouse` le permite consultar tablas de ClickHouse desde sesiones estándar de Postgres.
 
   Más información en [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements).
 
@@ -101,7 +126,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
   * [Documentación de AI Notebooks de ClickStack](/es/clickstack/notebooks)
   * [AI Notebooks en beta (blog)](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#ai-notebooks-in-beta)
 
-  ### Autoescalado horizontal (private preview)
+  ### Autoescalado horizontal (vista previa privada)
 
   El escalado automático horizontal ajusta automáticamente el número de réplicas en un clúster de ClickHouse Cloud: escala hacia afuera de forma agresiva cuando la demanda aumenta y reduce gradualmente la capacidad a medida que la carga disminuye, de modo que los equipos con workloads variables y de alta concurrencia ya no necesitan ajustar manualmente el tamaño de los clústeres. En private preview, el escalado se basa en el número de consultas concurrentes; las señales de CPU y memoria están previstas para la public beta. Disponible para clientes de los niveles Enterprise y Scale en ClickHouse 26.2+.
 
@@ -109,7 +134,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 
   ### ClickStack MCP Server (código abierto)
 
-  El nuevo MCP Server de ClickStack de código abierto proporciona a agentes de IA externos herramientas estructuradas de investigación de observabilidad construidas sobre ClickStack y ClickHouse. Expone primitivas semánticas para logs, métricas y trazas — con soporte para análisis de patrones de logs, investigación de valores atípicos en trazas, análisis de correlación y depuración entre señales — y puede persistir dashboards, búsquedas y alertas, al tiempo que conserva el acceso SQL nativo para una exploración más profunda. Conecta agentes como Claude Code, Cursor, Codex o frameworks personalizados.
+  El nuevo servidor MCP de ClickStack de código abierto proporciona a agentes de IA externos herramientas estructuradas de investigación de observabilidad construidas sobre ClickStack y ClickHouse. Expone primitivas semánticas para logs, métricas y trazas —con soporte para análisis de patrones de logs, investigación de valores atípicos en trazas, análisis de correlación y depuración entre señales— y puede persistir dashboards, búsquedas y alertas, al tiempo que conserva el acceso SQL nativo para una exploración más profunda. Conecta agentes como Claude Code, Cursor, Codex o frameworks personalizados.
 
   Para más detalles, consulte la [documentación del MCP Server de ClickStack](/es/clickstack/mcp) y la [entrada de blog sobre el MCP Server de observabilidad + AI Notebooks](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#clickstack-mcp-server).
 
@@ -119,7 +144,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 
   {/* vale on */}
 
-  Ahora puedes escribir una función en Python, comprimirla en un archivo zip, subirla a tu clúster y llamarla desde SQL como cualquier función integrada. ClickHouse ejecuta un grupo de procesos en sandbox de larga duración y canaliza filas a través de ellos a la velocidad de consulta, de modo que puedes invocar tu función en cualquier lugar donde funcione SQL: consultas ad hoc, joins, incluso vistas materializadas que se activan en cada insert. El código de tu modelo vive justo junto a los datos, y desplegarlo es tan sencillo como una pantalla de carga en la consola de Cloud.
+  Ahora puedes escribir una función en Python, comprimirla en un archivo zip, subirla a tu clúster y llamarla desde SQL como cualquier función integrada. ClickHouse ejecuta un grupo de procesos sandbox de larga duración y canaliza filas a través de ellos a la velocidad de la consulta, por lo que puedes invocar tu función en cualquier lugar donde funcione SQL: consultas ad-hoc, joins, incluso vistas materializadas que se activan en cada inserción. El código de tu modelo vive justo junto a los datos, y desplegarlo es tan sencillo como una pantalla de carga en la consola de Cloud.
 
   Para mostrar lo que puede hacer, creamos una [Demo](https://github.com/ClickHouse/stock-anomaly-udf). A partir de nuestros datos de operaciones bursátiles en tiempo real en StockHouse, entrenamos un pequeño autoencoder de PyTorch para puntuar los ticks de operaciones de renta variable en busca de anomalías a medida que se ingestan. Se trata de un UDF y una sentencia DDL; todo lo demás es SQL estándar. También incluimos una vista previa de los UDFs con acceso a red (beta privada), que permiten a los UDFs realizar llamadas HTTPS salientes. Los usamos para obtener noticias y documentos de la SEC, y hacer que Claude clasifique por qué una operación determinada parece anómala.
 
@@ -177,7 +202,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 <Update label="8 de mayo de 2026">
   ### Query insights de Postgres (vista previa privada)
 
-  Ahora está disponible una nueva pestaña de **Query insights** en [ClickHouse Cloud Managed Postgres](/es/products/managed-postgres/overview) (vista previa privada). Clasifica cada patrón de consulta por impacto y muestra por qué cada uno es lento en tres vistas:
+  Ahora está disponible una nueva pestaña de **Query insights** en [ClickHouse Managed Postgres](/es/products/managed-postgres/overview) (vista previa privada). Clasifica cada patrón de consulta por impacto y muestra por qué cada uno es lento en tres vistas:
 
   * **Overview** — estado de la base de datos en una sola pantalla
   * **Patterns** — tabla ordenable por tiempo de ejecución, CPU, errores y P95
@@ -221,7 +246,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 
   ### Paridad regional de ClickPipes en AWS
 
-  ClickPipes ya está disponible en todas las regiones de AWS (públicas y privadas) compatibles con ClickHouse Cloud, ampliándose de 6 regiones a 18. Esto incluye regiones estratégicas como Singapore (ap-southeast-1), Seoul (ap-northeast-2) y Tokyo (ap-northeast-1). Las nuevas regiones están disponibles para servicios creados después del 14 de abril de 2026. Consulta la [documentación](/es/integrations/clickpipes/home#list-of-static-ips) para obtener más detalles.
+  ClickPipes ya está disponible en todas las regiones de AWS (públicas y privadas) compatibles con ClickHouse Cloud, ampliándose de 6 regiones a 18. Esto incluye regiones estratégicas como Singapore (ap-southeast-1), Seoul (ap-northeast-2) y Tokyo (ap-northeast-1). Las nuevas regiones están disponibles para servicios creados después del 14 de abril de 2026. Consulta la [documentación](/es/integrations/clickpipes/networking/static-ips) para obtener más detalles.
 </Update>
 
 <Update label="10 de abril de 2026">
@@ -246,8 +271,8 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 
 <Update label="3 de abril de 2026">
   * **Escalado automático más inteligente con recomendador de dos ventanas:** ClickHouse Cloud ahora utiliza un enfoque de doble ventana retrospectiva para el escalado automático vertical, sustituyendo la anterior ventana única de 30 horas por una combinación de una &quot;ventana pequeña&quot; de 3 horas y una &quot;ventana grande&quot; de 30 horas. Esto reduce la latencia de scale-down de hasta 30 horas a tan solo 3 horas, lo que disminuye los costos de infraestructura para cargas de trabajo variables sin sacrificar la capacidad de respuesta del scale-up. Lee la [entrada del blog](https://clickhouse.com/blog/smarter-auto-scaling) para obtener más detalles.
-  * **Monitoring en Cloud Console:** Los nuevos paneles de Overview e infraestructura ofrecen una mejor visibilidad del comportamiento de los servidores de ClickHouse. Los usuarios Admin ahora reciben notificaciones por correo electrónico sobre problemas comunes al usar ClickHouse Cloud. Lee la [entrada del blog](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities) para obtener más detalles.
-  * **Compute-compute separation (warehouses):** La compatibilidad con auto-idling en los primary services (también denominados parent services) ya se está implementando como vista previa pública. Si la función no está habilitada para tu organización, [contacta con soporte](https://clickhouse.com/support/program) para obtener acceso. Una vez que la función pase a disponibilidad general, el comportamiento predeterminado será que los primary services existentes tendrán la opción de activar el auto-idling y los nuevos primary services lo tendrán habilitado de forma predeterminada.
+  * **Monitoring en Cloud Console:** Los nuevos dashboards de Overview e infraestructura ofrecen una mejor visibilidad del comportamiento de los servidores de ClickHouse. Los usuarios Admin ahora reciben notificaciones por correo electrónico sobre problemas comunes al usar ClickHouse Cloud. Lee la [entrada del blog](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities) para obtener más detalles.
+  * **Compute-compute separation (warehouses):** La compatibilidad con auto-idling en los servicios principales (también denominados parent services) ya se está implementando como vista previa pública. Si la función no está habilitada para tu organización, [contacta con soporte](https://clickhouse.com/support/program) para obtener acceso. Una vez que la función pase a disponibilidad general, el comportamiento predeterminado será que los servicios principales existentes tendrán la opción de activar el auto-idling y los nuevos servicios principales lo tendrán habilitado de forma predeterminada.
   * **Integración de catálogo de datos:** ClickHouse Cloud ahora admite Iceberg REST Catalog y Microsoft OneLake como integraciones de catálogo de lago de datos en la UI de fuentes de datos. Una vez conectado, el catálogo aparece como una base de datos, lo que te permite leer tablas Iceberg directamente, sin duplicar datos.
   * **Bring Your Own Cloud (BYOC) en GCP ya está generalmente disponible:** ClickHouse BYOC ahora es GA en Google Cloud, lo que te permite implementar servicios de ClickHouse en tu propio proyecto de GCP y cumplir requisitos estrictos de residencia de datos. Lee la [documentación](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview) y la [entrada del blog](https://clickhouse.com/blog/byoc-gcp-ga) para obtener más detalles. Puedes [contactarnos](https://clickhouse.com/cloud/bring-your-own-cloud) para solicitar acceso.
   * **Notificaciones de facturación para créditos prepagados y cambios en el método de pago:** ClickHouse Cloud ahora envía notificaciones cuando se añaden créditos prepagados a tu organización tras la formalización de un contrato, o cuando se actualiza un método de pago (tarjeta de crédito o suscripción del marketplace). Las notificaciones están habilitadas de forma predeterminada para la UI y el correo electrónico, y también se pueden configurar para enviarse a Slack.
@@ -260,7 +285,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 </Update>
 
 <Update label="20 de febrero de 2026">
-  * **ClickPipes:** Los endpoints privados inversos en estado inactivo ahora se eliminarán automáticamente después de un período de gracia definido. Esto garantiza que los endpoints no utilizados o mal configurados no permanezcan indefinidamente en el backend. Consulta la [documentación](/es/integrations/clickpipes/aws-privatelink#automatic-cleanup) sobre la limpieza automática para obtener más detalles.
+  * **ClickPipes:** Los endpoints privados inversos en estado inactivo ahora se eliminarán automáticamente después de un período de gracia definido. Esto garantiza que los endpoints no utilizados o mal configurados no permanezcan indefinidamente en el backend. Consulta la [documentación](/es/integrations/clickpipes/networking/aws-privatelink#automatic-cleanup) sobre la limpieza automática para obtener más detalles.
 </Update>
 
 <Update label="13 de febrero de 2026">
@@ -275,7 +300,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 </Update>
 
 <Update label="23 de enero de 2026">
-  * ClickPipes ya está disponible en AWS `eu-west-1`. Para los nuevos servicios de ClickHouse Cloud creados a partir del 20 de enero en esa región, se utilizará la región correspondiente para ClickPipes. Para los servicios más antiguos, ClickPipes usa de forma predeterminada `eu-central-1`. Consulte la [documentación](/es/integrations/clickpipes/home#list-of-static-ips) para obtener más detalles.
+  * ClickPipes ya está disponible en AWS `eu-west-1`. Para los nuevos servicios de ClickHouse Cloud creados a partir del 20 de enero en esa región, se utilizará la región correspondiente para ClickPipes. Para los servicios más antiguos, ClickPipes usa de forma predeterminada `eu-central-1`. Consulte la [documentación](/es/integrations/clickpipes/networking/static-ips) para obtener más detalles.
 </Update>
 
 <Update label="16 de enero de 2026">

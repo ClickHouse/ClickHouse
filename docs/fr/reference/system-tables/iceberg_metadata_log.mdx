@@ -27,7 +27,7 @@ Cette table consigne chaque fichier de métadonnées et chaque entrée lus à pa
   ### Contrôler la verbosité des logs
 </div>
 
-Vous pouvez contrôler quels événements de métadonnées sont journalisés à l’aide du paramètre [`iceberg_metadata_log_level`](/fr/reference/settings/session-settings#iceberg_metadata_log_level).
+Vous pouvez contrôler quels événements de métadonnées sont journalisés à l’aide du paramètre [`iceberg_metadata_log_level`](/fr/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level).
 
 Pour journaliser toutes les métadonnées utilisées dans la requête en cours :
 
@@ -53,7 +53,7 @@ FROM system.iceberg_metadata_log
 WHERE query_id = '{previous_query_id}';
 ```
 
-Consultez la description du paramètre [`iceberg_metadata_log_level`](/fr/reference/settings/session-settings#iceberg_metadata_log_level) pour plus d&#39;informations.
+Consultez la description du paramètre [`iceberg_metadata_log_level`](/fr/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level) pour plus d&#39;informations.
 
 <div id="good-to-know">
   ### Bon à savoir

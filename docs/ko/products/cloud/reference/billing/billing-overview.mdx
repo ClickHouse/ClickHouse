@@ -17,7 +17,7 @@ ClickHouse Cloud는 컴퓨트, 스토리지, [데이터 전송](/ko/products/clo
 
 <Note>
   * 가격은 AWS us-east-1 기준 요금을 반영합니다.
-  * 해당 데이터 전송 및 ClickPipes 청구 요금은 [여기](/ko/products/cloud/reference/billing/network-data-transfer)에서 확인하세요.
+  * 해당 데이터 전송 요금은 [여기](/ko/products/cloud/reference/billing/network-data-transfer)에서 확인하세요.
 </Note>
 
 <div id="basic-from-6652-per-month">
@@ -276,7 +276,7 @@ WHERE name = <your table name>
 </div>
 
 ClickHouse 쿼리 로그에는 ClickHouse Cloud에서 워크로드를 실행하는 비용을 추정하는 데 활용할 수 있는 [주요 메트릭](/ko/reference/system-tables/query_log)이 기록됩니다.
-자가 관리형에서 ClickHouse Cloud로 마이그레이션하는 방법에 대한 자세한 내용은 [마이그레이션 문서](/ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)를 참조하시고, 추가 질문이 있으면 [ClickHouse 지원팀](https://console.clickhouse.cloud/support)에 문의하십시오.
+자가 관리형 ClickHouse에서 ClickHouse Cloud로 마이그레이션하려면 [`remoteSecure`](/ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) 또는 [`BACKUP` 및 `RESTORE`](/ko/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore)를 사용하십시오. 추가 질문이 있으면 [ClickHouse 지원팀](https://console.clickhouse.cloud/support)에 문의하십시오.
 
 <div id="what-billing-options-are-available-for-clickhouse-cloud">
   ### ClickHouse Cloud에서 사용할 수 있는 청구 옵션은 무엇입니까?
@@ -351,8 +351,7 @@ ClickHouse Cloud 콘솔에서 Organization &gt; Billing으로 이동하세요. R
   ### 체험 기간과 크레딧이 만료되기 전에 신용카드를 추가하고 업그레이드하면 요금이 청구되나요?
 </div>
 
-사용자가 30일 체험 기간이 끝나기 전에 체험에서 유료 플랜으로 전환하더라도 체험 크레딧이 남아 있다면,
-초기 30일 체험 기간 동안에는 남아 있는 체험 크레딧이 계속 먼저 차감되며, 그 이후에 신용카드로 요금이 청구됩니다.
+사용자가 체험 기간 동안 신용카드를 추가하면 체험 크레딧이 모두 소진되거나 만료되는 시점 중 먼저 도래하는 시점까지 체험 크레딧이 계속 차감됩니다. 결제 수단을 추가한 후에도 체험 크레딧은 30일 체험 기간이 끝나는 시점에 만료됩니다. 체험 크레딧이 모두 소진되거나 만료되면 등록된 신용카드로 요금이 청구됩니다. 체험 크레딧 만료일은 ClickHouse Cloud 콘솔의 청구 페이지에서 확인할 수 있습니다.
 
 <div id="how-can-i-keep-track-of-my-spending">
   ### 지출 내역은 어떻게 확인할 수 있습니까?
@@ -492,4 +491,4 @@ ClickHouse Cloud 선불 크레딧(ClickHouse에서 직접 구매했거나 클라
   ## ClickPipes 요금
 </div>
 
-ClickPipes 청구에 관한 정보는 별도의 [&quot;ClickPipes 청구&quot; 섹션](/ko/products/cloud/reference/billing/clickpipes/index)을 참조하십시오.
+ClickPipes 청구에 관한 정보는 별도의 [&quot;ClickPipes&quot; 섹션](/ko/products/cloud/reference/billing/clickpipes/index)을 참조하십시오.

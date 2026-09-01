@@ -17,9 +17,9 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
   Se você usa o ClickHouse Cloud, recomendamos usar [ClickPipes](/pt-BR/integrations/clickpipes/home). O ClickPipes oferece suporte nativo a conexões de rede privadas, ao escalonamento independente da ingestão e dos recursos do cluster, além de monitoramento abrangente para streaming de dados do Kafka para o ClickHouse.
 </Tip>
 
-* Publique ou inscreva-se em fluxos de dados.
+* Publique ou assine fluxos de dados.
 * Organize o armazenamento tolerante a falhas.
-* Processe streams à medida que estiverem disponíveis.
+* Processe fluxos à medida que estiverem disponíveis.
 
 <div id="creating-a-table">
   ## Criar uma tabela
@@ -58,7 +58,9 @@ SETTINGS
     [kafka_consumer_acquire_timeout_ms = 30000,]
     [kafka_max_rows_per_message = 1,]
     [kafka_compression_codec = '',]
-    [kafka_compression_level = -1];
+    [kafka_compression_level = -1,]
+    [kafka_partition_shard_num = '',]
+    [kafka_shard_count = 0];
 ```
 
 Parâmetros obrigatórios:
@@ -78,17 +80,17 @@ Parâmetros opcionais:
 * `kafka_schema` — Parâmetro que deve ser usado se o formato exigir uma definição de esquema. Por exemplo, [Cap&#39;n Proto](https://capnproto.org/) exige o caminho para o arquivo de esquema e o nome do objeto raiz `schema.capnp:Message`.
 * `kafka_schema_registry_skip_bytes` — O número de bytes a ignorar no início de cada mensagem ao usar schema registry com cabeçalhos de envelope (por exemplo, o AWS Glue Schema Registry, que inclui um envelope de 19 bytes). Intervalo: `[0, 255]`. Padrão: `0`.
 * `kafka_num_consumers` — O número de consumidores por tabela. Especifique mais consumidores se a taxa de transferência de um consumidor for insuficiente. O número total de consumidores não deve exceder o número de partições no tópico, já que apenas um consumidor pode ser atribuído por partição, e não deve ser maior que o número de núcleos físicos no servidor onde o ClickHouse está implantado. Padrão: `1`.
-* `kafka_max_block_size` — O tamanho máximo do lote (em mensagens) na operação de poll. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_insert_block_size).
+* `kafka_max_block_size` — O tamanho máximo do lote (em mensagens) na operação de poll. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `kafka_skip_broken_messages` — tolerância do parser de mensagens do Kafka a mensagens incompatíveis com o schema por bloco. Se `kafka_skip_broken_messages = N`, então o engine ignora *N* mensagens do Kafka que não podem ser analisadas (uma mensagem equivale a uma linha de dados). Padrão: `0`.
 * `kafka_commit_every_batch` — Faz commit de cada lote consumido e processado, em vez de fazer um único commit após gravar um bloco inteiro. Padrão: `0`.
 * `kafka_client_id` — Identificador do cliente. Em branco por padrão.
-* `kafka_poll_timeout_ms` — Tempo limite para uma única operação de poll do Kafka. Padrão: [stream&#95;poll&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings#stream_poll_timeout_ms).
-* `kafka_poll_max_batch_size` — Número máximo de mensagens obtidas em uma única operação de poll do Kafka. Padrão: [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_block_size).
-* `kafka_flush_interval_ms` — Tempo limite para fazer o flush dos dados do Kafka. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings#stream_flush_interval_ms).
+* `kafka_poll_timeout_ms` — Tempo limite para uma única operação de poll do Kafka. Padrão: [stream&#95;poll&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `kafka_poll_max_batch_size` — Número máximo de mensagens obtidas em uma única operação de poll do Kafka. Padrão: [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
+* `kafka_flush_interval_ms` — Tempo limite para fazer o flush dos dados do Kafka. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `kafka_consumer_reschedule_ms` — Intervalo de reagendamento quando o processamento de streams do Kafka é interrompido (por exemplo, quando não há mensagens disponíveis para consumo). Essa configuração controla o tempo de espera até o consumidor tentar fazer polling novamente. Não deve exceder `kafka_consumers_pool_ttl_ms`. Padrão: `500` milissegundos.
 * `kafka_thread_per_consumer` — Fornece uma thread independente para cada consumidor. Quando habilitado, cada consumidor faz o flush dos dados de forma independente, em paralelo (caso contrário, as linhas de vários consumidores são combinadas para formar um bloco). Padrão: `0`.
 * `kafka_handle_error_mode` — Como lidar com erros no motor Kafka. Valores possíveis: default (uma exceção será gerada se não conseguirmos interpretar uma mensagem), stream (a mensagem da exceção e a mensagem bruta serão salvas nas colunas virtuais `_error` e `_raw_message`), dead&#95;letter&#95;queue (os dados relacionados ao erro serão salvos em system.dead&#95;letter&#95;queue).
-* `kafka_commit_on_select` —  Faz commit das mensagens quando uma consulta SELECT é executada. Padrão: `false`.
+* `kafka_commit_on_select` —  Faz commit das mensagens quando uma consulta `SELECT` é executada. Padrão: `false`.
 * `kafka_consumer_acquire_timeout_ms` — Tempo limite, em milissegundos, para obter um consumidor do Kafka durante consultas `SELECT` diretas em uma tabela `Kafka2` (com armazenamento de offsets baseado em Keeper). Quando várias consultas `SELECT` diretas e concorrentes são executadas na mesma tabela, cada uma precisa esperar até que os consumidores fiquem disponíveis. Esse tempo limite evita deadlocks quando as consultas retêm subconjuntos diferentes de consumidores. Padrão: `30000`.
 * `kafka_max_rows_per_message` — O número máximo de linhas gravadas em uma mensagem Kafka para formatos baseados em linhas. Padrão: `1`.
 * `kafka_autodetect_client_rack` — Configura automaticamente o parâmetro `client.rack` do `librdkafka` para dar preferência às réplicas do Kafka mais próximas.
@@ -104,6 +106,8 @@ Parâmetros opcionais:
 * `kafka_compression_codec` — codec de compressão usado para produzir mensagens. Suportados: string vazia, `none`, `gzip`, `snappy`, `lz4`, `zstd`. No caso de string vazia, o codec de compressão não é definido pela tabela; portanto, serão usados os valores dos arquivos de configuração ou o valor padrão de `librdkafka`. Padrão: string vazia.
 * `kafka_compression_level` — Parâmetro do nível de compressão para o algoritmo selecionado por kafka&#95;compression&#95;codec. Valores mais altos resultarão em melhor compressão, ao custo de maior uso de CPU. O intervalo utilizável depende do algoritmo: `[0-9]` para `gzip`; `[0-12]` para `lz4`; apenas `0` para `snappy`; `[0-12]` para `zstd`; `-1` = nível de compressão padrão dependente do codec. Padrão: `-1`.
 * `kafka_map_virtual_columns_on_write` — Se ativado, colunas com nomes especiais `_key`, `_timestamp`, `_headers.name` e `_headers.value` no esquema da tabela são mapeadas para os metadados correspondentes da mensagem Kafka em `INSERT` e excluídas do payload da mensagem. Consulte [Mapeamento de colunas para metadados de mensagens Kafka](#mapping-columns-to-kafka-message-metadata). Padrão: `false`.
+* `kafka_partition_shard_num` — O número atual do shard para afinidade estática entre partição e shard. Deve estar entre 1 e `kafka_shard_count`, inclusive. As partições são atribuídas pela fórmula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Compatível com expansão de macro (por exemplo, `'{shard}'`). Deve ser usado junto com `kafka_shard_count`. Compatível apenas com StorageKafka2 (requer `kafka_keeper_path` e `kafka_replica_name`). Padrão: `''` (desativado).
+* `kafka_shard_count` — Número total de shards que participam do consumo. Usado junto com `kafka_partition_shard_num` para atribuir partições estaticamente. Deve ser usado junto com `kafka_partition_shard_num`. Compatível apenas com StorageKafka2. Padrão: `0` (desativado).
 
 Exemplos:
 
@@ -201,7 +205,7 @@ Exemplo, usando [coleções nomeadas](/pt-BR/concepts/features/configuration/ser
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Para melhorar o desempenho, as mensagens recebidas são agrupadas em blocos com o tamanho de [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_insert_block_size). Se o bloco não for formado dentro de [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings#stream_flush_interval_ms) milissegundos, os dados serão gravados na tabela independentemente de o bloco estar completo.
+Para melhorar o desempenho, as mensagens recebidas são agrupadas em blocos com o tamanho de [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size). Se o bloco não for formado dentro de [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms) milissegundos, os dados serão gravados na tabela independentemente de o bloco estar completo.
 
 Para parar de receber dados do tópico ou alterar a lógica de conversão, desanexe a visão materializada:
 
@@ -455,7 +459,7 @@ O motor Kafka oferece suporte a todos os [formatos](/pt-BR/reference/formats/ind
 O número de linhas em uma mensagem do Kafka depende de o formato ser baseado em linhas ou em blocos:
 
 * Para formatos baseados em linhas, o número de linhas em uma mensagem do Kafka pode ser controlado pela configuração `kafka_max_rows_per_message`.
-* Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_block_size).
+* Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
 
 <div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
   ## Motor para armazenar offsets confirmados no ClickHouse Keeper
@@ -469,6 +473,46 @@ Se `allow_experimental_kafka_offsets_storage_in_keeper` estiver habilitada, mais
 * `kafka_replica_name` especifica o nome da réplica no ClickHouse Keeper
 
 As duas configurações devem ser especificadas juntas, ou nenhuma delas. Quando ambas são especificadas, um novo motor Kafka experimental passa a ser usado. Esse novo motor não depende do armazenamento dos offsets confirmados no Kafka, mas os armazena no ClickHouse Keeper. Ele ainda tenta fazer commit dos offsets no Kafka, mas só depende desses offsets quando a tabela é criada. Em qualquer outra situação (se a tabela for reiniciada ou recuperada após algum erro), os offsets armazenados no ClickHouse Keeper serão usados para continuar consumindo mensagens. Além do offset confirmado, ele também armazena quantas mensagens foram consumidas no último lote, portanto, se o insert falhar, a mesma quantidade de mensagens será consumida, o que permite a desduplicação, se necessário.
+
+<div id="static-partition-to-shard-affinity">
+  ### Afinidade estática entre partições e shards
+</div>
+
+Ao usar `StorageKafka2`, você pode habilitar opcionalmente a afinidade estática entre partições e shards especificando `kafka_partition_shard_num` e `kafka_shard_count`. Isso permite que várias instâncias do ClickHouse (shards) consumam o mesmo tópico do Kafka, com cada shard processando apenas um subconjunto determinístico de partições, com base na fórmula:
+
+```text
+partition_id % kafka_shard_count == kafka_partition_shard_num - 1
+```
+
+Ambas as configurações devem ser especificadas juntas; especificar apenas uma gera uma exceção. O valor de `kafka_partition_shard_num` deve estar entre 1 e `kafka_shard_count`, inclusive. Ele oferece suporte à expansão de macros (por exemplo, `'{shard}'`), que é reexpandida a cada inicialização do servidor. Isso permite compartilhar os mesmos metadados de tabela entre shards em um banco de dados `Replicated`, com cada shard resolvendo seu próprio valor. A validação é realizada após a expansão das macros.
+
+Todos os shards devem usar o mesmo valor de `kafka_keeper_path`. Todas as réplicas compartilham offsets confirmados e tamanhos de intenção, mas apenas as réplicas com o mesmo número de shard competem entre si pelos bloqueios de partição (considerando que todas as réplicas tenham a mesma contagem de shards).
+
+Exemplo com 3 shards consumindo um tópico com 12 partições:
+
+```sql
+-- Shard 1: consumes partitions 0, 3, 6, 9
+CREATE TABLE kafka_shard1 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '1',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+
+-- Shard 2: consumes partitions 1, 4, 7, 10
+CREATE TABLE kafka_shard2 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '2',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+```
+
+Quando usado com réplicas (vários valores de `kafka_replica_name` que compartilham o mesmo `kafka_keeper_path`), o filtro de afinidade é aplicado primeiro para determinar as partições elegíveis; em seguida, os locks do ZooKeeper distribuem essas partições entre as réplicas.
 
 Exemplo:
 
@@ -489,11 +533,12 @@ Como o novo motor é experimental, ele ainda não está pronto para produção. 
 
 * Excluir e recriar a tabela rapidamente, ou especificar o mesmo caminho do ClickHouse Keeper para motores diferentes, pode causar problemas. Como prática recomendada, você pode usar `{uuid}` em `kafka_keeper_path` para evitar conflitos de caminho.
 * Para garantir leituras repetíveis, as mensagens não podem ser consumidas de várias partições em uma única thread. Por outro lado, os consumidores do Kafka precisam ser consultados regularmente para continuarem ativos. Como resultado dessas duas exigências, decidimos permitir a criação de vários consumidores apenas se `kafka_thread_per_consumer` estiver ativado; caso contrário, é muito complicado evitar problemas relacionados à consulta regular dos consumidores.
+* Ao usar afinidade de partição, todos os shards devem usar o mesmo `kafka_shard_count`; caso contrário, algumas partições podem ser consumidas por vários shards ou permanecer sem consumo.
 
 **Veja também**
 
 * [Colunas virtuais](/pt-BR/reference/engines/table-engines/index#table_engines-virtual_columns)
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
 * [system.kafka&#95;consumers](/pt-BR/reference/system-tables/kafka_consumers)
 
 {/*AUTOGENERATED_END*/}

@@ -25,6 +25,7 @@ SET query_plan_optimize_prewhere=1;
 SET enable_multiple_prewhere_read_steps=1;
 SET join_runtime_filter_min_probe_rows=0;
 SET join_runtime_filter_size_from_hash_table_stats=0;
+SET join_runtime_filter_from_fixed_hash_table=0;
 
 -- 1 row in filter
 SELECT count()

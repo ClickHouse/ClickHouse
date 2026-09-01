@@ -70,7 +70,7 @@ Os formatos compatíveis são:
 | [CustomSeparatedIgnoreSpacesWithNamesAndTypes](/pt-BR/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpacesWithNamesAndTypes) | ✔       | ✗     |
 | [CustomSeparatedWithNames](/pt-BR/reference/formats/CustomSeparated/CustomSeparatedWithNames)                                         | ✔       | ✔     |
 | [CustomSeparatedWithNamesAndTypes](/pt-BR/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)                         | ✔       | ✔     |
-| [HiveText](/pt-BR/reference/formats/HiveText)                                                                                         | ✔       | ✗     |
+| [HiveText](/pt-BR/reference/formats/HiveText)                                                                                         | ✔       | ✔     |
 | [SQLInsert](/pt-BR/reference/formats/SQLInsert)                                                                                       | ✗       | ✔     |
 | [Values](/pt-BR/reference/formats/Values)                                                                                             | ✔       | ✔     |
 | [Vertical](/pt-BR/reference/formats/Vertical)                                                                                         | ✗       | ✔     |
@@ -171,16 +171,16 @@ pode conter um caminho absoluto ou um caminho relativo ao diretório atual no cl
 Se você usar o client no [batch mode](/pt-BR/concepts/features/interfaces/client#batch-mode), o caminho para o esquema deverá ser relativo por motivos de segurança.
 
 Se você inserir ou gerar dados por meio da [interface HTTP](/pt-BR/concepts/features/interfaces/http), o nome do arquivo especificado no esquema de formato
-deve estar localizado no diretório especificado em [format&#95;schema&#95;path](/pt-BR/reference/settings/server-settings/settings#format_schema_path)
+deve estar localizado no diretório especificado em [format&#95;schema&#95;path](/pt-BR/reference/settings/server-settings/settings/format#format_schema_path)
 na configuração do servidor.
 
 <div id="skippingerrors">
   ## Ignorar erros
 </div>
 
-Alguns formatos, como `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` e `Protobuf`, podem ignorar uma linha inválida se ocorrer um erro de parsing e continuar o parsing a partir do início da próxima linha. Veja as configurações [input&#95;format&#95;allow&#95;errors&#95;num](/pt-BR/reference/settings/formats#input_format_allow_errors_num) e
-[input&#95;format&#95;allow&#95;errors&#95;ratio](/pt-BR/reference/settings/formats#input_format_allow_errors_ratio).
+Alguns formatos, como `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` e `Protobuf`, podem ignorar uma linha inválida se ocorrer um erro de análise e continuar a análise a partir do início da próxima linha. Veja as configurações [input&#95;format&#95;allow&#95;errors&#95;num](/pt-BR/reference/settings/formats/input-format#input_format_allow_errors_num) e
+[input&#95;format&#95;allow&#95;errors&#95;ratio](/pt-BR/reference/settings/formats/input-format#input_format_allow_errors_ratio).
 Limitações:
 
-* Em caso de erro de parsing, `JSONEachRow` ignora todos os dados até a quebra de linha (ou EOF), portanto as linhas devem ser delimitadas por `\n` para que os erros sejam contados corretamente.
+* Em caso de erro de análise, `JSONEachRow` ignora todos os dados até a quebra de linha (ou EOF), portanto as linhas devem ser delimitadas por `\n` para que os erros sejam contados corretamente.
 * `Template` e `CustomSeparated` usam o delimitador após a última coluna e o delimitador entre linhas para localizar o início da próxima linha, portanto ignorar erros só funciona se pelo menos um deles não estiver vazio.

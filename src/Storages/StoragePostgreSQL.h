@@ -3,7 +3,9 @@
 #include "config.h"
 
 #if USE_LIBPQXX
+#include <Core/PostgreSQL/ConnectionSSLParams.h>
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/TableNameOrQuery.h>
 
@@ -67,6 +69,9 @@ public:
         String schema;
         String on_conflict;
 
+        /// TLS/SSL parameters forwarded to libpq. Empty values keep libpq's defaults.
+        postgres::ConnectionSSLParams ssl;
+
         std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
         String addresses_expr;
     };
@@ -77,6 +82,20 @@ public:
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
+
+    /// Reads the TLS/SSL parameters from a named collection: `sslmode`, the certificate and key
+    /// paths (`sslrootcert` / `sslcert` / `sslkey`) and their contents forms (`sslrootcert_pem` /
+    /// `sslcert_pem` / `sslkey_pem`). A path is only accepted from a named collection defined in
+    /// the server configuration file and cannot be overridden in a query; the contents forms are
+    /// accepted from anywhere and are masked like passwords. Throws `BAD_ARGUMENTS` otherwise.
+    static postgres::ConnectionSSLParams getSSLParams(const NamedCollection & named_collection);
+
+    /// Extracts trailing `key = value` TLS/SSL arguments (`sslmode` and the contents forms) from a
+    /// positional argument list, e.g. `postgresql('host:port', 'db', 'table', 'user', 'password',
+    /// sslmode = 'verify-full', sslrootcert_pem = '...')`. A certificate or key path there is
+    /// rejected: it is only accepted from the server configuration file. The extracted arguments
+    /// are removed from `arguments`.
+    static postgres::ConnectionSSLParams extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,

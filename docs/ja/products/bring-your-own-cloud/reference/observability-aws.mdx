@@ -34,7 +34,7 @@ BYOC では、Prometheus を使用してメトリクスを収集・可視化す�
 | **Best Suited For**       | インフラストラクチャとサービスの包括的な監視                                | サービス単位の監視とインテグレーション                                         |
 | **How to Integrate**      | 外部Prometheusでフェデレーションを設定し、クラスターのメトリクスを取り込む          | ClickHouseのメトリクス用エンドポイントをPrometheusのconfigに直接追加             |
 
-**推奨**: ほとんどのユースケースでは、組み込みのPrometheusスタックとのインテグレーションを推奨します。これは、ClickHouseサーバーのメトリクスだけでなく、BYOCデプロイメント内のすべてのコンポーネント (ClickHouseサービス、Kubernetesクラスター、補助サービス) から包括的なメトリクスを取得できるためです。 
+**推奨**: ほとんどのユースケースでは、組み込みのPrometheusスタックとのインテグレーションを推奨します。これは、ClickHouseサーバーのメトリクスだけでなく、BYOCデプロイメント内のすべてのコンポーネント (ClickHouseサービス、Kubernetesクラスター、補助サービス) から包括的なメトリクスを取得できるためです。
 
 <div id="builtin-prometheus-stack">
   ## 組み込み BYOC Prometheus スタック
@@ -50,21 +50,23 @@ ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に�
   ### Prometheus スタックへのアクセス
 </div>
 
-組み込みの Prometheus スタックに接続するには、次の手順に従います。
+組み込みの Prometheus スタックに接続するには、次の手順を実行します。
 
-1. BYOC 環境でプライベートロードバランサーを有効にするため、**ClickHouse Support に連絡**します。
-2. **Prometheus エンドポイント URL** を ClickHouse Support に依頼します。
-3. Prometheus エンドポイントへの**プライベートネットワーク接続**を確認します。通常は、VPC peering またはその他のプライベートネットワーク構成を使用します。
+1. ClickHouse Cloud console で、BYOC インフラストラクチャの**プライベート ロードバランサーを有効化**します ([ロードバランサー](/ja/products/bring-your-own-cloud/configuration/configurations#load-balancers)を参照) 。
+2. ClickHouse Support に Prometheus エンドポイント URL をリクエストします。
+3. Prometheus エンドポイントへの**プライベート ネットワーク接続**を確認します。通常は、VPC/VNet ピアリングまたはその他のプライベート ネットワーク設定を使用します。
 
-エンドポイントのフォーマットは、接続タイプによって異なります。
+エンドポイント形式は、接続タイプによって異なります。
 
-| 接続方式              | エンドポイントのフォーマット                                                                 |
-| ----------------- | ------------------------------------------------------------------------------ |
-| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+| 接続             | エンドポイント形式                                                                      |
+| -------------- | ------------------------------------------------------------------------------ |
+| VPC/VNet ピアリング | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| プライベート エンドポイント | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`  |
+
+`<cloud>` には `aws`、`gcp`、または `azure` を指定します。プライベート エンドポイントの場合、`<label>` はクラウド固有です。AWS では `vpce`、GCP では `p`、Azure では `privatelink` になります。
 
 <Note>
-  Prometheus スタックの URL にはプライベートネットワーク接続経由でのみアクセスでき、認証は不要です。アクセスできるのは、VPC peering またはその他のプライベート接続オプションを介して BYOC VPC に到達可能なネットワークに限られます。
+  Prometheus スタック URL にはプライベート ネットワーク接続経由でのみアクセスでき、認証は必要ありません。アクセスは、ピアリングまたはその他のプライベート接続オプションを通じて BYOC VPC/VNet に到達できるネットワークに制限されます。
 </Note>
 
 <div id="prometheus-stack-integration">
@@ -116,22 +118,22 @@ ClickHouse service は Prometheus 互換のメトリクスエンドポイント�
   ### メトリクスエンドポイントへのアクセス
 </div>
 
-メトリクスエンドポイントは、ClickHouse serviceのエンドポイント上の`/metrics_all`で利用できます。
+メトリクスエンドポイントは、ClickHouse サービスのエンドポイント上の`/metrics_all`で利用できます。
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **レスポンス例:**
 
 ```bash
-# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes system databaseの`s3disk`ディスクに保存されているバイト数
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes The amount of bytes stored on disk `s3disk` in system database
 # TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
 ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
-# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts 破損したデタッチされたパーツの数
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts The number of broken detached parts
 # TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
 ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
-# HELP ClickHouse_CustomMetric_TotalNumberOfErrors 最後の再起動以降にサーバーで発生したエラーの総数
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors The total number of errors on server since the last restart
 # TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
 ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
 ```
@@ -182,7 +184,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -193,7 +195,7 @@ scrape_configs:
 
 置き換えます:
 
-* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` を実際のサービスエンドポイントに
+* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` を実際のサービスエンドポイントに
 * `<username>` と `<password>` をスクレイピングユーザーの認証情報に
 
 <div id="clickhouse-mixin">

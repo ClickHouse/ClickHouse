@@ -30,6 +30,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
+        in_prewhere = parent_scope->in_prewhere;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();
@@ -45,6 +46,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
             union_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
 
         context = union_node->getContext();
+        in_prewhere = false;
     }
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
@@ -54,6 +56,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = query_node->getContext();
         group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
             && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        in_prewhere = false;
     }
 
     if (context)
