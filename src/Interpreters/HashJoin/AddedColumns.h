@@ -79,10 +79,10 @@ struct LazyOutput
     /// Shared by all row-store columns of a block; a specific column is a field_offset/field_size slice.
     const RowDataStore * const * block_row_stores = nullptr;
 
-    /// Per output column, the source descriptor `gatherColumnDirect` reads. Resolved once per probe
+    /// Per output column, the source descriptor `gatherColumn` reads. Resolved once per probe
     /// block, because it is a property of the join and not of an output chunk; empty for joinGet, which
     /// emits through `buildJoinGetOutput` instead.
-    std::vector<DirectGatherColumn> emit_direct_gather;
+    std::vector<GatherColumn> emit_gather;
 
     NamesAndTypes type_name;
 
@@ -260,16 +260,16 @@ public:
                       access_indexes, [](const auto & index) { return index.type == ColumnAccessIndex::Type::Columns; }))
                 : saved_block_sample.columns();
 
-            std::vector<DirectGatherColumn> direct_gather_by_position;
+            std::vector<GatherColumn> gather_by_position;
             join.getJoinedData()->stored_columns_index->resolveEmitColumns(
-                columnar_columns_count, columnar_requests, direct_gather_by_position);
+                columnar_columns_count, columnar_requests, gather_by_position);
 
-            lazy_output.emit_direct_gather.assign(lazy_output.output_access_indexes.size(), {});
+            lazy_output.emit_gather.assign(lazy_output.output_access_indexes.size(), {});
             for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
             {
                 const auto & access_index = lazy_output.output_access_indexes[dst_idx];
                 if (access_index.type == ColumnAccessIndex::Type::Columns)
-                    lazy_output.emit_direct_gather[dst_idx] = direct_gather_by_position[access_index.index];
+                    lazy_output.emit_gather[dst_idx] = gather_by_position[access_index.index];
             }
         }
     }

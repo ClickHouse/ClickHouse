@@ -1531,15 +1531,15 @@ public:
                   access_indexes, [](const auto & index) { return index.type == ColumnAccessIndex::Type::Columns; }))
             : saved_block_sample.columns();
 
-        std::vector<DirectGatherColumn> direct_gather_by_position;
-        parent.data->stored_columns_index->resolveEmitColumns(columnar_columns_count, columnar_requests, direct_gather_by_position);
+        std::vector<GatherColumn> gather_by_position;
+        parent.data->stored_columns_index->resolveEmitColumns(columnar_columns_count, columnar_requests, gather_by_position);
 
-        emit_direct_gather.assign(output_access_indexes.size(), {});
+        emit_gather.assign(output_access_indexes.size(), {});
         for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
         {
             const auto & access_index = output_access_indexes[dst_idx];
             if (access_index.type == ColumnAccessIndex::Type::Columns)
-                emit_direct_gather[dst_idx] = direct_gather_by_position[access_index.index];
+                emit_gather[dst_idx] = gather_by_position[access_index.index];
         }
     }
 
@@ -1591,7 +1591,7 @@ private:
 
     /// The per-column gather descriptors, resolved once in the constructor: the same currency the
     /// probe's lazy output uses, so the not-joined rows run the same kernels.
-    std::vector<DirectGatherColumn> emit_direct_gather;
+    std::vector<GatherColumn> emit_gather;
 
     bool isBucketInRange(size_t bucket) const
     {
@@ -1637,7 +1637,7 @@ private:
 
         for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
             if (output_access_indexes[dst_idx].type == ColumnAccessIndex::Type::Columns)
-                gatherColumnDirect(*columns_right[dst_idx], emit_direct_gather[dst_idx], selection, scratch);
+                gatherColumn(*columns_right[dst_idx], emit_gather[dst_idx], selection, scratch);
     }
 
     template <bool with_row_store, typename Map>

@@ -317,7 +317,7 @@ void StoredColumnsIndex::invalidateEmitTable()
 }
 
 void StoredColumnsIndex::resolveEmitColumns(
-    size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<DirectGatherColumn> & out_direct_gather)
+    size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<GatherColumn> & out_gather)
 {
     std::lock_guard guard(mutex);
 
@@ -335,7 +335,7 @@ void StoredColumnsIndex::resolveEmitColumns(
     }
 
     const size_t num_blocks = blocks.size();
-    out_direct_gather.assign(saved_columns_count, {});
+    out_gather.assign(saved_columns_count, {});
     for (const EmitColumnRequest & request : requests)
     {
         const size_t pos = request.position;
@@ -344,7 +344,7 @@ void StoredColumnsIndex::resolveEmitColumns(
         {
             auto emit_column = std::make_unique<EmitColumn>();
             bool any_replicated = false;
-            std::vector<DirectGatherRowRemap> remap(num_blocks);
+            std::vector<GatherRowRemap> remap(num_blocks);
             for (size_t b = 0; b < num_blocks; ++b)
             {
                 /// A cleared/popped slot is skipped: no live ref points to it (mirrors `at()`).
@@ -355,7 +355,7 @@ void StoredColumnsIndex::resolveEmitColumns(
                 const IColumn * column = block->columns[pos].get();
                 /// A replicated stored column gathers through its indexes: `row' = indexes[row]`
                 /// addresses the nested column, so the planes come from the nested column and the
-                /// remap entry carries the indexes plane (see `DirectGatherRowRemap`).
+                /// remap entry carries the indexes plane (see `GatherRowRemap`).
                 if (const ColumnReplicated * replicated = block->replicated_columns[pos])
                 {
                     const IColumn & indexes = *replicated->getIndexes().getIndexes();
@@ -397,7 +397,7 @@ void StoredColumnsIndex::resolveEmitColumns(
             emit_columns[pos] = std::move(emit_column);
         }
         const EmitColumn & emit_column = *emit_columns[pos];
-        out_direct_gather[pos]
+        out_gather[pos]
             = {.node = &emit_column.gather_root,
                .remap_by_block = emit_column.gather_remap_by_block.empty() ? nullptr : emit_column.gather_remap_by_block.data()};
     }

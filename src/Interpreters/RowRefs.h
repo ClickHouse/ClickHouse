@@ -408,18 +408,18 @@ ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
         return mapped.encode();
 }
 
-struct DirectGatherNode;
+struct GatherNode;
 
 /// Appends `length` consecutive rows of `src` starting at `begin` to `dst`. Both sides are bound to
 /// one concrete column class at plan construction, so an encoding without raw planes still copies
-/// through direct calls rather than through `IColumn`.
+/// through a bound function pointer rather than a virtual `IColumn` call.
 using GatherRowsCopy = void (*)(IColumn & dst, const IColumn & src, size_t begin, size_t length);
 
-/// One level of a direct-gather source descriptor: the raw per-block base pointers of a stored
+/// One level of a gather source descriptor: the raw per-block base pointers of a stored
 /// column, mirroring the column's own nesting. Every `*_by_block` vector below is indexed by
 /// `block_no`; entries of cleared blocks stay null and are never dereferenced, because no live ref
 /// points at such a block. The pointers are valid only while the emit-table generation holds.
-struct DirectGatherNode
+struct GatherNode
 {
     enum class Kind : UInt8
     {
@@ -442,7 +442,7 @@ struct DirectGatherNode
     size_t stride = 0;
     std::vector<const void *> data_by_block;
     std::vector<const void *> aux_by_block;
-    std::vector<DirectGatherNode> children;
+    std::vector<GatherNode> children;
     std::vector<UInt8> local_to_global_by_block;
     /// `Rows` only: the copy bound to the concrete column class, and the output type whose
     /// `insertDefaultInto` writes an unmatched row - null below a `Nullable`, where the row is NULL
@@ -462,18 +462,18 @@ struct DirectGatherNode
 /// Per-block row indirection of a `ColumnReplicated` stored column: the gather reads
 /// `row' = indexes[row]` at `index_width` bytes and addresses the nested column with `row'`.
 /// A null `indexes_data` means the block stores the column plainly and rows pass through unchanged.
-struct DirectGatherRowRemap
+struct GatherRowRemap
 {
     const void * indexes_data = nullptr;
     UInt8 index_width = 0; /// bytes per index: 1, 2, 4 or 8
 };
 
 /// The source of one output column, as handed to the emit path.
-struct DirectGatherColumn
+struct GatherColumn
 {
-    const DirectGatherNode * node = nullptr;
+    const GatherNode * node = nullptr;
     /// Indexed by block_no; null when no block stores this column as `ColumnReplicated`.
-    const DirectGatherRowRemap * remap_by_block = nullptr;
+    const GatherRowRemap * remap_by_block = nullptr;
 };
 
 /// One column an emit table is asked for: its position in `StoredBlock::columns` and the type of the
@@ -515,10 +515,10 @@ public:
     {
         /// Its raw bases stay valid only until the generation changes, so a stored column's buffer must
         /// not be mutated in place without bumping it.
-        DirectGatherNode gather_root;
+        GatherNode gather_root;
         /// Indexed by block_no; filled only when at least one block stores the column as `ColumnReplicated`
         /// (identity entries for the blocks that do not).
-        std::vector<DirectGatherRowRemap> gather_remap_by_block;
+        std::vector<GatherRowRemap> gather_remap_by_block;
         /// Owns the shape when no live block resolved one - see `resolveEmitColumns`.
         MutableColumnPtr shape_prototype;
     };
@@ -552,13 +552,13 @@ public:
 
     /// Resolve the emit table for the given `requests` (the output columns of one probe), building any
     /// not-yet-built positions for the current generation (and dropping the whole table first if the
-    /// blocks changed). `out_direct_gather` is sized to `saved_columns_count` and indexed by stored-block
+    /// blocks changed). `out_gather` is sized to `saved_columns_count` and indexed by stored-block
     /// column position; positions not requested stay empty. Pointers are stable for as long as the
     /// generation does not change, which a StorageJoin read lock or a normal join's build-then-probe
     /// guarantees for the caller's lifetime. Holds `mutex` for the duration; called once per probe batch,
     /// never in the per-row loop.
     void resolveEmitColumns(
-        size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<DirectGatherColumn> & out_direct_gather);
+        size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<GatherColumn> & out_gather);
 
     /// Invalidate the emit table after the stored columns are replaced in place (e.g. shrinkStoredBlocksToFit
     /// `cloneResized`), which would otherwise leave the cached `const IColumn *` dangling. Bumps the generation.

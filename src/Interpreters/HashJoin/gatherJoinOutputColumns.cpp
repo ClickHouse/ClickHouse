@@ -26,17 +26,11 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray.h>
-#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
 
 #include <cstring>
-
-namespace ProfileEvents
-{
-    extern const Event HashJoinDirectGatheredValues;
-}
 
 namespace DB
 {
@@ -59,6 +53,10 @@ constexpr char null_map_default = 1;
 /// `STRIDE` is 0 when the width is only known at run time, which is what covers `FixedString(n)` for
 /// an arbitrary `n`; a compile-time width turns the copy into a single load and store.
 /// `default_pattern` is the `stride` bytes a zero ref word writes.
+///
+/// A run-time width stays a `memcpy` call. `memcpySmallAllowReadWriteOverflow15` is the obvious
+/// alternative and it is slower here: measured on `FixedString(40)`, its 16-bytes-at-a-time loop
+/// costs 4% to 8% more emit CPU than the call it saves.
 template <bool from_row_list, size_t STRIDE>
 void gatherFixedStride(
     IColumn & dst,
@@ -150,9 +148,9 @@ void gatherFixedDispatch(
 
 /// Remap one inline word's row through a replicated block's indexes: `row' = indexes[row]` addresses
 /// the nested column. An identity entry (a block that stores the column plainly) passes the word through.
-ALWAYS_INLINE UInt64 remapFlatWord(UInt64 word, const DirectGatherRowRemap * remap_by_block)
+ALWAYS_INLINE UInt64 remapFlatWord(UInt64 word, const GatherRowRemap * remap_by_block)
 {
-    const DirectGatherRowRemap & remap = remap_by_block[refWordBlockNo(word)];
+    const GatherRowRemap & remap = remap_by_block[refWordBlockNo(word)];
     if (!remap.indexes_data)
         return word;
     const size_t row = refWordRowNo(word);
@@ -185,7 +183,7 @@ void appendGatherRange(GatherRanges & ranges, UInt32 block_no, UInt64 begin, UIn
 /// replicated block. `RefWordShape::Flat` without a remap is already that and passes through; the
 /// list and range shapes are expanded once per emit call into the scratch, which every
 /// flat-consuming kernel of the call then shares.
-const UInt64 * flatWords(const RefWordSelection & selection, const DirectGatherRowRemap * remap_by_block, EmitScratch & scratch)
+const UInt64 * flatWords(const RefWordSelection & selection, const GatherRowRemap * remap_by_block, EmitScratch & scratch)
 {
     const UInt64 * flat = selection.begin;
     if (selection.shape != RefWordShape::Flat)
@@ -255,14 +253,20 @@ GatherRange rebaseOffsets(const UInt64 * offsets, const GatherRange & range, UIn
 
 /// One bulk copy per range from a per-block plane of `stride`-byte values into `dst`'s raw buffer; a
 /// run of unmatched rows writes `default_pattern` per row.
-void gatherRawRanges(
+///
+/// `STRIDE` is specialized for the same reason as in `gatherFixedStride`: the range copy is one call
+/// for a whole run and its size is long, but the default is written a row at a time, so a width known
+/// at compile time is what turns that row into a single load and store rather than a call.
+template <size_t STRIDE>
+void gatherRawRangesStride(
     IColumn & dst,
     const void * const * bases,
-    size_t stride,
+    size_t dynamic_stride,
     const GatherRanges & ranges,
     size_t total_rows,
     const char * default_pattern)
 {
+    const size_t stride = STRIDE ? STRIDE : dynamic_stride;
     const std::span<char> out_span = dst.insertRawUninitialized(total_rows);
     chassert(out_span.size() == total_rows * stride);
     char * out = out_span.data();
@@ -281,12 +285,39 @@ void gatherRawRanges(
     chassert(out == out_span.data() + out_span.size());
 }
 
-void gatherNodeRows(IColumn & dst, const DirectGatherNode & node, const UInt64 * words, size_t count);
-void gatherNodeRanges(IColumn & dst, const DirectGatherNode & node, const GatherRanges & ranges, size_t total_rows);
+void gatherRawRanges(
+    IColumn & dst,
+    const void * const * bases,
+    size_t stride,
+    const GatherRanges & ranges,
+    size_t total_rows,
+    const char * default_pattern)
+{
+    switch (stride)
+    {
+#define M(STRIDE) \
+    case (STRIDE): \
+        gatherRawRangesStride<(STRIDE)>(dst, bases, stride, ranges, total_rows, default_pattern); \
+        break;
+        M(1)
+        M(2)
+        M(4)
+        M(8)
+        M(16)
+        M(32)
+#undef M
+        default:
+            gatherRawRangesStride<0>(dst, bases, stride, ranges, total_rows, default_pattern);
+            break;
+    }
+}
+
+void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count);
+void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows);
 
 /// The unmatched row of a `Kind::Rows` node: the output type's default, or the destination column's own
 /// below a `Nullable`, where the row is NULL and the enclosing `insertDefault` owns the nested value.
-void insertRowsDefault(IColumn & dst, const DirectGatherNode & node)
+void insertRowsDefault(IColumn & dst, const GatherNode & node)
 {
     if (node.type)
         node.type->insertDefaultInto(dst);
@@ -294,7 +325,7 @@ void insertRowsDefault(IColumn & dst, const DirectGatherNode & node)
         dst.insertDefault();
 }
 
-void gatherNullableRows(ColumnNullable & dst, const DirectGatherNode & node, const UInt64 * words, size_t count)
+void gatherNullableRows(ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
     /// A default row is NULL: a set null byte over the nested column's own default, which is what
     /// `ColumnNullable::insertDefault` writes and what the nested node's pattern reproduces.
@@ -302,7 +333,7 @@ void gatherNullableRows(ColumnNullable & dst, const DirectGatherNode & node, con
     gatherNodeRows(dst.getNestedColumn(), node.children[0], words, count);
 }
 
-void gatherStringRows(ColumnString & dst, const DirectGatherNode & node, const UInt64 * words, size_t count)
+void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
     const void * const * offsets_by_block = node.data_by_block.data();
     const void * const * chars_by_block = node.aux_by_block.data();
@@ -369,7 +400,7 @@ void gatherStringRows(ColumnString & dst, const DirectGatherNode & node, const U
     chassert(out_chars == dst_chars.data() + dst_chars.size());
 }
 
-void gatherArrayRows(ColumnArray & dst, const DirectGatherNode & node, const UInt64 * words, size_t count)
+void gatherArrayRows(ColumnArray & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
     const void * const * offsets_by_block = node.data_by_block.data();
 
@@ -409,13 +440,13 @@ void gatherArrayRows(ColumnArray & dst, const DirectGatherNode & node, const UIn
     gatherNodeRanges(dst.getData(), node.children[0], child_ranges, child_rows);
 }
 
-void gatherTupleRows(ColumnTuple & dst, const DirectGatherNode & node, const UInt64 * words, size_t count)
+void gatherTupleRows(ColumnTuple & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
     for (size_t i = 0; i < node.children.size(); ++i)
         gatherNodeRows(dst.getColumn(i), node.children[i], words, count);
 }
 
-void gatherVariantRows(ColumnVariant & dst, const DirectGatherNode & node, const UInt64 * words, size_t count)
+void gatherVariantRows(ColumnVariant & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
     const size_t num_variants = node.children.size();
     const void * const * discriminators_by_block = node.data_by_block.data();
@@ -490,7 +521,7 @@ void gatherVariantRows(ColumnVariant & dst, const DirectGatherNode & node, const
 /// per row. A build side ordered by the join key stores a key's rows contiguously, so its refs form
 /// one long run; a scattered one degrades to runs of length one for the cost of one comparison per
 /// ref. Runs are tracked across the whole call, so a key-ordered build coalesces the whole selection.
-void gatherRowsByRuns(IColumn & dst, const DirectGatherNode & node, const UInt64 * words, size_t count)
+void gatherRowsByRuns(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
     /// The plane kernels size their destination exactly through `insertRawUninitialized`; this one
     /// appends run by run, so it is the one that has to say how much is coming.
@@ -534,13 +565,13 @@ void gatherRowsByRuns(IColumn & dst, const DirectGatherNode & node, const UInt64
     flush_run();
 }
 
-void gatherNullableRanges(ColumnNullable & dst, const DirectGatherNode & node, const GatherRanges & ranges, size_t total_rows)
+void gatherNullableRanges(ColumnNullable & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
     gatherRawRanges(dst.getNullMapColumn(), node.data_by_block.data(), 1, ranges, total_rows, &null_map_default);
     gatherNodeRanges(dst.getNestedColumn(), node.children[0], ranges, total_rows);
 }
 
-void gatherStringRanges(ColumnString & dst, const DirectGatherNode & node, const GatherRanges & ranges, size_t total_rows)
+void gatherStringRanges(ColumnString & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
     ColumnString::Offsets & dst_offsets = dst.getOffsets();
     ColumnString::Chars & dst_chars = dst.getChars();
@@ -582,7 +613,7 @@ void gatherStringRanges(ColumnString & dst, const DirectGatherNode & node, const
     chassert(out_chars == dst_chars.data() + dst_chars.size());
 }
 
-void gatherArrayRanges(ColumnArray & dst, const DirectGatherNode & node, const GatherRanges & ranges, size_t total_rows)
+void gatherArrayRanges(ColumnArray & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
     ColumnArray::Offsets & dst_offsets = dst.getOffsets();
     const size_t old_rows = dst_offsets.size();
@@ -614,13 +645,13 @@ void gatherArrayRanges(ColumnArray & dst, const DirectGatherNode & node, const G
     gatherNodeRanges(dst.getData(), node.children[0], child_ranges, child_rows);
 }
 
-void gatherTupleRanges(ColumnTuple & dst, const DirectGatherNode & node, const GatherRanges & ranges, size_t total_rows)
+void gatherTupleRanges(ColumnTuple & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
     for (size_t i = 0; i < node.children.size(); ++i)
         gatherNodeRanges(dst.getColumn(i), node.children[i], ranges, total_rows);
 }
 
-void gatherVariantRanges(ColumnVariant & dst, const DirectGatherNode & node, const GatherRanges & ranges, size_t total_rows)
+void gatherVariantRanges(ColumnVariant & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
     /// A variant dispatches per row anyway (per-row discriminator), so expanding the ranges to flat
     /// row words loses nothing and reuses the row primitive.
@@ -641,7 +672,7 @@ void gatherVariantRanges(ColumnVariant & dst, const DirectGatherNode & node, con
 }
 
 /// A range already names a run, so it is one copy.
-void gatherRowsByRanges(IColumn & dst, const DirectGatherNode & node, const GatherRanges & ranges, size_t total_rows)
+void gatherRowsByRanges(IColumn & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
     dst.reserve(dst.size() + total_rows);
 
@@ -655,9 +686,9 @@ void gatherRowsByRanges(IColumn & dst, const DirectGatherNode & node, const Gath
     }
 }
 
-void gatherNodeRows(IColumn & dst, const DirectGatherNode & node, const UInt64 * words, size_t count)
+void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
-    using enum DirectGatherNode::Kind;
+    using enum GatherNode::Kind;
     switch (node.kind)
     {
         case Fixed:
@@ -674,9 +705,9 @@ void gatherNodeRows(IColumn & dst, const DirectGatherNode & node, const UInt64 *
     }
 }
 
-void gatherNodeRanges(IColumn & dst, const DirectGatherNode & node, const GatherRanges & ranges, size_t total_rows)
+void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
-    using enum DirectGatherNode::Kind;
+    using enum GatherNode::Kind;
     switch (node.kind)
     {
         case Fixed:
@@ -738,7 +769,7 @@ void copyRowsConcrete(IColumn & dst, const IColumn & src, size_t begin, size_t l
 /// concrete class exists to reconcile.
 struct RowsBinding
 {
-    DirectGatherNode & node;
+    GatherNode & node;
     const DataTypePtr & type;
     const IColumn & column;
     size_t block_no;
@@ -752,7 +783,7 @@ struct RowsBinding
     {
         if (first)
         {
-            node.kind = DirectGatherNode::Kind::Rows;
+            node.kind = GatherNode::Kind::Rows;
             node.data_by_block.resize(num_blocks);
             node.copy_rows = &copyRowsConcrete<Column>;
             node.type = default_from_type ? type : nullptr;
@@ -776,14 +807,14 @@ struct RowsBinding
 }
 
 void resolveGatherNode(
-    DirectGatherNode & node,
+    GatherNode & node,
     const DataTypePtr & type,
     const IColumn & column,
     size_t block_no,
     size_t num_blocks,
     bool default_from_type)
 {
-    using enum DirectGatherNode::Kind;
+    using enum GatherNode::Kind;
 
     const bool first = !node.column_type;
     if (first)
@@ -982,10 +1013,10 @@ void resolveGatherNode(
     node.data_by_block[block_no] = raw_data.data();
 }
 
-void gatherColumnDirect(IColumn & dst, const DirectGatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch)
+void gatherColumn(IColumn & dst, const GatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch)
 {
     chassert(src.node);
-    const DirectGatherNode & node = *src.node;
+    const GatherNode & node = *src.node;
 
     /// A sorted build side names runs of rows rather than single rows, and keeping them as runs is the
     /// whole point of having reranged it: flattening would cost a word and a copy per row instead of
@@ -997,7 +1028,7 @@ void gatherColumnDirect(IColumn & dst, const DirectGatherColumn & src, const Ref
     /// The dominant case - a fixed-width column with no replicated block - reads the flat and list
     /// shapes as they are; every other kernel needs one inline-or-zero word per output row, which
     /// `flatWords` produces once per emit call for all of them to share.
-    else if (node.kind == DirectGatherNode::Kind::Fixed && !src.remap_by_block)
+    else if (node.kind == GatherNode::Kind::Fixed && !src.remap_by_block)
     {
         if (selection.shape == RefWordShape::Flat)
             gatherFixedDispatch<false>(
@@ -1012,8 +1043,6 @@ void gatherColumnDirect(IColumn & dst, const DirectGatherColumn & src, const Ref
     {
         gatherNodeRows(dst, node, flatWords(selection, src.remap_by_block, scratch), selection.rows);
     }
-
-    ProfileEvents::increment(ProfileEvents::HashJoinDirectGatheredValues, selection.rows);
 }
 
 }

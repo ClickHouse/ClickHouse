@@ -67,7 +67,7 @@ struct EmitScratch
 /// Every encoding a stored right column can have is bound here, so there is nothing to refuse: a
 /// column that does not resolve means the plan disagrees with the stored data, and that throws.
 void resolveGatherNode(
-    DirectGatherNode & node,
+    GatherNode & node,
     const DataTypePtr & type,
     const IColumn & column,
     size_t block_no,
@@ -76,6 +76,6 @@ void resolveGatherNode(
 
 /// Append the `selection.rows` values of one output column, reading the encoded ref words in whichever
 /// shape they arrive and the source through the planes `resolveGatherNode` resolved.
-void gatherColumnDirect(IColumn & dst, const DirectGatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch);
+void gatherColumn(IColumn & dst, const GatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch);
 
 }

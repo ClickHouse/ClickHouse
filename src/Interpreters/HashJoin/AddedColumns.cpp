@@ -166,12 +166,12 @@ void LazyOutput::emitColumnarOutputs(MutableColumns & columns, const RefWordSele
         return;
 
     /// Empty for joinGet, which emits through `buildJoinGetOutput` instead.
-    chassert(!emit_direct_gather.empty());
+    chassert(!emit_gather.empty());
     EmitScratch scratch;
 
     for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
         if (output_access_indexes[dst_idx].type == ColumnAccessIndex::Type::Columns)
-            gatherColumnDirect(*columns[dst_idx], emit_direct_gather[dst_idx], selection, scratch);
+            gatherColumn(*columns[dst_idx], emit_gather[dst_idx], selection, scratch);
 }
 
 std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * block, size_t row_num, size_t column_index)
