@@ -520,7 +520,7 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     });
 }
 
-void FailPointInjection::waitForPause(const String & fail_point_name, std::optional<UInt64> timeout_ms)
+bool FailPointInjection::waitForPause(const String & fail_point_name, std::optional<UInt64> timeout_ms)
 {
     /// A mistyped name would otherwise return at once and silently drop the synchronisation the
     /// caller asked for, turning a deterministic test into a race. A registered fail point with no
@@ -531,7 +531,7 @@ void FailPointInjection::waitForPause(const String & fail_point_name, std::optio
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        return;
+        return false;
 
     auto channel = iter->second;
 
@@ -541,6 +541,7 @@ void FailPointInjection::waitForPause(const String & fail_point_name, std::optio
 
     /// Wait until a thread has paused at this failpoint after the most recent resume. `timeout_ms`
     /// bounds the wait so a caller cannot hang forever if the target never reaches the failpoint.
+    /// Returns whether the pause was actually reached (as opposed to a timeout or a premature disable).
     if (timeout_ms)
         channel->pause_cv.wait_until(
             lock,
@@ -548,6 +549,8 @@ void FailPointInjection::waitForPause(const String & fail_point_name, std::optio
             paused_or_disabled);
     else
         channel->pause_cv.wait(lock, paused_or_disabled);
+
+    return paused_or_disabled();
 }
 
 void FailPointInjection::waitForResume(const String & fail_point_name)

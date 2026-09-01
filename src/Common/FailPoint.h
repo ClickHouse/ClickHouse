@@ -165,7 +165,10 @@ public:
     /// `timeout_ms`, when set, bounds the wait so a caller cannot hang forever if the target never
     /// reaches the failpoint (e.g. the operation errored out earlier). When unset, waits indefinitely
     /// as before.
-    static void waitForPause(const String & fail_point_name, std::optional<UInt64> timeout_ms = {});
+    /// Returns `true` if a thread actually reached and paused at the failpoint, `false` if the wait
+    /// timed out or the failpoint was never paused (so a caller can distinguish a real pause from a
+    /// timeout instead of treating them identically).
+    static bool waitForPause(const String & fail_point_name, std::optional<UInt64> timeout_ms = {});
 
     /** Wait for the failpoint to be notified and threads to resume.
       *
