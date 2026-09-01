@@ -1,7 +1,7 @@
-<!-- Emit of fixed-width right-side columns through the direct gather, one query per stride class of
-     the gather's dispatch rather than one per admitted type: the runner samples at most 10 queries
-     per file, so per-type queries would drop coverage at random. Per-type correctness is covered by
-     tests/queries/0_stateless/05054_hash_join_direct_gather.sql.
+<!-- Emit of fixed-width right-side columns through the gather, one query per stride class of the
+     gather's dispatch rather than one per type: the runner samples at most 10 queries per file, so
+     per-type queries would drop coverage at random. Per-type correctness is covered by
+     tests/queries/0_stateless/05054_hash_join_gather.sql.
 
      Every query has to reach the COLUMNAR emit path, which the in-memory row store claims first
      whenever it initializes. Queries 1 to 4, 8 and 9 arrange that with a fanout below
@@ -35,8 +35,8 @@
     <fill_query>INSERT INTO dg_wide_x10 SELECT number % 20000, toFixedString(leftPad(toString(number), 40, 'y'), 40) FROM numbers(200000)</fill_query>
     <fill_query>INSERT INTO dg_enum WITH CAST(1 + number % 2, 'Enum8(\'x\' = 1, \'y\' = 2)') AS n SELECT number, n, n, n, n, n, n, n, n FROM numbers(2000000)</fill_query>
 
-    <!-- STRIDE 4. 1 and 2 byte strides are deliberately not measured: there is almost no emit cost to
-         remove at that width, so the arm would be noise. -->
+    <!-- STRIDE 4. Stride 2 is the one class with no arm of its own: it has the same shape as 1 and 4,
+         which are both here, so a third arm of that shape would only take a slot from another. -->
     <query>SELECT * FROM dg_probe p JOIN dg_s4 b ON p.k = b.k FORMAT Null</query>
     <!-- STRIDE 8 -->
     <query>SELECT * FROM dg_probe p JOIN dg_s8 b ON p.k = b.k FORMAT Null</query>
@@ -53,7 +53,7 @@
     <!-- parallel_hash, inline rather than as a substitution: a substitution expands as a cartesian
          product and would push this file past the runner's 10-query sample. -->
     <query>SELECT * FROM dg_probe p JOIN dg_s8 b ON p.k = b.k SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
-    <!-- Control: Enum8 is not admitted by the gather, so this query must not change. -->
+    <!-- STRIDE 1, through Enum8 - the narrowest fixed-width leaf a table can hold. -->
     <query>SELECT * FROM dg_probe p JOIN dg_enum b ON p.k = b.k FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS dg_probe</drop_query>

@@ -1,8 +1,9 @@
 -- Every right-side encoding has exactly one emit kernel, and the four emit builders - by blocks, by
 -- ref lists, by limit and offset, and the not-joined scan - all have to produce the same values
 -- through it. Every arm pins the settings that select the builder, because the test runner randomizes
--- them, and the block at the end asserts how many values each arm gathered: without it a green run
--- cannot tell which builder ran, or whether a column reached its kernel at all.
+-- them, and checks its values against a source that shares no code with the kernel under test: a
+-- `full_sorting_merge` twin of the same query where that is possible, and a hand-computed count
+-- otherwise.
 --
 -- Whether the in-memory row store claims a narrow column instead of the gather depends on a planner
 -- estimate that is not stable across runs, so every arm takes that estimate out of its own outcome
@@ -55,7 +56,7 @@ DROP TABLE IF EXISTS dg_any_right;
 DROP TABLE IF EXISTS dg_semi_right;
 DROP TABLE IF EXISTS dg_any_inner;
 
--- One payload column per admitted type except `Interval`, which arm 1e carries on its own fixture so
+-- One payload column per gathered type except `Interval`, which arm 1e carries on its own fixture so
 -- that its column does not move the reference values of every arm that reads this table.
 CREATE TABLE dg_build
 (
@@ -101,37 +102,29 @@ INSERT INTO dg_probe SELECT number * 2 FROM numbers(1000);
 SELECT 'arm1 hash', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm1_hash', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm1 parallel_hash', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm1_parallel_hash', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm1 full_sorting_merge', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm1_fsm', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
--- Arm 1d: how many values were gathered, not merely that some were. Every other arm asserts only that
--- one column took the gather, which stays true if a single admitted type falls back, because the values
--- of the two paths are identical by construction. Pinning the row store off leaves all 30 payload
--- columns of `dg_build` on the columnar path for all 1000 probe rows, with no planner estimate in the
--- path, so 30000 is exact. Dropping a type from `directGatherAdmits` moves it by 1000 per payload
--- column of that type, which is 2000 for `FixedString`: `dg_build` carries both a 7-byte and a
--- 40-byte one.
+-- Arm 1d: every payload type of `dg_build` in one query, so a kernel that writes the wrong bytes for
+-- any one of them changes the hash. Pinning the row store off leaves all 30 payload columns on the
+-- columnar path for all 1000 probe rows, with no planner estimate in the path.
 SELECT 'arm1d per-type arming', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm1d_per_type', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
--- Arm 1e: `Interval` is the one admitted type `dg_build` does not carry. It is storable in a table
--- (`cannotBeStoredInTables` is not overridden for it), so it gets the same exact-count treatment as
--- arm 1d: one payload column over 1000 matched probe rows is 1000 gathered values.
+-- Arm 1e: `Interval` is the one gathered type `dg_build` does not carry. It is storable in a table
+-- (`cannotBeStoredInTables` is not overridden for it), so it gets a fixture of its own, and `countIf`
+-- checks its values rather than only the hash.
 CREATE TABLE dg_interval (k UInt64, iv IntervalDay) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_interval SELECT number, toIntervalDay(number) FROM numbers(2000);
 
@@ -140,8 +133,7 @@ FROM dg_probe JOIN dg_interval USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm1e_per_type_interval', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 2: 100 probe keys have no match. With `join_use_nulls = 0` an unmatched right value is the type
 -- default, which is what a zero ref word makes the gather write - not zero bytes, because an `Enum8`
@@ -161,16 +153,14 @@ SELECT 'arm2 unmatched defaults', count(), sum(cityHash64(*)),
 FROM dg_mixed_probe LEFT JOIN dg_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm2_defaults', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm2 unmatched nulls', count(), sum(cityHash64(*)),
     countIf(c_u64 IS NULL), countIf(c_fs7 IS NULL), countIf(c_enum IS NULL)
 FROM dg_mixed_probe LEFT JOIN dg_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 1,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm2_nulls', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arms 3 and 5: ten build rows per key. The threshold pin selects the emit builder, and all three -
 -- by blocks, by ref lists, by limit and offset - have to agree on the values. `buildOutputFromBlocks`
@@ -184,13 +174,11 @@ INSERT INTO dg_list_probe SELECT number FROM numbers(100);
 
 SELECT 'arm3 row list', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm3_by_blocks', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm3 row ref lists control', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm3_by_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 -- Every arm below that asks for the limit and offset builder also pins `enable_analyzer = 1`: only
 -- the `TableJoin` the analyzer builds carries `joined_block_split_single_row`, so with the old
@@ -198,8 +186,7 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 SELECT 'arm5 limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_analyzer = 1,
-    log_comment = 'dg_arm5_limit_offset', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 7, enable_analyzer = 1;
 
 -- Arms 5b and 5c pin which builder ran. The limit and offset builder records the ref words its walk
 -- selects, so it reaches the kernels like every other builder: 2 columns x 1000 rows, `a` through
@@ -213,20 +200,17 @@ INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003, toString(number
 SELECT 'arm5b mixed limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1,
-    log_comment = 'dg_arm5b_mixed_limit_offset', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1;
 
 SELECT 'arm5c mixed by blocks', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm5c_mixed_by_blocks', ast_fuzzer_runs = 0;
+    enable_hash_join_row_store = 0;
 
 -- Arm 4: `SEMI` strictness leaves `output_by_row_list` false, which is the single-inline-ref builder.
 SELECT 'arm4 semi', count(), sum(cityHash64(*)) FROM dg_probe SEMI LEFT JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm4_semi', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 6: a `Nullable` stored column gathers its null map and its nested plane; an unmatched row
 -- writes a set null byte over a zeroed nested value, which is what `insertDefaultInto` inserts.
@@ -240,20 +224,18 @@ SELECT 'arm6 nullable', count(), sum(cityHash64(*)), countIf(a IS NULL), countIf
 FROM dg_probe LEFT JOIN dg_nullable USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm6_nullable', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm6 nullable full_sorting_merge control', count(), sum(cityHash64(*)), countIf(a IS NULL), countIf(b IS NULL)
 FROM dg_probe LEFT JOIN dg_nullable USING (k)
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm6b_nullable_fsm', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 7: lazy replication under an upstream `arrayJoin` wraps the right columns wider than 8 bytes
 -- (`u`, `w`, `d`) in `ColumnReplicated`, which the gather reads through the per-block indexes:
 -- `row' = indexes[row]` addresses the nested column. The two key ranges overlap, so all 45 rows
--- reach the probe emit path: 4 gathered columns by 45 rows. Every column here fits the row store's
--- inclusive 32-byte limit, so it is pinned off to make 180 exact.
+-- reach the probe emit path. Every column here fits the row store's inclusive 32-byte limit, so it
+-- is pinned off to keep them all on the columnar path.
 SELECT 'arm7 replicated', count(), sum(cityHash64(*)) FROM
 (
     SELECT number AS k FROM numbers(1, 9)
@@ -267,8 +249,7 @@ RIGHT JOIN
 ) AS r USING (k)
 SETTINGS enable_lazy_columns_replication = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0,
     join_use_nulls = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
-    joined_block_split_single_row = 0, enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm7_replicated', ast_fuzzer_runs = 0;
+    joined_block_split_single_row = 0, enable_hash_join_row_store = 0;
 
 -- Arm 8: the row store and the gather coexisting. A ratio of zero admits the row store without
 -- consulting any row-count estimate; `USING` saves no right key, so `n1` and `n2` are the two
@@ -282,8 +263,7 @@ INSERT INTO dg_rowstore_probe SELECT number % 100 FROM numbers(1000);
 SELECT 'arm8 row store mixed', count(), sum(cityHash64(*)) FROM dg_rowstore_probe JOIN dg_rowstore USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 1, min_rows_ratio_for_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm8_row_store', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 9: a reranged build side is the one producer of the range shape, and the kernels consume it as
 -- ranges rather than flattening it - one copy per run of consecutive rows. The threshold is pinned to
@@ -293,13 +273,12 @@ SELECT 'arm9 reranged control', count(), sum(cityHash64(*)) FROM dg_list_probe J
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
     allow_experimental_join_right_table_sorting = 1, join_to_sort_minimum_perkey_rows = 2,
-    join_to_sort_maximum_table_rows = 10000,
-    log_comment = 'dg_arm9_reranged', ast_fuzzer_runs = 0;
+    join_to_sort_maximum_table_rows = 10000;
 
 -- Arm 10: the extended-type gathers - `String`, `Nullable`, `Array` (nested and doubly nested),
 -- `Tuple` - all in one table. The row store pin leaves all 6 payload columns on the columnar path
--- for all 1000 matched probe rows: 6000 gathered values exactly. The `full_sorting_merge` twin
--- pins the same values through an algorithm sharing no code.
+-- for all 1000 matched probe rows. The `full_sorting_merge` twin pins the same values through an
+-- algorithm sharing no code.
 CREATE TABLE dg_ext
 (
     k UInt64,
@@ -324,13 +303,11 @@ FROM numbers(2000);
 SELECT 'arm10 extended types', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm10_extended', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm10 extended full_sorting_merge control', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_ext USING (k)
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm10b_extended_fsm', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 10c: 100 unmatched probe keys. Every extended type's unmatched value must equal what
 -- `insertDefaultInto` writes: an empty string, NULL, an empty array, a tuple of those.
@@ -342,17 +319,15 @@ SELECT 'arm10c extended defaults', count(), sum(cityHash64(*)),
 FROM dg_ext_probe LEFT JOIN dg_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm10c_extended_defaults', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm10c defaults full_sorting_merge control', count(), sum(cityHash64(*)),
     countIf(s = ''), countIf(ns IS NULL), countIf(nu IS NULL), countIf(a = []), countIf(tupleElement(t, 's') = '')
 FROM dg_ext_probe LEFT JOIN dg_ext USING (k)
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm10d_defaults_fsm', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
--- Arm 11: `Variant` gathers its local discriminators, offsets, and every admitted nested variant
+-- Arm 11: `Variant` gathers its local discriminators, offsets, and every nested variant
 -- column, remapping each stored block's local discriminator order onto the destination's. An
 -- unmatched row is NULL, like `insertDefault`.
 CREATE TABLE dg_variant (k UInt64, v Variant(Array(UInt64), String, UInt64), w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
@@ -371,15 +346,13 @@ SELECT 'arm11 variant', count(), sum(cityHash64(k, toString(v), w)), countIf(v I
 FROM dg_ext_probe LEFT JOIN dg_variant USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm11_variant', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm11 variant full_sorting_merge control', count(), sum(cityHash64(k, toString(v), w)), countIf(v IS NULL),
     countIf(variantType(v) = 'UInt64'), countIf(variantType(v) = 'String'), countIf(variantType(v) = 'Array(UInt64)')
 FROM dg_ext_probe LEFT JOIN dg_variant USING (k)
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm11b_variant_fsm', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 11c: stored blocks whose local discriminator orders actually differ. Arm 11 cannot reach one,
 -- because `SerializationVariant` only ever writes the global order, so every block a `MergeTree` read
@@ -414,8 +387,7 @@ FROM dg_ext_probe LEFT JOIN (
     SELECT k, CAST(v, 'Variant(Array(UInt64), String, UInt64)') AS v, w FROM dg_variant_ord2
 ) AS ord USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm11c_variant_local_order', ast_fuzzer_runs = 0;
+    enable_hash_join_row_store = 0;
 
 SELECT 'arm11c local order full_sorting_merge control', count(), sum(cityHash64(k, toString(v), w)), countIf(v IS NULL),
     countIf(variantType(v) = 'UInt64'), countIf(variantType(v) = 'String'), countIf(variantType(v) = 'Array(UInt64)')
@@ -424,8 +396,7 @@ FROM dg_ext_probe LEFT JOIN (
     UNION ALL
     SELECT k, CAST(v, 'Variant(Array(UInt64), String, UInt64)') AS v, w FROM dg_variant_ord2
 ) AS ord USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm11d_local_order_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 -- Arm 11e: a `Variant` below an `Array`. The array kernel hands its nested plane ranges rather than
 -- row words, so this is the only shape that reaches `gatherVariantRanges` - and the only one where a
@@ -443,13 +414,11 @@ FROM numbers(2000);
 SELECT 'arm11e variant under array', count(), sum(cityHash64(k, toString(va), w)), sum(length(va)), countIf(empty(va))
 FROM dg_ext_probe LEFT JOIN dg_variant_array USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm11e_variant_under_array', ast_fuzzer_runs = 0;
+    enable_hash_join_row_store = 0;
 
 SELECT 'arm11e under array full_sorting_merge control', count(), sum(cityHash64(k, toString(va), w)), sum(length(va)), countIf(empty(va))
 FROM dg_ext_probe LEFT JOIN dg_variant_array USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm11f_under_array_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 -- Arm 12: the extended types under lazy replication (arm 7's fixture with `String`, `Array`,
 -- `Nullable` and `Tuple` payloads): every replicated column gathers through the per-block indexes.
@@ -466,8 +435,7 @@ RIGHT JOIN
 ) AS r USING (k)
 SETTINGS enable_lazy_columns_replication = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0,
     join_use_nulls = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
-    joined_block_split_single_row = 0, enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm12_replicated_extended', ast_fuzzer_runs = 0;
+    joined_block_split_single_row = 0, enable_hash_join_row_store = 0;
 
 SELECT 'arm12 replicated ref lists control', count(), sum(cityHash64(*)) FROM
 (
@@ -482,12 +450,11 @@ RIGHT JOIN
 ) AS r USING (k)
 SETTINGS enable_lazy_columns_replication = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0,
     join_use_nulls = 0, join_output_by_rowlist_perkey_rows_threshold = 0,
-    joined_block_split_single_row = 0,
-    log_comment = 'dg_arm12b_replicated_ref_lists', ast_fuzzer_runs = 0;
+    joined_block_split_single_row = 0;
 
 -- Arm 13: an `Enum` leaf inside a `Tuple` gathers like any other fixed-width leaf, and its default
 -- comes from `DataTypeTuple::insertDefaultInto`, which recurses into the element types. Both columns
--- gather here: exactly 2000 values.
+-- gather here.
 CREATE TABLE dg_tuple_enum (k UInt64, te Tuple(u UInt64, e Enum8('a' = 1, 'b' = 2)), w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_tuple_enum SELECT number,
     CAST((number, CAST(1 + number % 2, 'Enum8(\'a\' = 1, \'b\' = 2)')), 'Tuple(u UInt64, e Enum8(\'a\' = 1, \'b\' = 2))'),
@@ -497,8 +464,7 @@ FROM numbers(2000);
 SELECT 'arm13 enum in tuple', count(), sum(cityHash64(*)) FROM dg_probe JOIN dg_tuple_enum USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm13_tuple_enum', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 14: the extended types through the two remaining gathering builders: the row-list one (ten
 -- build rows per key, `refsOf` expansion plus adjacent-run merging under `Array`) and the
@@ -510,25 +476,21 @@ INSERT INTO dg_list_ext SELECT number % 200, concat('s', toString(number)), rang
 SELECT 'arm14 extended row list', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm14_ext_by_blocks', ast_fuzzer_runs = 0;
+    enable_hash_join_row_store = 0;
 
 SELECT 'arm14 extended ref lists control', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm14b_ext_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 SELECT 'arm14c extended limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1,
-    log_comment = 'dg_arm14c_ext_limit_offset', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1;
 
 -- Arm asof: an `ASOF` match is a single inline ref word like any other, so it resolves the same emit
 -- table and runs the same kernels. Its three emitted right columns are the two payloads and the
--- right `ASOF` key itself, over all 80 probe rows: 240 gathered values with the row store pinned
--- off. Ten build rows per key with distinct `ts` keep the chosen row unique, so the values are
--- deterministic.
+-- right `ASOF` key itself, over all 80 probe rows, with the row store pinned off. Ten build rows per
+-- key with distinct `ts` keep the chosen row unique, so the values are deterministic.
 CREATE TABLE dg_asof (k UInt64, ts UInt64, a UInt64, w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_asof SELECT number % 50, intDiv(number, 50) * 10, number * 1000003,
     toFixedString(leftPad(toString(number), 40, 'w'), 40) FROM numbers(500);
@@ -540,14 +502,12 @@ SELECT 'arm_asof', count(), sum(cityHash64(*)), countIf(a = 0), countIf(w = toFi
 FROM dg_asof_probe ASOF LEFT JOIN dg_asof ON dg_asof_probe.k = dg_asof.k AND dg_asof_probe.ts >= dg_asof.ts
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm_asof', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm_asof full_sorting_merge control', count(), sum(cityHash64(*)), countIf(a = 0), countIf(w = toFixedString('', 40))
 FROM dg_asof_probe ASOF LEFT JOIN dg_asof ON dg_asof_probe.k = dg_asof.k AND dg_asof_probe.ts >= dg_asof.ts
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm_asof_fsm', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 15: the not-joined scan over the hash map. `RIGHT JOIN` emits every build row that no probe row
 -- matched, and those rows are recorded as ref words and emitted by the same kernels as a match. Half
@@ -559,14 +519,12 @@ SELECT 'arm15 right non-joined', count(), sum(cityHash64(*)) FROM dg_probe RIGHT
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm15_right_non_joined', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm15 right non-joined full_sorting_merge control', count(), sum(cityHash64(*))
 FROM dg_probe RIGHT JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm15b_right_non_joined_fsm', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 16: the not-joined scan over the null maps, which is the source a hash-map-only collector would
 -- drop. A build row whose join key is NULL is in no hash map cell at all, so `FULL JOIN` can only
@@ -581,15 +539,13 @@ FROM dg_mixed_probe FULL JOIN dg_nullkey ON dg_mixed_probe.k = dg_nullkey.k
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm16_full_null_keys', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm16 full join null keys full_sorting_merge control', count(), sum(cityHash64(a, w)),
     countIf(dg_nullkey.k IS NULL), countIf(a = 0)
 FROM dg_mixed_probe FULL JOIN dg_nullkey ON dg_mixed_probe.k = dg_nullkey.k
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm16b_full_null_keys_fsm', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 17: the third not-joined source. Two disjuncts put the used flags per right row instead of per
 -- map cell, so the scan walks the stored blocks and their flags rather than the map. Probe rows hit
@@ -606,8 +562,7 @@ FROM dg_or_probe RIGHT JOIN dg_or ON dg_or_probe.k1 = dg_or.k1 OR dg_or_probe.k2
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm17_disjunct_non_joined', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- No other algorithm joins on a disjunction, so the oracle is built by hand: both disjuncts select
 -- the same build rows here (`k2` is `k1 + 10000` on both sides), so every build row is emitted once
@@ -621,8 +576,7 @@ FROM dg_or_probe RIGHT JOIN dg_or ON dg_or_probe.k1 = dg_or.k1 OR dg_or_probe.k2
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 1,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm17b_disjunct_split', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 18: the limit and offset builder cut by bytes instead of rows. A one-byte budget ends every
 -- chunk at the first row that crosses it, which is the mid-`RowRefList` cursor case: the walk stops
@@ -630,22 +584,19 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 SELECT 'arm18 byte limit mid list', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 4096, max_joined_block_size_bytes = 1, enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm18_byte_limit', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 4096, max_joined_block_size_bytes = 1, enable_hash_join_row_store = 0;
 
 -- Arm 19: the same builder at the two ends of its row budget. One row per chunk is the degenerate
 -- cursor (every call resumes mid-key), 4096 rows is one chunk for the whole probe block.
 SELECT 'arm19 row limit 1', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 1, enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm19_row_limit_1', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 1, enable_hash_join_row_store = 0;
 
 SELECT 'arm19 row limit 4096', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 4096, enable_hash_join_row_store = 0,
-    log_comment = 'dg_arm19_row_limit_4096', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 4096, enable_hash_join_row_store = 0;
 
 -- Arm 21: `ANY` strictness records one ref word per emitted left row like every other strictness, so
 -- it runs the same kernels: 30 payload columns over 1000 matched probe rows, the same 30000 as the
@@ -657,8 +608,7 @@ SELECT 'arm21 any left join', count(), sum(cityHash64(*)) FROM dg_probe ANY LEFT
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm21_any_left', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm21 any left join over unbounded source', count(), sum(cityHash64(*)) FROM
 (
@@ -667,9 +617,7 @@ SELECT 'arm21 any left join over unbounded source', count(), sum(cityHash64(*)) 
         USING number LIMIT 10
 )
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm21b_any_numbers', ast_fuzzer_runs = 0;
-
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 22: `RightAny` is a strictness of its own - the old `ANY`, selected by
 -- `any_join_distinct_right_table_keys` - and it picks a key's first row rather than claiming rows
@@ -680,16 +628,14 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     any_join_distinct_right_table_keys = 1,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
-    joined_block_split_single_row = 0,
-    log_comment = 'dg_arm22_right_any', ast_fuzzer_runs = 0;
+    joined_block_split_single_row = 0;
 
 -- Arm 23: `ANTI` emits no right row at all, so it must record no words and gather nothing however
 -- the collector is shaped.
 SELECT 'arm23 anti', count() FROM dg_mixed_probe ANTI LEFT JOIN dg_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
-    joined_block_split_single_row = 0,
-    log_comment = 'dg_arm23_anti', ast_fuzzer_runs = 0;
+    joined_block_split_single_row = 0;
 
 -- Arm 24: a required right key forces `need_filter`, because the key column is emitted from the
 -- right side rather than derived from the left one. `ON` (not `USING`) is what puts it there.
@@ -698,8 +644,7 @@ FROM dg_probe ANY INNER JOIN dg_build ON dg_probe.k = dg_build.k
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
-    joined_block_split_single_row = 0,
-    log_comment = 'dg_arm24_required_right_key', ast_fuzzer_runs = 0;
+    joined_block_split_single_row = 0;
 
 -- Arm 26: `ANY RIGHT JOIN` claims a key once and then emits every row of it, so the probe records
 -- the key's whole cell word - a `RowRefList` word as soon as a key has duplicates, not an inline
@@ -711,14 +656,12 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     any_join_distinct_right_table_keys = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
     enable_hash_join_row_store = 0, join_output_by_rowlist_perkey_rows_threshold = 1000000,
-    joined_block_split_single_row = 0,
-    log_comment = 'dg_arm26_any_right', ast_fuzzer_runs = 0;
+    joined_block_split_single_row = 0;
 
 SELECT 'arm26 any right full_sorting_merge control', count(), sum(cityHash64(*))
 FROM dg_list_probe ANY RIGHT JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    any_join_distinct_right_table_keys = 0,
-    log_comment = 'dg_arm26b_any_right_fsm', ast_fuzzer_runs = 0;
+    any_join_distinct_right_table_keys = 0;
 
 -- Arm 27: the same through a `Join` engine, which is how a query reaches `ANY RIGHT` without saying
 -- so in the join clause. `SEMI RIGHT` and `ANY INNER` go alongside it: `SEMI RIGHT` records whole
@@ -737,20 +680,17 @@ INSERT INTO dg_any_inner SELECT number % 200, concat('s', toString(number)),
 SELECT 'arm27 storage join any right', count(), sum(cityHash64(*))
 FROM dg_list_probe ANY RIGHT JOIN dg_any_right USING (k)
 SETTINGS join_use_nulls = 0, enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm27_sj_any_right', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm27 storage join semi right', count(), sum(cityHash64(*))
 FROM dg_list_probe SEMI RIGHT JOIN dg_semi_right USING (k)
 SETTINGS join_use_nulls = 0, enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm27b_sj_semi_right', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm27 storage join any inner', count(), sum(cityHash64(*))
 FROM dg_list_probe ANY INNER JOIN dg_any_inner USING (k)
 SETTINGS join_use_nulls = 0, enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm27c_sj_any_inner', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 28: every `Enum` shape at once, because an `Enum` is the one fixed-width leaf whose default is
 -- not zero bytes - it is the first declared value, so the kernel has to write a captured pattern
@@ -796,8 +736,7 @@ SELECT 'arm28 enum defaults', count(), sum(cityHash64(*)),
 FROM dg_mixed_probe LEFT JOIN dg_enum USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm28_enum', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- The same enum shapes with ten build rows per key, which is what lets the threshold pin select the
 -- emit builder: `buildOutputFromRowRefLists` is only reached at a per-key fanout above one, so a
@@ -833,8 +772,7 @@ SELECT 'arm28 enum row list', count(), sum(cityHash64(*)),
 FROM dg_enum_probe LEFT JOIN dg_enum_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm28b_enum_row_list', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm28 enum ref lists control', count(), sum(cityHash64(*)),
     countIf(e8 = 'a'), countIf(e_neg = 'z'), countIf(e_neg = 'y'),
@@ -842,8 +780,7 @@ SELECT 'arm28 enum ref lists control', count(), sum(cityHash64(*)),
 FROM dg_enum_probe LEFT JOIN dg_enum_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm28c_enum_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 -- Arm 29: `LowCardinality`, whose kernel is `ColumnLowCardinality::insertRangeFrom` bound to the
 -- concrete class. That call is the whole point: it adopts the source dictionary when the destination
@@ -891,8 +828,7 @@ SELECT 'arm29 low cardinality', count(), sum(cityHash64(*)),
 FROM dg_enum_probe LEFT JOIN dg_lc USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm29_lc', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- The other builder over the same words, which hands the kernel the list words whole instead of
 -- expanding them: the values have to agree to the byte.
@@ -903,16 +839,14 @@ SELECT 'arm29 low cardinality ref lists control', count(), sum(cityHash64(*)),
 FROM dg_enum_probe LEFT JOIN dg_lc USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm29b_lc_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 SELECT 'arm29 low cardinality full_sorting_merge control', count(), sum(cityHash64(*)),
     countIf(lc = ''), uniqExact(lc), countIf(lcn IS NULL), uniqExact(lcn),
     sum(lcu), uniqExact(lcu), sum(length(alc)), uniqExact(arrayStringConcat(alc, ',')),
     uniqExact(tlc.s), sum(tlc.i)
 FROM dg_enum_probe LEFT JOIN dg_lc USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm29c_lc_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 -- `join_use_nulls` makes every emitted column nullable, which for a `LowCardinality` one moves the
 -- nullability inside the dictionary rather than wrapping the column.
@@ -921,8 +855,7 @@ SELECT 'arm29 low cardinality use nulls', count(), sum(cityHash64(*)),
 FROM dg_enum_probe LEFT JOIN dg_lc USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 1,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm29d_lc_use_nulls', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- The not-joined scan reaches the same kernels. The probe is cut to keys below 50 so that 150 of the
 -- 200 build keys stay unmatched: `join_use_nulls` then makes the left key NULL on exactly the rows
@@ -932,14 +865,12 @@ SELECT 'arm29 low cardinality right join', count(), sum(cityHash64(*)),
 FROM (SELECT k FROM dg_enum_probe WHERE k < 50) AS p RIGHT JOIN dg_lc USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 1,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm29e_lc_right', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm29 low cardinality right join full_sorting_merge control', count(), sum(cityHash64(*)),
     uniqExact(lc), countIf(p.k IS NULL)
 FROM (SELECT k FROM dg_enum_probe WHERE k < 50) AS p RIGHT JOIN dg_lc USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 1,
-    log_comment = 'dg_arm29f_lc_right_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 1;
 
 -- The continuation builder hands the emit a freshly cloned destination for every chunk, so the
 -- dictionary adoption that only happens into an empty destination is re-entered per chunk.
@@ -948,8 +879,7 @@ FROM dg_enum_probe LEFT JOIN dg_lc USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7,
-    log_comment = 'dg_arm29g_lc_continuation', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 7;
 
 -- A `StorageJoin` whose second query sees a block inserted after the first one resolved the emit
 -- table: the generation bump has to drop the cached source pointers, and the new block's dictionary
@@ -963,8 +893,7 @@ SELECT 'arm29 storage join before insert', count(), sum(cityHash64(*)), uniqExac
 FROM dg_enum_probe LEFT JOIN dg_lc_sj USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm29h_sj_before', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 INSERT INTO dg_lc_sj SELECT number, concat('z', toString(number % 13)),
     toFixedString(leftPad(toString(number), 40, 'z'), 40) FROM numbers(100, 100);
@@ -973,8 +902,7 @@ SELECT 'arm29 storage join after insert', count(), sum(cityHash64(*)), uniqExact
 FROM dg_enum_probe LEFT JOIN dg_lc_sj USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm29i_sj_after', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- A build side that is three unions rather than three parts, so per-block dictionary divergence is
 -- guaranteed by the plan instead of by merges staying stopped.
@@ -989,8 +917,7 @@ FROM dg_enum_probe LEFT JOIN
 ) AS r USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm29j_lc_unioned', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 30: `JSON`. Its kernel is `ColumnObject::insertRangeFrom` bound to the concrete class, and the
 -- three inserts below carry disjoint path sets with merges stopped, so an output column has to
@@ -1016,8 +943,7 @@ SELECT 'arm30 json', count(), sum(cityHash64(toString(j))),
 FROM dg_enum_probe LEFT JOIN dg_json USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm30_json', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm30 json ref lists control', count(), sum(cityHash64(toString(j))),
     countIf(toString(j) = '{}'), uniqExact(arrayStringConcat(arraySort(JSONAllPaths(j)), ',')),
@@ -1025,15 +951,13 @@ SELECT 'arm30 json ref lists control', count(), sum(cityHash64(toString(j))),
 FROM dg_enum_probe LEFT JOIN dg_json USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm30b_json_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 SELECT 'arm30 json full_sorting_merge control', count(), sum(cityHash64(toString(j))),
     countIf(toString(j) = '{}'), uniqExact(arrayStringConcat(arraySort(JSONAllPaths(j)), ',')),
     sum(cityHash64(w))
 FROM dg_enum_probe LEFT JOIN dg_json USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm30c_json_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 -- The not-joined scan and the continuation builder over the same paths: the scan reaches the kernels
 -- for 150 unmatched build keys, and the continuation hands the emit a freshly cloned destination per
@@ -1042,8 +966,7 @@ SELECT 'arm30 json right join', count(), sum(cityHash64(toString(j), w)), countI
 FROM (SELECT k FROM dg_enum_probe WHERE k < 50) AS p RIGHT JOIN dg_json USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 1,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm30d_json_right', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm30 json continuation', count(), sum(cityHash64(toString(j), w)),
     uniqExact(arrayStringConcat(arraySort(JSONAllPaths(j)), ','))
@@ -1051,8 +974,7 @@ FROM dg_enum_probe LEFT JOIN dg_json USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7,
-    log_comment = 'dg_arm30e_json_continuation', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 7;
 
 -- Arm 31: `Dynamic`. Its rows are a variant list rather than a path set, which is why it is its own
 -- kernel and not a case of the `JSON` one, even though both end up in `insertRangeFrom` on their
@@ -1076,29 +998,25 @@ SELECT 'arm31 dynamic', count(), sum(cityHash64(toString(d))), countIf(d IS NULL
 FROM dg_enum_probe LEFT JOIN dg_dyn USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm31_dynamic', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm31 dynamic ref lists control', count(), sum(cityHash64(toString(d))), countIf(d IS NULL),
     uniqExact(dynamicType(d)), sum(cityHash64(w))
 FROM dg_enum_probe LEFT JOIN dg_dyn USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm31b_dynamic_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 SELECT 'arm31 dynamic full_sorting_merge control', count(), sum(cityHash64(toString(d))),
     countIf(d IS NULL), uniqExact(dynamicType(d)), sum(cityHash64(w))
 FROM dg_enum_probe LEFT JOIN dg_dyn USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm31c_dynamic_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 SELECT 'arm31 dynamic right join', count(), sum(cityHash64(toString(d), w)), countIf(p.k IS NULL)
 FROM (SELECT k FROM dg_enum_probe WHERE k < 50) AS p RIGHT JOIN dg_dyn USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 1,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm31d_dynamic_right', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm31 dynamic continuation', count(), sum(cityHash64(toString(d), w)),
     uniqExact(dynamicType(d))
@@ -1106,8 +1024,7 @@ FROM dg_enum_probe LEFT JOIN dg_dyn USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7,
-    log_comment = 'dg_arm31e_dynamic_continuation', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 7;
 
 -- Arm 32: `Map`, which is its nested `Array(Tuple(key, value))` and nothing besides, so its kernel
 -- delegates to the `Array` one. What the arm has to establish is that the delegation lands on
@@ -1143,8 +1060,7 @@ SELECT 'arm32 map', count(), sum(cityHash64(*)),
 FROM dg_enum_probe LEFT JOIN dg_map USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm32_map', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm32 map ref lists control', count(), sum(cityHash64(*)),
     countIf(length(m) = 0), sum(length(m)), sum(arraySum(mapValues(m))),
@@ -1154,8 +1070,7 @@ SELECT 'arm32 map ref lists control', count(), sum(cityHash64(*)),
 FROM dg_enum_probe LEFT JOIN dg_map USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm32b_map_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 SELECT 'arm32 map full_sorting_merge control', count(), sum(cityHash64(*)),
     countIf(length(m) = 0), sum(length(m)), sum(arraySum(mapValues(m))),
@@ -1163,8 +1078,7 @@ SELECT 'arm32 map full_sorting_merge control', count(), sum(cityHash64(*)),
     sum(length(mlc)), uniqExact(arrayStringConcat(mapValues(mlc), ',')),
     sum(length(mm)), sum(length(mm['x']))
 FROM dg_enum_probe LEFT JOIN dg_map USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm32c_map_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 -- A `Map` nested under an `Array` is what makes the delegation take the range path rather than the
 -- row one: the `Array` kernel hands its child contiguous runs of nested rows, and the `Map` kernel
@@ -1179,8 +1093,7 @@ FROM dg_enum_probe LEFT JOIN
 ) AS r USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm32d_map_under_array', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm32 map under array full_sorting_merge control', count(), sum(cityHash64(am)),
     sum(arraySum(arrayMap(x -> length(x), am)))
@@ -1191,8 +1104,7 @@ FROM dg_enum_probe LEFT JOIN
          CAST((arrayMap(i -> concat('q', toString(i)), range(number % 3)), range(number % 3)), 'Map(String, UInt64)')] AS am
     FROM numbers(2000)
 ) AS r USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm32e_map_under_array_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 -- Arm 33: `AggregateFunction`. A row is a pointer to a state owned by one source column's arena, so
 -- this is the encoding where copying rows is a question of ownership rather than of layout: the
@@ -1230,8 +1142,7 @@ SELECT 'arm33 aggregate function', count(), sum(finalizeAggregation(s)),
 FROM dg_enum_probe LEFT JOIN dg_agg USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm33_agg', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm33 aggregate function ref lists control', count(), sum(finalizeAggregation(s)),
     countIf(finalizeAggregation(s) = 0), sum(finalizeAggregation(u)),
@@ -1240,16 +1151,14 @@ SELECT 'arm33 aggregate function ref lists control', count(), sum(finalizeAggreg
 FROM dg_enum_probe LEFT JOIN dg_agg USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm33b_agg_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 SELECT 'arm33 aggregate function full_sorting_merge control', count(), sum(finalizeAggregation(s)),
     countIf(finalizeAggregation(s) = 0), sum(finalizeAggregation(u)),
     sum(length(finalizeAggregation(ga))), countIf(empty(finalizeAggregation(ga))),
     uniqExact(w)
 FROM dg_enum_probe LEFT JOIN dg_agg USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm33c_agg_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 -- The continuation builder is where a dangling state would show: it clones a fresh destination per
 -- chunk, so each chunk takes its own references into the source arenas and drops them again.
@@ -1259,8 +1168,7 @@ FROM dg_enum_probe LEFT JOIN dg_agg USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7,
-    log_comment = 'dg_arm33d_agg_continuation', ast_fuzzer_runs = 0;
+    max_joined_block_size_rows = 7;
 
 -- Arm 34: the three encodings that close the set. `QBit` keeps its dimension and stride invariants
 -- inside `ColumnQBit`, so its own `insertRangeFrom` is the kernel; an element-less `Tuple` and a
@@ -1277,16 +1185,14 @@ SELECT 'arm34 qbit', count(), sum(cityHash64(toString(q))),
 FROM dg_enum_probe LEFT JOIN dg_qbit USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm34_qbit', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm34 qbit ref lists control', count(), sum(cityHash64(toString(q))),
     countIf(toString(q) = '[0,0,0,0,0,0,0,0]'), sum(cityHash64(w))
 FROM dg_enum_probe LEFT JOIN dg_qbit USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm34b_qbit_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 -- `toString` is what forces the value-less columns into the join output at all: an expression over
 -- them alone folds to a constant, and then nothing is emitted and nothing is gathered.
@@ -1296,8 +1202,7 @@ FROM dg_enum_probe LEFT JOIN
 (SELECT number % 200 AS k, tuple() AS t, NULL AS n, number AS u FROM numbers(2000)) AS r USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm34c_tuple0_nothing', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm34 element-less tuple and nothing ref lists control', count(), uniqExact(toString(t)),
     uniqExact(toString(n)), countIf(n IS NULL), sum(u)
@@ -1305,8 +1210,7 @@ FROM dg_enum_probe LEFT JOIN
 (SELECT number % 200 AS k, tuple() AS t, NULL AS n, number AS u FROM numbers(2000)) AS r USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm34d_tuple0_nothing_ref_lists', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
 -- Arm 35: an empty right side. Every emitted row is a default and there is no stored block to take
 -- the shape from, so the emit resolves it from a column of the output type instead - a plane pointer
@@ -1331,8 +1235,7 @@ SELECT 'arm35 empty right side', count(), sum(a), countIf(s = ''), countIf(lc = 
 FROM dg_enum_probe LEFT JOIN dg_empty USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm35_empty', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 36: the two column classes that have no kernel and must never reach one. A sparse stored
 -- column is unwrapped by `recursiveRemoveSparse` and a constant one by `convertToFullColumnIfConst`,
@@ -1350,15 +1253,13 @@ FROM dg_enum_probe LEFT JOIN
 (SELECT k, sp, w, 7 AS c, 'x' AS s FROM dg_sparse) AS r USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm36_sparse_const', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm36 sparse and const full_sorting_merge control', count(), sum(sp), countIf(sp = 0),
     sum(cityHash64(w)), uniqExact(c), uniqExact(s)
 FROM dg_enum_probe LEFT JOIN
 (SELECT k, sp, w, 7 AS c, 'x' AS s FROM dg_sparse) AS r USING (k)
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    log_comment = 'dg_arm36_sparse_const_fsm', ast_fuzzer_runs = 0;
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, join_use_nulls = 0;
 
 -- Arm 25: `joinGet` is forced `Left Any`, so it is the one consumer that emits through
 -- `buildJoinGetOutput` and its nullable wrap rather than through the kernels: a zero word becomes
@@ -1369,18 +1270,15 @@ INSERT INTO dg_jg SELECT number, number * 1000003, concat('s', toString(number))
     toFixedString(leftPad(toString(number), 40, 'j'), 40) FROM numbers(100);
 
 SELECT 'arm25 joinGet hit and miss', joinGet(dg_jg, 'a', toUInt64(7)), joinGet(dg_jg, 's', toUInt64(7)),
-    joinGet(dg_jg, 'a', toUInt64(500)), joinGet(dg_jg, 's', toUInt64(500)) = ''
-SETTINGS log_comment = 'dg_arm25_join_get', ast_fuzzer_runs = 0;
+    joinGet(dg_jg, 'a', toUInt64(500)), joinGet(dg_jg, 's', toUInt64(500)) = '';
 
 SELECT 'arm25 joinGetOrNull hit and miss', joinGetOrNull(dg_jg, 'a', toUInt64(7)),
     joinGetOrNull(dg_jg, 's', toUInt64(7)), joinGetOrNull(dg_jg, 'a', toUInt64(500)) IS NULL,
-    joinGetOrNull(dg_jg, 's', toUInt64(500)) IS NULL
-SETTINGS log_comment = 'dg_arm25b_join_get_or_null', ast_fuzzer_runs = 0;
+    joinGetOrNull(dg_jg, 's', toUInt64(500)) IS NULL;
 
 SELECT 'arm25 joinGet over a range', count(), sum(joinGet(dg_jg, 'a', number)),
     sum(cityHash64(joinGet(dg_jg, 'w', number))), countIf(joinGetOrNull(dg_jg, 'a', number) IS NULL)
-FROM numbers(200)
-SETTINGS log_comment = 'dg_arm25c_join_get_range', ast_fuzzer_runs = 0;
+FROM numbers(200);
 
 -- Arm 20: `StorageJoin` inserts more build blocks between queries and lets each query select its own
 -- subset of the right columns, both of which the emit table has to survive: the insert bumps the
@@ -1392,8 +1290,7 @@ INSERT INTO dg_sj SELECT number, number * 1000003, concat('s', toString(number))
 
 SELECT 'arm20 storage join subset a', count(), sum(cityHash64(k, a)) FROM dg_probe LEFT JOIN dg_sj USING (k)
 SETTINGS join_use_nulls = 0, enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm20_storage_join_a', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 INSERT INTO dg_sj SELECT number, number * 1000003, concat('s', toString(number)),
     toFixedString(leftPad(toString(number), 40, 'j'), 40) FROM numbers(500, 500);
@@ -1401,48 +1298,11 @@ INSERT INTO dg_sj SELECT number, number * 1000003, concat('s', toString(number))
 SELECT 'arm20 storage join subset s w after insert', count(), sum(cityHash64(k, s, w))
 FROM dg_probe LEFT JOIN dg_sj USING (k)
 SETTINGS join_use_nulls = 0, enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm20b_storage_join_sw', ast_fuzzer_runs = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 SELECT 'arm20 storage join all columns', count(), sum(cityHash64(*)) FROM dg_probe LEFT JOIN dg_sj USING (k)
 SETTINGS join_use_nulls = 0, enable_hash_join_row_store = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
-    log_comment = 'dg_arm20c_storage_join_all', ast_fuzzer_runs = 0;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT
-    replaceOne(log_comment, 'dg_', '') AS arm,
-    if(log_comment IN ('dg_arm1d_per_type', 'dg_arm1e_per_type_interval', 'dg_arm5b_mixed_limit_offset',
-                       'dg_arm7_replicated', 'dg_arm8_row_store',
-                       'dg_arm10_extended', 'dg_arm10c_extended_defaults', 'dg_arm11_variant',
-                       'dg_arm11c_variant_local_order', 'dg_arm11e_variant_under_array',
-                       'dg_arm12_replicated_extended', 'dg_arm13_tuple_enum', 'dg_arm14_ext_by_blocks',
-                       'dg_arm14c_ext_limit_offset', 'dg_arm15_right_non_joined', 'dg_arm16_full_null_keys',
-                       'dg_arm17_disjunct_non_joined', 'dg_arm18_byte_limit', 'dg_arm19_row_limit_1',
-                       'dg_arm19_row_limit_4096', 'dg_arm_asof', 'dg_arm20_storage_join_a',
-                       'dg_arm20b_storage_join_sw', 'dg_arm20c_storage_join_all', 'dg_arm21_any_left',
-                       'dg_arm21b_any_numbers', 'dg_arm22_right_any', 'dg_arm24_required_right_key',
-                       'dg_arm26_any_right', 'dg_arm27_sj_any_right', 'dg_arm27b_sj_semi_right',
-                       'dg_arm27c_sj_any_inner', 'dg_arm28_enum', 'dg_arm28b_enum_row_list', 'dg_arm28c_enum_ref_lists',
-                       'dg_arm29_lc', 'dg_arm29b_lc_ref_lists', 'dg_arm29d_lc_use_nulls',
-                       'dg_arm29e_lc_right', 'dg_arm29g_lc_continuation', 'dg_arm29h_sj_before',
-                       'dg_arm29i_sj_after', 'dg_arm29j_lc_unioned', 'dg_arm30_json',
-                       'dg_arm30b_json_ref_lists', 'dg_arm30d_json_right',
-                       'dg_arm30e_json_continuation', 'dg_arm31_dynamic',
-                       'dg_arm31b_dynamic_ref_lists', 'dg_arm31d_dynamic_right',
-                       'dg_arm31e_dynamic_continuation', 'dg_arm32_map',
-                       'dg_arm32b_map_ref_lists', 'dg_arm32d_map_under_array',
-                       'dg_arm33_agg', 'dg_arm33b_agg_ref_lists', 'dg_arm33d_agg_continuation',
-                       'dg_arm34_qbit', 'dg_arm34b_qbit_ref_lists', 'dg_arm34c_tuple0_nothing',
-                       'dg_arm34d_tuple0_nothing_ref_lists', 'dg_arm35_empty',
-                       'dg_arm36_sparse_const'),
-       toString(max(ProfileEvents['HashJoinDirectGatheredValues'])),
-       toString(max(ProfileEvents['HashJoinDirectGatheredValues']) > 0)) AS gathered
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'dg_arm%'
-GROUP BY log_comment
-ORDER BY log_comment;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 DROP TABLE dg_build;
 DROP TABLE dg_probe;
