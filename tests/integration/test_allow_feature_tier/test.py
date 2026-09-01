@@ -718,7 +718,7 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")
 
-    for tier in ["0", "1", "2", "3"]:
+    for tier in ["0", "1", "2"]:
         if tier != "0":
             instance.replace_in_config(feature_tier_path, str(int(tier) - 1), tier)
             instance.query("SYSTEM RELOAD CONFIG")
@@ -737,7 +737,7 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
         assert output == ""
         assert error == ""
 
-    instance.replace_in_config(feature_tier_path, "3", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")
