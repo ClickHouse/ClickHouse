@@ -181,9 +181,10 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
                 elem->throwIfKilled();
         }
     };
-    // As above: a borrowed child group (e.g. async-insert-queue flush) inherits the parent's
-    // per-query scheduling context so its CPU/IO requests are accounted to the same query.
-    scheduling_context = parent->scheduling_context;
+    // NOTE: this borrowed constructor (used by `createForFlushAsyncInsertQueue`) deliberately does
+    // NOT inherit the parent's `scheduling_context`. An async-insert flush writes a batch aggregated
+    // from many independent inserts, so it is not a single query — leaving its context null keeps its
+    // IO anonymous rather than mis-attributing the whole batch to one query's fair/las accounting.
 }
 
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
