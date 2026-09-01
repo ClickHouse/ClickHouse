@@ -59,7 +59,7 @@ private:
 
         std::string head;
         char buffer[1024];
-        while (head.find("\r\n\r\n") == std::string::npos)
+        while (!head.contains("\r\n\r\n"))
         {
             int received = peer.receiveBytes(buffer, sizeof(buffer));
             if (received <= 0)
