@@ -362,6 +362,13 @@ class Shell:
                 return True
             return time.monotonic() - ladder_start + next_delay < retry_deadline
 
+        def _deadline_passed():
+            return (
+                retry_deadline is not None
+                and ladder_start is not None
+                and time.monotonic() - ladder_start >= retry_deadline
+            )
+
         for retry in range(retries):
 
             if retry > 0:
@@ -369,28 +376,22 @@ class Shell:
                 if verbose:
                     print(f"Retrying in {delay}s...")
                 time.sleep(delay)
-                # time.sleep may return late, so the delay actually taken is not the
-                # nominal one the pre-sleep check reasoned about. Re-read the clock.
-                if (
-                    retry_deadline is not None
-                    and ladder_start is not None
-                    and time.monotonic() - ladder_start >= retry_deadline
-                ):
+                if on_retry and pending_notice is not None and not _deadline_passed():
+                    # A reporting failure must never fail the command the retry is rescuing.
+                    try:
+                        on_retry(pending_notice, retry, retries - 1)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"WARNING: on_retry callback failed, ex [{e}]")
+                pending_notice = None
+                # Last thing before the attempt: `time.sleep` may return late, and
+                # `on_retry` is caller code that runs inside the window.
+                if _deadline_passed():
                     if verbose:
                         print(
                             f"Retry deadline of {retry_deadline}s reached, stopping retries"
                         )
                     deadline_cancelled = True
                     break
-                if on_retry and pending_notice is not None:
-                    # Announced here, where the recheck above has confirmed the attempt
-                    # it announces will run. A reporting failure must never fail the
-                    # command the retry is rescuing.
-                    try:
-                        on_retry(pending_notice, retry, retries - 1)
-                    except Exception as e:  # noqa: BLE001
-                        print(f"WARNING: on_retry callback failed, ex [{e}]")
-                pending_notice = None
 
             try:
                 with open(log_file, "w") as log_fp:
