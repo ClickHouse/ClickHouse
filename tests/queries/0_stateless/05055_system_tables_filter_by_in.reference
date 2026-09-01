@@ -1,0 +1,38 @@
+-- system.tables
+t_a
+t_c
+t_a
+t_b
+t_a
+t_b
+t_a
+t_c
+t_c
+t_dist
+t_rep
+t_a
+t_c
+t_a
+t_b
+t_c
+t_b
+t_a
+0
+-- pushed down == applied afterwards
+tables	1
+columns	1
+parts	1
+parts_columns	1
+projection_parts	1
+detached_parts	1
+data_skipping_indices	1
+projections	1
+constraints	1
+mutations	1
+replicas	1
+replication_queue	1
+part_moves_between_shards	1
+distribution_queue	1
+detached_tables	1
+-- system.replicas rows are complete
+t_rep	0

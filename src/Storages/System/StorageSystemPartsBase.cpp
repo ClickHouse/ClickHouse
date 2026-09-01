@@ -4,6 +4,7 @@
 #include <Core/UUID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Common/escapeForFileName.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -113,6 +114,13 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
     Block block_to_filter;
 
+    /// A condition on `table` prunes the enumeration below, which resolves every storage of
+    /// every database that survived the condition on `database`. The sets of `filter_by_other_columns`
+    /// were built in `ReadFromSystemPartsBase::applyFilters`, so an `IN` is readable here.
+    const auto table_name_filter = filter_by_other_columns
+        ? extractNameFilter(filter_by_other_columns->getOutputs().at(0), table_column_name, context)
+        : IDatabase::FilterByNameFunction{};
+
     MutableColumnPtr table_column_mut = ColumnString::create();
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
@@ -158,7 +166,8 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                     = check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
                 offsets[i] = offsets[i - 1];
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                auto iterator = database->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+                for (; iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
