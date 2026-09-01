@@ -10,7 +10,7 @@ CREATE TABLE t_adaptive_mixed
     x UInt64
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1, max_compress_block_size = 65536;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, max_compress_block_size = 65536;
 
 -- Two parts so OPTIMIZE FINAL merges (adaptive runs only on merge). In x, low ids are random (LZ4), high ids monotonic (T64)
 INSERT INTO t_adaptive_mixed SELECT number, if(number < 500000, cityHash64(number), number) FROM numbers(1000000);
