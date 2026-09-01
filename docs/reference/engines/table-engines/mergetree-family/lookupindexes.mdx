@@ -20,7 +20,7 @@ This means:
 - repeated queries can be significantly faster;
 - `GRANULARITY` is not used.
 
-Lookup indexes are supported for `MergeTree` tables, including `ReplicatedMergeTree`.
+Lookup indexes are supported for non-replicated `MergeTree` tables.
 
 ## Types {#types}
 
@@ -127,8 +127,10 @@ It is most useful when the right-hand side is reused across many queries, becaus
 - `table_join` is only used for direct-compatible equality joins.
 - `table_join` serves physical columns only. A query that reads an `ALIAS` column from the right-hand table falls back to a regular join (which computes the alias) instead of using the lookup.
 - Lookup indexes are not data skipping indexes. They do not use `GRANULARITY`, do not materialize per-granule index files, and are not shown in `system.data_skipping_indices`.
+- Lookup indexes are not supported for `ReplicatedMergeTree`, see [Replication](#replication).
 
 ## Replication {#replication}
 
-Lookup index metadata is replicated together with `ReplicatedMergeTree` table metadata.
-`ALTER TABLE ... ADD LOOKUP INDEX` and `ALTER TABLE ... DROP LOOKUP INDEX` are replicated in the same way as other metadata-only `ALTER` queries.
+A lookup index cannot be created on a `ReplicatedMergeTree` table: both `CREATE TABLE ... LOOKUP INDEX` and `ALTER TABLE ... ADD LOOKUP INDEX` throw `SUPPORT_IS_DISABLED`.
+
+Lookup index metadata would be stored in the replicated table metadata in ZooKeeper as an extra line, and a replica running a build without support for the feature ignores that line and rewrites the metadata without it on the next unrelated `ALTER`, which would silently drop the lookup indexes for the whole cluster. While the feature is experimental, and until the replicated metadata carries a version that lets a replica refuse metadata it does not understand, lookup indexes are restricted to non-replicated tables.

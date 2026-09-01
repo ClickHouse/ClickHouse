@@ -180,6 +180,10 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
             out << "graphite hash: " << graphite_params_hash << "\n";
     }
 
+    /// Lookup indexes are rejected on replicated tables (see the `StorageReplicatedMergeTree`
+    /// constructor), so this line is never written for a table created by a current build. The
+    /// plumbing is kept for tables attached with `FORCE_ATTACH`/`FORCE_RESTORE` and for the future
+    /// rollout, which needs a metadata version replicas can check.
     if (!lookup_indices.empty())
         out << "lookup indices: " << lookup_indices << "\n";
 }

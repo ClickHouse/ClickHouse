@@ -469,6 +469,18 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (mode <= LoadingStrictnessLevel::ATTACH && (*getSettings())[MergeTreeSetting::table_readonly])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
 
+    /// A lookup index is stored in the replicated table metadata in ZooKeeper as an extra
+    /// `lookup indices:` line. A replica running a build without this feature stops parsing the
+    /// metadata before that line, keeps an empty local lookup-index set, and rewrites the metadata
+    /// without it on the next unrelated `ALTER`, silently dropping the lookup indexes for the whole
+    /// cluster. Until the replicated metadata carries a version that lets replicas refuse metadata
+    /// they do not understand, reject the experimental feature on replicated tables, so that such
+    /// metadata never reaches ZooKeeper. `FORCE_ATTACH`/`FORCE_RESTORE` (server startup, restore
+    /// from a backup) are still allowed to load a table created before this check.
+    if (mode <= LoadingStrictnessLevel::ATTACH && !metadata_.getLookupIndices().empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Experimental `LOOKUP INDEX` is not supported for `ReplicatedMergeTree`");
+
     auto table_disks = getDisks();
     for (const auto & disk : table_disks)
     {

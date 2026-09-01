@@ -6189,6 +6189,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
+    /// See the same check in the `StorageReplicatedMergeTree` constructor: a lookup index in the
+    /// replicated table metadata is silently dropped by replicas that do not understand it, so it
+    /// must not be added to a replicated table. Dropping one from a table that somehow has it is
+    /// still allowed, hence the check on the new metadata rather than on the commands.
+    if (supportsReplication() && !new_metadata.getLookupIndices().empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Experimental `LOOKUP INDEX` is not supported for `ReplicatedMergeTree`");
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
