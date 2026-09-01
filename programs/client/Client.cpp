@@ -69,7 +69,6 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsDialect dialect;
 extern const SettingsBool use_client_time_zone;
 }
 
@@ -180,9 +179,14 @@ std::vector<String> Client::loadWarningMessages()
     /// session that switched to another dialect could not parse it. `showWarnings` swallows any
     /// exception from here, so that failure would not be an error the user sees, but server warnings
     /// silently never being displayed.
+    ///
+    /// The override is unconditional: only changed settings are serialized, so leaving `dialect` alone
+    /// when the local value is already `clickhouse` would let the server take the parser from the
+    /// effective `dialect` of the authenticated user, which a profile may default to Kusto or PRQL.
+    /// Sending the value a user already has is a no-op for setting constraints, so this does not trip a
+    /// profile that pins `dialect` as read-only to `clickhouse`.
     Settings probe_settings = settingsWithoutCompatibilityDerived().value_or(client_context->getSettingsRef());
-    if (probe_settings[Setting::dialect] != Dialect::clickhouse)
-        probe_settings.set("dialect", String("clickhouse"));
+    probe_settings.set("dialect", String("clickhouse"));
 
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",

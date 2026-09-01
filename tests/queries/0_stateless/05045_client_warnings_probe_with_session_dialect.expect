@@ -11,6 +11,10 @@
 #
 # `showWarnings` swallows any exception from the probe, so a regression in either direction is silent:
 # the warnings simply stop being displayed.
+#
+# Requirement 2 has two halves: the session-level `SET dialect` / `--dialect` case, and the case where
+# the session never changes `dialect` but the authenticated user's profile defaults to a foreign one -
+# only changed settings are serialized, so the override has to be unconditional. Both are pinned here.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -21,6 +25,8 @@ if {[info exists env(CLICKHOUSE_TMP)]} {
 }
 exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
+set user "user_$env(CLICKHOUSE_DATABASE)"
+set profile "profile_$env(CLICKHOUSE_DATABASE)"
 
 log_user 0
 set timeout 60
@@ -36,6 +42,56 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \
 
 expect "Warnings:"
 expect " * Obsolete setting"
+expect ":) "
+
+send -- "\4"
+expect eof
+
+# Second half: no session-level `dialect` at all; the authenticated user's profile defaults to Kusto.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "DROP USER IF EXISTS $user\r"
+expect "Ok."
+expect ":) "
+
+send -- "DROP SETTINGS PROFILE IF EXISTS $profile\r"
+expect "Ok."
+expect ":) "
+
+send -- "CREATE SETTINGS PROFILE $profile SETTINGS dialect = 'kusto', allow_experimental_kusto_dialect = 1\r"
+expect "Ok."
+expect ":) "
+
+send -- "CREATE USER $user SETTINGS PROFILE '$profile'\r"
+expect "Ok."
+expect ":) "
+
+send -- "GRANT SELECT ON *.* TO $user\r"
+expect "Ok."
+expect ":) "
+
+send -- "\4"
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --user $user --max_memory_usage_for_all_queries=123 --history_file=$history_file"
+
+expect "Warnings:"
+expect " * Obsolete setting"
+expect ":) "
+
+send -- "\4"
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "DROP USER IF EXISTS $user\r"
+expect "Ok."
+expect ":) "
+
+send -- "DROP SETTINGS PROFILE IF EXISTS $profile\r"
+expect "Ok."
 expect ":) "
 
 send -- "\4"

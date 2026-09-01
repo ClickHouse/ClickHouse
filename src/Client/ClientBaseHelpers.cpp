@@ -70,6 +70,15 @@ Settings networkCompressionSettings(const Settings & settings)
     /// must not be serialized as explicit changes. Keep the values, clear the `changed` flags.
     result.markSettingsChangedByCompatibilityAsUnchanged();
 
+    /// Force ClickHouse SQL unconditionally, and after the demotion above so that the override stays
+    /// `changed` and is therefore serialized: dropping the session `dialect` is not enough, because the
+    /// server takes the parser from the effective `dialect` of the authenticated user, which a profile
+    /// may itself default to Kusto or PRQL. The same override, for the same reason, is applied to
+    /// secondary queries by the interserver senders (`MultiplexedConnections`, `HedgedConnections`,
+    /// `RemoteInserter`). Sending the value a user already has is a no-op for setting constraints, so
+    /// this does not trip a profile that pins `dialect` as read-only to `clickhouse`.
+    result.set("dialect", String("clickhouse"));
+
     return result;
 }
 
