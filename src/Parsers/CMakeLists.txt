@@ -2,15 +2,14 @@ include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 
 add_headers_and_sources(clickhouse_parsers .)
 add_headers_and_sources(clickhouse_parsers ./Access)
-add_headers_and_sources(clickhouse_parsers ./MySQL)
 add_headers_and_sources(clickhouse_parsers ./Kusto)
+add_headers_and_sources(clickhouse_parsers ./MySQL)
 add_headers_and_sources(clickhouse_parsers ./PRQL)
 # The Mongo dialect is built on rapidjson, so it is only available when rapidjson is.
 if (TARGET ch_contrib::rapidjson)
     add_headers_and_sources(clickhouse_parsers ./Mongo)
 endif ()
 add_headers_and_sources(clickhouse_parsers ./Polyglot)
-add_headers_and_sources(clickhouse_parsers ./Kusto/KustoFunctions)
 add_headers_and_sources(clickhouse_parsers ./Prometheus)
 
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
