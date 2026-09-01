@@ -73,7 +73,7 @@ DROP TABLE tab_scann_l2;
 
 SELECT '2. cosineDistance';
 DROP TABLE IF EXISTS tab_scann_cos;
-CREATE TABLE tab_scann_cos (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2))
+CREATE TABLE tab_scann_cos (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2, 'bf16', 44))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 INSERT INTO tab_scann_cos VALUES
     (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]),
@@ -82,7 +82,7 @@ INSERT INTO tab_scann_cos
     SELECT 12 + toInt32(number), [toFloat32((number + 1) * 100.0), toFloat32(0.0)]
     FROM numbers(1988);
 OPTIMIZE TABLE tab_scann_cos FINAL;
--- Reload the persisted index to cover `ScannConfig`, residual AH, and SOAR restoration.
+-- Reload the persisted index to cover `ScannConfig`, residual AH, SOAR, and bf16 restoration.
 DETACH TABLE tab_scann_cos SYNC;
 ATTACH TABLE tab_scann_cos;
 WITH [0.0, 2.0] AS reference_vec
@@ -135,7 +135,7 @@ DROP TABLE tab_scann_cos;
 
 SELECT '3. dotProduct';
 DROP TABLE IF EXISTS tab_scann_dot;
-CREATE TABLE tab_scann_dot (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'dotProduct', 2))
+CREATE TABLE tab_scann_dot (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'dotProduct', 2, 'i8', 44))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 INSERT INTO tab_scann_dot VALUES
     (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]),
@@ -144,6 +144,9 @@ INSERT INTO tab_scann_dot
     SELECT 12 + toInt32(number), [toFloat32((number + 1) * 100.0), toFloat32(0.0)]
     FROM numbers(1988);
 OPTIMIZE TABLE tab_scann_dot FINAL;
+-- Cover residual AH, SOAR, and i8 fixed-point restoration.
+DETACH TABLE tab_scann_dot SYNC;
+ATTACH TABLE tab_scann_dot;
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, dotProduct(vec, reference_vec) AS score
 FROM tab_scann_dot
@@ -508,6 +511,9 @@ INSERT INTO tab_scann_cos_f64_large
     SELECT 2 + toInt32(number), [toFloat64(number + 1), toFloat64(number + 2)]
     FROM numbers(1998);
 OPTIMIZE TABLE tab_scann_cos_f64_large FINAL;
+-- Keep residual f32 restoration covered after the primary cosine test switches to bf16.
+DETACH TABLE tab_scann_cos_f64_large SYNC;
+ATTACH TABLE tab_scann_cos_f64_large;
 -- Indexed-vector path: reference [1.0, 0.0] isolates indexed-vector normalization.
 -- Without the fix, [1e20, 0] is stored as [0, 0] and its index distance is 1.
 WITH [toFloat64(1.0), toFloat64(0.0)] AS reference_vec
