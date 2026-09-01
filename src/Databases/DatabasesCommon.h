@@ -60,6 +60,11 @@ public:
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
+    /// Removes the entry that `detachTable` adds to the `system.detached_tables` snapshot.
+    /// Only for rollback paths: when a detach is undone by removing the table from the database
+    /// altogether, the detached-table bookkeeping must not outlive it.
+    void forgetDetachedTableSnapshot(const String & table_name);
+
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     DatabaseDetachedTablesSnapshotIteratorPtr

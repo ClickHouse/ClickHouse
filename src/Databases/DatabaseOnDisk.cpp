@@ -586,6 +586,12 @@ void DatabaseOnDisk::renameTable(
             if (to_database.tryGetTable(to_table_name, local_context) == table)
             {
                 to_database.detachTable(local_context, to_table_name);
+                /// `detachTable` records the table in the destination `system.detached_tables`
+                /// snapshot. The rollback removes the destination metadata altogether, so that
+                /// bookkeeping must go too - otherwise a failed rename leaves a phantom detached
+                /// table behind, which `DatabaseAtomic::renameDatabase` also keeps validating.
+                if (auto * to_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
+                    to_with_own_tables->forgetDetachedTableSnapshot(to_table_name);
                 if (from_ordinary_to_atomic)
                 {
                     auto & to_atomic = dynamic_cast<DatabaseAtomic &>(to_database);
@@ -1022,13 +1028,13 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
 }
 
-void DatabaseOnDisk::checkTablesLimit() const
+void DatabaseOnDisk::checkTablesLimit(size_t tables_to_add) const
 {
     std::lock_guard lock(mutex);
-    checkTablesLimitUnlocked();
+    checkTablesLimitUnlocked(tables_to_add);
 }
 
-void DatabaseOnDisk::checkTablesLimitUnlocked() const
+void DatabaseOnDisk::checkTablesLimitUnlocked(size_t tables_to_add) const
 {
     const UInt64 limit = max_tables.load(std::memory_order_relaxed);
     if (limit == 0)
@@ -1038,7 +1044,7 @@ void DatabaseOnDisk::checkTablesLimitUnlocked() const
 
     /// The limit applies to tables only. DDL dictionaries live in the same map but do not count.
     /// Iterate only when the total is at the limit: the table count never exceeds the total.
-    if (current_tables >= limit)
+    if (current_tables + tables_to_add > limit)
     {
         for (const auto & name_and_storage : tables)
             if (name_and_storage.second->isDictionary())
@@ -1047,7 +1053,7 @@ void DatabaseOnDisk::checkTablesLimitUnlocked() const
 
     /// NOTE: The check is best-effort.
     /// NOTE: `getDatabaseName` would take `mutex` again and deadlock, so read the name directly.
-    if (current_tables >= limit)
+    if (current_tables + tables_to_add > limit)
         throw Exception(
             ErrorCodes::TOO_MANY_TABLES,
             "Too many tables in database {}. The limit (database setting `max_tables`) is set to {}, the current number is {}",

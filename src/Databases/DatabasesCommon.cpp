@@ -613,6 +613,12 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, con
     return detachTableUnlocked(table_name);
 }
 
+void DatabaseWithOwnTablesBase::forgetDetachedTableSnapshot(const String & table_name)
+{
+    std::lock_guard lock(mutex);
+    snapshot_detached_tables.erase(table_name);
+}
+
 StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
 {
     auto it = tables.find(table_name);
