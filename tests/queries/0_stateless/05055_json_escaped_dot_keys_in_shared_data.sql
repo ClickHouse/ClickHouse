@@ -1,7 +1,8 @@
 SET json_type_escape_dots_in_keys = 1;
 
--- A key holding more than one dot: every dot is escaped, not just the first.
-SELECT '{"a.b.c" : 42}'::JSON(max_dynamic_paths = 0) AS json, JSONSharedDataPaths(json);
+-- A key holding more than one dot, below a parent: every dot in the key is escaped, not just the
+-- first, and the separator dot is left alone.
+SELECT '{"x" : {"a.b.c" : 42}}'::JSON(max_dynamic_paths = 0) AS json, JSONSharedDataPaths(json);
 
 -- Empty keys carry no dot, so escaping must leave the separator-only paths untouched.
 SELECT '{"" : {"" : 42}}'::JSON(max_dynamic_paths = 0) AS json, JSONSharedDataPaths(json);
