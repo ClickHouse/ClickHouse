@@ -138,6 +138,13 @@ GROUP BY u WITH ROLLUP SETTINGS group_by_use_nulls = 1;
 SELECT count() FROM (SELECT 1::Bool AS c0, 7::UInt8 AS u) t0
 JOIN (SELECT 1::Bool AS d0) t1 ON (t0.c0 = t1.d0) AND (t0.u < 300)
 GROUP BY t0.u WITH ROLLUP SETTINGS group_by_use_nulls = 1;
+-- An alias makes one node serve two clauses, so the clause an `and` sits in does not decide whether
+-- it may be moved: `WHERE k` and `GROUP BY k` are the same node, and moving it there moves the key.
+SELECT c0 AND (u < 300) AS k, count() FROM (SELECT 1::Bool AS c0, 7::UInt8 AS u) t0
+WHERE k GROUP BY k WITH ROLLUP ORDER BY k SETTINGS group_by_use_nulls = 1;
+WITH (c0 AND (u < 300)) AS e
+SELECT e, count() FROM (SELECT 1::Bool AS c0, 7::UInt8 AS u) t0
+WHERE e GROUP BY e WITH ROLLUP ORDER BY e SETTINGS group_by_use_nulls = 1;
 -- Their own chains are not optimized either, because a query level is what is left alone. Each row
 -- has a group_by_use_nulls = 0 sibling, so the absence is attributable to the setting and not to the
 -- chain being uninformative.
