@@ -696,7 +696,18 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
                 /// of the column in current block.
                 auto new_column = sample_column.type->createColumn();
                 new_column->takeExactDynamicStructureFrom(*sample_column.column);
-                new_column->insertRangeFrom(*column.column, 0, column.column->size());
+                /// The reshape itself is a row-wise operation over the whole column (it can even
+                /// decode every value stored in the shared variant / shared data), so do it in
+                /// chunks and poll cancellation between them. The dynamic structure is already
+                /// fixed by `takeExactDynamicStructureFrom`, so inserting the range in chunks
+                /// gives exactly the same result as inserting it at once.
+                const size_t rows_to_reshape = column.column->size();
+                for (size_t offset = 0; offset < rows_to_reshape; offset += IColumn::CANCELLATION_CHECK_PERIOD_ROWS)
+                {
+                    check_cancellation();
+                    new_column->insertRangeFrom(
+                        *column.column, offset, std::min(IColumn::CANCELLATION_CHECK_PERIOD_ROWS, rows_to_reshape - offset));
+                }
                 column.column = std::move(new_column);
             }
 

@@ -953,7 +953,7 @@ public:
     /// For ColumnObject/ColumnDynamic, must be called AFTER `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom`,
     /// because statistics placement depends on the dynamic structure (e.g. which paths are dynamic vs shared).
     virtual void takeOrCalculateStatisticsFrom(
-        const VectorWithMemoryTracking<Ptr> & /*source_columns*/, const CheckCancellationCallback & /*check_cancellation*/ = {}) {}
+        const VectorWithMemoryTracking<Ptr> & /*source_columns*/, const CheckCancellationCallback & /*check_cancellation*/) {}
 
 protected:
     template <typename Compare, typename Sort, typename PartialSort>
