@@ -26,6 +26,13 @@ namespace
         changed |= maskPresignedURLParameters(url);
         return changed;
     }
+
+    /// The backup engines whose locator arguments name a destination without any credential in them.
+    /// `BackupFactory` registers exactly these plus `S3` and `AzureBlobStorage`, which do carry one.
+    bool isCredentialFreeBackupEngine(const String & engine_name)
+    {
+        return engine_name == "Disk" || engine_name == "File" || engine_name == "Memory" || engine_name == "Null";
+    }
 }
 
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
@@ -1187,7 +1194,26 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
         return;
     }
 
-    if (storage_function->name() != "S3" || !storage_function->hasArguments())
+    if (storage_function->name() != "S3")
+    {
+        if (isCredentialFreeBackupEngine(storage_function->name()))
+            return;
+
+        /// Any other locator holds a credential no rule below reconstructs (`AzureBlobStorage` holds
+        /// `account_key` and connection-string material); its engine name and arity are not secrets.
+        std::string replacement = storage_function->name() + "(";
+        for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
+            replacement += i > 0 ? ", '[HIDDEN]'" : "'[HIDDEN]'";
+        replacement += ")";
+
+        result.start = 1;
+        result.count = 1;
+        result.replacement = std::move(replacement);
+        result.quote_replacement = false;
+        return;
+    }
+
+    if (!storage_function->hasArguments())
         return;
 
     const auto & nested_args = *storage_function->arguments;

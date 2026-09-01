@@ -291,6 +291,14 @@ CREATE DATABASE db_04510_quoted ENGINE = Backup('', 'S3(\'url_dbquoted\', \'ak\'
 CREATE DATABASE db_04510_nonlit ENGINE = Backup('', S3(concat('SEKRIT_NONLIT', 'x'),
                  'url_dbnonlit')); -- { serverError BAD_ARGUMENTS }
 
+-- S3 is not the only backup engine whose locator carries credentials: AzureBlobStorage takes an
+-- account_key and accepts connection strings and named-collection overrides that carry one too.
+-- Only S3 is reconstructed above, so an Azure locator keeps its engine name and argument count
+-- (neither is a secret) and every argument is hidden. The url carries a query string, which the
+-- engine rejects before it reaches the network.
+CREATE DATABASE db_04510_azure ENGINE = Backup('', AzureBlobStorage('http://localhost:11111/acct?sig=x',
+                 'cont', 'blob', 'account', 'SEKRIT_AZUREKEY')); -- { serverError BAD_ARGUMENTS }
+
 -- The S3 database engine accepts no positional beyond secret_access_key; an extra positional must
 -- be masked in the logged query text.
 CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
