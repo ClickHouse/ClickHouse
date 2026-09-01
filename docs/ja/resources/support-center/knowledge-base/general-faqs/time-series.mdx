@@ -12,7 +12,7 @@ keywords: ['時系列', '時系列データ', 'ユースケース', '時間ベ�
 
 ClickHouse は [OLAP](/ja/resources/support-center/knowledge-base/general-faqs/olap) ワークロード向けの汎用データストレージソリューションであり、一方で特化した[時系列データベース管理システム](https://clickhouse.com/engineering-resources/what-is-time-series-database)も数多く存在します。それでも、ClickHouse は[クエリ実行速度を重視している](/ja/get-started/about/why-clickhouse-is-so-fast)ため、多くの場合で特化型システムを上回る性能を発揮できます。このテーマに関する独立したベンチマークはすでに数多くあるため、ここではそれは扱いません。代わりに、このユースケースで重要となる ClickHouse の機能に注目しましょう。
 
-まず、典型的な時系列データに適した **[専用コーデック](/ja/reference/statements/create/table#specialized-codecs)** があります。`DoubleDelta` や `Gorilla` のような一般的なアルゴリズムだけでなく、`T64` のような ClickHouse 固有のものもあります。
+まず、典型的な時系列データに適した **[専用コーデック](/ja/reference/statements/create/table/codec#specialized-codecs)** があります。`DoubleDelta` や `Gorilla` のような一般的なアルゴリズムだけでなく、`T64` のような ClickHouse 固有のものもあります。
 
 次に、時系列のクエリは 1 日前や 1 週間前など、比較的新しいデータだけを対象とすることがよくあります。そのため、高速な NVMe/SSD ドライブと大容量の HDD ドライブの両方を備えたサーバーを使うのが理にかなっています。ClickHouse の [有効期限 (TTL)](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) 機能を使うと、新しいホットデータを高速なドライブに保持し、古くなるにつれて徐々に低速なドライブへ移動するよう設定できます。要件によっては、さらに古いデータをロールアップしたり削除したりすることも可能です。
 

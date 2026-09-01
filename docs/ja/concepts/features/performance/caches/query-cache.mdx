@@ -37,7 +37,7 @@ configuration が重複して実装されることが少なくありません。
   結果キャッシュは無効になっています。
 </Note>
 
-設定 [use&#95;query&#95;cache](/ja/reference/settings/session-settings#use_query_cache) を使用すると、特定のクエリ、または
+設定 [use&#95;query&#95;cache](/ja/reference/settings/session-settings/use-query#use_query_cache) を使用すると、特定のクエリ、または
 現在のセッション内のすべてのクエリでクエリキャッシュを利用するかどうかを制御できます。たとえば、クエリを初めて実行する場合は
 
 ```sql
@@ -54,8 +54,8 @@ SETTINGS use_query_cache = true;
   ステートメントを `SETTINGS use_query_cache = true` 付きで実行しない限り、キャッシュされません。
 </Note>
 
-キャッシュの利用方法は、設定 [enable&#95;writes&#95;to&#95;query&#95;cache](/ja/reference/settings/session-settings#enable_writes_to_query_cache)
-および [enable&#95;reads&#95;from&#95;query&#95;cache](/ja/reference/settings/session-settings#enable_reads_from_query_cache) (どちらもデフォルトで `true`) を使って、より詳細に構成できます。前者の設定は
+キャッシュの利用方法は、設定 [enable&#95;writes&#95;to&#95;query&#95;cache](/ja/reference/settings/session-settings/enable#enable_writes_to_query_cache)
+および [enable&#95;reads&#95;from&#95;query&#95;cache](/ja/reference/settings/session-settings/enable#enable_reads_from_query_cache) (どちらもデフォルトで `true`) を使って、より詳細に構成できます。前者の設定は
 クエリ結果をキャッシュに保存するかどうかを制御し、後者の設定は、データベースがクエリ
 結果をキャッシュから取得しようとするかどうかを決定します。たとえば、次のクエリはキャッシュを受動的にのみ使用します。つまり、キャッシュから読み取ろうとはしますが、その
 結果は保存しません。
@@ -90,7 +90,7 @@ use_query_cache = true`) が、その場合はすべての `SELECT` クエリが
 クエリが例外またはユーザーによるキャンセルによって中断された場合、そのエントリはクエリキャッシュに書き込まれません。
 
 クエリキャッシュのサイズ (バイト単位) 、cache エントリの最大数、および個々の cache エントリの最大サイズ (バイト単位および
-レコード単位) は、さまざまな [サーバー設定オプション](/ja/reference/settings/server-settings/settings#query_cache) を使用して構成できます。
+レコード単位) は、さまざまな [サーバー設定オプション](/ja/reference/settings/server-settings/settings/query#query_cache) を使用して構成できます。
 
 ```xml
 <query_cache>
@@ -105,8 +105,8 @@ use_query_cache = true`) が、その場合はすべての `SELECT` クエリが
 制約](/ja/concepts/features/configuration/settings/constraints-on-settings) を使用して、個々のユーザーによる cache の使用量を制限することもできます。具体的には、ユーザーが
 クエリキャッシュ内で割り当て可能なメモリの最大量 (バイト単位) と、保存できるクエリ結果の最大数を制限できます。そのためには、まず
 `users.xml` のユーザープロファイルに
-[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ja/reference/settings/session-settings#query_cache_max_size_in_bytes) と
-[query&#95;cache&#95;max&#95;entries](/ja/reference/settings/session-settings#query_cache_max_entries) の設定を追加し、その後、両方の設定を
+[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ja/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) と
+[query&#95;cache&#95;max&#95;entries](/ja/reference/settings/session-settings/query-cache#query_cache_max_entries) の設定を追加し、その後、両方の設定を
 読み取り専用にします。
 
 ```xml
@@ -130,7 +130,7 @@ use_query_cache = true`) が、その場合はすべての `SELECT` クエリが
 ```
 
 クエリ結果をキャッシュできるようにするために、クエリが少なくともどれくらいの時間実行されている必要があるかを定義するには、設定
-[query&#95;cache&#95;min&#95;query&#95;duration](/ja/reference/settings/session-settings#query_cache_min_query_duration)を使用できます。たとえば、次のクエリの結果は
+[query&#95;cache&#95;min&#95;query&#95;duration](/ja/reference/settings/session-settings/query-cache#query_cache_min_query_duration)を使用できます。たとえば、次のクエリの結果は
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -139,9 +139,9 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 ```
 
 クエリの実行時間が 5 秒を超えた場合にのみキャッシュされます。また、結果が
-キャッシュされるまでにクエリを何回実行する必要があるかを指定することもできます。その場合は設定 [query&#95;cache&#95;min&#95;query&#95;runs](/ja/reference/settings/session-settings#query_cache_min_query_runs) を使用します。
+キャッシュされるまでにクエリを何回実行する必要があるかを指定することもできます。その場合は設定 [query&#95;cache&#95;min&#95;query&#95;runs](/ja/reference/settings/session-settings/query-cache#query_cache_min_query_runs) を使用します。
 
-クエリキャッシュ内のエントリは、一定時間 (time-to-live) が経過すると古くなります。デフォルトでは、この期間は 60 秒ですが、設定 [query&#95;cache&#95;ttl](/ja/reference/settings/session-settings#query_cache_ttl) を使用して、セッション、プロファイル、またはクエリのレベルで別の
+クエリキャッシュ内のエントリは、一定時間 (time-to-live) が経過すると古くなります。デフォルトでは、この期間は 60 秒ですが、設定 [query&#95;cache&#95;ttl](/ja/reference/settings/session-settings/query-cache#query_cache_ttl) を使用して、セッション、プロファイル、またはクエリのレベルで別の
 値を指定できます。クエリ
 キャッシュではエントリは「遅延的に」削除されます。つまり、エントリが古くなっても、すぐにキャッシュから削除されるわけではありません。代わりに、新しいエントリを
 クエリキャッシュに挿入しようとすると、データベースは新しいエントリのためにキャッシュに十分な空き領域があるかどうかを確認します。そうでない
@@ -150,10 +150,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 クエリが HTTP 経由で実行される場合、ClickHouse は `Age` および `Expires` ヘッダーに、キャッシュされたエントリの経過時間 (秒単位) と有効期限のタイムスタンプを設定します。
 
 クエリキャッシュ内のエントリは、デフォルトで圧縮されています。これにより、クエリキャッシュへの書き込み / 読み取りは遅くなるものの、全体的なメモリ消費量は削減されます
-。圧縮を無効にするには、設定 [query&#95;cache&#95;compress&#95;entries](/ja/reference/settings/session-settings#query_cache_compress_entries) を使用します。
+。圧縮を無効にするには、設定 [query&#95;cache&#95;compress&#95;entries](/ja/reference/settings/session-settings/query-cache#query_cache_compress_entries) を使用します。
 
 同じクエリに対して複数の結果をキャッシュしておくことが有用な場合があります。これは、
-クエリキャッシュのエントリに対するラベル (またはネームスペース) として機能する設定 [query&#95;cache&#95;tag](/ja/reference/settings/session-settings#query_cache_tag) を使うことで実現できます。クエリキャッシュは、
+クエリキャッシュのエントリに対するラベル (またはネームスペース) として機能する設定 [query&#95;cache&#95;tag](/ja/reference/settings/session-settings/query-cache#query_cache_tag) を使うことで実現できます。クエリキャッシュは、
 同じクエリであってもタグが異なる結果は別のものとして扱います。
 
 同じクエリに対して 3 つの異なるクエリキャッシュエントリを作成する例:
@@ -200,16 +200,16 @@ SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
 サブクエリの cache エントリは、[system.query&#95;cache](/ja/reference/system-tables/query_cache) で `is_subquery = 1` のエントリとして確認できます。`query_cache_ttl` 設定はサブクエリの cache エントリにも適用され、サブクエリごとに設定できます。
 
-ClickHouse は、テーブルデータを [max&#95;block&#95;size](/ja/reference/settings/session-settings#max_block_size) 行ごとのブロックで読み取ります。フィルタリングや集約、
+ClickHouse は、テーブルデータを [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size) 行ごとのブロックで読み取ります。フィルタリングや集約、
 その他の処理の影響により、結果ブロックは通常 &#39;max&#95;block&#95;size&#39; よりかなり小さくなりますが、これよりずっと大きくなる場合もあります。設定
-[query&#95;cache&#95;squash&#95;partial&#95;results](/ja/reference/settings/session-settings#query_cache_squash_partial_results) (デフォルトで有効) は、結果ブロックを
+[query&#95;cache&#95;squash&#95;partial&#95;results](/ja/reference/settings/session-settings/query-cache#query_cache_squash_partial_results) (デフォルトで有効) は、結果ブロックを
 クエリ結果キャッシュに挿入する前に、 (非常に小さい場合は) まとめるか、 (大きい場合は) &#39;max&#95;block&#95;size&#39; サイズのブロックに分割するかを制御します。
 これによりクエリキャッシュへの書き込み性能は低下しますが、cache エントリの圧縮率が向上し、後でクエリ結果がクエリキャッシュから返される際の
 ブロック粒度がより自然になります。
 
 その結果、クエリキャッシュには各クエリごとに複数の (部分的な)
 結果ブロックが保存されます。この挙動はデフォルトとしては適切ですが、設定
-[query&#95;cache&#95;squash&#95;partial&#95;results](/ja/reference/settings/session-settings#query_cache_squash_partial_results) を使用して無効にできます。
+[query&#95;cache&#95;squash&#95;partial&#95;results](/ja/reference/settings/session-settings/query-cache#query_cache_squash_partial_results) を使用して無効にできます。
 
 また、非決定論的関数を含むクエリの結果は、デフォルトではキャッシュされません。こうした関数には次のものが含まれます。
 
@@ -231,16 +231,16 @@ ClickHouse は、テーブルデータを [max&#95;block&#95;size](/ja/reference
   [`getMacro()`](/ja/reference/functions/regular-functions/other-functions#getMacro) など
 
 それでも非決定論的関数を含むクエリの結果を強制的にキャッシュするには、設定
-[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ja/reference/settings/session-settings#query_cache_nondeterministic_function_handling) を使用します。
+[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ja/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling) を使用します。
 
 システムテーブルを含むクエリ (たとえば [system.processes](/ja/reference/system-tables/processes)&#96; または
 [information&#95;schema.tables](/ja/reference/system-tables/information_schema)) の結果は、デフォルトではキャッシュされません。システムテーブルを含むクエリの結果を
-それでも強制的にキャッシュするには、設定 [query&#95;cache&#95;system&#95;table&#95;handling](/ja/reference/settings/session-settings#query_cache_system_table_handling) を使用します。
+それでも強制的にキャッシュするには、設定 [query&#95;cache&#95;system&#95;table&#95;handling](/ja/reference/settings/session-settings/query-cache#query_cache_system_table_handling) を使用します。
 
 最後に、クエリキャッシュ内の cache エントリは、セキュリティ上の理由からユーザー間で共有されません。たとえば、ユーザー A が、同じクエリを実行することで、
 そのようなポリシーが存在しない別のユーザー B の結果を利用し、テーブル上の ROW POLICY を回避できてはなりません。ただし、必要に応じて、
 設定
-[query&#95;cache&#95;share&#95;between&#95;users](/ja/reference/settings/session-settings#query_cache_share_between_users) を指定することで、cache エントリを他のユーザーから
+[query&#95;cache&#95;share&#95;between&#95;users](/ja/reference/settings/session-settings/query-cache#query_cache_share_between_users) を指定することで、cache エントリを他のユーザーから
 アクセス可能 (つまり共有) としてマークできます。
 
 <div id="related-content">
