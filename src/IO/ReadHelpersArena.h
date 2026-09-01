@@ -33,19 +33,6 @@ inline void readStringGrowing(String & s, size_t size, ReadBuffer & buf)
     }
 }
 
-/// Like `readStringBinary`, but the destination grows as the bytes arrive.
-inline void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
-{
-    size_t size = 0;
-    readVarUInt(size, buf);
-
-    if (unlikely(size > max_string_size))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
-
-    s.clear();
-    readStringGrowing(s, size, buf);
-}
-
 inline std::string_view readStringBinaryInto(Arena & arena, ReadBuffer & buf)
 {
     size_t size = 0;

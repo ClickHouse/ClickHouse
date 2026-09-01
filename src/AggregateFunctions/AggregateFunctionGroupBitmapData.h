@@ -133,8 +133,7 @@ public:
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap (maximum: {})", max_size);
 
             /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
-            /// A plain String keeps the allocation policy of the `new char[]` it replaces: counted against
-            /// the memory tracker but not refused by it, so a large legitimate bitmap still loads.
+            /// A `String` is counted against the memory tracker but not refused by it, so a large legitimate bitmap still loads.
             String buf;
             readStringGrowing(buf, size, in);
 

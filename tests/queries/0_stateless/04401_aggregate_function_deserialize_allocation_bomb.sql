@@ -56,6 +56,14 @@ SELECT finalizeAggregation(CAST(unhex('0100' || '0100000000000040' || '000000000
 
 -- timeSeriesChangesToGrid reaches the same pattern through one bucket's sample count.
 SELECT finalizeAggregation(CAST(unhex('0300' || '0100000000000000' || '0100000000000000' || '0000000000000000' || '0000008000000000'), 'AggregateFunction(timeSeriesChangesToGrid(0, 0, 1, 1), DateTime, Float64)')) SETTINGS allow_experimental_time_series_aggregate_functions = 1, max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
+-- The bucket map above those samples is bounded only by a grid size the same caller picks through the
+-- aggregate's own parameters, so the declared bucket count is admitted up to that grid.
+SELECT finalizeAggregation(CAST(unhex('0300' || 'FFFFFF0000000000' || 'FFFFFF0000000000'), 'AggregateFunction(timeSeriesChangesToGrid(0, 16777214, 1, 1), DateTime, Float64)')) SETTINGS allow_experimental_time_series_aggregate_functions = 1, max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
+
+-- windowFunnel keeps two independent state layouts, each reserving behind the same count cap. The
+-- header is `sorted` and an 8-byte count of 99999999, which the cap admits, with no events after it.
+SELECT finalizeAggregation(CAST(unhex('00FFE0F50500000000'), 'AggregateFunction(windowFunnel(3600), DateTime, UInt8, UInt8)')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
+SELECT finalizeAggregation(CAST(unhex('00FFE0F50500000000'), 'AggregateFunction(windowFunnel(3600, \'strict_once\'), DateTime, UInt8, UInt8)')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
 
 -- readStringBinaryInto is shared by -Distinct, groupUniqArray and generic groupArrayIntersect,
 -- so one element declaring ~1 GiB is enough whatever the element count says.
@@ -75,6 +83,14 @@ SELECT finalizeAggregation(CAST(unhex('00FFC1D72F'), 'AggregateFunction(groupArr
 SELECT finalizeAggregation(CAST(unhex('00FFE0F50500000000'), 'AggregateFunction(sequenceMatch(\'(?1)\'), DateTime, UInt8, UInt8, UInt8)')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
 SELECT finalizeAggregation(CAST(unhex('10270000000000007b14ae47e17a843f0000000000000000FFE0F50500000000'), 'AggregateFunction(quantileGK(100), Float64)')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
 
+-- Two destinations are allocated by `operator new`, which the memory tracker counts but never refuses at
+-- the default `min_allocation_size_to_throw_on_memory_limit`, so both sides report the same truncation.
+-- These two lines therefore pin the path and the error, not the size of the allocation behind it. Each
+-- blob declares exactly the size its own cap admits: 1 GiB for a `-Map` `String` key, and 1<<30 elements
+-- for `groupBitmap`. Neither reaches croaring, because both sides throw before `readSafe`.
+SELECT finalizeAggregation(CAST(unhex('018080808004'), 'AggregateFunction(groupBitmap, UInt64)')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
+SELECT finalizeAggregation(CAST(unhex('018080808004'), 'AggregateFunction(sumMap, Map(String, UInt64))')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
+
 -- Legitimate states for the newly touched functions.
 SELECT kolmogorovSmirnovTestMerge(s) FROM (SELECT kolmogorovSmirnovTestState(x, y) AS s FROM (SELECT number::Float64 AS x, (number % 2)::UInt8 AS y FROM numbers(100)));
 SELECT rankCorrMerge(s) FROM (SELECT rankCorrState(number::Float64, (number * 2)::Float64) AS s FROM numbers(100));
@@ -84,25 +100,34 @@ SELECT finalizeAggregation(sumMapState(map(toString(number % 3), number::UInt64)
 SELECT bitmapCardinality(groupBitmapStateMerge(s)) FROM (SELECT groupBitmapState(number::UInt64) AS s FROM numbers(300000));
 SELECT length(finalizeAggregation(timeSeriesGroupArrayState(t, v))) FROM (SELECT number::DateTime AS t, number::Float64 AS v FROM numbers(1000)) SETTINGS allow_experimental_time_series_aggregate_functions = 1;
 SELECT finalizeAggregation(timeSeriesChangesToGridState(10, 50, 10, 10)(t, v)) FROM (SELECT number::DateTime AS t, number::Float64 AS v FROM numbers(60)) SETTINGS allow_experimental_time_series_aggregate_functions = 1;
+SELECT windowFunnelMerge(3600)(s) FROM (SELECT windowFunnelState(3600)(toDateTime(number), number = 0, number = 1) AS s FROM numbers(10));
+SELECT windowFunnelMerge(3600, 'strict_once')(s) FROM (SELECT windowFunnelState(3600, 'strict_once')(toDateTime(number), number = 0, number = 1) AS s FROM numbers(10));
 
 -- A CAST(unhex(...)) blob is always fully buffered, so the assertions above only exercise the
 -- one-shot path. A state read back from a table crosses compressed-block boundaries, which is
 -- the path that stages the payload before committing it, and it must round-trip unchanged.
+-- Both block sizes are randomized per run, so they are pinned here to keep the block structure these
+-- states are read back through fixed. At 64 KiB every state below spans at least 30 blocks.
 DROP TABLE IF EXISTS t_deserialize_allocation_bomb_refill;
 CREATE TABLE t_deserialize_allocation_bomb_refill
 (
     gua AggregateFunction(groupUniqArray, String),
-    tsga AggregateFunction(timeSeriesGroupArray, DateTime, Float64)
+    tsga AggregateFunction(timeSeriesGroupArray, DateTime, Float64),
+    tscg AggregateFunction(timeSeriesChangesToGrid(0, 100000, 1, 1), DateTime, Float64)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_time_series_aggregate_functions = 1;
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS allow_experimental_time_series_aggregate_functions = 1,
+    min_compress_block_size = 65536, max_compress_block_size = 65536;
 
 INSERT INTO t_deserialize_allocation_bomb_refill
 SELECT
     (SELECT groupUniqArrayState(s) FROM (SELECT repeat('x', 1000000) AS s UNION ALL SELECT repeat('y', 1000000) AS s)),
-    (SELECT timeSeriesGroupArrayState(t, v) FROM (SELECT number::DateTime AS t, number::Float64 AS v FROM numbers(300000)))
+    (SELECT timeSeriesGroupArrayState(t, v) FROM (SELECT number::DateTime AS t, number::Float64 AS v FROM numbers(300000))),
+    (SELECT timeSeriesChangesToGridState(0, 100000, 1, 1)(t, v) FROM (SELECT number::DateTime AS t, number::Float64 AS v FROM numbers(100001)))
 SETTINGS allow_experimental_time_series_aggregate_functions = 1;
 
 SELECT sum(length(x)) FROM (SELECT arrayJoin(groupUniqArrayMerge(gua)) AS x FROM t_deserialize_allocation_bomb_refill);
 SELECT length(finalizeAggregation(tsga)) FROM t_deserialize_allocation_bomb_refill SETTINGS allow_experimental_time_series_aggregate_functions = 1;
+SELECT length(finalizeAggregation(tscg)) FROM t_deserialize_allocation_bomb_refill SETTINGS allow_experimental_time_series_aggregate_functions = 1;
 
 DROP TABLE t_deserialize_allocation_bomb_refill;

@@ -425,13 +425,15 @@ public:
         }
 
         VectorWithMemoryTracking<TimestampType> timestamps;
-        VectorWithMemoryTracking<ValueType> values;
         readRun(timestamps, size, buf);
-        readRun(values, size, buf);
 
+        /// A complete timestamps run makes `size` payload-backed, so the values run needs no staging.
         data.reserve(size, arena);
         for (size_t i = 0; i < size; ++i)
-            data.elements[i] = Element{.timestamp = timestamps[i], .value = values[i]};
+            data.elements[i].timestamp = timestamps[i];
+
+        for (size_t i = 0; i < size; ++i)
+            readBinaryLittleEndian(data.elements[i].value, buf);
 
         data.size = size;
     }

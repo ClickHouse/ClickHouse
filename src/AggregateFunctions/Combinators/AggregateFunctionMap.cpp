@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -62,7 +63,14 @@ struct AggregateFunctionMapCombinatorData<String>
     }
     static void readKey(String & key, ReadBuffer & buf)
     {
-        readStringBinaryGrowing(key, buf);
+        size_t size = 0;
+        readVarUInt(size, buf);
+
+        if (size > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+        key.clear();
+        readStringGrowing(key, size, buf);
     }
 };
 
@@ -289,8 +297,7 @@ public:
 
             this->data(place).readKey(key, buf);
 
-            /// serialize() walks a map, so a repeated key is not something a writer can emit. Without this
-            /// each repetition allocates a nested state that emplace then drops on the floor.
+            /// `serialize` walks a map, so a repeated key is not something a writer can emit.
             if (merged_maps.contains(key))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Duplicate key in the serialized state of a -Map aggregate function");

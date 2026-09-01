@@ -281,7 +281,7 @@ public:
         static constexpr size_t serialized_stats_size = sizeof(T) + sizeof(Int64) + sizeof(Int64);
         sampled.clear();
         /// The loop appends, so reserving is only an optimization: derive it from payload that arrived.
-        sampled.reserve(std::min(sampled_len, buf.available() / serialized_stats_size));
+        sampled.reserve_exact(std::min(sampled_len, buf.available() / serialized_stats_size));
 
         for (size_t i = 0; i < sampled_len; ++i)
         {
