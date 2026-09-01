@@ -684,7 +684,8 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
     {
         auto * header_stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::Regular);
         header_stream->seekToStart();
-        auto header = TextIndexSerialization::deserializeHeader(*header_stream->getDataBuffer());
+        /// Only the scoring stats are needed here, so skip deserializing the sparse index.
+        auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream->getDataBuffer());
         merged_sum_doc_length += header.scoring_stats.sum_doc_length;
 
         auto doc_lengths_stream_it = input_streams[source_num].find(MergeTreeIndexSubstream::Type::TextIndexDocLengths);

@@ -1297,11 +1297,23 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         header.has_scoring = has_scoring != 0;
     }
 
-    /// BM25 scoring payload.
+    /// BM25 corpus stats.
     if (header.has_scoring)
     {
         readVarUInt(header.scoring_stats.num_docs, istr);
         readVarUInt(header.scoring_stats.sum_doc_length, istr);
+    }
+
+    return header;
+}
+
+TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
+{
+    ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
+    TextIndexHeader header = deserializeHeaderPrefix(istr);
+
+    if (header.has_scoring)
+    {
         readVarUInt(header.scoring_stats.doc_lengths_segment_size, istr);
 
         UInt64 num_segments = 0;
@@ -1318,15 +1330,6 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
             header.scoring_stats.doc_lengths_segment_offsets[i] = offset;
         }
     }
-
-    return header;
-}
-
-TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
-{
-    ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
-
-    TextIndexHeader header = deserializeHeaderPrefix(istr);
 
     size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);

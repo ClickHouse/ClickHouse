@@ -445,8 +445,8 @@ struct TextIndexSerialization
     static void checkTokenSize(size_t token_size);
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
 
-    /// Reads only the version and posting list codec from the start of the header, without the
-    /// (potentially large) sparse index. The returned header has an empty `sparse_index`.
+    /// Reads the version, posting list codec, feature flags and the BM25 corpus stats (`num_docs`, `sum_doc_length`).
+    /// Skips the doc-lengths segment offsets and the sparse index, which stay empty in the result.
     static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
 
     /// If `with_postings` is false, embedded postings (and their inline term frequencies) are skipped.
