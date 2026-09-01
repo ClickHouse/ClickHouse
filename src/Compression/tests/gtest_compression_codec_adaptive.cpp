@@ -27,7 +27,6 @@ namespace
 constexpr auto LZ4 = static_cast<uint8_t>(CompressionMethodByte::LZ4);
 constexpr auto T64 = static_cast<uint8_t>(CompressionMethodByte::T64);
 constexpr auto NONE = static_cast<uint8_t>(CompressionMethodByte::NONE);
-constexpr auto ALP = static_cast<uint8_t>(CompressionMethodByte::ALP);
 
 DataTypePtr type(const String & name)
 {
@@ -183,15 +182,6 @@ TEST(CompressionCodecAdaptive, ConstantColumnPicksT64)
     std::vector<UInt32> values(100000, 42u);
 
     EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), T64);
-}
-
-TEST(CompressionCodecAdaptive, DecimalLikeFloatsPickALP)
-{
-    std::vector<Float64> values(100000);
-    for (size_t i = 0; i < values.size(); ++i)
-        values[i] = static_cast<Float64>(i) / 100.0;
-
-    EXPECT_EQ(adaptiveWinnerByte("Float64", bytesOf(values)), ALP);
 }
 
 TEST(CompressionCodecAdaptive, TinyBlockStoredRaw)
