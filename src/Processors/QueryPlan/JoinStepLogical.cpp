@@ -2430,7 +2430,9 @@ void JoinStepLogical::writeLogicalDigest(StepDigestWriter & writer) const
     /// sizes, the partial-merge and grace-hash bucketing, the spill thresholds, the temporary-file
     /// codec and buffer size, `max_rows_in_set_to_optimize_join` (an exact pre-filter),
     /// `use_join_disjunctions_push_down`, the lazy-column, prefetch and fixed-hash-table switches,
-    /// and the whole `sorting_settings` struct - the physical join re-derives its sorts from it.
+    /// `enable_hash_join_row_store` and `min_rows_ratio_for_hash_join_row_store` (they only pick the
+    /// hash join payload's memory layout), and the whole `sorting_settings` struct - the physical
+    /// join re-derives its sorts from it.
 }
 
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)

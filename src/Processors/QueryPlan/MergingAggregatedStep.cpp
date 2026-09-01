@@ -333,6 +333,13 @@ void MergingAggregatedStep::writeFullDigest(StepDigestWriter & writer) const
     /// any instance (`isSerializable()` is unconditionally true).
     writer.addStepWireEncoding(*this);
 
+    /// No tag for `params.enable_adaptive_aggregator` and the two freeze thresholds, which this
+    /// step's `serializeSettings` does not write either: they are inert on the merge path.
+    /// `Aggregator::mergeBlocks` calls `result.init(method_chosen)` directly, never
+    /// `initDataVariantsWithSizeHint` - the one reader of the flag - and the thresholds are read
+    /// only from the `executeImpl` freeze and drain paths, which no merge reaches. Re-audit if
+    /// merging ever gains an adaptive path.
+
     /// Not on the wire (`deserialize` re-derives both from session settings): they are the
     /// parallelism of the physical plan - how many streams `transformPipeline` resizes to, and the
     /// thread count of its memory-efficient merge branch. `max_threads` covers `params.max_threads`

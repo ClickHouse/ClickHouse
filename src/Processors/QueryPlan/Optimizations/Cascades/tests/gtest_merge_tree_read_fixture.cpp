@@ -1,3 +1,4 @@
+/// No `TEST` here; the `gtest` filename prefix is what the `src/CMakeLists.txt` glob picks up.
 #include <Processors/QueryPlan/Optimizations/Cascades/tests/gtest_merge_tree_read_fixture.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>

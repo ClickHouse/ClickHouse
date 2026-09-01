@@ -625,6 +625,15 @@ same order on every call, with explicit absent slots.
   `serialize` / `serializeSettings`, hence already in the digest through `addStepWireEncoding`),
   *execution-constraining non-wire* (written through `StepDigestWriter` in the same
   `writeFullDigest` override), or *derived or display-only* (excluded, with the reason).
+- **Re-auditing after a master merge: diff the embedded value types, not only the step headers.**
+  A field added to a struct a step holds *by value* enters that step's state without the step
+  header changing at all, so a sweep of the audited `.h` files alone reports "no drift" and misses
+  it. Diff the defining header of every value-typed member too - `JoinSettings` and
+  `SortingSettings` for `JoinStepLogical`, `Aggregator::Params` for `AggregatingStep` and
+  `MergingAggregatedStep`, `SortingStep::Settings`, `SelectQueryInfo` and the snapshot types for
+  `ReadFromMergeTree` - and classify each addition like any other new member. One field can land
+  in several steps at once and need a different answer in each: a `Params` member that constrains
+  `AggregatingStep` may be inert in `MergingAggregatedStep`, whose merge path never reads it.
 - A step with no wire `serialize` at all is not thereby excluded: its content digest is simply
   extras-only, over the shared preamble. The four exchange steps are that case.
 - `input_headers` is excluded for every step: `GroupExpression::fullyEqualTo` compares the
