@@ -294,6 +294,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     if (range_readers.empty())
         return read_result;
 
+    /// Provenance of the columns carried between the steps of this read, see the declaration.
+    columns_evaluated_from_defaults.clear();
+
     auto & first_reader = range_readers.front();
 
     try
@@ -415,6 +418,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Final filter is missing or has mistaching size, read_result: {}", result.dumpInfo());
 
         MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
+        merge_tree_reader->filterSharedOffsetsOfMissingDefaults(result.final_filter.getColumn(), result.num_rows);
     }
 
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);
@@ -525,7 +529,7 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
         additional_columns.insert(col);
 
     addDummyColumnWithRowCount(additional_columns, result.num_rows);
-    range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
+    range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns, &columns_evaluated_from_defaults);
 }
 
 void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader)

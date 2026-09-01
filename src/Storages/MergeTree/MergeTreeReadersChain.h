@@ -78,6 +78,11 @@ private:
         const Block & previous_header,
         bool is_last_reader);
 
+    /// Columns that a step of the current read produced from a `DEFAULT` expression instead of
+    /// reading them from the part. They describe the shared `Nested` offsets as they were at that
+    /// step, so a later step must not take its offsets from them. Reset at the start of every read.
+    mutable NameSet columns_evaluated_from_defaults;
+
     void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
 
     /// Materializes the sort-key result columns of MergeOnKey patches.

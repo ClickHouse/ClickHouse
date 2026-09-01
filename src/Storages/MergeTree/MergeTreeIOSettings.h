@@ -87,6 +87,13 @@ struct MergeTreeReaderSettings
     /// maintain selectivity counters for system.predicate_statistics_log. When
     /// false (the default), the readers skip the per-granule counter work.
     bool collect_predicate_statistics = false;
+    /// If true, a column that is missing from the part and recomputed from its default expression
+    /// is reconciled with the array sizes the part already stores through the shared offsets of
+    /// its Nested structure (see reconcileEvaluatedDefaultWithSharedOffsets). Enabled for reads
+    /// that feed merges and mutations, where writing a value with different array sizes next to
+    /// the sibling subcolumns would corrupt the shared offsets of the new part. Plain queries keep
+    /// returning the plain evaluated expression.
+    bool reconcile_missing_defaults_with_shared_offsets = false;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove

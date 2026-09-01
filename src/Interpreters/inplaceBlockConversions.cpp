@@ -599,7 +599,8 @@ void fillMissingColumns(
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
     bool share_nested_offsets,
-    const NameSet & additional_available_columns)
+    const NameSet & additional_available_columns,
+    std::unordered_map<String, Columns> * shared_offsets_of_missing_defaults)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -624,16 +625,14 @@ void fillMissingColumns(
         if (res_columns[i] && partially_read_columns.contains(requested_column->name))
             res_columns[i] = nullptr;
 
-        /// Nothing to fill or default should be filled in evaluateMissingDefaults.
-        if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+        /// Nothing to fill.
+        if (res_columns[i])
             continue;
 
-        /// Subcolumn missing from the part's (older) type but whose parent is available (read here
-        /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
-        /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
-        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, available_columns, additional_available_columns))
-            continue;
-
+        /// Collect the offsets the part already stores for the array levels of the column: for a
+        /// subcolumn of a Nested structure they come from the shared offsets streams (e.g.
+        /// `n.size0`), read from a sibling subcolumn or salvaged from the partial read of the
+        /// missing column itself.
         std::vector<ColumnPtr> current_offsets;
         size_t num_dimensions = 0;
 
@@ -669,6 +668,23 @@ void fillMissingColumns(
                 }
             }
         }
+
+        /// The default is filled in evaluateMissingDefaults from the column's expression. The
+        /// expression knows nothing about the array sizes the part already pins down through the
+        /// shared Nested offsets, so export those offsets and let the caller reconcile the
+        /// evaluated values with them (see reconcileEvaluatedDefaultWithSharedOffsets).
+        if (hasDefault(storage_snapshot, *requested_column))
+        {
+            if (shared_offsets_of_missing_defaults && !current_offsets.empty())
+                (*shared_offsets_of_missing_defaults)[requested_column->name] = current_offsets;
+            continue;
+        }
+
+        /// Subcolumn missing from the part's (older) type but whose parent is available (read here
+        /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
+        /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
+        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, available_columns, additional_available_columns))
+            continue;
 
         if (!current_offsets.empty())
         {
@@ -715,6 +731,117 @@ void fillMissingColumns(
             res_columns[i] = createColumnWithDefaultValue(*requested_column->getTypeInStorage(), requested_column->getSubcolumnName(), num_rows);
         }
     }
+}
+
+ColumnPtr reconcileEvaluatedDefaultWithSharedOffsets(
+    const ColumnPtr & evaluated_column,
+    const DataTypePtr & type,
+    const Columns & shared_offsets)
+{
+    if (shared_offsets.empty())
+        return evaluated_column;
+
+    ColumnPtr evaluated = evaluated_column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+
+    /// The array columns of the evaluated value at the levels the shared offsets pin down.
+    std::vector<const ColumnArray *> evaluated_arrays;
+    evaluated_arrays.reserve(shared_offsets.size());
+    const IColumn * current_column = evaluated.get();
+    for (size_t level = 0; level < shared_offsets.size(); ++level)
+    {
+        const auto * array = typeid_cast<const ColumnArray *>(current_column);
+        /// The evaluated column is not an array at a pinned level; there is nothing to reconcile against.
+        if (!array)
+            return evaluated;
+        evaluated_arrays.push_back(array);
+        current_column = &array->getData();
+    }
+
+    auto shared_offsets_data = [&](size_t level) -> const ColumnArray::Offsets &
+    {
+        return assert_cast<const ColumnUInt64 &>(*shared_offsets[level]).getData();
+    };
+
+    auto size_at = [](const ColumnArray::Offsets & offsets, size_t pos)
+    {
+        return offsets[pos] - (pos == 0 ? 0 : offsets[pos - 1]);
+    };
+
+    size_t num_rows = evaluated->size();
+    if (shared_offsets_data(0).size() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot reconcile an evaluated default with shared offsets: expected {} rows, got {}",
+            shared_offsets_data(0).size(), num_rows);
+
+    /// Row-wise agreement of array sizes between the evaluated column and the shared offsets, at
+    /// every pinned level.
+    PaddedPODArray<UInt8> row_matches(num_rows, 1);
+    size_t num_matching_rows = 0;
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        bool match = true;
+
+        /// Ranges of positions belonging to this row at the current level. The absolute positions
+        /// may differ between the evaluated column and the shared offsets (other rows may have
+        /// mismatched there), but the lengths of the ranges agree while this row's outer levels do.
+        size_t evaluated_begin = row;
+        size_t expected_begin = row;
+        size_t count = 1;
+
+        for (size_t level = 0; level < shared_offsets.size(); ++level)
+        {
+            const auto & evaluated_offsets = evaluated_arrays[level]->getOffsets();
+            const auto & expected_offsets = shared_offsets_data(level);
+
+            for (size_t pos = 0; pos < count; ++pos)
+            {
+                if (size_at(evaluated_offsets, evaluated_begin + pos) != size_at(expected_offsets, expected_begin + pos))
+                {
+                    match = false;
+                    break;
+                }
+            }
+
+            /// An empty range stays empty at the deeper levels, nothing more to compare.
+            if (!match || count == 0)
+                break;
+
+            [[maybe_unused]] size_t evaluated_end = evaluated_offsets[evaluated_begin + count - 1];
+            size_t expected_end = expected_offsets[expected_begin + count - 1];
+            evaluated_begin = evaluated_begin == 0 ? 0 : evaluated_offsets[evaluated_begin - 1];
+            expected_begin = expected_begin == 0 ? 0 : expected_offsets[expected_begin - 1];
+            count = expected_end - expected_begin;
+            chassert(evaluated_end - evaluated_begin == count);
+        }
+
+        row_matches[row] = match;
+        num_matching_rows += match;
+    }
+
+    if (num_matching_rows == num_rows)
+        return evaluated;
+
+    /// The fallback: type-default values shaped by the shared offsets, exactly what a column
+    /// without a default expression reads as (see the offsets branch of fillMissingColumns).
+    DataTypePtr type_below_pinned_levels = type;
+    for (size_t level = 0; level < shared_offsets.size(); ++level)
+        type_below_pinned_levels = assert_cast<const DataTypeArray &>(*type_below_pinned_levels).getNestedType();
+
+    size_t data_size = shared_offsets_data(shared_offsets.size() - 1).back();
+    ColumnPtr fallback = type_below_pinned_levels->createColumnConstWithDefaultValue(data_size)->convertToFullColumnIfConst();
+    for (auto it = shared_offsets.rbegin(); it != shared_offsets.rend(); ++it)
+        fallback = ColumnArray::create(fallback, *it);
+
+    if (num_matching_rows == 0)
+        return fallback;
+
+    auto result = type->createColumn();
+    result->reserve(num_rows);
+    for (size_t row = 0; row < num_rows; ++row)
+        result->insertFrom(row_matches[row] ? *evaluated : *fallback, row);
+
+    return result;
 }
 
 }

@@ -1,0 +1,618 @@
+-- Vertical merge of Nested arrays with DEFAULT expressions referencing
+-- non-existent sibling columns must not corrupt data.
+-- https://github.com/ClickHouse/ClickHouse/issues/86123
+
+DROP TABLE IF EXISTS t_nested_vertical;
+
+CREATE TABLE t_nested_vertical (
+    id UInt32,
+    `n1.nums` Array(UInt32),
+    `n1.numsplus` Array(UInt32),
+    `n2.nums` Array(UInt32),
+    `n2.numsplus` Array(UInt32)
+) ENGINE = ReplacingMergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_vertical;
+
+INSERT INTO t_nested_vertical VALUES (1, [1,1,1], [2,2,2], [11,11,11], [22,22,22]);
+INSERT INTO t_nested_vertical VALUES (2, [2,2,2], [3,3,3], [22,22,22], [33,33,33]);
+INSERT INTO t_nested_vertical VALUES (3, [3,3,3], [4,4,4], [33,33,33], [44,44,44]);
+INSERT INTO t_nested_vertical VALUES (4, [4,4,4], [5,5,5], [44,44,44], [55,55,55]);
+
+ALTER TABLE t_nested_vertical ADD COLUMN `n1.urls` Array(Array(String));
+ALTER TABLE t_nested_vertical ADD COLUMN `n1.domains` Array(Array(String))
+    DEFAULT arrayMap(x -> arrayMap(y -> domain(y), CAST(x AS Array(String))), `n1.urls`);
+
+-- Verify data is intact before merge
+SELECT id, `n1.nums`, `n1.numsplus`, `n2.nums`, `n2.numsplus` FROM t_nested_vertical ORDER BY id;
+
+SYSTEM START MERGES t_nested_vertical;
+OPTIMIZE TABLE t_nested_vertical FINAL;
+
+-- After vertical merge, Nested arrays must not be corrupted
+SELECT id, `n1.nums`, `n1.numsplus`, `n2.nums`, `n2.numsplus` FROM t_nested_vertical ORDER BY id;
+
+-- The new columns should return correct defaults (empty arrays matching Nested dimensions)
+SELECT id, `n1.urls`, `n1.domains` FROM t_nested_vertical ORDER BY id;
+
+DROP TABLE t_nested_vertical;
+
+-- Multi-hop transitive dependency chain: c3 -> c2 -> c1 (expired)
+DROP TABLE IF EXISTS t_nested_chain;
+
+CREATE TABLE t_nested_chain (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_chain;
+
+INSERT INTO t_nested_chain VALUES (1, [10,20]);
+INSERT INTO t_nested_chain VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_chain ADD COLUMN `n.b` Array(String);
+ALTER TABLE t_nested_chain ADD COLUMN `n.c` Array(String) DEFAULT `n.b`;
+ALTER TABLE t_nested_chain ADD COLUMN `n.d` Array(String) DEFAULT `n.c`;
+
+SYSTEM START MERGES t_nested_chain;
+OPTIMIZE TABLE t_nested_chain FINAL;
+
+SELECT id, `n.a`, `n.b`, `n.c`, `n.d` FROM t_nested_chain ORDER BY id;
+
+DROP TABLE t_nested_chain;
+
+-- A Nested subcolumn whose DEFAULT references a subcolumn (`m.keys`) of an expired column (`m`).
+-- `collectIdentifierNames` returns the subcolumn name `m.keys`, while the expired set holds the
+-- physical storage column name `m`. The identifier must be resolved back to its storage column
+-- before the lookup; otherwise `n.b` is not expired and the vertical merge fails to materialize
+-- the missing subcolumn (writing Nested offsets inconsistent with its sibling `n.a`).
+-- The merge must complete and the sibling `n.a` must remain intact.
+DROP TABLE IF EXISTS t_nested_subcol;
+
+CREATE TABLE t_nested_subcol (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_subcol;
+
+INSERT INTO t_nested_subcol VALUES (1, [10,20]);
+INSERT INTO t_nested_subcol VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_subcol ADD COLUMN m Map(String, String);
+ALTER TABLE t_nested_subcol ADD COLUMN `n.b` Array(String) DEFAULT m.keys;
+
+SYSTEM START MERGES t_nested_subcol;
+OPTIMIZE TABLE t_nested_subcol FINAL;
+
+-- Sibling data must survive the merge into a single part.
+-- (`n.b` itself is not selected: a DEFAULT referencing a subcolumn of a missing column is a
+--  separate, pre-existing read-path limitation independent of the merge corruption fixed here.)
+SELECT count(), countDistinct(_part) FROM t_nested_subcol;
+SELECT id, `n.a` FROM t_nested_subcol ORDER BY id;
+
+DROP TABLE t_nested_subcol;
+
+-- A lambda formal parameter must not be mistaken for a column dependency. The DEFAULT of the Nested
+-- subcolumn `n.b` uses a lambda whose parameter `x` shadows the expired physical column `x`, but the
+-- expression only reads the present sibling `n.a`. A naive identifier walk would treat the
+-- lambda-local `x` as the expired column and wrongly expire `n.b`, dropping it from the merged part.
+-- Scope-aware dependency analysis excludes lambda parameters, so `n.b` stays materialized.
+DROP TABLE IF EXISTS t_nested_lambda_shadow;
+
+CREATE TABLE t_nested_lambda_shadow (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_lambda_shadow;
+
+INSERT INTO t_nested_lambda_shadow VALUES (1, [10,20]);
+INSERT INTO t_nested_lambda_shadow VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_lambda_shadow ADD COLUMN x UInt32;
+ALTER TABLE t_nested_lambda_shadow ADD COLUMN `n.b` Array(UInt32) DEFAULT arrayMap(x -> x + 1, `n.a`);
+
+SYSTEM START MERGES t_nested_lambda_shadow;
+OPTIMIZE TABLE t_nested_lambda_shadow FINAL;
+
+-- Exactly one part after the merge, and `n.b` must be materialized in it (not wrongly expired).
+SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_nested_lambda_shadow' AND active;
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_lambda_shadow' AND active AND column = 'n.b';
+
+-- Sibling data intact and the default evaluates from the present `n.a`.
+SELECT id, `n.a`, `n.b` FROM t_nested_lambda_shadow ORDER BY id;
+
+DROP TABLE t_nested_lambda_shadow;
+
+-- A DEFAULT dependency reached only through an ALIAS column must still be discovered. `s` is an
+-- expired physical column, `s_alias` is `ALIAS s`, and the Nested subcolumn `n.b` depends on the
+-- expired `s` only via the alias. Without expanding aliases, `n.b` is not expired and vertical merge
+-- tries to materialize it from the missing `s`, writing Nested offsets inconsistent with the present
+-- sibling `n.a` and corrupting the shared offsets. Expanding the alias expires `n.b` instead.
+DROP TABLE IF EXISTS t_nested_alias;
+
+CREATE TABLE t_nested_alias (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_alias;
+
+INSERT INTO t_nested_alias VALUES (1, [10,20]);
+INSERT INTO t_nested_alias VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_alias ADD COLUMN s Array(String);
+ALTER TABLE t_nested_alias ADD COLUMN s_alias Array(String) ALIAS s;
+ALTER TABLE t_nested_alias ADD COLUMN `n.b` Array(String) DEFAULT s_alias;
+
+SYSTEM START MERGES t_nested_alias;
+OPTIMIZE TABLE t_nested_alias FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+SELECT count(), countDistinct(_part) FROM t_nested_alias;
+SELECT id, `n.a` FROM t_nested_alias ORDER BY id;
+
+DROP TABLE t_nested_alias;
+
+-- A DEFAULT dependency reached through a *subcolumn of an ALIAS column* must still be discovered.
+-- `m` is an expired physical `Map` column, `m_alias` is `ALIAS m`, and the Nested subcolumn `n.b`
+-- depends on the expired `m` only via the alias subcolumn `m_alias.keys`. `ColumnsDescription` does
+-- not register subcolumns of alias columns, so `m_alias.keys` does not resolve directly; the
+-- dependency must be recovered by resolving the identifier prefix (`m_alias`) and expanding the alias
+-- to the physical `m`. Without this, `n.b` is not expired and vertical merge tries to materialize it
+-- from the missing `m`, corrupting the shared Nested offsets of the present sibling `n.a`.
+DROP TABLE IF EXISTS t_nested_alias_subcol;
+
+CREATE TABLE t_nested_alias_subcol (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_alias_subcol;
+
+INSERT INTO t_nested_alias_subcol VALUES (1, [10,20]);
+INSERT INTO t_nested_alias_subcol VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_alias_subcol ADD COLUMN m Map(String, String);
+ALTER TABLE t_nested_alias_subcol ADD COLUMN m_alias Map(String, String) ALIAS m;
+ALTER TABLE t_nested_alias_subcol ADD COLUMN `n.b` Array(String) DEFAULT m_alias.keys;
+
+SYSTEM START MERGES t_nested_alias_subcol;
+OPTIMIZE TABLE t_nested_alias_subcol FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+-- (`n.b` itself is not selected: a DEFAULT reading a subcolumn of a missing column is the same
+--  pre-existing read-path limitation noted for `t_nested_subcol` above.)
+SELECT count(), countDistinct(_part) FROM t_nested_alias_subcol;
+SELECT id, `n.a` FROM t_nested_alias_subcol ORDER BY id;
+
+DROP TABLE t_nested_alias_subcol;
+
+-- A DEFAULT dependency reached through a subcolumn of an ALIAS column whose *name contains a dot*
+-- must still be discovered. `m` is an expired physical `Map` column, `` `x.y` `` is `ALIAS m` (a legal
+-- quoted column name that itself contains a dot), and the Nested subcolumn `n.b` depends on the
+-- expired `m` only via the alias subcolumn `` `x.y`.keys ``. Resolving the identifier to its storage
+-- column must find the longest existing column-name prefix (`` `x.y` ``), not merely peel the first
+-- dotted segment (`x`); otherwise the alias is never expanded, `n.b` is not expired, and vertical
+-- merge corrupts the shared Nested offsets of the present sibling `n.a`.
+DROP TABLE IF EXISTS t_nested_alias_dotted;
+
+CREATE TABLE t_nested_alias_dotted (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_alias_dotted;
+
+INSERT INTO t_nested_alias_dotted VALUES (1, [10,20]);
+INSERT INTO t_nested_alias_dotted VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_alias_dotted ADD COLUMN m Map(String, String);
+ALTER TABLE t_nested_alias_dotted ADD COLUMN `x.y` Map(String, String) ALIAS m;
+ALTER TABLE t_nested_alias_dotted ADD COLUMN `n.b` Array(String) DEFAULT `x.y`.keys;
+
+SYSTEM START MERGES t_nested_alias_dotted;
+OPTIMIZE TABLE t_nested_alias_dotted FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+SELECT count(), countDistinct(_part) FROM t_nested_alias_dotted;
+SELECT id, `n.a` FROM t_nested_alias_dotted ORDER BY id;
+
+DROP TABLE t_nested_alias_dotted;
+
+-- A transitive dependency reached through a missing ordinary `DEFAULT` intermediate must still be
+-- discovered. `m` is an expired physical column (absent from every source part, no default), `tmp`
+-- is an ordinary, non-`ALIAS`, non-`Nested` column whose `DEFAULT` reads the expired `m`, and the
+-- Nested subcolumn `n.b` is `` DEFAULT tmp ``. During the merge `tmp` is itself recomputed from its
+-- expression, so `n.b` transitively depends on the expired `m`. The dependency closure must follow
+-- the missing default-bearing intermediate `tmp` and expire `n.b`; otherwise vertical merge
+-- materializes `n.b` from the recomputed (empty) `tmp`, writing Nested offsets inconsistent with the
+-- present sibling `n.a` and corrupting the shared offsets.
+DROP TABLE IF EXISTS t_nested_default_chain;
+
+CREATE TABLE t_nested_default_chain (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_default_chain;
+
+INSERT INTO t_nested_default_chain VALUES (1, [10,20]);
+INSERT INTO t_nested_default_chain VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_default_chain ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_default_chain ADD COLUMN tmp Array(String) DEFAULT arrayMap(v -> toString(v), m);
+ALTER TABLE t_nested_default_chain ADD COLUMN `n.b` Array(String) DEFAULT tmp;
+
+SYSTEM START MERGES t_nested_default_chain;
+OPTIMIZE TABLE t_nested_default_chain FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+SELECT count(), countDistinct(_part) FROM t_nested_default_chain;
+SELECT id, `n.a` FROM t_nested_default_chain ORDER BY id;
+
+DROP TABLE t_nested_default_chain;
+
+-- The same transitive chain, but with *mixed* source parts: the intermediate `tmp` is materialized in
+-- one source part (by a mutation that touches only the rows of that part) and still missing in the
+-- other. Missing defaults are evaluated per part, so `tmp` is recomputed from the expired `m` for the
+-- rows of the part where it is absent, and `` `n.b` `` must be expired all the same. A dependency
+-- closure that stops recursing as soon as the intermediate is stored in *some* source part leaves
+-- `` `n.b` `` on the vertical-materialization path and corrupts the shared Nested offsets of the
+-- present sibling `n.a`. `max_bytes_to_merge_at_max_space_in_pool` keeps background merges from
+-- consuming the mixed parts before `OPTIMIZE ... FINAL` (which ignores that limit).
+DROP TABLE IF EXISTS t_nested_mixed_parts;
+
+CREATE TABLE t_nested_mixed_parts (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_mixed_parts VALUES (1, [10,20]);
+INSERT INTO t_nested_mixed_parts VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_mixed_parts ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_mixed_parts ADD COLUMN tmp Array(String) DEFAULT arrayMap(v -> toString(v), m);
+ALTER TABLE t_nested_mixed_parts ADD COLUMN `n.b` Array(String) DEFAULT tmp;
+
+-- Touches only the part holding `id = 1`, so `tmp` becomes stored there and stays missing elsewhere.
+ALTER TABLE t_nested_mixed_parts UPDATE tmp = tmp WHERE id = 1 SETTINGS mutations_sync = 2;
+
+-- Exactly one of the two active parts stores `tmp` (the mixed state this case is about).
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_parts' AND active AND column = 'tmp';
+
+OPTIMIZE TABLE t_nested_mixed_parts FINAL;
+
+-- `` `n.b` `` must be expired instead of materialized from the recomputed `tmp`: expired columns are
+-- not written, so they have no row in `system.parts_columns` (0 rows here, 1 row without the fix).
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_parts' AND active AND column = 'n.b';
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+SELECT count(), countDistinct(_part) FROM t_nested_mixed_parts;
+SELECT id, `n.a` FROM t_nested_mixed_parts ORDER BY id;
+
+DROP TABLE t_nested_mixed_parts;
+
+-- Mixed source parts for the Nested subcolumn *itself*: one part stores `` `n.b` `` (inserted
+-- explicitly after the ALTERs), the other still relies on its DEFAULT, whose dependency `m` is
+-- absent from that older part. `` `n.b` `` cannot be expired - that would drop the stored values -
+-- and its DEFAULT cannot be evaluated faithfully for the older part's rows (the absent `m`
+-- degrades to an empty literal), so the evaluated value would have array sizes inconsistent with
+-- the shared Nested offsets. The merge must reconcile the evaluated default with the offsets the
+-- part already stores: the rows of the older part degrade to type-default values shaped by the
+-- sibling's offsets, and the stored values of the newer part survive as-is.
+DROP TABLE IF EXISTS t_nested_mixed_stored;
+
+CREATE TABLE t_nested_mixed_stored (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_mixed_stored VALUES (1, [10,20]);
+
+ALTER TABLE t_nested_mixed_stored ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_mixed_stored ADD COLUMN `n.b` Array(String) DEFAULT arrayMap(v -> toString(v), m);
+
+INSERT INTO t_nested_mixed_stored (id, `n.a`, `n.b`) VALUES (2, [30,40], ['x','y']);
+
+-- Exactly one of the two active parts stores `n.b` (the mixed state this case is about).
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_stored' AND active AND column = 'n.b';
+
+OPTIMIZE TABLE t_nested_mixed_stored FINAL;
+
+-- `n.b` stays materialized (it cannot be expired without losing the stored values).
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_stored' AND active AND column = 'n.b';
+SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_stored' AND active;
+
+-- The stored values survive, the recomputed rows agree with the shared offsets.
+SELECT id, `n.a`, `n.b` FROM t_nested_mixed_stored ORDER BY id;
+
+DROP TABLE t_nested_mixed_stored;
+
+-- The same mixed state merged with the horizontal algorithm: reading all columns together does not
+-- make the DEFAULT evaluable either (`m` is still absent from the older part), so the evaluated
+-- value must be reconciled with the shared offsets all the same.
+DROP TABLE IF EXISTS t_nested_mixed_stored_horizontal;
+
+CREATE TABLE t_nested_mixed_stored_horizontal (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    enable_vertical_merge_algorithm = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_mixed_stored_horizontal VALUES (1, [10,20]);
+
+ALTER TABLE t_nested_mixed_stored_horizontal ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_mixed_stored_horizontal ADD COLUMN `n.b` Array(String) DEFAULT arrayMap(v -> toString(v), m);
+
+INSERT INTO t_nested_mixed_stored_horizontal (id, `n.a`, `n.b`) VALUES (2, [30,40], ['x','y']);
+
+OPTIMIZE TABLE t_nested_mixed_stored_horizontal FINAL;
+
+SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_stored_horizontal' AND active;
+SELECT id, `n.a`, `n.b` FROM t_nested_mixed_stored_horizontal ORDER BY id;
+
+DROP TABLE t_nested_mixed_stored_horizontal;
+
+-- A DEFAULT with no dependencies at all whose value has array sizes different from the shared
+-- Nested offsets (a plain constant). The reconciliation is per row: a row whose evaluated sizes
+-- happen to agree with the sibling's offsets keeps the evaluated value, a row whose sizes disagree
+-- degrades to the type-default value shaped by the offsets.
+DROP TABLE IF EXISTS t_nested_const_default;
+
+CREATE TABLE t_nested_const_default (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_const_default;
+
+INSERT INTO t_nested_const_default VALUES (1, [10]);
+INSERT INTO t_nested_const_default VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_const_default ADD COLUMN `n.b` Array(String) DEFAULT ['x'];
+
+SYSTEM START MERGES t_nested_const_default;
+OPTIMIZE TABLE t_nested_const_default FINAL;
+
+SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_nested_const_default' AND active;
+SELECT id, `n.a`, `n.b` FROM t_nested_const_default ORDER BY id;
+
+DROP TABLE t_nested_const_default;
+
+-- A `Nested` subcolumn whose live values are in a patch part must not be expired. The base parts
+-- predate both `m` and `n.b`; `m` is therefore expired, but the lightweight update supplies live
+-- `n.b` values in a patch part. The update also writes the matching `n.a` values because nested
+-- arrays in an update block must have matching sizes. Expiring `n.b` would omit it from the merge
+-- read set and lose those values before `AlterConversions::getPatchesForColumns` can request the
+-- patch.
+SET enable_lightweight_update = 1;
+SET apply_patch_parts = 1;
+
+DROP TABLE IF EXISTS t_nested_patch_part;
+
+CREATE TABLE t_nested_patch_part (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1,
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1;
+
+INSERT INTO t_nested_patch_part VALUES (1, [10,20]);
+INSERT INTO t_nested_patch_part VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_patch_part ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_patch_part ADD COLUMN `n.b` Array(String) DEFAULT arrayMap(v -> toString(v), m);
+
+UPDATE t_nested_patch_part SET `n.a` = `n.a`, `n.b` = ['x','y'] WHERE id = 1;
+
+OPTIMIZE TABLE t_nested_patch_part FINAL;
+
+SELECT id, `n.a`, `n.b` FROM t_nested_patch_part ORDER BY id;
+
+DROP TABLE t_nested_patch_part;
+
+-- Reader-chain filters must be applied to the cached shared offsets before a missing default is
+-- evaluated. The delete filter removes the row whose array has one element, leaving the row whose
+-- sibling has two. The constant default has one element, so after the merge it must be reconciled
+-- to two type-default values rather than written with incompatible shared Nested offsets.
+DROP TABLE IF EXISTS t_nested_filtered_default;
+
+CREATE TABLE t_nested_filtered_default (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_filtered_default VALUES (1, [10]);
+INSERT INTO t_nested_filtered_default VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_filtered_default ADD COLUMN `n.b` Array(String) DEFAULT ['x'];
+
+DELETE FROM t_nested_filtered_default WHERE id = 1;
+OPTIMIZE TABLE t_nested_filtered_default FINAL;
+
+SELECT id, `n.a`, `n.b` FROM t_nested_filtered_default ORDER BY id;
+
+DROP TABLE t_nested_filtered_default;
+
+-- A merge that expires a column whose `DEFAULT` reads another expired column must be able to fill
+-- both. `min_bytes_for_full_part_storage` forces packed part storage, hence a horizontal merge,
+-- which is the algorithm that hands the expired columns to the TTL step.
+DROP TABLE IF EXISTS t_nested_expired_default_chain;
+
+CREATE TABLE t_nested_expired_default_chain (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    min_bytes_for_full_part_storage = 1000000000;
+
+SYSTEM STOP MERGES t_nested_expired_default_chain;
+
+INSERT INTO t_nested_expired_default_chain VALUES (1, [10,20]);
+INSERT INTO t_nested_expired_default_chain VALUES (2, [30]);
+
+ALTER TABLE t_nested_expired_default_chain ADD COLUMN `n.urls` Array(Array(String));
+ALTER TABLE t_nested_expired_default_chain ADD COLUMN `n.domains` Array(Array(String))
+    DEFAULT arrayMap(x -> arrayMap(y -> domain(y), CAST(x AS Array(String))), `n.urls`);
+
+SYSTEM START MERGES t_nested_expired_default_chain;
+OPTIMIZE TABLE t_nested_expired_default_chain FINAL;
+
+SELECT id, `n.a`, `n.urls`, `n.domains` FROM t_nested_expired_default_chain ORDER BY id;
+
+-- Both added columns stay unmaterialized in the merged part and are recomputed on read.
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_nested_expired_default_chain' AND active
+    AND column IN ('n.urls', 'n.domains');
+
+DROP TABLE t_nested_expired_default_chain;
+
+-- The same reconciliation for a multidimensional array: only the outermost level is shared through
+-- the `Nested` offsets, so a constant default with a different number of outer elements degrades to
+-- offset-shaped type defaults while the inner levels come from the default itself.
+DROP TABLE IF EXISTS t_nested_filtered_default_2d;
+
+CREATE TABLE t_nested_filtered_default_2d (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_filtered_default_2d VALUES (1, [10]);
+INSERT INTO t_nested_filtered_default_2d VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_filtered_default_2d ADD COLUMN `n.b` Array(Array(String)) DEFAULT [['x']];
+
+DELETE FROM t_nested_filtered_default_2d WHERE id = 1;
+OPTIMIZE TABLE t_nested_filtered_default_2d FINAL;
+
+SELECT id, `n.a`, `n.b` FROM t_nested_filtered_default_2d ORDER BY id;
+
+DROP TABLE t_nested_filtered_default_2d;
+
+-- The same alias dependency on a part layout that merges horizontally. A packed part makes
+-- `chooseMergeAlgorithm` pick `Horizontal`, and only that branch hands the expired columns to the
+-- TTL step, which fills them with the value of their `DEFAULT`. That value is exactly the one that
+-- disagrees with the shared `Nested` offsets, and an `ALIAS` dependency is not even resolvable
+-- there (an alias column is never part of the block), so a column expired because its `DEFAULT`
+-- cannot be materialized must be kept out of that step and recomputed on read instead.
+DROP TABLE IF EXISTS t_nested_alias_packed;
+
+CREATE TABLE t_nested_alias_packed (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    min_bytes_for_full_part_storage = 1000000000;
+
+SYSTEM STOP MERGES t_nested_alias_packed;
+
+INSERT INTO t_nested_alias_packed VALUES (1, [10,20]);
+INSERT INTO t_nested_alias_packed VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_alias_packed ADD COLUMN s Array(String);
+ALTER TABLE t_nested_alias_packed ADD COLUMN s_alias Array(String) ALIAS s;
+ALTER TABLE t_nested_alias_packed ADD COLUMN `n.b` Array(String) DEFAULT s_alias;
+
+SYSTEM START MERGES t_nested_alias_packed;
+OPTIMIZE TABLE t_nested_alias_packed FINAL;
+
+SELECT count(), countDistinct(_part) FROM t_nested_alias_packed;
+SELECT id, `n.a` FROM t_nested_alias_packed ORDER BY id;
+
+-- `n.b` stays unmaterialized in the merged part and is recomputed on read.
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_nested_alias_packed' AND active
+    AND column = 'n.b';
+
+DROP TABLE t_nested_alias_packed;
