@@ -5,6 +5,8 @@ SET allow_experimental_bm25_score_column = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_top_k_dynamic_filtering = 1;
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
+SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 DROP TABLE IF EXISTS tab_bm25_topk;
 
