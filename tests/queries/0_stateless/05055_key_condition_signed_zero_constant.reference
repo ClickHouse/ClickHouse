@@ -9,3 +9,13 @@ non-zero constant	Granules: 2/3
 zero constant, transform keeps the values equal	1
 zero constant, transform keeps the values equal, ground truth	1
 zero constant, transform keeps the values equal	Granules: 1/3
+isNotDistinctFrom	1
+isNotDistinctFrom, ground truth	1
+partition key	1
+partition key, ground truth	1
+minmax index	1
+minmax index, ground truth	1
+dynamically typed domain	1
+dynamically typed domain, ground truth	1
+dynamically typed domain nested in a container	1
+dynamically typed domain nested in a container, ground truth	1

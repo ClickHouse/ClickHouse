@@ -44,7 +44,57 @@ SELECT 'zero constant, transform keeps the values equal', extract(explain, 'Gran
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_signed_zero_negate WHERE f = 0)
 WHERE match(explain, 'Granules: \\d+/\\d+');
 
+-- `IS NOT DISTINCT FROM` builds the same atom, and the atom also feeds the partition pruner and a
+-- `minmax` skip index.
+DROP TABLE IF EXISTS t_signed_zero_not_distinct;
+CREATE TABLE t_signed_zero_not_distinct (f Float64) ENGINE = MergeTree ORDER BY toString(f)
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_not_distinct VALUES (-0);
+
+SELECT 'isNotDistinctFrom', count() FROM t_signed_zero_not_distinct WHERE f IS NOT DISTINCT FROM 0;
+SELECT 'isNotDistinctFrom, ground truth', countIf(f IS NOT DISTINCT FROM 0) FROM t_signed_zero_not_distinct;
+
+DROP TABLE IF EXISTS t_signed_zero_partition;
+CREATE TABLE t_signed_zero_partition (f Float64) ENGINE = MergeTree PARTITION BY toString(f) ORDER BY tuple()
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_partition VALUES (-0);
+
+SELECT 'partition key', count() FROM t_signed_zero_partition WHERE f = 0;
+SELECT 'partition key, ground truth', countIf(f = 0) FROM t_signed_zero_partition;
+
+DROP TABLE IF EXISTS t_signed_zero_minmax;
+CREATE TABLE t_signed_zero_minmax (f Float64, INDEX idx toString(f) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_minmax VALUES (-0);
+
+SELECT 'minmax index', count() FROM t_signed_zero_minmax WHERE f = 0;
+SELECT 'minmax index, ground truth', countIf(f = 0) FROM t_signed_zero_minmax;
+
+-- A dynamically typed domain compares values of different types as equal, so a constant there does not
+-- name a single stored value and no range can be built from it, whatever the constant's own type is.
+DROP TABLE IF EXISTS t_signed_zero_dynamic;
+CREATE TABLE t_signed_zero_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY toString(d)
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_dynamic VALUES (toFloat64('-0')::Dynamic);
+
+SELECT 'dynamically typed domain', count() FROM t_signed_zero_dynamic WHERE d = toUInt64(0)::Dynamic;
+SELECT 'dynamically typed domain, ground truth', countIf(d = toUInt64(0)::Dynamic) FROM t_signed_zero_dynamic;
+
+DROP TABLE IF EXISTS t_signed_zero_dynamic_nested;
+CREATE TABLE t_signed_zero_dynamic_nested (d Tuple(Dynamic)) ENGINE = MergeTree ORDER BY toString(d)
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_dynamic_nested VALUES (tuple(-0.0::Float64));
+
+SELECT 'dynamically typed domain nested in a container', count() FROM t_signed_zero_dynamic_nested WHERE d = tuple(0);
+SELECT 'dynamically typed domain nested in a container, ground truth', countIf(d = tuple(0)) FROM t_signed_zero_dynamic_nested;
+
 DROP TABLE t_signed_zero;
 DROP TABLE t_signed_zero_tuple;
 DROP TABLE t_signed_zero_nonzero;
 DROP TABLE t_signed_zero_negate;
+DROP TABLE t_signed_zero_not_distinct;
+DROP TABLE t_signed_zero_partition;
+DROP TABLE t_signed_zero_minmax;
+DROP TABLE t_signed_zero_dynamic;
+DROP TABLE t_signed_zero_dynamic_nested;
