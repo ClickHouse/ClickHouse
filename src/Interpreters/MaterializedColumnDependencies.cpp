@@ -1,6 +1,6 @@
 #include <Interpreters/MaterializedColumnDependencies.h>
 
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/expressionSourceColumns.h>
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
@@ -68,9 +68,7 @@ MaterializedColumnDependencies::findNode(const String & column_name) const
     /// subcolumn must be reported as depending on `t`, not on `t.a`.
     replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized.expression, source_columns_);
 
-    /// `analyze` rewrites in place, so keep `materialized.expression` pristine for callers.
-    auto query = materialized.expression->clone();
-    materialized.dependencies = TreeRewriter(context).analyze(query, source_columns_)->requiredSourceColumns();
+    materialized.dependencies = expressionSourceColumnsInStorage(materialized.expression, columns, context);
     materialized.reads_ephemeral = std::ranges::any_of(
         materialized.dependencies, [&](const auto & dependency) { return ephemeral_columns.contains(dependency); });
 
