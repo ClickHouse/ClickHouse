@@ -339,9 +339,17 @@ SELECT 'dynamic string Bool baseline', arraySort(groupArray(id)) FROM json_path_
 WHERE data.bool_value = '1'
 SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0,
     dynamic_throw_on_type_mismatch = 0;
-SELECT count() FROM json_path_values_dynamic_equality_safety
+SELECT 'dynamic string Bool indexed', arraySort(groupArray(id)) FROM json_path_values_dynamic_equality_safety
 WHERE data.bool_value = '1'
-SETTINGS force_data_skipping_indices = 'tokens', dynamic_throw_on_type_mismatch = 0; -- { serverError INDEX_NOT_USED }
+SETTINGS force_data_skipping_indices = 'tokens', dynamic_throw_on_type_mismatch = 0;
+
+SELECT 'dynamic string false Bool baseline', arraySort(groupArray(id)) FROM json_path_values_dynamic_equality_safety
+WHERE data.bool_value = '0'
+SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0,
+    dynamic_throw_on_type_mismatch = 0;
+SELECT 'dynamic string false Bool indexed', arraySort(groupArray(id)) FROM json_path_values_dynamic_equality_safety
+WHERE data.bool_value = '0'
+SETTINGS force_data_skipping_indices = 'tokens', dynamic_throw_on_type_mismatch = 0;
 
 SELECT 'dynamic string Float baseline', arraySort(groupArray(id)) FROM json_path_values_dynamic_equality_safety
 WHERE data.float_value = '0.50'

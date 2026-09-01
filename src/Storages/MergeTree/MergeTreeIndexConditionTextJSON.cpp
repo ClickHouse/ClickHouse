@@ -209,7 +209,7 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
                 continue;
 
             const String converted_text = serializeFieldAsText(converted, target_type);
-            if (converted_text != value)
+            if (converted_text != value && !isBool(target_type))
                 return false;
 
             auto append_converted = [&](const Field & converted_value)
