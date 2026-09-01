@@ -71,6 +71,25 @@ SETTINGS query_plan_merge_filter_into_join_condition = 1;
 
 DROP TABLE t_merge_filter_u8;
 
+-- A `LowCardinality` conjunct: `and` returns a full column, so the conversion also changes
+-- the type of the leftover conjunct.
+DROP TABLE IF EXISTS t_merge_filter_lc;
+
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_merge_filter_lc (id UInt32, x LowCardinality(UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_merge_filter_lc SELECT number, number FROM numbers(600);
+
+SELECT count() FROM t_merge_filter_lc AS l LEFT JOIN t_merge_filter_lc AS r ON l.id = r.id
+WHERE r.x AND l.id = r.id
+SETTINGS query_plan_merge_filter_into_join_condition = 1;
+
+SELECT l.id, (r.x AND l.id = r.id) AS c FROM t_merge_filter_lc AS l LEFT JOIN t_merge_filter_lc AS r ON l.id = r.id
+WHERE r.x AND l.id = r.id AND l.id IN (0, 255, 256, 512)
+ORDER BY l.id
+SETTINGS query_plan_merge_filter_into_join_condition = 1;
+
+DROP TABLE t_merge_filter_lc;
+
 -- A `NULL` condition is false, and the conversion keeps the value nullable.
 DROP TABLE IF EXISTS t_merge_filter_null;
 
