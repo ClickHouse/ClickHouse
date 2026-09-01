@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-encrypted-storage, no-replicated-database
 # no-fasttest: disk_s3_plain_rewritable_03517 is only installed when EXPORT_S3_STORAGE_POLICIES=1.
-# no-replicated-database: kept from 04774 as the conservative choice; no arm here is known to need
+# no-replicated-database: kept from 04776 as the conservative choice; no arm here is known to need
 # it. Not re-verified: that job's 3-replica cluster and Keeper ensemble need more than one server.
 
 # A `Disk(...)` backup location requires READ/WRITE ON DISK whatever the disk is backed by. This
-# guards the object-storage case, which 04774 cannot cover because its disk is local.
+# guards the object-storage case, which 04776 cannot cover because its disk is local.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
