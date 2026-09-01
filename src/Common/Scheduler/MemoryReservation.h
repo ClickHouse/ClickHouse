@@ -5,6 +5,7 @@
 #include <Common/CurrentMetrics.h>
 
 #include <memory>
+#include <chrono>
 #include <mutex>
 
 class MemoryTracker;
@@ -50,8 +51,15 @@ class MemorySpillScheduler;
 struct MemoryReservation : public ResourceAllocation
 {
 public:
+    struct Settings
+    {
+        MemoryPressurePolicy pressure_policy;
+        bool force_spill_before_suction = true;
+        UInt64 suction_queue_timeout_ms = 0;
+    };
+
     // Blocks until reservation is admitted iff reserved_size > 0
-    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size);
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size, Settings settings_ = {});
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
@@ -80,6 +88,7 @@ private:
     void increaseCancelled() override;
 
     const ResourceCost reserved_size; // value of `reserve_memory` query setting
+    const Settings settings;
 
     /// Protects all the fields in this allocation that may be accessed from the scheduler thread.
     /// Lock ordering: AllocationQueue::mutex -> MemoryReservation::mutex (scheduler thread acquires
@@ -101,6 +110,7 @@ private:
     bool growth_recovery_active = false;
     UInt64 recovery_epoch = 0;
     UInt64 reported_recovery_epoch = 0;
+    std::chrono::steady_clock::time_point recovery_started_at;
 
     /// Helper struct. Holds postponed ProfileEvents increments to be executed from a query thread.
     struct Metrics

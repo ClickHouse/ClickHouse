@@ -510,8 +510,13 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
 struct ManualAllocation : public ResourceAllocation
 {
-    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, bool wait_for_admission = true)
-        : ResourceAllocation(*queue_, name_)
+    ManualAllocation(
+        AllocationQueue * queue_,
+        const String & name_,
+        ResourceCost initial_size,
+        bool wait_for_admission = true,
+        MemoryPressurePolicy memory_pressure_policy = {})
+        : ResourceAllocation(*queue_, name_, memory_pressure_policy)
     {
         if (initial_size > 0)
             increase_enqueued = true;
@@ -2615,6 +2620,98 @@ TEST(SchedulerSpaceShared, SuctionUsesExistingVictimOrder)
         << "Suction did not use the existing largest-first victim order";
     EXPECT_EQ(victim->killCount(), 0u);
     EXPECT_EQ(heavy.killCount(), 0u);
+}
+
+
+TEST(SchedulerSpaceShared, EvictionProtectionIsLastFallback)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy protected_policy;
+    protected_policy.protect_from_eviction = true;
+    auto protected_allocation = std::make_unique<ManualAllocation>(
+        queue, "protected", 7000, true, protected_policy);
+    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 2000);
+    ManualAllocation requester(queue, "requester", 1000);
+
+    requester.increaseAsync(1000);
+
+    ASSERT_TRUE(ordinary->waitKillsFor(1, std::chrono::seconds(5)));
+    EXPECT_EQ(protected_allocation->killCount(), 0u);
+    EXPECT_EQ(requester.killCount(), 0u);
+
+    ordinary.reset();
+    requester.waitSynced();
+}
+
+
+TEST(SchedulerSpaceShared, LargestMemoryFirstSuctionQueuePolicy)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy largest_first;
+    largest_first.suction_queue_policy = ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst;
+    ManualAllocation first(queue, "first", 3000, true, largest_first);
+    ManualAllocation largest(queue, "largest", 4000, true, largest_first);
+    auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 2000, true, largest_first);
+    first.protectAfterPressureRounds(1);
+    largest.protectAfterPressureRounds(1);
+
+    first.increaseAsync(2000);
+    first.waitPressureCount(1);
+    largest.increaseAsync(3000);
+    largest.waitPressureCount(1);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+    first.recoveryCheckpoint();
+    largest.recoveryCheckpoint();
+    releaser->decreaseAsync(2000);
+    release.set_value();
+    releaser->waitSynced();
+
+    ASSERT_TRUE(largest.waitSyncedFor(std::chrono::seconds(5)));
+    EXPECT_EQ(largest.size(), 7000);
+    EXPECT_EQ(first.size(), 3000);
+}
+
+
+TEST(SchedulerSpaceShared, SuctionReservationCapsProtectedGrowth)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy capped_suction;
+    capped_suction.suction_reservation_bytes = 1000;
+    ManualAllocation requester(queue, "requester", 3000, true, capped_suction);
+    auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 7000, true, capped_suction);
+    requester.protectAfterPressureRounds(1);
+
+    requester.increaseAsync(3000);
+    requester.waitPressureCount(1);
+    releaser->decreaseAsync(3000);
+    releaser->waitSynced();
+    EXPECT_EQ(releaser->killCount(), 0u);
+
+    requester.recoveryCheckpoint();
+    ASSERT_TRUE(releaser->waitKillsFor(1, std::chrono::seconds(5)));
+    EXPECT_EQ(requester.size(), 3000);
+
+    releaser.reset();
+    requester.waitSynced();
 }
 
 

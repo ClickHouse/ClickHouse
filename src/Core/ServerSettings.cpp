@@ -386,6 +386,12 @@ The maximum memory consumption of the server is further restricted by setting `m
 
 As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
 )", 0) \
+    DECLARE(UInt64, memory_reservation_suction_reservation_bytes, 0, R"(
+Maximum pending query growth protected by a memory-reservation suction slot. The request must still fit completely in real scheduler headroom; this setting does not create or overcommit capacity. A value of `0` means unlimited.
+)", 0) \
+    DECLARE(String, memory_reservation_suction_queue_policy, "fifo", R"(
+Policy used to select the next completed-spill query for memory-reservation suction. Supported values are `fifo` and `largest_memory_first`.
+)", 0) \
     DECLARE(UInt64, max_per_cpu_untracked_memory, (8 * 1024 * 1024), R"(
 Upper bound, in bytes, on the untracked memory all threads running on one CPU may hold at once before it is flushed to the memory tracker. While `max_untracked_memory` bounds a single thread, this bounds the per-CPU total, so many threads cannot multiply their per-thread allowance into a large server-wide overcommit. The total untracked memory is therefore bounded by roughly `number_of_cpus * max_per_cpu_untracked_memory`. A value of `0` disables the per-CPU bound (only the per-thread `max_untracked_memory` applies). Linux only.
 )", 0) \

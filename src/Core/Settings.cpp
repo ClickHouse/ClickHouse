@@ -4038,6 +4038,18 @@ If not enough memory is available to the workload, a query is prevented from sta
 A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, memory_reservation_protect_from_eviction, false, R"(
+Give this query soft protection from memory-reservation eviction. The existing scheduler skips protected queries while an unprotected victim is available. A protected query remains a final fallback so that a fully protected workload cannot deadlock permanently.
+This setting takes effect only if a MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, memory_reservation_force_spill_before_suction, true, R"(
+Run one exhaustive query-level spill pass when this query enters the memory-reservation eviction queue. Disable it to move directly to suction after the existing scheduler nominates the query for eviction.
+This setting takes effect only if a MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL) \
+    DECLARE(Milliseconds, memory_reservation_suction_queue_timeout_ms, 0, R"(
+Maximum time a query may spend in its forced-spill pass after entering the memory-reservation eviction queue. After the timeout, the query proceeds to suction with the spill work completed so far. A value of `0` disables the timeout.
+This setting takes effect only if a MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 

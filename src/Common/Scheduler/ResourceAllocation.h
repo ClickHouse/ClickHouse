@@ -31,8 +31,28 @@ public:
         Protect,
     };
 
-    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {})
-        : queue(queue_), id(id_), increase(*this), decrease(*this)
+    enum class SuctionQueuePolicy : UInt8
+    {
+        Fifo,
+        LargestMemoryFirst,
+    };
+
+    struct MemoryPressurePolicy
+    {
+        bool protect_from_eviction = false;
+        UInt64 suction_reservation_bytes = 0;
+        SuctionQueuePolicy suction_queue_policy = SuctionQueuePolicy::Fifo;
+    };
+
+    explicit ResourceAllocation(
+        IAllocationQueue & queue_,
+        const String & id_ = {},
+        MemoryPressurePolicy memory_pressure_policy_ = {})
+        : queue(queue_)
+        , id(id_)
+        , memory_pressure_policy(memory_pressure_policy_)
+        , increase(*this)
+        , decrease(*this)
     {}
 
     virtual ~ResourceAllocation();
@@ -72,6 +92,13 @@ public:
     /// The allocation itself keeps running and may still release resources.
     bool isIncreaseSuspended() const { return memory_growth_suspended; }
     bool isSuctioned() const { return memory_growth_suction_priority; }
+    bool isProtectedFromEviction() const { return memory_pressure_policy.protect_from_eviction; }
+    bool canReserveForSuction(ResourceCost size) const
+    {
+        return memory_pressure_policy.suction_reservation_bytes == 0
+            || static_cast<UInt64>(size) <= memory_pressure_policy.suction_reservation_bytes;
+    }
+    SuctionQueuePolicy getSuctionQueuePolicy() const { return memory_pressure_policy.suction_queue_policy; }
 
 private:
     friend class ISpaceSharedNode;
@@ -79,6 +106,7 @@ private:
     friend class AllocationLimit;
 
     ResourceCost allocated = 0; /// Currently allocated.
+    const MemoryPressurePolicy memory_pressure_policy;
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
     /// A hard-limit constraint may temporarily park a running allocation's pending growth so another
     /// request can be considered. The allocation can still decrease or be removed while growth is parked.

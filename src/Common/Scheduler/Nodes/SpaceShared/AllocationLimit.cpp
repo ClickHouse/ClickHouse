@@ -276,6 +276,14 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
         }
     }
 
+    if (new_increase
+        && new_increase == suction_growth
+        && !new_increase->allocation.canReserveForSuction(new_increase->size))
+    {
+        processSuction();
+        new_increase = nullptr;
+    }
+
     /// The active suction is the only request allowed to consume a local release. If a policy
     /// temporarily presents another request, keep it queued and reactivate the slot owner.
     if (suction_growth && new_increase != suction_growth)

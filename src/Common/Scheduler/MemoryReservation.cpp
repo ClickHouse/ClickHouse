@@ -33,9 +33,10 @@ namespace ErrorCodes
     extern const int MEMORY_RESERVATION_FAILED;
 }
 
-MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_)
-    : ResourceAllocation(*link.allocation_queue, id_)
+MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_, Settings settings_)
+    : ResourceAllocation(*link.allocation_queue, id_, settings_.pressure_policy)
     , reserved_size(reserved_size_)
+    , settings(settings_)
     , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)
     , demand_increment(CurrentMetrics::MemoryReservationDemand, 0)
 {
@@ -119,6 +120,7 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     ResourceCost pending_decrease = 0;
     std::shared_ptr<MemorySpillScheduler> recovery_scheduler;
     UInt64 observed_recovery_epoch = 0;
+    bool recovery_timed_out = false;
     {
         std::unique_lock lock(mutex);
 
@@ -133,6 +135,9 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
         {
             recovery_scheduler = memory_spill_scheduler.lock();
             observed_recovery_epoch = recovery_epoch;
+            recovery_timed_out = settings.suction_queue_timeout_ms > 0
+                && std::chrono::steady_clock::now() - recovery_started_at
+                    >= std::chrono::milliseconds(settings.suction_queue_timeout_ms);
         }
 
         // Make sure reservation size is always respected.
@@ -167,7 +172,7 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     if (recovery_scheduler && observed_recovery_epoch != 0)
     {
         const auto result = recovery_scheduler->getForcedSpillResult(observed_recovery_epoch);
-        if (result.outcome != MemorySpillScheduler::ForcedSpillOutcome::Pending)
+        if (result.outcome != MemorySpillScheduler::ForcedSpillOutcome::Pending || recovery_timed_out)
         {
             bool notify_recovery_progress = false;
             {
@@ -213,6 +218,9 @@ void MemoryReservation::setMemorySpillScheduler(const std::shared_ptr<MemorySpil
 
 ResourceAllocation::GrowthPressureAction MemoryReservation::onGrowthPressure()
 {
+    if (!settings.force_spill_before_suction)
+        return GrowthPressureAction::Protect;
+
     std::shared_ptr<MemorySpillScheduler> scheduler;
     {
         std::unique_lock lock(mutex);
@@ -227,6 +235,7 @@ ResourceAllocation::GrowthPressureAction MemoryReservation::onGrowthPressure()
         std::unique_lock lock(mutex);
         growth_recovery_active = true;
         recovery_epoch = spill_request.epoch;
+        recovery_started_at = std::chrono::steady_clock::now();
         cv.notify_all();
     }
     return GrowthPressureAction::Yield;
@@ -240,6 +249,7 @@ void MemoryReservation::onGrowthPressureResolved()
         growth_recovery_active = false;
         recovery_epoch = 0;
         reported_recovery_epoch = 0;
+        recovery_started_at = {};
         scheduler = memory_spill_scheduler.lock();
         cv.notify_all();
     }

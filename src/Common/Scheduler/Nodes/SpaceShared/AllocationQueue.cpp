@@ -510,7 +510,9 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
         return nullptr;
 
     ResourceAllocation * victim = nullptr;
+    ResourceAllocation * protected_victim = nullptr;
     ResourceAllocation * self_fallback = nullptr;
+    ResourceAllocation * protected_self_fallback = nullptr;
     /// Search the whole queue in reverse acquisition order. The suctioned requester is the final
     /// fallback, so eviction frees competing allocations one at a time before killing the requester.
     for (auto it = running_allocations.rbegin(); it != running_allocations.rend(); ++it)
@@ -520,7 +522,16 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
             continue;
         if (&candidate == &killer.allocation)
         {
-            self_fallback = &candidate;
+            if (candidate.isProtectedFromEviction())
+                protected_self_fallback = &candidate;
+            else
+                self_fallback = &candidate;
+            continue;
+        }
+        if (candidate.isProtectedFromEviction())
+        {
+            if (!protected_victim)
+                protected_victim = &candidate;
             continue;
         }
         victim = &candidate;
@@ -529,6 +540,10 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
 
     if (!victim)
         victim = self_fallback;
+    if (!victim)
+        victim = protected_victim;
+    if (!victim)
+        victim = protected_self_fallback;
     if (!victim)
         return nullptr;
 
@@ -671,8 +686,16 @@ void AllocationQueue::processActivation()
                 && !increase->allocation.memory_growth_recovery_pending);
         if (!suspended_growth && !has_active_suction)
         {
+            const auto first_nominated = std::find_if(
+                increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
+                {
+                    return allocation.memory_growth_eviction_order != 0;
+                });
+            const auto queue_policy = first_nominated == increasing_allocations.end()
+                ? ResourceAllocation::SuctionQueuePolicy::Fifo
+                : first_nominated->getSuctionQueuePolicy();
             auto next = std::min_element(
-                increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & lhs, const ResourceAllocation & rhs)
+                increasing_allocations.begin(), increasing_allocations.end(), [queue_policy](const ResourceAllocation & lhs, const ResourceAllocation & rhs)
                 {
                     const UInt64 lhs_order = lhs.memory_growth_eviction_order;
                     const UInt64 rhs_order = rhs.memory_growth_eviction_order;
@@ -680,6 +703,9 @@ void AllocationQueue::processActivation()
                         return false;
                     if (rhs_order == 0)
                         return true;
+                    if (queue_policy == ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst
+                        && lhs.allocated != rhs.allocated)
+                        return lhs.allocated > rhs.allocated;
                     return lhs_order < rhs_order;
                 });
             if (next != increasing_allocations.end() && next->memory_growth_eviction_order != 0)
