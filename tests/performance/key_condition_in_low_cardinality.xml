@@ -1,0 +1,16 @@
+<test>
+    <create_query>CREATE TABLE test_in_lc (`k` LowCardinality(String)) ENGINE = MergeTree() ORDER BY k</create_query>
+    <fill_query>INSERT INTO test_in_lc SELECT toString(intDiv(number, 50)) FROM numbers(50000000)</fill_query>
+
+    <!--
+        `IN` on a `LowCardinality` primary key with no wrapping functions: the monotonic functions chain
+        is empty, so index analysis reaches `MergeTreeSetIndex::checkInRange` once per mark per key column
+        and does almost nothing else. `max_rows_to_read` keeps the reading part out of the measurement.
+    -->
+    <query>SELECT count() FROM test_in_lc WHERE k IN (SELECT toString(rand(1)) FROM numbers(200000)) SETTINGS max_rows_to_read = 200001, read_overflow_mode = 'break'</query>
+
+    <!-- The same, but nothing can be pruned, so every mark reaches `checkInRange`. -->
+    <query>SELECT count() FROM test_in_lc WHERE k NOT IN (SELECT toString(rand(1)) FROM numbers(200000)) SETTINGS max_rows_to_read = 200001, read_overflow_mode = 'break'</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_in_lc</drop_query>
+</test>
