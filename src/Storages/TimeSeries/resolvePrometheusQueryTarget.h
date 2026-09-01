@@ -37,6 +37,12 @@ bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 /// a fourth decoration keyed on the storage id rather than on a query clause, revisit this.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
+/// Refuses a Distributed target whose shard-local tables are not TimeSeries, which an INSERT would
+/// otherwise accept: the rows would land in tables every prometheus read surface rejects. The
+/// verdict is cached per cluster and table, keyed on the fleet itself so a configuration reload
+/// re-probes rather than trusting a stale answer. Call after the caller's INSERT check.
+void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
+
 /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
 /// generated cluster() call's own declaration so ClusterProxy applies its usual precedence.
 std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage, const ContextPtr & context);
