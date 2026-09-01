@@ -5042,7 +5042,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
+        auto mutation_commands = commands.getMutationCommands(
+            new_metadata,
+            settings[Setting::materialize_ttl_after_modify],
+            local_context,
+            /*with_alters=*/ false,
+            (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode],
+            (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -5480,6 +5486,104 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     NamesAndTypesList columns_to_check_conversion;
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
+
+    /// An insert can retain the pre-ALTER metadata snapshot and commit its first part after this
+    /// check. Therefore an empty active-parts set does not prove that an ALTER affects only future
+    /// inserts; keep the guards conservative for every MergeTree family storage.
+    const bool alter_affects_existing_parts = true;
+
+    /// Changing the effective expression of a skip index, or the normalized `preprocessor` /
+    /// `postprocessor` arguments of a text index, invalidates index files built from the old
+    /// definition. In `REBUILD` and `DROP` modes `AlterCommands::getMutationCommands` handles this
+    /// with an additional mutation; `THROW` and `COMPATIBILITY` modes forbid such alters.
+    /// `new_metadata` already has the commands applied (see above).
+    if (alter_affects_existing_parts
+        && (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY))
+    {
+        auto affected_indices = commands.getSkipIndicesWithChangedExpression(old_metadata, new_metadata, local_context);
+        if (!affected_indices.empty())
+        {
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "The ALTER changes the effective definition of the skip index '{}' ({}) and would leave stale index files on existing "
+                "parts. Check the MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
+                affected_indices.front().first,
+                affected_indices.front().second);
+        }
+    }
+
+    /// A `MATERIALIZED` column whose effective expression changes is rematerialized with an
+    /// automatic `MATERIALIZE COLUMN` mutation (see `AlterCommands::getMutationCommands`), but
+    /// `MATERIALIZE COLUMN` refuses to run on sort-key columns because it could break the sort
+    /// order. Reject such ALTERs up front instead of persisting the new metadata and queueing
+    /// a mutation that can never succeed.
+    /// The partition key needs the same protection: rematerializing a column the partition key
+    /// depends on rewrites the stored values in place, while the parts keep the partition IDs
+    /// (and part names) computed from the old values, so a part would no longer belong to the
+    /// partition it is stored in and partition pruning would return wrong results.
+    if (alter_affects_existing_parts)
+    {
+        /// The commands that `AlterCommands::getMutationCommands` will synthesize for this ALTER.
+        /// They are built inside `StorageMergeTree::alter` / `StorageReplicatedMergeTree::alter`,
+        /// after `InterpreterAlterQuery` has already validated the mutation commands written in
+        /// the query, so nothing else runs `checkMutationIsPossible` on them. Only the fields that
+        /// check inspects are filled in - these commands are never executed.
+        MutationCommands automatic_mutation_commands;
+
+        /// The sort key check must cover the source columns of sort-key expressions
+        /// (e.g. `ORDER BY m + 1`), not only bare key columns: rewriting such a column
+        /// in place breaks the stored order just the same.
+        Names sorting_key_columns = new_metadata.getColumnsRequiredForSortingKey();
+        Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        for (const auto & column_name : commands.getMaterializedColumnsWithChangedExpansion(old_metadata, new_metadata, local_context))
+        {
+            if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), column_name) != sorting_key_columns.end())
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The ALTER changes the effective expression of the MATERIALIZED column {}, which the sort key "
+                    "depends on. Existing parts would have to be rematerialized, and that could break the sort order",
+                    backQuote(column_name));
+
+            if (std::find(partition_key_columns.begin(), partition_key_columns.end(), column_name) != partition_key_columns.end())
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The ALTER changes the effective expression of the MATERIALIZED column {}, which the partition key "
+                    "depends on. Existing parts would have to be rematerialized, and that would make their stored values "
+                    "disagree with the partition they are placed in",
+                    backQuote(column_name));
+
+            MutationCommand materialize_column;
+            materialize_column.type = MutationCommand::MATERIALIZE_COLUMN;
+            materialize_column.column_name = column_name;
+            automatic_mutation_commands.push_back(std::move(materialize_column));
+        }
+
+        if (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP)
+        {
+            for (const auto & [index_name, _] : commands.getSkipIndicesWithChangedExpression(old_metadata, new_metadata, local_context))
+            {
+                MutationCommand index_command;
+                if (index_mode == AlterColumnSecondaryIndexMode::REBUILD)
+                {
+                    index_command.type = MutationCommand::MATERIALIZE_INDEX;
+                    index_command.index_name = index_name;
+                }
+                else
+                {
+                    index_command.type = MutationCommand::DROP_INDEX;
+                    index_command.column_name = index_name;
+                    index_command.clear = true;
+                }
+                automatic_mutation_commands.push_back(std::move(index_command));
+            }
+        }
+
+        /// Reject the ALTER before any metadata is committed if the storage cannot run the
+        /// mutation it would queue (immutable disks, `UNIQUE KEY` tables).
+        if (!automatic_mutation_commands.empty())
+            checkMutationIsPossible(automatic_mutation_commands, local_context->getSettingsRef());
+    }
+
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
@@ -5965,7 +6069,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     if (!columns_to_check_conversion.empty())
     {
         auto old_header = old_metadata.getSampleBlock();
-        performRequiredConversions(old_header, columns_to_check_conversion, local_context, new_metadata.getColumns().getDefaults(), true);
+        performRequiredConversions(old_header, columns_to_check_conversion, local_context, new_metadata.getColumns(), true);
     }
 
     if (old_metadata.hasSettingsChanges())

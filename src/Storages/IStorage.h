@@ -346,6 +346,10 @@ public:
     /// MergeTree.
     TableLockHolder lockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);
 
+    /// Storage-specific barrier held by an INSERT from before its metadata snapshot is captured
+    /// until its pipeline finishes. Most storages do not need one.
+    virtual TableLockHolder lockForInsert(const String & query_id, const Poco::Timespan & acquire_timeout);
+
     /// Similar to lockForShare, but returns a nullptr if the table is dropped while
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
     TableLockHolder tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);

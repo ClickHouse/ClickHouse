@@ -135,6 +135,10 @@ struct MutationCommand
     bool isEmptyCommand() const;
     bool isDropOrRename() const;
     bool affectsAllColumns() const;
+
+    /// The command repairs derived files or values whose definition changed with table metadata.
+    /// A storage must register it after every `INSERT` using the old metadata has finished.
+    bool requiresInsertBarrier() const;
 };
 
 /// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
@@ -161,6 +165,7 @@ public:
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
+    bool requiresInsertBarrier() const;
     NameSet getAllUpdatedColumns() const;
 };
 

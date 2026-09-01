@@ -264,7 +264,7 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
             names_to_keep.insert(column.name);
 
-    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, names_to_keep);
+    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, names_to_keep, getContext());
     if (!lazy_info)
         return {};
 

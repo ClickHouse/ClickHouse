@@ -76,6 +76,11 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const Poco::Time
     return result;
 }
 
+TableLockHolder IStorage::lockForInsert(const String &, const Poco::Timespan &)
+{
+    return {};
+}
+
 TableLockHolder IStorage::tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);

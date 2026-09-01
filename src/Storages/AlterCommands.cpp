@@ -38,6 +38,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -52,6 +53,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <ranges>
 #include <vector>
@@ -145,6 +149,41 @@ void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null
         throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
     if (*null_modifier)
         data_type = makeNullable(data_type);
+}
+
+ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns, const NameSet & excluded_columns = {})
+{
+    auto default_expr_list = make_intrusive<ASTExpressionList>();
+
+    for (const auto & column : columns)
+    {
+        if (!column.default_desc.expression || excluded_columns.contains(column.name))
+            continue;
+
+        const auto tmp_column_name = column.name + "_tmp_alter" + toString(randomSeed());
+        default_expr_list->children.emplace_back(setAlias(
+            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), column.type->getName()), column.name));
+        default_expr_list->children.emplace_back(setAlias(column.default_desc.expression->clone(), tmp_column_name));
+    }
+
+    return default_expr_list;
+}
+
+void renameColumnInStoredExpressions(ColumnsDescription & columns, const String & from, const String & to)
+{
+    RenameColumnData rename_data{from, to};
+    RenameColumnVisitor rename_visitor(rename_data);
+
+    for (const auto & column : columns)
+    {
+        columns.modify(column.name, [&](ColumnDescription & column_to_modify)
+        {
+            if (column_to_modify.default_desc.expression)
+                rename_visitor.visit(column_to_modify.default_desc.expression);
+            if (column_to_modify.ttl)
+                rename_visitor.visit(column_to_modify.ttl);
+        });
+    }
 }
 
 /// A column declaration can syntactically carry more modifiers than `AlterCommand` transfers into
@@ -1721,6 +1760,35 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
+/// Is this one of the implicit minmax indices created over a virtual column by
+/// `add_minmax_index_for_block_{number,offset}_column`? Those - and only those - have to be
+/// resolved with the virtual columns in scope. Implicit indices over ordinary and `ALIAS`
+/// columns keep the underlying columns of the expression in `column_names`, so a virtual name
+/// there identifies the virtual-column case, exactly as in
+/// `StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns`.
+static bool isImplicitIndexOverVirtualColumn(const IndexDescription & index, const StorageInMemoryMetadata & metadata)
+{
+    return index.isImplicitlyCreated() && index.column_names.size() == 1 && metadata.isVirtualColumn(index.column_names.front());
+}
+
+static void renameColumnsInTextIndexTransformArguments(const ASTPtr & arguments, RenameColumnVisitor & rename_visitor)
+{
+    if (!arguments)
+        return;
+
+    for (const auto & child : arguments->children)
+    {
+        const auto * function = child->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+            continue;
+
+        /// The option name on the left is not a column reference; only rename the transform body.
+        const auto * key = function->arguments->children[0]->as<ASTIdentifier>();
+        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+            rename_visitor.visit(function->arguments->children[1]);
+    }
+}
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     if (!prepared)
@@ -1771,8 +1839,19 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
+            /// Only the implicit indices over virtual columns (`add_minmax_index_for_block_number_column`
+            /// and `add_minmax_index_for_block_offset_column`) need the virtual columns in scope. Every
+            /// other index - explicit, or implicit over an ordinary/`ALIAS` column - is created against
+            /// ordinary columns only, so it must be re-resolved the same way: otherwise virtual columns
+            /// would leak into the re-expansion of column matchers inside referenced `ALIAS` bodies and
+            /// the expression would silently differ from the one the index was built from.
+            const bool over_virtual_column = isImplicitIndexOverVirtualColumn(index, metadata_copy);
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast,
+                over_virtual_column ? columns_with_virtuals : metadata_copy.columns,
+                index.isImplicitlyCreated(),
+                index.escape_filenames,
+                context);
         }
         catch (const Exception & exception)
         {
@@ -1793,7 +1872,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
             /// Check if new metadata is convertible from old metadata for projection.
             Block old_projection_block = projection.sample_block;
-            performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns().getDefaults());
+            performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns());
             new_projections.add(std::move(new_projection));
         }
         catch (const Exception & exception)
@@ -2022,6 +2101,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
+    bool revalidate_stored_defaults = false;
     /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
     /// must not reference virtual columns. An external-target (`TO`) materialized view forwards inserts
     /// to its target using the target metadata and never evaluates its own column defaults, so a default
@@ -2032,6 +2112,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    std::vector<std::pair<String, String>> renames;
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2091,12 +2172,28 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     codec_validation_settings);
             }
 
+            ColumnDescription column(column_name, command.data_type);
+            if (command.default_expression)
+            {
+                column.default_desc.kind = command.default_kind;
+                column.default_desc.expression = command.default_expression->clone();
+            }
+
             /// Advance the working snapshot with the exact columns apply() would materialize
             /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
-                                                  context, command.if_not_exists, share_nested))
-                all_columns.add(std::move(col));
+            auto columns_to_add = columnsAddedByAlter(all_columns, std::move(column), context, command.if_not_exists, share_nested);
+            if (!command.after_column.empty() || command.first)
+            {
+                for (auto & col : columns_to_add | std::views::reverse)
+                    all_columns.add(std::move(col), command.after_column, command.first);
+            }
+            else
+            {
+                for (auto & col : columns_to_add)
+                    all_columns.add(std::move(col), command.after_column, command.first);
+            }
+            revalidate_stored_defaults = true;
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -2209,6 +2306,31 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         backQuote(column_name));
             }
 
+            const bool removes_default_expression = command.to_remove == AlterCommand::RemoveProperty::DEFAULT
+                || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
+                || command.to_remove == AlterCommand::RemoveProperty::ALIAS;
+            const bool changes_position = !command.after_column.empty() || command.first;
+            if (command.data_type || command.default_expression || removes_default_expression || changes_position)
+            {
+                all_columns.modify(column_name, command.after_column, command.first, [&](ColumnDescription & column)
+                {
+                    if (command.data_type)
+                        column.type = command.data_type;
+
+                    if (removes_default_expression)
+                    {
+                        column.default_desc = ColumnDefault{};
+                    }
+                    else if (command.default_expression)
+                    {
+                        column.default_desc.kind = command.default_kind;
+                        column.default_desc.expression = command.default_expression->clone();
+                    }
+                });
+            }
+
+            if (command.data_type || command.default_expression || removes_default_expression || changes_position)
+                revalidate_stored_defaults = true;
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -2227,7 +2349,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         {
                             if (const auto & default_expression = column.default_desc.expression)
                             {
-                                auto expression = buildQueryTree(default_expression->clone(), execution_context);
+                                ASTPtr query = default_expression->clone();
+                                expandColumnMatchersInExpression(query, all_columns);
+                                auto expression = buildQueryTree(query, execution_context);
                                 QueryAnalyzer analyzer(true);
                                 analyzer.resolve(expression, fake_table_expression, execution_context);
                                 GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
@@ -2252,6 +2376,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             if (const auto & default_expression = column.default_desc.expression)
                             {
                                 ASTPtr query = default_expression->clone();
+                                expandColumnMatchersInExpression(query, all_columns);
                                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
                                 const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                                 for (const auto & required_column : actions->getRequiredColumns())
@@ -2264,7 +2389,68 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         }
                     }
                 }
-                all_columns.remove(command.column_name);
+                else
+                {
+                    /// CLEAR COLUMN triggers recalculation of the MATERIALIZED columns that read
+                    /// the cleared column, directly or through another recalculated MATERIALIZED
+                    /// column. Reject up front, instead of queueing a mutation that can never
+                    /// succeed or that would corrupt the parts, when:
+                    /// - the recalculation would read an EPHEMERAL column: its values exist only
+                    ///   during INSERT and are not stored in parts;
+                    /// - the recalculated column is required by the sorting or partition key:
+                    ///   the mutation rewrites it in place, without re-sorting rows or moving
+                    ///   parts between partitions, breaking the key invariants.
+                    NameSet ephemeral_names;
+                    for (const auto & col : all_columns.getEphemeral())
+                        ephemeral_names.insert(col.name);
+
+                    /// Expand ALIAS bodies and canonicalize subcolumn reads exactly like
+                    /// `MutationsInterpreter` does, otherwise a MATERIALIZED column that reaches the
+                    /// cleared column through an ALIAS or a subcolumn would pass this validation and
+                    /// the mutation would only fail (or rewrite the wrong columns) after being queued.
+                    auto materialized_column_inputs = collectMaterializedColumnInputsAfterExpansion(all_columns, context);
+
+                    auto stale_columns
+                        = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs.by_column, {command.column_name});
+
+                    if (auto unsafe_column = materialized_column_inputs.findFirstUnsafeColumn(stale_columns))
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but its "
+                            "expression contains a legacy ALIAS reference captured by a lambda and cannot be evaluated safely",
+                            backQuote(command.column_name), backQuote(*unsafe_column));
+
+                    Names sorting_key_columns = metadata->getColumnsRequiredForSortingKey();
+                    Names partition_key_columns = metadata->getColumnsRequiredForPartitionKey();
+                    for (const auto & stale_column : stale_columns)
+                    {
+                        for (const auto & required_column : materialized_column_inputs.by_column.at(stale_column))
+                        {
+                            if (ephemeral_names.contains(required_column))
+                                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                    "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but it "
+                                    "depends on the EPHEMERAL column {}, whose values cannot be read from existing parts",
+                                    backQuote(command.column_name), backQuote(stale_column), backQuote(required_column));
+                        }
+
+                        if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), stale_column) != sorting_key_columns.end())
+                            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but the "
+                                "sort key depends on it, and rewriting it could break the sort order",
+                                backQuote(command.column_name), backQuote(stale_column));
+
+                        if (std::find(partition_key_columns.begin(), partition_key_columns.end(), stale_column) != partition_key_columns.end())
+                            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but the "
+                                "partition key depends on it, and the rewritten values would disagree with the "
+                                "partition the parts are placed in",
+                                backQuote(command.column_name), backQuote(stale_column));
+                    }
+                }
+                if (!command.clear)
+                {
+                    all_columns.remove(command.column_name);
+                    revalidate_stored_defaults = true;
+                }
             }
             else if (!command.if_exists)
             {
@@ -2365,21 +2551,31 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
 
+            bool renamed_column = false;
             if (from_nested && to_nested)
             {
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_column = true;
             }
             else if (!from_nested && !to_nested)
             {
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_column = true;
                 renamed_columns.emplace(command.column_name);
                 renamed_columns.emplace(command.rename_to);
             }
             else
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from nested struct to normal column and vice versa");
+            }
+
+            if (renamed_column)
+            {
+                renameColumnInStoredExpressions(all_columns, command.column_name, command.rename_to);
+                renames.emplace_back(command.column_name, command.rename_to);
+                revalidate_stored_defaults = true;
             }
         }
         else if (command.type == AlterCommand::REMOVE_TTL && !metadata->hasAnyTableTTL())
@@ -2445,7 +2641,43 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
-    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
+    if (revalidate_stored_defaults)
+    {
+        /// The whole stored default list is revalidated here, including expressions this ALTER does
+        /// not touch. The alias-lambda-capture rule is newer than some stored metadata, and metadata
+        /// loading deliberately skips it, so applying it wholesale would make unrelated ALTERs fail
+        /// on tables that still load fine. Reject only the violations the current ALTER introduces;
+        /// an expression with an identical pre-existing violation stays tolerated and is left out of
+        /// the revalidation (its analysis could only re-throw the tolerated capture error).
+        NameSet tolerated_capture_violations;
+        auto capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(all_columns);
+        if (!capture_violations.empty())
+        {
+            /// Apply the same rename-only transformation to the old schema before comparing it
+            /// with the post-ALTER schema. A renamed host column otherwise changes the map key,
+            /// while renaming an alias changes the diagnostic text, although neither operation
+            /// introduces a new capture.
+            ColumnsDescription preexisting_columns = metadata->columns;
+            for (const auto & [from, to] : renames)
+            {
+                preexisting_columns.rename(from, to);
+                renameColumnInStoredExpressions(preexisting_columns, from, to);
+            }
+            auto preexisting_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(preexisting_columns);
+            for (const auto & [violating_column, message] : capture_violations)
+            {
+                auto preexisting = preexisting_violations.find(violating_column);
+                if (preexisting == preexisting_violations.end() || preexisting->second != message)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+                tolerated_capture_violations.insert(violating_column);
+            }
+        }
+
+        validateColumnsDefaultsAndGetSampleBlock(
+            makeStoredDefaultExpressionList(all_columns, tolerated_capture_violations), all_columns, context, insert_time_default_columns);
+    }
+    else
+        validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns, context, insert_time_default_columns);
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const
@@ -2478,7 +2710,422 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
+static MutationCommand createMaterializeIndexCommand(const String & index_name)
+{
+    MutationCommand command;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::MATERIALIZE_INDEX;
+    ast->index = ast->children.emplace_back(make_intrusive<ASTIdentifier>(index_name)).get();
+    command.type = MutationCommand::MATERIALIZE_INDEX;
+    command.index_name = index_name;
+    command.ast_text = ast->formatWithSecretsOneLine();
+    return command;
+}
+
+static MutationCommand createMaterializeColumnCommand(const String & column_name)
+{
+    MutationCommand command;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::MATERIALIZE_COLUMN;
+    ast->column = ast->children.emplace_back(make_intrusive<ASTIdentifier>(column_name)).get();
+    command.type = MutationCommand::MATERIALIZE_COLUMN;
+    command.column_name = column_name;
+    command.ast_text = ast->formatWithSecretsOneLine();
+    return command;
+}
+
+static MutationCommand createClearIndexCommand(const String & index_name)
+{
+    MutationCommand command;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::DROP_INDEX;
+    ast->clear_index = true;
+    ast->index = ast->children.emplace_back(make_intrusive<ASTIdentifier>(index_name)).get();
+    command.type = MutationCommand::DROP_INDEX;
+    command.column_name = index_name;
+    command.clear = true;
+    command.ast_text = ast->formatWithSecretsOneLine();
+    return command;
+}
+
+std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesWithChangedExpression(
+    const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const
+{
+    if (old_metadata.secondary_indices.empty() || areNonReplicatedAlterCommands())
+        return {};
+
+    /// Indices dropped or cleared by this same ALTER do not leave stale index files behind,
+    /// so they are not affected and need no rebuild (and must not be rejected in THROW mode).
+    NameSet dropped_indices;
+    std::vector<std::pair<String, String>> renames;
+    for (const auto & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::DROP_INDEX)
+            dropped_indices.insert(command.index_name);
+        else if (command.type == AlterCommand::RENAME_COLUMN)
+            renames.emplace_back(command.column_name, command.rename_to);
+    }
+
+    /// Only needed for the implicit indices over virtual columns, which are rare, so build it lazily.
+    std::optional<ColumnsDescription> new_columns_with_virtuals;
+
+    std::vector<std::pair<String, String>> res;
+    for (const auto & index : old_metadata.secondary_indices)
+    {
+        if (dropped_indices.contains(index.name))
+            continue;
+
+        /// Implicitly created indices are named after their column, so `RENAME COLUMN` renames the
+        /// index along with it (see `AlterCommand::apply`), and the post-ALTER metadata - which the
+        /// rebuild mutation runs against - knows the index only under its new name.
+        String new_index_name = index.name;
+        if (index.isImplicitlyCreated())
+        {
+            for (const auto & [from, to] : renames)
+            {
+                if (index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + from)
+                {
+                    new_index_name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + to;
+                    break;
+                }
+            }
+        }
+
+        /// An index that no longer exists after the ALTER leaves no stale files behind: it either
+        /// has files removed with the column, or is rebuilt from scratch when it comes back.
+        /// Implicit indices disappear without a `DROP INDEX` command, e.g. when their column is
+        /// dropped or its type stops being indexable
+        /// (`StorageInMemoryMetadata::dropImplicitIndicesForColumn`).
+        if (!new_metadata.secondary_indices.has(new_index_name))
+            continue;
+
+        /// Renaming a column does not invalidate index files but does change identifiers in
+        /// the re-parsed expression, so apply the renames to the old definition and expression
+        /// too: a pure rename must not register as an expression change.
+        ASTPtr old_definition = index.definition_ast->clone();
+        ASTPtr old_expression_list = index.expression_list_ast->clone();
+        ASTPtr old_arguments = index.arguments ? index.arguments->clone() : nullptr;
+        for (const auto & [from, to] : renames)
+        {
+            RenameColumnData rename_data{from, to};
+            RenameColumnVisitor rename_visitor(rename_data);
+            rename_visitor.visit(old_definition);
+            rename_visitor.visit(old_expression_list);
+            if (index.type == TEXT_INDEX_NAME)
+                renameColumnsInTextIndexTransformArguments(old_arguments, rename_visitor);
+        }
+
+        /// The effective index expression under the post-ALTER schema. `ALIAS` columns referenced
+        /// by the persisted definition are re-resolved against the new alias bodies and matchers
+        /// inside those bodies are re-expanded, so this catches changes no command mentions
+        /// explicitly, e.g. `ADD COLUMN` extending a matcher inside a referenced alias body.
+        /// The implicit minmax indices created for numeric, string and temporal columns are
+        /// compared as well: `StorageInMemoryMetadata::addImplicitIndicesForColumn` creates them
+        /// over `ALIAS` columns with a non-trivial body too, so matcher re-expansion inside that
+        /// body makes them schema-sensitive in exactly the same way. The columns the definition is
+        /// resolved against must match what `apply` uses, or the comparison would report a
+        /// difference of its own making.
+        const bool over_virtual_column = isImplicitIndexOverVirtualColumn(index, old_metadata);
+        if (over_virtual_column && !new_columns_with_virtuals)
+            new_columns_with_virtuals = new_metadata.getColumnsWithVirtuals();
+
+        IndexDescription new_index;
+        try
+        {
+            new_index = IndexDescription::getIndexFromAST(
+                old_definition,
+                over_virtual_column ? *new_columns_with_virtuals : new_metadata.columns,
+                index.isImplicitlyCreated(),
+                index.escape_filenames,
+                context);
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
+        }
+
+        const String old_expression_formatted = old_expression_list->formatWithSecretsOneLine();
+        const String new_expression_formatted = new_index.expression_list_ast->formatWithSecretsOneLine();
+        const bool expression_changed = old_expression_formatted != new_expression_formatted;
+
+        String old_arguments_formatted;
+        String new_arguments_formatted;
+        bool arguments_changed = false;
+        if (index.type == TEXT_INDEX_NAME)
+        {
+            old_arguments_formatted = old_arguments ? old_arguments->formatWithSecretsOneLine() : String{};
+            new_arguments_formatted = new_index.arguments ? new_index.arguments->formatWithSecretsOneLine() : String{};
+            arguments_changed = old_arguments_formatted != new_arguments_formatted;
+        }
+
+        if (!expression_changed && !arguments_changed)
+            continue;
+
+        String change_description;
+        if (expression_changed)
+            change_description = fmt::format("expression from '{}' to '{}'", old_expression_formatted, new_expression_formatted);
+        if (arguments_changed)
+        {
+            if (!change_description.empty())
+                change_description += "; ";
+            change_description += fmt::format("arguments from '{}' to '{}'", old_arguments_formatted, new_arguments_formatted);
+        }
+        res.emplace_back(new_index_name, std::move(change_description));
+    }
+    return res;
+}
+
+Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
+    const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const
+{
+    if (areNonReplicatedAlterCommands())
+        return {};
+
+    std::vector<std::pair<String, String>> renames;
+    for (const auto & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::RENAME_COLUMN)
+            renames.emplace_back(command.column_name, command.rename_to);
+    }
+
+    NameSet dropped_old_names;
+    for (const auto & command : *this)
+    {
+        if (!command.ignore && command.type == AlterCommand::DROP_COLUMN)
+            dropped_old_names.insert(command.column_name);
+    }
+
+    /// Metadata loading deliberately keeps old alias-lambda captures attachable. Do not expand
+    /// such an unchanged legacy expression while looking for matcher-driven rematerialization:
+    /// that probe must not turn an otherwise unrelated ALTER into a validation failure. Project
+    /// out dropped columns before renaming: a live column may be renamed into a dropped name and
+    /// must not inherit the dropped column's tolerated violation.
+    ColumnsDescription old_columns_after_renames = old_metadata.columns;
+    for (const auto & name : dropped_old_names)
+    {
+        if (old_columns_after_renames.has(name))
+            old_columns_after_renames.remove(name);
+    }
+    for (const auto & [from, to] : renames)
+    {
+        /// A rename may target a column added earlier in the same ALTER. It is absent
+        /// from the pre-ALTER metadata, so there is no old expression to rename.
+        if (!old_columns_after_renames.has(from))
+            continue;
+
+        old_columns_after_renames.rename(from, to);
+        renameColumnInStoredExpressions(old_columns_after_renames, from, to);
+    }
+    const auto legacy_capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(old_columns_after_renames);
+
+    /// The columns this ALTER changes explicitly. `MODIFY COLUMN` targets are keyed on their
+    /// post-ALTER names: `AlterCommands::validate` rejects renaming and modifying the same column
+    /// in a single ALTER, so this currently only maps the names of columns renamed by another
+    /// command of the same ALTER, but keying the exclusion below on the post-ALTER name keeps it
+    /// correct regardless of that restriction and of the order of the commands. Dropped columns
+    /// are deliberately kept separate and keyed on their pre-ALTER names: an ALTER may drop a
+    /// column and rename another one into the freed name, and that renamed column is not the
+    /// dropped one — it must not be suppressed by the dropped column's name.
+    /// Only a `MODIFY COLUMN` that states a *different* `MATERIALIZED` expression counts as an
+    /// explicit change of the expression - that is the form the metadata-only semantics are about.
+    /// A `MODIFY COLUMN` that only changes the type or the position of the column keeps the stored
+    /// expression (`AlterCommands::prepare` copies it into the command), so it must not suppress
+    /// the rematerialization that a change of the effective expression requires.
+    NameSet modified_new_names;
+    for (const auto & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::MODIFY_COLUMN)
+        {
+            if (!command.default_expression)
+                continue;
+
+            if (old_metadata.columns.has(command.column_name))
+            {
+                const auto & old_default = old_metadata.columns.get(command.column_name).default_desc;
+                if (old_default.kind == command.default_kind && old_default.expression
+                    && old_default.expression->formatWithSecretsOneLine() == command.default_expression->formatWithSecretsOneLine())
+                    continue;
+            }
+
+            String name = command.column_name;
+            for (const auto & [from, to] : renames)
+            {
+                if (name == from)
+                    name = to;
+            }
+            modified_new_names.insert(name);
+        }
+    }
+
+    Names res;
+    for (const auto & old_column : old_metadata.columns)
+    {
+        if (old_column.default_desc.kind != ColumnDefaultKind::Materialized || !old_column.default_desc.expression)
+            continue;
+
+        /// A column dropped by this ALTER no longer exists and cannot need rematerialization.
+        /// Checked against the pre-ALTER name, before the rename mapping: a column renamed into
+        /// the freed name is a different, live column.
+        if (dropped_old_names.contains(old_column.name))
+            continue;
+
+        String new_name = old_column.name;
+        for (const auto & [from, to] : renames)
+        {
+            if (new_name == from)
+                new_name = to;
+        }
+
+        /// Explicit changes of the column itself keep the ordinary `MATERIALIZED` semantics:
+        /// the ALTER is metadata-only and existing parts keep the previously computed values.
+        if (modified_new_names.contains(new_name))
+            continue;
+
+        if (legacy_capture_violations.contains(new_name))
+            continue;
+
+        if (!new_metadata.columns.has(new_name))
+            continue;
+
+        const auto & new_column = new_metadata.columns.get(new_name);
+        if (new_column.default_desc.kind != ColumnDefaultKind::Materialized || !new_column.default_desc.expression)
+            continue;
+
+        /// Compare the effective expressions — matchers expanded and referenced `ALIAS` columns
+        /// lowered to their bodies, the same way execution materializes the column — under the
+        /// old and the new schema. Lowering aliases catches changes that arrive through an alias
+        /// body, e.g. `m MATERIALIZED y` with `y ALIAS greatest(*, 0)` when `ADD COLUMN` extends
+        /// the matcher inside `y`. Renames were already applied to the stored expressions of the
+        /// new metadata, so apply them to the old expansion too: a pure rename does not change
+        /// the values.
+        ASTPtr old_expanded = cloneAndExpandColumnDefaultExpressionWithAliases(old_column.default_desc, old_metadata.columns, context);
+        for (const auto & [from, to] : renames)
+        {
+            RenameColumnData rename_data{from, to};
+            RenameColumnVisitor rename_visitor(rename_data);
+            rename_visitor.visit(old_expanded);
+        }
+
+        ASTPtr new_expanded = cloneAndExpandColumnDefaultExpressionWithAliases(new_column.default_desc, new_metadata.columns, context);
+        if (old_expanded->formatWithSecretsOneLine() != new_expanded->formatWithSecretsOneLine())
+            res.push_back(new_name);
+    }
+
+    if (res.empty())
+        return res;
+
+    /// Rematerializing a column changes its values, so `MATERIALIZED` columns that read it
+    /// (directly or through an `ALIAS`) must be rematerialized as well. Close the set over
+    /// such dependents; the loop terminates because the set only grows. Columns explicitly
+    /// modified by this ALTER are excluded for the same reason as above: an explicit
+    /// `MODIFY COLUMN ... MATERIALIZED` keeps the ordinary metadata-only semantics even when
+    /// its expression reads a rematerialized column. The closure runs over the new metadata,
+    /// so it uses the same post-ALTER names as the exclusion above; dropped columns do not
+    /// exist in the new metadata, and a column renamed into a freed name must participate.
+    NameSet changed(res.begin(), res.end());
+    bool progress = true;
+    while (progress)
+    {
+        progress = false;
+        for (const auto & column : new_metadata.columns)
+        {
+            if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression
+                || changed.contains(column.name) || modified_new_names.contains(column.name)
+                || legacy_capture_violations.contains(column.name))
+                continue;
+
+            ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
+            NameSet dependencies;
+            collectColumnDependenciesFromAST(expanded, changed, new_metadata.columns, dependencies);
+            if (!dependencies.empty())
+            {
+                changed.insert(column.name);
+                progress = true;
+            }
+        }
+    }
+
+    /// Every column in the closure is rematerialized by a mutation, but a mutation cannot
+    /// read `EPHEMERAL` columns: their values exist only during `INSERT` and are not stored
+    /// in parts. Reject such ALTERs up front instead of committing the new metadata and
+    /// queueing a mutation that can never succeed.
+    NameSet ephemeral_names;
+    for (const auto & column : new_metadata.columns.getEphemeral())
+        ephemeral_names.insert(column.name);
+    if (!ephemeral_names.empty())
+    {
+        for (const auto & name : changed)
+        {
+            const auto & column = new_metadata.columns.get(name);
+            ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
+            NameSet ephemeral_dependencies;
+            collectColumnDependenciesFromAST(expanded, ephemeral_names, new_metadata.columns, ephemeral_dependencies);
+            if (!ephemeral_dependencies.empty())
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The ALTER changes the effective expression of the MATERIALIZED column {}, which depends on the EPHEMERAL "
+                    "column {}. Existing parts cannot be rematerialized because EPHEMERAL values exist only during INSERT",
+                    backQuote(name),
+                    backQuote(*ephemeral_dependencies.begin()));
+        }
+    }
+
+    /// Order the result topologically by dependencies: the generated `MATERIALIZE COLUMN`
+    /// mutation commands execute in separate sequential stages, so a column reading another
+    /// rematerialized column must come after it to see the recalculated values.
+    std::unordered_map<String, NameSet> deps_in_closure;
+    for (const auto & name : changed)
+    {
+        const auto & column = new_metadata.columns.get(name);
+        ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
+        NameSet dependencies;
+        collectColumnDependenciesFromAST(expanded, changed, new_metadata.columns, dependencies);
+        dependencies.erase(name);
+        deps_in_closure[name] = std::move(dependencies);
+    }
+
+    Names ordered;
+    NameSet done;
+    while (ordered.size() < changed.size())
+    {
+        bool ordering_progress = false;
+        for (const auto & column : new_metadata.columns)
+        {
+            if (!changed.contains(column.name) || done.contains(column.name))
+                continue;
+
+            const auto & dependencies = deps_in_closure.at(column.name);
+            if (std::all_of(dependencies.begin(), dependencies.end(), [&](const String & dep) { return done.contains(dep); }))
+            {
+                ordered.push_back(column.name);
+                done.insert(column.name);
+                ordering_progress = true;
+            }
+        }
+
+        /// Cyclic default expressions are rejected when the metadata is created.
+        if (!ordering_progress)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic dependency between MATERIALIZED columns {}", fmt::join(changed, ", "));
+    }
+    return ordered;
+}
+
+MutationCommands AlterCommands::getMutationCommands(
+    StorageInMemoryMetadata metadata,
+    bool materialize_ttl,
+    ContextPtr context,
+    bool with_alters,
+    AlterColumnSecondaryIndexMode index_mode,
+    bool share_nested_offsets) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -2524,6 +3171,35 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
             }
         }
     }
+
+    /// A skip index becomes stale when its effective expression or normalized text-index transform
+    /// arguments change. Metadata and query analysis switch to the new definition while parts keep
+    /// index files built from the old one, and stale index files can incorrectly prune granules.
+    /// Rebuild (or, in `DROP` mode, clear) such indices. `THROW` and `COMPATIBILITY` modes reject these
+    /// alters in `MergeTreeData::checkAlterIsPossible`.
+    /// After the loop above, `metadata` has all commands applied, so it describes the
+    /// post-ALTER schema, while `original_metadata` describes the pre-ALTER one.
+    /// Plan the repair even when the table currently looks empty. A write using the old metadata
+    /// may not have committed its part yet; the storage orders mutation registration after it.
+    if (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP)
+    {
+        for (const auto & [index_name, change_description] : getSkipIndicesWithChangedExpression(original_metadata, metadata, context))
+        {
+            if (index_mode == AlterColumnSecondaryIndexMode::REBUILD)
+                result.push_back(createMaterializeIndexCommand(index_name));
+            else
+                result.push_back(createClearIndexCommand(index_name));
+        }
+    }
+
+    /// An existing `MATERIALIZED` column whose expression contains a column matcher can change
+    /// its expansion when an unrelated command changes the schema (e.g. `ADD COLUMN` extends `*`).
+    /// New inserts would compute the column from the new expansion while existing parts keep
+    /// values computed from the old one, so the same column would silently return two different
+    /// definitions depending on row age. Rematerialize such columns so parts written from an old
+    /// metadata snapshot follow the new expansion too.
+    for (const auto & column_name : getMaterializedColumnsWithChangedExpansion(original_metadata, metadata, context))
+        result.push_back(createMaterializeColumnCommand(column_name));
 
     return result;
 }

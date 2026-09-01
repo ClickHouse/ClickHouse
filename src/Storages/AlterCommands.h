@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Core/SettingsEnums.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
@@ -255,10 +256,51 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
+    /// If the commands change the effective expression of a skip index,
+    /// or the normalized `preprocessor` / `postprocessor` arguments of a text index,
+    /// additional mutation commands
+    /// rebuilding (or, in `DROP` mode, clearing) the affected indices are returned,
+    /// because index files on disk were built from the old expression and would
+    /// prune incorrectly. Similarly, if the matcher expansion of an existing
+    /// `MATERIALIZED` column changes, a MATERIALIZE_COLUMN command is returned
+    /// so existing parts do not silently diverge from new inserts.
+    /// Mutation commands are planned even when the storage currently has no active parts.
+    /// Storage engines must order their registration after writes using the old metadata, because
+    /// those writes can still commit a part after an empty-table observation.
     /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
     /// intermediate metadata built while planning mutations matches the real commands.apply() for
     /// IF NOT EXISTS nested adds (see AlterCommand::apply).
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
+    MutationCommands getMutationCommands(
+        StorageInMemoryMetadata metadata,
+        bool materialize_ttl,
+        ContextPtr context,
+        bool with_alters = false,
+        AlterColumnSecondaryIndexMode index_mode = AlterColumnSecondaryIndexMode::REBUILD,
+        bool share_nested_offsets = true) const;
+
+    /// Names of skip indices whose effective normalized expression or text-index
+    /// transform arguments change when these commands are applied, paired with a
+    /// human-readable description of the change. This catches both explicit edits
+    /// of an `ALIAS` column referenced by an index and implicit changes, where an
+    /// unrelated command (e.g. `ADD COLUMN`) changes the expansion of a column
+    /// matcher inside a referenced alias body. `new_metadata` must already have
+    /// the commands applied to its columns. Pure column renames are not reported.
+    std::vector<std::pair<String, String>> getSkipIndicesWithChangedExpression(
+        const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const;
+
+    /// Names (post-ALTER) of `MATERIALIZED` columns that these commands do not
+    /// modify explicitly but whose effective expression (matchers expanded,
+    /// referenced `ALIAS` columns lowered to their bodies) changes under the
+    /// post-ALTER schema, e.g. `m MATERIALIZED greatest(a, * EXCEPT m)` when a
+    /// column is added, or `m MATERIALIZED y` when the expansion of a matcher
+    /// inside the body of `y` changes. Existing parts keep values computed from
+    /// the old expression while new inserts would use the new one, so such
+    /// columns must be rematerialized. The result is closed over dependents:
+    /// it also includes `MATERIALIZED` columns that read a changed column,
+    /// directly or through an `ALIAS`, transitively.
+    /// `new_metadata` must already have the commands applied to its columns.
+    Names getMaterializedColumnsWithChangedExpansion(
+        const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

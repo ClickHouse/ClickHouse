@@ -76,6 +76,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
     extern const char rmt_pause_before_commit_local_part[];
+    extern const char rmt_insert_pause_before_commit_part[];
     extern const char rmt_dedup_conflict_part_name_missing[];
     extern const char merge_tree_sink_on_start_random_sleep[];
 }
@@ -742,6 +743,10 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     /// For now, consider it is ok. See 02461_alter_update_respect_part_column_type_bug for an example.
     ///
     /// metadata_snapshot->check(part->getColumns());
+
+    /// Before the part block number is allocated, so a test can hold an `INSERT` that captured the
+    /// old metadata here and check that an `ALTER` registering a repair mutation waits for it.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_insert_pause_before_commit_part);
 #if CLICKHOUSE_CLOUD
     part->is_prewarmed = true;
 #endif

@@ -1,0 +1,3 @@
+-- skip index over an ALIAS: rejected even while empty
+-- MATERIALIZED depending on EPHEMERAL: rejected even while empty
+-- MATERIALIZED in the sort key: rejected even while empty

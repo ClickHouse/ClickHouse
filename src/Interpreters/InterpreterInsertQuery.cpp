@@ -1278,6 +1278,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
 
+    auto insert_lock = table->lockForInsert(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     table->updateExternalDynamicMetadataIfExists(context);
@@ -1349,6 +1350,8 @@ BlockIO InterpreterInsertQuery::execute()
     /// already committed (and is covered by the pinned snapshot) or has not yet discovered the
     /// dependent views (and will see the newly registered view).
     QueryPlanResourceHolder insert_resources;
+    if (insert_lock)
+        insert_resources.table_locks.emplace_back(std::move(insert_lock));
     insert_resources.table_locks.emplace_back(std::move(table_lock));
     res.pipeline.addResources(std::move(insert_resources));
 

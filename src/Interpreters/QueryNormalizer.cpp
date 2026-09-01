@@ -3,7 +3,6 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -243,7 +242,7 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         Aliases extracted_aliases;
         if (func_node->name == "lambda")
         {
-            Names lambda_aliases = RequiredSourceColumnsMatcher::extractNamesFromLambda(*func_node);
+            Names lambda_aliases = getASTLambdaArgumentNames(*func_node);
             for (const auto & name : lambda_aliases)
             {
                 auto it = data.aliases.find(name);

@@ -10,9 +10,11 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -37,6 +39,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -118,6 +121,91 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     if (auto override_value = context->getMutationsUseAnalyzerOverride())
         return *override_value;
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
+}
+
+namespace
+{
+
+ASTPtr cloneAndValidateExpandedDefaultExpression(
+    const String & column_name,
+    const ColumnDefault & column_default,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    auto expression = cloneAndExpandColumnDefaultExpressionWithAliases(column_default, columns, context);
+    validateNoCyclicAliasesAfterExpansion(column_name, expression, columns);
+    return expression;
+}
+
+ASTPtr cloneAndValidateExpandedDefaultExpression(
+    const ColumnDescription & column,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    return cloneAndValidateExpandedDefaultExpression(column.name, column.default_desc, columns, context);
+}
+
+void addColumnsRequiredForDefaultConversions(
+    Names & required_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData::DataPartPtr & part,
+    const AlterConversionsPtr & alter_conversions,
+    const ContextPtr & context)
+{
+    if (!part)
+        return;
+
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    auto source_columns = columns_desc.getAllPhysical();
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
+
+    /// A column pulled in as a source of someone else's default conversion may itself need a
+    /// default conversion, so keep walking the list as it grows (mirrors the read path in
+    /// `injectRequiredColumnsForNullableDefaultConversions`).
+    for (size_t i = 0; i < required_columns.size(); ++i)
+    {
+        const String column_name = required_columns[i];
+
+        auto metadata_column = columns_desc.tryGetPhysical(column_name);
+        if (!metadata_column)
+            continue;
+
+        /// A part that still carries a pre-`RENAME COLUMN` schema stores the column under its old name,
+        /// while `required_columns` uses the current metadata name. Resolve the on-part name the same way
+        /// the read path does in `injectRequiredColumnsForNullableDefaultConversions`, otherwise the
+        /// lookup misses the column and the sources of its default conversion are never added.
+        String column_name_in_part = column_name;
+        if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
+            column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
+
+        auto part_column = part->tryGetColumn(column_name_in_part);
+        if (!part_column)
+            continue;
+
+        if (!isNullableOrLowCardinalityNullable(part_column->type) || isNullableOrLowCardinalityNullable(metadata_column->type))
+            continue;
+
+        auto default_desc = columns_desc.getDefault(column_name);
+        if (!default_desc)
+            continue;
+
+        auto default_expression = cloneAndValidateExpandedDefaultExpression(column_name, *default_desc, columns_desc, context);
+        auto syntax_result = TreeRewriter(context).analyze(default_expression, source_columns);
+        for (const auto & dependency : syntax_result->requiredSourceColumns())
+        {
+            /// Default expressions can read a subcolumn. The conversion is applied to its
+            /// physical owner, so follow the same subcolumn-to-owner dependency as the read path.
+            auto storage_column = columns_desc.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), dependency);
+            const String & dependency_in_storage = storage_column && storage_column->isSubcolumn()
+                ? storage_column->getNameInStorage()
+                : dependency;
+            if (required_columns_set.emplace(dependency_in_storage).second)
+                required_columns.push_back(dependency_in_storage);
+        }
+    }
+}
+
 }
 
 /// A mutation command's predicate and `UPDATE` expressions are stored as serialized SQL text and
@@ -742,14 +830,20 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// just like for a classical ALTER UPDATE (see the READ_COLUMN branch below,
     /// which only rebuilds when the column type changes and so misses patches).
     NameSet patch_updated_columns;
-    /// Base columns removed by CLEAR COLUMN (DROP_COLUMN with clear). Collected here in the
-    /// first command scan so their MATERIALIZED closure can be seeded into dependency analysis
-    /// below, before the per-command stage loop runs.
+    /// Columns rewritten by `MATERIALIZE COLUMN` commands. The rewrite changes the stored
+    /// values, so skip indices, projections and statistics that depend on them must be
+    /// rebuilt, just like for a classical ALTER UPDATE. They are kept separate from
+    /// `updated_columns` because they must not go through update-column validation or
+    /// trigger recalculation of dependent MATERIALIZED columns.
+    NameSet rematerialized_columns;
+    /// Base columns reset to their type default by `CLEAR COLUMN` (`DROP_COLUMN` with `clear`).
+    /// Collected in this first command scan so that they, and the `MATERIALIZED` columns derived
+    /// from them, can be seeded into dependency analysis below - it runs before the per-command
+    /// stage loop that handles the clear itself.
     NameSet clear_column_names;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
-    bool has_clear_column = false;
 
     for (const auto & command : commands)
     {
@@ -762,16 +856,16 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::REWRITE_PARTS)
             has_rewrite_parts = true;
 
-        if (command.type == MutationCommand::DROP_COLUMN && command.clear)
-        {
-            has_clear_column = true;
-            clear_column_names.insert(command.column_name);
-        }
-
         /// The _row_exists mask is handled by APPLY_DELETED_MASK, not as a data column.
         if (command.type == MutationCommand::READ_COLUMN && command.read_for_patch
             && command.column_name != RowExistsColumn::name)
             patch_updated_columns.insert(command.column_name);
+
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+            rematerialized_columns.insert(command.column_name);
+
+        if (command.type == MutationCommand::DROP_COLUMN && command.clear)
+            clear_column_names.insert(command.column_name);
 
         auto alter = command.ast();
         if (alter && alter->update_assignments)
@@ -792,20 +886,20 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     MaterializedColumnDependencies materialized_dependencies(columns_desc, context);
 
+    /// EPHEMERAL columns exist only during INSERT; the guards below skip or reject the
+    /// recalculation of a MATERIALIZED column that reads one.
+    NameSet ephemeral_columns;
+    for (const auto & col : columns_desc.getEphemeral())
+        ephemeral_columns.insert(col.name);
+
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
-    /// Each MATERIALIZED column's own required source columns. Used to walk chains of
-    /// MATERIALIZED columns (e.g. m2 MATERIALIZED m1 MATERIALIZED src) so a change of a
+    /// Every MATERIALIZED column's own required source columns. Used to walk chains of
+    /// MATERIALIZED columns (e.g. `m2 MATERIALIZED m1 MATERIALIZED src`) so that a change of a
     /// base column recalculates every MATERIALIZED column transitively derived from it.
     std::unordered_map<String, NameSet> materialized_column_dependencies;
-
-    /// The MATERIALIZED-chain analysis is needed for classical UPDATE, for materializing
-    /// patch parts (APPLY PATCHES) and for CLEAR COLUMN, since all three can change a
-    /// column that a chain of MATERIALIZED columns is derived from.
-    const bool need_materialized_analysis =
-        !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
-    if (need_materialized_analysis)
+    if (!updated_columns.empty() || !patch_updated_columns.empty())
     {
         for (const auto & column : columns_desc)
         {
@@ -845,27 +939,28 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
         }
 
-        /// Extend to chains of MATERIALIZED columns. If updated column `u` affects m1 and
-        /// another MATERIALIZED column m2 reads m1 (m2 MATERIALIZED m1 MATERIALIZED u), then
-        /// m2 must be recalculated too. Compute, for each updated column, the transitive
-        /// closure of MATERIALIZED columns derived from it and record them all under that
-        /// updated column so the recompute stage and TTL dependency analysis pick them up.
+        /// Extend to chains of MATERIALIZED columns. If updated column `u` affects `m1` and
+        /// another MATERIALIZED column `m2` reads `m1` (`m2 MATERIALIZED m1 MATERIALIZED u`),
+        /// then `m2` has to be recalculated as well. Record the whole transitive closure under
+        /// the updated column so that the recompute stages and the dependency analysis below
+        /// pick it up.
         for (auto & [updated_column, affected_list] : column_to_affected_materialized)
         {
             NameSet in_list(affected_list.begin(), affected_list.end());
-            bool changed = true;
-            while (changed)
+            bool grown = true;
+            while (grown)
             {
-                changed = false;
-                for (const auto & [mat_column, deps] : materialized_column_dependencies)
+                grown = false;
+                for (const auto & [materialized_column, deps] : materialized_column_dependencies)
                 {
-                    if (in_list.contains(mat_column))
+                    if (in_list.contains(materialized_column))
                         continue;
-                    if (std::ranges::any_of(deps, [&](const auto & d) { return in_list.contains(d); }))
+
+                    if (std::ranges::any_of(deps, [&](const auto & dep) { return in_list.contains(dep); }))
                     {
-                        affected_list.push_back(mat_column);
-                        in_list.insert(mat_column);
-                        changed = true;
+                        affected_list.push_back(materialized_column);
+                        in_list.insert(materialized_column);
+                        grown = true;
                     }
                 }
             }
@@ -875,65 +970,68 @@ void MutationsInterpreter::prepare(bool dry_run)
             validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
     }
 
-    /// Transitive closure of MATERIALIZED columns that must be recomputed when the given
-    /// base columns change. A MATERIALIZED column is affected if any of its required
-    /// columns is one of the changed base columns or is itself an affected MATERIALIZED
-    /// column. Columns already present in `changed_base_columns` are not returned.
-    auto affected_materialized_closure = [&](const NameSet & changed_base_columns) -> NameSet
+    /// Transitive closure of the MATERIALIZED columns that have to be recomputed when the given
+    /// base columns change: a MATERIALIZED column is affected when one of its required columns is
+    /// a changed base column or is itself an affected MATERIALIZED column.
+    auto affected_materialized_closure = [&](const NameSet & changed_base_columns)
     {
         NameSet affected;
         NameSet reachable = changed_base_columns;
-        bool changed = true;
-        while (changed)
+        bool grown = true;
+        while (grown)
         {
-            changed = false;
-            for (const auto & [mat_column, deps] : materialized_column_dependencies)
+            grown = false;
+            for (const auto & [materialized_column, deps] : materialized_column_dependencies)
             {
-                if (reachable.contains(mat_column))
+                if (reachable.contains(materialized_column))
                     continue;
-                if (std::ranges::any_of(deps, [&](const auto & d) { return reachable.contains(d); }))
+
+                if (std::ranges::any_of(deps, [&](const auto & dep) { return reachable.contains(dep); }))
                 {
-                    affected.insert(mat_column);
-                    reachable.insert(mat_column);
-                    changed = true;
+                    affected.insert(materialized_column);
+                    reachable.insert(materialized_column);
+                    grown = true;
                 }
             }
         }
         return affected;
     };
 
-    /// Emit recompute stages for a set of affected MATERIALIZED columns. A MATERIALIZED
-    /// column may read another affected MATERIALIZED column (e.g. m2 MATERIALIZED m1, where
-    /// m1 is itself recomputed). Recomputing them all in a single stage would evaluate m2
-    /// against the pre-mutation m1. Assign each affected column a dependency level (0 =
-    /// depends only on non-affected columns) and recompute one level per stage in ascending
-    /// order, so a column always reads the freshly written value of any affected column it
-    /// depends on.
+    /// Emit recompute stages for a set of affected MATERIALIZED columns. Every column of a stage
+    /// is computed from the values that stage reads, so recomputing a whole chain in one stage
+    /// would evaluate `m2 MATERIALIZED m1` against the pre-mutation `m1`. Assign each affected
+    /// column a dependency level (0 = reads no affected column) and recompute one level per stage
+    /// in ascending order.
     auto emit_materialized_recompute_stages = [&](const NameSet & affected_materialized)
     {
         if (affected_materialized.empty())
             return;
 
-        std::unordered_map<String, size_t> level_of;
-        auto level_of_column = [&](const String & name, auto && self) -> size_t
+        std::unordered_map<String, size_t> levels;
+        auto level_of = [&](const String & name, auto && self) -> size_t
         {
-            if (auto it = level_of.find(name); it != level_of.end())
+            if (auto it = levels.find(name); it != levels.end())
                 return it->second;
-            size_t lvl = 0;
-            if (auto deps_it = materialized_column_dependencies.find(name);
-                deps_it != materialized_column_dependencies.end())
+
+            /// Guard against a cycle: cyclic MATERIALIZED expressions are rejected when the table
+            /// is created or altered, but a broken metadata entry must not hang the mutation.
+            levels.emplace(name, 0);
+            size_t level = 0;
+            if (auto deps_it = materialized_column_dependencies.find(name); deps_it != materialized_column_dependencies.end())
+            {
                 for (const auto & dep : deps_it->second)
                     if (dep != name && affected_materialized.contains(dep))
-                        lvl = std::max(lvl, self(dep, self) + 1);
-            level_of.emplace(name, lvl);
-            return lvl;
+                        level = std::max(level, self(dep, self) + 1);
+            }
+            levels[name] = level;
+            return level;
         };
 
-        size_t max_level = 0;
+        size_t num_levels = 0;
         for (const auto & name : affected_materialized)
-            max_level = std::max(max_level, level_of_column(name, level_of_column));
+            num_levels = std::max(num_levels, level_of(name, level_of) + 1);
 
-        for (size_t current_level = 0; current_level <= max_level; ++current_level)
+        for (size_t level = 0; level < num_levels; ++level)
         {
             stages.emplace_back(context);
             for (const auto & column : columns_desc)
@@ -941,8 +1039,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 /// Membership and level first: both sets are already built, while `findNode`
                 /// analyses the default. Asking it for every column of the table would undo the
                 /// on-demand analysis for any read that recomputes even one MATERIALIZED column.
-                if (!affected_materialized.contains(column.name)
-                    || level_of_column(column.name, level_of_column) != current_level)
+                if (!affected_materialized.contains(column.name) || level_of(column.name, level_of) != level)
                     continue;
 
                 const auto * materialized = materialized_dependencies.findNode(column.name);
@@ -951,9 +1048,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
-                /// The expression comes with subcolumns already replaced by getSubcolumn(),
-                /// because otherwise subcolumns are extracted before the source column is
-                /// updated and we get old subcolumn values.
+                /// The expression comes with column matchers expanded and subcolumns already
+                /// replaced by getSubcolumn(), because otherwise subcolumns are extracted before
+                /// the source column is updated and we get old subcolumn values.
                 ASTPtr materialized_column = makeASTFunction("_CAST",
                     materialized->expression->clone(),
                     type_literal);
@@ -962,6 +1059,31 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
         }
     };
+
+    /// An UPDATE of a base column also recalculates every MATERIALIZED column that transitively
+    /// depends on it (the closure recorded above). Besides writing the values, the closure enters
+    /// dependency analysis so that TTL expressions, projections, skip indices and statistics see
+    /// the rewritten columns.
+    NameSet updated_materialized_columns;
+    for (const auto & [source_column, affected_materialized] : column_to_affected_materialized)
+        updated_materialized_columns.insert(affected_materialized.begin(), affected_materialized.end());
+
+    /// MATERIALIZED columns transitively derived from patch-updated columns that the patch part
+    /// does not carry itself. Old patch parts (created before the chain was grown, or by an older
+    /// replica during a rolling upgrade) store only the earlier hops, e.g. {src, m1} for
+    /// `src -> m1 -> m2 -> m3`. On `APPLY PATCHES` the rest has to be recomputed from the patched
+    /// values, otherwise the on-disk chain and any TTL that reads it stay stale.
+    NameSet patch_affected_materialized;
+    if (!patch_updated_columns.empty())
+        patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
+
+    /// Every MATERIALIZED column this mutation recomputes because of an UPDATE or because of
+    /// materializing a patch part. Used to seed dependency analysis and to decide which
+    /// projections, skip indices and statistics have to be rebuilt - a predicate that only looked
+    /// at the mutation's explicit columns would miss a projection or an index reading a derived
+    /// MATERIALIZED column (e.g. `m2` in `src -> m1 -> m2`).
+    NameSet all_affected_materialized = updated_materialized_columns;
+    all_affected_materialized.insert(patch_affected_materialized.begin(), patch_affected_materialized.end());
 
     StorageInMemoryMetadata::HasDependencyCallback has_dependency =
         [&](const String & name, ColumnDependency::Kind kind)
@@ -975,39 +1097,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         return true;
     };
 
-    /// MATERIALIZED columns transitively derived from patch-updated columns that are not
-    /// themselves stored in the patch part. Old patch parts (created before derived chains
-    /// were fully materialized, or by an older replica during a rolling upgrade) carry only
-    /// the earlier hops, e.g. {src, m1} for src -> m1 -> m2 -> m3. On APPLY PATCHES these
-    /// must be recomputed from the patched values so the on-disk chain and any TTL DELETE
-    /// WHERE that references them stay correct.
-    NameSet patch_affected_materialized;
-    if (!patch_updated_columns.empty())
-        patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
-
-    /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
-    /// below writes, otherwise a rewritten column keeps stale dependent artifacts.
-    NameSet clear_affected_materialized;
-    if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
-    {
-        for (const auto & column : columns_desc)
-        {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
-                clear_affected_materialized.insert(column.name);
-        }
-    }
-
-    /// The union of every MATERIALIZED column recomputed by this mutation (from UPDATE, from
-    /// materializing patch parts, and from CLEAR COLUMN). Used both to seed dependency analysis
-    /// and to decide which projections / skip indices / statistics must be rebuilt, since a
-    /// rebuild predicate that only looked at the mutation's explicit columns would miss a
-    /// projection or index that reads a derived MATERIALIZED column (e.g. m2 in src -> m1 -> m2).
-    NameSet all_affected_materialized;
-    for (const auto & [source_column, affected_materialized] : column_to_affected_materialized)
-        all_affected_materialized.insert(affected_materialized.begin(), affected_materialized.end());
-    all_affected_materialized.insert(patch_affected_materialized.begin(), patch_affected_materialized.end());
-    all_affected_materialized.insert(clear_affected_materialized.begin(), clear_affected_materialized.end());
-
     if (settings.recalculate_dependencies_of_updated_columns)
     {
         /// Patch-updated columns change data without a type change, so they must
@@ -1015,14 +1104,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// statistics rebuilt. They are excluded from update-column validation
         /// above because they are not user-issued UPDATEs.
         NameSet columns_for_dependencies = updated_columns;
-        columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
-        /// Base columns removed by CLEAR COLUMN also change data (to the type default) and so
-        /// must enter dependency analysis alongside their derived MATERIALIZED closure below.
-        columns_for_dependencies.insert(clear_column_names.begin(), clear_column_names.end());
-        /// MATERIALIZED columns recomputed by the mutation are not in updated_columns
-        /// but their new values still drive dependencies (e.g. a TTL DELETE WHERE that
-        /// references a MATERIALIZED column). Seed them so recalculation is triggered.
         columns_for_dependencies.insert(all_affected_materialized.begin(), all_affected_materialized.end());
+        columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+        columns_for_dependencies.insert(rematerialized_columns.begin(), rematerialized_columns.end());
+        /// A column reset by `CLEAR COLUMN` changes data too - to the type default - so it enters
+        /// dependency analysis alongside the MATERIALIZED closure derived from it below.
+        columns_for_dependencies.insert(clear_column_names.begin(), clear_column_names.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
     }
 
@@ -1039,6 +1126,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// Whether any MATERIALIZED column depends on a cleared column and needs
     /// to be recalculated with the type-default value.
     bool need_recalculate_materialized_for_clear = false;
+
+    /// Names of all the columns reset to their type default by `CLEAR COLUMN` commands.
+    NameSet cleared_columns;
+
     if (has_lightweight_delete_materialization || has_rewrite_parts)
     {
         auto & stage = stages.emplace_back(context);
@@ -1128,12 +1219,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                 ? nullptr
                 : getPartitionAndPredicateExpressionForMutationCommand(alter.get());
 
+            /// The recorded closure already contains every MATERIALIZED column transitively
+            /// derived from the updated ones.
             for (const auto & [column_name, update_expr] : column_to_update)
             {
                 auto materialized_it = column_to_affected_materialized.find(column_name);
                 if (materialized_it != column_to_affected_materialized.end())
-                    for (const auto & mat_column : materialized_it->second)
-                        affected_materialized.emplace(mat_column);
+                    affected_materialized.insert(materialized_it->second.begin(), materialized_it->second.end());
             }
 
             for (const auto & [column_name, update_expr] : column_to_update)
@@ -1249,11 +1341,21 @@ void MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             addStageIfNeeded(command.mutation_version, false);
 
-            // Can't materialize a column in the sort key
-            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+            /// Can't materialize a column the sort key depends on. Source columns of sort-key
+            /// expressions (e.g. `ORDER BY m + 1`) count too: rewriting them in place breaks
+            /// the stored order just the same as rewriting a bare key column.
+            Names sort_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
             if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
             {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because the sort key depends on it. Doing so could break the sort order", backQuote(command.column_name));
+            }
+
+            /// Same for the partition key: rewriting a column it depends on would leave the rows
+            /// in parts whose partition IDs and names were computed from the old values.
+            Names partition_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+            if (std::find(partition_columns.begin(), partition_columns.end(), command.column_name) != partition_columns.end())
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because the partition key depends on it. Doing so could leave rows in wrong partitions", backQuote(command.column_name));
             }
 
             const auto & column = columns_desc.get(command.column_name);
@@ -1263,8 +1365,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
-            auto materialized_column = makeASTFunction(
-                "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
+            ASTPtr materialized_column = makeASTFunction(
+                "_CAST", cloneAndValidateExpandedDefaultExpression(column, columns_desc, context), make_intrusive<ASTLiteral>(column.type->getName()));
+
+            /// Subcolumns used in the expression must be extracted from the current state of
+            /// their source column: a preceding `MATERIALIZE COLUMN` command of the same
+            /// mutation may have recalculated it in an earlier stage (see the same replacement
+            /// in the UPDATE branch).
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
@@ -1283,7 +1391,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                 continue;
             }
 
-            if (!source.hasSecondaryIndex(it->name, metadata_snapshot))
             {
                 /// An index may be defined over a persistent virtual column (e.g. the implicit
                 /// minmax index created by add_minmax_index_for_block_{number,offset}_column over
@@ -1533,6 +1640,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
         {
+            cleared_columns.insert(command.column_name);
+
             /// When clearing a column, we need to also clear any indices that depend on it
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
@@ -1557,43 +1666,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
 
-            /// When clearing a column, any MATERIALIZED column whose expression
-            /// depends on the cleared column must be recalculated so its stored
-            /// data stays consistent with the new (default) value.
-            /// We must check every CLEAR COLUMN command (not short-circuit after the
-            /// first match) so that all cleared columns used by materialized
-            /// expressions are registered in `cleared_columns_with_dependencies`.
-            bool has_dependent_materialized = false;
-            for (const auto & column : columns_desc)
-            {
-                if (!available_columns_set.contains(column.name))
-                    continue;
-
-                const auto * materialized = materialized_dependencies.findNode(column.name);
-                if (!materialized)
-                    continue;
-
-                for (const auto & dep : materialized->dependencies)
-                {
-                    if (dep == command.column_name)
-                    {
-                        has_dependent_materialized = true;
-                        break;
-                    }
-                }
-                if (has_dependent_materialized)
-                    break;
-            }
-
-            if (has_dependent_materialized)
-            {
-                need_recalculate_materialized_for_clear = true;
-                /// Ensure the cleared column enters the readonly stage
-                /// with its default value so the materialized expression
-                /// evaluates correctly.
-                dependencies.emplace(command.column_name, ColumnDependency::PROJECTION);
-                cleared_columns_with_dependencies.insert(command.column_name);
-            }
+            /// Compute the actual stale MATERIALIZED closure below with
+            /// `collectMaterializedColumnInputsAfterExpansion`. It deliberately skips
+            /// pre-existing alias-lambda-capture violations, which metadata loading
+            /// tolerates for backward compatibility. Do not eagerly validate every
+            /// MATERIALIZED expression here: an unrelated legacy expression must not
+            /// make this queued mutation fail during preparation.
+            need_recalculate_materialized_for_clear = true;
         }
         /// The following mutations handled separately:
         else if (command.type == MutationCommand::APPLY_DELETED_MASK
@@ -1616,6 +1695,119 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
+    /// Clear-triggered recalculation rewrites the stored values of MATERIALIZED columns,
+    /// so skip indices, projections, TTL expressions and statistics that depend on them
+    /// must be rebuilt, just like for `MATERIALIZE COLUMN`. Collect the columns the
+    /// recalculation stage below will write and register their dependencies before the
+    /// dependency sets are consumed.
+    NameSet clear_rematerialized_columns;
+    MaterializedColumnInputInfo materialized_column_inputs;
+    if (need_recalculate_materialized_for_clear)
+    {
+        /// The same helper backs the `CLEAR COLUMN` check in `AlterCommands::validate`, so the
+        /// dependency sets the two sides reason about cannot drift apart.
+        materialized_column_inputs = collectMaterializedColumnInputsAfterExpansion(columns_desc, context);
+
+        /// The MATERIALIZED columns that actually read a cleared column, directly or through
+        /// another recalculated MATERIALIZED column, are the ones the clear makes stale. They are
+        /// the only ones the guards below reject the ALTER for, because they are the only ones the
+        /// clear itself forces to be rewritten.
+        NameSet clear_stale_materialized
+            = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs.by_column, cleared_columns);
+        clear_rematerialized_columns = clear_stale_materialized;
+
+        if (auto unsafe_column = materialized_column_inputs.findFirstUnsafeColumn(clear_stale_materialized))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, but its "
+                "expression contains a legacy ALIAS reference captured by a lambda and cannot be evaluated safely",
+                backQuote(*unsafe_column));
+
+        const Names sorting_key_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
+        const Names partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+        auto is_key_column = [&](const String & name)
+        {
+            return std::find(sorting_key_columns.begin(), sorting_key_columns.end(), name) != sorting_key_columns.end()
+                || std::find(partition_key_columns.begin(), partition_key_columns.end(), name) != partition_key_columns.end();
+        };
+        auto reads_ephemeral_column = [&](const Names & inputs)
+        {
+            return std::ranges::any_of(inputs, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
+        };
+
+        /// The recalculation stages below rewrite the stale MATERIALIZED columns in place, without
+        /// re-sorting rows or moving parts between partitions, so a column the sorting or partition
+        /// key depends on must not be rewritten - the same protection `UPDATE` and
+        /// `MATERIALIZE COLUMN` apply. `AlterCommands::validate` rejects such ALTERs up front;
+        /// this is a fail-fast for mutation entries created before that check existed.
+        for (const auto & name : clear_stale_materialized)
+        {
+            if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), name) != sorting_key_columns.end())
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                    "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
+                    "but the sort key depends on it, and rewriting it could break the sort order",
+                    backQuote(name));
+
+            if (std::find(partition_key_columns.begin(), partition_key_columns.end(), name) != partition_key_columns.end())
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                    "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
+                    "but the partition key depends on it, and the rewritten values would disagree with the "
+                    "partition the parts are placed in",
+                    backQuote(name));
+        }
+
+        /// Recalculation reads the inputs of the MATERIALIZED expression from the existing part, but
+        /// EPHEMERAL values only exist during INSERT and are not stored. The direct case is rejected
+        /// in the command loop above; reject the transitive one here as well, instead of committing a
+        /// mutation that leaves the column inconsistent with its declared expression.
+        for (const auto & name : clear_stale_materialized)
+        {
+            for (const auto & dep : materialized_column_inputs.by_column.at(name))
+            {
+                if (ephemeral_columns.contains(dep))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
+                        "but it depends on the EPHEMERAL column {}, whose values cannot be read from existing parts",
+                        backQuote(name), backQuote(dep));
+            }
+        }
+
+        /// A `CLEAR COLUMN` that makes any MATERIALIZED column stale re-evaluates every
+        /// MATERIALIZED expression of the table. That is long-standing behaviour and it is what
+        /// refreshes a column whose expression was changed by a metadata-only `MODIFY COLUMN`,
+        /// which schedules no mutation of its own. A column outside the stale closure is only
+        /// added when recomputing it is safe: an EPHEMERAL input cannot be read back from the
+        /// part, and a column the sorting or partition key depends on must not be rewritten in
+        /// place - such a column is not made stale by this clear, so leaving it alone is correct.
+        if (!clear_stale_materialized.empty())
+        {
+            /// The recalculation reads the cleared column, which is not written to the new part,
+            /// so it has to enter the readonly stage with its type-default value instead of the
+            /// value stored in the source part. Only do this when something actually reads it:
+            /// otherwise the cleared column would be pinned to the type default for TTL
+            /// evaluation as well, while TTL has to see the column's own `DEFAULT` expression.
+            for (const auto & name : cleared_columns)
+            {
+                dependencies.emplace(name, ColumnDependency::PROJECTION);
+                cleared_columns_with_dependencies.insert(name);
+            }
+
+            for (const auto & [name, inputs] : materialized_column_inputs.by_column)
+            {
+                if (clear_rematerialized_columns.contains(name) || cleared_columns.contains(name))
+                    continue;
+
+                if (materialized_column_inputs.unsafe_legacy_columns.contains(name)
+                    || reads_ephemeral_column(inputs) || is_key_column(name))
+                    continue;
+
+                clear_rematerialized_columns.insert(name);
+            }
+        }
+
+        for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, clear_rematerialized_columns, has_dependency))
+            dependencies.insert(dependency);
+    }
+
     if (!read_columns.empty())
     {
         stages.emplace_back(context);
@@ -1623,10 +1815,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             stages.back().column_to_updated.emplace(column_name, make_intrusive<ASTIdentifier>(column_name));
     }
 
-    /// Recompute MATERIALIZED columns derived from patch-updated columns that the patch part
-    /// does not itself carry (old-shape patches). The patched values were just materialized by
-    /// the read_columns stage above, so emitting these stages afterwards lets each level read
-    /// the freshly written value of the column it depends on.
+    /// Recompute the MATERIALIZED columns derived from patch-updated columns that the patch part
+    /// does not carry. The patched values are materialized by the stage above, so emitting these
+    /// stages afterwards lets every level read the freshly written value it depends on.
     emit_materialized_recompute_stages(patch_affected_materialized);
 
     /// We care about affected indices and projections because we also need to rewrite them
@@ -1703,10 +1894,94 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    /// The cleared column entered the readonly stage above with its type-default value, so these
-    /// level-ordered stages evaluate each hop against the freshly written value of the previous one.
-    if (need_recalculate_materialized_for_clear)
-        emit_materialized_recompute_stages(clear_affected_materialized);
+    /// Recalculate the MATERIALIZED columns that a cleared column makes stale (the closure
+    /// computed above), so that transitive dependencies are covered while the columns a
+    /// `CLEAR COLUMN` does not affect keep their stored values.
+    if (!clear_rematerialized_columns.empty())
+    {
+        /// A stale MATERIALIZED column may read another stale one, and every column of a stage is
+        /// computed from the values the stage reads. Recomputing the whole closure in a single stage
+        /// would therefore feed the dependents the *old* values of their inputs, so group the columns
+        /// into dependency levels and give every level its own stage.
+        std::unordered_map<String, size_t> levels;
+        while (levels.size() < clear_rematerialized_columns.size())
+        {
+            bool grown = false;
+            for (const auto & name : clear_rematerialized_columns)
+            {
+                if (levels.contains(name))
+                    continue;
+
+                size_t level = 0;
+                bool inputs_ready = true;
+                for (const auto & input : materialized_column_inputs.by_column.at(name))
+                {
+                    if (!clear_rematerialized_columns.contains(input))
+                        continue;
+
+                    auto it = levels.find(input);
+                    if (it == levels.end())
+                    {
+                        inputs_ready = false;
+                        break;
+                    }
+                    level = std::max(level, it->second + 1);
+                }
+
+                if (inputs_ready)
+                {
+                    levels.emplace(name, level);
+                    grown = true;
+                }
+            }
+
+            /// A cycle between MATERIALIZED expressions is rejected when the table is created or
+            /// altered, so this cannot happen; bail out rather than loop forever if it ever does.
+            if (!grown)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cyclic dependency between MATERIALIZED columns recalculated by CLEAR COLUMN");
+        }
+
+        size_t num_levels = 0;
+        for (const auto & [_, level] : levels)
+            num_levels = std::max(num_levels, level + 1);
+
+        for (size_t level = 0; level < num_levels; ++level)
+        {
+            stages.emplace_back(context);
+            for (const auto & column : columns_desc)
+            {
+                auto it = levels.find(column.name);
+                if (it == levels.end() || it->second != level)
+                    continue;
+
+                auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
+
+                ASTPtr materialized_column = makeASTFunction("_CAST",
+                    cloneAndValidateExpandedDefaultExpression(column, columns_desc, context),
+                    type_literal);
+
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
+
+                stages.back().column_to_updated.emplace(
+                    column.name,
+                    materialized_column);
+            }
+        }
+
+        /// `updated_header` may already have been computed above, from the stages that existed
+        /// before these recalculation stages were appended. The columns they rewrite have to be part
+        /// of it, otherwise `MutateTask` hardlinks their old files into the new part next to the
+        /// freshly rebuilt indices and projections, leaving the part inconsistent with itself.
+        if (updated_header)
+        {
+            for (const auto & column : columns_desc)
+            {
+                if (clear_rematerialized_columns.contains(column.name) && !updated_header->has(column.name))
+                    updated_header->insert({column.type->createColumn(), column.type, column.name});
+            }
+        }
+    }
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
@@ -1729,7 +2004,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col) || all_affected_materialized.contains(col);
+                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col)
+                    || clear_rematerialized_columns.contains(col) || all_affected_materialized.contains(col);
             });
 
         if (changed)
@@ -1775,7 +2051,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col) || all_affected_materialized.contains(col);
+                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col)
+                    || clear_rematerialized_columns.contains(col) || all_affected_materialized.contains(col);
             });
 
         if (changed)
@@ -2416,6 +2693,7 @@ void MutationsInterpreter::Source::read(
     }
 
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);
+    addColumnsRequiredForDefaultConversions(required_columns, snapshot_, part, alter_conversions, context_);
 
     if (!mutation_settings.can_execute)
     {

@@ -336,14 +336,82 @@ void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDesc
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 
+ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns);
+ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
+
+/// Return the columns read by a default expression after expanding column matchers and replacing
+/// table-scope `ALIAS` references exactly as default evaluation does.
+NameSet getDefaultExpressionRequiredColumns(
+    const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
+
+/// Insert into `dependencies` the columns from `candidate_names` that `node` reads,
+/// excluding names bound by lambda arguments inside the expression. With
+/// `follow_subcolumns = true`, subcolumn references (e.g. `t.x`) are canonicalized to their owning
+/// storage column of `columns` before the membership test, so reading a column through a subcolumn
+/// path still counts as a dependency on that column. With `follow_subcolumns = false`, only
+/// whole-column reads produce an edge, which is what the `DEFAULT` cycle graph uses.
+void collectColumnDependenciesFromAST(const ASTPtr & node, const NameSet & candidate_names, const ColumnsDescription & columns, NameSet & dependencies, bool follow_subcolumns = true);
+void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTPtr & expanded_alias_expression, const ColumnsDescription & columns);
+
+/// Throw if the fully expanded body of the ALIAS column `alias_column_name` references a name from
+/// `enclosing_lambda_parameters`: the alias body was written at table scope, so its identifiers must
+/// refer to table columns, but raw AST substitution inside a lambda would let the lambda parameter
+/// capture them. Parameters of lambdas inside the expanded body shadow their own scope and are not
+/// considered captured.
+void validateAliasExpansionNotCapturedByLambda(
+    const String & alias_column_name, const ASTPtr & expanded_alias_expression, const NameSet & enclosing_lambda_parameters);
+
+/// Run the check above over every stored default expression of `columns` (the columns must carry
+/// their default expressions). Rejects definitions whose evaluation would capture an ALIAS body
+/// inside a lambda, e.g. `m MATERIALIZED arrayMap(x -> y, arr)` with `y ALIAS x + 1`.
+void validateNoAliasLambdaCaptureInStoredExpressions(const ColumnsDescription & columns);
+void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns);
+void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns);
+
+/// `CLEAR COLUMN` resets the cleared columns to their type default, so the stored values of the
+/// `MATERIALIZED` columns computed from them no longer match their declared expression and have to
+/// be recomputed. `materialized_column_inputs` maps every `MATERIALIZED` column to the columns its
+/// matcher-expanded expression reads; the result is the transitive closure over `cleared_columns`:
+/// a `MATERIALIZED` column is stale if it reads a cleared column or an already stale one.
+/// `MATERIALIZED` columns outside the closure keep their stored values - rewriting them would
+/// break the metadata-only contract of `ALTER TABLE ... MODIFY COLUMN ... MATERIALIZED`, which
+/// deliberately leaves existing parts untouched.
+NameSet collectMaterializedColumnsStaleAfterClear(
+    const std::unordered_map<String, Names> & materialized_column_inputs, const NameSet & cleared_columns);
+
+struct MaterializedColumnInputInfo
+{
+    std::unordered_map<String, Names> by_column;
+    NameSet unsafe_legacy_columns;
+
+    std::optional<String> findFirstUnsafeColumn(const NameSet & columns) const;
+};
+
+/// Map every `MATERIALIZED` column of `columns` to the storage columns its expression reads.
+/// Safe expressions have matchers and `ALIAS` bodies expanded and subcolumn references
+/// canonicalized to their owning storage column. For stored expressions that predate
+/// alias-lambda capture validation, collect conservative raw dependencies while following
+/// table-scope `ALIAS` columns and record the host column in `unsafe_legacy_columns`.
+/// `AlterCommands::validate` and `MutationsInterpreter` both build the input of
+/// `collectMaterializedColumnsStaleAfterClear` through this helper, so `ALTER` validation and
+/// mutation preparation cannot disagree about which recalculations a `CLEAR COLUMN` triggers.
+MaterializedColumnInputInfo collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context);
+
+/// Collect (instead of throwing) the alias-lambda-capture violations that
+/// `validateNoAliasLambdaCaptureInStoredExpressions` would report for `columns`, keyed by the
+/// column whose stored expression violates the rule. Lets `ALTER` validation distinguish
+/// violations introduced by the current command from identical ones already present in the stored
+/// metadata, which must stay tolerated for backward compatibility.
+std::unordered_map<String, String> collectAliasLambdaCaptureViolationsInStoredExpressions(const ColumnsDescription & columns);
+
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be cast to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
 /// insert_time_default_columns lists the DEFAULT/MATERIALIZED columns whose stored value is computed
 /// from the expression; their expressions must not reference virtual columns.
-void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
+void validateColumnsDefaults(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
 
 /// Whether a PREWHERE contract (`IStorage::supportedPrewhereColumns`, a set of top-level names)
 /// admits `column_name`: directly, or - when `include_subcolumns` is set

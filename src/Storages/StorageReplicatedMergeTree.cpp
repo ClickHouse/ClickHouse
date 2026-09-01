@@ -209,6 +209,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsBool always_fetch_mutated_part;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
@@ -6470,6 +6471,11 @@ void StorageReplicatedMergeTree::assertNotStaticStorage() const
 }
 
 
+TableLockHolder StorageReplicatedMergeTree::lockForInsert(const String & query_id, const Poco::Timespan & acquire_timeout)
+{
+    return tryLockTimed(insert_alter_lock, RWLockImpl::Read, query_id, acquire_timeout);
+}
+
 SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
     /// We need to check it explicitly since someone may write to table explicitly (bypassing InterpreterInsertQuery, which has this check)
@@ -7072,6 +7078,13 @@ void StorageReplicatedMergeTree::alter(
     std::optional<ReplicatedMergeTreeLogEntryData> alter_entry;
     std::optional<String> mutation_znode;
 
+    /// `lockForAlter` only serializes `ALTER` queries; `INSERT` pipelines hold `insert_alter_lock`
+    /// for reading instead. When the `ALTER` registers a repair mutation, drain writes that captured
+    /// the old metadata before allocating the mutation block numbers, and block new ones until the
+    /// mutation is committed. Otherwise a late old-snapshot part can receive a block number above
+    /// the mutation version and skip it (same barrier as in `StorageMergeTree::alter`).
+    TableLockHolder insert_barrier;
+
     while (true)
     {
         if (shutdown_called || partial_shutdown_called)
@@ -7194,8 +7207,13 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
-        auto maybe_mutation_commands
-            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context, /*with_alters*/ false, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+        auto maybe_mutation_commands = commands.getMutationCommands(
+            *current_metadata,
+            query_settings[Setting::materialize_ttl_after_modify],
+            query_context,
+            /*with_alters=*/ false,
+            (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode],
+            (*old_settings)[MergeTreeSetting::share_nested_offsets]);
 
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;
@@ -7214,6 +7232,11 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.alter_version = new_metadata_version;
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
+
+            if (!insert_barrier && mutation_entry.commands.requiresInsertBarrier())
+                insert_barrier = tryLockTimed(
+                    insert_alter_lock, RWLockImpl::Write,
+                    query_context->getCurrentQueryId(), query_settings[Setting::lock_acquire_timeout]);
 
             int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
@@ -7307,6 +7330,8 @@ void StorageReplicatedMergeTree::alter(
 
         throw Coordination::Exception::fromMessage(rc, "Alter cannot be assigned because of Zookeeper error");
     }
+
+    insert_barrier.reset();
 
     table_lock_holder.unlock();
 

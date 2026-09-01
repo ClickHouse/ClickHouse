@@ -634,8 +634,16 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns,
+    bool is_full_definition_attach)
 {
+    /// A full-definition `ATTACH TABLE t (...) ENGINE = ...` is CREATE-like user input that also runs
+    /// under `LoadingStrictnessLevel::ATTACH`, so it gets the same stored-default validation as
+    /// `CREATE TABLE`. Definitions read back from metadata stored on this server (short
+    /// `ATTACH TABLE t`, server startup) and DDL/RESTORE replay of previously validated definitions
+    /// must stay loadable and skip it. This mirrors `is_fresh_definition` in `registerStorageMergeTree`.
+    const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
+        || (mode == LoadingStrictnessLevel::ATTACH && is_full_definition_attach);
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
@@ -644,6 +652,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     DefaultExpressionsInfo default_expr_info;
     default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
+    ColumnsDescription columns_for_default_validation;
 
     /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
     /// Known limitation: with distributed_ddl_entry_format_version < NORMALIZE_CREATE_ON_INITIATOR_VERSION
@@ -668,9 +677,25 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
 
+        ColumnDescription column_for_validation(col_decl.name, column_names_and_types.back().type);
+        if (col_decl.getDefaultExpression())
+            column_for_validation.default_desc.kind = toColumnDefaultKind(col_decl.default_specifier);
+        columns_for_default_validation.add(std::move(column_for_validation));
+
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
     }
+
+    /// Column matchers (`*`, `COLUMNS(...)`) in default/materialized/alias expressions are stored unexpanded and
+    /// re-expanded against the table's `ColumnsDescription` every time the default is evaluated. The metadata is
+    /// flattened below (with `flatten_nested = 1`), so a matcher in a default expression is expanded at execution
+    /// time against the flattened schema. Validate against the same flattened schema, otherwise a matcher could
+    /// expand differently (or to nothing) at runtime than during validation — e.g. `length(COLUMNS('^n$'))` over a
+    /// `Nested` column `n` would validate against `n` but execute against `n.x`, persisting a default that throws on
+    /// insert. Flatten the validation columns under the same condition as `res` below.
+    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+        columns_for_default_validation.flattenNested();
 
     Block defaults_sample_block;
     /// Set missing types and wrap default_expression's in a conversion-function if necessary.
@@ -678,14 +703,19 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// (for example, a default expression can contain dictGet() and that dictionary can access remote servers or
     /// require different users to authenticate).
     if (!default_expr_info.expr_list->children.empty()
-        && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
+        && (default_expr_info.has_columns_with_default_without_type || is_fresh_definition))
     {
         /// Ordinary views never evaluate column defaults over an insert block, so a default over a
         /// virtual column is inert there and must not be rejected.
+        /// The rejection of a default over a virtual column applies only to a definition created now:
+        /// a table created by an affected version may already carry one, and re-stating its definition
+        /// through a full-definition `ATTACH TABLE` must keep loading it (see
+        /// `04630_default_over_virtual_column`), so it is not part of the `is_fresh_definition` checks.
         NameSet insert_time_default_columns;
-        if (check_defaults_over_virtual_columns)
+        if (check_defaults_over_virtual_columns && mode <= LoadingStrictnessLevel::CREATE)
             insert_time_default_columns = default_expr_info.insert_time_default_columns;
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_, insert_time_default_columns);
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(
+            default_expr_info.expr_list, columns_for_default_validation, context_, insert_time_default_columns);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
@@ -778,6 +808,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
+    /// `columns_for_default_validation` above carries no default expressions, so the alias-capture
+    /// check inside `validateColumnsDefaultsAndGetSampleBlock` has nothing to expand at CREATE time.
+    /// Re-run it over the final description, which does carry them, against the same (flattened) schema.
+    if (is_fresh_definition && !is_restore_from_backup)
+        validateNoAliasLambdaCaptureInStoredExpressions(res);
+
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 
@@ -837,7 +873,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             const bool check_defaults_over_virtual_columns
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
             properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns,
+                /*is_full_definition_attach=*/ create.attach && !create.attach_short_syntax);
         }
 
         if (create.columns_list->indices)

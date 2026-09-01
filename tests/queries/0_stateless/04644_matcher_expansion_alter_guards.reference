@@ -1,0 +1,4 @@
+-- MATERIALIZED column in the partition key is rejected
+10
+-- an empty table still plans the repair mutation
+CREATE TABLE default.t_matcher_guard_empty\n(\n    `a` UInt64,\n    `x` UInt64 ALIAS a + 2,\n    INDEX idx x TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS index_granularity = 8192

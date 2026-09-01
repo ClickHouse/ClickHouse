@@ -1,0 +1,23 @@
+-- positional MODIFY of the column whose expansion changes
+1
+0	1000	1000
+1	1001	1001
+2	1002	1002
+10	1010	1010
+-- type-only MODIFY of the column whose expansion changes
+1
+0	1000	1000
+1	1001	1001
+2	1002	1002
+10	1010	1010
+-- a positionally modified dependent stays in the closure
+1
+0	1000	1001	1000
+1	1001	1002	1001
+2	1002	1003	1002
+10	1010	1011	1010
+-- restating the same expression does not suppress it either
+1
+0	1000	1000
+1	1001	1001
+2	1002	1002

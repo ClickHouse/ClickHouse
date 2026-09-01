@@ -6,9 +6,9 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
@@ -448,7 +448,8 @@ size_t clampClusterFunctionNumStreams(UInt64 num_streams)
     return std::min<UInt64>(num_streams, 256 * getNumberOfCPUCoresToUse());
 }
 
-std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names)
+std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(
+    ReadFromFormatInfo & info, const NameSet & required_names, const ContextPtr & context)
 {
     /// Columns that the PREWHERE / row-level filter needs as inputs must stay in the main read
     /// because filtering happens there.
@@ -564,12 +565,23 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
         if (column_defaults.contains(storage_name) && names_in_default_expressions.insert(storage_name).second)
             names_to_visit.push_back(storage_name);
     };
-    auto default_expression_inputs = [&](const String & name)
+    std::unordered_map<String, NameSet> default_expression_inputs_cache;
+    auto default_expression_inputs = [&](const String & name) -> const NameSet &
     {
-        RequiredSourceColumnsVisitor::Data columns_context;
-        auto expression = column_defaults.at(name).expression->clone();
-        RequiredSourceColumnsVisitor(columns_context).visit(expression);
-        return columns_context.requiredColumns();
+        auto [it, inserted] = default_expression_inputs_cache.try_emplace(name);
+        if (!inserted)
+            return it->second;
+
+        auto required_columns = getDefaultExpressionRequiredColumns(
+            column_defaults.at(name), info.columns_description, context);
+        for (const auto & required_name : required_columns)
+        {
+            if (auto column = info.columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_name))
+                it->second.insert(column->getNameInStorage());
+            else
+                it->second.insert(required_name);
+        }
+        return it->second;
     };
     for (const auto & column : info.source_header)
         if (columns_to_keep.contains(column.name))

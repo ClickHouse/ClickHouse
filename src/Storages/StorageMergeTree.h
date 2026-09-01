@@ -84,6 +84,7 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
     MutationCounters getMutationCounters() const override;
 
+    TableLockHolder lockForInsert(const String & query_id, const Poco::Timespan & acquire_timeout) override;
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     /** Perform the next step in combining the parts.
@@ -166,6 +167,7 @@ private:
     MutationCounters mutation_counters;
 
     CommittingBlocksSet committing_blocks;
+    mutable RWLock insert_alter_lock = RWLockImpl::create();
     mutable std::mutex committing_blocks_mutex;
     mutable std::condition_variable committing_blocks_cv;
 
