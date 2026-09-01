@@ -681,9 +681,15 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     try
     {
         const auto & access = query_context->getAccess();
-        if (auto first_table = traverseTablesUntil([access](auto && table)
+        if (auto first_table = traverseTablesUntil([&access, &query_context](auto && table)
         {
             if (!table)
+                return false;
+
+            /// An `Alias` reports its target's virtual columns, so inheriting them needs the
+            /// privilege on the target that reading the target's columns requires.
+            if (const auto * alias = table->template as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
                 return false;
 
             auto id = table->getStorageID();
