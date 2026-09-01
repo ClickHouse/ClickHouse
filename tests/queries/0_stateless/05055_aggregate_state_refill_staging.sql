@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- An aggregate state value that arrives across compressed-block boundaries must round-trip
 -- unchanged, and staging it must cost the value rather than the number of pieces it arrives in.
 -- A `CAST(unhex(...))` blob is always fully buffered, so only a state read back from a table
