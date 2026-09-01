@@ -8,6 +8,16 @@ FROM (SELECT number AS n, if(number < 3, toFloat64(1), NULL) AS x FROM numbers(6
 WINDOW w AS (ORDER BY n ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)
 ORDER BY n;
 
+SELECT n, sumIf(x, cond) OVER w AS s, sumKahanIf(x, cond) OVER w AS sk
+FROM (SELECT number AS n, if(number % 2 = 0, toFloat64(1), NULL) AS x, toUInt8(number < 4) AS cond FROM numbers(6))
+WINDOW w AS (ORDER BY n ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)
+ORDER BY n;
+
+SELECT n, sumIf(x, cond) OVER w AS s, sumKahanIf(x, cond) OVER w AS sk
+FROM (SELECT number AS n, toFloat64(1) AS x, if(number % 3 = 0, NULL, toUInt8(number < 4)) AS cond FROM numbers(6))
+WINDOW w AS (ORDER BY n ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)
+ORDER BY n;
+
 DROP TABLE IF EXISTS t_sum_kahan_offset;
 
 CREATE TABLE t_sum_kahan_offset (k UInt32, x Float64, cond UInt8) ENGINE = MergeTree ORDER BY k;
