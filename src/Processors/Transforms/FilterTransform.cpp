@@ -62,7 +62,8 @@ const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
 bool hasConstantColumn(const ActionsDAG::Node * node)
 {
     node = unwrapAlias(node);
-    return node->column != nullptr;
+    /// Do not extract a `Field` here: some values (for example, large arrays) are kept in column form.
+    return node->column != nullptr && isColumnConst(*node->column);
 }
 
 template <typename Predicate>
