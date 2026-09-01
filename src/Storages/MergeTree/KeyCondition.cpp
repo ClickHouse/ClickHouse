@@ -2382,6 +2382,30 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
+/// Whether the value holds a floating-point zero at any depth. `-0.` and `+0.` compare equal while
+/// being distinct values, and they are the only such pair on a floating-point domain: every other pair
+/// of distinct bit patterns compares unequal, and a `NaN` equals nothing. `Field` has no `Float32`, so
+/// `Float32` and `BFloat16` values arrive here as `Float64`.
+static bool fieldHoldsFloatZero(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Float64:
+            return field.safeGet<Float64>() == 0;
+        case Field::Types::Array:
+            return std::ranges::any_of(field.safeGet<Array>(), fieldHoldsFloatZero);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(field.safeGet<Tuple>(), fieldHoldsFloatZero);
+        case Field::Types::Map:
+            return std::ranges::any_of(field.safeGet<Map>(), fieldHoldsFloatZero);
+        case Field::Types::Object:
+            return std::ranges::any_of(
+                field.safeGet<Object>(), [](const auto & entry) { return fieldHoldsFloatZero(entry.second); });
+        default:
+            return false;
+    }
+}
+
 bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -2421,6 +2445,12 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DeterministicKeyTransformDag dag;
 
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
+        return false;
+
+    /// A key transform reads the bit pattern, so it can map `-0.` and `+0.` to two different key values
+    /// while the comparison feeding it treats them as one. A range built from one of them misses the
+    /// mark holding the other, so decline the atom instead.
+    if (fieldHoldsFloatZero(tryConvertFieldToType(out_value, *dag.input_type, out_type.get())))
         return false;
 
     out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
