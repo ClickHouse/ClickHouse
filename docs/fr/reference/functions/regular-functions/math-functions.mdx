@@ -20,7 +20,7 @@ doc_type: 'reference'
 
 Introduit dans : v1.1.0
 
-Renvoie l’arc cosinus de l’argument.
+Renvoie l’arccosinus de l’argument.
 
 **Syntaxe**
 
@@ -45,7 +45,7 @@ SELECT acos(0.5);
 ```
 
 ```response title=Response
-1.0471975511965979
+1.0471975511965974
 ```
 
 <div id="acosh">
@@ -114,7 +114,7 @@ SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))
 ```
 
 ```response title=Response
-1 1 1
+1	1	0.9999999999999999
 ```
 
 **float32**
@@ -134,7 +134,7 @@ SELECT asin(1.1), asin(-2), asin(inf), asin(nan)
 ```
 
 ```response title=Response
-nan nan nan nan
+nan	nan	nan	nan
 ```
 
 <div id="asinh">
@@ -647,7 +647,7 @@ Renvoie la factorielle de l&#39;argument sous forme de UInt64. Renvoie 1 si l&#3
 **Exemple d’utilisation**
 
 ```sql title=Query
-factorial(10)
+SELECT factorial(10)
 ```
 
 ```response title=Response
@@ -993,7 +993,7 @@ SELECT log(10);
 ```
 
 ```response title=Response
-2.302585092994046
+2.3025850938475476
 ```
 
 <div id="log10">
@@ -1573,7 +1573,7 @@ Renvoie le numéro du bucket sous la forme d’un entier. Renvoie 0 si operand &
 **Exemple d’utilisation**
 
 ```sql title=Query
-widthBucket(10.15, -8.6, 23, 18)
+SELECT widthBucket(10.15, -8.6, 23, 18)
 ```
 
 ```response title=Response
