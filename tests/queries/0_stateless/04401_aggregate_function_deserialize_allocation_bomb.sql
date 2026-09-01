@@ -69,6 +69,10 @@ SELECT finalizeAggregation(CAST(unhex('010A03000000000000006162'), 'AggregateFun
 SELECT finalizeAggregation(CAST(unhex('00FFC1D72F'), 'AggregateFunction(groupArrayIntersect, Array(UInt64))')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
 SELECT finalizeAggregation(CAST(unhex('00FFC1D72F'), 'AggregateFunction(groupArrayIntersect, Array(String))')) SETTINGS max_memory_usage = 100000000; -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
 SELECT finalizeAggregation(CAST(unhex('00FFE0F50500000000'), 'AggregateFunction(sequenceMatch(\'(?1)\'), DateTime, UInt8, UInt8, UInt8)')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
+-- Elements of the generic path are variable length, so its count and its byte count diverge: one
+-- element of 5000000 bytes declaring 99999999 of them reserves 256 MiB when the byte count is the
+-- bound, and 16 MiB when the slot size divides it. The limit below sits between the two.
+SELECT finalizeAggregation(CAST(unhex('00FFC1D72F') || unhex('C096B102') || repeat(repeat('a', 1000000), 5), 'AggregateFunction(groupArrayIntersect, Array(String))')) SETTINGS max_memory_usage = 200000000; -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
 SELECT finalizeAggregation(CAST(unhex('10270000000000007b14ae47e17a843f0000000000000000FFE0F50500000000'), 'AggregateFunction(quantileGK(100), Float64)')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
 
 -- Both destinations are `operator new`, which the tracker counts but never refuses, so both sides

@@ -335,8 +335,8 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large array size ({}) in groupArrayIntersect deserialization", size);
         /// Reserving is only an optimization here, so it is derived from payload that already arrived.
-        /// An element costs at least one varint byte.
-        set.reserve(std::min(size, buf.available()));
+        /// Elements are variable length, so the divisor is the size of a slot, not of an element.
+        set.reserve(std::min(size, buf.available() / sizeof(typename State::Set::cell_type)));
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);
