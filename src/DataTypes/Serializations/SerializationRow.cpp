@@ -300,7 +300,12 @@ void SerializationRow::serializeBinaryBulkWithMultipleStreams(
     const auto & tuple = assert_cast<const ColumnTuple &>(column);
     const size_t end = limit ? std::min(offset + limit, tuple.size()) : tuple.size();
     const size_t num_fields = field_serializations.size();
-    const FormatSettings format_settings;
+
+    /// `settings.format_settings` is null on the MergeTree write path, where a local default is the
+    /// right binary-storage behaviour. `FORMAT Native` does populate it, and the writer has to honour
+    /// the same settings the reader will, so that both sides agree on the field encodings.
+    const FormatSettings default_format_settings;
+    const FormatSettings & format_settings = settings.format_settings ? *settings.format_settings : default_format_settings;
 
     /// Layout per row: [VarUInt row_size][fields...]. The size prefix lets a
     /// reader skip a row without deserializing its fields.
@@ -334,9 +339,11 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
     auto & tuple = assert_cast<ColumnTuple &>(column);
     const size_t num_fields = field_serializations.size();
 
-    /// Must not use settings.format_settings: it is uninitialised on the MergeTree
-    /// read path. A local default is correct for binary storage.
-    const FormatSettings format_settings;
+    /// `settings.format_settings` is null on the MergeTree read path, where a local default is the
+    /// right binary-storage behaviour. `FORMAT Native` populates it from the query context, and must
+    /// keep honouring per-query limits such as `format_binary_max_string_size`.
+    const FormatSettings default_format_settings;
+    const FormatSettings & format_settings = settings.format_settings ? *settings.format_settings : default_format_settings;
 
     if (limit)
         for (size_t i = 0; i < num_fields; ++i)
