@@ -201,6 +201,10 @@ CREATE TABLE tab_scann_fallback (id Int32, vec Array(Float32), INDEX idx vec TYP
 INSERT INTO tab_scann_fallback VALUES
     (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]),
     (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
+-- A no-index granule stores only metadata, not a duplicate of the source vectors.
+SELECT secondary_indices_uncompressed_bytes < 64
+FROM system.parts
+WHERE database = currentDatabase() AND table = 'tab_scann_fallback' AND active;
 -- rescoring=1: fallback should return the same results as the exact search.
 SELECT count() FROM (
     WITH [0.0, 2.0] AS reference_vec

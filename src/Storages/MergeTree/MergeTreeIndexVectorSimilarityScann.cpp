@@ -98,6 +98,12 @@ struct ScannSearcherWrapper
 namespace
 {
 
+enum class ScannIndexState : UInt8
+{
+    NoIndex = 0,
+    Built = 1,
+};
+
 /// Global thread pool shared by all ScaNN index builds, mirroring Usearch's
 /// getBuildVectorSimilarityIndexThreadPool(). A single shared pool bounds the total
 /// number of ScaNN build threads to max_build_vector_similarity_index_thread_pool_size
@@ -365,14 +371,17 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
     writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
     writeIntBinary(static_cast<UInt64>(padded_dim), ostr);
 
+    /// Small granules fall back to an exact scan of the source column. Persist only their row
+    /// count so that the fallback can return all row offsets without duplicating the vectors in
+    /// the index file and vector index cache.
+    const bool index_built = searcher && searcher->inner;
+    const auto index_state = index_built ? ScannIndexState::Built : ScannIndexState::NoIndex;
+    writeIntBinary(static_cast<UInt8>(index_state), ostr);
+    if (!index_built)
+        return;
+
     /// Precision tag for the exact-reordering vectors: 0 = f32, 1 = bf16, 2 = i8.
-    /// When no index was built (too few vectors), no quantization happened and the granule still
-    /// holds the raw float `vectors`, so fall back to f32 regardless of the configured precision.
-    const bool index_built = (searcher && searcher->inner);
-    const bool have_quantized = !bf16_data.empty() || !int8_data.empty();
-    UInt8 precision_tag = 0;
-    if (index_built || have_quantized)
-        precision_tag = (params.precision == "bf16") ? 1 : (params.precision == "i8" ? 2 : 0);
+    const UInt8 precision_tag = (params.precision == "bf16") ? 1 : (params.precision == "i8" ? 2 : 0);
     writeIntBinary(precision_tag, ostr);
 
     writeIntBinary(static_cast<UInt64>(serialized_config_proto.size()), ostr);
@@ -676,6 +685,17 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
     readIntBinary(pd, istr);
     num_vectors = n;
     padded_dim = pd;
+
+    UInt8 index_state = 0;
+    readIntBinary(index_state, istr);
+    if (index_state != static_cast<UInt8>(ScannIndexState::NoIndex)
+        && index_state != static_cast<UInt8>(ScannIndexState::Built))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "ScaNN index restore failed: invalid index state {}. Please drop the index and create it again.",
+            static_cast<UInt64>(index_state));
+    if (index_state == static_cast<UInt8>(ScannIndexState::NoIndex))
+        return;
 
     /// Reorder vectors at the stored precision. The on-disk tag is authoritative (it must match
     /// how the artifacts were quantized), so set params.precision from it.
