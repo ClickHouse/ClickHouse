@@ -39,6 +39,7 @@ Checks: [
   '-bugprone-signed-bitwise', # canonical name of `hicpp-signed-bitwise` since clang-tidy 23; too noisy
   '-bugprone-sizeof-expression', # too aggressive
   '-bugprone-throwing-static-initialization',
+  '-bugprone-unhandled-code-paths', # new in clang-tidy 23; duplicates `bugprone-switch-missing-default-case` (enabled; `NOLINT`s in the code use that name)
 
   '-cert-dcl16-c',
   '-cert-arr39-c', # alias of bugprone-sizeof-expression
