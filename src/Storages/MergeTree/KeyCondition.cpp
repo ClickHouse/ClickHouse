@@ -37,6 +37,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -2693,7 +2694,10 @@ static bool tryPrepareSetColumnsForIndex(
 ///     `00674_has_array_enum`) and the cast accepts the codes of declared values;
 ///   - `Nothing` on the element side: an all-NULL element never equals a non-NULL key value under
 ///     `has`, and the accurate-or-null cast likewise keeps it NULL, dropping it from the set;
-///   - `Tuple` / `Array` / `Map` pairs are compared element-wise by a stricter rule: inside a
+///   - `Tuple` / `Array` / `Map` pairs are compared element-wise (`Tuple`s additionally have to
+///     agree on arity and, when both are named, on the names and their order, because the cast
+///     between two named tuples matches elements by name while `has` compares them positionally)
+///     by a stricter rule: inside a
 ///     container the runtime comparison is no longer accurate. `accurateEquals` takes the same-type
 ///     fast path for two container `Field`s and compares their children with the plain
 ///     `Field::operator==`, which requires the same carrier type (an `UInt64` child never equals an
@@ -2701,9 +2705,10 @@ static bool tryPrepareSetColumnsForIndex(
 ///     `Field`s use the same integer carrier: two native integers of the same signedness, or an
 ///     `Enum` next to a *signed* native integer (both are carried as `Int64`);
 ///   - a `Variant` element is admissible when every contained alternative is, because the raw
-///     `Field` of a `Variant` is its underlying value. A `Dynamic` element does not describe its
-///     contents at the type level; the caller substitutes the `Variant` of the types the constant
-///     column actually holds, so a bare `Dynamic` reaching this check is declined.
+///     `Field` of a `Variant` is its underlying value. Neither a `Variant` nor a `Dynamic` element
+///     describes at the type level what the constant actually holds, so the caller narrows both to
+///     the alternatives the constant column occupies before calling here; a bare `Dynamic` reaching
+///     this check is declined.
 static bool areTypesCompatibleForHasSetIndex(
     const DataTypePtr & set_element_type, const DataTypePtr & key_column_type, bool within_container = false)
 {
@@ -2761,10 +2766,21 @@ static bool areTypesCompatibleForHasSetIndex(
         const auto & set_elements = set_tuple_type->getElements();
         const auto & key_elements = key_tuple_type->getElements();
 
-        /// Tuples of different sizes agree trivially: the raw comparison never holds and the cast
-        /// drops the element from the set.
+        /// `has` compares two `Tuple` `Field`s positionally and by arity, while the cast follows
+        /// named-tuple semantics: for two *named* tuples it matches elements by name, fills the
+        /// elements missing on the source side with defaults and ignores the extra ones (see
+        /// `04056_tuple_inside_nullable_casting`). Any layout drift therefore makes the set element
+        /// stand for a different value than the one the runtime predicate compares, so a set atom
+        /// built from it could prune rows that satisfy `notHas`. Require the same arity, and, when
+        /// both sides are named, the same names in the same order - only then is the cast
+        /// positional and equivalent to the runtime comparison. A tuple without explicit names is
+        /// always cast positionally, so pairing it with a named one is fine.
         if (set_elements.size() != key_elements.size())
-            return true;
+            return false;
+
+        if (set_tuple_type->hasExplicitNames() && key_tuple_type->hasExplicitNames()
+            && set_tuple_type->getElementNames() != key_tuple_type->getElementNames())
+            return false;
 
         for (size_t i = 0; i < set_elements.size(); ++i)
         {
@@ -2947,6 +2963,35 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     return true;
 }
 
+/// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
+/// array usually occupies only some of them. Judging such a constant by its declared alternatives
+/// would decline exact pruning because of branches that carry no value at all, so narrow the type
+/// down to the alternatives that are actually occupied. `ignored_discriminator` skips the shared
+/// variant of a `Dynamic` column, which is handled by the caller.
+static DataTypePtr narrowVariantToOccupiedAlternatives(
+    const ColumnVariant & variant_column, const DataTypes & alternatives, std::optional<size_t> ignored_discriminator = {})
+{
+    DataTypes occupied_types;
+    for (size_t i = 0; i < alternatives.size(); ++i)
+    {
+        if (ignored_discriminator && i == *ignored_discriminator)
+            continue;
+        if (!variant_column.getVariantByGlobalDiscriminator(i).empty())
+            occupied_types.push_back(alternatives[i]);
+    }
+
+    /// A column with no occupied alternative holds nothing but NULLs, which never poison the set:
+    /// they are either dropped by the accurate-or-null conversion or match the NULL of a `Nullable`
+    /// key.
+    if (occupied_types.empty())
+        return std::make_shared<DataTypeNothing>();
+
+    if (occupied_types.size() == 1)
+        return occupied_types.front();
+
+    return std::make_shared<DataTypeVariant>(occupied_types);
+}
+
 bool KeyCondition::tryPrepareSetIndexForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -2992,17 +3037,27 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     /// considers the two NaNs equal. Do not build a set atom for arrays with floating-point elements,
     /// including nested tuple elements: using it under `notHas` could otherwise prune rows that satisfy
     /// the predicate.
-    bool array_contains_float = WhichDataType(*array_nested_type).isFloat();
-    if (!array_contains_float)
+    auto contains_float = [](const DataTypePtr & type)
     {
-        array_nested_type->forEachChild([&array_contains_float](const IDataType & child)
+        bool found = WhichDataType(*type).isFloat();
+        if (!found)
         {
-            if (!array_contains_float && WhichDataType(child).isFloat())
-                array_contains_float = true;
-        });
-    }
+            type->forEachChild([&found](const IDataType & child)
+            {
+                if (!found && WhichDataType(child).isFloat())
+                    found = true;
+            });
+        }
+        return found;
+    };
 
-    if (array_contains_float)
+    /// `Variant` and `Dynamic` elements are judged by the alternatives the constant column actually
+    /// holds rather than by the declared ones, which is only known below, once the column data is at
+    /// hand.
+    const bool element_type_is_from_column
+        = WhichDataType(*array_nested_type).isDynamic() || WhichDataType(*array_nested_type).isVariant();
+
+    if (!element_type_is_from_column && contains_float(array_nested_type))
         return false;
 
     const auto array_elements = array_col->getDataPtr();
@@ -3014,40 +3069,36 @@ bool KeyCondition::tryPrepareSetIndexForHas(
         return true;
     }
 
+    /// Neither a `Dynamic` element nor an unoccupied `Variant` alternative describes what the
+    /// constant actually holds, so derive the checked type from the column instead of the declared
+    /// one. The narrowed type is what both the floating-point guard and the compatibility rule
+    /// below are applied to.
+    DataTypePtr checked_element_type = array_nested_type;
+    if (WhichDataType(*array_nested_type).isDynamic())
+    {
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*array_elements);
+
+        /// Values that overflowed into the shared variant are stored serialized and carry no
+        /// type-level description, so their compatibility cannot be established.
+        if (!dynamic_column.getSharedVariant().empty())
+            return false;
+
+        checked_element_type = narrowVariantToOccupiedAlternatives(
+            dynamic_column.getVariantColumn(),
+            assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants(),
+            dynamic_column.getSharedVariantDiscriminator());
+    }
+    else if (const auto * variant_element_type = typeid_cast<const DataTypeVariant *>(array_nested_type.get()))
+    {
+        checked_element_type = narrowVariantToOccupiedAlternatives(
+            assert_cast<const ColumnVariant &>(*array_elements), variant_element_type->getVariants());
+    }
+
+    if (element_type_is_from_column && contains_float(checked_element_type))
+        return false;
+
     if (!out.relaxed)
     {
-        /// A `Dynamic` element does not describe its contents at the type level, so check the types
-        /// the constant column actually holds instead.
-        DataTypePtr checked_element_type = array_nested_type;
-        if (WhichDataType(*array_nested_type).isDynamic())
-        {
-            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*array_elements);
-
-            /// Values that overflowed into the shared variant are stored serialized and carry no
-            /// type-level description, so their compatibility cannot be established.
-            if (!dynamic_column.getSharedVariant().empty())
-                return false;
-
-            const auto & alternatives
-                = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
-            const auto shared_variant_discriminator = dynamic_column.getSharedVariantDiscriminator();
-
-            DataTypes contained_types;
-            for (size_t i = 0; i < alternatives.size(); ++i)
-            {
-                if (i != shared_variant_discriminator)
-                    contained_types.push_back(alternatives[i]);
-            }
-
-            /// A column with no typed variants holds nothing but NULLs, which never poison the set:
-            /// they are either dropped by the accurate-or-null conversion or match the NULL of a
-            /// Nullable key.
-            if (contained_types.empty())
-                checked_element_type = std::make_shared<DataTypeNothing>();
-            else
-                checked_element_type = std::make_shared<DataTypeVariant>(contained_types);
-        }
-
         if (!areSetAndKeyTypesCompatibleForHas(
                 {checked_element_type}, key_args_count, data_types, set_transforming_dags, indexes_mapping))
             return false;
