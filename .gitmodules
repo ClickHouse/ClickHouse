@@ -423,3 +423,6 @@
 [submodule "contrib/MeCab"]
 	path = contrib/MeCab
 	url = https://github.com/taku910/mecab
+[submodule "contrib/optimized-routines"]
+	path = contrib/optimized-routines
+	url = https://github.com/ARM-software/optimized-routines
