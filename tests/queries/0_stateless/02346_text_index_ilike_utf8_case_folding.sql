@@ -2,10 +2,11 @@
 -- no-fasttest: lowerUTF8/upperUTF8 require a build with ICU.
 
 -- `ILIKE '%needle%'` folds case per code point with `Poco::Unicode::toLower`, which agrees neither with the
--- ICU full case mapping of `lowerUTF8`/`upperUTF8` nor with the ASCII-only dictionary of a text index.
+-- ICU full case mapping of `lowerUTF8`/`upperUTF8` nor with the ASCII-only matching of the dictionary scan.
 -- The dictionary scan must not answer such a predicate. Every query below must return the same rows it
 -- returns with `use_skip_indexes = 0`.
 
+SET explain_query_plan_default = 'legacy';
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 
 SELECT 'lowerUTF8 preprocessor, U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE folds to i + U+0307';
@@ -87,11 +88,8 @@ INSERT INTO tab SELECT number, 'Hello Monkey' FROM numbers(10);
 INSERT INTO tab SELECT number, 'Bonjour Monde' FROM numbers(10);
 
 -- No character of the needle is reachable by case folding, so the dictionary answers it and prunes one part.
-SELECT 'ILIKE %monde%', countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE message ILIKE '%monde%');
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1
-    SELECT count() FROM tab WHERE message ILIKE '%monde%'
-) WHERE explain LIKE '%Name:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%';
+SELECT 'ILIKE %monde%', countIf(explain LIKE '%Name: idx%'), countIf(explain LIKE '%Granules: 10/20%')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE message ILIKE '%monde%');
 
 -- `k` can be spelled with U+212A, which the dictionary never sees.
 SELECT 'ILIKE %monkey%', countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE message ILIKE '%monkey%');
