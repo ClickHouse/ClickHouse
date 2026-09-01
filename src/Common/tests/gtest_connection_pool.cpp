@@ -759,6 +759,30 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
     ASSERT_TRUE(reached_proxy_connect);
 }
 
+TEST_F(ConnectionPoolTest, ProxyConnectionReportsProxyHostInResolvedAddress)
+{
+    /// A proxied connection must report the proxy host in getResolvedAddress(),
+    /// not the target URL host, so S3 request logging shows the actually-dialled proxy.
+    auto uri = Poco::URI("http://proxy-only-target.invalid:9999");
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    proxy_config.port = server_data.server->socket().address().port();
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    ASSERT_TRUE(connection->connected());
+
+    auto resolved = connection->getResolvedAddress();
+    ASSERT_NE(std::string::npos, resolved.find("127.0.0.1"))
+        << "Resolved address does not contain proxy host: " << resolved;
+    ASSERT_EQ(std::string::npos, resolved.find("proxy-only-target.invalid"))
+        << "Resolved address contains target host: " << resolved;
+}
+
 TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
 {
     /// Regression test for the PR's core fallback path: when the first resolved
