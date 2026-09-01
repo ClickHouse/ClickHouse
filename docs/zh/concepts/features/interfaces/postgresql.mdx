@@ -6,17 +6,17 @@ title: 'PostgreSQL 接口'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
 <Tip>
-  了解我们的 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 服务。它采用与计算资源物理同置的 NVMe 存储，相比使用 EBS 等网络附加存储的替代方案，对于受磁盘 I/O 限制的工作负载，性能最高可提升 10 倍，并支持您通过 ClickPipes 中的 Postgres CDC 连接器将 Postgres 数据复制到 ClickHouse。
+  了解我们的 [Managed Postgres](/zh/products/managed-postgres/overview) 服务。它采用与计算资源物理同置的 NVMe 存储，相比使用 EBS 等网络附加存储的替代方案，对于受磁盘 I/O 限制的工作负载，性能最高可提升 10 倍，并支持您通过 ClickPipes 中的 Postgres CDC 连接器将 Postgres 数据复制到 ClickHouse。
 </Tip>
 
 ClickHouse 支持 PostgreSQL wire 协议，因此您可以使用 Postgres 客户端连接到 ClickHouse。从某种意义上说，ClickHouse 可以充当一个 PostgreSQL 实例，使您能够将 PostgreSQL 客户端应用程序连接到 ClickHouse，即使该应用程序尚未获得 ClickHouse 的直接支持 (例如 Amazon Redshift) 。
 
-要启用 PostgreSQL wire 协议，请将 [postgresql&#95;port](/zh/reference/settings/server-settings/settings/postgresql#postgresql_port) 设置添加到服务器的配置文件中。例如，您可以在 `config.d` 文件夹中新建一个 XML 文件来定义该端口：
+要启用 PostgreSQL wire 协议，请将 [postgresql&#95;port](/zh/reference/settings/server-settings/settings#postgresql_port) 设置添加到服务器的配置文件中。例如，您可以在 `config.d` 文件夹中新建一个 XML 文件来定义该端口：
 
 ```xml
 <clickhouse>

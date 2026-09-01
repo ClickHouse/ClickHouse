@@ -35,7 +35,9 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
 * Espaço em disco suficiente para os arquivos de log
 
 <Steps>
-  <Step title="Configure o logging do PostgreSQL" id="configure-postgres">
+  <Step>
+    #### Configure o logging do PostgreSQL
+
     O PostgreSQL oferece suporte a vários formatos de log. Para o parsing estruturado com OpenTelemetry, recomendamos o formato CSV, que fornece uma saída consistente e fácil de analisar.
 
     O arquivo `postgresql.conf` normalmente fica em:
@@ -47,19 +49,19 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     Adicione ou modifique estas configurações em `postgresql.conf`:
 
     ```conf
-    # Required for CSV logging
+    # Necessário para logging em CSV
     logging_collector = on
     log_destination = 'csvlog'
 
-    # Recommended: Connection logging
+    # Recomendado: logging de conexão
     log_connections = on
     log_disconnections = on
 
-    # Optional: Tune based on your monitoring needs
-    #log_min_duration_statement = 1000  # Log queries taking more than 1 second
-    #log_statement = 'ddl'               # Log DDL statements (CREATE, ALTER, DROP)
-    #log_checkpoints = on                # Log checkpoint activity
-    #log_lock_waits = on                 # Log lock contention
+    # Opcional: ajuste conforme suas necessidades de monitoramento
+    #log_min_duration_statement = 1000  # Registra queries que levam mais de 1 segundo
+    #log_statement = 'ddl'               # Registra instruções DDL (CREATE, ALTER, DROP)
+    #log_checkpoints = on                # Registra atividade de checkpoint
+    #log_lock_waits = on                 # Registra contenção de lock
     ```
 
     <Note>
@@ -69,17 +71,17 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     Após fazer essas alterações, reinicie o PostgreSQL:
 
     ```bash
-    # For systemd
+    # Para systemd
     sudo systemctl restart postgresql
 
-    # For Docker
+    # Para Docker
     docker restart 
     ```
 
     Verifique se os logs estão sendo gravados:
 
     ```bash
-    # Default log location on Linux
+    # Localização padrão dos logs no Linux
     tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
 
     # macOS Homebrew
@@ -87,7 +89,9 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     ```
   </Step>
 
-  <Step title="Crie uma configuração personalizada do OTel collector" id="custom-otel">
+  <Step>
+    #### Crie uma configuração personalizada do OTel collector
+
     O ClickStack permite estender a configuração padrão do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente. A configuração personalizada é mesclada à configuração padrão gerenciada pelo HyperDX via OpAMP.
 
     Crie um arquivo chamado `postgres-logs-monitoring.yaml` com a configuração a seguir:
@@ -96,7 +100,7 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     receivers:
       filelog/postgres:
         include:
-          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Adjust to match your PostgreSQL installation
+          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Ajuste conforme a sua instalação do PostgreSQL
         start_at: end
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
@@ -149,7 +153,9 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     </Note>
   </Step>
 
-  <Step title="Configure o ClickStack para carregar uma configuração personalizada" id="load-custom">
+  <Step>
+    #### Configure o ClickStack para carregar uma configuração personalizada
+
     Para habilitar uma configuração personalizada do collector na implantação existente do ClickStack, você deve:
 
     1. Montar o arquivo de configuração personalizado em `/etc/otelcol-contrib/custom.config.yaml`
@@ -163,14 +169,14 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... configuração existente ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... outras variáveis de ambiente ...
         volumes:
           - ./postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/lib/postgresql:/var/lib/postgresql:ro
-          # ... other volumes ...
+          # ... outros volumes ...
     ```
 
     ##### Opção 2: Docker Run (Imagem all-in-one)
@@ -191,7 +197,9 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     </Note>
   </Step>
 
-  <Step title="Verificando logs no HyperDX" id="verifying-logs">
+  <Step>
+    #### Verificando logs no HyperDX
+
     Depois de configurar, entre no HyperDX e verifique se os logs estão chegando:
 
     1. Acesse a Search view
@@ -212,7 +220,9 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
 Para usuários que querem testar a integração de logs do PostgreSQL antes de configurar seus sistemas de produção, fornecemos um conjunto de dados de exemplo com logs do PostgreSQL pré-gerados e padrões realistas.
 
 <Steps>
-  <Step title="Baixe o conjunto de dados de exemplo" id="download-sample">
+  <Step>
+    #### Baixe o conjunto de dados de exemplo
+
     Baixe o arquivo de log de exemplo:
 
     ```bash
@@ -220,7 +230,9 @@ Para usuários que querem testar a integração de logs do PostgreSQL antes de c
     ```
   </Step>
 
-  <Step title="Crie a configuração do collector de teste" id="test-config">
+  <Step>
+    #### Crie a configuração do coletor de teste
+
     Crie um arquivo chamado `postgres-logs-demo.yaml` com a configuração a seguir:
 
     ```yaml
@@ -265,7 +277,9 @@ Para usuários que querem testar a integração de logs do PostgreSQL antes de c
     ```
   </Step>
 
-  <Step title="Execute o ClickStack com a configuração de demonstração" id="run-demo">
+  <Step>
+    #### Execute o ClickStack com a configuração de demonstração
+
     Execute o ClickStack com os logs e a configuração de demonstração:
 
     ```bash
@@ -278,7 +292,9 @@ Para usuários que querem testar a integração de logs do PostgreSQL antes de c
     ```
   </Step>
 
-  <Step title="Verifique os logs no HyperDX" id="verify-demo-logs">
+  <Step>
+    #### Verifique os logs no HyperDX
+
     Quando o ClickStack estiver em execução:
 
     1. Abra o [HyperDX](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
@@ -304,11 +320,13 @@ Para usuários que querem testar a integração de logs do PostgreSQL antes de c
 Para ajudar você a começar a monitorar o PostgreSQL com o ClickStack, fornecemos visualizações essenciais dos logs do PostgreSQL.
 
 <Steps>
-  <Step title="Baixar a configuração do dashboard" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Baixar o arquivo de configuração do dashboard</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Baixar</TrackedLink> a configuração do dashboard
   </Step>
 
-  <Step title="Importe o dashboard pré-configurado" id="import-dashboard">
+  <Step>
+    #### Importe o dashboard pré-configurado
+
     1. Abra o HyperDX e navegue até a seção Dashboards
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
@@ -319,7 +337,9 @@ Para ajudar você a começar a monitorar o PostgreSQL com o ClickStack, fornecem
     <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="Concluir importação" />
   </Step>
 
-  <Step title="Visualize o dashboard" id="created-dashboard">
+  <Step>
+    #### Visualize o dashboard
+
     O dashboard será criado com todas as visualizações pré-configuradas:
 
     <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="Dashboard de logs" />
@@ -385,4 +405,4 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
   ## Colocando em produção
 </div>
 
-Este guia usa o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel collector e enviar dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para ver a configuração de produção.

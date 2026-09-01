@@ -46,11 +46,7 @@ SELECT
 
 تعطي هذه الدالة النتيجة نفسها التي تعطيها `now('UTC')`. وقد أُضيفت فقط لدعم MySQL. ويُعد [`now`](#now) الخيار المفضّل.
 
-<Note>
-  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
-</Note>
-
-**الصيغة**
+**الصياغة**
 
 ```sql
 UTCTimestamp()
@@ -58,7 +54,7 @@ UTCTimestamp()
 
 **الأسماء المستعارة**: `UTC_timestamp`
 
-**الوسائط**
+**المعاملات**
 
 * لا يوجد.
 
@@ -403,7 +399,7 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
 addInterval(interval_1, interval_2)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `interval_1` — قيمة Interval الأولى أو `Tuple` من قيم `Interval`. [`Interval`](/ar/reference/data-types/int-uint) أو [`Tuple(Interval)`](/ar/reference/data-types/tuple)
 * `interval_2` — قيمة Interval الثانية المراد إضافتها. [`Interval`](/ar/reference/data-types/int-uint)
@@ -1652,8 +1648,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                  │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromDaysSinceYearZero">
@@ -1847,9 +1843,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
-│                                                   2023-03-16 18:00:00.000 │
-└───────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
+│                                                 2023-03-16 18:00:00.000 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromUnixTimestamp">
@@ -1965,17 +1961,13 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
 يعيد الوقت الحالي من اليوم وفق المنطقة الزمنية الخاصة بالخادم (أو الجلسة) في لحظة تحليل الاستعلام.
 الدالة تعبير ثابت. وهي `LOCALTIME` القياسية في SQL / PostgreSQL، وتكافئ `CAST(now() AS Time)`.
 
-<Note>
-  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسائط نفسها.
-</Note>
-
 **البنية**
 
 ```sql
 localtime()
 ```
 
-**الوسائط**
+**المعاملات**
 
 * لا يوجد.
 
@@ -2238,11 +2230,7 @@ SELECT monthName(date_value)
 
 تعيد التاريخ والوقت الحاليين عند لحظة تحليل الاستعلام. الدالة تعبير ثابت.
 
-<Note>
-  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة لنفس الوسائط.
-</Note>
-
-**البنية**
+**الصياغة**
 
 ```sql
 now([timezone])
@@ -2304,17 +2292,13 @@ SELECT NOW, CURRENT_TIMESTAMP
 
 تعيد التاريخ والوقت الحاليَّين بدقة أجزاء الثانية عند لحظة تحليل الاستعلام. الدالة تعبير ثابت.
 
-<Note>
-  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
-</Note>
-
 **البنية**
 
 ```sql
 now64([scale[, timezone]])
 ```
 
-**الوسائط**
+**المعاملات**
 
 * `scale` — اختياري. حجم الخطوة (الدقة): `10^-precision` ثانية. النطاق الصالح: [0 : 9]. تُستخدم عادةً القيم 3 (افتراضي) (مللي ثانية)، و6 (ميكروثانية)، و9 (نانوثانية). [`UInt8`](/ar/reference/data-types/int-uint)
 * `timezone` — اختياري. اسم المنطقة الزمنية للقيمة المُعادة. [`String`](/ar/reference/data-types/string)
@@ -2347,17 +2331,13 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
 
 من المنطقي استخدام هذه الدالة لتوليد الوقت الحالي في استعلامات `INSERT SELECT` طويلة التشغيل.
 
-<Note>
-  هذه الدالة غير حتمية: يمكنها إرجاع نتائج مختلفة للوسائط نفسها.
-</Note>
-
 **البنية**
 
 ```sql
 nowInBlock([timezone])
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `timezone` — اختياري. اسم المنطقة الزمنية للقيمة المعادة. [`String`](/ar/reference/data-types/string)
 
@@ -2396,10 +2376,6 @@ FORMAT PrettyCompactMonoBlock
 تعيد التاريخ والوقت الحاليين عند معالجة كل كتلة من البيانات، وذلك بالمللي ثانية. وعلى خلاف الدالة [now64](#now64)، فهي ليست تعبيرًا ثابتًا، وستكون القيمة المُعادة مختلفة من كتلة إلى أخرى في الاستعلامات طويلة التشغيل.
 
 يُستحسن استخدام هذه الدالة لتوليد الوقت الحالي في استعلامات `INSERT SELECT` طويلة التشغيل.
-
-<Note>
-  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للمعاملات نفسها.
-</Note>
 
 **الصياغة**
 
@@ -2444,12 +2420,8 @@ FORMAT PrettyCompactMonoBlock
 
 أُضيفت في: v23.6.0
 
-تُرجِع المنطقة الزمنية للخادم، أي قيمة إعداد [`timezone`](/ar/reference/settings/server-settings/settings/other#timezone).
+تُرجِع المنطقة الزمنية للخادم، أي قيمة إعداد [`timezone`](/ar/reference/settings/server-settings/settings#timezone).
 إذا نُفِّذت الدالة في سياق جدول موزّع، فإنها تُنشئ عمودًا عاديًا بقيم تخص كل shard. وإلا، فإنها تُنتج قيمة ثابتة.
-
-<Note>
-  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسائط نفسها.
-</Note>
 
 **الصيغة**
 
@@ -2967,7 +2939,7 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 nanosecond)
 subtractQuarters(datetime, num)
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * `datetime` — تاريخ أو تاريخ مع وقت يُطرح منه العدد المحدد من أرباع السنة. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`String`](/ar/reference/data-types/string)
 * `num` — عدد أرباع السنة المراد طرحه. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
@@ -3004,9 +2976,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
-│                                               1995-12-16 │
-└──────────────────────────────────────────────────────────┘
+┌─minus(CAST('1⋯Quarter(10))─┐
+│                1996-09-16 │
+└───────────────────────────┘
 ```
 
 <div id="subtractSeconds">
@@ -3295,7 +3267,7 @@ SELECT
   فإن تمرير قيمة وقت تقع خارج النطاق المعتاد إليها (من عام 1970 إلى 2149 بالنسبة إلى `Date` / وحتى 2106 بالنسبة إلى `DateTime`) سيؤدي إلى نتائج غير صحيحة.
 </Note>
 
-**البنية**
+**الصياغة**
 
 ```sql
 timeSlot(time[, time_zone])
@@ -3433,11 +3405,7 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 تعيد اسم المنطقة الزمنية للجلسة الحالية، أو تحوّل إزاحة منطقة زمنية
 أو اسمها إلى الاسم القياسي للمنطقة الزمنية.
 
-<Note>
-  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
-</Note>
-
-**البنية**
+**الصيغة**
 
 ```sql
 timezone()
@@ -3445,7 +3413,7 @@ timezone()
 
 **الأسماء البديلة**: `timeZone`
 
-**الوسيطات**
+**الوسائط**
 
 * لا توجد.
 
@@ -3898,10 +3866,10 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 يُقرِّب قيمة من نوع تاريخ أو تاريخ مع وقت إلى آخر يوم في الشهر.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع من خلال الإعداد [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع من خلال الإعداد [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
-**البنية**
+**الصياغة**
 
 ```sql
 toLastDayOfMonth(value)
@@ -3909,7 +3877,7 @@ toLastDayOfMonth(value)
 
 **الأسماء المستعارة**: `LAST_DAY`
 
-**الوسيطات**
+**الوسائط**
 
 * `value` — التاريخ أو التاريخ مع الوقت المطلوب تقريبه للأعلى إلى آخر يوم من الشهر. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 
@@ -3940,7 +3908,7 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 يُقرِّب تاريخًا أو تاريخًا ووقتًا إلى أقرب يوم سبت أو أحد.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع عبر ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع عبر ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **البنية**
@@ -4180,7 +4148,7 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
 يُقرِّب التاريخ أو التاريخ مع الوقت نزولًا إلى يوم الاثنين من الأسبوع نفسه. ويُرجع التاريخ.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع عبر تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع عبر تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **البنية**
@@ -4712,7 +4680,7 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 يقرّب قيمة تاريخ ووقت نزولًا إلى بداية اليوم.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع عبر تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع عبر تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **الصيغة**
@@ -4749,10 +4717,10 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 
 أُضيفت في: v1.1.0
 
-يقرّب نزولًا قيمة التاريخ والوقت إلى بداية الفاصل الزمني البالغ خمس عشرة دقيقة.
+تُنزِّل قيمة التاريخ والوقت إلى بداية الفاصل الزمني البالغ خمس عشرة دقيقة.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع عبر تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع عبر تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **الصياغة**
@@ -4798,7 +4766,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 تُقرِّب قيمة تاريخ ووقت نزولًا إلى بداية فترة الخمس دقائق الأقرب.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع من خلال الإعداد [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع من خلال الإعداد [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **البنية**
@@ -4846,7 +4814,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 يقرّب تاريخًا ووقتًا نزولًا إلى بداية الساعة.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع من خلال ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع من خلال ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **الصيغة**
@@ -4884,10 +4852,10 @@ SELECT
 
 أُضيفت في: v1.1.0
 
-يقرّب نزولًا تاريخًا أو تاريخًا يتضمن وقتًا إلى اليوم الأول من سنة ISO، والتي قد تختلف عن السنة الميلادية العادية. راجع [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
+يُنزل تاريخًا أو تاريخًا يتضمن وقتًا إلى اليوم الأول من سنة ISO، والتي قد تختلف عن السنة الميلادية العادية. راجع [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
 
 <Note>
-  يمكن تهيئة نوع الإرجاع عن طريق ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع عن طريق ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **البنية**
@@ -4962,9 +4930,9 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**الأسماء البديلة**: `date_bin`, `time_bucket`
+**الأسماء البديلة**: `time_bucket`, `date_bin`
 
-**الوسيط**
+**المعاملات**
 
 * `value` — قيمة تاريخ أو تاريخ مع وقت تُقرَّب نزولًا. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `x` — رقم يمثّل طول الفاصل الزمني. - `unit` — وحدة الفاصل الزمني: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — اختياري. اسم المنطقة الزمنية كسلسلة نصية. - `origin` — اختياري. نقطة بدء الحساب (في التوقيع الثاني فقط).
@@ -5110,7 +5078,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 تُقرِّب قيمة تاريخية تتضمن وقتًا نزولًا إلى بداية الدقيقة.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع عن طريق ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع عن طريق ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **الصياغة**
@@ -5154,7 +5122,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 يقرّب تاريخًا أو تاريخًا مع وقت إلى اليوم الأول من الشهر.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع من خلال إعداد [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع من خلال إعداد [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **الصيغة**
@@ -5245,7 +5213,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 يقرّب تاريخًا أو قيمة تاريخ ووقت نزولًا إلى اليوم الأول من الربع. ويكون اليوم الأول من الربع أحد التواريخ التالية: 1 يناير، أو 1 أبريل، أو 1 يوليو، أو 1 أكتوبر.
 
 <Note>
-  يمكن ضبط نوع الإرجاع عن طريق تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن ضبط نوع الإرجاع عن طريق تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **الصيغة**
@@ -5336,7 +5304,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 يقرّب قيمة تاريخ مع وقت بالتنزيل إلى بداية أقرب فترة من عشر دقائق.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع عن طريق تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع القيمة المعادة عن طريق تعيين [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **البنية**
@@ -5382,10 +5350,10 @@ toStartOfTenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 يُقرِّب قيمة من نوع تاريخ أو تاريخ مع وقت نزولًا إلى أقرب يوم أحد أو اثنين.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع من خلال ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع من خلال ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
-**البنية**
+**الصيغة**
 
 ```sql
 toStartOfWeek(datetime[, mode[, timezone]])
@@ -5427,12 +5395,12 @@ Row 1:
   ## toStartOfYear
 </div>
 
-أُضيف في: v1.1.0
+قُدِّمت في: v1.1.0
 
 تُنزِّل قيمة من نوع تاريخ أو تاريخ مع وقت إلى اليوم الأول من السنة. وتُرجِع التاريخ ككائن `Date`.
 
 <Note>
-  يمكن تهيئة نوع الإرجاع عبر ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+  يمكن تهيئة نوع الإرجاع عبر ضبط [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
 </Note>
 
 **البنية**
@@ -5441,7 +5409,7 @@ Row 1:
 toStartOfYear(value)
 ```
 
-**الوسيطات**
+**المعاملات**
 
 * `value` — التاريخ أو التاريخ مع الوقت المراد تقريبه لأسفل. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 
@@ -5467,37 +5435,29 @@ SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
   ## toTimeWithFixedDate
 </div>
 
-أُضيفت في: v25.5.0
+أُضيفت في: v1.1.0
 
-تستخرج مكوّن الوقت من تاريخ ووقت.
+تستخرج مكوّن الوقت من تاريخ أو تاريخ ووقت.
 النتيجة المُعادة هي إزاحة إلى نقطة زمنية ثابتة، وهي حاليًا `1970-01-02`،
-لكن النقطة الزمنية الدقيقة هي تفصيل من تفاصيل التنفيذ وقد تتغير مستقبلًا.
+لكن النقطة الزمنية الدقيقة هي تفصيل تنفيذي قد يتغير مستقبلًا.
 
-لذلك، لا ينبغي استخدام `toTimeWithFixedDate` بمفردها.
-الغرض الرئيسي من الدالة هو حساب الفرق الزمني بين قيمتين من نوع التاريخ والوقت، مثل: `toTimeWithFixedDate(dt1) - toTimeWithFixedDate(dt2)`.
-
-هذه هي الدالة القديمة `toTime` التي أُعيدت تسميتها في v25.5 لأن الاسم `toTime` يُستخدم الآن من قِبل
-[`toTime`](/ar/reference/functions/regular-functions/type-conversion-functions#toTime)، التي تحوّل القيم إلى
-نوع البيانات [`Time`](/ar/reference/data-types/time).
-ولا يزال بالإمكان الوصول إليها باسمها القديم `toTime` عند تمكين الإعداد
-[`use_legacy_to_time`](/ar/reference/settings/session-settings#use_legacy_to_time) (قيمته الافتراضية هي `0` منذ v26.7، لكنها كانت `1` من v25.6 إلى v26.6).
-
-إذا كانت الوسيطة `datetime` تحتوي على مكوّنات دون الثانية، فستُحذف من قيمة `DateTime` المُعادة، التي تبلغ دقتها ثانية واحدة.
+لذلك، لا ينبغي استخدام `toTime` بشكل مستقل.
+الغرض الرئيسي من هذه الدالة هو حساب فرق الوقت بين تاريخين أو قيمتين من نوع تاريخ ووقت، مثل: `toTime(dt1) - toTime(dt2)`.
 
 **البنية**
 
 ```sql
-toTimeWithFixedDate(datetime[, timezone])
+toTimeWithFixedDate(date[, timezone])
 ```
 
-**الوسيطات**
+**الوسائط**
 
-* `datetime` — تاريخ ووقت لتحويله إلى وقت. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `date` — التاريخ المراد تحويله إلى وقت. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `timezone` — اختياري. المنطقة الزمنية للقيمة المُعادة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تعيد مكوّن الوقت من تاريخ ووقت على شكل إزاحة عن نقطة زمنية ثابتة (المحددة حاليًا بـ 1970-01-02). [`DateTime`](/ar/reference/data-types/datetime)
+يعيد مكوّن الوقت من قيمة تاريخ أو تاريخ ووقت، على هيئة إزاحة بالنسبة إلى نقطة زمنية ثابتة (المحددة حاليًا بـ 1970-01-02). [`DateTime`](/ar/reference/data-types/datetime)
 
 **أمثلة**
 
@@ -5511,31 +5471,6 @@ SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDat
 ┌─result─┬─toTypeName(result)─┐
 │   3600 │ Int32              │
 └────────┴────────────────────┘
-```
-
-**تُهمل الأجزاء الأصغر من الثانية**
-
-```sql title=Query
-SELECT toTimeWithFixedDate(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
-```
-
-```response title=Response
-┌──────────────result─┬─toTypeName(result)─┐
-│ 1970-01-02 01:20:30 │ DateTime           │
-└─────────────────────┴────────────────────┘
-```
-
-**الدالة نفسها تُستدعى باسمها القديم legacy**
-
-```sql title=Query
-SET use_legacy_to_time = 1;
-SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
-```
-
-```response title=Response
-┌──────────────result─┬─toTypeName(result)─┐
-│ 1970-01-02 01:20:30 │ DateTime           │
-└─────────────────────┴────────────────────┘
 ```
 
 <div id="toTimezone">
@@ -5631,8 +5566,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                       2023-03-15 16:00:00 │
-└───────────────────────────────────────────────────────────┘
+│                                     2023-03-15 16:00:00 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp">
@@ -5697,9 +5632,9 @@ from_date32:     1509840000
 
 تُعد [`toISOWeek()`](#toWeek) دالة توافقية مكافئة لـ `toWeek(date,3)`.
 
-يوضح الجدول التالي كيفية عمل وسيطة الوضع.
+يوضح الجدول التالي كيفية عمل وسيطة mode.
 
-| وضع | اليوم الأول من الأسبوع | النطاق | الأسبوع 1 هو أول أسبوع ...            |
+| Mode | اليوم الأول من الأسبوع | النطاق | الأسبوع 1 هو أول أسبوع ...            |
 | ---- | ---------------------- | ------ | ------------------------------------- |
 | 0    | الأحد                  | 0-53   | يحتوي على يوم أحد في هذه السنة        |
 | 1    | الاثنين                | 0-53   | يحتوي على 4 أيام أو أكثر في هذه السنة |
@@ -5712,18 +5647,18 @@ from_date32:     1509840000
 | 8    | الأحد                  | 1-53   | يتضمن 1 يناير                         |
 | 9    | الاثنين                | 1-53   | يتضمن 1 يناير                         |
 
-بالنسبة إلى قيم الوضع التي يكون معناها &quot;يحتوي على 4 أيام أو أكثر في هذه السنة&quot;، تُرقَّم الأسابيع وفقًا للمعيار ISO 8601:1988:
+بالنسبة إلى قيم mode التي يكون معناها &quot;يحتوي على 4 أيام أو أكثر في هذه السنة&quot;، تُرقَّم الأسابيع وفقًا للمعيار ISO 8601:1988:
 
 * إذا كان الأسبوع الذي يتضمن 1 يناير يحتوي على 4 أيام أو أكثر في السنة الجديدة، فهو الأسبوع 1.
 * وإلا، فهو الأسبوع الأخير من السنة السابقة، ويكون الأسبوع التالي هو الأسبوع 1.
 
-بالنسبة إلى قيم الوضع التي يكون معناها &quot;يتضمن 1 يناير&quot;، فإن الأسبوع الذي يتضمن 1 يناير هو الأسبوع 1.
+بالنسبة إلى قيم mode التي يكون معناها &quot;يتضمن 1 يناير&quot;، فإن الأسبوع الذي يتضمن 1 يناير هو الأسبوع 1.
 ولا يهم عدد الأيام من السنة الجديدة التي يتضمنها ذلك الأسبوع، حتى لو كان يتضمن يومًا واحدًا فقط.
 أي إذا كان الأسبوع الأخير من ديسمبر يتضمن 1 يناير من السنة التالية، فسيكون هو الأسبوع 1 من السنة التالية.
 
-يمكن أيضًا تحديد الوسيطة الأولى على أنها [`String`](/ar/reference/data-types/string) بتنسيق تدعمه [`parseDateTime64BestEffort`](/ar/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). يوجد دعم لوسائط السلاسل النصية فقط لأسباب تتعلق بالتوافق مع MySQL، كما تتطلبه بعض أدوات الجهات الخارجية. ونظرًا إلى أن دعم وسائط السلاسل النصية قد يصبح في المستقبل معتمدًا على إعدادات جديدة للتوافق مع MySQL، ولأن تحليل السلاسل النصية بطيء عمومًا، يُوصى بعدم استخدامه.
+يمكن أيضًا تحديد الوسيطة الأولى على أنها [`String`](/ar/reference/data-types/string) بتنسيق تدعمه [`parseDateTime64BestEffort()`](/ar/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). يوجد دعم لوسائط السلاسل النصية فقط لأسباب تتعلق بالتوافق مع MySQL، كما تتطلبه بعض أدوات الجهات الخارجية. ونظرًا إلى أن دعم وسائط السلاسل النصية قد يصبح في المستقبل معتمدًا على إعدادات جديدة للتوافق مع MySQL، ولأن تحليل السلاسل النصية بطيء عمومًا، يُوصى بعدم استخدامه.
 
-**بنية**
+**الصياغة**
 
 ```sql
 toWeek(datetime[, mode[, time_zone]])
@@ -5733,16 +5668,16 @@ toWeek(datetime[, mode[, time_zone]])
 
 **الوسيطات**
 
-* `datetime` — ‏`Date` أو تاريخ ووقت لاستخراج رقم الأسبوع منه. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
-* `mode` — اختياري. يحدد الوضع من `0` إلى `9` اليوم الأول من الأسبوع ونطاق رقم الأسبوع. القيمة الافتراضية هي `0`. - `time_zone` — اختياري. المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
+* `datetime` — ‏`Date` أو تاريخ مع وقت لاستخراج رقم الأسبوع منه. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `mode` — اختياري. يحدد النمط من `0` إلى `9` اليوم الأول من الأسبوع ونطاق رقم الأسبوع. القيمة الافتراضية هي `0`. - `time_zone` — اختياري. المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-يعيد رقم الأسبوع وفقًا للوضع المحدد. [`UInt32`](/ar/reference/data-types/int-uint)
+يعيد رقم الأسبوع وفقًا للنمط المحدد. [`UInt32`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
-**الحصول على أرقام الأسابيع باستخدام أوضاع مختلفة**
+**الحصول على أرقام الأسابيع باستخدام أنماط مختلفة**
 
 ```sql title=Query
 SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9
@@ -5949,24 +5884,24 @@ SELECT toYearNumSinceEpoch(toDate('2024-10-01'))
 
 تعيد هذه الدالة السنة ورقم الأسبوع لتاريخٍ ما. وقد تختلف السنة في النتيجة عن السنة في وسيطة التاريخ في الأسبوع الأول والأسبوع الأخير من السنة.
 
-تعمل وسيطة الوضع بالطريقة نفسها التي تعمل بها وسيطة الوضع في [`toWeek()`](/ar/reference/functions/regular-functions/date-time-functions#toWeek).
+تعمل الوسيطة mode بالطريقة نفسها التي تعمل بها الوسيطة mode في [`toWeek()`](/ar/reference/functions/regular-functions/date-time-functions#toWeek).
 
 تحذير: قد يختلف رقم الأسبوع الذي تُعيده `toYearWeek()` عن الرقم الذي تُعيده `toWeek()`. إذ تُعيد `toWeek()` دائمًا رقم الأسبوع ضمن سياق السنة المحددة، وإذا أعادت `toWeek()` القيمة `0`، فإن `toYearWeek()` تُعيد القيمة المقابلة لآخر أسبوع من السنة السابقة. راجع `prev_yearWeek` في المثال أدناه.
 
-يمكن أيضًا تحديد الوسيطة الأولى على أنها [`String`](/ar/reference/data-types/string) بتنسيق تدعمه [`parseDateTime64BestEffort`](/ar/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). ولا يوجد دعم لوسيطات السلاسل النصية إلا لأسباب تتعلق بالتوافق مع MySQL، كما تتطلبه بعض الأدوات الخارجية. ونظرًا إلى أن دعم وسائط السلاسل النصية قد يصبح في المستقبل معتمدًا على إعدادات جديدة للتوافق مع MySQL، ولأن تحليل السلاسل النصية بطيء عمومًا، يُوصى بعدم استخدامها.
+يمكن أيضًا تحديد الوسيطة الأولى على أنها [`String`](/ar/reference/data-types/string) بتنسيق تدعمه [`parseDateTime64BestEffort()`](/ar/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). ولا يوجد دعم لوسيطات السلاسل النصية إلا لأسباب تتعلق بالتوافق مع MySQL، كما تتطلبه بعض الأدوات الخارجية. ونظرًا إلى أن دعم وسائط السلاسل النصية قد يصبح في المستقبل معتمدًا على إعدادات جديدة للتوافق مع MySQL، ولأن تحليل السلاسل النصية بطيء عمومًا، يُوصى بعدم استخدامها.
 
-**بنية**
+**الصياغة**
 
 ```sql
 toYearWeek(datetime[, mode[, timezone]])
 ```
 
-**اسم بديل**: `yearweek`
+**الأسماء المستعارة**: `yearweek`
 
-**وسيطة**
+**الوسائط**
 
-* `datetime` — التاريخ أو تاريخ ووقت المراد استخراج السنة ورقم الأسبوع منه. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
-* `mode` — اختياري. يحدد الوضع من `0` إلى `9` اليوم الأول من الأسبوع ونطاق رقم الأسبوع. القيمة الافتراضية `0`. - `timezone` — اختياري. المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
+* `datetime` — التاريخ أو التاريخ مع الوقت المراد استخراج السنة ورقم الأسبوع منه. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `mode` — اختياري. يحدد النمط من `0` إلى `9` اليوم الأول من الأسبوع ونطاق رقم الأسبوع. القيمة الافتراضية `0`. - `timezone` — اختياري. المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -5974,7 +5909,7 @@ toYearWeek(datetime[, mode[, timezone]])
 
 **أمثلة**
 
-**الحصول على تركيبات السنة-الأسبوع باستخدام أوضاع مختلفة**
+**الحصول على تركيبات السنة-الأسبوع باستخدام أنماط مختلفة**
 
 ```sql title=Query
 SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9, toYearWeek(toDate('2022-01-01')) AS prev_yearWeek
@@ -5994,19 +5929,15 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 يعيد التاريخ الحالي وقت تحليل الاستعلام. وهو مطابق لـ `toDate(now())`.
 
-<Note>
-  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
-</Note>
-
-**البنية**
+**الصياغة**
 
 ```sql
 today()
 ```
 
-**الأسماء البديلة**: `current_date`, `curdate`
+**الأسماء البديلة**: `curdate`, `current_date`
 
-**الوسيطات**
+**المعاملات**
 
 * لا توجد.
 
@@ -6052,17 +5983,13 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 
 لا تقبل أي وسيطات وتُرجِع تاريخ الأمس في إحدى مراحل تحليل الاستعلام.
 
-<Note>
-  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسيطات نفسها.
-</Note>
-
 **البنية**
 
 ```sql
 yesterday()
 ```
 
-**الوسيطات**
+**المعاملات**
 
 * لا شيء.
 

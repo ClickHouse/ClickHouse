@@ -78,31 +78,3 @@ En plus du compte de service `clickhouse-management` créé via Terraform dans l
   * Identité cible de la stack de monitoring exécutée dans votre cluster. Utilisée pour lire et écrire dans le stockage à long terme des métriques d’un bucket GCS dédié à ce déploiement.
 * **Identité de gestion de l’exécution ClickHouse**
   * Utilisée par le contrôleur de gestion du plan de données à l’exécution de ClickHouse, qui gère les opérations courantes post-déploiement telles que la gestion des points de terminaison Private Service Connect, les ajustements du cycle de vie des buckets et les rotations de comptes de service.
-
-<div id="azure-roles-and-identities">
-  ## Rôles et identités Azure
-</div>
-
-<div id="onboarding-service-principal">
-  ### Principal de service d’onboarding
-</div>
-
-L’onboarding via le [module Terraform pour Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) provisionne une application mutualisée en tant qu’application d’entreprise (principal de service) dans votre locataire, conformément aux recommandations d’Azure relatives à l’authentification inter-locataires. Le principal de service se voit attribuer un rôle personnalisé respectant le principe du moindre privilège, limité à l’abonnement cible, avec les autorisations suivantes :
-
-* **Réseau** : Gérer le VNet, les sous-réseaux, les adresses IP publiques, les passerelles NAT, les groupes de sécurité réseau et les zones DNS qui hébergent votre infrastructure BYOC.
-* **Cluster** : Gérer les clusters AKS et les pools de nœuds.
-* **Storage** : Gérer les comptes de stockage et les conteneurs blob utilisés pour les données ClickHouse, les sauvegardes et les données de monitoring.
-* **Identité** : Gérer les identités managées attribuées par l’utilisateur et leurs informations d’identification fédérées au sein de l’abonnement.
-* **Autorisation** : Gérer les définitions de rôles personnalisés et les attributions de rôles. Toutes les autorisations sont limitées à l’abonnement cible : le rôle ne peut pas accéder aux ressources d’autres abonnements ou locataires.
-
-<div id="additional-managed-identities-created-by-the-controller">
-  ### Identités managées supplémentaires créées par le contrôleur
-</div>
-
-Lorsque vous provisionnez des services BYOC, le plan de contrôle de ClickHouse crée des identités managées affectées par l’utilisateur dans votre abonnement. Chacune est fédérée à un compte de service Kubernetes spécifique (identité de charge de travail) et dispose d’un ensemble d’autorisations restreint, dédié à un seul usage :
-
-* **Identité par service**
-  * Utilisée par chaque service ClickHouse pour accéder à son propre compte de stockage afin d’y stocker les données de table et les sauvegardes, via un rôle personnalisé de stockage Blob limité à ce compte de stockage.
-  * Lorsqu’un service est restauré à partir d’une sauvegarde, il reçoit également un accès en lecture seule au conteneur de sauvegarde du service source.
-* **Identité d’infrastructure partagée**
-  * Utilisée par le contrôleur de gestion du plan de données à l’exécution de ClickHouse pour les opérations courantes, telles que la gestion des services Private Link.

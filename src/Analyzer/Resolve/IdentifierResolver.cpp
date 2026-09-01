@@ -570,7 +570,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 }
 
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
-    const TableExpressionNodePtr & table_expression_node,
+    const QueryTreeNodePtr & table_expression_node,
     const IdentifierResolveScope & scope)
 {
     auto table_expression_node_type = table_expression_node->getNodeType();
@@ -592,17 +592,6 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
-    /** A materialized CTE is registered under an internal temporary table name, but queries refer to it
-      * by its CTE name, which is visible in the same way as a table name. Every place that decides whether
-      * an identifier binds to a table expression has to know that name, otherwise a column of another table
-      * expression is not qualified enough to be distinguished from the CTE columns, and a qualifier that
-      * matches both the CTE and a table is not reported as ambiguous.
-      */
-    std::string_view materialized_cte_name;
-    if (const auto * table_node = table_expression_node->as<TableNode>())
-        if (table_node->isMaterializedCTE())
-            materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
-
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
@@ -613,8 +602,6 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 table_expression_node->formatASTForErrorMessage());
 
         if (parts_size == 1 && path_start == table_name)
-            return true;
-        if (parts_size == 1 && !materialized_cte_name.empty() && path_start == materialized_cte_name)
             return true;
         if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return true;
@@ -630,9 +617,6 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
         return true;
 
-    if (!materialized_cte_name.empty() && path_start == materialized_cte_name)
-        return true;
-
     if (identifier.getPartsSize() == 2)
         return false;
 
@@ -643,7 +627,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
 }
 
 bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLookup & identifier_lookup,
-    const TableExpressionNodePtr & table_expression_node_to_ignore,
+    const QueryTreeNodePtr & table_expression_node_to_ignore,
     const IdentifierResolveScope & scope)
 {
     bool can_bind_identifier_to_table_expression = false;
@@ -684,7 +668,7 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const IdentifierLookup & identifier_lookup,
-    const TableExpressionNodePtr & table_expression_node,
+    const QueryTreeNodePtr & table_expression_node,
     const AnalysisTableExpressionData & table_expression_data,
     IdentifierResolveScope & scope,
     size_t identifier_column_qualifier_parts,
@@ -754,7 +738,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         std::unordered_set<Identifier> valid_identifiers;
         TypoCorrection::collectTableExpressionValidIdentifiers(
             identifier,
-            *table_expression_node,
+            table_expression_node,
             table_expression_data,
             valid_identifiers);
 
@@ -806,7 +790,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
-    const TableExpressionNodePtr & table_expression_node,
+    const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     auto table_expression_node_type = table_expression_node->getNodeType();
@@ -841,21 +825,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-
-        /** A materialized CTE is stored under an internal temporary table name, but it has to be addressable
-          * by its CTE name in the same way as by a table name. The qualifier of a qualified matcher is looked
-          * up as a table expression after the expression lookup misses, so without this the matcher variant
-          * of a materialized CTE reference is not resolved.
-          * Example: WITH cte AS MATERIALIZED (SELECT 42 AS id) SELECT cte.* FROM cte;
-          */
-        if (parts_size == 1 && table_expression_node_type == QueryTreeNodeType::TABLE)
-        {
-            const auto * table_node = table_expression_node->as<TableNode>();
-            if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
-                return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        }
-
-        return {};
+        else
+            return {};
     }
 
     /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
@@ -871,20 +842,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
         const bool prefix_matches_alias
             = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
-        /** A materialized CTE is stored under an internal temporary table name, so its `table_name` never
-          * matches the qualifier the user wrote. Its visible CTE name is a qualifier carrier just like a
-          * table name or an alias, and it has to take part in this compatibility path as well, otherwise
-          * `cte.id` prefers a same-named subcolumn of the CTE while the equivalent shape with a regular CTE
-          * or a table alias prefers the qualified column.
-          */
-        bool prefix_matches_cte_name = false;
-        if (table_expression_node_type == QueryTreeNodeType::TABLE)
-        {
-            const auto * table_node = table_expression_node->as<TableNode>();
-            prefix_matches_cte_name
-                = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
-        }
-        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
+        if (prefix_matches_table_name || prefix_matches_alias)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
@@ -921,104 +879,20 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
 
     const auto & table_name = table_expression_data.table_name;
-    const auto & database_name = table_expression_data.database_name;
-
-    /** The identifier first part can match a table name or an alias of one table expression and at the same
-      * time be the database name of some table expression in the scope. Then the identifier as a whole can be
-      * qualified with the table name or the alias, with the database name and the table name, or refer to
-      * another table expression from that database.
-      * Resolution with a single-part qualifier is attempted first, but it must be allowed to fail, so that the
-      * other interpretations are attempted next.
-      * Example: SELECT db1.db1.id FROM db1.db1;
-      * Example: SELECT db1.tbl.id FROM db1.db1 JOIN db1.tbl USING (id);
-      * Example: SELECT db1.tbl.id FROM (SELECT 1 AS id) AS db1 JOIN db1.tbl USING (id);
-      * Parent scopes participate as well: resolution from a parent scope (a correlated identifier) is
-      * attempted only after the current scope returns no result, so an early exception here would make
-      * the outer interpretation unreachable.
-      * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
-      * The fall-through is only valid when there is an actual database-and-table interpretation to try:
-      * some table expression in this scope or in a parent scope is the table `identifier[1]` inside the
-      * database `path_start`. Without such a candidate a failed lookup must throw as before; e.g. a
-      * two-part `db.x` against the table `db` with no table `x` in the database `db` must not fall
-      * through to a column literally named `db.x` of a sibling table expression.
-      * For a two-part identifier the database-and-table interpretation is the table expression itself,
-      * which is not a valid column expression, so an expression lookup must still throw
-      * (e.g. plain `db.db` selected from the table `db.db`). The only exception is the qualifier of
-      * a qualified matcher (`db.db.*`): it is resolved as an expression first, and that lookup must be
-      * allowed to fail so that the matcher can resolve the qualifier as a table expression next.
-      * The candidate check is evaluated lazily, only after a failed qualifier lookup, to avoid
-      * scanning the scope chain on the hot path of successful resolution.
-      */
-    auto identifier_can_fall_through_to_database_and_table = [&]() -> bool
-    {
-        if (identifier.getPartsSize() == 2 && !identifier_lookup.is_matcher_qualifier)
-            return false;
-
-        for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
-        {
-            for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
-            {
-                if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
-                    && identifier[1] == other_table_expression_data.table_name)
-                    return true;
-            }
-        }
-
-        return false;
-    };
-
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
-    {
-        auto lookup_result = tryResolveIdentifierFromStorage(
-            identifier_lookup,
-            table_expression_node,
-            table_expression_data,
-            scope,
-            1 /*identifier_column_qualifier_parts*/,
-            true /*can_be_not_found*/);
-
-        if (lookup_result.resolved_identifier)
-            return lookup_result;
-
-        /// No other interpretation is possible: repeat the lookup to throw the proper exception.
-        if (!identifier_can_fall_through_to_database_and_table())
-            return tryResolveIdentifierFromStorage(
-                identifier_lookup,
-                table_expression_node,
-                table_expression_data,
-                scope,
-                1 /*identifier_column_qualifier_parts*/);
-    }
+        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
     {
         auto * table_node = table_expression_node->as<TableNode>();
         if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
-        {
-            auto lookup_result = tryResolveIdentifierFromStorage(
-                identifier_lookup,
-                table_expression_node,
-                table_expression_data,
-                scope,
-                1 /*identifier_column_qualifier_parts*/,
-                true /*can_be_not_found*/);
-
-            if (lookup_result.resolved_identifier)
-                return lookup_result;
-
-            if (!identifier_can_fall_through_to_database_and_table())
-                return tryResolveIdentifierFromStorage(
-                    identifier_lookup,
-                    table_expression_node,
-                    table_expression_data,
-                    scope,
-                    1 /*identifier_column_qualifier_parts*/);
-        }
+            return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
     }
 
     if (identifier.getPartsSize() == 2)
         return {};
 
+    const auto & database_name = table_expression_data.database_name;
     if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
@@ -1082,17 +956,15 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
-    const TableExpressionNodePtr & table_expression_node,
+    const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     const auto & from_cross_join_node = table_expression_node->as<const CrossJoinNode &>();
     bool prefer_left_table = scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table];
 
     IdentifierResolveResult resolve_result;
-    size_t num_tables = from_cross_join_node.getChildren().size();
-    for (size_t i = 0; i < num_tables; ++i)
+    for (const auto & expr : from_cross_join_node.getTableExpressions())
     {
-        auto expr = from_cross_join_node.getTableExpressionTypedAt(i);
         auto identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, expr, scope);
         if (!identifier)
             continue;
@@ -1156,67 +1028,6 @@ static bool resolvedIdenfiersFromJoinAreEquals(
     return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
 }
 
-/** For an INNER JOIN with an ON expression, an unqualified identifier that resolves to a column on
-  * both sides is not truly ambiguous when the two columns are equated by a top-level `equals` conjunct
-  * of the ON condition: every joined row then has equal values on both sides, so resolving to either
-  * side yields the same result.
-  *
-  * This holds only for INNER joins (for OUTER joins the non-preserved side becomes default/NULL on
-  * unmatched rows) and only when the equality is reachable through a chain of `and` (an equality under
-  * `or` does not guarantee equal values), so we recurse through `and` and require a direct `equals` of
-  * the two resolved columns.
-  *
-  * Example: SELECT id FROM a INNER JOIN b ON a.id = b.id;
-  */
-static bool innerJoinKeyColumnsAreEquated(
-    const JoinNode & join_node,
-    const QueryTreeNodePtr & left_resolved_identifier,
-    const QueryTreeNodePtr & right_resolved_identifier)
-{
-    if (join_node.getKind() != JoinKind::Inner || !join_node.isOnJoinExpression())
-        return false;
-
-    if (left_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN
-        || right_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
-        return false;
-
-    const auto compare_options = IQueryTreeNode::CompareOptions{.compare_aliases = false};
-
-    /// `ColumnNode::isEqual` compares the column source too, so this distinguishes `a.id` from `b.id`.
-    const auto is_equi_key = [&](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
-    {
-        return (lhs->isEqual(*left_resolved_identifier, compare_options) && rhs->isEqual(*right_resolved_identifier, compare_options))
-            || (lhs->isEqual(*right_resolved_identifier, compare_options) && rhs->isEqual(*left_resolved_identifier, compare_options));
-    };
-
-    QueryTreeNodes conjuncts;
-    conjuncts.push_back(join_node.getJoinExpression());
-
-    while (!conjuncts.empty())
-    {
-        auto node = conjuncts.back();
-        conjuncts.pop_back();
-
-        const auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
-            continue;
-
-        const auto & function_name = function_node->getFunctionName();
-        const auto & arguments = function_node->getArguments().getNodes();
-
-        if (function_name == "and")
-            conjuncts.insert(conjuncts.end(), arguments.begin(), arguments.end());
-        /// `isNotDistinctFrom` (`<=>`) is a join-key carrier for the planner just like `equals`
-        /// (see `PlannerJoins.cpp`), and it is even stronger here: a surviving row either has the
-        /// same non-NULL value on both sides, or `NULL` on both sides.
-        else if ((function_name == "equals" || function_name == "isNotDistinctFrom") && arguments.size() == 2
-            && is_equi_key(arguments[0], arguments[1]))
-            return true;
-    }
-
-    return false;
-}
-
 /* Creates a projection expression for columns specified in JOIN USING clause.
  *
  * In SQL, when joining tables with USING(column_name), the result should contain only one
@@ -1275,26 +1086,15 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     return function_node;
 }
 
-/// With `database_qualified = false`, the qualifier is the first identifier part matched against
-/// aliases, table names and materialized CTE names. With `database_qualified = true`, the first two identifier parts are
-/// matched against the database and table names of the leaf table expressions (`db.table.column`);
-/// this binding is weaker and must not compete with a successful alias / table-name resolution,
-/// it is only used to rescue a miss (see tryResolveIdentifierFromJoin).
 static bool qualifierBindsToJoinSubtree(
-    const TableExpressionNodePtr & join_tree_node,
-    const Identifier & identifier,
-    const IdentifierResolveScope & scope,
-    bool database_qualified)
+    const QueryTreeNodePtr & join_tree_node,
+    const std::string & qualifier,
+    const IdentifierResolveScope & scope)
 {
-    if (!join_tree_node)
+    if (!join_tree_node || qualifier.empty())
         return false;
 
-    const auto & qualifier = identifier.front();
-
-    if (qualifier.empty())
-        return false;
-
-    if (!database_qualified && join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
+    if (join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
         return true;
 
     switch (join_tree_node->getNodeType())
@@ -1302,25 +1102,21 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpressionNodeTyped(), identifier, scope, database_qualified)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpressionNodeTyped(), identifier, scope, database_qualified);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, scope)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, scope);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
             const auto & cross = join_tree_node->as<CrossJoinNode &>();
-            size_t num_tables = cross.getChildren().size();
-            for (size_t i = 0; i < num_tables; ++i)
-            {
-                auto expr = cross.getTableExpressionTypedAt(i);
-                if (qualifierBindsToJoinSubtree(expr, identifier, scope, database_qualified))
+            for (const auto & expr : cross.getTableExpressions())
+                if (qualifierBindsToJoinSubtree(expr, qualifier, scope))
                     return true;
-            }
             return false;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier, scope, database_qualified);
+            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, scope);
         }
         default:
             break;
@@ -1329,24 +1125,11 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    if (database_qualified)
-        return !it->second.database_name.empty() && it->second.database_name == qualifier
-            && it->second.table_name == identifier[1];
-
-    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
-        return true;
-
-    /// A materialized CTE is registered under its internal temporary table name;
-    /// the name visible to queries is the CTE name, and it qualifies like a table name.
-    if (const auto * table_node = join_tree_node->as<TableNode>())
-        if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->cte_name == qualifier)
-            return true;
-
-    return false;
+    return !it->second.table_name.empty() && it->second.table_name == qualifier;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
-    const TableExpressionNodePtr & table_expression_node,
+    const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
@@ -1365,7 +1148,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
     }
 
-    auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column)
+    auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
         /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
         /// even if tryResolveIdentifierFromJoinTreeNode throws: an UNKNOWN_IDENTIFIER from a
@@ -1403,31 +1186,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
+        const auto & path_start = identifier_lookup.identifier.front();
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
     QueryTreeNodePtr right_resolved_identifier = nullptr;
     if (binds_left || !binds_right)
-        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
+        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
     if (!binds_left || binds_right)
-        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
-
-    /** The alias / table-name qualifier can restrict resolution to one side while the identifier is
-      * actually a database-qualified reference (`db.table.column`) to the pruned side (the same token
-      * is the table name of one side and the database name of the other). The database-qualified
-      * interpretation must not compete with a successful alias / table-name resolution — that would
-      * turn the precedence the setting establishes into `AMBIGUOUS_IDENTIFIER` — so it is attempted
-      * only when the restricted side produced no result.
-      */
-    if (binds_left != binds_right && !left_resolved_identifier && !right_resolved_identifier)
-    {
-        if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
-            right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
-        else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
-            left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
-    }
+        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
 
     if (!identifier_lookup.isExpressionLookup())
     {
@@ -1610,20 +1379,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 resolved_side = JoinTableSide::Left;
                 resolved_identifier = left_resolved_identifier;
             }
-        }
-        else if (identifier_lookup.identifier.isShort()
-            && innerJoinKeyColumnsAreEquated(from_join_node, left_resolved_identifier, right_resolved_identifier))
-        {
-            /// The column is an equated key of an INNER JOIN, so both sides carry the same value.
-            /// Resolve to the left side, exactly as `single_join_prefer_left_table` would, so that this
-            /// only turns a previously-thrown ambiguity into the same result the default already gives.
-            ///
-            /// Restricted to unqualified (one-part) identifiers: this is a relaxation for a bare column
-            /// name that binds to both sides, and it must not change how qualified or subcolumn paths
-            /// (e.g. `SELECT p.q FROM t INNER JOIN u AS p ON t.p.q = p.q`, where `p.q` is both a left
-            /// subcolumn and a right column) resolve.
-            resolved_side = JoinTableSide::Left;
-            resolved_identifier = left_resolved_identifier;
         }
         else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
         {
@@ -1853,11 +1608,11 @@ std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identif
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup,
-    const TableExpressionNodePtr & table_expression_node,
+    const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
-    auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpressionNodeTyped(), scope);
+    auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpression(), scope);
 
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;
@@ -1922,7 +1677,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTreeNode(const IdentifierLookup & identifier_lookup,
-    const TableExpressionNodePtr & join_tree_node,
+    const QueryTreeNodePtr & join_tree_node,
     IdentifierResolveScope & scope)
 {
     auto join_tree_node_type = join_tree_node->getNodeType();
@@ -1989,10 +1744,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTree(con
         return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, scope.expression_join_tree_node, scope);
 
     auto * query_scope_node = scope.scope_node->as<QueryNode>();
-    if (!query_scope_node || !query_scope_node->getJoinTreeNode())
+    if (!query_scope_node || !query_scope_node->getJoinTree())
         return {};
 
-    const auto & join_tree_node = query_scope_node->getJoinTreeNodeTyped();
+    const auto & join_tree_node = query_scope_node->getJoinTree();
     return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
 }
 

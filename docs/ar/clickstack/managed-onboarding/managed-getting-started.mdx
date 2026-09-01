@@ -30,15 +30,21 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
 * **Docker**، إذا لم يكن لديك **مجمّع** بالفعل وكنت تريد اتباع مسار **مجمّع** الجديد أدناه.
 
 <Steps>
-  <Step title="جهّز بيانات الاعتماد الخاصة بك" id="gather-credentials">
+  <Step>
+    ## جهّز بيانات الاعتماد الخاصة بك
+
     <GatherCredentials />
   </Step>
 
-  <Step title="أنشئ مستخدمًا للاستيعاب" id="create-ingestion-user">
+  <Step>
+    ## أنشئ مستخدمًا للاستيعاب
+
     <CreateIngestionUser />
   </Step>
 
-  <Step title="نشر المُجمِّع" id="deploy-collector">
+  <Step>
+    ## نشر المُجمِّع
+
     اختر الخيار الذي يناسب وضعك.
 
     <Info>
@@ -193,7 +199,9 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
     </Tabs>
   </Step>
 
-  <Step title="استنساخ التطبيق وتشغيله" id="clone-and-run-the-application">
+  <Step>
+    ## استنساخ التطبيق وتشغيله
+
     استنسخ المستودع، وثبّت التبعيات، وأنشئ ملف `.env` الخاص بك:
 
     ```bash
@@ -216,7 +224,9 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
     في هذه المرحلة، يكون التطبيق قيد التشغيل لكنه غير مزوّد بأدوات القياس عن بُعد. لا يعرض ClickStack أي بيانات، إذ ما يزال بانتظار بيانات القياس عن بُعد. هذه هي حالة &quot;ما قبل&quot;.
   </Step>
 
-  <Step title="وصّل التطبيق بالمجمّع الخاص بك" id="connect-the-application">
+  <Step>
+    ## وصّل التطبيق بالمجمّع الخاص بك
+
     يحتاج التطبيق إلى قيمتين للوصول إلى المجمّع الذي نشرته أعلاه:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: نقطة نهاية OTLP التي يوفّرها المجمّع (وعادةً ما تكون على المنفذ `4318` لـ OTLP عبر HTTPS).
@@ -233,7 +243,9 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
     تستخدم حزمة SDK المتغير `OTEL_EXPORTER_OTLP_HEADERS` لتعيين ترويسة التفويض للإشارات الثلاث جميعها: التتبعات والمقاييس والسجلات. إذا كان الـ collector يعمل محليًا ولا يفرض المصادقة، يمكنك ترك القيمة فارغة (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`)، ولكن يجب أن يكون المتغير موجودًا؛ إذ تتخطى حزمة SDK التهيئة بالكامل إذا لم يتم تعيينه أو كان فارغًا تمامًا. وأخيرًا، عند تشغيل الـ collector بدون TLS، تأكد من استخدام بروتوكول HTTP الصحيح (على سبيل المثال: `http://localhost:4318`).
   </Step>
 
-  <Step title="أضِف أدوات الرصد إلى التطبيق" id="instrument-the-application">
+  <Step>
+    ## أضِف أدوات الرصد إلى التطبيق
+
     تتكوّن عملية إضافة أدوات الرصد من ثلاثة أجزاء: تثبيت SDKs، وتغيير أمر التشغيل، وتمكين Browser SDK. ولا يغيّر أيٌّ من ذلك منطق الأعمال في التطبيق.
 
     ### تثبيت SDKs
@@ -286,7 +298,9 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
     </Warning>
   </Step>
 
-  <Step title="توليد حركة المرور" id="generate-traffic">
+  <Step>
+    ## توليد حركة المرور
+
     أعد تشغيل التطبيق حتى يدخل أمر التشغيل الجديد وحزمة المتصفح المبنية حديثًا حيز التنفيذ:
 
     ```bash
@@ -297,7 +311,9 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
     أعِد تحميل علامة تبويب المتصفح لكي يقدّم Vite الحزمة المحدَّثة، ثم حدِّث التطبيق بضع مرات، وبدّل بين السنوات، وانقر على القصص لفتحها من أجل توليد حركة مرور. يرسل كل تفاعل logs وmetrics وtraces وأحداث session replay عبر الـ collector لديك إلى ClickStack.
   </Step>
 
-  <Step title="شغّل ClickStack واستكشف بيانات التليمتري الخاصة بك" id="launch-clickstack">
+  <Step>
+    ## شغّل ClickStack واستكشف بيانات التليمتري الخاصة بك
+
     افتح خدمتك في [ClickHouse Cloud console](https://console.clickhouse.cloud) وحدد **ClickStack** من القائمة اليمنى، ثم **Start Ingestion**.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="تشغيل ClickStack" border />
@@ -342,6 +358,6 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
 
 * [مراقبة Kubernetes](/ar/clickstack/managed-onboarding/monitoring-kubernetes): اجمع السجلات ومقاييس البنية التحتية وأحداث Kubernetes من عنقود.
 * [مراقبة سجلات AWS CloudWatch](/ar/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): مرّر سجلات CloudWatch عبر CloudWatch receiver الخاص بـ OpenTelemetry.
-* [ضبط Managed ClickStack](/ar/clickstack/managed-onboarding/tuning-clickstack-schema): حسّن المخطط لديك لتحسين أداء الاستعلام وكفاءة التخزين.
-* [تأمين المجمّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام TLS على نقطة نهاية OTLP وحسابات الاستيعاب ذات أقل الامتيازات.
+* [ضبط Managed ClickStack](/ar/clickstack/managed-onboarding/tuning-clickstack-schema): حسّن الـ schema لديك لتحسين أداء الاستعلام وكفاءة التخزين.
+* [تأمين المجمّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام TLS على نقطة نهاية OTLP وبمستخدمي إدخال بأقل الامتيازات.
 * [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production) للاطلاع على التوصيات عند الانتقال إلى بيئة الإنتاج.

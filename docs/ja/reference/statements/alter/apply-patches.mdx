@@ -6,7 +6,7 @@ title: '論理更新によるパッチの適用'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -29,7 +29,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partitio
   通常、`APPLY PATCHES` を使用する必要はありません
 </Tip>
 
-パッチパートは通常、[`apply_patches_on_merge`](/ja/reference/settings/merge-tree-settings/other#apply_patches_on_merge) 設定が有効 (デフォルト) であれば、マージ時に自動的に適用されます。ただし、次のようなケースでは、パッチの適用を手動で行いたいことがあります。
+パッチパートは通常、[`apply_patches_on_merge`](/ja/reference/settings/merge-tree-settings#apply_patches_on_merge) 設定が有効 (デフォルト) であれば、マージ時に自動的に適用されます。ただし、次のようなケースでは、パッチの適用を手動で行いたいことがあります。
 
 * `SELECT` クエリ実行時のパッチ適用によるオーバーヘッドを減らすため
 * 複数のパッチパートが蓄積する前にまとめるため
@@ -74,4 +74,4 @@ WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
 </div>
 
 * [論理更新 `UPDATE`](/ja/reference/statements/update) - 論理更新によってパッチパートを作成します
-* [`apply_patches_on_merge` 設定](/ja/reference/settings/merge-tree-settings/other#apply_patches_on_merge) - マージ時のパッチの自動適用を制御します
+* [`apply_patches_on_merge` 設定](/ja/reference/settings/merge-tree-settings#apply_patches_on_merge) - マージ時のパッチの自動適用を制御します

@@ -58,6 +58,11 @@ CREATE TABLE t2 (delete_time DateTime) ENGINE = MergeTree ORDER BY delete_time S
 insert into t1 values (101, '2023-05-28 00:00:00'), (102, '2023-05-28 00:00:00');
 insert into t2 values ('2023-05-31 00:00:00');
 
+EXPLAIN indexes=1 SELECT id, delete_time FROM t1
+ CROSS JOIN (
+    SELECT delete_time
+    FROM t2
+) AS d WHERE create_time < delete_time AND id = 101 SETTINGS enable_analyzer=0;
 
 EXPLAIN indexes=1 SELECT id, delete_time FROM t1
  CROSS JOIN (

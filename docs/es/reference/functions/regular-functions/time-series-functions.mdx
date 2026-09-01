@@ -25,7 +25,7 @@ entre otras.
 
 Introducido en: v24.1.0
 
-Descompone un dato de serie temporal mediante STL [(procedimiento de descomposición estacional-tendencia basado en Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf) en un componente estacional, una tendencia y un componente residual.
+Descompone una serie temporal mediante STL [(procedimiento de descomposición estacional-tendencia basado en Loess)](https://www.wessa.net/download/stl.pdf) en un componente estacional, una tendencia y un componente residual.
 
 **Sintaxis**
 
@@ -44,16 +44,33 @@ Devuelve un array de cuatro arrays, donde el primero incluye los componentes est
 
 **Ejemplos**
 
-**Descomposición de datos de serie temporal con STL**
+**Descomposición de datos de series temporales con STL**
 
 ```sql title=Query
 SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0
 ```
 
 ```response title=Response
-┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[
+        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
+        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
+        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
+    ],
+    [
+        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
+        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
+        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
+    ],
+    [
+        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
+        0
+    ],
+    [
+        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
+        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
+    ]]                                                                                                                   │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="seriesOutliersDetectTukey">
@@ -167,10 +184,6 @@ Si la etiqueta copiada no está presente en `src_group`, la función también la
 La función reproduce la lógica de copia de los modificadores de prometheus
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers).
 
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
-
 **Sintaxis**
 
 ```sql
@@ -216,10 +229,6 @@ Si alguna de las etiquetas copiadas no está presente en `src_group`, la funció
 La función imita la lógica de copia de los modificadores de Prometheus
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers).
 
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
-
 **Sintaxis**
 
 ```sql
@@ -261,10 +270,6 @@ Introducido en: v26.1.0
 
 Extrae el valor de una etiqueta especificada del grupo. Devuelve NULL si no se encuentra.
 Véase también la función [timeSeriesGroupToTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
-
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
 
 **Sintaxis**
 
@@ -355,10 +360,6 @@ Devuelve una clave de muestreo `UInt64` estable derivada de las etiquetas del gr
 El valor es determinista: si las etiquetas de entrada son idénticas, siempre producen la misma clave.
 Está pensada como clave de ordenación para operadores de muestreo como `limitk` y `limit_ratio`.
 
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
-
 **Sintaxis**
 
 ```sql
@@ -396,10 +397,6 @@ Introducida en: v26.1.0
 
 Devuelve los nombres y valores de las etiquetas asociadas a un grupo especificado.
 Véase también la función [timeSeriesTagsToGroup()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup).
-
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
 
 **Sintaxis**
 
@@ -445,10 +442,6 @@ Introducido en: v26.1.0
 Devuelve los nombres y valores de las etiquetas asociadas a un identificador de serie temporal especificado.
 Véase también la función [timeSeriesStoreTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
 
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
-
 **Sintaxis**
 
 ```sql
@@ -459,7 +452,7 @@ timeSeriesIdToGroup(id)
 
 **Argumentos**
 
-* `id` — Identificador de una serie temporal. Debe ser del mismo tipo que se usó al llamar a [timeSeriesStoreTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/es/reference/data-types/index)
+* `id` — Identificador de una serie temporal. [`UInt64`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`UUID`](/es/reference/data-types/uuid) o [`FixedString(16)`](/es/reference/data-types/fixedstring)
 
 **Valor devuelto**
 
@@ -492,10 +485,6 @@ Introducido en: v25.8.0
 Devuelve las etiquetas asociadas al identificador especificado de una serie temporal.
 Véase también la función [timeSeriesStoreTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
 
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
-
 **Sintaxis**
 
 ```sql
@@ -504,7 +493,7 @@ timeSeriesIdToTags(id)
 
 **Argumentos**
 
-* `id` — Identificador de una serie temporal. Debe ser del mismo tipo que se utilizó al llamar a [timeSeriesStoreTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/es/reference/data-types/index)
+* `id` — Identificador de una serie temporal. [`UInt64`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`UUID`](/es/reference/data-types/uuid) o [`FixedString(16)`](/es/reference/data-types/fixedstring)
 
 **Valor devuelto**
 
@@ -540,10 +529,6 @@ La función inserta un separador entre los valores unidos y devuelve un nuevo gr
 con la etiqueta `dest_tag` establecida con el valor unido.
 Esta función imita la lógica de la función de Prometheus
 [label&#95;join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join).
-
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
 
 **Sintaxis**
 
@@ -630,10 +615,6 @@ Elimina todas las etiquetas de un grupo, excepto las especificadas.
 Véase también la función [timeSeriesRemoveTag()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags).
 
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
-
 **Sintaxis**
 
 ```sql
@@ -675,10 +656,6 @@ Elimina una etiqueta especificada de un grupo de etiquetas.
 Si esa etiqueta no existe en el grupo, el grupo se devuelve sin cambios.
 Véase también la función [timeSeriesRemoveTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
 [timeSeriesRemoveAllTagsExcept()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
-
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
 
 **Sintaxis**
 
@@ -726,10 +703,6 @@ Si algunas de las etiquetas especificadas no están en el grupo de etiquetas, la
 Véase también la función [timeSeriesRemoveTag()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveAllTagsExcept()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
-
 **Sintaxis**
 
 ```sql
@@ -774,10 +747,6 @@ Si hay coincidencia, el valor de la etiqueta `dest_tag` en el grupo devuelto ser
 junto con las etiquetas originales de la entrada.
 Esta función imita la lógica de la función de Prometheus
 [label&#95;replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace).
-
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
 
 **Sintaxis**
 
@@ -832,7 +801,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **Argumentos**
 
-* `id` — Identificador de una serie temporal. Puede ser de cualquier tipo comparable. Se omiten las filas con identificadores NULL. [`Any`](/es/reference/data-types/index)
+* `id` — Identificador de una serie temporal. [`UInt64`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`UUID`](/es/reference/data-types/uuid) o [`FixedString(16)`](/es/reference/data-types/fixedstring)
 * `tags_array` — Array de pares (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/es/reference/data-types/array) o [`NULL`](/es/reference/syntax#null)
 * `separate_tag_name_i` — El nombre de una etiqueta. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring)
 * `separate_tag_value_i` — El valor de una etiqueta. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`Nullable(String)`](/es/reference/data-types/nullable)
@@ -869,10 +838,6 @@ Devuelve un grupo de etiquetas asociado a las etiquetas especificadas.
 Si se encuentra el mismo grupo de etiquetas varias veces durante la ejecución de la consulta, la función devuelve el mismo grupo.
 Para un conjunto vacío de etiquetas, la función siempre devuelve 0.
 Véase también la función [timeSeriesGroupToTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
-
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
 
 **Sintaxis**
 
@@ -921,10 +886,6 @@ Si la `condition` es `false`, la función devuelve `0`.
 Esta función es similar a [throwIf()](/es/reference/functions/regular-functions/other-functions#throwIf),
 pero usa un código de error diferente y presenta el mensaje de error con un formato distinto.
 
-<Note>
-  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
-</Note>
-
 **Sintaxis**
 
 ```sql
@@ -959,7 +920,10 @@ INSERT INTO test VALUES ([('__name__', 'up')]);
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Lanza la excepción "Multiple series have the same tags {'__name__': 'up'}"
+```
+
+```response title=Response
 ```
 
 {/*AUTOGENERATED_END*/}

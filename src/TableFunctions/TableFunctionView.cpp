@@ -88,7 +88,7 @@ view(subquery)
 
 - `subquery` — `SELECT` query.
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 - A table.
 

@@ -1,8 +1,8 @@
 ---
-description: 'Документация по SELECT-запросу'
-sidebarTitle: 'Обзор'
+description: 'Документация по запросу SELECT'
+sidebarTitle: 'SELECT'
 slug: /sql-reference/statements/select/
-title: 'SELECT-запрос'
+title: 'Запрос SELECT'
 doc_type: 'reference'
 ---
 
@@ -34,26 +34,23 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-Список выражений сразу после `SELECT` обязателен; все остальные секции необязательны.
+Все секции необязательны, за исключением обязательного списка выражений сразу после `SELECT`, о котором подробнее говорится [ниже](#select-clause).
 
-`SELECT` и его необязательные секции описаны в отдельных разделах:
+Особенности каждой необязательной секции описаны в отдельных разделах, перечисленных в том порядке, в котором они выполняются:
 
 * [конструкция WITH](/ru/reference/statements/select/with)
 * [секция SELECT](#select-clause)
-* [секция ALL](/ru/reference/statements/select/all)
 * [секция DISTINCT](/ru/reference/statements/select/distinct)
 * [секция FROM](/ru/reference/statements/select/from)
 * [предложение SAMPLE](/ru/reference/statements/select/sample)
-* [секция ARRAY JOIN](/ru/reference/statements/select/array-join)
 * [секция JOIN](/ru/reference/statements/select/join)
 * [секция PREWHERE](/ru/reference/statements/select/prewhere)
 * [предложение WHERE](/ru/reference/statements/select/where)
-* [секция GROUP BY](/ru/reference/statements/select/group-by)
-* [секция HAVING](/ru/reference/statements/select/having)
 * [секция WINDOW](/ru/reference/functions/window-functions/index)
-* [предложение QUALIFY](/ru/reference/statements/select/qualify)
-* [предложение ORDER BY](/ru/reference/statements/select/order-by)
+* [секция GROUP BY](/ru/reference/statements/select/group-by)
 * [предложение LIMIT BY](/ru/reference/statements/select/limit-by)
+* [секция HAVING](/ru/reference/statements/select/having)
+* [предложение QUALIFY](/ru/reference/statements/select/qualify)
 * [секция LIMIT](/ru/reference/statements/select/limit)
 * [секция OFFSET](/ru/reference/statements/select/offset)
 * [секция UNION](/ru/reference/statements/select/union)
@@ -61,15 +58,6 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [оператор EXCEPT](/ru/reference/statements/select/except)
 * [Предложение INTO OUTFILE](/ru/reference/statements/select/into-outfile)
 * [предложение FORMAT](/ru/reference/statements/select/format)
-
-Запрос также можно записать в виде линейной цепочки преобразований с [конвейерными операторами](/ru/reference/statements/select/pipe-operators):
-
-```sql
-FROM table
-|> WHERE x > 1
-|> AGGREGATE count() AS c GROUP BY y
-|> ORDER BY c DESC
-```
 
 <div id="select-clause">
   ## Секция SELECT
@@ -208,7 +196,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 Вы можете использовать синонимы (псевдонимы `AS`) в любой части запроса.
 
-В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать позиционные аргументы. Чтобы включить эту возможность, активируйте настройку [enable&#95;positional&#95;arguments](/ru/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). Тогда, например, `ORDER BY 1,2` будет сортировать строки таблицы сначала по первому, а затем по второму столбцу.
+В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать позиционные аргументы. Чтобы включить эту возможность, активируйте настройку [enable&#95;positional&#95;arguments](/ru/reference/settings/session-settings#enable_positional_arguments). Тогда, например, `ORDER BY 1,2` будет сортировать строки таблицы сначала по первому, а затем по второму столбцу.
 
 <div id="implementation-details">
   ## Подробности реализации

@@ -27,22 +27,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 * AWS (GA)
 * GCP (GA)
-* Azure (GA)
+* Azure (معاينة خاصة). يُرجى الانضمام إلى قائمة الانتظار [هنا](https://clickhouse.com/cloud/bring-your-own-cloud) إذا كنت مهتمًا.
 
 **المناطق السحابية المدعومة:**
 جميع **المناطق العامة** المدرجة في وثائق [المناطق المدعومة](/ar/products/cloud/reference/supported-regions) الخاصة بنا متاحة لعمليات نشر BYOC. المناطق الخاصة غير مدعومة حاليًا.
-
-<div id="prerequisites">
-  ## المتطلبات المسبقة
-</div>
-
-تُعد المتطلبات التالية أساسية لبناء BYOC وتشغيله. وهي تنطبق على كل عملية نشر، ولا يمكن التنازل عنها أو التحايل عليها:
-
-* **منطقة مدعومة.** لا يُنشر BYOC إلا في المناطق العامة المدرجة في وثائق [المناطق المدعومة](/ar/products/cloud/reference/supported-regions). لا تُدعم AWS Local Zones والمناطق ذات منطقة توافر واحدة. إذا لم تكن المنطقة التي تحتاج إليها مدرجة، فتحدث إلى ممثل ClickHouse قبل التخطيط لعملية النشر.
-* **ثلاث مناطق توافر.** تمتد كل بنية BYOC الأساسية عبر ثلاث مناطق توافر، وبذلك يتحقق التوافر العالي لخوادم ClickHouse وClickHouse Keeper. لا يمكن للمناطق التي تضم أقل من ثلاث مناطق توافر استضافة BYOC، ولا تتوفر عمليات نشر في منطقة واحدة أو منطقتين.
-* **مخرجات التأهيل، تُطبَّق حرفيًا.** يجب تطبيق CloudFormation template أو وحدة Terraform تمامًا كما هي مقدَّمة؛ إذ إن أسماء الموارد (مثل دور IAM ‏`ClickHouseManagementRole`) و[الأذونات الأساسية الموثقة](/ar/products/bring-your-own-cloud/reference/privilege) مضمَّنة بشكل ثابت في أتمتة ClickHouse. يتطلب أي تعديل موافقة صريحة من ClickHouse، وتُتاح التخصيصات المدعومة كمعلمات للقالب. راجع [التأهيل القياسي](/ar/products/bring-your-own-cloud/onboarding/standard).
-* **Kubernetes cluster مُدار من ClickHouse.** يُنشأ Kubernetes cluster من نوع EKS/GKE/AKS ويُشغَّل بالكامل بواسطة ClickHouse. لا يُدعم التثبيت في Kubernetes cluster قائم، ويجب عدم تثبيت وحدات تحكم القبول أو محركات السياسات على مستوى المجموعة عليه.
-* **أساسيات الشبكة.** يلزم توفر DNS resolution فعال ووصول صادر إلى الإنترنت (مباشرةً أو عبر NAT) في كل إعداد. بالنسبة إلى VPC/VNet مُدار من ClickHouse، يجب ألا يقل نطاق CIDR عن `/23` في AWS وAzure، وعن `/20` في GCP، حيث يُخصَّص نصف النطاق لنطاق pod الخاص بـ GKE cluster. وهذه حدود دنيا وليست توصيات: تستهلك كل replica عناوين IP، لذا تحتاج عمليات النشر الأكبر إلى نطاق أكبر. أما VPCs المُدارة من العميل فلها متطلبات شبكات فرعية خاصة بكل سحابة؛ راجع دليلي التخصيص لـ [AWS](/ar/products/bring-your-own-cloud/onboarding/customization-aws) و[GCP](/ar/products/bring-your-own-cloud/onboarding/customization-gcp).
 
 <div id="features">
   ## الميزات
@@ -68,7 +56,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * **S3 الآمن**
 * **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
 * **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
-* **[Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview)**
 * **تكامل**: راجع القائمة الكاملة في [هذه الصفحة](/ar/integrations/home).
 
 <div id="planned-features-currently-unsupported">
@@ -77,8 +64,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تتضمن الميزات التالية قيودًا أو أنها غير مدعومة بالكامل في عمليات نشر Bring Your Own Cloud (BYOC).
 
-* SQL Console: غير متوفرة لعمليات نشر BYOC، لكنها مدرجة على خارطة الطريق.
-* ClickPipes: غير متاحة لعمليات نشر BYOC، لكنها مدرجة على خارطة الطريق.
+* SQL Console: لا تتوفر SQL Console القياسية لعمليات نشر BYOC حاليًا، لكنها مدرجة على خارطة الطريق لدينا.
+* دعم ClickPipes: متاح حاليًا ضمن معاينة خاصة مع تكاملات البث مثل Kafka وKinesis. أما التكاملات الإضافية (CDC، وتخزين الكائنات، وما إلى ذلك) فهي مدرجة على خارطة الطريق.
 * التحجيم التلقائي: مُدرج على خارطة الطريق لإضافته في الإصدارات المستقبلية.
 * واجهة MySQL
 * AWS KMS المعروف أيضًا باسم CMEK (مفاتيح التشفير المُدارة من العميل)

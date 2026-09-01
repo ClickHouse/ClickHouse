@@ -1,16 +1,11 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
-#include <Storages/KeyDescription.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 
-#include <algorithm>
 #include <unordered_set>
 
 namespace DB
@@ -273,7 +268,7 @@ static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, 
     res.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`.
+        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`
         if (columns[i])
             res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
     }
@@ -311,16 +306,14 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
+        readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
 
-        /// Record the statistics before `readPatches`, which fills the columns missing on disk.
         if (dataflow_cache_update_cb)
             dataflow_cache_update_cb(
                 toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
-                first_reader.getReader()->getPartiallyReadColumns(),
                 read_result.num_bytes_read,
                 should_continue_sampling);
 
-        readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
@@ -355,7 +348,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 // is already set to false, because we still need to update the total bytes seen.
                 dataflow_cache_update_cb(
                     toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
-                    range_readers[i].getReader()->getPartiallyReadColumns(),
                     read_result.num_bytes_read - num_bytes_read_so_far,
                     should_continue_sampling);
             }
@@ -506,26 +498,19 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
     /// If some columns absent in part, then evaluate default values
     if (should_evaluate_missing_defaults)
-        evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
+    {
+        Block additional_columns;
+        if (!previous_header.empty())
+            additional_columns = previous_header.cloneWithColumns(result.columns);
+
+        for (const auto & col : result.additional_columns)
+            additional_columns.insert(col);
+
+        addDummyColumnWithRowCount(additional_columns, result.num_rows);
+        merge_tree_reader->evaluateMissingDefaults(additional_columns, read_columns);
+    }
 
     apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
-}
-
-void MergeTreeReadersChain::evaluateMissingDefaults(
-    MergeTreeRangeReader & range_reader,
-    const ReadResult & result,
-    const Block & previous_header,
-    Columns & columns) const
-{
-    Block additional_columns;
-    if (!previous_header.empty())
-        additional_columns = previous_header.cloneWithColumns(result.columns);
-
-    for (const auto & col : result.additional_columns)
-        additional_columns.insert(col);
-
-    addDummyColumnWithRowCount(additional_columns, result.num_rows);
-    range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
 }
 
 void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader)
@@ -565,144 +550,29 @@ void MergeTreeReadersChain::addPatchVirtuals(ReadResult & result, const Block & 
 
 void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) const
 {
-    const auto & system_columns = getAllPatchPartSystemColumns();
+    const auto & system_columns = getPatchPartSystemColumns();
     for (const auto & column : system_columns)
     {
         /// All system columns must be read on previous steps.
         if (!to.has(column.name) && from.has(column.name))
             to.insert(from.getByName(column.name));
     }
-
-    /// Save sorting key columns required for applying MergeOnKey patches.
-    for (const auto & patch_reader : patch_readers)
-    {
-        const auto & patch = patch_reader->getPatchPart();
-
-        if (patch.mode == PatchMode::MergeOnKey && patch.sorting_key)
-        {
-            for (const auto & name : patch.sorting_key->column_names)
-            {
-                if (!to.has(name) && from.has(name))
-                    to.insert(from.getByName(name));
-            }
-        }
-    }
-}
-
-Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_header, ReadResult & read_result)
-{
-    /// Sort-key columns of MergeOnKey patches are required for key comparisons but may be missing on disk.
-    bool should_evaluate_missing_defaults = false;
-    range_readers.front().getReader()->fillMissingColumns(read_result.columns, should_evaluate_missing_defaults, read_result.num_rows);
-
-    if (should_evaluate_missing_defaults)
-    {
-        NameSet required_key_columns;
-        for (const auto & patch_reader : patch_readers)
-        {
-            const auto & patch = patch_reader->getPatchPart();
-
-            if (patch.mode == PatchMode::MergeOnKey && patch.sorting_key)
-            {
-                auto key_columns = getKeyColumnsRequiredForPatch(patch);
-                required_key_columns.insert(key_columns.begin(), key_columns.end());
-            }
-        }
-
-        auto is_missing_key_column = [&](size_t pos)
-        {
-            const auto & column_name = result_header.getByPosition(pos).name;
-            return !read_result.columns[pos] && required_key_columns.contains(column_name);
-        };
-
-        size_t num_columns = result_header.columns();
-        bool has_missing_key_columns = false;
-
-        for (size_t pos = 0; pos < num_columns; ++pos)
-        {
-            if (is_missing_key_column(pos))
-            {
-                has_missing_key_columns = true;
-                break;
-            }
-        }
-
-        if (has_missing_key_columns)
-        {
-            auto columns_with_defaults = read_result.columns;
-            evaluateMissingDefaults(range_readers.front(), read_result, /*previous_header=*/ {}, columns_with_defaults);
-
-            for (size_t pos = 0; pos < num_columns; ++pos)
-            {
-                if (is_missing_key_column(pos))
-                    read_result.columns[pos] = columns_with_defaults[pos];
-            }
-        }
-    }
-
-    auto main_block = result_header.cloneWithColumns(read_result.columns);
-
-    /// Materialize the sort-key result columns of MergeOnKey patches on `main_block` once per main block.
-    for (const auto & patch_reader : patch_readers)
-    {
-        const auto & patch = patch_reader->getPatchPart();
-        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key)
-            continue;
-
-        auto is_missing = [&](const String & name)
-        {
-            const auto * column = main_block.findByName(name);
-            return !column || !column->column;
-        };
-
-        if (patch.sorting_key->expression && std::ranges::any_of(patch.sorting_key->column_names, is_missing))
-        {
-            auto block_for_key = result_header.cloneWithColumns(read_result.columns);
-            patch.sorting_key->expression->execute(block_for_key);
-
-            for (const auto & name : patch.sorting_key->column_names)
-            {
-                if (!main_block.has(name))
-                    main_block.insert(block_for_key.getByName(name));
-            }
-        }
-
-        for (const auto & name : patch.sorting_key->column_names)
-        {
-            /// Key comparisons require the same column class on all sides.
-            auto & key_column = main_block.getByName(name);
-
-            chassert(key_column.column);
-            key_column.column = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_column.column->convertToFullColumnIfConst()));
-            key_column.type = recursiveRemoveLowCardinality(key_column.type);
-
-            if (!read_result.columns_for_patches.has(name))
-                read_result.columns_for_patches.insert(key_column);
-        }
-    }
-
-    return main_block;
 }
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
 {
-    if (patch_readers.empty())
-        return;
-
-    auto main_block = executeSortingKeyExpressions(result_header, read_result);
-
     for (size_t i = 0; i < patches_results.size(); ++i)
     {
         auto & patch_results = patches_results[i];
 
         /// Remove patches that are not needed for current block anymore.
-        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front(), main_block))
+        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front()))
         {
             patch_results.pop_front();
         }
 
         const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
-        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, main_block, last_read_patch);
+        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, result_header, last_read_patch);
         patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
     }
 }
@@ -718,8 +588,6 @@ ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & head
         const auto & patch = patch_reader->getPatchPart();
         const auto & patch_columns = patch.part->getColumnsDescription();
         const auto & alter_conversions = patch.part->getAlterConversions();
-
-        const auto & sorting_key_columns = patch.stored_sorting_key_columns;
         auto & columns_for_patch = res.emplace_back();
 
         for (const auto & column : block)
@@ -730,10 +598,6 @@ ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & head
             String column_name_in_patch = column.name;
             if (alter_conversions && alter_conversions->isColumnRenamed(column.name))
                 column_name_in_patch = alter_conversions->getColumnOldName(column.name);
-
-            /// Sorting key columns are never updated.
-            if (sorting_key_columns.contains(column_name_in_patch))
-                continue;
 
             if (!patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name_in_patch))
                 continue;
@@ -814,11 +678,9 @@ void MergeTreeReadersChain::applyPatches(
     auto result_block = result_header.cloneWithColumns(result_columns);
     addPatchVirtuals(result_block, additional_columns);
 
-    /// Release the second references to columns so that updateInplaceFrom doesn't have to clone the updated columns.
-    result_columns.clear();
-
+    /// Combine patches with the same structure.
+    std::unordered_map<Names, PatchesToApply, NamesHash> patches_to_apply;
     UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
-    std::vector<PatchReadResultToApply> patch_read_results;
 
     for (size_t i = 0; i < patch_readers.size(); ++i)
     {
@@ -845,20 +707,29 @@ void MergeTreeReadersChain::applyPatches(
                 updated_columns.push_back(columns_for_patch.column_name);
         }
 
-        if (!updated_columns.empty())
-        {
-            std::sort(updated_columns.begin(), updated_columns.end());
+        if (updated_columns.empty())
+            continue;
 
-            for (const auto & patch_result : patch_results)
-                patch_read_results.push_back(PatchReadResultToApply{patch, patch_result, updated_columns});
+        std::sort(updated_columns.begin(), updated_columns.end());
+
+        for (const auto & patch_result : patch_results)
+        {
+            /// TODO: build indices once and filter them in MergeTreeRangeReader.
+            auto patches = patch_readers[i]->applyPatch(result_block, *patch_result);
+
+            for (auto & patch_to_apply : patches)
+            {
+                if (!patch_to_apply->empty())
+                    patches_to_apply[updated_columns].push_back(std::move(patch_to_apply));
+            }
         }
     }
 
-    /// Prevent patch rows with versions <= min_version from re-applying stale updates.
     if (min_version.has_value())
         source_data_version = std::max(source_data_version, *min_version);
 
-    applyPatchesToBlock(result_block, versions_block, patch_read_results, source_data_version);
+    for (const auto & [updated_columns, patches] : patches_to_apply)
+        applyPatchesToBlock(result_block, versions_block, patches, updated_columns, source_data_version);
 
     result_columns = result_block.getColumns();
     result_columns.resize(result_header.columns());

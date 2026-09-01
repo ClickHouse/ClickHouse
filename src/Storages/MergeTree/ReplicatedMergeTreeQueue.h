@@ -11,7 +11,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
+#include <Storages/MergeTree/Streaming/CursorPromoter.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
@@ -158,13 +158,6 @@ private:
         /// Also we can jump over mutation when we download mutated part from other replica.
         bool is_done = false;
 
-        /// Time when the mutation was finalized on this replica (the modification time of the
-        /// `mutation_pointer` znode). Zero if the mutation is not done yet or if its completion
-        /// time is unknown: after the queue state is reloaded (e.g. on server restart), only the
-        /// finish time of the mutation the pointer points at can be restored from Keeper, and
-        /// older finished mutations report zero.
-        time_t finish_time = 0;
-
         String latest_failed_part;
         MergeTreePartInfo latest_failed_part_info;
         time_t latest_fail_time = 0;
@@ -185,9 +178,6 @@ private:
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
-    /// Modification time of the `mutation_pointer` znode, i.e. the time when the mutation
-    /// it points at was finalized on this replica. Used as `finish_time` of that mutation.
-    time_t mutation_pointer_mtime = 0;
 
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;

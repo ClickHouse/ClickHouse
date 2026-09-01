@@ -15,18 +15,18 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
   ## 설명
 </div>
 
-쿼리 실행 시 함께 실행되는 종속 조회수에 관한 정보(예: 조회수 유형, 실행 시간)를 포함합니다.
+쿼리 실행 시 함께 실행되는 종속 뷰에 관한 정보(예: 뷰 유형, 실행 시간)를 포함합니다.
 
 로깅을 시작하려면 다음과 같이 하십시오.
 
-1. [query&#95;views&#95;log](/ko/reference/settings/server-settings/settings/query#query_views_log) 섹션에서 매개변수를 구성합니다.
-2. [log&#95;query&#95;views](/ko/reference/settings/session-settings/log-query#log_query_views)를 1로 설정합니다.
+1. [query&#95;views&#95;log](/ko/reference/settings/server-settings/settings#query_views_log) 섹션에서 매개변수를 구성합니다.
+2. [log&#95;query&#95;views](/ko/reference/settings/session-settings#log_query_views)를 1로 설정합니다.
 
-데이터 플러시 주기는 [query&#95;views&#95;log](/ko/reference/settings/server-settings/settings/query#query_views_log) server settings 섹션의 `flush_interval_milliseconds` 매개변수에서 설정합니다. 플러시를 강제로 수행하려면 [SYSTEM FLUSH LOGS](/ko/reference/statements/system#flush-logs) 쿼리를 사용하십시오.
+데이터 플러시 주기는 [query&#95;views&#95;log](/ko/reference/settings/server-settings/settings#query_views_log) server settings 섹션의 `flush_interval_milliseconds` 매개변수에서 설정합니다. 플러시를 강제로 수행하려면 [SYSTEM FLUSH LOGS](/ko/reference/statements/system#flush-logs) 쿼리를 사용하십시오.
 
 ClickHouse는 테이블의 데이터를 자동으로 삭제하지 않습니다. 자세한 내용은 [Introduction](/ko/reference/system-tables/overview#system-tables-introduction)을 참조하십시오.
 
-`query_views_log` 테이블에 기록되는 쿼리 수를 줄이려면 [log&#95;queries&#95;probability](/ko/reference/settings/session-settings/log-queries#log_queries_probability)) 설정을 사용할 수 있습니다.
+`query_views_log` 테이블에 기록되는 쿼리 수를 줄이려면 [log&#95;queries&#95;probability](/ko/reference/settings/session-settings#log_queries_probability)) 설정을 사용할 수 있습니다.
 
 <div id="columns">
   ## 컬럼
@@ -39,7 +39,7 @@ ClickHouse는 테이블의 데이터를 자동으로 삭제하지 않습니다. 
 * `event_time` ([DateTime](/ko/reference/data-types/datetime)) — 뷰 실행이 완료된 날짜와 시간입니다.
 * `event_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 뷰 실행이 완료된 날짜와 시간을 마이크로초 정밀도로 나타냅니다.
 * `view_duration_ms` ([UInt64](/ko/reference/data-types/int-uint)) — 뷰 실행 시간(각 단계의 합계)을 밀리초 단위로 나타냅니다.
-* `initial_query_id` ([String](/ko/reference/data-types/string)) — 동일한 쿼리 체인에 속한 초기 쿼리의 ID입니다.
+* `initial_query_id` ([String](/ko/reference/data-types/string)) — 초기 쿼리의 ID입니다(분산 쿼리 실행용).
 * `view_name` ([String](/ko/reference/data-types/string)) — 뷰 이름입니다.
 * `view_uuid` ([UUID](/ko/reference/data-types/uuid)) — 뷰의 UUID입니다.
 * `view_type` ([Enum8(&#39;Default&#39; = 1, &#39;Materialized&#39; = 2, &#39;Live&#39; = 3, &#39;Window&#39; = 4)](/ko/reference/data-types/enum)) — 뷰의 유형입니다. 값: &#39;Default&#39; = 1 — 기본 뷰입니다. 이 로그에는 나타나지 않아야 합니다. &#39;Materialized&#39; = 2 — materialized view, &#39;Live&#39; = 3 — 라이브 view입니다.

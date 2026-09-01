@@ -13,11 +13,15 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
 > يتوفر ClickHouse في مستودع Nixpkgs ويمكن تثبيته باستخدام Nix على **Linux** و**macOS**.
 
 <Steps>
-  <Step title="راجع التوصيات" id="review-recommendations">
+  <Step>
+    ## راجع التوصيات
+
     <Recommendations />
   </Step>
 
-  <Step title="تثبيت ClickHouse باستخدام Nix" id="install-clickhouse-using-nix">
+  <Step>
+    ## تثبيت ClickHouse باستخدام Nix
+
     يمكنك استخدام Nix لتثبيت ClickHouse دون إضافته بشكل دائم إلى نظامك:
 
     ```bash
@@ -35,7 +39,9 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     * تعمل كلتا الحزمتين على Linux وmacOS.
   </Step>
 
-  <Step title="التثبيت الدائم" id="permanent-installation">
+  <Step>
+    ## التثبيت الدائم
+
     لتثبيت ClickHouse بشكل دائم على نظامك:
 
     **لمستخدمي NixOS**، أضف ما يلي إلى `configuration.nix`:
@@ -63,7 +69,9 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="تشغيل خادم ClickHouse" id="start-clickhouse-server">
+  <Step>
+    ## تشغيل خادم ClickHouse
+
     بعد التثبيت، يمكنك تشغيل خادم ClickHouse:
 
     ```bash
@@ -75,7 +83,9 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     للاستخدام في بيئة الإنتاج على NixOS، قد ترغب في تهيئة ClickHouse كخدمة نظام. راجع [دليل NixOS](https://search.nixos.org/options?query=clickhouse) للاطلاع على خيارات الإعداد المتاحة.
   </Step>
 
-  <Step title="تشغيل عميل ClickHouse" id="start-clickhouse-client">
+  <Step>
+    ## تشغيل عميل ClickHouse
+
     للاتصال بخادم ClickHouse، افتح طرفية جديدة وشغّل:
 
     ```bash

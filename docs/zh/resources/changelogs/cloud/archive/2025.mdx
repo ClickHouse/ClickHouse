@@ -89,7 +89,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * **适用于 AWS Glue 的 ClickHouse 连接器**
   现在，您可以使用在 [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s) 上提供的官方[适用于 AWS Glue 的 ClickHouse 连接器](/zh/integrations/connectors/data-ingestion/AWS/glue)。该连接器利用 AWS Glue 基于 Apache
-  Spark 的 serverless 引擎，在 ClickHouse 与其他数据源之间执行提取、转换和加载。请参阅这篇公告[博文](https://clickhouse.com/blog/clickhouse-connector-aws-glue)快速上手，了解如何创建表，以及如何在 ClickHouse 和 Spark 之间写入和读取数据。
+  Spark 的 serverless 引擎，在 ClickHouse 与其他数据源之间执行提取、转换和加载。请参阅这篇公告[博文](http://clickhouse.com/blog/clickhouse-connector-aws-glue)快速上手，了解如何创建表，以及如何在 ClickHouse 和 Spark 之间写入和读取数据。
 * **服务最小副本数变更**
   已扩容的服务现在可以[缩容](/zh/products/cloud/features/autoscaling/overview)至仅使用单个副本 (此前最少为 2 个副本) 。注意：单副本服务的可用性较低，不建议在生产环境中使用。
 * 默认情况下，ClickHouse Cloud 将开始向管理员角色发送与服务扩缩容和服务版本升级相关的通知。您可以在通知设置中调整相关通知偏好。
@@ -241,7 +241,7 @@ ClickPipes 中的 MySQL CDC 连接器现已面向广大用户开放 Public Beta�
   在 VPC、AWS 服务、本地系统与 ClickHouse Cloud 之间建立安全连接。
   这样在从 AWS 上的 Postgres、MySQL 和 MSK 等来源移动数据时，
   无需将流量暴露在公共互联网之上。它还支持通过 VPC service endpoints 实现跨区域访问。
-  现在可通过 ClickPipes [完全自助完成](/zh/integrations/clickpipes/networking/aws-privatelink)
+  现在可通过 ClickPipes [完全自助完成](/zh/integrations/clickpipes/aws-privatelink)
   PrivateLink 连接设置。
 
 <div id="april-4-2025">
@@ -267,8 +267,8 @@ ClickPipes 中的 MySQL CDC 连接器现已面向广大用户开放 Public Beta�
 
 * 新增 `UsageCost` API 端点：API 规范现已支持一个用于获取使用情况信息的新端点。
   这是一个组织级端点，最多可查询 31 天的使用成本。可获取的指标包括
-  Storage、Compute、数据传输 和 ClickPipes。详情请参阅
-  [文档](/zh/products/cloud/api-reference/billing/get-organization-usage-costs)。
+  Storage、Compute、Data Transfer 和 ClickPipes。详情请参阅
+  [文档](/zh/api-reference/billing/get-organization-usage-costs)。
 * Terraform provider [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) 版本现已支持启用 MySQL 端点。
 
 <div id="february-21-2025">
@@ -423,14 +423,14 @@ JDBC / Java 将在[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/release
   ### Prometheus 集成改进
 </div>
 
-我们为 Prometheus 集成带来了多项增强：
+我们对 Prometheus 集成进行了多项增强：
 
-* **组织级端点**。我们为 ClickHouse Cloud 的 Prometheus 集成新增了一项增强功能。除了服务级指标外，API 现在还提供用于**组织级指标**的端点。这个新端点会自动收集您组织内所有服务的指标，简化将指标导出到 Prometheus 收集器的流程。这些指标还可以与 Grafana 和 Datadog 等可视化工具集成，帮助您更全面地了解组织的性能表现。
+* **组织级端点**。我们增强了 ClickHouse Cloud 的 Prometheus 集成。除服务级指标外，API 现在还提供了一个用于**组织级指标**的端点。这个新端点会自动收集您组织内所有服务的指标，从而简化将指标导出到 Prometheus collector 的流程。这些指标还可以与 Grafana 和 Datadog 等可视化工具集成，帮助您更全面地了解组织的整体性能。
 
-  该功能现已向所有用户开放。更多详细信息请参见[这里](/zh/products/cloud/features/monitoring/prometheus)。
+  此功能现已面向所有用户开放。您可以在[这里](/zh/products/cloud/features/monitoring/prometheus)了解更多详情。
 
-* **过滤后的指标**。我们已为 ClickHouse Cloud 的 Prometheus 集成添加了返回过滤后指标列表的支持。借助此功能，您可以聚焦对监控服务运行状况至关重要的指标，从而减少响应载荷大小。
+* **过滤指标**。我们已为 ClickHouse Cloud 的 Prometheus 集成新增返回过滤后指标列表的支持。借助此功能，您可以聚焦于对监控服务健康状态至关重要的指标，从而减少响应载荷大小。
 
-  该功能可通过 API 中的可选查询参数使用，帮助您更轻松地优化数据采集，并简化与 Grafana 和 Datadog 等工具的集成。
+  该功能通过 API 中的可选查询参数提供，让您更轻松地优化数据收集，并简化与 Grafana 和 Datadog 等工具的集成。
 
-  过滤后指标功能现已向所有用户开放。更多详细信息请参见[这里](/zh/products/cloud/features/monitoring/prometheus)。
+  过滤指标功能现已面向所有用户开放。您可以在[这里](/zh/products/cloud/features/monitoring/prometheus)了解更多详情。

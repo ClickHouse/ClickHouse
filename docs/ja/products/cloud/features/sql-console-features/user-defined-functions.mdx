@@ -7,16 +7,14 @@ doc_type: 'guide'
 keywords: ['user defined function', 'UDF']
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
-ユーザー定義関数 (UDF) を使用すると、ClickHouse に標準で用意されている 1,000 種類を超える [関数](/ja/reference/functions/regular-functions/overview) だけでは対応できない処理を追加できます。
+ユーザー定義関数 (UDF) を使用すると、ClickHouse に標準で用意されている 1,000 種類を超える [関数](/ja/reference/functions/regular-functions/regular-functions-index) だけでは対応できない処理を追加できます。
 
-ClickHouse Cloud では、ユーザー定義関数を作成および管理する方法がいくつかあります。
+ClickHouse Cloud では、ユーザー定義関数を作成する方法が 2 つあります。
 
 1. SQL を使用する
 2. UI と独自のコードを使用する (公開ベータ)
-3. [Cloud API](#manage-udfs-with-the-cloud-api) を使用する (ベータ)
-4. [Terraform](#manage-udfs-with-terraform) を使用する (alpha)
 
 <div id="sql-udfs">
   ## SQL ユーザー定義関数
@@ -78,7 +76,9 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
 前回は SQL を使って作成しましたが、今回は Python で実装し、UI から設定します。
 
 <Steps>
-  <Step title="Python ファイルを作成する" id="create-python-file">
+  <Step>
+    ### Python ファイルを作成する
+
     ローカルで新しいファイル `main.py` を作成します。
 
     ```python
@@ -107,7 +107,9 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     </Note>
   </Step>
 
-  <Step title="依存関係パッケージとローカルファイルをまとめる" id="bundle-dependencies">
+  <Step>
+    ### 依存関係パッケージとローカルファイルをまとめる
+
     依存関係パッケージや追加のローカルファイル (wheel ファイル、設定ファイル、データファイルなど) を含めるには、`main.py` と `requirements.txt` と同じディレクトリに配置します。ZIP アーカイブを作成する際は、すべてのファイルを含めてください。
 
     ```bash
@@ -143,7 +145,9 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     </Warning>
   </Step>
 
-  <Step title="UI で UDF を作成する" id="create-udf-via-ui">
+  <Step>
+    ### UI で UDF を作成する
+
     1. Cloud コンソールのホームページで、左下のメニューにある組織名をクリックします。
     2. メニューから **ユーザー定義関数** を選択します。
     3. ユーザー定義関数ページで **UDF を設定** をクリックします。画面右側に設定パネルが開きます。
@@ -161,7 +165,9 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
         * 完了すると、ステータスは **deployed** に変わります。
   </Step>
 
-  <Step title="UDFをテストする" id="test-your-udf">
+  <Step>
+    ### UDFをテストする
+
     1. ページ左上の **Settings - return to your service view** をクリックして、**SQL Console** のホーム画面に戻ります
     2. 左側のメニューで **SQL Console** をクリックします
     3. 次のクエリを入力します:
@@ -177,7 +183,9 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     ```
   </Step>
 
-  <Step title="新しいバージョンを作成する" id="create-new-version">
+  <Step>
+    ### 新しいバージョンを作成する
+
     UDF のコードを変更するには、新しいバージョンを作成します。**Edit** パネルで管理できるのは、UDF をどのサービスに割り当てるかだけです。そこでファイルをアップロードしても、デプロイ済みのコードは置き換えられません。
 
     1. Cloud Console のホーム画面で、左下のメニューにある組織名をクリックします。
@@ -188,80 +196,3 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     これで、UI から最初のユーザー定義関数を追加し、それが実行されることを確認し、必要に応じて新しいバージョンを作成する方法も確認できました。
   </Step>
 </Steps>
-
-<div id="manage-udfs-with-the-cloud-api">
-  ## Cloud API を使用して UDF を管理する
-</div>
-
-<BetaBadge />
-
-UI で利用できるすべての機能は、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) を通じてプログラムからも利用できます。
-UDF エンドポイントを使用すると、ソースアーカイブのアップロード、関数とバージョンの作成、サービスへのアタッチ、削除まで、UDF のライフサイクル全体をスクリプトで自動化できます。
-
-<Note>
-  これらのエンドポイントはベータ版であり、API コントラクトは変更される可能性があります。
-</Note>
-
-API を介した UDF の作成とデプロイの一般的なワークフローは次のとおりです。
-
-1. 署名付き `application/zip` アップロード URL を取得するために[アップロード URL を作成](/ja/products/cloud/api-reference/udf/udf-upload-session-create)し、その URL に ZIP アーカイブをアップロードします。各アップロード ID は、作成またはバージョン作成の 1 回の試行にのみ使用できます。再試行する場合は、新しいアップロード URL をリクエストしてください。
-2. アップロードしたアーカイブから [UDF を作成](/ja/products/cloud/api-reference/udf/udf-create)し、関数名、ランタイム、引数、戻り値の型を指定します。
-3. [UDF をサービスにアタッチ](/ja/products/cloud/api-reference/udf/udf-attach)します。バージョンを省略した場合は、最新の準備完了バージョンがアタッチされます。サービスは実行中である必要があります。アイドル状態のサービスは事前に起動できます。
-
-エンドポイントの一覧は次のとおりです。
-
-| エンドポイント                                                                           | 説明                                               |
-| --------------------------------------------------------------------------------- | ------------------------------------------------ |
-| [UDF アップロード URL を作成](/ja/products/cloud/api-reference/udf/udf-upload-session-create) | 組織スコープの署名付き `application/zip` アップロード URL を作成します  |
-| [UDF を作成](/ja/products/cloud/api-reference/udf/udf-create)                           | アップロードしたアーカイブから新しい UDF を作成します                    |
-| [UDF を一覧表示](/ja/products/cloud/api-reference/udf/udf-list)                           | 組織内の各 UDF の最新バージョンを返します                          |
-| [UDF を取得](/ja/products/cloud/api-reference/udf/udf-get)                              | UDF の最新バージョンを返します                                |
-| [UDF を削除](/ja/products/cloud/api-reference/udf/udf-delete)                           | UDF のすべてのバージョンを削除し、すべてのサービスからデタッチします             |
-| [UDF バージョンを作成](/ja/products/cloud/api-reference/udf/udf-version-create)              | ソースアーカイブを使用してバージョンを割り当て、UDF のビルドを開始します           |
-| [UDF バージョンを一覧表示](/ja/products/cloud/api-reference/udf/udf-version-list)              | UDF のすべてのバージョンを返します                              |
-| [UDF バージョンを削除](/ja/products/cloud/api-reference/udf/udf-version-delete)              | どのサービスにもアタッチされていない UDF バージョンを削除します               |
-| [UDF をサービスにアタッチ](/ja/products/cloud/api-reference/udf/udf-attach)                    | 必要に応じて現在のバージョンを置き換え、UDF の 1 つのバージョンをサービスにアタッチします |
-| [UDF アタッチメントを一覧表示](/ja/products/cloud/api-reference/udf/udf-attachment-list)         | UDF の現在のサービスへのアタッチ状況を返します                        |
-| [UDF アタッチメントを取得](/ja/products/cloud/api-reference/udf/udf-attachment-get)            | 指定したサービスへの UDF の現在のアタッチ状況を返します                   |
-| [UDF をサービスからデタッチ](/ja/products/cloud/api-reference/udf/udf-detach)                   | UDF をサービスからデタッチします                               |
-
-リクエストおよびレスポンスのスキーマについては、[UDF API リファレンス](/ja/products/cloud/api-reference/udf/udf-create)を参照してください。
-
-<div id="manage-udfs-with-terraform">
-  ## Terraform で UDF を管理する
-</div>
-
-公式の [ClickHouse Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)には、Infrastructure as Code として UDF を管理するためのリソースが 2 つ含まれています。
-
-* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)は、関数自体を管理します。関数のソースコードを含む ZIP アーカイブを受け取り、アーカイブのハッシュが変更されるたびに新しいバージョンをパブリッシュし、ビルドの完了を待機します。
-* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md)は、UDF のバージョンをサービスにアタッチします。サービスに関連付けられる関数のバージョンは、一度に最大 1 つです。固定のバージョン番号を指定することも、`clickhouse_udf.<name>.version` を参照してサービスを最新バージョンに自動更新することもできます。
-
-<Note>
-  これらのリソースは、プロバイダーのバージョン 3.24.0 以降で利用できます。alpha ステータスであり、今後のプロバイダーバージョンで動作が変更される可能性があります。
-</Note>
-
-たとえば、前の例の `isBusinessHours` UDF を Terraform でデプロイするには、次のようにします。
-
-```terraform
-resource "clickhouse_udf" "is_business_hours" {
-  function_name = "isBusinessHours"
-  runtime       = "python3.11"
-  type          = "executable_pool"
-  return_type   = "Bool"
-
-  arguments = [
-    { name = "timestamp", type = "DateTime" },
-  ]
-
-  source_archive_path = "${path.module}/is_business_hours.zip"
-  source_archive_hash = filebase64sha256("${path.module}/is_business_hours.zip")
-}
-
-resource "clickhouse_udf_attachment" "production" {
-  function_name = clickhouse_udf.is_business_hours.function_name
-  service_id    = var.service_id
-  version       = clickhouse_udf.is_business_hours.version
-}
-```
-
-アタッチは準備完了のバージョンに対してのみ成功し、完了まで数分かかる場合があります。アイドル状態のサービスは自動的に起動します。`clickhouse_udf` リソースを削除すると、関数のすべてのバージョンが削除され、すべてのサービスからデタッチされます。

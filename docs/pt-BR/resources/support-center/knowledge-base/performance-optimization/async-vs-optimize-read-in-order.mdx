@@ -8,7 +8,7 @@ keywords: ['Síncrona', 'Assíncrona', 'Leitura de dados']
 
 A nova configuração allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree permite que o número de threads de leitura (streams) seja maior do que o número de threads no restante do pipeline de execução da consulta.
 
-Normalmente, a configuração [max&#95;threads](/pt-BR/reference/settings/session-settings/max-threads#max_threads) [controla](https://clickhouse.com/company/events/query-performance-introspection) o número de threads de leitura paralelas e de processamento paralelo da consulta:
+Normalmente, a configuração [max&#95;threads](/pt-BR/reference/settings/session-settings#max_threads) [controla](https://clickhouse.com/company/events/query-performance-introspection) o número de threads de leitura paralelas e de processamento paralelo da consulta:
 
 <Image img={sync_read} size="md" alt="Diagrama de leitura síncrona de dados" />
 

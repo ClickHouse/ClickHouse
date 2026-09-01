@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-darwin
-# - long - slow
-# - no-darwin - darwin does not support "script -qc"
-#
+# Tags: long
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/92718
 # Verifies that `--chime N` makes the client emit ASCII `BEL` (`\x07`) on stderr
 # when a query finishes after running for at least N seconds AND stderr is

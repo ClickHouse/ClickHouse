@@ -34,13 +34,13 @@ Timezone agnostic Unix timestamp is stored in tables, and the timezone is used t
 
 A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia.
 
-You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn't set, ClickHouse uses the value of the [timezone](/reference/settings/server-settings/settings/other#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
+You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn't set, ClickHouse uses the value of the [timezone](/reference/settings/server-settings/settings#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
 The [clickhouse-client](/concepts/features/interfaces/client) applies the server time zone by default if a time zone isn't explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date_time_output_format](/reference/settings/formats/date-time#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](/reference/functions/regular-functions/date-time-functions#formatDateTime) function.
+ClickHouse outputs values depending on the value of the [date_time_output_format](/reference/settings/formats#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](/reference/functions/regular-functions/date-time-functions#formatDateTime) function.
 
-When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](/reference/settings/formats/date-time#date_time_input_format) setting.
+When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](/reference/settings/formats#date_time_input_format) setting.
 
 ## Examples {#examples}
 
@@ -57,8 +57,8 @@ ENGINE = TinyLog;
 
 ```sql
 -- Parse DateTime
--- - from a string,
--- - from a number interpreted as the number of seconds since 1970-01-01 (a fractional part is truncated to whole seconds).
+-- - from string,
+-- - from integer interpreted as number of seconds since 1970-01-01.
 INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
 
 SELECT * FROM dt;
@@ -71,7 +71,7 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
-- When inserting datetime as a number, it is treated as a Unix Timestamp (UTC) in seconds. `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`. A number with a fractional or exponent part is accepted as well and truncated to whole seconds, consistent with `CAST`, `toDateTime` and the `Values` format. (Before version 26.8, such a fractional or exponent number in the `JSON` and `Values`/`Quoted` input paths — the latter covering every format that parses fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and `Template`/`CustomSeparated`/`Regexp` configured with `Quoted` field escaping — was not accepted by the streaming parser; set `input_format_read_datetime_number_as_raw_value = 1` to restore that. In the `Values` format itself such a literal still worked — and keeps working in compatibility mode — through the SQL-expression fallback, which reads it as a number of seconds. In `JSONExtract` and the `JSON` data type a fractional value is parsed through `Float64`, so a value near a whole-second boundary can round to the adjacent second, unlike the row input formats which truncate the original text exactly. The tab-separated, CSV and other escaped text formats are not governed by this setting.)
+- When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
 - When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values
@@ -146,7 +146,7 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 
 ClickHouse's DateTime type with time zones can exhibit unexpected behavior during Daylight Saving Time (DST) transitions, particularly when:
 
-- [`date_time_output_format`](/reference/settings/formats/date-time#date_time_output_format) is set to `simple`.
+- [`date_time_output_format`](/reference/settings/formats#date_time_output_format) is set to `simple`.
 - Clocks move backward ("Fall Back"), causing a one-hour overlap.
 - Clocks move forward ("Spring Forward"), causing a one-hour gap.
 
@@ -188,10 +188,10 @@ In this case, ClickHouse shifts the non-existent time `2023-03-26 01:30:00` back
 - [Type conversion functions](/reference/functions/regular-functions/type-conversion-functions)
 - [Functions for working with dates and times](/reference/functions/regular-functions/date-time-functions)
 - [Functions for working with arrays](/reference/functions/regular-functions/array-functions)
-- [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
-- [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
-- [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
-- [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
+- [The `date_time_input_format` setting](/reference/settings/formats#date_time_input_format)
+- [The `date_time_output_format` setting](/reference/settings/formats#date_time_output_format)
+- [The `timezone` server configuration parameter](/reference/settings/server-settings/settings#timezone)
+- [The `session_timezone` setting](/reference/settings/session-settings#session_timezone)
 - [Operators for working with dates and times](/reference/operators/index#operators-for-working-with-dates-and-times)
 - [The `Date` data type](/reference/data-types/date)
 {/*AUTOGENERATED_END*/}

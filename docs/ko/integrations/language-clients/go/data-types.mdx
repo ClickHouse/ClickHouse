@@ -258,7 +258,7 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
   ### Nested
 </div>
 
-Nested 필드는 이름이 지정된 튜플 배열과 동일합니다. 사용 방식은 사용자가 [flatten&#95;nested](/ko/reference/settings/session-settings/other#flatten_nested)를 1로 설정했는지 0으로 설정했는지에 따라 달라집니다.
+Nested 필드는 이름이 지정된 튜플 배열과 동일합니다. 사용 방식은 사용자가 [flatten&#95;nested](/ko/reference/settings/session-settings#flatten_nested)를 1로 설정했는지 0으로 설정했는지에 따라 달라집니다.
 
 flatten&#95;nested를 0으로 설정하면 Nested 컬럼은 하나의 튜플 배열로 유지됩니다. 이렇게 하면 삽입 및 조회 시 맵 슬라이스를 사용할 수 있고, 임의 수준으로 중첩할 수도 있습니다. 아래 예시와 같이 맵의 키는 컬럼 이름과 같아야 합니다.
 
@@ -357,7 +357,7 @@ for rows.Next() {
     }
     fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
 }
-// NOTE: Do not skip rows.Err() check
+// 참고: rows.Err() 확인을 생략하지 마십시오
 if err := rows.Err(); err != nil {
     return err
 }
@@ -367,7 +367,7 @@ rows.Close()
 
 [전체 예시 - `flatten_tested=0`](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nested.go#L28-L118)
 
-`flatten_nested`에 기본값인 1을 사용하면 Nested 컬럼이 별도의 배열로 평탄화됩니다. 이 경우 삽입 및 조회 시 중첩 슬라이스를 사용해야 합니다. 임의 수준의 중첩도 동작할 수 있지만, 공식적으로 지원되지는 않습니다.
+`flatten_nested`에 기본값인 1을 사용하면 중첩 컬럼이 별도의 배열로 평탄화됩니다. 이 경우 삽입 및 조회 시 중첩 슬라이스를 사용해야 합니다. 임의 수준의 중첩도 동작할 수 있지만, 공식적으로 지원되지는 않습니다.
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)

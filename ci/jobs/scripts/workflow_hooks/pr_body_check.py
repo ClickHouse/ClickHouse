@@ -1,7 +1,6 @@
 import re
 import sys
 
-from ci.jobs.scripts.check_style.clickhouse_spelling import clickhouse_misspellings
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import (
     BOT_AUTHORS,
     NO_CHANGELOG_REQUIRED_LABELS,
@@ -10,14 +9,6 @@ from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import (
 )
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
-
-
-def check_clickhouse_spelling(entry: str) -> str:
-    """Reject non-canonical product-name spellings in a changelog entry."""
-    misspellings = sorted(set(clickhouse_misspellings(entry)))
-    if misspellings:
-        return "The product name is spelled `ClickHouse`: " + ", ".join(misspellings)
-    return ""
 
 
 def check_changelog_entry(category, pr_body: str) -> str:
@@ -57,8 +48,7 @@ def check_changelog_entry(category, pr_body: str) -> str:
             while i < len(lines) and lines[i]:
                 entry_lines.append(lines[i])
                 i += 1
-            raw_entry = " ".join(entry_lines)
-            entry = raw_entry
+            entry = " ".join(entry_lines)
             # Don't accept changelog entries like '...'.
             entry = re.sub(r"[#>*_.\- ]", "", entry)
             # Don't accept changelog entries like 'Close #12345'.
@@ -69,8 +59,6 @@ def check_changelog_entry(category, pr_body: str) -> str:
     error = ""
     if not entry:
         error = f"Changelog entry required for category '{category}'"
-    else:
-        error = check_clickhouse_spelling(raw_entry)
     return error
 
 

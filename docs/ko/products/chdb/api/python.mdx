@@ -1,0 +1,3934 @@
+---
+title: 'chDB Python API 참조'
+sidebarTitle: 'Python API'
+slug: /chdb/api/python
+description: 'chDB Python API 전체 참조'
+keywords: ['chdb', '내장', 'clickhouse-lite', 'python', 'api', '참고']
+doc_type: '참고'
+---
+
+<div id="core-query-functions">
+  ## 핵심 쿼리 함수
+</div>
+
+<div id="chdb-query">
+  ### `chdb.query`
+</div>
+
+chDB 엔진을 사용해 SQL 쿼리를 실행합니다.
+
+내장 ClickHouse 엔진을 사용해 SQL 문을 실행하는 기본 쿼리 함수입니다. 다양한 출력 형식을 지원하며, 인메모리 데이터베이스 또는 파일 기반 데이터베이스에서 사용할 수 있습니다.
+
+**구문**
+
+```python
+chdb.query(sql, output_format='CSV', path='', udf_path='')
+```
+
+**매개변수**
+
+| 매개변수            | 유형  | 기본값     | 설명                                                                                                                                                                                                                                                        |
+| --------------- | --- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`           | str | *필수*    | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                            |
+| `output_format` | str | `"CSV"` | 결과의 출력 형식입니다. 지원되는 포맷:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 상세 로깅 활성화 |
+| `path`          | str | `""`    | 데이터베이스 파일 경로입니다. 기본적으로 인메모리 데이터베이스를 사용합니다.<br />파일 경로 또는 인메모리 데이터베이스를 나타내는 `":memory:"`를 사용할 수 있습니다                                                                                                                                                       |
+| `udf_path`      | str | `""`    | 사용자 정의 함수 디렉터리 경로                                                                                                                                                                                                                                         |
+
+**반환값**
+
+지정된 형식으로 쿼리 결과를 반환합니다.
+
+| 반환 유형              | 조건                                                    |
+| ------------------ | ----------------------------------------------------- |
+| `str`              | CSV, JSON과 같은 형식인 경우                                  |
+| `pd.DataFrame`     | `output_format`이 `"DataFrame"` 또는 `"dataframe"`인 경우   |
+| `pa.Table`         | `output_format`이 `"ArrowTable"` 또는 `"arrowtable"`인 경우 |
+| chdb result object | 기타 포맷인 경우                                             |
+
+**예외**
+
+| 예외            | 조건                                 |
+| ------------- | ---------------------------------- |
+| `ChdbError`   | SQL 쿼리 실행이 실패한 경우                  |
+| `ImportError` | DataFrame/Arrow 형식에 필요한 의존성이 없는 경우 |
+
+**예시**
+
+```pycon
+>>> # 기본 CSV 쿼리
+>>> result = chdb.query("SELECT 1, 'hello'")
+>>> print(result)
+"1,hello"
+```
+
+```pycon
+>>> # DataFrame 형식으로 쿼리 실행
+>>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
+>>> print(df)
+   id    msg
+0   1  hello
+```
+
+```pycon
+>>> # 파일 기반 데이터베이스를 사용한 쿼리
+>>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
+```
+
+```pycon
+>>> # UDF를 사용한 쿼리
+>>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
+```
+
+***
+
+<div id="chdb_sql">
+  ### `chdb.sql`
+</div>
+
+chDB 엔진을 사용해 SQL 쿼리를 실행합니다.
+
+내장 ClickHouse 엔진을 사용해 SQL 문을 실행하는 핵심 쿼리 함수입니다. 다양한 출력 형식을 지원하며, 인메모리 데이터베이스 또는 파일 기반 데이터베이스에서 사용할 수 있습니다.
+
+**구문**
+
+```python
+chdb.sql(sql, output_format='CSV', path='', udf_path='')
+```
+
+**매개변수**
+
+| 매개변수       | 유형  | Default    | Description                                                                                                                                                                                                                                                         |
+| --------------- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`           | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                                      |
+| `output_format` | str | `"CSV"`    | 결과의 출력 형식입니다. 지원되는 포맷은 다음과 같습니다.<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 상세 로깅 활성화 |
+| `path`          | str | `""`       | 데이터베이스 파일 경로입니다. 기본값은 인메모리 데이터베이스입니다.<br />파일 경로 또는 인메모리 데이터베이스를 위한 `":memory:"`를 사용할 수 있습니다                                                                                                                                                                        |
+| `udf_path`      | str | `""`       | 사용자 정의 함수 디렉터리 경로                                                                                                                                                                                                                                                   |
+
+**반환값**
+
+지정된 포맷으로 쿼리 결과를 반환합니다.
+
+| Return 유형        | Condition                                             |
+| ------------------ | ----------------------------------------------------- |
+| `str`              | CSV, JSON과 같은 텍스트 형식인 경우                              |
+| `pd.DataFrame`     | `output_format`이 `"DataFrame"` 또는 `"dataframe"`인 경우   |
+| `pa.Table`         | `output_format`이 `"ArrowTable"` 또는 `"arrowtable"`인 경우 |
+| chdb result object | 그 밖의 포맷인 경우                                           |
+
+**예외**
+
+| Exception                 | Condition                          |
+| ------------------------- | ---------------------------------- |
+| [`ChdbError`](#chdberror) | SQL 쿼리 실행이 실패한 경우                  |
+| `ImportError`             | DataFrame/Arrow 형식에 필요한 종속성이 없는 경우 |
+
+**예시**
+
+```pycon
+>>> # 기본 CSV 쿼리
+>>> result = chdb.query("SELECT 1, 'hello'")
+>>> print(result)
+"1,hello"
+```
+
+```pycon
+>>> # DataFrame 출력으로 쿼리
+>>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
+>>> print(df)
+   id    msg
+0   1  hello
+```
+
+```pycon
+>>> # 파일 기반 데이터베이스로 쿼리
+>>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
+```
+
+```pycon
+>>> # UDF를 사용한 쿼리
+>>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
+```
+
+***
+
+<div id="chdb-state-sqlitelike-to_arrowtable">
+  ### `chdb.to_arrowTable`
+</div>
+
+쿼리 결과를 PyArrow Table로 변환합니다.
+
+효율적인 열 지향 데이터 처리를 위해 chDB 쿼리 결과를 PyArrow Table 형식으로 변환합니다.
+결과가 비어 있으면 빈 테이블을 반환합니다.
+
+**구문**
+
+```python
+chdb.to_arrowTable(res)
+```
+
+**매개변수**
+
+| 매개변수  | 설명                                     |
+| ----- | -------------------------------------- |
+| `res` | Arrow 형식의 바이너리 데이터를 포함하는 chDB 쿼리 결과 객체 |
+
+**반환값**
+
+| 반환 유형      | 설명                     |
+| ---------- | ---------------------- |
+| `pa.Table` | 쿼리 결과가 포함된 PyArrow 테이블 |
+
+**예외**
+
+| 오류 유형         | 설명                               |
+| ------------- | -------------------------------- |
+| `ImportError` | pyarrow 또는 pandas가 설치되어 있지 않은 경우 |
+
+**예시**
+
+```pycon
+>>> result = chdb.query("SELECT 1 as id, 'hello' as msg", "Arrow")
+>>> table = chdb.to_arrowTable(result)
+>>> print(table.to_pandas())
+   id    msg
+0   1  hello
+```
+
+***
+
+<div id="chdb_to_df">
+  ### `chdb.to_df`
+</div>
+
+쿼리 결과를 pandas DataFrame으로 변환합니다.
+
+먼저 PyArrow Table로 변환한 뒤, 성능 향상을 위해 멀티스레딩을 사용해 pandas DataFrame으로 변환합니다.
+
+**구문**
+
+```python
+chdb.to_df(r)
+```
+
+**매개변수**
+
+| 매개변수 | 설명                                 |
+| ---- | ---------------------------------- |
+| `r`  | 바이너리 Arrow 데이터를 포함하는 chDB 쿼리 결과 객체 |
+
+**반환값**
+
+| 반환 유형          | 설명                           |
+| -------------- | ---------------------------- |
+| `pd.DataFrame` | 쿼리 결과를 포함하는 pandas DataFrame |
+
+**예외**
+
+| 예외            | 조건                               |
+| ------------- | -------------------------------- |
+| `ImportError` | pyarrow 또는 pandas가 설치되어 있지 않은 경우 |
+
+**예시**
+
+```pycon
+>>> result = chdb.query("SELECT 1 as id, 'hello' as msg", "Arrow")
+>>> df = chdb.to_df(result)
+>>> print(df)
+   id    msg
+0   1  hello
+```
+
+<div id="connection-session-management">
+  ## 연결 및 세션 관리
+</div>
+
+다음 세션 함수(Session Function)를 사용할 수 있습니다:
+
+<div id="chdb-connect">
+  ### `chdb.connect`
+</div>
+
+chDB 백그라운드 서버에 대한 연결을 생성합니다.
+
+이 함수는 chDB(ClickHouse) 데이터베이스 엔진에 대한 [Connection](#chdb-state-sqlitelike-connection)을 생성합니다.
+프로세스당 열려 있는 연결은 하나만 허용됩니다.
+동일한 연결 문자열(connection string)로 여러 번 호출하면 동일한 연결 객체를 반환합니다.
+
+```python
+chdb.connect(connection_string: str = ':memory:') → Connection
+```
+
+**매개변수:**
+
+| 매개변수                | 유형  | 기본값          | 설명                               |
+| ------------------- | --- | ------------ | -------------------------------- |
+| `connection_string` | str | `":memory:"` | 데이터베이스 연결 문자열입니다. 아래 포맷을 참고하십시오. |
+
+**기본 포맷**
+
+| 포맷                        | 설명               |
+| ------------------------- | ---------------- |
+| `":memory:"`              | 인메모리 데이터베이스(기본값) |
+| `"test.db"`               | 상대 경로 데이터베이스 파일  |
+| `"file:test.db"`          | 상대 경로와 동일        |
+| `"/path/to/test.db"`      | 절대 경로 데이터베이스 파일  |
+| `"file:/path/to/test.db"` | 절대 경로와 동일        |
+
+**쿼리 매개변수 사용 시**
+
+| 포맷                                                 | 설명              |
+| -------------------------------------------------- | --------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | 매개변수가 포함된 상대 경로 |
+| `"file::memory:?verbose&log-level=test"`           | 매개변수가 포함된 인메모리  |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 매개변수가 포함된 절대 경로 |
+
+**쿼리 매개변수 처리**
+
+쿼리 매개변수는 시작 시 인수로 ClickHouse 엔진에 전달됩니다.
+특수 매개변수 처리:
+
+| 특수 매개변수          | 변환 결과          | 설명            |
+| ---------------- | -------------- | ------------- |
+| `mode=ro`        | `--readonly=1` | 읽기 전용 모드      |
+| `verbose`        | (플래그)          | 상세 로깅을 활성화합니다 |
+| `log-level=test` | (설정)           | 로깅 수준을 설정합니다  |
+
+전체 매개변수 목록은 `clickhouse local --help --verbose`를 참고하십시오.
+
+**반환값**
+
+| 반환 유형        | 설명                                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection` | 다음을 지원하는 데이터베이스 연결 객체입니다:<br />• `Connection.cursor()`로 커서 생성<br />• `Connection.query()`로 직접 쿼리 실행<br />• `Connection.send_query()`로 스트리밍 쿼리 실행<br />• 자동 정리를 위한 컨텍스트 관리자 프로토콜 |
+
+**발생 가능한 예외**
+
+| 예외             | 조건                |
+| -------------- | ----------------- |
+| `RuntimeError` | 데이터베이스 연결에 실패한 경우 |
+
+<Warning>
+  프로세스당 하나의 connection만 지원됩니다.
+  새 connection을 생성하면 기존 connection은 닫힙니다.
+</Warning>
+
+**예시**
+
+```pycon
+>>> # 인메모리 데이터베이스
+>>> conn = connect()
+>>> conn = connect(":memory:")
+>>>
+>>> # 파일 기반 데이터베이스
+>>> conn = connect("my_data.db")
+>>> conn = connect("/path/to/data.db")
+>>>
+>>> # 매개변수 사용
+>>> conn = connect("data.db?mode=ro")  # 읽기 전용 모드
+>>> conn = connect(":memory:?verbose&log-level=debug")  # 디버그 로깅
+>>>
+>>> # 자동 정리를 위한 컨텍스트 매니저 사용
+>>> with connect("data.db") as conn:
+...     result = conn.query("SELECT 1")
+...     print(result)
+>>> # 연결 자동 종료
+```
+
+**관련 항목**
+
+* [`Connection`](#chdb-state-sqlitelike-connection) - 데이터베이스 연결 클래스
+* [`Cursor`](#chdb-state-sqlitelike-cursor) - DB-API 2.0 작업용 데이터베이스 커서
+
+<div id="chdb-exceptions">
+  ## 예외 처리
+</div>
+
+<div id="chdb_chdbError">
+  ### **class** `chdb.ChdbError`
+</div>
+
+기반 클래스: `Exception`
+
+chDB 관련 오류를 위한 기본 예외 클래스입니다.
+
+이 예외는 chDB 쿼리 실행에 실패하거나
+오류가 발생할 때 발생합니다. 표준 Python Exception 클래스를 상속하며,
+기반 ClickHouse engine의 오류 정보를 제공합니다.
+
+***
+
+<div id="chdb_session_session">
+  ### **class** `chdb.session.Session`
+</div>
+
+기반 클래스: `object`
+
+Session은 쿼리 상태를 유지합니다.
+path가 `None`이면 임시 디렉터리를 생성해 데이터베이스 경로로 사용하고,
+세션이 닫히면 해당 임시 디렉터리가 삭제됩니다.
+또한 path를 전달해 해당 경로에 데이터베이스를 생성하고 데이터를 유지할 수도 있습니다.
+
+연결 문자열을 사용해 경로와 기타 매개변수를 전달할 수도 있습니다.
+
+```python
+class chdb.session.Session(path=None)
+```
+
+**예시**
+
+| 연결 문자열                                  | Description             |
+| -------------------------------------------------- | ----------------------- |
+| `":memory:"`                                       | 인메모리 데이터베이스             |
+| `"test.db"`                                        | 상대 경로                   |
+| `"file:test.db"`                                   | 위와 동일                   |
+| `"/path/to/test.db"`                               | 절대 경로                   |
+| `"file:/path/to/test.db"`                          | 위와 동일                   |
+| `"file:test.db?param1=value1&param2=value2"`       | 쿼리 매개변수가 있는 상대 경로       |
+| `"file::memory:?verbose&log-level=test"`           | 쿼리 매개변수가 있는 인메모리 데이터베이스 |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 쿼리 매개변수가 있는 절대 경로       |
+
+<Info>
+  **연결 문자열 인자 처리**
+
+  “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)”와 같이 쿼리 매개변수를 포함하는 연결 문자열의 경우,
+  “param1=value1”은 시작 인자로 ClickHouse 엔진에 전달됩니다.
+
+  자세한 내용은 `clickhouse local –help –verbose`를 참조하십시오.
+
+  몇 가지 특수 인자 처리:
+
+  * “mode=ro”는 clickhouse에서 “–readonly=1”로 처리됩니다 (읽기 전용 모드)
+</Info>
+
+<Warning>
+  **중요**
+
+  * 한 번에 하나의 세션만 사용할 수 있습니다. 새 세션을 만들려면 기존 세션을 닫아야 합니다.
+  * 새 세션을 만들면 기존 세션이 닫힙니다.
+</Warning>
+
+***
+
+<div id="cleanup">
+  #### `cleanup`
+</div>
+
+예외를 처리하며 세션 리소스를 정리합니다.
+
+이 메서드는 정리 과정에서 발생할 수 있는 예외를 무시하면서
+세션을 닫으려고 시도합니다. 오류 처리 상황에서 특히 유용하며,
+세션 상태와 관계없이 정리가 반드시 수행되어야 할 때도 유용합니다.
+
+**구문**
+
+```python
+cleanup()
+```
+
+<Note>
+  이 메서드는 예외를 발생시키지 않으므로
+  `finally` 블록이나 소멸자에서 안전하게 호출할 수 있습니다.
+</Note>
+
+**예시**
+
+```pycon
+>>> session = Session("test.db")
+>>> try:
+...     session.query("INVALID SQL")
+... finally:
+...     session.cleanup()  # 오류 발생 여부와 관계없이 안전하게 정리
+```
+
+**관련 항목**
+
+* [`close()`](#chdb-session-session-close) - 오류를 전파하면서 세션을 명시적으로 종료할 때 사용합니다
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+세션을 종료하고 리소스를 정리합니다.
+
+이 메서드는 내부 connection을 닫고 전역 session 상태를 재설정합니다.
+이 메서드를 호출한 후에는 session이 더 이상 유효하지 않으므로
+추가 쿼리에 사용할 수 없습니다.
+
+**구문**
+
+```python
+close()
+```
+
+<Note>
+  이 메서드는 세션을 컨텍스트 관리자(context manager)로 사용하거나
+  세션 객체가 소멸될 때 자동으로 호출됩니다.
+</Note>
+
+<Warning>
+  **중요**
+
+  `close()`를 호출한 후 세션을 사용하면 오류가 발생합니다.
+</Warning>
+
+**예시**
+
+```pycon
+>>> session = Session("test.db")
+>>> session.query("SELECT 1")
+>>> session.close()  # 명시적으로 세션을 닫습니다
+```
+
+***
+
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
+
+SQL 쿼리를 실행하고 결과를 반환합니다.
+
+이 메서드는 세션의 데이터베이스에서 SQL 쿼리를 실행하고
+지정된 포맷으로 결과를 반환합니다. 또한 다양한 출력 형식을 지원하며,
+쿼리 간에 세션 상태를 유지합니다.
+
+**구문**
+
+```python
+query(sql, fmt='CSV', udf_path='')
+```
+
+**매개변수**
+
+| 매개변수       | 유형  | 기본값        | 설명                                                                                                                                                                                                                                                                         |
+| ---------- | --- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`      | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                                             |
+| `fmt`      | str | `"CSV"`    | 결과의 출력 형식입니다. 사용할 수 있는 포맷은 다음과 같습니다:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 형식<br />• `"TabSeparated"` - 탭으로 구분된 값<br />• `"Pretty"` - 보기 좋게 출력된 테이블 형식<br />• `"JSONCompact"` - 간결한 JSON 형식<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 형식 |
+| `udf_path` | str | `""`       | 사용자 정의 함수의 경로입니다. 지정하지 않으면 세션 초기화 시 설정된 UDF 경로를 사용합니다.                                                                                                                                                                                                                     |
+
+**반환값**
+
+지정된 형식으로 쿼리 결과를 반환합니다.
+정확한 반환 유형은 `fmt` 매개변수에 따라 달라집니다.
+
+* 문자열 포맷(CSV, JSON 등)은 str을 반환합니다
+* 바이너리 포맷(Arrow, Parquet)은 bytes를 반환합니다
+
+**예외**
+
+| 예외             | 조건                  |
+| -------------- | ------------------- |
+| `RuntimeError` | 세션이 닫혔거나 유효하지 않은 경우 |
+| `ValueError`   | SQL 쿼리 구문이 잘못된 경우   |
+
+<Note>
+  &quot;Debug&quot; 포맷은 지원되지 않으며 경고와 함께 자동으로
+  &quot;CSV&quot;로 변환됩니다.
+  디버깅할 때는 대신 연결 문자열 매개변수를 사용하십시오.
+</Note>
+
+<Warning>
+  **경고**
+
+  이 메서드는 쿼리를 동기적으로 실행하고 모든 결과를
+  메모리에 로드합니다. 큰 결과 집합의 경우 [`send_query()`](#chdb-session-session-send_query)를 사용해
+  결과를 스트리밍하는 방법을 고려하십시오.
+</Warning>
+
+**예시**
+
+```pycon
+>>> session = Session("test.db")
+>>>
+>>> # 기본 CSV 형식으로 쿼리 실행
+>>> result = session.query("SELECT 1 as number")
+>>> print(result)
+number
+1
+```
+
+```pycon
+>>> # JSON 포맷으로 쿼리
+>>> result = session.query("SELECT 1 as number", fmt="JSON")
+>>> print(result)
+{"number": "1"}
+```
+
+```pycon
+>>> # Complex query with table creation
+>>> session.query("CREATE TABLE test (id INT, name String) ENGINE = Memory")
+>>> session.query("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
+>>> result = session.query("SELECT * FROM test ORDER BY id")
+>>> print(result)
+id,name
+1,Alice
+2,Bob
+```
+
+**관련 항목**
+
+* [`send_query()`](#chdb-session-session-send_query) - 스트리밍 쿼리 실행에 사용됩니다
+* [`sql`](#chdb-session-session-sql) - 이 메서드의 별칭입니다
+
+***
+
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
+
+SQL 쿼리를 실행하고 스트리밍 결과 이터레이터를 반환합니다.
+
+이 메서드는 세션의 데이터베이스에서 SQL 쿼리를 실행하고,
+모든 내용을 한 번에 메모리에 로드하지 않고도 결과를 순회할 수 있는
+스트리밍 결과 객체를 반환합니다. 이는 특히 큰 결과 집합에 유용합니다.
+
+**구문**
+
+```python
+send_query(sql, fmt='CSV') → StreamingResult
+```
+
+**매개변수**
+
+| 매개변수  | 유형  | 기본값     | 설명                                                                                                                                                                                                                         |
+| ----- | --- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql` | str | *필수*    | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                             |
+| `fmt` | str | `"CSV"` | 결과의 출력 형식입니다. 사용할 수 있는 포맷:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"TabSeparated"` - 탭으로 구분된 값<br />• `"JSONCompact"` - 압축 JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷 |
+
+**반환**
+
+| 반환 유형             | 설명                                                                            |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `StreamingResult` | 쿼리 결과를 점진적으로 반환하는 스트리밍 결과 반복자입니다. 이 반복자는 for 루프에서 사용하거나 다른 데이터 구조로 변환할 수 있습니다 |
+
+**발생 가능한 예외**
+
+| Exception      | 조건                  |
+| -------------- | ------------------- |
+| `RuntimeError` | 세션이 닫혔거나 유효하지 않은 경우 |
+| `ValueError`   | SQL 쿼리 형식이 잘못된 경우   |
+
+<Note>
+  “Debug” 포맷은 지원되지 않으며 경고와 함께 자동으로 “CSV”로 변환됩니다. 디버깅하려면 대신 연결 문자열 매개변수를 사용하십시오.
+</Note>
+
+<Warning>
+  반환된 StreamingResult 객체는 데이터베이스 연결을 유지하므로 즉시 사용하거나 적절히 저장해야 합니다.
+</Warning>
+
+**예시**
+
+```pycon
+>>> session = Session("test.db")
+>>> session.query("CREATE TABLE big_table (id INT, data String) ENGINE = MergeTree() order by id")
+>>>
+>>> # 대용량 데이터셋 삽입
+>>> for i in range(1000):
+...     session.query(f"INSERT INTO big_table VALUES ({i}, 'data_{i}')")
+>>>
+>>> # 메모리 문제를 방지하기 위해 결과를 스트리밍
+>>> streaming_result = session.send_query("SELECT * FROM big_table ORDER BY id")
+>>> for chunk in streaming_result:
+...     print(f"Processing chunk: {len(chunk)} bytes")
+...     # 전체 결과 집합을 로드하지 않고 청크 처리
+```
+
+```pycon
+>>> # 컨텍스트 매니저와 함께 사용
+>>> with session.send_query("SELECT COUNT(*) FROM big_table") as stream:
+...     for result in stream:
+...         print(f"Count result: {result}")
+```
+
+**관련 항목**
+
+* [`query()`](#chdb-session-session-query) - 비스트리밍 쿼리 실행용
+* `chdb.state.sqlitelike.StreamingResult` - 스트리밍 결과 이터레이터
+
+***
+
+<div id="chdb-session-session-sql">
+  #### `sql`
+</div>
+
+SQL 쿼리를 실행하고 결과를 반환합니다.
+
+이 메서드는 세션의 데이터베이스에서 SQL 쿼리를 실행하고,
+지정된 포맷으로 결과를 반환합니다. 또한 다양한 출력 형식을
+지원하며, 쿼리 간 세션 상태를 유지합니다.
+
+**구문**
+
+```python
+sql(sql, fmt='CSV', udf_path='')
+```
+
+**매개변수**
+
+| 매개변수       | 유형  | 기본값        | 설명                                                                                                                                                                                                                                                             |
+| ---------- | --- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`      | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                                 |
+| `fmt`      | str | `"CSV"`    | 결과의 출력 형식입니다. 사용 가능한 포맷:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"TabSeparated"` - 탭으로 구분된 값<br />• `"Pretty"` - 보기 좋게 표시된 테이블 포맷<br />• `"JSONCompact"` - 간결한 JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷 |
+| `udf_path` | str | `""`       | 사용자 정의 함수의 경로입니다. 지정하지 않으면 세션 초기화 시 설정된 UDF 경로를 사용합니다                                                                                                                                                                                                          |
+
+**반환값**
+
+지정한 형식으로 쿼리 결과를 반환합니다.
+정확한 반환 유형은 `fmt` 매개변수에 따라 달라집니다:
+
+* 문자열 포맷(CSV, JSON 등)은 str을 반환합니다
+* 바이너리 형식(Arrow, Parquet)은 bytes를 반환합니다
+
+**발생 가능한 예외:**
+
+| 예외             | 조건                    |
+| -------------- | --------------------- |
+| `RuntimeError` | 세션이 닫혔거나 유효하지 않은 경우   |
+| `ValueError`   | SQL 쿼리 형식이 올바르지 않은 경우 |
+
+<Note>
+  “Debug” 포맷은 지원되지 않으며, 경고와 함께 자동으로 “CSV”로 변환됩니다.
+  디버깅에는 대신 연결 문자열 매개변수를 사용하십시오.
+</Note>
+
+<Warning>
+  **경고**
+
+  이 메서드는 쿼리를 동기식으로 실행하고 모든 결과를
+  메모리에 로드합니다.
+  큰 결과 집합에는 스트리밍 결과를 위해 [`send_query()`](#chdb-session-session-send_query) 사용을 고려하십시오.
+</Warning>
+
+**예시**
+
+```pycon
+>>> session = Session("test.db")
+>>>
+>>> # 기본 CSV 형식으로 쿼리 실행
+>>> result = session.query("SELECT 1 as number")
+>>> print(result)
+number
+1
+```
+
+```pycon
+>>> # JSON 포맷으로 쿼리
+>>> result = session.query("SELECT 1 as number", fmt="JSON")
+>>> print(result)
+{"number": "1"}
+```
+
+```pycon
+>>> # 테이블 생성을 포함한 복합 쿼리
+>>> session.query("CREATE TABLE test (id INT, name String) ENGINE = MergeTree() order by id")
+>>> session.query("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
+>>> result = session.query("SELECT * FROM test ORDER BY id")
+>>> print(result)
+id,name
+1,Alice
+2,Bob
+```
+
+**관련 항목**
+
+* [`send_query()`](#chdb-session-session-send_query) - 스트리밍 쿼리 실행에 사용
+* [`sql`](#chdb-session-session-sql) - 이 메서드의 별칭
+
+<div id="chdb-state-management">
+  ## 상태 관리
+</div>
+
+<div id="chdb_state_connect">
+  ### `chdb.state.connect`
+</div>
+
+chDB 백그라운드 서버와의 [연결](#chdb-state-sqlitelike-connection)을 생성합니다.
+
+이 함수는 chDB(ClickHouse) 데이터베이스 엔진에 대한 연결을 설정합니다.
+프로세스당 하나의 연결만 열어 둘 수 있습니다. 동일한
+connection string으로 여러 번 호출하면 동일한 연결 객체를 반환합니다.
+
+**구문**
+
+```python
+chdb.state.connect(connection_string: str = ':memory:') → Connection
+```
+
+**매개변수**
+
+| Parameter                          | Type | Default      | Description                      |
+| ---------------------------------- | ---- | ------------ | -------------------------------- |
+| `connection_string(str, optional)` | str  | `":memory:"` | 데이터베이스 연결 문자열입니다. 아래 포맷을 참조하십시오. |
+
+**기본 포맷**
+
+지원되는 연결 문자열 포맷:
+
+| Format                    | Description       |
+| ------------------------- | ----------------- |
+| `":memory:"`              | 메모리 내 데이터베이스(기본값) |
+| `"test.db"`               | 상대 경로 데이터베이스 파일   |
+| `"file:test.db"`          | 상대 경로와 동일         |
+| `"/path/to/test.db"`      | 절대 경로 데이터베이스 파일   |
+| `"file:/path/to/test.db"` | 절대 경로와 동일         |
+
+**쿼리 매개변수 포함**
+
+| Format                                             | Description     |
+| -------------------------------------------------- | --------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | 매개변수가 포함된 상대 경로 |
+| `"file::memory:?verbose&log-level=test"`           | 매개변수가 포함된 인메모리  |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 매개변수가 포함된 절대 경로 |
+
+**쿼리 매개변수 처리**
+
+쿼리 매개변수는 시작 인수로 ClickHouse 엔진에 전달됩니다.
+특수 매개변수 처리:
+
+| Special Parameter | Becomes        | Description |
+| ----------------- | -------------- | ----------- |
+| `mode=ro`         | `--readonly=1` | 읽기 전용 모드    |
+| `verbose`         | (flag)         | 상세 로깅 활성화   |
+| `log-level=test`  | (setting)      | 로깅 수준 설정    |
+
+전체 매개변수 목록은 `clickhouse local --help --verbose`를 참조하십시오.
+
+**반환값**
+
+| Return Type  | Description                                                                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection` | 다음을 지원하는 데이터베이스 연결 객체입니다:<br />• `Connection.cursor()`를 사용한 커서 생성<br />• `Connection.query()`를 사용한 직접 쿼리 실행<br />• `Connection.send_query()`를 사용한 스트리밍 쿼리 실행<br />• 자동 정리를 위한 컨텍스트 매니저 프로토콜 |
+
+**예외 발생**
+
+| Exception      | Condition         |
+| -------------- | ----------------- |
+| `RuntimeError` | 데이터베이스 연결에 실패한 경우 |
+
+<Warning>
+  **경고**
+
+  프로세스당 하나의 연결만 지원됩니다.
+  새 연결을 생성하면 기존 연결은 모두 종료됩니다.
+</Warning>
+
+**예시**
+
+```pycon
+>>> # 인메모리 데이터베이스
+>>> conn = connect()
+>>> conn = connect(":memory:")
+>>>
+>>> # 파일 기반 데이터베이스
+>>> conn = connect("my_data.db")
+>>> conn = connect("/path/to/data.db")
+>>>
+>>> # 매개변수 사용
+>>> conn = connect("data.db?mode=ro")  # 읽기 전용 모드
+>>> conn = connect(":memory:?verbose&log-level=debug")  # 디버그 로깅
+>>>
+>>> # 자동 정리를 위한 컨텍스트 매니저 사용
+>>> with connect("data.db") as conn:
+...     result = conn.query("SELECT 1")
+...     print(result)
+>>> # 연결 자동 종료
+```
+
+**관련 항목**
+
+* `Connection` - 데이터베이스 연결 클래스
+* `Cursor` - DB-API 2.0 작업을 위한 데이터베이스 커서"
+
+<div id="chdb-state-sqlitelike-connection">
+  ### **class** `chdb.state.sqlitelike.Connection`
+</div>
+
+상속: `object`
+
+**구문**
+
+```python
+class chdb.state.sqlitelike.Connection(connection_string: str)
+```
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+연결을 닫고 리소스를 정리합니다.
+
+이 메서드는 데이터베이스(database) 연결을 닫고, 활성 커서를 포함한
+관련 리소스를 모두 정리합니다. 이 메서드를 호출한 후에는
+연결이 더 이상 유효하지 않아 이후 작업에 사용할 수 없습니다.
+
+**구문**
+
+```python
+close() → None
+```
+
+<Note>
+  이 메서드는 멱등적이므로 여러 번 호출해도 안전합니다.
+</Note>
+
+<Warning>
+  **경고**
+
+  연결이 닫히면 진행 중인 모든 스트리밍 쿼리가 취소됩니다.
+  닫기 전에 중요한 데이터가 모두 처리되었는지 확인하십시오.
+</Warning>
+
+**예시**
+
+```pycon
+>>> conn = connect("test.db")
+>>> # 쿼리에 연결 사용
+>>> conn.query("CREATE TABLE test (id INT) ENGINE = Memory")
+>>> # 완료 후 닫기
+>>> conn.close()
+```
+
+```pycon
+>>> # 컨텍스트 매니저 사용 (자동 정리)
+>>> with connect("test.db") as conn:
+...     conn.query("SELECT 1")
+...     # 연결이 자동으로 닫힘
+```
+
+***
+
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
+
+쿼리를 실행하기 위한 [Cursor](#chdb-state-sqlitelike-cursor) 객체를 생성합니다.
+
+이 메서드는 쿼리 실행과 결과 조회를 위한 표준
+DB-API 2.0 인터페이스를 제공하는 데이터베이스 커서를 생성합니다.
+커서를 사용하면 쿼리 실행과
+결과 조회를 세밀하게 제어할 수 있습니다.
+
+**구문**
+
+```python
+cursor() → Cursor
+```
+
+**반환값**
+
+| 반환 유형    | 설명               |
+| -------- | ---------------- |
+| `Cursor` | 데이터베이스 작업용 커서 객체 |
+
+<Note>
+  새 커서를 생성하면 이 connection에 연결된 기존 커서가 대체됩니다. connection당
+  하나의 커서만 지원됩니다.
+</Note>
+
+**예시**
+
+```pycon
+>>> conn = connect(":memory:")
+>>> cursor = conn.cursor()
+>>> cursor.execute("CREATE TABLE test (id INT, name String) ENGINE = Memory")
+>>> cursor.execute("INSERT INTO test VALUES (1, 'Alice')")
+>>> cursor.execute("SELECT * FROM test")
+>>> rows = cursor.fetchall()
+>>> print(rows)
+((1, 'Alice'),)
+```
+
+**관련 항목**
+
+* [`Cursor`](#chdb-state-sqlitelike-cursor) - 데이터베이스 커서 구현체
+
+***
+
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
+
+SQL 쿼리를 실행하고 전체 결과를 반환합니다.
+
+이 메서드는 SQL 쿼리를 동기적으로 실행하고 전체
+결과를 반환합니다. 다양한 출력 형식을 지원하며
+출력 형식별 후처리를 자동으로 적용합니다.
+
+**구문**
+
+```python
+query(query: str, format: str = 'CSV') → Any
+```
+
+**매개변수:**
+
+| 매개변수     | 유형  | 기본값        | 설명                                                                                                                                                                                                                                 |
+| -------- | --- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`  | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                     |
+| `format` | str | `"CSV"`    | 결과의 출력 형식입니다. 지원되는 포맷:<br />• `"CSV"` - 쉼표로 구분된 값(문자열)<br />• `"JSON"` - JSON 포맷(문자열)<br />• `"Arrow"` - Apache Arrow 형식(바이트)<br />• `"Dataframe"` - Pandas DataFrame(pandas 필요)<br />• `"Arrowtable"` - PyArrow Table(pyarrow 필요) |
+
+**반환값**
+
+| 반환 유형              | 설명                    |
+| ------------------ | --------------------- |
+| `str`              | 문자열 포맷(CSV, JSON)인 경우 |
+| `bytes`            | Arrow 형식인 경우          |
+| `pandas.DataFrame` | dataframe 포맷인 경우      |
+| `pyarrow.Table`    | arrowtable 포맷인 경우     |
+
+**예외**
+
+| Exception      | 조건                         |
+| -------------- | -------------------------- |
+| `RuntimeError` | 쿼리 실행이 실패한 경우              |
+| `ImportError`  | 해당 포맷에 필요한 패키지가 설치되지 않은 경우 |
+
+<Warning>
+  **경고**
+
+  이 메서드는 전체 결과 집합을 메모리에 로드합니다. 결과가 큰 경우에는
+  스트리밍을 위해 [`send_query()`](#chdb-state-sqlitelike-connection-send_query) 사용을 고려하십시오.
+</Warning>
+
+**예시**
+
+```pycon
+>>> conn = connect(":memory:")
+>>>
+>>> # 기본 CSV 쿼리
+>>> result = conn.query("SELECT 1 as num, 'hello' as text")
+>>> print(result)
+num,text
+1,hello
+```
+
+```pycon
+>>> # DataFrame 포맷
+>>> df = conn.query("SELECT number FROM numbers(5)", "dataframe")
+>>> print(df)
+   number
+0       0
+1       1
+2       2
+3       3
+4       4
+```
+
+**관련 항목**
+
+* [`send_query()`](#chdb-state-sqlitelike-connection-send_query) - 스트리밍 쿼리 실행에 사용됩니다
+
+***
+
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
+
+SQL 쿼리를 실행하고 스트리밍 결과 이터레이터를 반환합니다.
+
+이 메서드는 SQL 쿼리를 실행하고 StreamingResult 객체를 반환합니다.
+이 객체를 사용하면 모든 데이터를 한 번에 메모리에 로드하지 않고도
+결과를 순회할 수 있습니다. 대규모 결과 집합을 처리할 때 적합합니다.
+
+**구문**
+
+```python
+send_query(query: str, format: str = 'CSV') → StreamingResult
+```
+
+**매개변수**
+
+| 매개변수     | 유형  | 기본값        | 설명                                                                                                                                                                                                                                  |
+| -------- | --- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`  | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                      |
+| `format` | str | `"CSV"`    | 결과의 출력 형식입니다. 지원되는 포맷:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식 (`record&#95;batch()` 메서드 사용 가능)<br />• `"dataframe"` - Pandas DataFrame 청크<br />• `"arrowtable"` - PyArrow Table 청크 |
+
+**반환값**
+
+| 반환 유형             | 설명                                                                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StreamingResult` | 다음을 지원하는 쿼리 결과용 스트리밍 이터레이터입니다:<br />• 이터레이터 프로토콜 (`for` 루프)<br />• 컨텍스트 매니저 프로토콜 (`with` 문)<br />• `fetch()` 메서드를 사용한 수동 가져오기<br />• PyArrow RecordBatch 스트리밍(Arrow 형식에서만 지원) |
+
+**예외**
+
+| 예외             | 조건                            |
+| -------------- | ----------------------------- |
+| `RuntimeError` | 쿼리 실행에 실패한 경우                 |
+| `ImportError`  | 해당 포맷에 필요한 패키지가 설치되어 있지 않은 경우 |
+
+<Note>
+  반환된 StreamingResult에서는 &quot;Arrow&quot; 형식에서만 `record_batch()` 메서드를 지원합니다.
+</Note>
+
+**예시**
+
+```pycon
+>>> conn = connect(":memory:")
+>>>
+>>> # 기본 스트리밍
+>>> stream = conn.send_query("SELECT number FROM numbers(1000)")
+>>> for chunk in stream:
+...     print(f"청크 처리 중: {len(chunk)} 바이트")
+```
+
+```pycon
+>>> # 정리를 위한 컨텍스트 매니저 사용
+>>> with conn.send_query("SELECT * FROM large_table") as stream:
+...     chunk = stream.fetch()
+...     while chunk:
+...         process_data(chunk)
+...         chunk = stream.fetch()
+```
+
+```pycon
+>>> # RecordBatch 스트리밍을 위한 Arrow 형식
+>>> stream = conn.send_query("SELECT * FROM data", "Arrow")
+>>> reader = stream.record_batch(rows_per_batch=10000)
+>>> for batch in reader:
+...     print(f"Batch shape: {batch.num_rows} x {batch.num_columns}")
+```
+
+**관련 항목**
+
+* [`query()`](#chdb-state-sqlitelike-connection-query) - 비스트리밍 쿼리 실행용
+* [`StreamingResult`](#chdb-state-sqlitelike-streamingresult) - 스트리밍 결과 이터레이터
+
+***
+
+<div id="chdb-state-sqlitelike-streamingresult">
+  ### **class** `chdb.state.sqlitelike.StreamingResult`
+</div>
+
+기반 클래스: `object`
+
+대용량 쿼리 결과를 처리하기 위한 스트리밍 결과 반복자입니다.
+
+이 클래스는 전체 결과 집합을 메모리에 로드하지 않고
+쿼리 결과를 스트리밍할 수 있는 반복자 인터페이스를 제공합니다. 다양한 출력 형식을
+지원하며, 수동으로 결과를 가져오는 메서드와 PyArrow RecordBatch 스트리밍 메서드도 제공합니다.
+
+```python
+class chdb.state.sqlitelike.StreamingResult
+```
+
+***
+
+<div id="streamingresult-fetch">
+  #### `fetch`
+</div>
+
+스트리밍 결과의 다음 청크를 가져옵니다.
+
+이 메서드는 스트리밍
+쿼리 결과에서 다음으로 사용 가능한 데이터 청크를 가져옵니다. 반환되는 데이터의 포맷은
+스트리밍 쿼리를 시작할 때 지정한 포맷에 따라 달라집니다.
+
+**구문**
+
+```python
+fetch() → Any
+```
+
+**반환값**
+
+| 반환 유형   | 설명                             |
+| ------- | ------------------------------ |
+| `str`   | 텍스트 형식(CSV, JSON)에 사용됩니다       |
+| `bytes` | 바이너리 형식(Arrow, Parquet)에 사용됩니다 |
+| `None`  | 결과 스트림을 모두 소비한 경우              |
+
+**예시**
+
+```pycon
+>>> stream = conn.send_query("SELECT * FROM large_table")
+>>> chunk = stream.fetch()
+>>> while chunk is not None:
+...     process_data(chunk)
+...     chunk = stream.fetch()
+```
+
+***
+
+<div id="streamingresult-cancel">
+  #### `cancel`
+</div>
+
+스트리밍 쿼리를 취소하고 리소스를 정리합니다.
+
+이 메서드는 진행 중인 스트리밍 쿼리를 취소하고 관련
+리소스를 해제합니다. 스트림이 끝나기 전에 결과 처리를
+중단하려는 경우 호출해야 합니다.
+
+**구문**
+
+```python
+cancel() → None
+```
+
+**예시**
+
+```pycon
+>>> stream = conn.send_query("SELECT * FROM very_large_table")
+>>> for i, chunk in enumerate(stream):
+...     if i >= 10:  # 처음 10개의 청크만 처리
+...         stream.cancel()
+...         break
+...     process_data(chunk)
+```
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+스트리밍 결과를 닫고 리소스를 정리합니다.
+
+[`cancel()`](#streamingresult-cancel)의 별칭입니다. 스트리밍 결과 이터레이터를 닫고
+관련 리소스를 해제합니다.
+
+**구문**
+
+```python
+close() → None
+```
+
+***
+
+<div id="streamingresult-record_batch">
+  #### `record_batch`
+</div>
+
+효율적인 배치 처리를 위해 PyArrow RecordBatchReader를 생성합니다.
+
+이 메서드는 Arrow 형식의 쿼리 결과를 효율적으로
+순회할 수 있는 PyArrow RecordBatchReader를 생성합니다. PyArrow를 사용할 때 대규모 결과 집합을 처리하는 가장
+효율적인 방법입니다.
+
+**구문**
+
+```python
+record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
+```
+
+**매개변수**
+
+| 매개변수             | 유형  | 기본값       | 설명      |
+| ---------------- | --- | --------- | ------- |
+| `rows_per_batch` | int | `1000000` | 배치당 행 수 |
+
+**반환**
+
+| 반환 유형                  | 설명                                        |
+| ---------------------- | ----------------------------------------- |
+| `pa.RecordBatchReader` | 배치를 순회하는 데 사용하는 PyArrow RecordBatchReader |
+
+<Note>
+  이 메서드는 스트리밍 쿼리가 `format="Arrow"`로 시작된 경우에만 사용할 수
+  있습니다. 다른 포맷에서 사용하면 오류가 발생합니다.
+</Note>
+
+**예시**
+
+```pycon
+>>> stream = conn.send_query("SELECT * FROM data", format="Arrow")
+>>> reader = stream.record_batch(rows_per_batch=10000)
+>>> for batch in reader:
+...     print(f"Processing batch: {batch.num_rows} rows")
+...     df = batch.to_pandas()
+...     process_dataframe(df)
+```
+
+***
+
+<div id="streamingresult-iterator">
+  #### 반복자 프로토콜
+</div>
+
+StreamingResult는 Python의 반복자 프로토콜을 지원하므로
+for 루프에서 직접 사용할 수 있습니다:
+
+```pycon
+>>> stream = conn.send_query("SELECT number FROM numbers(1000000)")
+>>> for chunk in stream:
+...     print(f"Chunk size: {len(chunk)} bytes")
+```
+
+***
+
+<div id="streamingresult-context-manager">
+  #### 컨텍스트 매니저 프로토콜
+</div>
+
+StreamingResult는 자동
+리소스 정리를 위해 컨텍스트 매니저 프로토콜을 지원합니다:
+
+```pycon
+>>> with conn.send_query("SELECT * FROM data") as stream:
+...     for chunk in stream:
+...         process(chunk)
+>>> # 스트림이 자동으로 닫힘
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor">
+  ### **class** `chdb.state.sqlitelike.Cursor`
+</div>
+
+상속: `object`
+
+```python
+class chdb.state.sqlitelike.Cursor(connection)
+```
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+커서를 닫고 리소스를 정리합니다.
+
+이 메서드는 커서를 닫고 관련 리소스를 모두 정리합니다.
+이 메서드를 호출하면 커서는 더 이상 유효하지 않아
+이후 작업에 사용할 수 없습니다.
+
+**구문**
+
+```python
+close() → None
+```
+
+<Note>
+  이 메서드는 멱등성을 가지므로 여러 번 호출해도 안전합니다.
+  connection이 닫히면 커서도 자동으로 닫힙니다.
+</Note>
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT 1")
+>>> result = cursor.fetchone()
+>>> cursor.close()  # 커서 리소스 정리
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-column_names">
+  #### `column_names`
+</div>
+
+마지막으로 실행된 쿼리의 컬럼 이름 목록을 반환합니다.
+
+이 메서드는 가장 최근에 실행한 SELECT 쿼리의 컬럼 이름을 반환합니다. 이름은
+결과 집합에 나타나는 순서대로 반환됩니다.
+
+**구문**
+
+```python
+column_names() → list
+```
+
+**반환값**
+
+| 반환 유형  | 설명                                                   |
+| ------ | ---------------------------------------------------- |
+| `list` | 컬럼 이름 문자열 목록 또는 쿼리가 실행되지 않았거나 쿼리 결과에 컬럼이 없는 경우의 빈 목록 |
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT id, name, email FROM users LIMIT 1")
+>>> print(cursor.column_names())
+['id', 'name', 'email']
+```
+
+**관련 항목**
+
+* [`column_types()`](#chdb-state-sqlitelike-cursor-column_types) - 컬럼 타입 정보를 조회합니다
+* [`description`](#chdb-state-sqlitelike-cursor-description) - DB-API 2.0 컬럼 설명 정보
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-column_types">
+  #### `column_types`
+</div>
+
+마지막으로 실행된 쿼리의 컬럼 타입 목록을 반환합니다.
+
+이 메서드는 가장 최근에 실행된 SELECT 쿼리의 ClickHouse 컬럼 타입 이름을 반환합니다. 타입은 결과 집합에 표시된 순서와 동일한 순서로 반환됩니다.
+
+**구문**
+
+```python
+column_types() → list
+```
+
+**반환값**
+
+| 반환 유형  | 설명                                                                    |
+| ------ | --------------------------------------------------------------------- |
+| `list` | ClickHouse type name 문자열의 목록이며, 쿼리가 실행되지 않았거나 쿼리 결과에 컬럼이 없으면 빈 목록입니다. |
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT toInt32(1), toString('hello')")
+>>> print(cursor.column_types())
+['Int32', 'String']
+```
+
+**관련 항목**
+
+* [`column_names()`](#chdb-state-sqlitelike-cursor-column_names) - 컬럼 이름 정보를 확인합니다
+* [`description`](#chdb-state-sqlitelike-cursor-description) - DB-API 2.0 컬럼 설명
+
+***
+
+<div id="commit">
+  #### `commit`
+</div>
+
+보류 중인 트랜잭션을 커밋합니다.
+
+이 메서드는 보류 중인 모든 데이터베이스(Database) 트랜잭션을 커밋합니다. ClickHouse에서는
+대부분의 작업이 자동으로 커밋되지만, 이 메서드는
+DB-API 2.0 호환성을 위해 제공됩니다.
+
+<Note>
+  ClickHouse는 일반적으로 작업을 자동으로 커밋하므로, 명시적으로 커밋할
+  필요는 거의 없습니다. 이 메서드는 표준
+  DB-API 2.0 워크플로와의 호환성을 위해 제공됩니다.
+</Note>
+
+**구문**
+
+```python
+commit() → None
+```
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("INSERT INTO test VALUES (1, 'data')")
+>>> cursor.commit()
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-description">
+  #### `property description : list`
+</div>
+
+DB-API 2.0 사양에 따라 컬럼 설명을 반환합니다.
+
+이 속성은 마지막으로 실행한 SELECT 쿼리의 결과 집합(result set)에 있는
+각 컬럼을 설명하는 7개 항목으로 이루어진 튜플 목록을 반환합니다. 각 튜플에는 다음이 포함됩니다:
+(name, type&#95;code, display&#95;size, internal&#95;size, precision, scale, null&#95;ok)
+
+현재는 name과 type&#95;code만 제공되며, 나머지 필드는 None으로 설정됩니다.
+
+**반환값**
+
+| 반환 유형  | 설명                                                   |
+| ------ | ---------------------------------------------------- |
+| `list` | 각 컬럼을 설명하는 7개 항목 튜플 목록 또는 SELECT 쿼리가 실행되지 않은 경우 빈 목록 |
+
+<Note>
+  이는 cursor.description에 대한 DB-API 2.0 사양을 따릅니다.
+  이 구현에서는 처음 두 요소(name 및 type&#95;code)에만
+  의미 있는 데이터가 포함됩니다.
+</Note>
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT id, name FROM users LIMIT 1")
+>>> for desc in cursor.description:
+...     print(f"Column: {desc[0]}, Type: {desc[1]}")
+Column: id, Type: Int32
+Column: name, Type: String
+```
+
+**관련 항목**
+
+* [`column_names()`](#chdb-state-sqlitelike-cursor-column_names) - 컬럼 이름만 반환합니다
+* [`column_types()`](#chdb-state-sqlitelike-cursor-column_types) - 컬럼 타입만 반환합니다
+
+***
+
+<div id="execute">
+  #### `execute`
+</div>
+
+SQL 쿼리를 실행하고 결과를 가져올 수 있도록 준비합니다.
+
+이 메서드는 SQL 쿼리를 실행한 뒤 fetch 메서드를 사용해 결과를
+조회할 수 있도록 준비합니다. 결과 데이터의 구문 분석과
+ClickHouse 데이터 타입에 대한 자동 타입 변환도 처리합니다.
+
+**구문**
+
+```python
+execute(query: str) → None
+```
+
+**매개변수:**
+
+| 매개변수    | 유형  | 설명             |
+| ------- | --- | -------------- |
+| `query` | str | 실행할 SQL 쿼리 문자열 |
+
+**예외**
+
+| Exception   | Condition                  |
+| ----------- | -------------------------- |
+| `Exception` | 쿼리 실행에 실패하거나 결과 파싱에 실패한 경우 |
+
+<Note>
+  이 메서드는 `cursor.execute()`에 대한 DB-API 2.0 사양을 따릅니다.
+  실행 후에는 `fetchone()`, `fetchmany()`, `fetchall()`을 사용하여
+  결과를 가져오십시오.
+</Note>
+
+<Note>
+  이 메서드는 ClickHouse 데이터 타입을 적절한
+  Python 타입으로 자동 변환합니다:
+
+  * Int/UInt 타입 → int
+  * Float 타입 → float
+  * String/FixedString → str
+  * DateTime → datetime.datetime
+  * Date → datetime.date
+  * Bool → bool
+</Note>
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>>
+>>> # DDL 실행
+>>> cursor.execute("CREATE TABLE test (id INT, name String) ENGINE = Memory")
+>>>
+>>> # DML 실행
+>>> cursor.execute("INSERT INTO test VALUES (1, 'Alice')")
+>>>
+>>> # SELECT 실행 및 결과 조회
+>>> cursor.execute("SELECT * FROM test")
+>>> rows = cursor.fetchall()
+>>> print(rows)
+((1, 'Alice'),)
+```
+
+**관련 항목**
+
+* [`fetchone()`](#chdb-state-sqlitelike-cursor-fetchone) - 행 1개 가져오기
+* [`fetchmany()`](#chdb-state-sqlitelike-cursor-fetchmany) - 여러 행 가져오기
+* [`fetchall()`](#chdb-state-sqlitelike-cursor-fetchall) - 남은 모든 행 가져오기
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchall">
+  #### `fetchall`
+</div>
+
+쿼리 결과에 남아 있는 모든 행을 가져옵니다.
+
+이 메서드는 현재 커서 위치를 기준으로 현재 쿼리 결과 집합에 남아 있는 모든 행을 조회합니다. 반환값은 적절한 Python 유형 변환이 적용된 행 튜플들의 튜플입니다.
+
+**구문**
+
+```python
+fetchall() → tuple
+```
+
+**반환값:**
+
+| 반환 유형   | 설명                                                          |
+| ------- | ----------------------------------------------------------- |
+| `tuple` | 결과 집합에 남아 있는 모든 행 튜플을 포함하는 튜플입니다. 사용 가능한 행이 없으면 빈 튜플을 반환합니다 |
+
+<Warning>
+  **경고**
+
+  이 메서드는 남아 있는 모든 행을 한 번에 메모리에 로드합니다. 큰
+  결과 집합의 경우 [`fetchmany()`](#chdb-state-sqlitelike-cursor-fetchmany)를 사용하여 결과를
+  배치 단위로 처리하는 것이 좋습니다.
+</Warning>
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT id, name FROM users")
+>>> all_users = cursor.fetchall()
+>>> for user_id, user_name in all_users:
+...     print(f"User {user_id}: {user_name}")
+```
+
+**관련 항목**
+
+* [`fetchone()`](#chdb-state-sqlitelike-cursor-fetchone) - 단일 행 조회
+* [`fetchmany()`](#chdb-state-sqlitelike-cursor-fetchmany) - 여러 행을 배치로 조회
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
+
+쿼리 결과에서 여러 행을 가져옵니다.
+
+이 메서드는 현재 쿼리 결과 집합에서 최대 `size`개의 행을 가져옵니다. 반환값은 행 튜플로 이루어진 튜플이며, 각 행에는 적절한 Python 유형으로 변환된 컬럼 값이 포함됩니다.
+
+**구문**
+
+```python
+fetchmany(size: int = 1) → tuple
+```
+
+**매개변수**
+
+| 매개변수   | 유형  | 기본값 | 설명         |
+| ------ | --- | --- | ---------- |
+| `size` | int | `1` | 가져올 최대 행 수 |
+
+**반환값**
+
+| 반환 유형   | 설명                                                                   |
+| ------- | -------------------------------------------------------------------- |
+| `tuple` | 최대 &#39;size&#39;개의 행 튜플을 담는 튜플입니다. 결과 집합이 소진된 경우 더 적은 행이 포함될 수 있습니다 |
+
+<Note>
+  이 메서드는 DB-API 2.0 사양을 따릅니다. 결과 집합이 소진되면
+  ‘size’보다 적은 수의 행을 반환합니다.
+</Note>
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT * FROM large_table")
+>>>
+>>> # 결과를 배치로 처리
+>>> while True:
+...     batch = cursor.fetchmany(100)  # 한 번에 100행씩 가져오기
+...     if not batch:
+...         break
+...     process_batch(batch)
+```
+
+**관련 항목**
+
+* [`fetchone()`](#chdb-state-sqlitelike-cursor-fetchone) - 단일 행 조회
+* [`fetchall()`](#chdb-state-sqlitelike-cursor-fetchall) - 남아 있는 모든 행 조회
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
+
+쿼리 결과에서 다음 행을 가져옵니다.
+
+이 메서드는 현재 쿼리 결과 집합에서 다음으로 사용 가능한 행을
+가져옵니다. 반환값은 적절한 Python 유형 변환이 적용된 컬럼 값들을
+포함하는 튜플입니다.
+
+**구문**
+
+```python
+fetchone() → tuple | None
+```
+
+**반환값:**
+
+| 반환 유형             | 설명                                                      |
+| ----------------- | ------------------------------------------------------- |
+| `Optional[tuple]` | 다음 행을 컬럼 값으로 이루어진 튜플로 반환하며, 더 이상 반환할 행이 없으면 None을 반환합니다 |
+
+<Note>
+  이 메서드는 DB-API 2.0 사양을 따릅니다. 컬럼 값은
+  ClickHouse 컬럼 타입에 따라 적절한 Python 타입으로
+  자동 변환됩니다.
+</Note>
+
+**예시**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT id, name FROM users")
+>>> row = cursor.fetchone()
+>>> while row is not None:
+...     user_id, user_name = row
+...     print(f"User {user_id}: {user_name}")
+...     row = cursor.fetchone()
+```
+
+**관련 항목**
+
+* [`fetchmany()`](#chdb-state-sqlitelike-cursor-fetchmany) - 여러 행 조회
+* [`fetchall()`](#chdb-state-sqlitelike-cursor-fetchall) - 남은 모든 행 조회
+
+***
+
+<div id="state-sqlitelike-to_arrowtable">
+  ### `chdb.state.sqlitelike`
+</div>
+
+쿼리 결과를 PyArrow Table로 변환합니다.
+
+이 함수는 chdb 쿼리 결과를 PyArrow Table 포맷으로 변환하여
+열 지향 데이터에 효율적으로 접근할 수 있게 하고,
+다른 데이터 처리 라이브러리와도 원활하게 상호 운용할 수 있도록 합니다.
+
+**구문**
+
+```python
+chdb.state.sqlitelike.to_arrowTable(res)
+```
+
+**매개변수:**
+
+| 매개변수  | 유형 | 설명                               |
+| ----- | -- | -------------------------------- |
+| `res` | -  | Arrow 형식 데이터가 포함된 chdb의 쿼리 결과 객체 |
+
+**반환값**
+
+| 반환 유형           | 설명                       |
+| --------------- | ------------------------ |
+| `pyarrow.Table` | 쿼리 결과가 포함된 PyArrow Table |
+
+**예외 발생**
+
+| 예외            | 조건                                   |
+| ------------- | ------------------------------------ |
+| `ImportError` | pyarrow 또는 pandas 패키지가 설치되어 있지 않은 경우 |
+
+<Note>
+  이 함수를 사용하려면 pyarrow와 pandas가 모두 설치되어 있어야 합니다.
+  다음 명령으로 설치하십시오: `pip install pyarrow pandas`
+</Note>
+
+<Warning>
+  **경고**
+
+  결과가 비어 있으면 스키마가 없는 빈 PyArrow Table이 반환됩니다.
+</Warning>
+
+**예시**
+
+```pycon
+>>> import chdb
+>>> result = chdb.query("SELECT 1 as num, 'hello' as text", "Arrow")
+>>> table = to_arrowTable(result)
+>>> print(table.schema)
+num: int64
+text: string
+>>> print(table.to_pandas())
+   num   text
+0    1  hello
+```
+
+***
+
+<div id="state-sqlitelike-to_df">
+  ### `chdb.state.sqlitelike.to_df`
+</div>
+
+쿼리 결과를 Pandas DataFrame으로 변환합니다.
+
+이 함수는 chdb 쿼리 결과를 먼저 PyArrow Table로 변환한 뒤 DataFrame으로 변환하여
+Pandas API를 통한 편리한 데이터 분석 기능을 제공합니다.
+
+**구문**
+
+```python
+chdb.state.sqlitelike.to_df(r)
+```
+
+**매개변수:**
+
+| 매개변수 | 유형 | Description                       |
+| --------- | ---- | --------------------------------- |
+| `r`       | -    | Arrow 형식 데이터를 포함하는 chdb의 쿼리 결과 객체 |
+
+**반환값:**
+
+| Return 유형        | Description                                |
+| ------------------ | ------------------------------------------ |
+| `pandas.DataFrame` | 적절한 컬럼 이름과 데이터 타입을 갖는 쿼리 결과가 포함된 DataFrame |
+
+**예외**
+
+| Exception     | Condition                            |
+| ------------- | ------------------------------------ |
+| `ImportError` | pyarrow 또는 pandas 패키지가 설치되어 있지 않은 경우 |
+
+<Note>
+  이 함수는 대규모 데이터셋에서 성능을 높이기 위해 Arrow를 Pandas로 변환할 때
+  멀티스레딩을 사용합니다.
+</Note>
+
+**관련 항목**
+
+* [`to_arrowTable()`](#chdb-state-sqlitelike-to_arrowtable) - PyArrow Table 포맷으로 변환할 때 사용합니다.
+
+**예시**
+
+```pycon
+>>> import chdb
+>>> result = chdb.query("SELECT 1 as num, 'hello' as text", "Arrow")
+>>> df = to_df(result)
+>>> print(df)
+   num   text
+0    1  hello
+>>> print(df.dtypes)
+num      int64
+text    object
+dtype: object
+```
+
+<div id="dataframe-integration">
+  ## DataFrame 통합
+</div>
+
+<div id="chdb-dataframe-table">
+  ### **class** `chdb.dataframe.Table`
+</div>
+
+기반 클래스:
+
+```python
+class chdb.dataframe.Table(*args: Any, **kwargs: Any)
+```
+
+<div id="database-api-interface">
+  ## 데이터베이스 API (DBAPI) 2.0 인터페이스
+</div>
+
+chDB는 데이터베이스 연결을 위한 Python DB-API 2.0 호환 인터페이스를 제공하므로, 표준 데이터베이스 인터페이스를 사용하는 도구 및 프레임워크와 함께 chDB를 사용할 수 있습니다.
+
+chDB DB-API 2.0 인터페이스에는 다음이 포함됩니다.
+
+* **Connections**: 연결 문자열(connection string)을 사용한 데이터베이스 연결 관리
+* **Cursors**: 쿼리 실행 및 결과 가져오기
+* **Type System**: DB-API 2.0을 준수하는 유형 상수 및 컨버터
+* **Error Handling**: 표준 데이터베이스 예외 계층 구조
+* **Thread Safety**: 수준 1의 스레드 안전성(스레드는 모듈을 공유할 수 있지만 연결은 공유할 수 없음)
+
+***
+
+<div id="core-functions">
+  ### 핵심 함수
+</div>
+
+Database API (DBAPI) 2.0 인터페이스는 다음과 같은 핵심 함수를 구현합니다:
+
+<div id="dbapi-connect">
+  #### `chdb.dbapi.connect`
+</div>
+
+새 데이터베이스 연결을 초기화합니다.
+
+**구문**
+
+```python
+chdb.dbapi.connect(*args, **kwargs)
+```
+
+**매개변수**
+
+| 매개변수   | 유형  | 기본값    | 설명                                     |
+| ------ | --- | ------ | -------------------------------------- |
+| `path` | str | `None` | 데이터베이스 파일 경로입니다. 인메모리 데이터베이스는 None입니다. |
+
+**예외**
+
+| 예외                                   | 조건              |
+| ------------------------------------ | --------------- |
+| [`err.Error`](#chdb-dbapi-err-error) | 연결을 설정할 수 없는 경우 |
+
+***
+
+<div id="dbapi-get-client-info">
+  #### `chdb.dbapi.get_client_info()`
+</div>
+
+클라이언트 버전 정보를 반환합니다.
+
+MySQLdb와의 호환성을 위해 chDB 클라이언트 버전을 문자열로 반환합니다.
+
+**구문**
+
+```python
+chdb.dbapi.get_client_info()
+```
+
+**반환값**
+
+| 반환 유형 | 설명                                     |
+| ----- | -------------------------------------- |
+| `str` | &#39;major.minor.patch&#39; 포맷의 버전 문자열 |
+
+***
+
+<div id="type-constructors">
+  ### 유형 생성자
+</div>
+
+<div id="dbapi-binary">
+  #### `chdb.dbapi.Binary(x)`
+</div>
+
+x를 바이너리 형식으로 반환합니다.
+
+이 함수는 DB-API 2.0 사양에 따라 바이너리 데이터베이스 필드에서 사용할 수 있도록 입력을 `bytes` 유형으로 변환합니다.
+
+**구문**
+
+```python
+chdb.dbapi.Binary(x)
+```
+
+**매개변수**
+
+| 매개변수 | 유형 | 설명            |
+| ---- | -- | ------------- |
+| `x`  | -  | 바이너리로 변환할 입력값 |
+
+**반환값**
+
+| 반환 유형   | 설명                |
+| ------- | ----------------- |
+| `bytes` | 입력값을 bytes로 변환한 값 |
+
+***
+
+<div id="connection-class">
+  ### 연결 클래스
+</div>
+
+<div id="chdb-dbapi-connections-connection">
+  #### **class** `chdb.dbapi.connections.Connection(path=None)`
+</div>
+
+기반 클래스: `object`
+
+chDB 데이터베이스용 DB-API 2.0 호환 연결입니다.
+
+이 클래스는 chDB 데이터베이스에 연결하고 상호 작용할 수 있는 표준 DB-API 인터페이스를 제공합니다. 인메모리 데이터베이스와 파일 기반 데이터베이스를 모두 지원합니다.
+
+이 연결은 내부의 chDB 엔진을 관리하며, 쿼리 실행, 트랜잭션 관리(ClickHouse에서는 no-op), 커서 생성용 메서드를 제공합니다.
+
+```python
+class chdb.dbapi.connections.Connection(path=None)
+```
+
+**매개변수**
+
+| 매개변수 | 유형 | Default | Description                                                                                                                         |
+| --------- | ---- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | str  | `None`  | 데이터베이스 파일 경로입니다. `None`이면 인메모리 데이터베이스를 사용합니다. &#39;database.db&#39;와 같은 파일 경로를 지정하거나, &#39;:memory:&#39;를 사용하려면 `None`을 지정할 수 있습니다. |
+
+**변수**
+
+| Variable   | 유형 | Description                           |
+| ---------- | ---- | ------------------------------------- |
+| `encoding` | str  | 쿼리의 문자 인코딩이며, 기본값은 &#39;utf8&#39;입니다. |
+| `open`     | bool | 연결이 열려 있으면 True, 닫혀 있으면 False입니다.     |
+
+**예시**
+
+```pycon
+>>> # 인메모리 데이터베이스
+>>> conn = Connection()
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT 1")
+>>> result = cursor.fetchall()
+>>> conn.close()
+```
+
+```pycon
+>>> # 파일 기반 데이터베이스
+>>> conn = Connection('mydata.db')
+>>> with conn.cursor() as cur:
+...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
+...     cur.execute("INSERT INTO users VALUES (1, 'Alice')")
+>>> conn.close()
+```
+
+```pycon
+>>> # 컨텍스트 매니저 사용
+>>> with Connection() as cur:
+...     cur.execute("SELECT version()")
+...     version = cur.fetchone()
+```
+
+<Note>
+  ClickHouse는 일반적인 트랜잭션을 지원하지 않으므로, commit() 및 rollback()
+  작업은 실제로 아무 동작도 하지 않지만 DB-API 컴플라이언스를 위해 제공됩니다.
+</Note>
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+데이터베이스 연결을 닫습니다.
+
+내부 chDB 연결을 닫고 이 연결을 닫힌 상태로 표시합니다.
+이후 이 연결에서 작업을 수행하면 오류가 발생합니다.
+
+**구문**
+
+```python
+close()
+```
+
+**발생 예외**
+
+| 예외                                   | 조건                   |
+| ------------------------------------ | -------------------- |
+| [`err.Error`](#chdb-dbapi-err-error) | connection이 이미 닫힌 경우 |
+
+***
+
+<div id="commit">
+  #### `commit`
+</div>
+
+현재 트랜잭션을 커밋합니다.
+
+**구문**
+
+```python
+commit()
+```
+
+<Note>
+  이는 chDB/ClickHouse에서 전통적인 트랜잭션을 지원하지 않으므로 no-op입니다.
+  DB-API 2.0 컴플라이언스를 위해 제공됩니다.
+</Note>
+
+***
+
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
+
+쿼리 실행에 사용할 새 커서를 생성합니다.
+
+**구문**
+
+```python
+cursor(cursor=None)
+```
+
+**매개변수**
+
+| 매개변수     | 유형 | 설명                  |
+| -------- | -- | ------------------- |
+| `cursor` | -  | 무시되며, 호환성을 위해 제공됩니다 |
+
+**반환값**
+
+| 반환 유형    | 설명                   |
+| -------- | -------------------- |
+| `Cursor` | 이 연결에 대한 새 Cursor 객체 |
+
+**예외 발생**
+
+| 예외                                   | 조건           |
+| ------------------------------------ | ------------ |
+| [`err.Error`](#chdb-dbapi-err-error) | 연결이 닫혀 있는 경우 |
+
+**예시**
+
+```pycon
+>>> conn = Connection()
+>>> cur = conn.cursor()
+>>> cur.execute("SELECT 1")
+>>> result = cur.fetchone()
+```
+
+***
+
+<div id="escape">
+  #### `escape`
+</div>
+
+값을 SQL 쿼리에 안전하게 포함할 수 있도록 이스케이프 처리합니다.
+
+**구문**
+
+```python
+escape(obj, mapping=None)
+```
+
+**매개변수**
+
+| 매개변수      | 유형 | 설명                       |
+| --------- | -- | ------------------------ |
+| `obj`     | -  | 이스케이프할 값(문자열, 바이트, 숫자 등) |
+| `mapping` | -  | 이스케이프에 사용할 선택적 문자 매핑     |
+
+**반환값**
+
+| 반환 유형 | 설명                               |
+| ----- | -------------------------------- |
+| -     | SQL 쿼리에 사용할 수 있도록 입력값을 이스케이프한 결과 |
+
+**예시**
+
+```pycon
+>>> conn = Connection()
+>>> safe_value = conn.escape("O'Reilly")
+>>> query = f"SELECT * FROM users WHERE name = {safe_value}"
+```
+
+***
+
+<div id="escape-string">
+  #### `escape_string`
+</div>
+
+SQL 쿼리에서 사용할 문자열 값을 이스케이프합니다.
+
+**구문**
+
+```python
+escape_string(s)
+```
+
+**매개변수**
+
+| 매개변수 | 유형  | 설명         |
+| ---- | --- | ---------- |
+| `s`  | str | 이스케이프할 문자열 |
+
+**반환값**
+
+| 반환 유형 | 설명                             |
+| ----- | ------------------------------ |
+| `str` | SQL에 안전하게 포함할 수 있도록 이스케이프된 문자열 |
+
+***
+
+<div id="property-open">
+  #### `property open`
+</div>
+
+연결(connection)이 열려 있는지 확인합니다.
+
+**반환값**
+
+| 반환 유형  | 설명                            |
+| ------ | ----------------------------- |
+| `bool` | 연결이 열려 있으면 True, 닫혀 있으면 False |
+
+***
+
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
+
+SQL 쿼리를 직접 실행하고 원시 결과를 반환합니다.
+
+이 메서드는 cursor 인터페이스를 거치지 않고 쿼리를 직접 실행합니다.
+표준 DB-API 사용 시에는 `cursor()` 메서드를 사용하는 것이 좋습니다.
+
+**구문**
+
+```python
+query(sql, fmt='CSV')
+```
+
+**매개변수:**
+
+| 매개변수  | 유형           | 기본값        | 설명                                                                                                      |
+| ----- | ------------ | ---------- | ------------------------------------------------------------------------------------------------------- |
+| `sql` | str or bytes | *required* | 실행할 SQL 쿼리                                                                                              |
+| `fmt` | str          | `"CSV"`    | 출력 형식입니다. 지원되는 포맷에는 &quot;CSV&quot;, &quot;JSON&quot;, &quot;Arrow&quot;, &quot;Parquet&quot; 등이 포함됩니다. |
+
+**반환값**
+
+| 반환 유형 | 설명            |
+| ----- | ------------- |
+| -     | 지정된 형식의 쿼리 결과 |
+
+**예외 발생**
+
+| 예외                                                     | 조건                             |
+| ------------------------------------------------------ | ------------------------------ |
+| [`err.InterfaceError`](#chdb-dbapi-err-interfaceerror) | connection이 닫혔거나 쿼리 실행에 실패한 경우 |
+
+**예시**
+
+```pycon
+>>> conn = Connection()
+>>> result = conn.query("SELECT 1, 'hello'", "CSV")
+>>> print(result)
+"1,hello\n"
+```
+
+***
+
+<div id="property-resp">
+  #### `property resp`
+</div>
+
+마지막 쿼리 응답을 반환합니다.
+
+**반환값**
+
+| 반환 유형 | 설명                           |
+| ----- | ---------------------------- |
+| -     | 마지막 `query()` 호출에서 반환된 원시 응답 |
+
+<Note>
+  이 속성은 `query()`를 직접 호출할 때마다 업데이트됩니다.
+  커서를 통해 실행된 쿼리는 반영되지 않습니다.
+</Note>
+
+***
+
+<div id="rollback">
+  #### `rollback`
+</div>
+
+현재 트랜잭션을 롤백합니다.
+
+**구문**
+
+```python
+rollback()
+```
+
+<Note>
+  chDB/ClickHouse는 전통적인 트랜잭션을 지원하지 않으므로 이는 no-op입니다. DB-API 2.0 컴플라이언스를 위해 제공됩니다.
+</Note>
+
+***
+
+<div id="cursor-class">
+  ### Cursor 클래스
+</div>
+
+<div id="chdb-dbapi-cursors-cursor">
+  #### **class** `chdb.dbapi.cursors.Cursor`
+</div>
+
+기반: `object`
+
+쿼리를 실행하고 결과를 가져오는 DB-API 2.0 커서입니다.
+
+이 커서는 SQL 문을 실행하고 쿼리 결과를 관리하며,
+결과 집합을 탐색하는 메서드를 제공합니다. 매개변수 바인딩, 일괄 작업을 지원하고,
+DB-API 2.0 사양을 따릅니다.
+
+Cursor 인스턴스를 직접 생성하지 마십시오. 대신 `Connection.cursor()`를 사용하십시오.
+
+```python
+class chdb.dbapi.cursors.Cursor(connection)
+```
+
+| Variable          | 유형    | 설명                                             |
+| ----------------- | ----- | ---------------------------------------------- |
+| `description`     | tuple | 마지막 쿼리 결과의 컬럼 메타데이터                            |
+| `rowcount`        | int   | 마지막 쿼리로 영향받은 행 수(알 수 없는 경우 -1)                 |
+| `arraysize`       | int   | 한 번에 가져올 기본 행 수(기본값: 1)                        |
+| `lastrowid`       | -     | 마지막으로 삽입된 행의 ID(해당하는 경우)                       |
+| `max_stmt_length` | int   | `executemany()`의 최대 문 크기(기본값: 1024000) |
+
+**예시**
+
+```pycon
+>>> conn = Connection()
+>>> cur = conn.cursor()
+>>> cur.execute("SELECT 1 as id, 'test' as name")
+>>> result = cur.fetchone()
+>>> print(result)  # (1, 'test') 출력
+>>> cur.close()
+```
+
+<Note>
+  전체 사양의 자세한 내용은 [DB-API 2.0 Cursor Objects](https://www.python.org/dev/peps/pep-0249/#cursor-objects)를
+  참조하십시오.
+</Note>
+
+***
+
+<div id="callproc">
+  #### `callproc`
+</div>
+
+저장 프로시저를 실행합니다(임시로 제공되는 구현).
+
+**구문**
+
+```python
+callproc(procname, args=())
+```
+
+**매개변수**
+
+| 매개변수       | 유형  | 설명              |
+| ---------- | --- | --------------- |
+| `procname` | str | 실행할 저장 프로시저의 이름 |
+| `args`     | 시퀀스 | 프로시저에 전달할 매개변수  |
+
+**반환값**
+
+| 반환 유형      | 설명                     |
+| ---------- | ---------------------- |
+| `sequence` | 원래의 args 매개변수(변경되지 않음) |
+
+<Note>
+  chDB/ClickHouse는 전통적인 의미의 저장 프로시저를 지원하지 않습니다.
+  이 메서드는 DB-API 2.0 컴플라이언스를 위해 제공되지만 실제로는
+  아무 작업도 수행하지 않습니다. 모든 SQL 작업에는 execute()를 사용하십시오.
+</Note>
+
+<Warning>
+  **호환성**
+
+  이는 placeholder 구현입니다. OUT/INOUT 매개변수, 여러 결과 집합, 서버
+  변수와 같은 전통적인 저장 프로시저 기능은 기반이 되는 ClickHouse engine에서 지원되지 않습니다.
+</Warning>
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+커서를 닫고 관련 리소스를 해제합니다.
+
+닫은 후에는 커서를 더 이상 사용할 수 없으며, 어떤 작업을 수행해도 예외가 발생합니다.
+커서를 닫으면 남아 있는 데이터를 모두 소진하고 내부 커서를 해제합니다.
+
+**구문**
+
+```python
+close()
+```
+
+***
+
+<div id="execute">
+  #### `execute`
+</div>
+
+선택적으로 매개변수를 바인딩하여 SQL 쿼리를 실행합니다.
+
+이 메서드는 선택적으로 매개변수를 치환하여 단일 SQL 문을 실행합니다.
+유연성을 위해 여러 매개변수 플레이스홀더 스타일을 지원합니다.
+
+**구문**
+
+```python
+execute(query, args=None)
+```
+
+**매개변수**
+
+| 매개변수    | 유형              | 기본값    | 설명             |
+| ------- | --------------- | ------ | -------------- |
+| `query` | str             | *필수*   | 실행할 SQL 쿼리     |
+| `args`  | tuple/list/dict | `None` | 플레이스홀더에 바인딩할 값 |
+
+**반환값**
+
+| 반환 유형 | 설명                       |
+| ----- | ------------------------ |
+| `int` | 영향을 받은 행 수(알 수 없는 경우 -1) |
+
+**매개변수 스타일**
+
+| 스타일       | 예시                                            |
+| --------- | --------------------------------------------- |
+| 물음표 스타일   | `"SELECT * FROM users WHERE id = ?"`          |
+| 이름 지정 스타일 | `"SELECT * FROM users WHERE name = %(name)s"` |
+| 포맷 스타일    | `"SELECT * FROM users WHERE age = %s"` (레거시)  |
+
+**예시**
+
+```pycon
+>>> # 물음표 매개변수
+>>> cur.execute("SELECT * FROM users WHERE id = ? AND age > ?", (123, 18))
+>>>
+>>> # 이름 있는 매개변수
+>>> cur.execute("SELECT * FROM users WHERE name = %(name)s", {'name': 'Alice'})
+>>>
+>>> # 매개변수 없음
+>>> cur.execute("SELECT COUNT(*) FROM users")
+```
+
+**예외**
+
+| Exception                                              | 조건                       |
+| ------------------------------------------------------ | ------------------------ |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | 커서가 닫혀 있거나 쿼리 형식이 잘못된 경우 |
+| [`InterfaceError`](#chdb-dbapi-err-interfaceerror)     | 실행 중 데이터베이스 오류가 발생한 경우   |
+
+***
+
+<div id="chdb-dbapi-cursors-cursor-executemany">
+  #### `executemany(query, args)`
+</div>
+
+서로 다른 매개변수 집합으로 쿼리를 여러 번 실행합니다.
+
+이 메서드는 동일한 SQL 쿼리를 서로 다른 매개변수 값으로 반복해 효율적으로 실행합니다. 특히 대량 INSERT 작업에 유용합니다.
+
+**구문**
+
+```python
+executemany(query, args)
+```
+
+**매개변수**
+
+| 매개변수    | 유형  | 설명                              |
+| ------- | --- | ------------------------------- |
+| `query` | str | 여러 차례 실행할 SQL 쿼리                |
+| `args`  | 시퀀스 | 각 실행에 사용할 매개변수 튜플/딕셔너리/리스트의 시퀀스 |
+
+**반환값**
+
+| 반환 유형 | 설명                   |
+| ----- | -------------------- |
+| `int` | 모든 실행에서 영향을 받은 행의 총수 |
+
+**예시**
+
+```pycon
+>>> # 물음표 매개변수를 사용한 일괄 삽입
+>>> users_data = [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie')]
+>>> cur.executemany("INSERT INTO users VALUES (?, ?)", users_data)
+>>>
+>>> # 이름 있는 매개변수를 사용한 일괄 삽입
+>>> users_data = [
+...     {'id': 1, 'name': 'Alice'},
+...     {'id': 2, 'name': 'Bob'}
+... ]
+>>> cur.executemany(
+...     "INSERT INTO users VALUES (%(id)s, %(name)s)",
+...     users_data
+... )
+```
+
+<Note>
+  이 메서드는 여러 행을 INSERT하거나 UPDATE하는 작업에서
+  쿼리 실행 과정을 최적화해 성능을 높입니다.
+</Note>
+
+***
+
+<div id="dbapi-fetchall">
+  #### `fetchall()`
+</div>
+
+쿼리 결과에 남아 있는 모든 행을 가져옵니다.
+
+**구문**
+
+```python
+fetchall()
+```
+
+**반환값**
+
+| 반환 유형  | 설명                     |
+| ------ | ---------------------- |
+| `list` | 남아 있는 모든 행을 나타내는 튜플 목록 |
+
+**발생 가능한 예외**
+
+| 예외                                                     | 조건                         |
+| ------------------------------------------------------ | -------------------------- |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | `execute()`가 먼저 호출되지 않은 경우 |
+
+<Warning>
+  **경고**
+
+  이 메서드는 결과 집합이 큰 경우 많은 메모리를 사용할 수 있습니다.
+  큰 데이터셋에는 `fetchmany()` 사용을 고려하십시오.
+</Warning>
+
+**예시**
+
+```pycon
+>>> cursor.execute("SELECT id, name FROM users")
+>>> all_rows = cursor.fetchall()
+>>> print(len(all_rows))  # 전체 행 수
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
+
+쿼리 결과에서 여러 행을 가져옵니다.
+
+**구문**
+
+```python
+fetchmany(size=1)
+```
+
+**매개변수**
+
+| 매개변수   | 유형  | 기본값 | 설명                                              |
+| ------ | --- | --- | ----------------------------------------------- |
+| `size` | int | `1` | 가져올 행 수입니다. 지정하지 않으면 `cursor.arraysize`를 사용합니다. |
+
+**반환값**
+
+| 반환 유형  | 설명                    |
+| ------ | --------------------- |
+| `list` | 가져온 행을 나타내는 튜플 목록입니다. |
+
+**예외 발생**
+
+| 예외                                                     | 조건                             |
+| ------------------------------------------------------ | ------------------------------ |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | `execute()`가 먼저 호출되지 않은 경우입니다. |
+
+**예시**
+
+```pycon
+>>> cursor.execute("SELECT id, name FROM users")
+>>> rows = cursor.fetchmany(3)
+>>> print(rows)  # [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie')]
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
+
+쿼리 결과에서 다음 행을 반환합니다.
+
+**구문**
+
+```python
+fetchone()
+```
+
+**반환**
+
+| 반환 유형           | 설명                                             |
+| --------------- | ---------------------------------------------- |
+| `tuple or None` | 다음 행을 tuple로 반환하며, 더 이상 반환할 행이 없으면 None을 반환합니다 |
+
+**예외 발생**
+
+| 예외                                                     | 조건                         |
+| ------------------------------------------------------ | -------------------------- |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | `execute()`가 먼저 호출되지 않은 경우 |
+
+**예시**
+
+```pycon
+>>> cursor.execute("SELECT id, name FROM users LIMIT 3")
+>>> row = cursor.fetchone()
+>>> print(row)  # (1, 'Alice') - 첫 번째 행
+>>> row = cursor.fetchone()
+>>> print(row)  # (2, 'Bob')
+```
+
+***
+
+<div id="max-stmt-length">
+  #### `max_stmt_length = 1024000`
+</div>
+
+[`executemany()`](#chdb-dbapi-cursors-cursor-executemany)이 생성하는 최대 문 길이입니다.
+
+기본값은 1024000입니다.
+
+***
+
+<div id="mogrify">
+  #### `mogrify`
+</div>
+
+데이터베이스로 전송될 정확한 쿼리 문자열을 반환합니다.
+
+이 메서드는 매개변수 치환이 적용된 최종 SQL 쿼리를 보여주므로,
+디버깅 및 로깅에 유용합니다.
+
+**구문**
+
+```python
+mogrify(query, args=None)
+```
+
+**매개변수**
+
+| 매개변수    | 유형              | 기본값    | 설명                     |
+| ------- | --------------- | ------ | ---------------------- |
+| `query` | str             | *필수*   | 매개변수 자리표시자가 포함된 SQL 쿼리 |
+| `args`  | tuple/list/dict | `None` | 치환할 매개변수               |
+
+**반환값**
+
+| 반환 유형 | 설명                      |
+| ----- | ----------------------- |
+| `str` | 매개변수가 치환된 최종 SQL 쿼리 문자열 |
+
+**예시**
+
+```pycon
+>>> cur.mogrify("SELECT * FROM users WHERE id = ?", (123,))
+"SELECT * FROM users WHERE id = 123"
+```
+
+<Note>
+  이 메서드는 Psycopg에서 사용하는 DB-API 2.0에 대한 확장을 따릅니다.
+</Note>
+
+***
+
+<div id="nextset">
+  #### `nextset`
+</div>
+
+다음 결과 세트로 이동합니다(지원되지 않음).
+
+**구문**
+
+```python
+nextset()
+```
+
+**반환값**
+
+| 반환 유형  | 설명                                 |
+| ------ | ---------------------------------- |
+| `None` | 여러 결과 집합은 지원되지 않으므로 항상 None을 반환합니다 |
+
+<Note>
+  chDB/ClickHouse는 단일 쿼리에서 여러 결과 집합을 지원하지 않습니다.
+  이 메서드는 DB-API 2.0 컴플라이언스를 위해 제공되지만, 항상 None을 반환합니다.
+</Note>
+
+***
+
+<div id="setinputsizes">
+  #### `setinputsizes`
+</div>
+
+매개변수 입력 크기를 설정합니다(no-op 구현).
+
+**구문**
+
+```python
+setinputsizes(*args)
+```
+
+**매개변수**
+
+| 매개변수    | 유형 | 설명              |
+| ------- | -- | --------------- |
+| `*args` | -  | 매개변수 크기 지정(무시됨) |
+
+<Note>
+  이 메서드는 아무 작업도 수행하지 않지만, DB-API 2.0 사양상 필요합니다.
+  chDB는 내부적으로 매개변수 크기 지정을 자동으로 처리합니다.
+</Note>
+
+***
+
+<div id="setoutputsizes">
+  #### `setoutputsizes`
+</div>
+
+출력 컬럼 크기를 설정합니다(아무 동작도 하지 않는 구현).
+
+**구문**
+
+```python
+setoutputsizes(*args)
+```
+
+**매개변수**
+
+| 매개변수    | 유형 | 설명            |
+| ------- | -- | ------------- |
+| `*args` | -  | 컬럼 크기 지정(무시됨) |
+
+<Note>
+  이 메서드는 아무 작업도 수행하지 않지만, DB-API 2.0 사양상 필요합니다.
+  chDB가 출력 크기를 내부적으로 자동으로 처리합니다.
+</Note>
+
+***
+
+<div id="error-classes">
+  ### 오류 클래스
+</div>
+
+chdb 데이터베이스 작업에서 사용하는 예외 클래스입니다.
+
+이 모듈은 Python Database API Specification v2.0을 따르며, chdb에서 발생하는 데이터베이스 관련 오류를 처리하기 위한 전체 예외 클래스 계층 구조를 제공합니다.
+
+예외 계층 구조는 다음과 같습니다:
+
+```default
+StandardError
+├── Warning
+└── Error
+    ├── InterfaceError
+    └── DatabaseError
+        ├── DataError
+        ├── OperationalError
+        ├── IntegrityError
+        ├── InternalError
+        ├── ProgrammingError
+        └── NotSupportedError
+```
+
+각 예외 클래스는 데이터베이스 오류의 특정 범주를 나타냅니다:
+
+| 예외           | Description                  |
+| ------------------- | ---------------------------- |
+| `Warning`           | 데이터베이스 작업 중 발생하는 치명적이지 않은 경고 |
+| `InterfaceError`    | 데이터베이스 인터페이스 자체의 문제          |
+| `DatabaseError`     | 모든 데이터베이스 관련 오류의 기본 클래스      |
+| `DataError`         | 데이터 처리 문제(잘못된 값, 유형 오류)      |
+| `OperationalError`  | 데이터베이스 운영상 문제(연결, 리소스)       |
+| `IntegrityError`    | 제약 조건 위반(외래 키, 고유성)          |
+| `InternalError`     | 데이터베이스 내부 오류 및 손상            |
+| `ProgrammingError`  | SQL 구문 오류 및 API 오용           |
+| `NotSupportedError` | 지원되지 않는 기능 또는 작업             |
+
+<Note>
+  이러한 예외 클래스는 Python DB API 2.0 사양을 준수하며,
+  다양한 데이터베이스 작업에서 일관된 오류 처리를 제공합니다.
+</Note>
+
+**관련 항목**
+
+* [Python Database API Specification v2.0](https://peps.python.org/pep-0249/)
+* `chdb.dbapi.connections` - 데이터베이스 연결 관리
+* `chdb.dbapi.cursors` - 데이터베이스 커서 작업
+
+**예시**
+
+```pycon
+>>> try:
+...     cursor.execute("SELECT * FROM nonexistent_table")
+... except ProgrammingError as e:
+...     print(f"SQL Error: {e}")
+...
+SQL Error: Table 'nonexistent_table' doesn't exist
+```
+
+```pycon
+>>> try:
+...     cursor.execute("INSERT INTO users (id) VALUES (1), (1)")
+... except IntegrityError as e:
+...     print(f"Constraint violation: {e}")
+...
+Constraint violation: Duplicate entry '1' for key 'PRIMARY'
+```
+
+***
+
+<div id="chdb-dbapi-err-dataerror">
+  #### **예외** `chdb.dbapi.err.DataError`
+</div>
+
+기반 클래스: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+처리된 데이터의 문제로 인해 발생하는 오류에 대해 발생하는 예외입니다.
+
+이 예외는 처리 중인 데이터에 문제가 있어 데이터베이스 작업이 실패할 때 발생합니다. 예를 들면 다음과 같습니다:
+
+* 0으로 나누기 연산
+* 범위를 벗어난 숫자 값
+* 잘못된 날짜/시간 값
+* 문자열 잘림 오류
+* 유형 변환 실패
+* 컬럼 유형에 맞지 않는 잘못된 데이터 포맷
+
+**발생 예외**
+
+| 예외                                       | 조건                       |
+| ---------------------------------------- | ------------------------ |
+| [`DataError`](#chdb-dbapi-err-dataerror) | 데이터 유효성 검사 또는 처리가 실패한 경우 |
+
+**예시**
+
+```pycon
+>>> # SQL에서 0으로 나누기
+>>> cursor.execute("SELECT 1/0")
+DataError: Division by zero
+```
+
+```pycon
+>>> # 잘못된 날짜 포맷
+>>> cursor.execute("INSERT INTO table VALUES ('invalid-date')")
+DataError: Invalid date format
+```
+
+***
+
+<div id="chdb-dbapi-err-databaseerror">
+  #### **예외** `chdb.dbapi.err.DatabaseError`
+</div>
+
+기반 클래스: [`Error`](#chdb-dbapi-err-error)
+
+데이터베이스와 관련된 오류가 발생할 때 반환되는 예외입니다.
+
+이 클래스는 모든 데이터베이스 관련 오류의 기본 클래스입니다. 데이터베이스 작업 중 발생하는 오류 중에서, 인터페이스 자체가 아니라 데이터베이스 자체와 관련된 모든 오류를 포괄합니다.
+
+일반적인 사례는 다음과 같습니다:
+
+* SQL 실행 오류
+* 데이터베이스 연결 문제
+* 트랜잭션 관련 문제
+* 데이터베이스별 제약 조건 위반
+
+<Note>
+  이 클래스는 [`DataError`](#chdb-dbapi-err-dataerror), [`OperationalError`](#chdb-dbapi-err-operationalerror) 등 더 구체적인 데이터베이스 오류 유형의 상위 클래스 역할을 합니다.
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-error">
+  #### **예외** `chdb.dbapi.err.Error`
+</div>
+
+기반 클래스: [`StandardError`](#chdb-dbapi-err-standarderror)
+
+Warning을 제외한 모든 오류 예외의 기본 클래스입니다.
+
+이는 경고를 제외한 chdb의 모든 오류 예외를 위한 기본 클래스입니다.
+작업이 성공적으로 완료되지 못하게 하는 모든 데이터베이스 오류 조건의
+상위 클래스로 사용됩니다.
+
+<Note>
+  이 예외 계층 구조는 Python DB API 2.0 명세를 따릅니다.
+</Note>
+
+**관련 항목**
+
+* [`Warning`](#chdb-dbapi-err-warning) - 작업 완료를 방해하지 않는 비치명적 경고는 이를 참조하십시오.
+
+<div id="chdb-dbapi-err-integrityerror">
+  #### **예외** `chdb.dbapi.err.IntegrityError`
+</div>
+
+기반 클래스: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+데이터베이스의 관계형 무결성이 손상될 때 발생하는 예외입니다.
+
+이 예외는 데이터베이스 작업이 무결성 제약을 위반할 때 발생하며,
+다음과 같은 경우가 포함됩니다:
+
+* 외래 키 제약 위반
+* 기본 키(primary key) 또는 고유 제약 조건(unique constraint) 위반(중복 키)
+* CHECK 제약 위반
+* NOT NULL 제약 위반
+* 참조 무결성 위반
+
+**발생 예외**
+
+| 예외                                                 | 조건                         |
+| -------------------------------------------------- | -------------------------- |
+| [`IntegrityError`](#chdb-dbapi-err-integrityerror) | 데이터베이스 무결성 제약이 위반될 때 발생합니다 |
+
+**예시**
+
+```pycon
+>>> # 기본 키(primary key) 중복
+>>> cursor.execute("INSERT INTO users (id, name) VALUES (1, 'John')")
+>>> cursor.execute("INSERT INTO users (id, name) VALUES (1, 'Jane')")
+IntegrityError: Duplicate entry '1' for key 'PRIMARY'
+```
+
+```pycon
+>>> # 외래 키 위반
+>>> cursor.execute("INSERT INTO orders (user_id) VALUES (999)")
+IntegrityError: Cannot add or update a child row: foreign key constraint fails
+```
+
+***
+
+<div id="chdb-dbapi-err-interfaceerror">
+  #### **exception** `chdb.dbapi.err.InterfaceError`
+</div>
+
+기반 클래스: [`Error`](#chdb-dbapi-err-error)
+
+이 예외는 데이터베이스 자체가 아니라 데이터베이스 인터페이스와 관련된 오류가 있을 때 발생합니다.
+
+다음과 같이 데이터베이스 인터페이스 구현에 문제가 있을 때 이 예외가 발생합니다.
+
+* 잘못된 연결 매개변수
+* API 오용(닫힌 연결에서 메서드를 호출하는 경우)
+* 인터페이스 수준의 프로토콜 오류
+* 모듈 import 또는 초기화 실패
+
+**발생 예외**
+
+| 예외                                          | Condition                                |
+| -------------------------------------------------- | ---------------------------------------- |
+| [`InterfaceError`](#chdb-dbapi-err-interfaceerror) | 데이터베이스 작업과 무관한 오류가 데이터베이스 인터페이스에서 발생한 경우 |
+
+<Note>
+  이러한 오류는 일반적으로 프로그래밍 오류 또는 구성 문제이며,
+  클라이언트 코드나 구성을 수정하면 해결할 수 있습니다.
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-internalerror">
+  #### **예외** `chdb.dbapi.err.InternalError`
+</div>
+
+기반 클래스: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+데이터베이스에서 내부 오류가 발생했을 때 발생하는 예외입니다.
+
+이 예외는 데이터베이스 시스템에서 애플리케이션이 원인이 아닌 내부
+오류가 발생했을 때 발생합니다. 예를 들면 다음과 같습니다.
+
+* 잘못된 커서 상태(커서가 더 이상 유효하지 않음)
+* 트랜잭션 상태 불일치(트랜잭션 동기화가 맞지 않음)
+* 데이터베이스 손상 문제
+* 내부 데이터 구조 손상
+* 시스템 수준의 데이터베이스 오류
+
+**발생 예외**
+
+| 예외                                               | 조건                      |
+| ------------------------------------------------ | ----------------------- |
+| [`InternalError`](#chdb-dbapi-err-internalerror) | 데이터베이스에서 내부 불일치가 발생한 경우 |
+
+<Warning>
+  **경고**
+
+  내부 오류는 데이터베이스 관리자의 주의가 필요한 심각한 데이터베이스 문제를 의미할 수
+  있습니다. 이러한 오류는 일반적으로 애플리케이션 수준의 retry 로직으로는
+  복구할 수 없습니다.
+</Warning>
+
+<Note>
+  이러한 오류는 일반적으로 애플리케이션이 제어할 수 있는 범위를 벗어나며,
+  데이터베이스를 재시작하거나 복구 작업이 필요할 수 있습니다.
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-notsupportederror">
+  #### **예외** `chdb.dbapi.err.NotSupportedError`
+</div>
+
+기반 클래스: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+메서드 또는 데이터베이스 API를 지원하지 않을 때 발생하는 예외입니다.
+
+애플리케이션이 현재 데이터베이스 구성이나 버전에서 지원하지 않는 데이터베이스
+기능 또는 API 메서드를 사용하려고 할 때 이 예외가 발생합니다. 예시는 다음과 같습니다:
+
+* 트랜잭션을 지원하지 않는 연결에서 `rollback()`을 요청하는 경우
+* 데이터베이스 버전에서 지원하지 않는 고급 SQL 기능을 사용하는 경우
+* 현재 드라이버에서 구현되지 않은 메서드를 호출하는 경우
+* 비활성화된 데이터베이스 기능을 사용하려는 경우
+
+**발생 예외**
+
+| 예외                                                       | 조건                        |
+| -------------------------------------------------------- | ------------------------- |
+| [`NotSupportedError`](#chdb-dbapi-err-notsupportederror) | 지원되지 않는 데이터베이스 기능에 접근한 경우 |
+
+**예시**
+
+```pycon
+>>> # 트랜잭션을 지원하지 않는 연결에서 트랜잭션 롤백 시도
+>>> connection.rollback()
+NotSupportedError: Transactions are not supported
+```
+
+```pycon
+>>> # 지원되지 않는 SQL 구문 사용
+>>> cursor.execute("SELECT * FROM table WITH (NOLOCK)")
+NotSupportedError: WITH clause not supported in this database version
+```
+
+<Note>
+  이러한 오류를 방지하려면 데이터베이스 문서와 드라이버 지원 기능을 확인하십시오.
+  가능하면 적절한 폴백을 고려하십시오.
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-operationalerror">
+  #### **예외** `chdb.dbapi.err.OperationalError`
+</div>
+
+기반: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+데이터베이스 운영과 관련된 오류가 발생할 때 발생하는 예외입니다.
+
+이 예외는 데이터베이스를 운영하는 중 발생하며, 반드시 프로그래머가 제어할 수 있는 것은 아닌 오류에 대해 발생합니다. 예시는 다음과 같습니다:
+
+* 데이터베이스와의 연결이 예기치 않게 끊어진 경우
+* 데이터베이스 서버를 찾을 수 없거나 연결할 수 없는 경우
+* 트랜잭션 처리 실패
+* 처리 중 메모리 할당 오류
+* 디스크 공간 또는 리소스 고갈
+* 데이터베이스 서버 내부 오류
+* 인증 또는 권한 부여 실패
+
+**발생 예외**
+
+| 예외                                                     | 조건                           |
+| ------------------------------------------------------ | ---------------------------- |
+| [`OperationalError`](#chdb-dbapi-err-operationalerror) | 운영상 문제로 인해 데이터베이스 작업이 실패한 경우 |
+
+<Note>
+  이러한 오류는 일반적으로 일시적이며, 작업을 다시 시도하거나
+  시스템 수준의 문제를 해결하면 해소될 수 있습니다.
+</Note>
+
+<Warning>
+  **경고**
+
+  일부 운영상 오류는 관리자의 개입이 필요한 심각한 시스템 문제를
+  나타낼 수 있습니다.
+</Warning>
+
+***
+
+<div id="chdb-dbapi-err-programmingerror">
+  #### **예외** `chdb.dbapi.err.ProgrammingError`
+</div>
+
+기반: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+데이터베이스 작업에서 프로그래밍 오류가 발생할 때 이 예외가 발생합니다.
+
+이 예외는 애플리케이션이 데이터베이스를 사용하는 과정에서 프로그래밍 오류가 있을 때 발생하며, 다음과 같은 경우를 포함합니다:
+
+* 테이블 또는 컬럼을 찾을 수 없음
+* 생성 시 테이블 또는 인덱스가 이미 존재함
+* SQL 문의 구문 오류
+* prepared 문에 지정된 매개변수 수가 잘못됨
+* 잘못된 SQL 작업(예: 존재하지 않는 객체에 대한 DROP)
+* 데이터베이스 API 메서드를 잘못 사용함
+
+**발생 예외**
+
+| 예외                                              | Condition                  |
+| ------------------------------------------------------ | -------------------------- |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | SQL 문 또는 API 사용에 오류가 있는 경우 |
+
+**예시**
+
+```pycon
+>>> # 테이블을 찾을 수 없음
+>>> cursor.execute("SELECT * FROM nonexistent_table")
+ProgrammingError: Table 'nonexistent_table' doesn't exist
+```
+
+```pycon
+>>> # SQL 구문 오류
+>>> cursor.execute("SELCT * FROM users")
+ProgrammingError: You have an error in your SQL syntax
+```
+
+```pycon
+>>> # 잘못된 매개변수 개수
+>>> cursor.execute("INSERT INTO users (name, age) VALUES (%s)", ('John',))
+ProgrammingError: Column count doesn't match value count
+```
+
+***
+
+<div id="chdb-dbapi-err-standarderror">
+  #### **예외** `chdb.dbapi.err.StandardError`
+</div>
+
+기반 클래스: `Exception`
+
+chdb 작업과 관련된 예외입니다.
+
+이 클래스는 모든 chdb 관련 예외의 기본 클래스입니다. Python의 내장 `Exception` 클래스를 상속하며, 데이터베이스 작업용 예외 계층 구조의 최상위 클래스 역할을 합니다.
+
+<Note>
+  이 예외 클래스는 데이터베이스 예외 처리를 위한 Python DB API 2.0 사양을 따릅니다.
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-warning">
+  #### **예외** `chdb.dbapi.err.Warning`
+</div>
+
+기반: [`StandardError`](#chdb-dbapi-err-standarderror)
+
+삽입 중 데이터 잘림과 같은 중요한 경고가 발생했을 때 발생하는 예외입니다.
+
+이 예외는 데이터베이스 작업이 완료되었지만 애플리케이션에서
+주의해야 할 중요한 경고가 함께 발생한 경우에 발생합니다.
+일반적인 예는 다음과 같습니다.
+
+* 삽입 중 데이터 잘림
+* 숫자 변환 시 정밀도 손실
+* 문자 집합 변환 경고
+
+<Note>
+  이는 경고 예외에 관한 Python DB API 2.0 사양을 따릅니다.
+</Note>
+
+***
+
+<div id="module-constants">
+  ### 모듈 상수
+</div>
+
+<div id="apilevel">
+  #### `chdb.dbapi.apilevel = '2.0'`
+</div>
+
+```python
+str(object=’’) -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+```
+
+주어진 객체로 새 문자열 객체를 생성합니다. `encoding` 또는
+`errors`가 지정되면, 객체는 데이터 버퍼를 제공해야 하며
+이 버퍼는 지정된 인코딩과 오류 처리기(error handler)를 사용해 디코딩됩니다.
+그렇지 않으면 `object._\_str_\_()`의 결과(정의된 경우) 또는
+`repr(object)`를 반환합니다.
+
+* `encoding`의 기본값은 ‘utf-8’입니다.
+* `errors`의 기본값은 ‘strict’입니다.
+
+***
+
+<div id="threadsafety">
+  #### `chdb.dbapi.threadsafety = 1`
+</div>
+
+```python
+int([x]) -> integer
+int(x, base=10) -> integer
+```
+
+숫자 또는 문자열을 정수로 변환합니다. 인수가 주어지지 않으면 0을
+반환합니다. x가 숫자이면 x.*&#95;int*&#95;()를 반환합니다. 부동소수점
+숫자의 경우 0을 향해 버림합니다.
+
+x가 숫자가 아니거나 base가 주어진 경우, x는 지정된 진법의 정수 리터럴을
+나타내는 문자열, bytes 또는 bytearray 인스턴스여야 합니다. 리터럴 앞에는
+‘+’ 또는 ‘-’가 올 수 있으며, 앞뒤는 공백으로 둘러싸여 있을 수 있습니다. 기본 진법은 10입니다.
+유효한 진법은 0과 2-36입니다. 진법 0은 문자열의 정수 리터럴 표기에서
+진법을 해석한다는 뜻입니다.
+
+```python
+>>> int(‘0b100’, base=0)
+4
+```
+
+***
+
+<div id="paramstyle">
+  #### `chdb.dbapi.paramstyle = 'format'`
+</div>
+
+```python
+str(object=’’) -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+```
+
+주어진 객체로부터 새 문자열 객체를 생성합니다. encoding 또는
+errors가 지정된 경우, 객체는 데이터 버퍼를 제공해야 하며
+이 버퍼는 지정된 encoding과 오류 handler를 사용해 디코딩됩니다.
+그렇지 않으면 object.*&#95;str*&#95;()의 결과(정의된 경우)
+또는 repr(object)를 반환합니다.
+encoding의 기본값은 ‘utf-8’입니다.
+errors의 기본값은 ‘strict’입니다.
+
+***
+
+<div id="type-constants">
+  ### 유형 상수
+</div>
+
+<div id="string-type">
+  #### `chdb.dbapi.STRING = frozenset({247, 253, 254})`
+</div>
+
+DB-API 2.0 유형 비교를 위한 확장 frozenset입니다.
+
+이 클래스는 DB-API 2.0의 유형 비교 의미 체계를 지원하도록 frozenset을 확장한 것입니다.
+개별 항목을 집합과 비교할 때 등호 및 부등호 연산자를 모두 사용할 수 있어
+유형을 유연하게 확인할 수 있습니다.
+
+이 객체는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
+`field_type`이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;과 같은 비교를 가능하게 합니다.
+
+**예시**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # True 반환
+>>> FIELD_TYPE.INT != string_types     # True 반환
+>>> FIELD_TYPE.BLOB in string_types    # False 반환
+```
+
+***
+
+<div id="binary-type">
+  #### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})`
+</div>
+
+DB-API 2.0 유형 비교를 위한 확장된 frozenset입니다.
+
+이 클래스는 DB-API 2.0 유형 비교 의미 체계를 지원하도록 frozenset을 확장합니다.
+이를 통해 개별 항목을 집합과 비교할 때 동등 및 부등 연산자를 모두 사용하여
+유연하게 유형을 검사할 수 있습니다.
+
+이는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
+field&#95;type이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;과 같은 비교를 가능하게 합니다.
+
+**예시**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # True 반환
+>>> FIELD_TYPE.INT != string_types     # True 반환
+>>> FIELD_TYPE.BLOB in string_types    # False 반환
+```
+
+***
+
+<div id="number-type">
+  #### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})`
+</div>
+
+DB-API 2.0 유형 비교를 위한 확장 frozenset입니다.
+
+이 클래스는 DB-API 2.0의 유형 비교 의미 체계를 지원하도록 frozenset을 확장합니다.
+이를 통해 개별 항목을 집합과 비교할 때 equality 및 inequality 연산자를 모두 사용해
+유연하게 유형을 검사할 수 있습니다.
+
+이는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
+`field_type == STRING`과 같은 비교를 가능하게 합니다. 여기서 `field_type`은 단일 유형 값입니다.
+
+**예시**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # True 반환
+>>> FIELD_TYPE.INT != string_types     # True 반환
+>>> FIELD_TYPE.BLOB in string_types    # False 반환
+```
+
+***
+
+<div id="date-type">
+  #### `chdb.dbapi.DATE = frozenset({10, 14})`
+</div>
+
+DB-API 2.0 유형 비교를 위한 확장 frozenset입니다.
+
+이 클래스는 DB-API 2.0의 유형 비교 의미 체계를 지원하도록 frozenset을 확장한 것입니다.
+개별 항목을 집합과 비교할 때 동등 및 부등 연산자를 모두 사용할 수 있어
+유형을 더 유연하게 확인할 수 있습니다.
+
+이는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
+field&#95;type이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;과 같은 비교를 가능하게 합니다.
+
+**예시**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # True 반환
+>>> FIELD_TYPE.INT != string_types     # True 반환
+>>> FIELD_TYPE.BLOB in string_types    # False 반환
+```
+
+***
+
+<div id="time-type">
+  #### `chdb.dbapi.TIME = frozenset({11})`
+</div>
+
+DB-API 2.0 유형 비교를 위한 확장된 frozenset입니다.
+
+이 클래스는 DB-API 2.0의 유형 비교 의미 체계를 지원하도록 frozenset을 확장합니다.
+개별 항목을 동등 및 부등 연산자를 사용해
+집합과 비교할 수 있으므로 유연한 유형 검사가 가능합니다.
+
+이는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
+field&#95;type이 단일 유형 값일 때 “field&#95;type == STRING”과 같은
+비교를 가능하게 합니다.
+
+**예시**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # True 반환
+>>> FIELD_TYPE.INT != string_types     # True 반환
+>>> FIELD_TYPE.BLOB in string_types    # False 반환
+```
+
+***
+
+<div id="timestamp-type">
+  #### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})`
+</div>
+
+DB-API 2.0 유형 비교를 위해 확장된 frozenset입니다.
+
+이 클래스는 DB-API 2.0 유형 비교 시맨틱을 지원하도록 frozenset을 확장합니다.
+개별 항목을 집합과 비교할 때 동등 연산자와 부등 연산자를 모두 사용할 수 있어
+유연한 유형 확인이 가능합니다.
+
+이는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
+`field&#95;type`이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;과 같은 비교를 가능하게 합니다.
+
+**예시**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # True 반환
+>>> FIELD_TYPE.INT != string_types     # True 반환
+>>> FIELD_TYPE.BLOB in string_types    # False 반환
+```
+
+<div id="datetime-type">
+  #### `chdb.dbapi.DATETIME = frozenset({7, 12})`
+</div>
+
+DB-API 2.0 유형 비교를 위해 확장된 frozenset입니다.
+
+이 클래스는 DB-API 2.0 유형 비교의 의미 체계를 지원하도록 frozenset을 확장합니다.
+이를 통해 개별 항목을 집합과 비교할 때
+동등 연산자와 부등 연산자를 모두 사용해 유연하게 유형을 확인할 수 있습니다.
+
+이는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
+field&#95;type이 단일 유형 값일 때 “field&#95;type == STRING”과 같은 비교를 가능하게 합니다.
+
+**예시**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # True 반환
+>>> FIELD_TYPE.INT != string_types     # True 반환
+>>> FIELD_TYPE.BLOB in string_types    # False 반환
+```
+
+***
+
+<div id="rowid-type">
+  #### `chdb.dbapi.ROWID = frozenset({})`
+</div>
+
+DB-API 2.0의 유형 비교를 위해 확장된 frozenset입니다.
+
+이 클래스는 DB-API 2.0의 유형 비교 의미 체계를 지원하도록 frozenset을 확장한 것입니다.
+이를 통해 개별 항목을 집합과 비교할 때
+동등 및 부등 연산자를 모두 사용해 유연하게 유형을 검사할 수 있습니다.
+
+이는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
+field&#95;type이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;과 같은 비교를 가능하게 합니다.
+
+**예시**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # True 반환
+>>> FIELD_TYPE.INT != string_types     # True 반환
+>>> FIELD_TYPE.BLOB in string_types    # False 반환
+```
+
+**사용 예시**
+
+기본 쿼리 예시:
+
+```python
+import chdb.dbapi as dbapi
+
+print("chdb driver version: {0}".format(dbapi.get_client_info()))
+
+# 연결 및 커서 생성
+conn = dbapi.connect()
+cur = conn.cursor()
+
+# 쿼리 실행
+cur.execute('SELECT version()')
+print("description:", cur.description)
+print("data:", cur.fetchone())
+
+# 정리
+cur.close()
+conn.close()
+```
+
+데이터 다루기:
+
+```python
+import chdb.dbapi as dbapi
+
+conn = dbapi.connect()
+cur = conn.cursor()
+
+# 테이블 생성
+cur.execute("""
+    CREATE TABLE employees (
+        id UInt32,
+        name String,
+        department String,
+        salary Decimal(10,2)
+    ) ENGINE = Memory
+""")
+
+# 데이터 삽입
+cur.execute("""
+    INSERT INTO employees VALUES
+    (1, 'Alice', 'Engineering', 75000.00),
+    (2, 'Bob', 'Marketing', 65000.00),
+    (3, 'Charlie', 'Engineering', 80000.00)
+""")
+
+# 데이터 쿼리
+cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
+
+# 결과 조회
+print("Column names:", [desc[0] for desc in cur.description])
+for row in cur.fetchall():
+    print(row)
+
+conn.close()
+```
+
+연결 관리:
+
+```python
+import chdb.dbapi as dbapi
+
+# 인메모리 데이터베이스 (기본값)
+conn1 = dbapi.connect()
+
+# 영구 데이터베이스 파일
+conn2 = dbapi.connect("./my_database.chdb")
+
+# 매개변수를 사용한 연결
+conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
+
+# 읽기 전용 연결
+conn4 = dbapi.connect("./my_database.chdb?mode=ro")
+
+# 자동 연결 정리
+with dbapi.connect("test.chdb") as conn:
+    cur = conn.cursor()
+    cur.execute("SELECT count() FROM numbers(1000)")
+    result = cur.fetchone()
+    print(f"Count: {result[0]}")
+    cur.close()
+```
+
+**모범 사례**
+
+1. **연결 관리**: 작업이 끝나면 항상 연결과 커서를 닫으십시오
+2. **Context 관리자**: 자동으로 정리되도록 `with` 문을 사용하십시오
+3. **배치 처리**: 큰 결과 집합에는 `fetchmany()`를 사용하십시오
+4. **오류 처리**: 데이터베이스 작업은 try-except 블록으로 감싸십시오
+5. **매개변수 바인딩**: 가능하면 매개변수화된 쿼리를 사용하십시오
+6. **메모리 관리**: 매우 큰 데이터셋에는 `fetchall()` 사용을 피하십시오
+
+<Note>
+  * chDB의 DB-API 2.0 인터페이스는 대부분의 Python 데이터베이스 도구와 호환됩니다
+  * 이 인터페이스는 수준 1 스레드 안전성을 제공합니다(스레드는 모듈을 공유할 수 있지만 연결은 공유할 수 없습니다)
+  * connection string은 chDB 세션과 동일한 매개변수를 지원합니다
+  * 모든 표준 DB-API 2.0 예외를 지원합니다
+</Note>
+
+<Warning>
+  **경고**
+
+  * 리소스 누수를 방지하려면 항상 커서와 연결을 닫으십시오
+  * 큰 결과 집합은 배치로 처리해야 합니다
+  * 매개변수 바인딩 구문은 포맷 스타일 `%s`를 따릅니다
+</Warning>
+
+<div id="user-defined-functions">
+  ## 사용자 정의 함수(UDF)
+</div>
+
+chDB용 사용자 정의 함수 모듈입니다.
+
+이 모듈은 chDB에서 사용자 정의 함수(UDF)를 생성하고 관리하는 기능을 제공합니다.
+SQL 쿼리에서 호출할 수 있는 사용자 정의 Python 함수를 작성해 chDB의 기능을
+확장할 수 있습니다.
+
+<div id="chdb-udf">
+  ### `chdb.udf.chdb_udf`
+</div>
+
+chDB Python UDF(사용자 정의 함수)용 데코레이터입니다.
+
+**구문**
+
+```python
+chdb.udf.chdb_udf(return_type='String')
+```
+
+**매개변수**
+
+| 매개변수          | 유형  | 기본값        | 설명                                         |
+| ------------- | --- | ---------- | ------------------------------------------ |
+| `return_type` | str | `"String"` | 함수의 반환 타입입니다. ClickHouse 데이터 타입 중 하나여야 합니다 |
+
+**참고**
+
+1. 함수는 stateless해야 합니다. UDAF는 지원되지 않으며 UDF만 지원됩니다.
+2. 기본 반환 타입은 String입니다. 반환 타입은 ClickHouse 데이터 타입 중 하나여야 합니다.
+3. 함수는 String 타입의 인수를 받아야 합니다. 모든 인수는 문자열입니다.
+4. 함수는 입력 각 줄에 대해 호출됩니다.
+5. 함수는 순수 Python 함수여야 합니다. 함수 내부에서 사용하는 모든 모듈은 import해야 합니다.
+6. 사용되는 Python 인터프리터는 스크립트를 실행할 때 사용하는 인터프리터와 동일합니다.
+
+**예시**
+
+```python
+@chdb_udf()
+def sum_udf(lhs, rhs):
+    return int(lhs) + int(rhs)
+
+@chdb_udf()
+def func_use_json(arg):
+    import json
+    # ... json 모듈 사용
+```
+
+***
+
+<div id="generate-udf">
+  ### `chdb.udf.generate_udf`
+</div>
+
+UDF 구성과 실행형 스크립트 파일을 생성합니다.
+
+이 함수는 chDB에서 사용자 정의 함수(UDF)에 필요한 다음 파일을 생성합니다:
+
+1. 입력 데이터를 처리하는 Python 실행형 스크립트
+2. ClickHouse에 UDF를 등록하는 XML 설정 파일
+
+**구문**
+
+```python
+chdb.udf.generate_udf(func_name, args, return_type, udf_body)
+```
+
+**매개변수**
+
+| 매개변수          | 유형   | 설명                      |
+| ------------- | ---- | ----------------------- |
+| `func_name`   | str  | UDF 함수 이름               |
+| `args`        | list | 함수의 인수 이름 목록            |
+| `return_type` | str  | 함수의 ClickHouse 반환 유형    |
+| `udf_body`    | str  | UDF 함수의 Python 소스 코드 본문 |
+
+<Note>
+  이 함수는 일반적으로 @chdb&#95;udf 데코레이터에서 호출되므로, 사용자가 직접
+  호출해서는 안 됩니다.
+</Note>
+
+***
+
+<div id="utilities">
+  ## 유틸리티
+</div>
+
+chDB용 유틸리티 함수와 도우미입니다.
+
+이 모듈에는 chDB 작업에 사용하는 다양한 유틸리티 함수가 포함되어 있으며,
+데이터 타입 추론, 데이터 변환 도우미, 디버깅 유틸리티 등을 제공합니다.
+
+***
+
+<div id="convert-to-columnar">
+  ### `chdb.utils.convert_to_columnar`
+</div>
+
+딕셔너리 목록을 컬럼형 포맷으로 변환합니다.
+
+이 함수는 딕셔너리 목록을 받아 각 키가 하나의 컬럼에 대응하고
+각 값이 해당 컬럼 값의 목록인 딕셔너리로 변환합니다.
+딕셔너리에서 누락된 값은 None으로 표현됩니다.
+
+**구문**
+
+```python
+chdb.utils.convert_to_columnar(items: List[Dict[str, Any]]) → Dict[str, List[Any]]
+```
+
+**매개변수**
+
+| 매개변수    | 유형                     | 설명           |
+| ------- | ---------------------- | ------------ |
+| `items` | `List[Dict[str, Any]]` | 변환할 딕셔너리의 목록 |
+
+**반환값**
+
+| 반환 유형                  | 설명                             |
+| ---------------------- | ------------------------------ |
+| `Dict[str, List[Any]]` | 키는 컬럼 이름이고 값은 각 컬럼 값의 목록인 딕셔너리 |
+
+**예시**
+
+```pycon
+>>> items = [
+...     {"name": "Alice", "age": 30, "city": "New York"},
+...     {"name": "Bob", "age": 25},
+...     {"name": "Charlie", "city": "San Francisco"}
+... ]
+>>> convert_to_columnar(items)
+{
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'age': [30, 25, None],
+    'city': ['New York', None, 'San Francisco']
+}
+```
+
+***
+
+<div id="flatten-dict">
+  ### `chdb.utils.flatten_dict`
+</div>
+
+중첩된 딕셔너리를 평탄화합니다.
+
+이 함수는 중첩된 딕셔너리를 받아 구분자를 사용해 중첩된 키를 이어 붙여 평탄화합니다.
+딕셔너리 목록은 JSON 문자열로 직렬화됩니다.
+
+**구문**
+
+```python
+chdb.utils.flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_') → Dict[str, Any]
+```
+
+**매개변수**
+
+| 매개변수         | 유형               | 기본값   | 설명                |
+| ------------ | ---------------- | ----- | ----------------- |
+| `d`          | `Dict[str, Any]` | *필수*  | 평탄화할 딕셔너리         |
+| `parent_key` | str              | `""`  | 각 키 앞에 붙일 기본 키    |
+| `sep`        | str              | `"_"` | 연결된 키 사이에 사용할 구분자 |
+
+**반환값**
+
+| 반환 유형            | 설명        |
+| ---------------- | --------- |
+| `Dict[str, Any]` | 평탄화된 딕셔너리 |
+
+**예시**
+
+```pycon
+>>> nested_dict = {
+...     "a": 1,
+...     "b": {
+...         "c": 2,
+...         "d": {
+...             "e": 3
+...         }
+...     },
+...     "f": [4, 5, {"g": 6}],
+...     "h": [{"i": 7}, {"j": 8}]
+... }
+>>> flatten_dict(nested_dict)
+{
+    'a': 1,
+    'b_c': 2,
+    'b_d_e': 3,
+    'f_0': 4,
+    'f_1': 5,
+    'f_2_g': 6,
+    'h': '[{"i": 7}, {"j": 8}]'
+}
+```
+
+***
+
+<div id="infer-data-type">
+  ### `chdb.utils.infer_data_type`
+</div>
+
+값 목록에 가장 적합한 데이터 타입을 추론합니다.
+
+이 함수는 값 목록을 살펴보고, 목록의 모든 값을 표현할 수 있는 가장 적절한
+데이터 타입을 결정합니다. 정수, 부호 없는 정수, Decimal, float 타입을 고려하며,
+값을 어떤 숫자 타입으로도 표현할 수 없거나 모든 값이 None이면 기본적으로 “string”을 사용합니다.
+
+**구문**
+
+```python
+chdb.utils.infer_data_type(values: List[Any]) → str
+```
+
+**매개변수**
+
+| 매개변수 | 유형        | Description                       |
+| --------- | ----------- | --------------------------------- |
+| `values`  | `List[Any]` | 분석할 값의 목록입니다. 값은 어떤 유형이든 될 수 있습니다 |
+
+**반환값**
+
+| Return 유형 | Description                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `str`       | 추론된 데이터 타입을 나타내는 문자열입니다. 가능한 반환값은 다음과 같습니다: &quot;int8&quot;, &quot;int16&quot;, &quot;int32&quot;, &quot;int64&quot;, &quot;int128&quot;, &quot;int256&quot;, &quot;uint8&quot;, &quot;uint16&quot;,&quot;uint32&quot;, &quot;uint64&quot;, &quot;uint128&quot;, &quot;uint256&quot;, &quot;decimal128&quot;, &quot;decimal256&quot;, &quot;float32&quot;, &quot;float64&quot; 또는 &quot;string&quot;. |
+
+<Note>
+  * 목록의 모든 값이 None이면 함수는 &quot;string&quot;을 반환합니다.
+  * 목록에 문자열 값이 하나라도 있으면 함수는 즉시 &quot;string&quot;을 반환합니다.
+  * 이 함수는 숫자 값이 범위와 정밀도에 따라 정수,
+    Decimal 또는 float로 표현될 수 있다고 가정합니다.
+</Note>
+
+***
+
+<div id="infer-data-types">
+  ### `chdb.utils.infer_data_types`
+</div>
+
+열 지향 데이터 구조에서 각 컬럼의 데이터 타입을 추론합니다.
+
+이 함수는 각 컬럼의 값을 분석하고, 데이터 샘플을 바탕으로
+각 컬럼에 가장 적합한 데이터 타입을 추론합니다.
+
+**구문**
+
+```python
+chdb.utils.infer_data_types`(column_data: Dict[str, List[Any]], n_rows: int = 10000) → List[tuple]
+```
+
+**매개변수**
+
+| 매개변수          | 유형                     | 기본값        | 설명                                |
+| ------------- | ---------------------- | ---------- | --------------------------------- |
+| `column_data` | `Dict[str, List[Any]]` | *required* | 키는 컬럼 이름이고 값은 각 컬럼의 값 목록인 딕셔너리입니다 |
+| `n_rows`      | int                    | `10000`    | type inference를 위해 샘플링할 행 수입니다    |
+
+**반환값**
+
+| 반환 유형         | 설명                                    |
+| ------------- | ------------------------------------- |
+| `List[tuple]` | 각 튜플에 컬럼 이름과 추론된 데이터 타입이 포함된 튜플 목록입니다 |
+
+<div id="abstract-base-classes">
+  ## 추상 기본 클래스
+</div>
+
+<div id="pyreader">
+  ### **클래스** `chdb.rwabc.PyReader`(data: Any)&#96;
+</div>
+
+기반 클래스: `ABC`
+
+```python
+class chdb.rwabc.PyReader(data: Any)
+```
+
+***
+
+<div id="read">
+  #### **abstractmethod** `read`
+</div>
+
+주어진 컬럼에서 지정된 수의 행을 읽고 객체 목록을 반환합니다.
+각 객체는 하나의 컬럼에 대한 값 시퀀스입니다.
+
+```python
+abstractmethod (col_names: List[str], count: int) → List[Any]
+```
+
+**매개변수**
+
+| 매개변수        | 유형          | 설명          |
+| ----------- | ----------- | ----------- |
+| `col_names` | `List[str]` | 읽을 컬럼 이름 목록 |
+| `count`     | int         | 읽을 최대 행 수   |
+
+**반환값**
+
+| 반환 유형       | 설명                |
+| ----------- | ----------------- |
+| `List[Any]` | 각 컬럼에 해당하는 시퀀스 목록 |
+
+<div id="pywriter">
+  ### **클래스** `chdb.rwabc.PyWriter`
+</div>
+
+기반 클래스: `ABC`
+
+```python
+class chdb.rwabc.PyWriter(col_names: List[str], types: List[type], data: Any)
+```
+
+***
+
+<div id="finalize">
+  #### **abstractmethod** finalize
+</div>
+
+블록에서 최종 데이터를 조합해 반환합니다. 하위 클래스에서 반드시 구현해야 합니다.
+
+```python
+abstractmethod finalize() → bytes
+```
+
+**반환값**
+
+| 반환 유형   | 설명          |
+| ------- | ----------- |
+| `bytes` | 최종 직렬화된 데이터 |
+
+***
+
+<div id="write">
+  #### **abstractmethod** `write`
+</div>
+
+데이터 컬럼들을 블록에 저장합니다. 하위 클래스에서 반드시 구현해야 합니다.
+
+```python
+abstractmethod write(col_names: List[str], columns: List[List[Any]]) → None
+```
+
+**매개변수**
+
+| 매개변수        | 유형                | 설명                                |
+| ----------- | ----------------- | --------------------------------- |
+| `col_names` | `List[str]`       | 기록할 컬럼 이름 목록                      |
+| `columns`   | `List[List[Any]]` | 컬럼 데이터 목록으로, 각 컬럼은 하나의 목록으로 표현됩니다 |
+
+<div id="chdb-exceptions">
+  ## 예외 처리
+</div>
+
+<div id="chdberror">
+  ### **클래스** `chdb.ChdbError`
+</div>
+
+기반 클래스: `Exception`
+
+chDB 관련 오류를 위한 기본 예외 클래스입니다.
+
+이 예외는 chDB 쿼리 실행이 실패하거나
+오류가 발생했을 때 발생합니다. 표준 Python `Exception` 클래스를 상속하며
+하위 ClickHouse 엔진의 오류 정보를 제공합니다.
+
+예외 메시지에는 일반적으로 ClickHouse의 자세한 오류 정보가 포함되며,
+여기에는 구문 오류, 유형 불일치, 누락된
+테이블/컬럼, 기타 쿼리 실행 문제가 포함됩니다.
+
+**변수**
+
+| 변수     | 유형 | 설명                          |
+| ------ | -- | --------------------------- |
+| `args` | -  | 오류 메시지와 추가 인수를 포함하는 `Tuple` |
+
+**예시**
+
+```pycon
+>>> try:
+...     result = chdb.query("SELECT * FROM non_existent_table")
+... except chdb.ChdbError as e:
+...     print(f"Query failed: {e}")
+Query failed: Table 'non_existent_table' doesn't exist
+```
+
+```pycon
+>>> try:
+...     result = chdb.query("SELECT invalid_syntax FROM")
+... except chdb.ChdbError as e:
+...     print(f"Syntax error: {e}")
+Syntax error: Syntax error near 'FROM'
+```
+
+<Note>
+  이 예외는 내부 ClickHouse engine이 오류를 보고하면 chdb.query() 및 관련
+  함수에서 자동으로 발생합니다.
+  애플리케이션에서 적절한 오류 처리를 수행할 수 있도록, 실패할 가능성이 있는
+  쿼리를 처리할 때는 이 예외를 포착해야 합니다.
+</Note>
+
+<div id="version-information">
+  ## 버전 정보
+</div>
+
+<div id="chdb-version">
+  ### `chdb.chdb_version = ('3', '6', '0')`
+</div>
+
+내장된 불변 시퀀스입니다.
+
+인수가 없으면 생성자는 빈 튜플을 반환합니다.
+iterable이 지정되면 iterable의 항목으로 튜플을 초기화합니다.
+
+인수가 튜플이면 동일한 객체를 반환합니다.
+
+***
+
+<div id="engine-version">
+  ### `chdb.engine_version = '25.5.2.1'`
+</div>
+
+```python
+str(object=’’) -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+```
+
+주어진 객체에서 새 문자열 객체를 생성합니다. encoding 또는
+errors가 지정되면, 객체는 지정된 인코딩과 오류 처리기(error handler)를 사용해 디코딩할 수 있는
+데이터 버퍼를 제공해야 합니다.
+그렇지 않으면 object.*&#95;str*&#95;()의 결과(정의된 경우)
+또는 repr(object)를 반환합니다.
+
+* encoding의 기본값은 ‘utf-8’입니다.
+* errors의 기본값은 ‘strict’입니다.
+
+***
+
+<div id="version">
+  ### `chdb.__version__ = '3.6.0'`
+</div>
+
+```python
+str(object=’’) -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+```
+
+주어진 객체에서 새 문자열 객체를 생성합니다. `encoding` 또는
+`errors`가 지정되면, 객체는 지정된 인코딩과 오류 handler를 사용해
+디코딩할 데이터 버퍼를 제공해야 합니다.
+그렇지 않으면 object.*&#95;str*&#95;()의 결과(정의된 경우)
+또는 repr(object)를 반환합니다.
+
+* `encoding`의 기본값은 ‘utf-8’입니다.
+* `errors`의 기본값은 ‘strict’입니다.

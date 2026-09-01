@@ -566,7 +566,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     else if (!expected_etag.empty())
         req.SetIfMatch(expected_etag);
 
-    S3::setClickHouseAttemptNumber(req, attempt);
+    S3::setClickhouseAttemptNumber(req, attempt);
 
     if (range_end_incl)
     {

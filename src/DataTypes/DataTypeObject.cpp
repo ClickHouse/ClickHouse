@@ -15,7 +15,6 @@
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
 
 #include <Parsers/IAST.h>
@@ -54,7 +53,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
-    extern const int ILLEGAL_COLUMN;
 }
 
 DataTypeObject::DataTypeObject(
@@ -677,15 +675,9 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// as a static subcolumn, then tried to resolve the remaining ":`Array(JSON)`.x" via the typed path's
     /// type chain, which eventually called this method. We return nullptr here so that the resolution falls
     /// through to the outer DataTypeObject::getDynamicSubcolumnData with the full subcolumn name, where
-    /// the type hint can be properly detected and stripped. That prefix-match probe always passes
-    /// throw_if_null=false; in throw_if_null mode there is no outer attempt to fall through to, so the
-    /// name is unresolvable.
+    /// the type hint can be properly detected and stripped.
     if (subcolumn_name.starts_with(":`"))
-    {
-        if (throw_if_null)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
         return nullptr;
-    }
 
     /// Split requested subcolumn to the JSON path, type hint, and remaining subcolumn.
     auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
@@ -862,15 +854,6 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 DataTypePtr DataTypeObject::getDynamicType() const
 {
     return std::make_shared<DataTypeDynamic>(max_dynamic_types);
-}
-
-UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getTypedPathSerializations() const
-{
-    UnorderedMapWithMemoryTracking<String, SerializationPtr> result;
-    result.reserve(typed_paths.size());
-    for (const auto & [path, type] : typed_paths)
-        result.emplace(path, type->getDefaultSerialization());
-    return result;
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
@@ -1150,7 +1133,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 ```
 
 <Note>
-To read subcolumns efficiently from Compact MergeTree parts make sure MergeTree setting [write_marks_for_substreams_in_compact_parts](/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts) is enabled.
+To read subcolumns efficiently from Compact MergeTree parts make sure MergeTree setting [write_marks_for_substreams_in_compact_parts](/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts) is enabled.
 </Note>
 
 ## Reading JSON sub-objects as sub-columns {#reading-json-sub-objects-as-sub-columns}
@@ -1246,16 +1229,16 @@ During parsing of `JSON`, ClickHouse tries to detect the most appropriate data t
 It works similarly to [automatic schema inference from input data](/concepts/features/interfaces/schema-inference),
 and is controlled by the same settings:
 
-- [input_format_try_infer_dates](/reference/settings/formats/input-format#input_format_try_infer_dates)
-- [input_format_try_infer_datetimes](/reference/settings/formats/input-format#input_format_try_infer_datetimes)
-- [schema_inference_make_columns_nullable](/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)
-- [input_format_json_try_infer_numbers_from_strings](/reference/settings/formats/input-format#input_format_json_try_infer_numbers_from_strings)
-- [input_format_json_infer_incomplete_types_as_strings](/reference/settings/formats/input-format#input_format_json_infer_incomplete_types_as_strings)
-- [input_format_json_read_numbers_as_strings](/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings)
-- [input_format_json_read_bools_as_strings](/reference/settings/formats/input-format#input_format_json_read_bools_as_strings)
-- [input_format_json_read_bools_as_numbers](/reference/settings/formats/input-format#input_format_json_read_bools_as_numbers)
-- [input_format_json_read_arrays_as_strings](/reference/settings/formats/input-format#input_format_json_read_arrays_as_strings)
-- [input_format_json_infer_array_of_dynamic_from_array_of_different_types](/reference/settings/formats/input-format#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
+- [input_format_try_infer_dates](/reference/settings/formats#input_format_try_infer_dates)
+- [input_format_try_infer_datetimes](/reference/settings/formats#input_format_try_infer_datetimes)
+- [schema_inference_make_columns_nullable](/reference/settings/formats#schema_inference_make_columns_nullable)
+- [input_format_json_try_infer_numbers_from_strings](/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)
+- [input_format_json_infer_incomplete_types_as_strings](/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)
+- [input_format_json_read_numbers_as_strings](/reference/settings/formats#input_format_json_read_numbers_as_strings)
+- [input_format_json_read_bools_as_strings](/reference/settings/formats#input_format_json_read_bools_as_strings)
+- [input_format_json_read_bools_as_numbers](/reference/settings/formats#input_format_json_read_bools_as_numbers)
+- [input_format_json_read_arrays_as_strings](/reference/settings/formats#input_format_json_read_arrays_as_strings)
+- [input_format_json_infer_array_of_dynamic_from_array_of_different_types](/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 Let's take a look at some examples:
 
@@ -1459,7 +1442,7 @@ Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path fo
 ```
 
 If you want to keep keys with dots and avoid formatting them as nested objects, you can enable
-setting [json_type_escape_dots_in_keys](/reference/settings/formats/other#json_type_escape_dots_in_keys) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
+setting [json_type_escape_dots_in_keys](/reference/settings/formats#json_type_escape_dots_in_keys) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
 escaped into `%2E` and unescaped back during formatting.
 
 ```sql title="Query"
@@ -1711,12 +1694,12 @@ Currently, there are 3 different shared data structure serializations in MergeTr
 and `advanced`.
 
 The serialization version is controlled by MergeTree
-settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-and [object_shared_data_serialization_version_for_zero_level_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
+settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings#object_shared_data_serialization_version)
+and [object_shared_data_serialization_version_for_zero_level_parts](/reference/settings/merge-tree-settings#object_shared_data_serialization_version_for_zero_level_parts)
 (zero level part is the part created during inserting data into the table, during merges parts have higher level).
 
 Note: changing shared data structure serialization is supported only
-for `v3` [object serialization version](/reference/settings/merge-tree-settings/other#object_serialization_version)
+for `v3` [object serialization version](/reference/settings/merge-tree-settings#object_serialization_version)
 
 #### Map {#shared-data-map}
 
@@ -1735,8 +1718,8 @@ reads the whole `Map` column from a single bucket and extracts the requested pat
 This serialization is less efficient for writing data and reading the whole `JSON` column, but it's more efficient for reading paths sub-columns
 because it reads data only from required buckets.
 
-Number of buckets `N` is controlled by MergeTree settings [object_shared_data_buckets_for_compact_part](/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part) (8 by default)
-and [object_shared_data_buckets_for_wide_part](/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part) (32 by default).
+Number of buckets `N` is controlled by MergeTree settings [object_shared_data_buckets_for_compact_part](/reference/settings/merge-tree-settings#object_shared_data_buckets_for_compact_part) (8 by default)
+and [object_shared_data_buckets_for_wide_part](/reference/settings/merge-tree-settings#object_shared_data_buckets_for_wide_part) (32 by default).
 The maximum allowed value for both settings is 256.
 
 #### Advanced {#shared-data-advanced}
@@ -1783,7 +1766,7 @@ Let's investigate the content of the [GH Archive](https://www.gharchive.org/) da
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPaths(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
 ```
 
 ```text title="Response"
@@ -1843,7 +1826,7 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPathsAndTypes(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
 
@@ -1979,8 +1962,6 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 With lazy type hints enabled, this query returns no rows, confirming the operation was metadata-only.
 
-This holds for the type-hint changes described above; see [Limitations](#lazy-type-hints-limitations) for the cases that are instead rejected.
-
 ### Materializing Type Hints {#materializing-type-hints}
 
 To materialize type hints in existing data, you can either:
@@ -1994,12 +1975,6 @@ To materialize type hints in existing data, you can either:
 - This feature is experimental and may change in future versions
 - Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
 - The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
-- Modifying a type hint (or removing a typed path) is **not** metadata-only, and is rejected, when the affected subcolumn is used in a positionally-persisted structure:
-  - the **primary/sorting key** or **partition key** — the change is forbidden, because the on-disk primary index / partition values cannot be rebuilt by a metadata-only `ALTER` (as with any other key column);
-  - an explicit **data skipping index** — drop the index first, or disable `allow_experimental_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
-  - a **projection whose sort key (`ORDER BY`) reads the subcolumn** — drop the projection first, because a metadata-only `ALTER` cannot rebuild the projection's primary index.
-
-  Adding hints for paths not used in any such structure, or changes that leave the on-disk type of the used subcolumns unchanged (e.g. adding an unrelated typed path), remain metadata-only.
 
 ## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
 

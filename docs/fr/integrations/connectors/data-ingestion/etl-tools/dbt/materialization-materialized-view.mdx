@@ -2,16 +2,16 @@
 sidebarTitle: 'Matérialisation : materialized_view'
 slug: /integrations/dbt/materialization-materialized-view
 description: 'Documentation dédiée à la matérialisation materialized_view'
-keywords: ['clickhouse', 'dbt', 'materialized_view', 'actualisable', 'Vues matérialisées', 'rattrapage']
+keywords: ['clickhouse', 'dbt', 'materialized_view', 'rafraîchissable', 'Vues matérialisées', 'rattrapage']
 title: 'Vues matérialisées'
 doc_type: 'guide'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
-La matérialisation `materialized_view` doit être un `SELECT` à partir d’une table source existante. Contrairement à PostgreSQL, une vue matérialisée dans ClickHouse n’est pas « statique » (et ne dispose pas d’opération REFRESH correspondante). Elle agit plutôt comme un **déclencheur à l’insertion** : elle insère de nouvelles lignes dans une table cible en appliquant la transformation `SELECT` définie aux lignes insérées dans la table source. Consultez la [documentation ClickHouse sur les vues matérialisées](/fr/concepts/features/materialized-views/index) pour en savoir plus sur le fonctionnement des vues matérialisées dans ClickHouse.
+La matérialisation `materialized_view` doit être un `SELECT` à partir d’une table source existante. Contrairement à PostgreSQL, une vue matérialisée dans ClickHouse n’est pas « statique » (et ne dispose pas d’opération REFRESH correspondante). Elle agit plutôt comme un **déclencheur d’insertion** : elle insère de nouvelles lignes dans une table cible en appliquant la transformation `SELECT` définie aux lignes insérées dans la table source. Consultez la [documentation ClickHouse sur les vues matérialisées](/fr/concepts/features/materialized-views/index) pour en savoir plus sur le fonctionnement des vues matérialisées dans ClickHouse.
 
 <Note>
   Pour les concepts généraux de matérialisation et les configurations partagées (engine, order&#95;by, partition&#95;by, etc.), consultez la page [Materializations](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).

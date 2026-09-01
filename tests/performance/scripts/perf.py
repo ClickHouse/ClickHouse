@@ -65,65 +65,6 @@ def tsv_escape(s):
     )
 
 
-def ch_median(times):
-    """Median with ClickHouse medianExact semantics, to match the report
-    (eqmed.sql): quantileExact returns sorted[floor(level * size)], so the
-    median of an even-length array is the UPPER middle element."""
-    s = sorted(times)
-    return s[len(s) // 2]
-
-
-# Enumerate all C(2k, k) balanced splits exactly up to this many runs per side
-# (C(16, 8) = 12870); sample beyond that. The sample count matches eqmed.sql's
-# numbers(10000) so the stop rule and the final report estimate the same
-# quantile with the same resolution past the enumerable range.
-MAX_EXACT_SPLIT_RUNS = 8
-SAMPLED_SPLITS = 10000
-
-
-def stat_threshold(left_times, right_times):
-    """The relative noise threshold of this comparison, replicating the
-    randomization test of the report (ci/jobs/scripts/perf/eqmed.sql):
-    q99 of |median(A) - median(B)| over balanced splits of the pooled
-    measurements, normalized by median(left). An observed relative difference
-    is distinguishable from noise when it exceeds this threshold, so the
-    threshold is the measurement precision reached so far.
-    Returns None if it cannot be computed (no runs, or zero left median)."""
-    k = min(len(left_times), len(right_times))
-    if k == 0:
-        return None
-    left = left_times[:k]
-    pooled = left + right_times[:k]
-    median_left = ch_median(left)
-    if median_left <= 0:
-        return None
-    mid = k // 2
-    gaps = []
-    if k <= MAX_EXACT_SPLIT_RUNS:
-        for a_indexes in itertools.combinations(range(2 * k), k):
-            a_set = set(a_indexes)
-            a = sorted(pooled[i] for i in a_indexes)
-            b = sorted(pooled[i] for i in range(2 * k) if i not in a_set)
-            gaps.append(abs(a[mid] - b[mid]))
-    else:
-        indexes = list(range(2 * k))
-        for _ in range(SAMPLED_SPLITS):
-            random.shuffle(indexes)
-            a = sorted(pooled[i] for i in indexes[:k])
-            b = sorted(pooled[i] for i in indexes[k:])
-            gaps.append(abs(a[mid] - b[mid]))
-    gaps.sort()
-    # quantileExact(0.99) semantics.
-    q99 = gaps[min(int(0.99 * len(gaps)), len(gaps) - 1)]
-    # floor to 3 decimals like eqmed.sql's floor(threshold / l, 3), so the
-    # stop target and the reported stat_threshold round identically at the
-    # tau boundary. The estimators target the same quantile of the same
-    # balanced-split null; this exact enumeration is the deterministic
-    # version of eqmed's 10,000 sampled shuffles (validated: 95.5% equal at
-    # 3 decimals for k <= 8, the residual being the sampling jitter).
-    return int(q99 / median_left * 1000) / 1000
-
-
 parser = argparse.ArgumentParser(description="Run performance test.")
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument(
@@ -178,51 +119,7 @@ parser.add_argument(
     "for the corresponding server. A shorter list is reused for every server.",
 )
 parser.add_argument(
-    "--runs",
-    type=int,
-    default=None,
-    help="Run every query at least this many times per server (the historical "
-    "CHPC_RUNS knob). Only widens the adaptive policy: raises the minimum and "
-    "the caps to fit, never lowers them; the --tau precision stop cannot end "
-    "a query before the resulting minimum. Ignored when --min-runs is given. "
-    "Unset by default: the adaptive policy decides.",
-)
-parser.add_argument(
-    "--tau",
-    type=float,
-    default=0.08,
-    help="Precision target: stop the measured runs of a query as soon as its "
-    "noise threshold (stat_threshold of the report, the q99 relative "
-    "median gap under balanced relabelings) is at most this value.",
-)
-parser.add_argument(
-    "--min-runs",
-    type=int,
-    default=None,
-    help="Never do fewer than this many measured runs of a query per server "
-    "(default 5). When given explicitly, the legacy --runs is ignored.",
-)
-parser.add_argument(
-    "--cap",
-    type=int,
-    default=7,
-    help="Maximum number of measured runs of a query per server "
-    "(fast queries get a higher cap, see --cap-fast).",
-)
-parser.add_argument(
-    "--cap-fast",
-    type=int,
-    default=30,
-    help="Maximum number of measured runs per server for fast queries "
-    "(see --fast-query-seconds): their extra runs are cheap and they need "
-    "more runs to reach the precision target.",
-)
-parser.add_argument(
-    "--fast-query-seconds",
-    type=float,
-    default=0.02,
-    help="A query whose median run time is below this on all servers after "
-    "--cap runs is considered fast and is allowed up to --cap-fast runs.",
+    "--runs", type=int, default=1, help="Number of query runs per server."
 )
 parser.add_argument(
     "--max-queries",
@@ -283,35 +180,7 @@ parser.add_argument(
     "RIGHT, which otherwise diverges across the test and causes background "
     "purges to do asymmetric work during measured queries.",
 )
-parser.add_argument(
-    "--pr-number",
-    type=int,
-    default=0,
-    help="Number of the pull request under test. A setup query marked "
-    'do_not_check_in_pr="<this number>" is allowed to fail on the reference '
-    "server. With the default 0 no failure is tolerated.",
-)
 args = parser.parse_args()
-
-if args.min_runs is not None:
-    # An explicit --min-runs means the caller speaks the adaptive-policy
-    # language: the legacy --runs is ignored to keep the precedence obvious.
-    args.runs = None
-else:
-    args.min_runs = 5
-if args.runs is not None:
-    # Backward compatibility: --runs (CHPC_RUNS) keeps its historical meaning
-    # of "at least this many measured runs" (on master it was the hard
-    # minimum before the cumulative-time stop). It only ever widens the
-    # policy (never lowers the default minimum), and the tau precision stop
-    # does not end a query before the resulting minimum. CI does not pass it
-    # (the adaptive defaults apply); manual and release-to-release
-    # investigations use e.g. CHPC_RUNS=13 to force a tighter comparison.
-    args.min_runs = max(args.min_runs, args.runs)
-# A minimum above a cap is contradictory; the minimum wins and the caps grow
-# to fit, whichever way it was requested.
-args.cap = max(args.cap, args.min_runs)
-args.cap_fast = max(args.cap_fast, args.cap)
 
 reportStageEnd("start")
 
@@ -572,48 +441,15 @@ if not args.long:
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
-if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
+if any(q["kind"] == "shell" for q in test_queries) and (
+    args.user != "default" or args.password != "" or args.secure
+):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
         "--user / --password / --secure connection options yet: the shell "
         "environment always connects without authentication over plaintext HTTP. "
         "Remove these options, or run this test without shell-script queries."
     )
-
-# Setup queries, in document order. The do_not_check_in_pr attribute is honoured only on these elements.
-setup_query_elements = [e for e in root.findall("./*") if e.tag in ("create_query", "fill_query")]
-
-for e in root.iter():
-    if "do_not_check_in_pr" in e.attrib and e not in setup_query_elements:
-        raise Exception(
-            "do_not_check_in_pr is only allowed on top-level <create_query> "
-            f"and <fill_query> elements, but was found on <{e.tag}>"
-        )
-
-if has_shell_queries and any("do_not_check_in_pr" in e.attrib for e in setup_query_elements):
-    raise Exception(
-        "do_not_check_in_pr is not compatible with shell queries: a shell "
-        "performance test must run on every server to be comparable"
-    )
-
-# Setup queries paired with a flag. Tolerate query's failure on the reference server
-# only when do_not_check_in_pr matches --pr-number.
-create_query_templates = []
-for e in setup_query_elements:
-    attr = e.get("do_not_check_in_pr")
-    if attr is not None and not re.fullmatch("[1-9][0-9]*", attr):
-        raise Exception(
-            f'Invalid do_not_check_in_pr="{attr}" on <{e.tag}> in the test '
-            "file: must be the number of the pull request that introduces "
-            "the test (a positive integer)"
-        )
-    create_query_templates.append(
-        (e.text, attr is not None and int(attr) == args.pr_number)
-    )
-
-# <query file=...> have no element to carry the attribute. We can add support for it later if needed.
-create_query_templates += [(template, False) for template in extra_create_queries]
 
 # Print report threshold for the test if it is set.
 ignored_relative_change = 0.05
@@ -766,43 +602,32 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
-# One-line summary per connection whose tolerated setup query failed there (the traceback goes to stderr).
-setup_error_on_connection = [None] * len(all_connections)
-
 if not args.use_existing_tables:
-    # Run create and fill queries. We will run them simultaneously for both servers, to save time.
-    create_queries = []
-    for template, tolerate_on_reference in create_query_templates:
-        create_queries += [
-            (q, tolerate_on_reference) for q in substitute_parameters([template])
-        ]
+    # Run create and fill queries. We will run them simultaneously for both
+    # servers, to save time. The weird XML search + filter is because we want to
+    # keep the relative order of elements, and etree doesn't support the
+    # appropriate xpath query.
+    create_query_templates = [
+        q.text for q in root.findall("./*") if q.tag in ("create_query", "fill_query")
+    ]
+    create_query_templates += extra_create_queries
+    create_queries = substitute_parameters(create_query_templates)
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue
     # after some errors.
-    for q, _ in create_queries:
+    for q in create_queries:
         if re.search("create temporary table", q, flags=re.IGNORECASE):
-            print(f"Temporary tables are not allowed in performance tests: '{q}'", file=sys.stderr)
+            print(
+                f"Temporary tables are not allowed in performance tests: '{q}'",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     def do_create(connection, index, queries):
-        for q, tolerate_on_reference in queries:
-            try:
-                connection.execute(q)
-                print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
-            except Exception:
-                # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
-                if index != 0 or not tolerate_on_reference:
-                    raise
-
-                message = (
-                    "setup query failed on the reference server and is tolerated "
-                    f"by do_not_check_in_pr matching --pr-number {args.pr_number}, "
-                    f"running the test on the new server only: {tsv_escape(q)[:200]}"
-                )
-                print(f"{message}\n{traceback.format_exc()}", file=sys.stderr)
-                setup_error_on_connection[index] = message
-                break
+        for q in queries:
+            connection.execute(q)
+            print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
 
     threads = [
         SafeThread(target=do_create, args=(connection, index, create_queries))
@@ -878,13 +703,8 @@ for query_index in queries_to_run:
     # new one. We want to run them on the new server only, so that the PR author
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
-    # A connection whose tolerated (do_not_check_in_pr) setup query failed
-    # starts out already failed for every query, so the partial
-    # ("backward-incompatible") machinery excludes it from the comparison.
-    query_error_on_connection = list(setup_error_on_connection)
+    query_error_on_connection = [None] * len(all_connections)
     for conn_index, c in enumerate(all_connections):
-        if query_error_on_connection[conn_index]:
-            continue
         try:
             prewarm_id = f"{query_prefix}.prewarm0"
 
@@ -983,22 +803,12 @@ for query_index in queries_to_run:
     start_seconds = time.perf_counter()
     server_seconds = 0
     profile_seconds = 0
-    threshold_seconds = 0.0
     run = 0
 
     # Arrays of run times for each connection.
     all_server_times = []
     for conn_index, c in enumerate(this_query_connections):
         all_server_times.append([])
-
-    # Run counts at which the precision stop condition is evaluated past the
-    # ordinary cap, for fast queries only: computing the threshold is not free,
-    # and the precision gained per extra run diminishes, so check sparsely.
-    fast_check_points = sorted(
-        set(p for p in (8, 10, 14, 20, 30) if args.cap < p < args.cap_fast)
-        | {args.cap_fast}
-    )
-    is_fast_query = False
 
     while True:
         run_id = f"{query_prefix}.run{run}"
@@ -1059,46 +869,14 @@ for query_index in queries_to_run:
 
         avg_time_per_server = server_seconds / len(this_query_connections)
 
-        # Precision-targeted adaptive run policy: do at least --min-runs runs
-        # per server (each individual run is still bounded by
-        # --max-query-seconds), then stop as soon as the noise threshold of this
-        # query drops to --tau, or a cap on the number of runs is reached:
-        # --cap runs normally, --cap-fast runs for fast queries (they are cheap
-        # to rerun and, in relative terms, the noisiest). The escape from
-        # pathologically slow queries — stop once the cumulative time per server
-        # reaches 30 seconds — takes precedence over the --min-runs floor, so a
-        # e.g. 12 s query stops after 3 runs instead of burning 5 x 12 s x 2.
-        if avg_time_per_server >= 30:
-            break
-
-        if run < args.min_runs:
-            continue
-
-        # The precision stop needs exactly two servers to compare; partial
-        # queries just run to the caps.
-        if len(all_server_times) == 2 and (
-            run <= args.cap or run in fast_check_points
+        # We break if all the min stop conditions are met (1 second arg.runs iterations)
+        # or at lest one of the max stop conditions is met (8 seconds or 500 iterations)
+        if (avg_time_per_server >= 1 and run >= args.runs) or (
+            avg_time_per_server >= 8 or run >= 500
         ):
-            # Connection 0 is the "left" (old) server. The computation takes
-            # real wall time (10,000 shuffles in pure python at the sampled
-            # checkpoints), which must not leak into the query's client time.
-            threshold_start_seconds = time.perf_counter()
-            threshold = stat_threshold(all_server_times[0], all_server_times[1])
-            threshold_seconds += time.perf_counter() - threshold_start_seconds
-            if threshold is not None and threshold <= args.tau:
-                break
-
-        if run < args.cap:
-            continue
-        if run == args.cap:
-            is_fast_query = (
-                max(ch_median(t) for t in all_server_times)
-                < args.fast_query_seconds
-            )
-        if not is_fast_query or run >= args.cap_fast:
             break
 
-    client_seconds = time.perf_counter() - start_seconds - threshold_seconds
+    client_seconds = time.perf_counter() - start_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
     median = [statistics.median(t) for t in all_server_times]
     print(f"median\t{query_index}\t{median[0]}")
@@ -1175,15 +953,8 @@ reportStageEnd("run")
 if not args.keep_created_tables and not args.use_existing_tables:
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
-        # Best-effort teardown on a connection whose setup never completed: the objects may not exist there.
-        setup_failed = setup_error_on_connection[conn_index] is not None
         for q in drop_queries:
-            try:
-                c.execute(q)
-            except Exception:
-                if setup_failed:
-                    continue
-                raise
+            c.execute(q)
             print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
 
     reportStageEnd("drop-2")

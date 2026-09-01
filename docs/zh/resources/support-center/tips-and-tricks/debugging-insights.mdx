@@ -149,7 +149,7 @@ WHERE is_done = 0;
   ### 外部聚合
 </div>
 
-为内存密集型操作启用外部聚合。虽然速度会稍慢一些，但可以通过落盘避免因内存不足而崩溃。你可以通过设置 `max_bytes_before_external_group_by` 来实现，这有助于防止大型 `GROUP BY` 操作因内存不足而崩溃。你可以在[这里](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)了解有关此设置的更多信息。
+为内存密集型操作启用外部聚合。虽然速度会稍慢一些，但可以通过落盘避免因内存不足而崩溃。你可以通过设置 `max_bytes_before_external_group_by` 来实现，这有助于防止大型 `GROUP BY` 操作因内存不足而崩溃。你可以在[这里](/zh/reference/settings/session-settings#max_bytes_before_external_group_by)了解有关此设置的更多信息。
 
 ```sql
 SELECT 
@@ -159,7 +159,7 @@ SELECT
     SUM(value) as total
 FROM large_table
 GROUP BY column1, column2
-SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB threshold
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB 阈值
 ```
 
 <div id="async-insert-details">

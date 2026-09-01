@@ -2,17 +2,17 @@
 slug: /cloud/managed-postgres/settings
 sidebarTitle: '설정'
 title: '설정'
-description: 'ClickHouse Managed Postgres의 인스턴스 설정을 관리하고 PostgreSQL 및 PgBouncer 매개변수를 구성합니다'
+description: 'Managed Postgres의 인스턴스 설정을 관리하고 PostgreSQL 및 PgBouncer 매개변수를 구성합니다'
 keywords: ['Postgres 구성', 'PostgreSQL 설정', 'PgBouncer']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
 
-사이드바의 **설정** 탭에서 ClickHouse Managed Postgres 인스턴스의 구성 매개변수를 변경하고 인스턴스 설정을 관리할 수 있습니다.
+사이드바의 **설정** 탭에서 Managed Postgres 인스턴스의 구성 매개변수를 변경하고 인스턴스 설정을 관리할 수 있습니다.
 
 <div id="service-actions">
   ## 서비스 작업 및 스케일링
@@ -20,10 +20,10 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Image img="/images/managed-postgres/service-actions.webp" alt="서비스 작업 및 스케일링" size="md" border />
 
-**서비스 작업** 도구 모음은 ClickHouse Managed Postgres 인스턴스를 관리하는 제어 기능을 제공합니다:
+**서비스 작업** 도구 모음에는 Managed Postgres 인스턴스를 관리하기 위한 제어 항목이 있습니다:
 
-* **비밀번호 재설정**: 슈퍼유저 비밀번호를 업데이트합니다 (인스턴스가 `Running` 상태일 때만 가능)
-* **재시작**: 데이터베이스 인스턴스를 재시작합니다 (인스턴스가 `Running` 상태일 때만 가능)
+* **비밀번호 재설정**: 슈퍼유저 비밀번호를 업데이트합니다 (`Running` 상태일 때만 가능)
+* **재시작**: 데이터베이스 인스턴스를 재시작합니다 (`Running` 상태일 때만 가능)
 * **삭제**: 인스턴스를 삭제합니다
 
 **스케일링** 섹션에서는 프라이머리 및 대기 인스턴스의 인스턴스 유형을 변경하여 컴퓨팅 리소스와 스토리지 용량을 늘리거나 줄일 수 있습니다.

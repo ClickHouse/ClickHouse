@@ -6,9 +6,9 @@ title: 'CREATE VIEW'
 doc_type: 'reference'
 ---
 
-import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { DeprecatedBadge } from "/snippets/es/components/DeprecatedBadge/DeprecatedBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import DeprecatedBadge from "/snippets/es/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Crea una nueva vista. Las vistas pueden ser [normales](#normal-view), [materializadas](#materialized-view), [materializadas actualizables](#refreshable-materialized-view) y [de ventana](/es/reference/statements/create/view#window-view).
 
@@ -49,8 +49,7 @@ SELECT a, b, c FROM (SELECT ...)
   ## Vista parametrizada
 </div>
 
-Las vistas parametrizadas son similares a las vistas normales, pero pueden crearse con parámetros que no se resuelven inmediatamente.
-Estas vistas pueden usarse con funciones de tabla, que especifican el nombre de la vista como nombre de la función y los valores de los parámetros como argumentos.
+Las vistas parametrizadas son similares a las vistas normales, pero pueden crearse con parámetros que no se resuelven inmediatamente. Estas vistas pueden usarse con funciones de tabla, que especifican el nombre de la vista como nombre de la función y los valores de los parámetros como argumentos.
 
 ```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
@@ -60,14 +59,6 @@ Lo anterior crea una vista para la tabla, que puede usarse como función de tabl
 
 ```sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
-```
-
-Dado que la vista parametrizada depende de los valores de los parámetros, no tiene un esquema cuando no se proporcionan parámetros.
-Esto significa que no hay información sobre las vistas parametrizadas en la tabla `system.columns`.
-Además, las consultas `DESCRIBE` solo funcionarían si se proporcionan parámetros.
-
-```sql
-DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
 <div id="materialized-view">
@@ -150,7 +141,7 @@ Las vistas materializadas almacenan los datos transformados por la consulta [SEL
 
 Al crear una vista materializada sin `TO [db].[table]`, debes especificar `ENGINE`: el motor de tabla para almacenar los datos.
 
-Al crear una vista materializada con `TO [db].[table]`, también puedes usar `POPULATE` para rellenar la tabla de destino con datos históricos de los datos de origen existentes (la tabla de destino ya puede contener datos, en cuyo caso se añaden las filas rellenadas). `POPULATE` no se puede combinar con `REFRESH`: una [vista materializada actualizable](#refreshable-materialized-view) se rellena mediante su primera actualización, por lo que `POPULATE` cargaría los datos iniciales dos veces (usa `EMPTY` para omitir la primera actualización en su lugar).
+Al crear una vista materializada con `TO [db].[table]`, tampoco puedes usar `POPULATE`.
 
 Una vista materializada se implementa de la siguiente manera: al insertar datos en la tabla especificada en `SELECT`, una parte de los datos insertados se transforma mediante esta consulta `SELECT`, y el resultado se inserta en la vista.
 
@@ -168,25 +159,22 @@ Una vista materializada se implementa de la siguiente manera: al insertar datos 
   `materialized_views_ignore_errors` es `true` de forma predeterminada para las tablas `system.*_log`.
 </Note>
 
-Si especifica `POPULATE`, los datos existentes de la tabla de origen se insertan en la vista al crearla. De lo contrario, la vista contiene solo los datos insertados en la tabla de origen después de crearla.
-
-Para un `CREATE MATERIALIZED VIEW` simple, `POPULATE` es **atómico** de forma predeterminada (configuración `materialized_views_populate_atomically = 1`): la vista se suscribe a las nuevas inserciones en la tabla de origen y se toma simultáneamente una instantánea de los datos existentes, bajo un breve bloqueo exclusivo en la tabla de origen, de modo que cada fila insertada de forma concurrente durante la carga inicial se entrega a la vista **exactamente una vez**: no se omite ni se duplica. A continuación, la carga inicial (que puede ser prolongada) lee la instantánea fijada sin mantener ningún bloqueo.
-
-Esta es una atomicidad local de la ruta de inserción: el bloqueo exclusivo solo se serializa con las inserciones que adquieren el bloqueo de almacenamiento de esta tabla de origen **en el mismo servidor**, por lo que la garantía de entrega exactamente una vez cubre las inserciones que llegan a través de este servidor. No es una garantía para todo el clúster: las filas insertadas en otra réplica de un origen `ReplicatedMergeTree`, o mediante una ruta de escritura distribuida (por ejemplo, en una tabla `Distributed` o mediante `ON CLUSTER`), de forma concurrente con la carga inicial, quedan fuera de este alcance y aún pueden omitirse o duplicarse.
-
-Si la carga inicial falla —por ejemplo, si no se puede adquirir el bloqueo exclusivo en una tabla de origen ocupada dentro de `lock_acquire_timeout`, o si el `SELECT` de la vista genera una excepción durante su ejecución—, la vista recién creada se elimina y la consulta `CREATE` falla, sin dejar nada de lo que creó, por lo que puede reintentarse sin más. Para la forma `TO [db].[table]`, esta reversión elimina solo la vista, nunca la tabla de destino preexistente; pero las filas que la carga inicial fallida ya insertó en el destino permanecen allí, exactamente como después de un `INSERT ... SELECT` fallido en esa tabla, por lo que reintentar el `CREATE` las inserta de nuevo. Si el relleno debe ser exacto, vuelva a intentarlo con una tabla de destino truncada o nueva, o use un motor de deduplicación como `ReplacingMergeTree`.
+Si especifica `POPULATE`, los datos existentes de la tabla se insertan en la vista al crearla, como si se hiciera un `CREATE TABLE ... AS SELECT ...`. De lo contrario, la consulta contiene solo los datos insertados en la tabla después de crear la vista. **No recomendamos** usar `POPULATE`, ya que los datos insertados en la tabla durante la creación de la vista no se insertarán en ella.
 
 <Note>
-  La atomicidad requiere que la tabla de origen permita leer una instantánea fijada en un momento dado: la familia `MergeTree` y `Memory`. Para cualquier otra fuente (una vista, `Distributed`, `Merge`, `Buffer`, la familia `Log` o una tabla que no esté en una base de datos `Atomic`), la carga inicial recurre al comportamiento heredado no atómico (registrado en el registro del servidor): los datos existentes se leen con una instantánea independiente y no coordinada, por lo que las filas insertadas durante la carga inicial pueden omitirse o duplicarse. En ese caso, cree la vista y ejecute un `INSERT ... SELECT` por separado si necesita datos exactos. Establecer `materialized_views_populate_atomically = 0` fuerza este comportamiento heredado para todas las fuentes.
+  Dado que `POPULATE` funciona como `CREATE TABLE ... AS SELECT ...`, tiene limitaciones:
 
-  La carga inicial atómica se aplica únicamente a `CREATE MATERIALIZED VIEW` simple. `CREATE OR REPLACE` / `REPLACE MATERIALIZED VIEW ... POPULATE` siempre usan la carga inicial heredada no atómica.
+  * No es compatible con base de datos `Replicated`
+  * No es compatible con ClickHouse Cloud
 
-  `POPULATE` no es compatible con las bases de datos `Replicated` (use `database_replicated_allow_heavy_create` para anularlo) ni con ClickHouse Cloud. Cuando se habilita mediante esa sobrescritura, la carga inicial siempre es la heredada no atómica: una carga inicial fallida no podría revertirse de forma coherente en todas las réplicas.
+  En su lugar, se puede usar un `INSERT ... SELECT` por separado.
 </Note>
 
 Una consulta `SELECT` puede contener `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Tenga en cuenta que las transformaciones correspondientes se realizan de forma independiente en cada bloque de datos insertados. Por ejemplo, si se establece `GROUP BY`, los datos se agregan durante la inserción, pero solo dentro de un único paquete de datos insertados. Los datos no se volverán a agregar después. La excepción es cuando se usa un `ENGINE` que realiza la agregación de datos por sí mismo, como `SummingMergeTree`.
 
 Si la vista materializada usa la construcción `TO [db.]name`, puede aplicar `DETACH` a la vista, ejecutar `ALTER` en la tabla de destino y luego hacer `ATTACH` de la vista previamente separada con `DETACH`.
+
+Tenga en cuenta que la vista materializada se ve afectada por la configuración [optimize&#95;on&#95;insert](/es/reference/settings/session-settings#optimize_on_insert). Los datos se fusionan antes de insertarse en una vista.
 
 Las vistas tienen el mismo aspecto que las tablas normales. Por ejemplo, aparecen en el resultado de la consulta `SHOW TABLES`.
 
@@ -213,18 +201,12 @@ Tenga en cuenta que, independientemente de la opción de SQL security, en todos 
   Por lo tanto, es necesario tener `GRANT ALLOW SQL SECURITY NONE TO <user>` para crear una vista con esta opción.
 </Note>
 
-Si no se especifican `DEFINER`/`SQL SECURITY`, el resultado depende de la configuración del servidor [`ignore_empty_sql_security_in_create_view_query`](/es/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
+Si no se especifican `DEFINER`/`SQL SECURITY`, se usan los valores predeterminados:
 
-Con su valor predeterminado de `true`, la consulta se almacena tal como se escribió y la vista obtiene un tipo de SQL security vacío. Una vista normal se ejecuta entonces con los permisos del invocador y, en el caso de una vista materializada con una tabla de destino especificada explícitamente, se omiten las comprobaciones de acceso a esa tabla de destino: insertar en la tabla fuente no requiere el privilegio `INSERT` en la tabla de destino, y leer de la vista no requiere el privilegio `SELECT` sobre ella.
+* `SQL SECURITY`: `INVOKER` para las vistas normales y `DEFINER` para las vistas materializadas ([configurable en Settings](/es/reference/settings/session-settings#default_normal_view_sql_security))
+* `DEFINER`: `CURRENT_USER` ([configurable en Settings](/es/reference/settings/session-settings#default_view_definer))
 
-Con `false`, los siguientes valores predeterminados se escriben en la definición de la vista en el momento de crearla:
-
-* `SQL SECURITY`: `INVOKER` para las vistas normales (configurable mediante [`default_normal_view_sql_security`](/es/reference/settings/session-settings/default#default_normal_view_sql_security)) y `DEFINER` para las vistas materializadas (configurable mediante [`default_materialized_view_sql_security`](/es/reference/settings/session-settings/default#default_materialized_view_sql_security))
-* `DEFINER`: `CURRENT_USER` (configurable mediante [`default_view_definer`](/es/reference/settings/session-settings/default#default_view_definer))
-
-Las vistas materializadas actualizables siempre reciben estos valores predeterminados, independientemente de la configuración.
-
-Una vista conserva el tipo de SQL security de su definición almacenada cuando se adjunta o se recarga al iniciar el servidor, por lo que una vista almacenada sin `DEFINER`/`SQL SECURITY` conserva el tipo de SQL security vacío.
+Si una vista se adjunta sin especificar `DEFINER`/`SQL SECURITY`, el valor predeterminado es `SQL SECURITY NONE` para la vista materializada y `SQL SECURITY INVOKER` para la vista normal.
 
 Para cambiar SQL security de una vista existente, use
 
@@ -338,7 +320,7 @@ En modo `APPEND`, la coordinación puede deshabilitarse con `SETTINGS all_replic
 
 En el modo no `APPEND`, solo se admite la actualización coordinada. Para una actualización no coordinada, use la base de datos `Atomic` y la consulta `CREATE ... ON CLUSTER` para crear vistas materializadas actualizables en todas las réplicas.
 
-La coordinación se realiza mediante Keeper. La ruta del znode se determina mediante la configuración de servidor [default&#95;replica&#95;path](/es/reference/settings/server-settings/settings/default-replica#default_replica_path).
+La coordinación se realiza mediante Keeper. La ruta del znode se determina mediante la configuración de servidor [default&#95;replica&#95;path](/es/reference/settings/server-settings/settings#default_replica_path).
 
 <div id="refresh-dependencies">
   ### Dependencias de actualización
@@ -516,15 +498,13 @@ Para esperar a que se complete una actualización, use [`SYSTEM WAIT VIEW`](/es/
   ## Window View
 </div>
 
-<DeprecatedBadge />
+<ExperimentalBadge />
 
 <CloudNotSupportedBadge />
 
-<Warning>
-  **Obsoleto**
-
-  Las window views están obsoletas y podrían eliminarse en una versión futura. Siguen requiriendo la opción de configuración [allow&#95;experimental&#95;window&#95;view](/es/reference/settings/session-settings/allow-experimental#allow_experimental_window_view) (`SET allow_experimental_window_view = 1`) y no se recomiendan para usos nuevos.
-</Warning>
+<Info>
+  Esta es una función experimental que puede cambiar de forma incompatible con versiones anteriores en futuras versiones. Habilite el uso de las Window View y de la consulta `WATCH` mediante la opción de configuración [allow&#95;experimental&#95;window&#95;view](/es/reference/settings/session-settings#allow_experimental_window_view). Introduzca el comando `set allow_experimental_window_view = 1`.
+</Info>
 
 ```sql
 CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]

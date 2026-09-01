@@ -147,7 +147,7 @@ WHERE
         database,
         table);
 
-    if (query.has_like)
+    if (!query.like.empty())
     {
         rewritten_query += " AND field ";
         if (query.not_like)

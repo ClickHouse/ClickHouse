@@ -87,13 +87,6 @@ if (OS_LINUX)
     list(APPEND EXAMPLES_SOURCES ../Common/examples/memory_statistics_os_perf.cpp)
 endif()
 
-# Uses sched_getcpu() and rseq via contrib/librseq. Gate on the target rather than OS_LINUX:
-# the submodule may be empty in minimal-submodule Linux checkouts (for example FastTest),
-# and there `ch_contrib::librseq` (with its <rseq/rseq.h> headers) does not exist.
-if (TARGET ch_contrib::librseq)
-    list(APPEND EXAMPLES_SOURCES ../Common/examples/rseq_vs_atomic_benchmark.cpp)
-endif()
-
 if (ENABLE_HIVE)
     list(APPEND EXAMPLES_SOURCES ../Common/examples/hive_metastore_client.cpp)
 endif()
@@ -138,9 +131,6 @@ if (TARGET ch_contrib::icu)
 endif()
 if (TARGET ch_contrib::hdfs)
     target_link_libraries(clickhouse-examples PRIVATE ch_contrib::hdfs)
-endif()
-if (TARGET ch_contrib::librseq)
-    target_link_libraries(clickhouse-examples PRIVATE ch_contrib::librseq)
 endif()
 
 target_link_libraries(clickhouse-examples PRIVATE ch_contrib::abseil_swiss_tables ch_contrib::cityhash ch_contrib::farmhash ch_contrib::lz4 ch_contrib::metrohash ch_contrib::pdqsort ch_contrib::sparsehash ch_contrib::zlib)

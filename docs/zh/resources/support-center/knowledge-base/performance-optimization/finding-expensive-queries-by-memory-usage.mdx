@@ -6,7 +6,7 @@ tags: ['性能与优化']
 keywords: ['高开销查询', '内存使用量']
 ---
 
-<div id="using-the-systemquery-log-table">
+<div id="using-the-systemquery_log-table">
   ## 使用 `system.query_log` 表
 </div>
 
@@ -29,7 +29,6 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -51,13 +50,7 @@ ORDER BY
 ```
 
 <Note>
-  如果你没有 `system.query_log` 表，那么很可能尚未启用查询日志。有关如何启用它的详细信息，请参阅 [`query_log` setting](/zh/reference/settings/server-settings/settings/query#query_log) 的相关说明。
-</Note>
-
-<Note>
-  **`query_log` 中记录的不止是你提交的查询**
-
-  你提交的一条查询可能会显示为多行：包括初始查询 (`is_initial_query = 1`) 以及派生步骤或内部步骤 (`is_initial_query = 0`) ，例如用于分布式执行的次级查询，或用于计算视图的内部查询。这些内部行都有各自的 `query_id` 值——由 ClickHouse 分配，有时还会带有类似 `queryView...` 的标签——因此，不要假定每个 `query_id` 都与你的客户端报告的一致。若要将使用情况归因到你实际运行的那条查询，请按 `is_initial_query = 1` 进行过滤，或匹配 `query_id = initial_query_id`。有关详细信息，请参阅[如何识别最昂贵的查询](/zh/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id)和 [`query_log` reference](/zh/reference/system-tables/query_log)。
+  如果你没有 `system.query_log` 表，那么很可能尚未启用查询日志。有关如何启用它的详细信息，请参阅 [`query_log` setting](/zh/reference/settings/server-settings/settings#server_configuration_parameters-query-log) 的相关说明。
 </Note>
 
 如果你没有集群，则可以直接查询仅有的那张 `system.query_log` 表：
@@ -73,7 +66,6 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

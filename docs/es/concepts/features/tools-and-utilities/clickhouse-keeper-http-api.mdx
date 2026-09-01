@@ -56,19 +56,6 @@ El dashboard proporciona:
 * Navegador de almacenamiento
 * Interfaz para ejecutar comandos
 
-<div id="dashboard-cluster-tab">
-  #### Pestaña Cluster
-</div>
-
-La pestaña **Cluster** muestra los miembros de Raft como un grafo de topología y una tabla. Cada miembro se muestra con un color que indica su estado:
-
-* **Verde** — activo y sincronizado con el líder
-* **Amarillo** — activo, pero con un retraso de más de `stale_log_gap` entradas de registro respecto al líder
-* **Rojo** — inaccesible (sin ninguna respuesta correcta de Raft dentro del intervalo de expiración del latido)
-* **Gris** — desconocido (el estado de los pares solo es visible desde el líder; los seguidores ven el estado de sus pares como desconocido)
-
-La tabla también muestra el rol de cada miembro (líder, seguidor u observador), la prioridad de Raft, el índice del último registro, el retraso de replicación respecto al líder y el tiempo transcurrido desde la última respuesta correcta de Raft. Cuando el nodo actual no es el líder, la pestaña ofrece un enlace directo que abre el dashboard del líder, donde está disponible el estado completo de los pares. La pestaña se puede abrir directamente con `/dashboard?tab=cluster`.
-
 <div id="readiness-probe">
   ### Sonda de disponibilidad
 </div>
