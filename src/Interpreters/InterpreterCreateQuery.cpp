@@ -54,7 +54,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
-#include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -1448,7 +1447,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
         setNullDictionarySourceIfExternal(create);
 
-    if (create.is_dictionary || create.is_ordinary_view || create.is_window_view)
+    if (create.is_dictionary || create.is_ordinary_view)
         return;
 
     if (create.isTemporary())
@@ -1519,9 +1518,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 qualified_name,
                 as_create.getTargetTableID(ViewTarget::To).getFullTableName());
         }
-
-        if (as_create.is_window_view)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Window View", qualified_name);
 
         if (as_create.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Dictionary", qualified_name);
@@ -1922,7 +1918,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
-                create.is_materialized_view ? "MATERIALIZED VIEW" : (create.is_window_view ? "WINDOW VIEW" : "VIEW"));
+                create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor::visit(*create.select);
@@ -2078,7 +2074,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// retry used to report `TABLE_ALREADY_EXISTS` instead of the access error). This reuses the same
     /// create-temporary-then-publish machinery as CREATE OR REPLACE (doCreateOrReplaceTable). On non-Atomic
     /// databases (getUUID() == Nil, e.g. Ordinary) we keep the previous behavior: the table is created first
-    /// and an orphan is left if the INSERT SELECT fails. Materialized/window views are excluded (they can own
+    /// and an orphan is left if the INSERT SELECT fails. Materialized views are excluded (they can own
     /// an inner table and carry source-view dependencies, so they keep the previous behavior for now).
     ///
     /// As a consequence, the final table name is only registered by the publishing RENAME, so the populating
@@ -2089,7 +2085,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// visible only once fully populated) is covered by
     /// `04547_create_as_select_destination_not_visible_during_populate`.
     if (create.isCreateQueryWithImmediateInsertSelect()
-        && !create.is_materialized_view && !create.is_window_view
+        && !create.is_materialized_view
         && database && database->getUUID() != UUIDHelpers::Nil)
     {
         chassert(!ddl_guard);
@@ -3039,13 +3035,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
     {
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        if (create.is_window_view)
-        {
-            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
-            insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
-        }
-        else
-            insert->select = create.select->clone();
+        insert->select = create.select->clone();
 
         InterpreterInsertQuery interpreter(
             insert,
@@ -3060,7 +3050,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
-        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+        && (!create.is_materialized_view || create.is_populate))
     {
         String as_database_name = getContext()->resolveDatabase(as_database_saved);
 
@@ -3106,7 +3096,7 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
     /// swap (and with the old view's still-live subscription) is not handled here, so those queries keep
     /// the legacy non-atomic population; only the plain CREATE flow is atomic.
     bool applies = create.isCreateQueryWithImmediateInsertSelect()
-        && create.is_materialized_view && !create.is_window_view && !create.is_clone_as && !internal
+        && create.is_materialized_view && !create.is_clone_as && !internal
         && !create.replace_table && !create.replace_view
         && getContext()->getSettingsRef()[Setting::materialized_views_populate_atomically];
 

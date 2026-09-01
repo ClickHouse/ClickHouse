@@ -1,0 +1,406 @@
+---
+slug: /optimize/diagnose-slow-queries
+sidebarTitle: 'Диагностика медленных запросов'
+title: 'Диагностика медленных запросов'
+description: 'Узнайте, как выявлять медленные запросы ClickHouse, анализировать потребление ресурсов и планы выполнения запросов'
+doc_type: 'guide'
+keywords: ['оптимизация запросов', 'журнал запросов', 'медленные запросы', 'EXPLAIN', 'производительность']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ru/_nyc_taxi_example_dataset.mdx';
+
+Диагностика медленного запроса начинается с изучения его истории. В этом руководстве показано, как использовать `system.query_log` для выявления повторяющихся шаблонов медленных запросов, выбора характерного выполнения и анализа потребления ресурсов. Затем с помощью `EXPLAIN` вы изучите план запроса и сформулируете гипотезу об узком месте, прежде чем изменять запрос или схему.
+
+<div id="before-you-begin">
+  ## Перед началом работы
+</div>
+
+В примерах этого руководства используется таблица `nyc_taxi.trips_small_inferred`. Чтобы выполнить их в исходном виде, создайте и загрузите таблицу, если ещё не сделали этого:
+
+<Accordion title="Настройка демонстрационного набора данных">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+Чтобы воспроизвести результаты из журнала запросов, описанные в этом руководстве, после загрузки набора данных выполните все три [запроса демонстрационной рабочей нагрузки](/ru/guides/clickhouse/performance-and-monitoring/query-optimization-example#define-the-baseline-workload) не менее двух раз. Затем выполните сброс журнала запросов, чтобы завершённые выполнения стали доступны для примеров ниже:
+
+```sql
+SYSTEM FLUSH LOGS;
+```
+
+Если вы не можете выполнить `SYSTEM FLUSH LOGS`, дождитесь автоматической записи журнала запросов, затем повторите первый поиск. При диагностике собственной рабочей нагрузки убедитесь, что `system.query_log` содержит завершённые выполнения запросов за интересующий вас период времени.
+
+<div id="how-it-works">
+  ## Как это работает
+</div>
+
+По умолчанию ClickHouse записывает информацию о завершённых запросах в таблицу [`system.query_log`](/ru/reference/system-tables/query_log). Каждая запись может содержать длительность запроса, количество прочитанных строк, использование CPU и памяти, а также сведения об активности файлового кэша.
+
+Эти показатели помогают выявлять шаблоны медленных запросов и понимать, как они используют ресурсы. Выбрав характерное выполнение, вы можете изучить его план запроса, чтобы определить, на каких этапах запрос может тратить время.
+
+В кластере данные журнала запросов хранятся локально на каждом узле. В примерах этого руководства [`clusterAllReplicas`](/ru/reference/functions/table-functions/cluster) используется для выполнения запроса ко всем репликам, а [`merge`](/ru/reference/functions/table-functions/merge) — для включения текущей таблицы `system.query_log` и всех версионированных таблиц `query_log_N`, сохранённых после изменений схемы системных таблиц.
+
+В каждом примере для журнала запросов предусмотрены вкладки для кластерных и одноузловых развертываний. ClickHouse Cloud предоставляет кластер `default`, используемый в кластерных примерах. В самоуправляемом развертывании замените `default` на кластер из [`system.clusters`](/ru/reference/system-tables/clusters).
+
+<Note>
+  В примерах задаётся [`skip_unavailable_shards`](/ru/reference/settings/session-settings#skip_unavailable_shards), чтобы временно недоступная реплика не приводила к сбою диагностического запроса. Это особенно полезно при автомасштабировании. Записи с пропущенной реплики не включаются, поэтому результаты могут быть неполными.
+</Note>
+
+<div id="diagnose-a-slow-query">
+  ## Диагностика медленного запроса
+</div>
+
+Используя завершённые выполнения из журнала запросов, последовательно выполните следующие три шага. Вы выявите повторяющийся шаблон медленного запроса, выберете характерное выполнение и изучите план выполнения запроса.
+
+<Steps titleSize="h3">
+  <Step title="Определите проблемные запросы" id="identify-candidate-queries">
+    Начните с группировки завершённых первичных запросов по `normalized_query_hash`. Это позволяет отделить регулярно повторяющиеся шаблоны запросов от единичных медленных выполнений. Приведённый ниже запрос сортирует шаблоны по медианной длительности и выводит пример запроса для каждого шаблона:
+
+    <Tabs>
+      <Tab title="Кластер">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1
+        ```
+      </Tab>
+
+      <Tab title="Один узел">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        ```
+      </Tab>
+    </Tabs>
+
+    Используйте `executions`, чтобы отличить регулярную рабочую нагрузку от единичных запросов. Шаблон с высокой медианной длительностью, частыми выполнениями или высоким потреблением ресурсов — более веский кандидат для анализа, чем один медленный запуск.
+
+    Для быстрого обзора приведённый ниже запрос выводит самое медленное завершённое выполнение для не более чем пяти различных шаблонов запросов к набору данных NYC Taxi. Из него исключены команды загрузки набора данных и повторные выполнения одного и того же шаблона. На следующем шаге вы сузите историю запросов до выполнений с выбранным выше значением `normalized_query_hash`.
+
+    <Tabs>
+      <Tab title="Кластер">
+        ```sql
+        -- Найти 5 самых длительных запросов к базе данных nyc_taxi за последний час
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        SETTINGS skip_unavailable_shards = 1
+        FORMAT VERTICAL
+        ```
+      </Tab>
+
+      <Tab title="Один узел">
+        ```sql
+        -- Найти 5 самых длительных запросов к базе данных nyc_taxi за последний час
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM merge('system', '^query_log')
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        FORMAT VERTICAL
+        ```
+      </Tab>
+    </Tabs>
+
+    ```response
+    Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+    Row 1:
+    ──────
+    normalized_query_hash: 11000678248135956062
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:36
+    query_duration_ms: 2967
+    query:             WITH
+      dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+      trip_distance / trip_time * 3600 AS speed_mph
+    SELECT
+      quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM
+      nyc_taxi.trips_small_inferred
+    WHERE
+      speed_mph > 30
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 2:
+    ──────
+    normalized_query_hash: 4194765292165295011
+    type:              QueryFinish
+    event_time:        2024-11-27 11:11:33
+    query_duration_ms: 2026
+    query:             SELECT
+        payment_type,
+        COUNT() AS trip_count,
+        formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+        AVG(total_amount) AS total_amount_avg,
+        AVG(tip_amount) AS tip_amount_avg
+    FROM
+        nyc_taxi.trips_small_inferred
+    WHERE
+        pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+    GROUP BY
+        payment_type
+    ORDER BY
+        trip_count DESC;
+
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 3:
+    ──────
+    normalized_query_hash: 1891814463795712754
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:17
+    query_duration_ms: 1860
+    query:             SELECT
+      avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+    FROM nyc_taxi.trips_small_inferred
+    WHERE passenger_count = 1 or passenger_count = 2
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+    ```
+
+    Поле `query_duration_ms` содержит длительность запроса в миллисекундах. В приведённых результатах самый долгий запрос выполнялся 2 967 мс.
+
+    Вы также можете отбирать запросы-кандидаты не по их длительности, а по потреблению ресурсов:
+
+    <Accordion title="Поиск ресурсоёмких запросов">
+      Этот запрос ранжирует последние запросы по использованию памяти и показывает использование CPU. Результаты зависят от рабочей нагрузки и типа развертывания:
+
+      <Tabs>
+        <Tab title="Кластер">
+          ```sql
+          -- Запросы с наибольшим использованием памяти
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM clusterAllReplicas('default', merge('system', '^query_log'))
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          SETTINGS skip_unavailable_shards = 1
+          ```
+        </Tab>
+
+        <Tab title="Один узел">
+          ```sql
+          -- Запросы с наибольшим использованием памяти
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM merge('system', '^query_log')
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          ```
+        </Tab>
+      </Tabs>
+    </Accordion>
+  </Step>
+
+  <Step title="Выберите типичный запуск запроса" id="choose-a-representative-query-run">
+    Один медленный запуск может оказаться выбросом из-за разового запроса или временной нагрузки на систему. Прежде чем изучать план запроса, просмотрите несколько завершённых запусков с одинаковым [`normalized_query_hash`](/ru/reference/system-tables/query_log#columns): он совпадает у запросов, различающихся только литеральными значениями. Выберите запуск с типичной для этого шаблона длительностью и потреблением ресурсов.
+
+    Замените значение `selected_hash` на `normalized_query_hash` шаблона, который вы хотите исследовать:
+
+    <Tabs>
+      <Tab title="Кластер">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1;
+        ```
+      </Tab>
+
+      <Tab title="Один узел">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10;
+        ```
+      </Tab>
+    </Tabs>
+
+    1. Найдите запуски с похожими значениями `read_rows` и `read_bytes`.
+    2. Сравните `query_duration_ms` и `memory_usage` для этих запусков.
+    3. Выберите `query_id`, для которого `query_duration_ms` ближе всего к медиане.
+
+    <Note>
+      Результаты из журнала запросов за прошлые периоды могут различаться в зависимости от состояния кэша и нагрузки на систему, поэтому используйте их для выбора запроса для исследования, а не для сравнения результатов оптимизации. Если в журнале запросов недостаточно завершённых запусков, выполните запрос несколько раз в схожих условиях. В следующем руководстве [Изоляция узких мест запросов](/ru/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) объясняется, как получать контролируемые измерения для сравнения изменений.
+    </Note>
+
+    Пример результатов журнала запросов показывает, что каждый кандидат прочитал примерно 329,04 млн строк. Для сравнения проверьте количество строк в таблице из примера:
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    ```
+
+    ```response
+    Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+       ┌───count()─┐
+    1. │ 329044175 │ -- 329.04 million
+       └───────────┘
+    ```
+
+    Таблица содержит 329,04 млн строк — примерно столько же указано в `read_rows` для каждого кандидата. Это говорит о том, что запросы просканировали большую часть или всю таблицу, но не позволяет определить, почему были прочитаны эти строки и оправдан ли такой объём для запроса. Далее изучите план запроса, чтобы понять, как ClickHouse выбрал и обработал данные.
+  </Step>
+
+  <Step title="Изучите Execution Plan" id="explain-statement">
+    После выбора характерного запуска используйте [`EXPLAIN`](/ru/reference/statements/explain), чтобы посмотреть, как ClickHouse строит план запроса, не выполняя его. В выводе показаны операции, которые ClickHouse предполагает выполнить, и перемещение данных между ними, что помогает лучше интерпретировать показатели из журнала запросов.
+
+    Подробное описание доступных форматов вывода см. в разделе [Понимание выполнения запросов с помощью analyzer](/ru/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). В этом примере `EXPLAIN` показывает, как ClickHouse планирует читать и фильтровать данные, а также может ли он пропустить часть данных.
+
+    Вывод представляет собой дерево операций, показывающее, как ClickHouse предполагает читать, фильтровать и обрабатывать данные. Дочерние операции располагаются под родительскими. Начните с наиболее глубокой операции чтения, затем двигайтесь вверх по плану, чтобы увидеть, как ClickHouse преобразует данные в итоговый результат.
+
+    В этом примере рассмотрите запрос расчёта скорости из результатов журнала запросов:
+
+    ```sql
+    EXPLAIN actions = 1, compact = 1, pretty = 1, indexes = 1
+    WITH
+        dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+        (trip_distance / trip_time) * 3600 AS speed_mph
+    SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM nyc_taxi.trips_small_inferred
+    WHERE speed_mph > 30
+    ```
+
+    Вывод содержит следующие операции. Такие сведения, как количество частей и гранул, зависят от способа хранения данных:
+
+    ```response
+    Output: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+
+    Aggregating
+    │  Aggregates: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    └──Filter
+       │  Filter column: trip_distance / dateDiff('s', pickup_datetime, dropoff_datetime) * 3600 > 30
+       └──ReadFromMergeTree (nyc_taxi.trips_small_inferred)
+    ```
+
+    Снизу вверх план соотносится с запросом следующим образом:
+
+    1. `ReadFromMergeTree` считывает данные из `nyc_taxi.trips_small_inferred`. Отсутствие раздела `Indexes` в сочетании с `read_rows`, равным числу строк в таблице, показывает, что ClickHouse читает всю таблицу.
+    2. `Filter` показывает развёрнутое выражение для `speed_mph > 30`. Для каждой прочитанной строки ClickHouse вычисляет продолжительность поездки и скорость, а затем оставляет только строки со скоростью выше 30 миль в час.
+    3. `Aggregating` вычисляет квантили по отфильтрованным значениям `trip_distance`.
+
+    Этот план позволяет выделить три источника нагрузки для проверки: чтение всех строк, вычисление `speed_mph` при фильтрации и вычисление квантилей.
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+Далее ознакомьтесь с руководством [Выявление узких мест запросов](/ru/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks), чтобы узнать, как проверять предполагаемые источники нагрузки в контролируемых условиях. В нём сравниваются запросы всё более простой структуры, чтобы определить, какие операции требуют дальнейшего исследования.
