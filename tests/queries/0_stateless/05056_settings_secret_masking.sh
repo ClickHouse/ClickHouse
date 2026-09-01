@@ -111,3 +111,24 @@ echo "$PRESIGNED_LOGGED"
 # A setting that is not in the list is left alone, even when its value looks like a presigned URL.
 $CLICKHOUSE_CLIENT -q "SELECT value FROM system.settings WHERE name = 'log_comment'
     SETTINGS log_comment = 'https://h/f?X-Amz-Signature=$PRESIGNED_CANARY'"
+
+# `getSetting` reads the same value as `system.settings`, so it must hide the same secret. A setting
+# profile is what makes this matter: the secret is put there by an administrator, and the user the
+# profile applies to is the one reading it back.
+GETSETTING_CANARY="c05056getsetting"
+GS_PROFILE="p05056gs_$CLICKHOUSE_DATABASE"
+GS_USER="u05056gs_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $GS_USER"
+$CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE IF EXISTS $GS_PROFILE"
+$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE $GS_PROFILE SETTINGS format_avro_schema_registry_url = 'http://u:$GETSETTING_CANARY@reg:8080/'"
+$CLICKHOUSE_CLIENT -q "CREATE USER $GS_USER IDENTIFIED WITH plaintext_password BY 'p' SETTINGS PROFILE $GS_PROFILE"
+
+$CLICKHOUSE_CLIENT --user "$GS_USER" --password p -q "SELECT
+    getSetting('format_avro_schema_registry_url'),
+    getSettingOrDefault('format_avro_schema_registry_url', '')"
+
+# A value with no credential in it is returned untouched, so the function stays usable.
+$CLICKHOUSE_CLIENT -q "SELECT getSetting('s3_base') SETTINGS s3_base = 's3://bucket/prefix/'"
+
+$CLICKHOUSE_CLIENT -q "DROP USER $GS_USER"
+$CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $GS_PROFILE"
