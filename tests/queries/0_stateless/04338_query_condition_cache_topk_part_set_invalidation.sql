@@ -1,4 +1,4 @@
--- Tags: long, no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1.5M rows across two partitions for the TopK threshold to drop
 --   whole granules of the unchanged part, so on the slower S3 + sanitizer
@@ -25,8 +25,6 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 -- so the dynamic-filtering branch of `tryOptimizeTopK` applies and the WHERE
 -- condition is the one written into the query condition cache.
 SET optimize_move_to_prewhere = 0;
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 -- Deterministic read so the warm run reliably populates the cache: single thread,
 -- pinned chunk size, no random mark-range splitting (see
