@@ -3354,10 +3354,8 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
 
 /// Whether a numeric conversion `from` -> `to` can be JIT-compiled.
 ///
-/// Floating point to integer or `Decimal` cannot: it lowers to `fptosi` / `fptoui`, which is poison unless the value
-/// fits the destination. `ConvertImpl` raises instead (`CANNOT_CONVERT_TYPE` for a non-finite float to an integer,
-/// `DECIMAL_OVERFLOW` past a `Decimal` bound), which IR cannot do, and out of an integer range it narrows with a
-/// `static_cast` C++ leaves undefined. `Bool` is reached through `nativeBoolCast`, a comparison against zero.
+/// Float to integer or `Decimal` lowers to `fptosi` / `fptoui`, poison unless the value fits, where
+/// `ConvertImpl` instead raises or narrows in a way IR cannot reproduce. `Bool` uses `nativeBoolCast`.
 static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
 {
     return castBothTypes(from, to, [](const auto & left, const auto & right)
