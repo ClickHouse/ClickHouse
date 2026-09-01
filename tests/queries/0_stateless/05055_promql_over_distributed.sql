@@ -94,9 +94,10 @@ DROP ROW POLICY p_05055_real ON ts_dist;
 CREATE TABLE ts_skip_default AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 0;
 SELECT count() > 0 FROM prometheusQuery(ts_skip_default, 'm', 140);
 DROP TABLE ts_skip_default;
--- A non-default value would be silently dropped by the generated cluster() call: fail closed.
+-- A declared non-default value is carried into the generated cluster() read, so the read matches
+-- a plain SELECT through the wrapper: must pass.
 CREATE TABLE ts_skip_on AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 1;
-SELECT * FROM prometheusQuery(ts_skip_on, 'm', 140); -- { serverError NOT_IMPLEMENTED }
+SELECT count() > 0 FROM prometheusQuery(ts_skip_on, 'm', 140);
 -- A selector-free query never reads the wrapper, so wrapper-only settings must not refuse it.
 SELECT count() FROM prometheusQuery(ts_skip_on, '1 + 2', 140);
 -- An explicit query setting overrides the declaration on the normal path and reaches the generated
