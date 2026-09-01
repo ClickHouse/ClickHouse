@@ -149,6 +149,13 @@ struct ProcessedManifestFileEntry
     String manifest_file_path;
     std::optional<UInt64> first_row_id;
 
+    /// `parsed_entry->partition_key_value` as it is stored in the manifest, brought to the ClickHouse
+    /// types of the partition columns (see `normalizePartitionKeyValue`). A manifest may keep a decimal
+    /// as raw `fixed` bytes, and manifests written by old ClickHouse versions keep a `DateTime64` as a
+    /// plain `long`, so the raw tuple of two manifests of the same table can be incomparable. Everything
+    /// that compares, groups or shows partition values has to use this one.
+    DB::Row normalized_partition_key_value;
+
     String dumpDeletesMatchingInfo() const;
 };
 

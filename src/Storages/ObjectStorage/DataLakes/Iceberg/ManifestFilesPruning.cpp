@@ -175,7 +175,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 {
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry->parsed_entry->partition_key_value;
+        const auto & partition_value = entry->normalized_partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (size_t i = 0; i < index_value.size(); ++i)
         {

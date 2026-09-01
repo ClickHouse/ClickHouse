@@ -1672,10 +1672,42 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     return value;
 }
 
+DB::Row normalizePartitionKeyValue(
+    const DB::Row & partition_key_value,
+    const PartitionSpecification & partition_specification,
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id)
+{
+    DB::Row result = partition_key_value;
+
+    for (const auto & partition_field : partition_specification)
+    {
+        /// Only these transforms keep the type of the source column, so only for them the ClickHouse
+        /// type of the source column tells how the stored partition value has to be interpreted.
+        /// A `bucket`, `year`, `month`, `day` or `hour` value is an integer of its own, unrelated to
+        /// the type of the source column, and must be left alone.
+        const auto transform_name = Poco::toLower(partition_field.transform_name);
+        if (transform_name != "identity" && !transform_name.starts_with("truncate"))
+            continue;
+
+        if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= result.size())
+            continue;
+
+        const auto name_and_type = schema_processor.tryGetFieldCharacteristics(schema_id, partition_field.source_id);
+        if (!name_and_type.has_value())
+            continue;
+
+        auto & value = result[partition_field.tuple_index];
+        value = normalizePartitionValue(value, name_and_type->type);
+    }
+
+    return result;
+}
+
 PartitionColumnValues getIdentityPartitionColumnValues(
     const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor)
 {
-    const auto & partition_key_value = manifest_file_entry.parsed_entry->partition_key_value;
+    const auto & partition_key_value = manifest_file_entry.normalized_partition_key_value;
     if (partition_key_value.empty())
         return {};
 
