@@ -54,7 +54,7 @@ def run_with_cpu_limit(cmd, *args):
 
 def skip_if_jemalloc_disabled():
     output = run_command_in_container(
-        """clickhouse local -q "
+        """clickhouse local --tmp -q "
         SELECT value FROM system.build_options WHERE name = 'USE_JEMALLOC'"
     """
     ).strip()
@@ -83,7 +83,7 @@ def test_jemalloc_percpu_arena():
 
     # implicitly disable percpu arena
     result = run_with_cpu_limit(
-        'clickhouse local -q "select 1"',
+        'clickhouse local --tmp -q "select 1"',
         # NOTE: explicitly disable, since it is enabled by default in debug build
         # (and even though debug builds are not in CI let's state this).
         "--env",
@@ -99,7 +99,7 @@ def test_jemalloc_percpu_arena():
     with pytest.raises(subprocess.CalledProcessError):
         # should fail because of abort_conf:true but:
         run_with_cpu_limit(
-            'clickhouse local -q "select 1"',
+            'clickhouse local --tmp -q "select 1"',
             "--cpuset-cpus", f"{CPU_ID}",
             "--env", "MALLOC_CONF=abort_conf:true",
         )
@@ -107,7 +107,7 @@ def test_jemalloc_percpu_arena():
     # should not fail even with abort_conf:true, due to explicit narenas
     # NOTE: abort:false to make it compatible with debug build
     run_with_cpu_limit(
-        'clickhouse local -q "select 1"',
+        'clickhouse local --tmp -q "select 1"',
         "--env", f"MALLOC_CONF=abort_conf:true,abort:false,narenas:{all_cpus}",
     )
 
