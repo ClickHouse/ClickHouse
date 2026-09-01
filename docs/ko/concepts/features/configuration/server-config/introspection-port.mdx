@@ -1,0 +1,60 @@
+---
+description: '일반 포트에서 연결을 허용하지 않는 서버 시작 또는 종료 중에 쿼리를 처리하는 네이티브 프로토콜 포트입니다.'
+sidebarTitle: '내부 검사 포트'
+slug: /operations/introspection-port
+title: '내부 검사 포트'
+doc_type: 'reference'
+---
+
+`clickhouse-server`가 시작 또는 종료 단계에서 멈추면 일반 포트는 연결을 허용하지 않아 서버가 수행 중인 작업을 확인할 수 없습니다.
+
+내부 검사 포트는 서버가 테이블을 ATTACH하기 전에 시작되며, 테이블 DETACH가 완료된 후에야 중지되는 네이티브 프로토콜 TCP 리스너입니다. 이 기간에는 연산자가 기본 `clickhouse-client`로 연결하여 `SHOW PROCESSLIST`, `SELECT * FROM system.stack_trace`, `SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5`와 같은 쿼리를 실행할 수 있습니다.
+
+<div id="configuration">
+  ## 구성
+</div>
+
+내부 검사 포트는 `<introspection>true</introspection>`로 표시된 [조합형 프로토콜](/ko/concepts/features/configuration/server-config/composable-protocols) 엔드포인트입니다. 기본적으로 내부 검사 포트는 구성되어 있지 않습니다:
+
+```xml
+<protocols>
+    <introspection_native>
+        <type>tcp</type>
+        <introspection>true</introspection>
+        <description>introspection native protocol (tcp)</description>
+        <host>127.0.0.1</host>
+        <port>9010</port>
+    </introspection_native>
+
+    <introspection_native_secure>
+        <type>tls</type>
+        <impl>introspection_native</impl>
+        <introspection>true</introspection>
+        <description>secure introspection native protocol (tcp_secure)</description>
+        <host>127.0.0.1</host>
+        <port>9011</port>
+    </introspection_native_secure>
+</protocols>
+```
+
+일반 조합형 프로토콜 엔드포인트이므로 `host`, `port`, `description`, `networks` 허용 목록, `default_database`, `tls` 및 `proxy1` 레이어로의 래핑 등 엔드포인트에서 지원하는 모든 기능을 지원합니다.
+
+`introspection` 플래그는 `port`를 포함하는 항목인 엔드포인트의 속성이며, `impl` 참조를 통해 상속되지 않습니다. 따라서 내부 검사 엔드포인트와 일반 엔드포인트에서 레이어를 공유할 수 있습니다.
+
+아래의 의미 체계는 네이티브 프로토콜 handler에서 구현되므로 스택은 반드시 `tcp` 레이어로 끝나야 합니다. 스택에 `http`, `mysql`, `postgres`, `prometheus` 또는 `interserver` 레이어가 포함된 엔드포인트를 표시하면, 정작 필요할 때 응답하지 않는 포트가 생성되는 대신 시작 시 `INVALID_CONFIG_PARAMETER` 오류와 함께 거부됩니다.
+
+| 키               | 설명                                             |
+| --------------- | ---------------------------------------------- |
+| `introspection` | 조합형 프로토콜 엔드포인트를 내부 검사 포트로 표시합니다. 기본값: `false`. |
+
+<div id="behavior">
+  ## 동작
+</div>
+
+* 허용되는 쿼리는 `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `KILL QUERY`, `SYSTEM`, `SET`, `USE`입니다. DDL 및 데이터를 수정하는 쿼리를 비롯한 그 밖의 모든 쿼리는 서버 상태가 아직 완전히 구성되지 않았거나 종료 중인 상태에서도 포트가 열려 있으므로 `QUERY_IS_PROHIBITED`와 함께 거부됩니다.
+* 시작 과정에서 구성을 다시 로드하면 초기화 순서가 깨질 수 있으므로, 서버가 완전히 시작될 때까지 `SYSTEM RELOAD CONFIG` 및 `SYSTEM RELOAD USERS`는 `QUERY_IS_PROHIBITED`와 함께 거부됩니다.
+* 이 포트의 쿼리는 `SHOW PROCESSLIST`와 마찬가지로 `max_concurrent_queries` 및 워크로드 스케줄러를 우회합니다.
+* 연결은 전용 스레드 풀에서 처리되므로 일반 연결 풀의 고갈은 이 포트에 영향을 주지 않습니다. 풀 크기는 `max_connections`로 결정됩니다.
+* CPU 과부하로 인해 서버가 일반 연결을 거부하는 경우에도 연결은 허용됩니다.
+* 일반적인 인증 및 권한 부여가 모두 적용됩니다. 이 포트에 연결해도 추가 접근 권한이 부여되지는 않습니다. 다만 앞서 언급한 동시성 제한은 해제되므로 운영자만 접근할 수 있는 주소에 바인딩하십시오.
+* 이 포트는 `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN`(`ALL` 및 `CUSTOM` 포함)의 영향을 받지 않으며, 구성 다시 로드 시 재구성되지 않습니다.
