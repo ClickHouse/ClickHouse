@@ -28,7 +28,6 @@ DUPLICATE_ID_CONFIG = """
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
@@ -59,7 +58,6 @@ DUPLICATE_ENDPOINT_CONFIG = """
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
@@ -90,7 +88,6 @@ LOCALHOST_WITH_REMOTE = """
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
@@ -122,7 +119,6 @@ MULTIPLE_LOCAL_WITH_REMOTE = """
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
@@ -159,7 +155,6 @@ NORMAL_CONFIG = """
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
@@ -185,7 +180,6 @@ JUST_WRONG_CONFIG = """
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
@@ -217,7 +211,6 @@ INVALID_ROTATE_INTERVAL_CONFIG = """
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>

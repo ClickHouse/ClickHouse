@@ -9,7 +9,6 @@
 
 #include <archive.h>
 #include <archive_entry.h>
-#pragma clang diagnostic pop
 #endif
 
 #include <optional>

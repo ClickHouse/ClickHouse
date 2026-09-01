@@ -104,10 +104,6 @@ echo -n 'H optimize '
 ${CLICKHOUSE_CLIENT} $NC -q "
     OPTIMIZE TABLE t1_deep_05048" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
 
-echo -n 'I manifest '
-${CLICKHOUSE_CLIENT} $NC -q "
-    OPTIMIZE TABLE t1_deep_05048 MANIFEST" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1
-
 echo -n 'J expire   '
 ${CLICKHOUSE_CLIENT} $NC --allow_experimental_insert_into_iceberg 1 --allow_experimental_expire_snapshots 1 -q "
     ALTER TABLE t1_deep_05048 EXECUTE expire_snapshots()" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -1

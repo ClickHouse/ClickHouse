@@ -52,7 +52,6 @@ public:
     {
         return makeNullableOrLowCardinalityNullable(arguments[0].column);
     }
-
     bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override

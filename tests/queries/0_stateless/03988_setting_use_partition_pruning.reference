@@ -74,3 +74,91 @@ INSERT INTO test VALUES
     ('2020-09-01 00:01:02', 1),
     ('2020-09-01 20:01:03', 2),
     ('2021-09-02 00:01:03', 3);
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_pruning = 1;
+2
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_pruning = 1;
+Expression ((Projection + Before ORDER BY))
+  MergingAggregated
+    ReadFromPreparedSource (Optimized trivial count)
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_pruning = 0,
+    use_skip_indexes = 0;
+2
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_pruning = 0,
+    use_skip_indexes = 0;
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter (WHERE)
+        ReadFromMergeTree (default.test)
+        Indexes:
+          Min-Max
+            Condition: true
+            Parts: 2/2
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 3/3
+          Ranges: 2
+-- `use_partition_key` is an alias
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_key = 1;
+Expression ((Projection + Before ORDER BY))
+  MergingAggregated
+    ReadFromPreparedSource (Optimized trivial count)
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toYear(toDate(p)) = 2020
+SETTINGS
+    enable_analyzer = 0,
+    optimize_use_implicit_projections = 0,
+    use_partition_key = 0,
+    use_skip_indexes = 0;
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter (WHERE)
+        ReadFromMergeTree (default.test)
+        Indexes:
+          Min-Max
+            Condition: true
+            Parts: 2/2
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 3/3
+          Ranges: 2

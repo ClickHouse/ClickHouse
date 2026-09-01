@@ -1,6 +1,6 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/103785
 -- DISTINCT inside a CTE branch was being silently weakened when an outer
--- query projected only a subset of the CTE's columns. The analyzer's
+-- query projected only a subset of the CTE's columns. The new analyzer's
 -- `RemoveUnusedProjectionColumnsPass` correctly skipped DISTINCT
 -- query-as-FROM-children, but did not skip DISTINCT query-as-children
 -- of a `UNION ALL`, so the unused column was pruned out of the inner
@@ -57,6 +57,12 @@ WITH a AS (
 SELECT Qty FROM a ORDER BY Qty;
 
 SELECT '-- Query F: workaround setting still works as before';
+WITH a AS (
+    SELECT DISTINCT ID, Qty FROM t_qty_103785 WHERE ID IN (116, 117, 118)
+    UNION ALL
+    SELECT ID, Qty FROM t_qty_103785 WHERE ID = 115
+)
+SELECT Qty FROM a ORDER BY Qty SETTINGS enable_analyzer = 0, optimize_duplicate_order_by_and_distinct = 0;
 
 SELECT '-- Query G: existing 03023 case - DISTINCT as direct FROM-child (already worked)';
 SELECT product_id

@@ -12,6 +12,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <base/IPv4andIPv6.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
@@ -33,7 +34,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 
 namespace
 {
@@ -774,37 +774,34 @@ public:
 
 #ifndef SHA1_GTEST_UNIT_TEST
 
-/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
-/// the default implementation, which this class derives from.
+/// Runtime dispatch via ImplementationSelector.
 class FunctionSHA1 : public TargetSpecific::Default::FunctionSHA1Impl
 {
 public:
-    explicit FunctionSHA1([[maybe_unused]] ContextPtr context)
+    explicit FunctionSHA1(ContextPtr context)
+        : selector(context)
     {
 #    if USE_SSL
         if (OpenSSLInitializer::instance().isFIPSEnabled())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #    endif
 
+        selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionSHA1Impl>();
+
 #    if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
-        {
-            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
-            return;
-        }
+        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
 #    endif
-        impl = std::make_unique<TargetSpecific::Default::FunctionSHA1Impl>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return impl->executeImpl(arguments, result_type, input_rows_count);
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSHA1>(context); }
 
 private:
-    std::unique_ptr<IFunction> impl;
+    ImplementationSelector<IFunction> selector;
 };
 
 
@@ -823,7 +820,7 @@ Calculates the SHA1 hash of the given string.
 SELECT HEX(SHA1('abc'));
         )",
             R"(
-┌─HEX(SHA1('abc'))─────────────────────────┐
+┌─hex(SHA1('abc'))─────────────────────────┐
 │ A9993E364706816ABA3E25717850C26C9CD0D89D │
 └──────────────────────────────────────────┘
         )"}};
