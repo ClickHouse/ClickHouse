@@ -7,8 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ANCHOR="${USER_FILES_PATH}/05055_anchor_${CLICKHOUSE_DATABASE}.db"
-# Outside the user_files confinement, but inside a directory the server owns.
-OUTSIDE="${USER_FILES_PATH}/../05055_outside_${CLICKHOUSE_DATABASE}.db"
+# Outside the user_files confinement.
+OUTSIDE="${CLICKHOUSE_TMP}/05055_outside_${CLICKHOUSE_DATABASE}.db"
 
 cleanup()
 {
