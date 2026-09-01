@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Обзор'
+sidebarTitle: 'Rust'
 keywords: ['clickhouse', 'rs', 'rust', 'cargo', 'crate', 'http', 'client', 'connect', 'integrate']
 slug: /integrations/rust
 description: 'Официальный клиент ClickHouse для Rust.'
@@ -189,7 +189,7 @@ insert.end().await?;
 
 * Если `end()` не вызвать, `INSERT` будет прерван.
 * Строки отправляются постепенно, в виде потока, чтобы распределить нагрузку на сеть.
-* ClickHouse выполняет атомарную вставку батчей, только если все строки помещаются в одну и ту же партицию и их количество меньше [`max_insert_block_size`](/ru/reference/settings/session-settings/max-insert#max_insert_block_size).
+* ClickHouse выполняет атомарную вставку батчей, только если все строки помещаются в одну и ту же партицию и их количество меньше [`max_insert_block_size`](/ru/reference/settings/session-settings#max_insert_block_size).
 
 <div id="async-insert-server-side-batching">
   ### Асинхронная вставка (батчинг на стороне сервера)
