@@ -481,7 +481,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     /// Re-resolve by name: the resolution above pins a UUID, and a concurrent EXCHANGE can move it
     /// to another name, making the UUID lookup return nothing. Temporary tables cannot be renamed.
-    if (table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    /// Queries with an explicit UUID (internal ones, e.g. the fill step of CREATE) address exactly
+    /// that table, and it may not be visible by name yet, so keep the storage resolved above.
+    if (alter.uuid == UUIDHelpers::Nil && table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
         table = database->tryGetTable(table_id.table_name, getContext());
 
     if (!table)
