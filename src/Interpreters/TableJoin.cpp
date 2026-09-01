@@ -721,22 +721,6 @@ bool TableJoin::needStreamWithNonJoinedRows() const
     return isRightOrFull(kind());
 }
 
-void TableJoin::warnIfSizeLimitPreventsSpilling(size_t external_join_threshold) const
-{
-    const size_t hard_cap = size_limits.max_bytes;
-    if (external_join_threshold == 0 || hard_cap == 0 || hard_cap > external_join_threshold
-        || size_limits.overflow_mode != OverflowMode::THROW)
-        return;
-
-    LOG_WARNING(
-        getLogger("TableJoin"),
-        "max_bytes_in_join ({}) is not above the spill threshold ({}). It is a hard cap on the right side of the JOIN, "
-        "not a spill trigger, so the query fails instead of spilling. Raise max_bytes_in_join above the spill threshold, "
-        "or set it to 0 to rely on spilling alone",
-        hard_cap,
-        external_join_threshold);
-}
-
 static void renameIfNeeded(String & name, const NameToNameMap & renames)
 {
     if (const auto it = renames.find(name); it != renames.end())

@@ -352,8 +352,6 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     bool legacyJoinSizeLimitsTriggerSpilling() const { return legacy_join_size_limits_trigger_spilling; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
-    /// A hard cap at or below the spill threshold fails the query before it ever spills, so say so.
-    void warnIfSizeLimitPreventsSpilling(size_t external_join_threshold) const;
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     void setRowStoreEnabled(bool value) { enable_row_store = value; }

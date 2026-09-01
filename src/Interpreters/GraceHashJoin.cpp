@@ -329,8 +329,6 @@ GraceHashJoin::GraceHashJoin(
             "max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has memory limits "
             "configured (the ratio is ignored without them). To keep the join in memory instead, use join_algorithm = 'hash' "
             "with both of them at 0");
-
-    table_join->warnIfSizeLimitPreventsSpilling(external_join_threshold);
 }
 
 void GraceHashJoin::initBuckets()
