@@ -56,7 +56,9 @@ SETTINGS
     [kafka_consumer_acquire_timeout_ms = 30000,]
     [kafka_max_rows_per_message = 1,]
     [kafka_compression_codec = '',]
-    [kafka_compression_level = -1];
+    [kafka_compression_level = -1,]
+    [kafka_partition_shard_num = '',]
+    [kafka_shard_count = 0];
 ```
 
 必需参数：
@@ -76,13 +78,13 @@ SETTINGS
 * `kafka_schema` — 如果该 format 需要 schema 定义，则必须使用此参数。例如，[Cap&#39;n Proto](https://capnproto.org/) 需要提供 schema 文件的路径以及根对象 `schema.capnp:Message` 的名称。
 * `kafka_schema_registry_skip_bytes` — 使用带有封装请求头的 schema registry 时，每条消息开头需要跳过的字节数 (例如 AWS Glue Schema Registry 会包含一个 19 字节的封装) 。范围：`[0, 255]`。默认值：`0`。
 * `kafka_num_consumers` —— 每个表的消费者数量。如果单个消费者的吞吐量不足，请增加消费者数量。消费者总数不应超过 topic 的分区数，因为每个分区只能分配给一个消费者；同时，消费者总数也不得大于部署 ClickHouse 的服务器上的物理核心数。默认值：`1`。
-* `kafka_max_block_size` — poll 操作的最大批次大小 (按消息数计) 。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings#max_insert_block_size)。
+* `kafka_max_block_size` — poll 操作的最大批次大小 (按消息数计) 。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `kafka_skip_broken_messages` — 每个块中，Kafka 消息解析器对与 schema 不兼容的消息的容忍度。如果 `kafka_skip_broken_messages = N`，则该 engine 会跳过 *N* 条无法解析的 Kafka 消息 (一条消息等于一行数据) 。默认值：`0`。
 * `kafka_commit_every_batch` — 每消费并处理一个批次就提交一次，而不是在整个块写入完成后只提交一次。默认值：`0`。
 * `kafka_client_id` — 客户端标识。默认为空。
-* `kafka_poll_timeout_ms` — 从 Kafka 执行单次 poll 的超时时间。默认值：[stream&#95;poll&#95;timeout&#95;ms](/zh/reference/settings/session-settings#stream_poll_timeout_ms)。
-* `kafka_poll_max_batch_size` — 在单次 Kafka poll 中可拉取的最大消息数。默认值：[max&#95;block&#95;size](/zh/reference/settings/session-settings#max_block_size)。
-* `kafka_flush_interval_ms` — 从 Kafka 刷新数据的超时时间。默认值：[stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings#stream_flush_interval_ms)。
+* `kafka_poll_timeout_ms` — 从 Kafka 执行单次 poll 的超时时间。默认值：[stream&#95;poll&#95;timeout&#95;ms](/zh/reference/settings/session-settings/stream#stream_poll_timeout_ms)。
+* `kafka_poll_max_batch_size` — 在单次 Kafka poll 中可拉取的最大消息数。默认值：[max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size)。
+* `kafka_flush_interval_ms` — 从 Kafka 刷新数据的超时时间。默认值：[stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings/stream#stream_flush_interval_ms)。
 * `kafka_consumer_reschedule_ms` — 当 Kafka 流处理发生停滞时 (例如，没有可消费的消息时) 的重新调度间隔。此设置控制消费者重试轮询前的等待时间。不得超过 `kafka_consumers_pool_ttl_ms`。默认值：`500` 毫秒。
 * `kafka_thread_per_consumer` — 为每个消费者提供独立线程。启用后，每个消费者都会独立并行地刷新数据 (否则，多个消费者的行会被合并成一个块) 。默认值：`0`。
 * `kafka_handle_error_mode` — Kafka 引擎的错误处理方式。可能的值：default (如果消息解析失败，则抛出异常) 、stream (异常消息和原始消息将保存在虚拟列 `_error` 和 `_raw_message` 中) 、dead&#95;letter&#95;queue (与错误相关的数据将保存在 system.dead&#95;letter&#95;queue 中) 。
@@ -102,6 +104,8 @@ SETTINGS
 * `kafka_compression_codec` — 用于生产消息的压缩编解码器。支持：空字符串、`none`、`gzip`、`snappy`、`lz4`、`zstd`。如果为空字符串，则该表不会设置压缩编解码器，因此会使用配置文件中的值或 `librdkafka` 的默认值。默认值：空字符串。
 * `kafka_compression_level` — 由 kafka&#95;compression&#95;codec 所选算法决定的压缩级别参数。值越高，压缩效果越好，但 CPU 使用量也会越高。可用范围取决于具体算法：`gzip` 为 `[0-9]`；`lz4` 为 `[0-12]`；`snappy` 仅支持 `0`；`zstd` 为 `[0-12]`；`-1` = 由 codec 决定的默认压缩级别。默认值：`-1`。
 * `kafka_map_virtual_columns_on_write` — 如果启用，表 schema 中名称为 `_key`、`_timestamp`、`_headers.name` 和 `_headers.value` 的特殊列会在 `INSERT` 时映射到相应的 Kafka 消息元数据，且不会包含在消息载荷中。请参阅[将列映射到 Kafka 消息元数据](#mapping-columns-to-kafka-message-metadata)。默认值：`false`。
+* `kafka_partition_shard_num` — 用于静态分区与分片关联的当前分片编号。必须介于 1 和 `kafka_shard_count` 之间 (含两端) 。分区按公式 `partition_id % kafka_shard_count == kafka_partition_shard_num - 1` 分配。支持宏展开 (例如 `'{shard}'`) 。必须与 `kafka_shard_count` 一起使用。仅 StorageKafka2 支持 (需要 `kafka_keeper_path` 和 `kafka_replica_name`) 。默认值：`''` (禁用) 。
+* `kafka_shard_count` — 参与消费的分片总数。与 `kafka_partition_shard_num` 一起使用以静态分配分区。必须与 `kafka_partition_shard_num` 一起使用。仅 StorageKafka2 支持。默认值：`0` (禁用) 。
 
 示例：
 
@@ -199,7 +203,7 @@ CREATE TABLE queue3 (
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-为提高性能，接收到的消息会按 [max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings#max_insert_block_size) 的大小分组成块。如果在 [stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings#stream_flush_interval_ms) 毫秒内仍未形成一个完整的块，则无论该块是否完整，数据都会被刷写到表中。
+为提高性能，接收到的消息会按 [max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size) 的大小分组成块。如果在 [stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings/stream#stream_flush_interval_ms) 毫秒内仍未形成一个完整的块，则无论该块是否完整，数据都会被刷写到表中。
 
 要停止接收 topic 数据或更改转换逻辑，请分离该 materialized view：
 
@@ -453,7 +457,7 @@ Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 单条 Kafka 消息中的行数取决于所用格式是基于行还是基于块：
 
 * 对于基于行的格式，单条 Kafka 消息中的行数可通过设置 `kafka_max_rows_per_message` 进行控制。
-* 对于基于块的格式，我们无法将块拆分为更小的部分，但单个块中的行数可通过通用设置 [max&#95;block&#95;size](/zh/reference/settings/session-settings#max_block_size) 进行控制。
+* 对于基于块的格式，我们无法将块拆分为更小的部分，但单个块中的行数可通过通用设置 [max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size) 进行控制。
 
 <div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
   ## 在 ClickHouse Keeper 中存储已提交偏移量的引擎
@@ -467,6 +471,46 @@ Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 * `kafka_replica_name` 指定 ClickHouse Keeper 中的副本名称
 
 这两个设置要么都指定，要么都不指定。当两者都指定时，将使用一个新的 Experimental Kafka 引擎。这个新引擎不依赖将已提交偏移量存储在 Kafka 中，而是将其存储在 ClickHouse Keeper 中。它仍会尝试将偏移量提交到 Kafka，但只有在创建表时才会依赖这些偏移量。在其他任何情况下 (例如表重启，或在发生错误后恢复) ，都会使用存储在 ClickHouse Keeper 中的偏移量继续消费消息。除了已提交偏移量外，它还会存储上一批次消费的消息数量，因此如果插入失败，就会再次消费相同数量的消息，从而在需要时实现去重。
+
+<div id="static-partition-to-shard-affinity">
+  ### 静态分区与分片亲和性
+</div>
+
+使用 `StorageKafka2` 时，可通过指定 `kafka_partition_shard_num` 和 `kafka_shard_count` 选择性启用静态分区与分片亲和性。这样，多个 ClickHouse 实例 (分片) 可以从同一 Kafka topic 消费数据，并且每个分片仅根据以下公式处理确定的分区子集：
+
+```text
+partition_id % kafka_shard_count == kafka_partition_shard_num - 1
+```
+
+这两个设置必须同时指定；仅指定其中一个会引发异常。`kafka_partition_shard_num` 的值必须介于 1 和 `kafka_shard_count` 之间 (含两端) 。它支持宏展开 (例如 `'{shard}'`) ，并在每次服务器启动时重新展开。这样，同一份表元数据可在 `Replicated` 数据库的各分片间共享，而每个分片会解析出自己的值。验证在宏展开后进行。
+
+所有分片都应使用相同的 `kafka_keeper_path` 值。所有副本共享已提交偏移量和意图大小，但只有分片编号相同的副本才会相互竞争分区锁 (假设所有副本的分片数相同) 。
+
+3 个分片消费一个包含 12 个分区的 topic 的示例：
+
+```sql
+-- Shard 1: consumes partitions 0, 3, 6, 9
+CREATE TABLE kafka_shard1 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '1',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+
+-- Shard 2: consumes partitions 1, 4, 7, 10
+CREATE TABLE kafka_shard2 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '2',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+```
+
+与副本配合使用时 (多个 `kafka_replica_name` 值共享同一个 `kafka_keeper_path`) ，系统会先应用亲和性过滤器以确定符合条件的分区，然后由 ZooKeeper 锁在各副本之间分配这些分区。
 
 示例：
 
@@ -487,11 +531,12 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 
 * 快速删除并重新创建表，或为不同引擎指定相同的 ClickHouse Keeper 路径，都可能导致问题。最佳实践是在 `kafka_keeper_path` 中使用 `{uuid}`，以避免路径冲突。
 * 为了实现可重复读取，单个线程不能从多个分区消费消息。另一方面，Kafka 消费者又必须定期执行 poll 才能保持存活。基于这两个目标，我们决定只有在启用 `kafka_thread_per_consumer` 时才允许创建多个消费者，否则很难避免与定期 poll 消费者相关的问题。
+* 使用分区亲和性时，所有分片必须使用相同的 `kafka_shard_count`；否则，某些分区可能被多个分片消费，或始终未被消费。
 
 **另请参见**
 
 * [虚拟列](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/zh/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
 * [system.kafka&#95;consumers](/zh/reference/system-tables/kafka_consumers)
 
 {/*AUTOGENERATED_END*/}

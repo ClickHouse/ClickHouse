@@ -47,7 +47,7 @@ ClickHouse Cloud는 OpenAPI를 사용하는 API를 제공하며, 이를 통해 �
   <Step title="허용된 IP 주소 추가">
     어떤 클라이언트가 API Key를 사용할 수 있는지 제한하려면 **Allow access to this API Key** 섹션에서 **Specific locations**를 선택하십시오. `203.0.113.1` 또는 `203.0.113.0/24`와 같은 IP 주소 또는 CIDR 범위를 입력하고 필요에 따라 항목을 추가하십시오.
 
-    Query API endpoints는 API Key 수준의 IP 허용 목록을 따릅니다. 요청은 ClickHouse 인프라 내부에서 프록시되므로 서비스 수준의 IP 허용 목록은 적용되지 않습니다. 자세한 내용은 [IP Access Control](/ko/cloud/features/query-api-endpoints#ip-access-control)을 참조하십시오.
+    Query API 엔드포인트는 API Key 수준의 IP 허용 목록을 따릅니다. 요청은 ClickHouse 인프라 내부에서 프록시되므로 서비스 수준의 IP 허용 목록은 적용되지 않습니다. 자세한 내용은 [IP Access Control](/ko/products/cloud/features/sql-console-features/query-endpoints#ip-access-control)을 참조하십시오.
 
     <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="API Key에 구성된 허용 IP 주소" border />
 

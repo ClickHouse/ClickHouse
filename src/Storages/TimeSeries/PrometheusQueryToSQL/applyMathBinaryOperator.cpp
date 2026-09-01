@@ -104,7 +104,19 @@ SQLQueryPiece applyMathBinaryOperator(
 
     auto apply_function_to_ast = [&](ASTPtr x, ASTPtr y) -> ASTPtr
     {
-        return makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y));
+        if (operator_name != "%")
+            return makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y));
+
+        ASTPtr result = makeASTFunction(impl_info->ch_function_name, x->clone(), y->clone());
+
+        return makeASTFunction(
+            "if",
+            makeASTFunction(
+                "and",
+                makeASTFunction("isInfinite", y->clone()),
+                makeASTFunction("isFinite", x->clone())),
+            std::move(x),
+            std::move(result));
     };
 
     return applySimpleBinaryOperator(

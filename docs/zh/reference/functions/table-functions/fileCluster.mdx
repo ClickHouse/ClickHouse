@@ -27,15 +27,15 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
   ## 参数
 </div>
 
-| 参数                   | 说明                                                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`       | 集群名称，用于构建远程和本地服务器的地址集合及连接参数。                                                                                                    |
-| `path`               | 相对于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings#user_files_path) 的文件路径。该路径也支持 [通配符](#globs-in-path)。 |
-| `format`             | 文件的[格式](/zh/reference/formats/index)。类型：[String](/zh/reference/data-types/string)。                                                    |
-| `structure`          | 表结构，格式为 `'UserID UInt64, Name String'`。用于确定列名和类型。类型：[String](/zh/reference/data-types/string)。                                     |
-| `compression_method` | 压缩方法。支持的压缩类型包括 `gz`、`br`、`xz`、`zst`、`lz4` 和 `bz2`。                                                                              |
+| 参数                   | 说明                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `cluster_name`       | 集群名称，用于构建远程和本地服务器的地址集合及连接参数。                                                                                                         |
+| `path`               | 相对于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings/user#user_files_path) 的文件路径。该路径也支持 [通配符](#globs-in-path)。 |
+| `format`             | 文件的[格式](/zh/reference/formats/index)。类型：[String](/zh/reference/data-types/string)。                                                         |
+| `structure`          | 表结构，格式为 `'UserID UInt64, Name String'`。用于确定列名和类型。类型：[String](/zh/reference/data-types/string)。                                          |
+| `compression_method` | 压缩方法。支持的压缩类型包括 `gz`、`br`、`xz`、`zst`、`lz4` 和 `bz2`。                                                                                   |
 
-<div id="returned_value">
+<div id="returned-value">
   ## 返回值
 </div>
 

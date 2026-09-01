@@ -1,6 +1,6 @@
 ---
 slug: /cloud/managed-postgres
-title: 'Managed Postgres'
+title: 'ClickHouse Managed Postgres'
 description: '快速、可扩展、企业级的 Postgres，采用 NVMe 存储，并提供与 ClickHouse 的原生集成以支持实时分析'
 keywords: ['Managed Postgres', 'postgresql', '云数据库', 'Postgres 服务', 'NVMe Postgres', 'ClickHouse 集成']
 doc_type: 'guide'
@@ -13,7 +13,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ClickHouse Managed Postgres 是一项企业级托管 Postgres 服务，专为高性能和大规模扩展而设计。依托与计算资源物理共置的 NVMe 存储，相比采用 EBS 等网络附加存储的替代方案，它可为受磁盘瓶颈限制的工作负载带来高达 10 倍的性能提升。
 
-Managed Postgres 与 [Ubicloud](https://www.ubicloud.com/) 联合打造。Ubicloud 的创始团队曾在 Citus Data、Heroku 和 Microsoft 打造世界一流的 Postgres 产品，拥有卓越的业绩。Managed Postgres 解决了快速增长的应用常见的性能挑战：摄取和更新变慢、vacuum 操作缓慢、尾延迟升高，以及因磁盘 IOPS 受限导致的 WAL 峰值。
+ClickHouse Managed Postgres 与 [Ubicloud](https://www.ubicloud.com/) 联合打造。Ubicloud 的创始团队曾在 Citus Data、Heroku 和 Microsoft 打造世界一流的 Postgres 产品，拥有卓越的业绩。ClickHouse Managed Postgres 解决了快速增长的应用常见的性能挑战：摄取和更新变慢、vacuum 操作缓慢、尾延迟升高，以及因磁盘 IOPS 受限导致的 WAL 峰值。
 
 {/* TODO: 展示 Postgres + ClickHouse 集成架构图
     Path: /images/cloud/managed-postgres/architecture-overview.png */}
@@ -24,7 +24,7 @@ Managed Postgres 与 [Ubicloud](https://www.ubicloud.com/) 联合打造。Ubiclo
 
 大多数托管 Postgres 服务使用网络附加存储 (如亚马逊 EBS) ，这意味着每次访问磁盘都需要一次网络往返。这会带来毫秒级延迟，并限制 IOPS，从而使写入密集型或 I/O 密集型工作负载出现瓶颈。
 
-Managed Postgres 使用与数据库位于同一服务器上、物理直连的 NVMe 存储。这种架构差异可带来：
+ClickHouse Managed Postgres 使用与数据库位于同一服务器上、物理直连的 NVMe 存储。这种架构差异可带来：
 
 * **微秒级磁盘延迟**，而非毫秒级
 * **持续 IOPS 上限提升 10 倍**<sup>*</sup>，且没有网络瓶颈
@@ -42,7 +42,7 @@ Managed Postgres 使用与数据库位于同一服务器上、物理直连的 NV
   ## 原生 ClickHouse 集成
 </div>
 
-Managed Postgres 原生集成 ClickHouse，无需复杂的 ETL 管道，即可将事务处理与分析统一起来。
+ClickHouse Managed Postgres 原生集成 ClickHouse，无需复杂的 ETL 管道，即可将事务处理与分析统一起来。
 
 <div id="postgres-replication">
   ### Postgres 到 ClickHouse 的复制
@@ -54,7 +54,7 @@ Managed Postgres 原生集成 ClickHouse，无需复杂的 ETL 管道，即可�
   ### pg_clickhouse：统一查询层
 </div>
 
-每个 Managed Postgres 实例都自带 [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse) 扩展，可让你直接从 Postgres 查询 ClickHouse。你的应用可以将 Postgres 作为同时处理事务和分析的统一查询层，而无需连接多个数据库。
+每个 ClickHouse Managed Postgres 实例都自带 [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse) 扩展，可让你直接从 Postgres 查询 ClickHouse。你的应用可以将 Postgres 作为同时处理事务和分析的统一查询层，而无需连接多个数据库。
 
 该扩展提供了面向 ClickHouse 的全面查询下推能力，可实现高效执行，并支持过滤器、JOIN、半 JOIN、聚合和函数。目前，22 个 TPC-H 查询中已有 14 个可完全下推；与在标准 Postgres 中运行相同查询相比，性能提升超过 60 倍。
 
@@ -62,7 +62,7 @@ Managed Postgres 原生集成 ClickHouse，无需复杂的 ETL 管道，即可�
   ## 企业级可靠性
 </div>
 
-Managed Postgres 提供生产环境所需的可靠性与安全特性。
+ClickHouse Managed Postgres 提供生产环境所需的可靠性与安全特性。
 
 <div id="high-availability">
   ### 高可用性
@@ -80,7 +80,7 @@ Managed Postgres 提供生产环境所需的可靠性与安全特性。
   ### 安全与合规
 </div>
 
-Managed Postgres 旨在满足与 ClickHouse Cloud 相同的安全标准：
+ClickHouse Managed Postgres 旨在满足与 ClickHouse Cloud 相同的安全标准：
 
 * **身份验证**：支持 SAML/SSO
 * **网络安全**：IP 允许列表、静态加密和传输中加密 (TLS 1.3)

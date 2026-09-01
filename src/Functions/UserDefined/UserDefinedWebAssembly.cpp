@@ -276,7 +276,7 @@ public:
 
             if (chunk && chunk.getNumColumns() != result_block.columns())
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::WASM_ERROR,
                     "Different number of columns in result chunks, expected {}, got {}",
                     result_block.dumpStructure(),
                     chunk.dumpStructure());
@@ -289,6 +289,13 @@ public:
             if (!has_data)
                 break;
         }
+
+        if (result_chunk.getNumColumns() != result_block.columns())
+            throw Exception(
+                ErrorCodes::WASM_ERROR,
+                "WebAssembly function returned a result with {} columns, expected {}",
+                result_chunk.getNumColumns(), result_block.columns());
+
         result_block.setColumns(result_chunk.detachColumns());
     }
 
@@ -699,6 +706,14 @@ bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) co
 {
     std::shared_lock lock(registry_mutex);
     return registry.contains(function_name);
+}
+
+void UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(const ContextPtr & context)
+{
+    /// `getWasmModuleManager` always throws `SUPPORT_IS_DISABLED` here, and it is the single place that
+    /// words the difference between the engine being turned off and being absent from the build.
+    if (!context->hasWasmModuleManager())
+        context->getWasmModuleManager();
 }
 
 FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name, ContextPtr context)

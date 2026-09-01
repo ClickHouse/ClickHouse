@@ -19,10 +19,10 @@ but the exact point in time is an implementation detail which may change in futu
 The main purpose of the function is to calculate the time difference between two dates with time, e.g., `toTimeWithFixedDate(dt1) - toTimeWithFixedDate(dt2)`.
 
 This is the legacy `toTime` function, renamed in v25.5 because the name `toTime` is now taken by
-[`toTime`](/sql-reference/functions/type-conversion-functions#toTime), which converts values to the
-[`Time`](/sql-reference/data-types/time) data type.
+[`toTime`](/reference/functions/regular-functions/type-conversion-functions#toTime), which converts values to the
+[`Time`](/reference/data-types/time) data type.
 It remains reachable under its old name `toTime` when the setting
-[`use_legacy_to_time`](/operations/settings/settings#use_legacy_to_time) is enabled (it defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6).
+[`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_to_time) is enabled (it defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6).
 
 If the `datetime` argument has sub-second components, they are dropped in the returned `DateTime` value, which has second accuracy.
     )";
