@@ -253,19 +253,19 @@ bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const Que
 
         if (const auto * join = node->as<JoinNode>())
         {
-            const bool table_on_left = extractTableExpressionsSet(join->getLeftTableExpression()).contains(table.get());
-            const bool table_on_right = extractTableExpressionsSet(join->getRightTableExpression()).contains(table.get());
+            const bool table_on_left = extractTableExpressionsSet(join->getLeftTableExpressionNodeTyped()).contains(table.get());
+            const bool table_on_right = extractTableExpressionsSet(join->getRightTableExpressionNodeTyped()).contains(table.get());
 
             if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
                 return false;
             if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))
                 return false;
-            stack.push_back(join->getLeftTableExpression());
-            stack.push_back(join->getRightTableExpression());
+            stack.push_back(join->getLeftTableExpressionNode());
+            stack.push_back(join->getRightTableExpressionNode());
         }
         else if (const auto * array_join = node->as<ArrayJoinNode>())
         {
-            stack.push_back(array_join->getTableExpression());
+            stack.push_back(array_join->getTableExpressionNode());
         }
         else if (const auto * cross_join = node->as<CrossJoinNode>())
         {
@@ -1568,7 +1568,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             ? select_query_info.query_tree->as<QueryNode>()
             : nullptr;
         can_prefilter_wrapped_table = parent_query
-            && joinTreePreservesRowsForTable(parent_query->getJoinTree(), original_table_expression);
+            && joinTreePreservesRowsForTable(parent_query->getJoinTreeNode(), original_table_expression);
 
         /// Subqueries inherit the outer GlobalPlannerContext, whose filter map is keyed by
         /// outer table nodes. Collect filters for this JOIN query so icebergCluster listing
