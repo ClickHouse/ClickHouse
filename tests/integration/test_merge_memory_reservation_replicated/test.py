@@ -161,6 +161,11 @@ def create_and_fill(instance, table, extra_settings=""):
         ORDER BY k
         SETTINGS merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 1000{extra_settings}
         """)
+    # Per table, right after CREATE: a database-wide `SYSTEM STOP MERGES` only locks the tables that
+    # exist when it runs (InterpreterSystemQuery::startStopActionInDatabase iterates over the current
+    # tables), so a table created afterwards would start merging on its own - and this table's parts
+    # must stay unmerged until the test starts its merges deliberately.
+    instance.query(f"SYSTEM STOP MERGES {table}")
     instance.query(
         f"INSERT INTO {table} SELECT number, repeat('a', 100) FROM numbers(10000)"
     )
@@ -187,10 +192,8 @@ def test_replicated_reservation_is_unconditional_and_throttles_further_merges(
 
     instance = node_limit
 
-    # Merges are enabled per table below, so the process-wide reservation metric can only reflect
-    # the merges this test drives.
-    instance.query("SYSTEM STOP MERGES")
-
+    # Merges are stopped per table as it is created (see create_and_fill) and enabled one table at a
+    # time below, so the process-wide reservation metric can only reflect the merges this test drives.
     for table in ("t_first", "t_second"):
         create_and_fill(instance, table)
     # The third table's merge is the one that must go through selection, so make its selection
