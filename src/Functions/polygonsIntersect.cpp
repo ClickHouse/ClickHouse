@@ -39,10 +39,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    /// The rejected kinds are decided from the argument TYPES, so they are rejected HERE, during
-    /// analysis, rather than from `executeImpl`. That keeps the rejection out of reach of anything
-    /// that removes rows -- pruning, `PREWHERE`, an empty part -- which is what lets
-    /// `Common/GeoBbox.h` prune granules for this predicate without restating its accepted domain.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         checkArealPredicateArgumentTypes<Point>(arguments[0], arguments[1], getName());
@@ -53,7 +49,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
-
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override

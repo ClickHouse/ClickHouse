@@ -82,11 +82,10 @@ public:
     }
 
     bool isStateful() const override { return function->isStateful(); }
+    bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
+
 
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }
-
-    /// See `IFunctionBase::isSpatialPredicate`.
-    bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
@@ -137,8 +136,8 @@ public:
     bool isDeterministic() const override { return function->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
     bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
-    /// See `IFunctionBase::isSpatialPredicate`.
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
+
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }

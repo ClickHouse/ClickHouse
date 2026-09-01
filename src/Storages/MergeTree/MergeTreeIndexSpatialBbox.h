@@ -8,7 +8,6 @@
 namespace DB
 {
 
-/// Per-granule bounding box stored by the `spatial_bbox` skip index.
 struct MergeTreeIndexGranuleSpatialBbox final : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleSpatialBbox(const String & index_name_);
@@ -25,7 +24,6 @@ struct MergeTreeIndexGranuleSpatialBbox final : public IMergeTreeIndexGranule
 };
 
 
-/// Builds a `MergeTreeIndexGranuleSpatialBbox` from a block of rows.
 struct MergeTreeIndexAggregatorSpatialBbox final : public IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorSpatialBbox(const String & index_name_, const String & column_name_);
@@ -45,7 +43,6 @@ struct MergeTreeIndexAggregatorSpatialBbox final : public IMergeTreeIndexAggrega
 };
 
 
-/// Evaluates whether a granule can be skipped for a spatial query predicate.
 class MergeTreeIndexConditionSpatialBbox final : public IMergeTreeIndexCondition
 {
 public:

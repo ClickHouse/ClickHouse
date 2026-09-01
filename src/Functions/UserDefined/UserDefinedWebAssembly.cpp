@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 
-#include <Common/GeoBbox.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -495,8 +494,6 @@ public:
             return val.safeGet<bool>();
         return val.safeGet<UInt64>() != 0;
     }
-
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 

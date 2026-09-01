@@ -143,31 +143,18 @@ inline bool buildPolygon(const Array & array, Polygon<CartesianPoint> & out_poly
 /// Extract bbox from a single Field value (not a column).
 /// Handles Tuple (native geometry points), Array (nested geometry collections),
 /// and String (WKB-encoded geometry).
-/// `allow_point_tuple` says the argument this field came from is DECLARED a `Point`, so a lone
+/// `allow_point_tuple` says the argument this field came from resolves to a `Point`, so a lone
 /// `Tuple(Float64, Float64)` may be read as one; see the `Tuple` branch below.
 static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc, bool allow_point_tuple = false)
 {
     using namespace GeoBboxDetail;
     const auto type = field.getType();
 
-    /// A `Tuple` constant is opaque to bbox extraction by default, deliberately including the
-    /// two-element case that would otherwise look like a `Point` domain type's own
-    /// (Float64, Float64) contract: of the three builtins that currently set
-    /// `isSpatialPredicate()` (`pointInPolygon`, `polygonsIntersectCartesian`,
-    /// `polygonsWithinCartesian`), only `pointInPolygon`'s own first argument accepts a bare
-    /// `Point` -- every other argument of all three unconditionally rejects one with
-    /// `ILLEGAL_TYPE_OF_ARGUMENT` at evaluation time, including when it arrives via a
-    /// `Geometry`/`Variant`-typed constant (e.g. `polygonsIntersectCartesian(poly,
-    /// readWKT('POINT(0 0)'))`) rather than a raw literal, since a raw literal would already be
-    /// caught by argument type-checking before ever reaching this code. Trusting a bbox derived
-    /// from such a point would let pruning discard every granule and silently hide the exception
-    /// the predicate is guaranteed to raise once evaluated on real data -- so, like a wider tuple
-    /// (e.g. a `isSpatialPredicate()` WASM UDF's constant `Tuple(Float64, Float64, Float64,
-    /// Float64)` bbox/rect argument with entirely different semantics), fail the extraction
-    /// instead so pruning is disabled for it, UNLESS the caller has confirmed (via
-    /// `allow_point_tuple`, read from the argument's declared type) that this argument really is a
-    /// `Point`: then it contributes a zero-area bbox at that single coordinate, since
-    /// `pointInPolygon` can only be true for rows whose polygon bbox contains that exact point.
+    /// A `Tuple` constant is opaque unless the caller confirmed the argument resolves to a `Point`.
+    /// A `Field` cannot tell one apart from an auxiliary tuple with entirely different semantics --
+    /// a WASM UDF's `Tuple(Float64, Float64, Float64, Float64)` bbox argument, say -- so the
+    /// argument's type has to decide it. A confirmed point contributes a zero-area bbox at its
+    /// coordinate: `pointInPolygon` can only be true for rows whose polygon bbox contains it.
     if (type == Field::Types::Tuple)
     {
         if (!allow_point_tuple)
@@ -389,10 +376,6 @@ enum class NodeBboxStatus
 /// `ColumnVariant::get`/`ColumnDynamic::get` return only the active alternative's flattened value
 /// and discard which alternative it was, so the name must be read from the type/discriminator here,
 /// before flattening, rather than guessed from the `Field`'s shape.
-///
-/// Used to tell an argument DECLARED a `Point` -- whose lone `Tuple(Float64, Float64)` constant is
-/// a geometry and carries a zero-area bbox -- from a bare `(0., 0.)` literal or an auxiliary
-/// tuple, which are indistinguishable from it once flattened to a `Field`.
 inline std::string geoKindNameOfType(const IDataType & type)
 {
     /// A declared geometry kind can sit under a `Nullable`/`LowCardinality` wrapper, which carries no
@@ -598,15 +581,10 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     bool has_extra_non_constant = false;
     bool any_extraction_failed = false;
     bool any_deferred_kind_rejection = false;
-    /// Paired with whether the argument's type resolves to a `Point`, which is what tells
-    /// `pointInPolygon`'s own point argument apart from its polygon-component arguments. Read from
-    /// the type rather than asked of the predicate.
-    ///
-    /// A bare `Tuple(Float64, Float64)` counts, not only a `Point`-named type: `callOnGeometryDataType`
-    /// resolves the unnamed shape to a `Point` too, so the overload that runs is the same one. That
-    /// used to need a veto instead -- a bare tuple in an argument position the predicate refuses would
-    /// have had its `ILLEGAL_TYPE_OF_ARGUMENT` pruned away -- but the areal predicates now reject such
-    /// an argument from `getReturnTypeImpl`, during analysis, where no amount of pruning can reach it.
+    /// A bare `Tuple(Float64, Float64)` counts as a point, not only a `Point`-named type:
+    /// `callOnGeometryDataType` resolves the unnamed shape to a `Point` too, so the same overload
+    /// runs. Safe only because the areal predicates reject an argument they refuse from
+    /// `getReturnTypeImpl`, during analysis, where pruning cannot turn it into a silent `0`.
     struct ConstGeoField
     {
         bool is_point = false;

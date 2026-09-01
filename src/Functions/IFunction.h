@@ -14,8 +14,6 @@
 
 #include <functional>
 #include <memory>
-#include <string_view>
-#include <vector>
 
 /// This file contains user interface for functions.
 
