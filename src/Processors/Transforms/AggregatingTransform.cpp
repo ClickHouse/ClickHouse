@@ -1573,9 +1573,13 @@ void AggregatingTransform::initGenerate()
                 = !many_data->has_created_dictionary_shards.load(std::memory_order_relaxed);
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
                 std::move(many_data->variants),
+                is_cancelled,
                 adaptive_context ? adaptive_context->session.get() : nullptr,
                 /*require_stable_bucket_hash=*/!params->final,
                 hash_table_sizes_are_representative);
+            if (is_cancelled.load(std::memory_order_relaxed))
+                return;
+
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
                 params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
@@ -1589,9 +1593,13 @@ void AggregatingTransform::initGenerate()
                 = !many_data->has_created_dictionary_shards.load(std::memory_order_relaxed);
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
                 std::move(many_data->variants),
+                is_cancelled,
                 /*adaptive_session=*/nullptr,
                 /*require_stable_bucket_hash=*/!params->final,
                 hash_table_sizes_are_representative);
+            if (is_cancelled.load(std::memory_order_relaxed))
+                return;
+
             Pipes pipes;
             for (auto & variant : prepared_data)
             {
