@@ -82,6 +82,9 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM te
 echo "Test DESCRIBE without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 
+echo "Test merge() structure without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE merge(currentDatabase(), '^test_alias_access\$');" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+
 echo "Test SHOW CREATE without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 
@@ -247,6 +250,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT arraySort(group
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "DESCRIBE TABLE test_alias_access FORMAT Null; SELECT 'DESCRIBE OK';"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "SHOW COLUMNS FROM test_alias_access FORMAT Null; SELECT 'SHOW COLUMNS OK';"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access FORMAT TSVRaw;" | grep -o "ENGINE = Alias" | uniq
+${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "DESCRIBE merge(currentDatabase(), '^test_alias_access\$') FORMAT Null; SELECT 'merge() OK';"
 
 # Test database-level access shortcuts with a cross-database `Alias`
 ${CLICKHOUSE_CLIENT} --multiquery --query "

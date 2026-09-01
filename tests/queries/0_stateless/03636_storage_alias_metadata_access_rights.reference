@@ -9,6 +9,8 @@ Test count without target SELECT permission using the old analyzer read path
 ACCESS_DENIED
 Test DESCRIBE without target permission
 ACCESS_DENIED
+Test merge() structure without target permission
+ACCESS_DENIED
 Test SHOW CREATE without target permission
 ACCESS_DENIED
 Test SHOW COLUMNS without target permission
@@ -51,6 +53,7 @@ Test schema commands with target permission
 DESCRIBE OK
 SHOW COLUMNS OK
 ENGINE = Alias
+merge() OK
 Test system.tables with an Alias database-level grant
 1	1	1	1
 Test other metadata tables with an Alias database-level grant
