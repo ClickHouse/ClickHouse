@@ -344,8 +344,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ASTPtr partition_predicate_as_ast_func;
     if (alter && alter->partitions)
     {
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, StorageResolution::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
 
         auto func = makeASTFunction("in");
         func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
