@@ -11,19 +11,51 @@ doc_type: 'reference'
 
 With `PREWHERE`, ClickHouse first reads only the columns needed to evaluate the condition. It then reads the other columns required by the query only for blocks that contain at least one matching row. This can reduce the amount of data read when the condition uses fewer columns than the rest of the query and filters out many blocks.
 
+When `WHERE` combines several conditions with `AND`, ClickHouse by default moves all eligible conditions to `PREWHERE` ([`move_all_conditions_to_prewhere`](/reference/settings/session-settings/move#move_all_conditions_to_prewhere)) and evaluates them in several read steps ([`enable_multiple_prewhere_read_steps`](/reference/settings/session-settings/enable#enable_multiple_prewhere_read_steps)): it reads the columns of the first condition, filters, then reads the columns of the next condition only for the rows that passed, and so on. The optimizer chooses the order and typically evaluates conditions on smaller columns first. A condition is not moved if it references every column the query reads, because moving it would not save any reads.
+
 ## Controlling `PREWHERE` manually {#controlling-prewhere-manually}
 
-Specify `PREWHERE` manually when a condition references a small number of columns and filters out many rows. This can reduce the amount of data read for the remaining columns.
+Specify `PREWHERE` manually when a condition references a small number of columns and filters out many rows. This is useful when the automatic order is not the most selective one: the optimizer may evaluate a cheap but unselective condition first and still read the other columns for every row. See the [example](#example) below.
 
 A query can contain both `PREWHERE` and `WHERE`. In this case, `PREWHERE` is evaluated first.
 
 Set [`optimize_move_to_prewhere`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) to `0` to prevent ClickHouse from automatically moving conditions from `WHERE` to `PREWHERE`.
 
-For queries with the [`FINAL`](/reference/statements/select/from#final-modifier) modifier, ClickHouse moves conditions from `WHERE` to `PREWHERE` only when both [`optimize_move_to_prewhere`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) and [`optimize_move_to_prewhere_if_final`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) are enabled.
+To see which conditions were moved, run the query with `EXPLAIN actions = 1` and look for `Prewhere filter column`, or set `send_logs_level = 'trace'` and look for the `QueryPlanOptimizePrewhere` log line.
 
-<Note>
-By default, `PREWHERE` is evaluated before `FINAL`, so `FROM ... FINAL` queries may produce unexpected results when `PREWHERE` references columns outside the table's `ORDER BY` key.
-</Note>
+## `PREWHERE` with `FINAL` {#prewhere-with-final}
+
+For queries with the [`FINAL`](/reference/statements/select/from#final-modifier) modifier, ClickHouse moves conditions from `WHERE` to `PREWHERE` only when both [`optimize_move_to_prewhere`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) and [`optimize_move_to_prewhere_if_final`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) are enabled, and it moves only conditions on sorting-key columns. Conditions on other columns stay in `WHERE`, because filtering them before the `FINAL` merge could remove rows that are needed to select the winning row.
+
+By default, an explicit `PREWHERE` is evaluated before `FINAL`. If it references columns outside the table's `ORDER BY` key, it filters the individual row versions before `FINAL` picks the winner, which can produce a result that the same condition in `WHERE` would not. The two rows below are inserted into separate parts:
+
+```sql
+CREATE TABLE rmt
+(
+    `k` UInt32,
+    `v` UInt32,
+    `ver` UInt32
+)
+ENGINE = ReplacingMergeTree(ver)
+ORDER BY k;
+
+INSERT INTO rmt VALUES (1, 10, 1);
+INSERT INTO rmt VALUES (1, 20, 2);
+
+-- After FINAL the row with k = 1 has v = 20, so WHERE v = 10 matches nothing.
+SELECT * FROM rmt FINAL WHERE v = 10;
+
+-- PREWHERE is applied to each row version before FINAL, so the superseded version is returned.
+SELECT * FROM rmt FINAL PREWHERE v = 10;
+```
+
+```text
+   ┌─k─┬──v─┬─ver─┐
+1. │ 1 │ 10 │   1 │
+   └───┴────┴─────┘
+```
+
+Set [`apply_prewhere_after_final`](/reference/settings/session-settings/apply#apply_prewhere_after_final) to `1` to apply `PREWHERE` after `FINAL`. The second query above then returns no rows.
 
 ## `PREWHERE` with `JOIN` {#prewhere-with-join}
 
@@ -97,7 +129,7 @@ ORDER BY table_1.id;
 
 ## Limitations {#limitations}
 
-`PREWHERE` is only supported by tables from the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family.
+`PREWHERE` is only supported by tables from the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family. Storages that do not support it, such as `Memory`, reject it with an `ILLEGAL_PREWHERE` error.
 
 ## Example {#example}
 
@@ -112,31 +144,33 @@ ENGINE = MergeTree
 ORDER BY A AS
 SELECT
     number,
-    0,
+    1,
     if(number between 1000 and 2000, 'x', toString(number))
 FROM numbers(10000000);
 
+-- Enable tracing to see which conditions are moved to PREWHERE.
+SET send_logs_level = 'trace';
+
 SELECT count()
 FROM mydata
-WHERE (B = 0) AND (C = 'x');
+WHERE (B = 1) AND (C = 'x');
 
-1 row in set. Elapsed: 0.074 sec. Processed 10.00 million rows, 168.89 MB (134.98 million rows/s., 2.28 GB/s.)
+QueryPlanOptimizePrewhere: Moved 2 conditions to PREWHERE
 
--- Enable tracing to see which predicates are moved to PREWHERE.
-set send_logs_level='debug';
+1 row in set. Elapsed: 0.133 sec. Processed 10.00 million rows, 108.89 MB (75.40 million rows/s., 821.05 MB/s.)
 
-MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE
--- ClickHouse automatically moves B = 0 to PREWHERE, but this condition does not filter any rows because B is always 0.
+-- Both conditions are moved to PREWHERE. B = 1 is evaluated first because B is the smaller column,
+-- but it does not filter any rows because B is always 1, so C is still read for every row.
 
--- Move the more selective C = 'x' predicate to PREWHERE.
+-- Put the more selective C = 'x' condition in PREWHERE explicitly.
 
 SELECT count()
 FROM mydata
 PREWHERE C = 'x'
-WHERE B = 0;
+WHERE B = 1;
 
-1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
+1 row in set. Elapsed: 0.112 sec. Processed 10.00 million rows, 98.89 MB (89.38 million rows/s., 883.95 MB/s.)
 
--- The query with manually specified PREWHERE processes slightly less data: 158.89 MB instead of 168.89 MB.
+-- Now C is read for every row but B only for the blocks that contain matching rows: 98.89 MB instead of 108.89 MB.
 ```
 {/*AUTOGENERATED_END*/}
