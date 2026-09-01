@@ -669,7 +669,8 @@ bool FileSegment::reserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint)
+    size_t reserve_hint,
+    const FileCacheQueryLimit::QueryContextPtr & query_context)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -748,21 +749,21 @@ bool FileSegment::reserve(
     /// by a thread which belongs to no query (a background download) is charged to it as well.
     FileCacheQueryLimit::QueryContextWeakPtr owner_query_context;
     /// Reserved by that query and not written yet, see the handover below.
-    size_t outstanding_reserve_ahead = 0;
+    size_t reserved_but_not_written = 0;
     if (has_query_limit_owner.load(std::memory_order_relaxed))
     {
         auto lk = lock();
         if (download_data)
         {
             owner_query_context = download_data->query_limit_owner;
-            outstanding_reserve_ahead = reserved_size - current_downloaded_size;
+            reserved_but_not_written = reserved_size - current_downloaded_size;
         }
     }
 
     FileCacheQueryLimit::QueryContextPtr charged_query_context;
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds,
-        failure_reason, &charged_query_context, owner_query_context);
+        failure_reason, &charged_query_context, owner_query_context, query_context);
 
     if (!reserved)
     {
@@ -770,8 +771,8 @@ bool FileSegment::reserve(
         return false;
     }
 
-    /// The write which follows consumes the previous reserve-ahead, so the query charged now owns
-    /// the whole outstanding one. Nothing to record while no query is charged for this segment.
+    /// The write which follows consumes what was reserved before, so the query charged now owns all
+    /// of it. Nothing to record while no query is charged for this segment.
     if (charged_query_context || has_query_limit_owner.load(std::memory_order_relaxed))
     {
         auto lk = lock();
@@ -782,12 +783,12 @@ bool FileSegment::reserve(
             download_data->query_limit_owner = charged_query_context;
             has_query_limit_owner.store(charged_query_context != nullptr, std::memory_order_relaxed);
 
-            /// The outstanding reserve-ahead is now owned by the query charged above, so give it
-            /// back to the query which reserved it, leaving that one charged for what it did write.
+            /// Those bytes are now owned by the query charged above, so give them back to the query
+            /// which reserved them, leaving it charged for what it did write.
             /// Without this a handover (or a write which fails right after this reservation) would
             /// keep those bytes charged to a query which never wrote them.
-            if (previous_owner && previous_owner != charged_query_context && outstanding_reserve_ahead)
-                previous_owner->tryDecrementSize(key(), offset(), outstanding_reserve_ahead);
+            if (previous_owner && previous_owner != charged_query_context && reserved_but_not_written)
+                previous_owner->tryDecrementSize(key(), offset(), reserved_but_not_written);
         }
     }
 
@@ -987,25 +988,24 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(result_size <= range().size());
     chassert(result_size >= downloaded_size);
 
-    /// Return the reserve-ahead surplus (reserved but not downloaded, see `FileSegment::reserve`)
-    /// to the cache: the segment is complete, nothing will fill the rest, so the surplus must not
-    /// stay charged against the quota. Done before the `result_size == range().size()` early return
-    /// below, since with `reserve_granularity == boundary_alignment` a tiny read rounds up to the
-    /// whole range and would otherwise keep a full granule charged.
+    /// Give the space reserved but not written back to the cache: the segment is complete, so
+    /// nothing will fill it and it must not stay charged. Done before the early return below,
+    /// because with `reserve_granularity == boundary_alignment` a tiny read rounds up to the whole
+    /// range and would otherwise keep a full granule charged.
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        const size_t surplus = reserved_size - downloaded_size;
-        queue_iterator->decrementSize(surplus);
-        /// The surplus was never written, so it must not stay charged against a query quota either.
+        const size_t reserved_but_not_written = reserved_size - downloaded_size;
+        queue_iterator->decrementSize(reserved_but_not_written);
+        /// Those bytes were never written, so they must not stay charged against a query quota either.
         if (download_data)
         {
             if (auto owner = download_data->query_limit_owner.lock())
-                owner->tryDecrementSize(key(), offset(), surplus);
+                owner->tryDecrementSize(key(), offset(), reserved_but_not_written);
             download_data->query_limit_owner.reset();
             has_query_limit_owner.store(false, std::memory_order_relaxed);
             /// `resetDownloadDataUnlocked` clears the mark as well, for the paths which drop the
-            /// whole download state without giving a surplus back.
+            /// whole download state without giving those bytes back.
         }
         reserved_size = downloaded_size.load();
     }

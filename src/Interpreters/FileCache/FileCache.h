@@ -238,7 +238,8 @@ public:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
         FileCacheQueryLimit::QueryContextPtr * charged_query_context = nullptr,
-        const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context = {});
+        const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context = {},
+        const FileCacheQueryLimit::QueryContextPtr & caller_query_context = {});
 
     bool tryIncreasePriority(FileSegment & file_segment);
 
@@ -475,7 +476,8 @@ private:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
         FileCacheQueryLimit::QueryContextPtr * charged_query_context,
-        const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context);
+        const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context,
+        const FileCacheQueryLimit::QueryContextPtr & caller_query_context);
 
     bool doEviction(
         EvictionInfo & main_eviction_info,

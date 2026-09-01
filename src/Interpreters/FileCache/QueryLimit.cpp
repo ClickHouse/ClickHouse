@@ -5,6 +5,12 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheQueryLimitLockMicroseconds;
+    extern const Event FilesystemCacheQueryLimitRecordsLockMicroseconds;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -40,19 +46,21 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext()
     if (!hasQueryContexts())
         return nullptr;
 
-    /// Destroyed after the lock is released.
-    std::vector<QueryContextPtr> doomed;
-    {
-        std::lock_guard lock(query_map_mutex);
-        if (auto context = tryGetCurrentQueryContextUnlocked())
-            return context;
+    ContextsReadLock lock(query_map_mutex, ProfileEvents::FilesystemCacheQueryLimitLockMicroseconds);
+    return tryGetCurrentQueryContextUnlocked();
+}
 
-        /// This query is not limited, yet some context is still here. Sweep the finished ones, so
-        /// that a context left behind by a query which is long gone does not keep every reservation
-        /// in this cache taking this lock.
-        sweepDroppableContextsUnlocked(doomed, /* keep_query_id */{}, /* only_finished_queries */true);
+void FileCacheQueryLimit::cleanupContextsOfFinishedQueries()
+{
+    if (!hasQueryContexts())
+        return;
+
+    /// Destroyed after the lock is released.
+    std::vector<QueryContextPtr> removed_contexts;
+    {
+        ContextsWriteLock lock(query_map_mutex, ProfileEvents::FilesystemCacheQueryLimitLockMicroseconds);
+        cleanupUnusedContextsUnlocked(removed_contexts, /* keep_query_id */{}, /* only_finished_queries */true);
     }
-    return nullptr;
 }
 
 
@@ -63,37 +71,37 @@ FileCacheQueryLimit::removeQueryContext(QueryContextPtr & context)
     /// per-query priority queues) are destroyed by the caller after the lock is released. Otherwise
     /// a query which touched many segments frees all of that state while holding query_map_mutex,
     /// blocking unrelated queries which look up their own context on every space reservation.
-    std::vector<QueryContextPtr> doomed;
+    std::vector<QueryContextPtr> removed_contexts;
     {
-        std::lock_guard lock(query_map_mutex);
+        ContextsWriteLock lock(query_map_mutex, ProfileEvents::FilesystemCacheQueryLimitLockMicroseconds);
 
         /// Drop this holder's own reference to the context under the lock, before the sweep below
         /// looks at use_count(). use_count() is not a synchronization primitive, so the decision
         /// must be made after every reference change to the context is serialized by this mutex
         /// (which also guards getOrSetQueryContext). Deciding before dropping the reference (or
         /// dropping it outside the lock) is a TOCTOU: two holders releasing at once can both observe
-        /// the shared count and both skip the erase, orphaning the map entry (see #109508).
+        /// the shared count and both skip the erase, leaving the map entry behind (see #109508).
         context.reset();
 
-        sweepDroppableContextsUnlocked(doomed, /* keep_query_id */{}, /* only_finished_queries */false);
+        cleanupUnusedContextsUnlocked(removed_contexts, /* keep_query_id */{}, /* only_finished_queries */false);
     }
-    return doomed;
+    return removed_contexts;
 }
 
-void FileCacheQueryLimit::sweepDroppableContextsUnlocked(
-    std::vector<QueryContextPtr> & doomed, const String & keep_query_id, bool only_finished_queries)
+void FileCacheQueryLimit::cleanupUnusedContextsUnlocked(
+    std::vector<QueryContextPtr> & removed_contexts, const String & keep_query_id, bool only_finished_queries)
 {
     for (auto it = query_map.begin(); it != query_map.end();)
     {
         /// The map entry is the only owner left and the query is gone. A context of an untracked
         /// query (no thread group) is only dropped by its own holder, which is the one thing known
         /// to end its lifetime.
-        const bool droppable = only_finished_queries
+        const bool can_be_removed = only_finished_queries
             ? it->second->isQueryFinished()
             : it->second->canBeDroppedWithoutHolders();
-        if (it->first != keep_query_id && it->second.use_count() == 1 && droppable)
+        if (it->first != keep_query_id && it->second.use_count() == 1 && can_be_removed)
         {
-            doomed.push_back(std::move(it->second));
+            removed_contexts.push_back(std::move(it->second));
             it = query_map.erase(it);
         }
         else
@@ -107,8 +115,9 @@ void FileCacheQueryLimit::unchargeRemovedSegment(const FileCacheKey & key, size_
     if (!hasQueryContexts())
         return;
 
-    std::lock_guard map_lock(query_map_mutex);
-    for (auto & [_, context] : query_map)
+    /// Shared: each context uncharges under its own `records_mutex`, the map itself is only read.
+    ContextsReadLock map_lock(query_map_mutex, ProfileEvents::FilesystemCacheQueryLimitLockMicroseconds);
+    for (const auto & [_, context] : query_map)
         context->unchargeRemoved(key, offset);
 }
 
@@ -126,20 +135,20 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
         return nullptr;
 
     /// Declared before the lock, so that dropped contexts are destroyed after it is released.
-    std::vector<QueryContextPtr> doomed;
+    std::vector<QueryContextPtr> removed_contexts;
     {
-        std::lock_guard lock(query_map_mutex);
+        ContextsWriteLock lock(query_map_mutex, ProfileEvents::FilesystemCacheQueryLimitLockMicroseconds);
 
         /// A query which released its last holder before finishing leaves its context behind, and
-        /// only holder destruction sweeps them, which may never come again. Sweep here too, so that
-        /// the next query arriving in this cache cleans up after the previous ones.
-        sweepDroppableContextsUnlocked(doomed, query_id, /* only_finished_queries */true);
+        /// the background cleanup may not have reached it yet. Clean up here too, so that the next
+        /// query arriving in this cache cleans up after the previous ones.
+        cleanupUnusedContextsUnlocked(removed_contexts, query_id, /* only_finished_queries */true);
 
         auto it = query_map.find(query_id);
         /// query_id is reusable, so an entry of a finished query must not be inherited by a new one.
         if (it != query_map.end() && it->second->isQueryFinished())
         {
-            doomed.push_back(std::move(it->second));
+            removed_contexts.push_back(std::move(it->second));
             query_map.erase(it);
             it = query_map.end();
         }
@@ -176,7 +185,7 @@ IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::add(
 {
     auto it = getPriority().add(key_metadata, offset, size, /* state_lock */nullptr);
 
-    std::lock_guard records_lock(records_mutex);
+    RecordsLock records_lock(records_mutex, ProfileEvents::FilesystemCacheQueryLimitRecordsLockMicroseconds);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
     if (!inserted)
     {
@@ -191,7 +200,7 @@ IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::add(
 
 bool FileCacheQueryLimit::QueryContext::tryRemove(const Key & key, size_t offset)
 {
-    std::lock_guard records_lock(records_mutex);
+    RecordsLock records_lock(records_mutex, ProfileEvents::FilesystemCacheQueryLimitRecordsLockMicroseconds);
     auto record = records.find({key, offset});
     if (record == records.end())
         return false;
@@ -203,7 +212,7 @@ bool FileCacheQueryLimit::QueryContext::tryRemove(const Key & key, size_t offset
 
 void FileCacheQueryLimit::QueryContext::unchargeRemoved(const Key & key, size_t offset)
 {
-    std::lock_guard records_lock(records_mutex);
+    RecordsLock records_lock(records_mutex, ProfileEvents::FilesystemCacheQueryLimitRecordsLockMicroseconds);
     auto record = records.find({key, offset});
     if (record == records.end())
         return;
@@ -222,12 +231,12 @@ void FileCacheQueryLimit::QueryContext::removeInvalidatedEntries(size_t max_batc
 
 void FileCacheQueryLimit::QueryContext::tryDecrementSize(const Key & key, size_t offset, size_t size)
 {
-    std::lock_guard records_lock(records_mutex);
+    RecordsLock records_lock(records_mutex, ProfileEvents::FilesystemCacheQueryLimitRecordsLockMicroseconds);
     auto record = records.find({key, offset});
     if (record == records.end())
         return;
 
-    /// The surplus belongs to the whole file segment, while this record holds only what this query
+    /// Those bytes belong to the whole file segment, while this record holds only what this query
     /// reserved of it: a segment whose download was handed over is charged to several queries.
     if (const size_t to_decrement = std::min<size_t>(size, record->second->getEntry()->size))
         record->second->decrementSize(to_decrement);
@@ -237,7 +246,7 @@ IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
     const Key & key,
     size_t offset)
 {
-    std::lock_guard records_lock(records_mutex);
+    RecordsLock records_lock(records_mutex, ProfileEvents::FilesystemCacheQueryLimitRecordsLockMicroseconds);
     auto it = records.find({key, offset});
     if (it == records.end())
         return nullptr;
@@ -259,13 +268,13 @@ FileCacheQueryLimit::QueryContextHolder::~QueryContextHolder()
 {
     /// The drop of this holder's reference must happen inside removeQueryContext under
     /// query_map_mutex, not here: dropping it outside the lock races with getOrSetQueryContext
-    /// and can orphan the map entry. context is only set when the per-query download limit is
+    /// and can leave the map entry behind. `context` is only set when the per-query limit is
     /// enabled, so this is a no-op otherwise.
     if (context)
     {
         /// The contexts of finished queries are handed back, so they are destroyed here, after
         /// the lock scope has ended.
-        std::vector<QueryContextPtr> doomed = query_limit->removeQueryContext(context);
+        std::vector<QueryContextPtr> removed_contexts = query_limit->removeQueryContext(context);
     }
 }
 

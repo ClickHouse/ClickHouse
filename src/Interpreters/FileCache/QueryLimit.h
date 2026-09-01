@@ -1,6 +1,8 @@
 #pragma once
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
+#include <Common/ProfiledLocks.h>
+#include <Common/SharedMutex.h>
 
 #include <mutex>
 
@@ -29,6 +31,10 @@ public:
 
     /// Whether the calling thread belongs to a query, no matter whether that query is limited.
     static bool isCurrentThreadInQuery();
+
+    /// Drops the contexts of queries which already finished. Runs in the background cleanup task,
+    /// so that a reservation never pays for cleaning up after other queries.
+    void cleanupContextsOfFinishedQueries();
 
     QueryContextPtr getOrSetQueryContext(
         const std::string & query_id,
@@ -99,9 +105,9 @@ public:
     private:
         using Records = std::unordered_map<FileCacheKeyAndOffset, Priority::IteratorPtr, FileCacheKeyAndOffsetHash>;
         /// `records` and `priority` mirror the part of the cache written by this query.
-        /// Structural changes of `priority` need the cache priority write lock (as for the main
-        /// priority), `records` is guarded by this leaf mutex, so that returning the reserve-ahead
-        /// surplus needs no cache lock.
+        /// `records` is guarded by this leaf mutex, so that giving back space which was reserved
+        /// but not written needs no cache lock.
+        using RecordsLock = ProfiledExclusiveLock<std::mutex>;
         mutable std::mutex records_mutex;
         Records records;
         LRUFileCachePriority priority;
@@ -126,9 +132,10 @@ public:
 
 private:
     /// Drops the contexts which have no holder left and whose query is gone, `keep_query_id`
-    /// excepted. The caller holds `query_map_mutex` and destroys `doomed` after releasing it.
-    void sweepDroppableContextsUnlocked(
-        std::vector<QueryContextPtr> & doomed, const String & keep_query_id, bool only_finished_queries);
+    /// excepted. The caller holds `query_map_mutex` and destroys `removed_contexts` after
+    /// releasing it.
+    void cleanupUnusedContextsUnlocked(
+        std::vector<QueryContextPtr> & removed_contexts, const String & keep_query_id, bool only_finished_queries);
 
     /// The context of the current query, if any. The caller holds `query_map_mutex`.
     QueryContextPtr tryGetCurrentQueryContextUnlocked() const;
@@ -137,10 +144,12 @@ private:
     QueryContextMap query_map;
     /// Size of `query_map`, kept in sync with it under `query_map_mutex` to be readable without it.
     std::atomic<size_t> live_contexts = 0;
-    /// The single lock guarding `query_map`. It is a leaf mutex, deliberately not one of the
-    /// cache locks: `getOrSetQueryContext` runs per read buffer creation and `tryGetQueryContext`
-    /// per space reservation, so neither should contend on the cache priority lock.
-    mutable std::mutex query_map_mutex;
+    /// The single lock guarding `query_map`. It is a leaf mutex, deliberately not one of the cache
+    /// locks. Shared for lookups, which every reservation and every removed segment does, and
+    /// exclusive only when a query starts or ends, which is rare.
+    using ContextsReadLock = ProfiledSharedLock<SharedMutex>;
+    using ContextsWriteLock = ProfiledExclusiveLock<SharedMutex>;
+    mutable SharedMutex query_map_mutex;
 };
 
 using FileCacheQueryLimitPtr = std::unique_ptr<FileCacheQueryLimit>;

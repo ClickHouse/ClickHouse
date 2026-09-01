@@ -1302,7 +1302,8 @@ bool FileCache::tryReserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheQueryLimit::QueryContextPtr * charged_query_context,
-    const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context)
+    const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context,
+    const FileCacheQueryLimit::QueryContextPtr & caller_query_context)
 {
     CurrentMetrics::Increment increment(CurrentMetrics::FilesystemCacheReserveThreads);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
@@ -1329,7 +1330,7 @@ bool FileCache::tryReserve(
 
     const bool success = doTryReserve(
         file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
-        failure_reason, charged_query_context, owner_query_context);
+        failure_reason, charged_query_context, owner_query_context, caller_query_context);
     if (!success)
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedReserveAttempts);
     return success;
@@ -1343,7 +1344,8 @@ bool FileCache::doTryReserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheQueryLimit::QueryContextPtr * charged_query_context,
-    const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context)
+    const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context,
+    const FileCacheQueryLimit::QueryContextPtr & caller_query_context)
 {
     auto main_priority_iterator = file_segment.getQueueIterator();
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -1383,15 +1385,18 @@ bool FileCache::doTryReserve(
         /// Check per-query cache limits.
         if (isQueryLimitInUse())
         {
-            query_context = query_limit->tryGetQueryContext();
-            if (!query_context && !FileCacheQueryLimit::isCurrentThreadInQuery())
+            /// Read buffers hold their query's context, so the common path needs no lookup.
+            query_context = caller_query_context;
+            if (!query_context)
             {
-                /// A background download reserves from a thread which belongs to no query at all,
-                /// so charge the query which reserved this segment so far - otherwise those bytes
+                /// A background download reserves from a thread which belongs to no query, so
+                /// charge the query which reserved this segment so far - otherwise those bytes
                 /// escape the per-query limit. A thread which does belong to a query is never
-                /// charged for another one, whether or not its own query is limited. The handle is
-                /// empty once that query's context is gone: then those bytes are charged to no one.
-                query_context = owner_query_context.lock();
+                /// charged for another one. Once the owner's context is gone, its weak handle is
+                /// empty and the bytes are charged to no one.
+                query_context = FileCacheQueryLimit::isCurrentThreadInQuery()
+                    ? query_limit->tryGetQueryContext()
+                    : owner_query_context.lock();
             }
 
             if (query_context)
@@ -1996,6 +2001,11 @@ void FileCache::backgroundCleanupTaskFunc()
         try
         {
             removed = main_priority->removeInvalidatedEntries(invalidated_entries_cleanup_remove_batch);
+
+            /// Contexts of queries which finished without releasing their last holder. Swept here,
+            /// so that no reservation pays for cleaning up after other queries.
+            if (query_limit)
+                query_limit->cleanupContextsOfFinishedQueries();
         }
         catch (...)
         {
