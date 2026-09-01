@@ -293,7 +293,7 @@ using FunctionArrayPackBitGroupsToFixedString
 
 REGISTER_FUNCTION(ArrayPackBits)
 {
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
 
     FunctionDocumentation::Description description_to_uint64 = R"(
