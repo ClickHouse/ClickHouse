@@ -26,7 +26,9 @@ SELECT k FROM t_memory_added_column PREWHERE e = 0 ORDER BY k;
 SELECT k FROM t_memory_added_column WHERE e = 0 ORDER BY k SETTINGS optimize_move_to_prewhere = 0;
 
 -- An `ALIAS` column is never stored, and `PREWHERE` on it is rejected as well.
+-- The old analyzer substitutes the alias expression into `PREWHERE` before the storage sees it,
+-- so the rejection is a property of the analyzer and the setting is pinned here.
 ALTER TABLE t_memory_added_column ADD COLUMN a UInt64 ALIAS k * 2;
-SELECT k FROM t_memory_added_column PREWHERE a = 4; -- { serverError ILLEGAL_PREWHERE }
+SELECT k FROM t_memory_added_column PREWHERE a = 4 SETTINGS enable_analyzer = 1; -- { serverError ILLEGAL_PREWHERE }
 
 DROP TABLE t_memory_added_column;
