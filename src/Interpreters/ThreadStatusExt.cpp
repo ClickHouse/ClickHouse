@@ -19,6 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/SensitiveDataMasker.h>
@@ -131,16 +132,21 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
+// c-tor for methods createForMaterializedView, createForExplainAnalyze and createForWorkNotChargedToTheQuery
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent)
     : parent(std::move(parent_thread_group))
     , master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
+    , charge_memory_to_query_user(charge_memory_to_parent)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
-    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , memory_tracker(
+          charge_memory_to_parent ? &parent->memory_tracker : &total_memory_tracker,
+          VariableContext::Process,
+          /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
 }
@@ -260,6 +266,11 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     }
     res_group->memory_tracker.setDescription("MaterializeView");
     return res_group;
+}
+
+ThreadGroupPtr ThreadGroup::createForWorkNotChargedToTheQuery(ThreadGroupPtr parent_thread_group)
+{
+    return ThreadGroupPtr(new ThreadGroup(std::move(parent_thread_group), /*charge_memory_to_parent=*/ false));
 }
 
 ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
@@ -438,6 +449,16 @@ void ThreadStatus::detachFromGroup()
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
+    /// Free query-scoped state (e.g. `local_data`'s query text for logs) here, while the tracker still points at
+    /// the query; freeing after the re-parent below would land on `total_memory_tracker`, leaving the user charged.
+    clearQueryId();
+    query_context.reset();
+    local_data = {};
+    fatal_error_callback = {};
+
+    /// Hand the frees above back to the query before the parent changes.
+    flushUntrackedMemory();
+
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
@@ -467,14 +488,6 @@ void ThreadStatus::detachFromGroup()
     }
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
-
-    clearQueryId();
-    query_context.reset();
-
-    local_data = {};
-
-    fatal_error_callback = {};
-
 }
 
 void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
@@ -574,6 +587,9 @@ void ThreadStatus::initPerformanceCounters()
 
     if (!taskstats)
     {
+        /// `taskstats` is created once per thread, not per query, and kept until the thread dies; charging
+        /// the query that happened to attach first would leave it on that user's tracker for good.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
         try
         {
             taskstats = TasksStatsCounters::create(thread_id);

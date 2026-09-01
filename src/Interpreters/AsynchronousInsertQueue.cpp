@@ -7,6 +7,8 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/noexcept_scope.h>
@@ -50,6 +52,7 @@
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -280,27 +283,31 @@ AsynchronousInsertQueue::InsertData::Entry::Entry(
     String && query_id_,
     const String & async_dedup_token_,
     const String & format_,
-    MemoryTracker * user_memory_tracker_)
+    std::unique_ptr<MemoryTracker> queued_data_tracker_)
     : chunk(std::move(chunk_))
     , query_id(std::move(query_id_))
     , async_dedup_token(async_dedup_token_)
     , format(format_)
-    , user_memory_tracker(user_memory_tracker_)
+    , queued_data_tracker(std::move(queued_data_tracker_))
     , create_time(std::chrono::system_clock::now())
 {
 }
 
 void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
 {
-    if (chunk.empty())
+    /// Released against the user that pushed the data, never the flush, whose user is whoever's insert it
+    /// happens to be flushing. The parameters were charged the same way and go with it.
+    if (queued_data_tracker)
+    {
+        MemoryTrackerSwitcher switcher(queued_data_tracker.get());
+        chunk = {};
+        query_parameters.clear();
         return;
+    }
 
-    // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
-    // Entries data must be destroyed in context of user who runs async insert.
-    // Each entry in the list may correspond to a different user,
-    // so we need to switch current thread's MemoryTracker.
-    MemoryTrackerSwitcher switcher(user_memory_tracker);
+    MemoryTrackerBlockerInThread queued_data_not_charged_to_the_flush;
     chunk = {};
+    query_parameters.clear();
 }
 
 void AsynchronousInsertQueue::InsertData::Entry::finish(ResultProgress result)
@@ -443,13 +450,28 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
     auto data_shared = std::make_shared<InsertDataPtr>(std::move(data));
+
+    /// The job's own copy of the key outlives the pushing query and is freed on a flush thread that can't
+    /// uncharge it, so allocate and release it the same way, charged to neither side.
+    std::shared_ptr<const InsertQuery> job_key;
+    {
+        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
+        job_key = std::shared_ptr<const InsertQuery>(
+            new InsertQuery(key),
+            [](const InsertQuery * ptr)
+            {
+                MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+                delete ptr;
+            });
+    }
+
     try
     {
         pool.scheduleOrThrowOnError(
-            [this, key, global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
+            [this, job_key, global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
             {
                 processData(
-                    key,
+                    *job_key,
                     std::move(*my_data),
                     std::move(global_context),
                     std::move(current_query_thread_group),
@@ -534,6 +556,10 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     }
     preprocessInsertQuery(query, query_context);
 
+    /// The bytes read below outlive this query once queued; charge them to a tracker of their own from the
+    /// start instead of estimating the size afterwards.
+    auto queued_data_tracker = createTrackerForDataTheQueryMayHandOver();
+
     StringWithMemoryTracking bytes;
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
@@ -546,25 +572,33 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             *read_buf,
             {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
 
-        if (const auto * insert_query = query->as<ASTInsertQuery>())
         {
-            size_t expected_data_size = 0;
-            if (insert_query->data)
-                expected_data_size += insert_query->end - insert_query->data;
-            if (insert_query->tail)
-                expected_data_size += insert_query->tail->buffer().size();
+            std::optional<MemoryTrackerSwitcher> switcher;
+            if (queued_data_tracker)
+                switcher.emplace(queued_data_tracker.get());
 
-            expected_data_size = std::min(expected_data_size, size_t{query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
-            bytes.reserve(expected_data_size);
-        }
+            if (const auto * insert_query = query->as<ASTInsertQuery>())
+            {
+                size_t expected_data_size = 0;
+                if (insert_query->data)
+                    expected_data_size += insert_query->end - insert_query->data;
+                if (insert_query->tail)
+                    expected_data_size += insert_query->tail->buffer().size();
 
-        {
-            WriteBufferFromStringWithMemoryTracking write_buf(bytes);
-            copyData(limit_buf, write_buf);
+                expected_data_size = std::min(expected_data_size, size_t{query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
+                bytes.reserve(expected_data_size);
+            }
+
+            {
+                WriteBufferFromStringWithMemoryTracking write_buf(bytes);
+                copyData(limit_buf, write_buf);
+            }
         }
 
         if (!read_buf->eof())
         {
+            /// Falls back to the synchronous path: the data never gets queued, so the tracker just goes out of
+            /// scope here; the bytes stay the query's, since that is where it sat all along.
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             ConcatReadBuffer::Buffers buffers;
@@ -580,14 +614,15 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
     }
 
-    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context));
+    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context), std::move(queued_data_tracker));
 }
 
-AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
+    ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
 {
     query = query->clone();
     preprocessInsertQuery(query, query_context);
-    return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
+    return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker));
 }
 
 std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData & data)
@@ -598,7 +633,8 @@ std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData &
     return query_ids;
 }
 
-AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
+    ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
@@ -610,7 +646,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         query_context->getCurrentQueryId(),
         settings[Setting::insert_deduplication_token],
         insert_query.format,
-        CurrentThread::getUserMemoryTracker());
+        std::move(queued_data_tracker));
 
     /// If data is parsed on client we don't care of format which is written
     /// in INSERT query. Replace it to put all such queries into one bucket in queue.
@@ -619,7 +655,15 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
     /// Query parameters make sense only for format Values.
     if (insert_query.format == "Values")
+    {
+        /// The queue holds on to these until the flush, just like the data, so they are charged the same way
+        /// and handed over with it. A parameter can carry the whole payload of the insert.
+        std::optional<MemoryTrackerSwitcher> switcher;
+        if (entry->queued_data_tracker)
+            switcher.emplace(entry->queued_data_tracker.get());
+
         entry->query_parameters = query_context->getQueryParameters();
+    }
 
     const auto & client_info = query_context->getClientInfo();
     InsertQuery key{
@@ -642,6 +686,10 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     const auto flush_time_points = flush_time_history_per_queue_shard[shard_num].getRecentTimePoints();
     {
         std::lock_guard lock(shard.mutex);
+
+        /// The queue's own bookkeeping (the `InsertQuery` key, `InsertData` holder, map/list nodes) outlives
+        /// this query, freed by a flush thread; entries stay charged to it until it ends, then to the server total.
+        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
 
         auto [it, inserted] = shard.iterators.try_emplace(key.hash);
         auto now = std::chrono::steady_clock::now();
@@ -693,6 +741,12 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
             throw;
         }
+
+        /// The entry is queued now, so its data outlives this query; move the charge to the user, who keeps it
+        /// until whichever thread flushes the entry frees it.
+        if (entry->queued_data_tracker)
+            handOverMemoryToTheUser(*entry->queued_data_tracker);
+
         data->size_in_bytes += entry_data_size;
         progress_future = entry->getFuture();
 
@@ -863,6 +917,10 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
             std::lock_guard lock(shard.mutex);
             auto & queue = shard.queue;
 
+            /// Moving the buckets out of the queue frees its nodes and keys, which were allocated without
+            /// charging the pushing query, so this must not credit whoever asked for the flush either.
+            MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+
             for (auto it = queue.begin(); it != queue.end();)
             {
                 const auto storage = it->second.key.getStorageID();
@@ -904,6 +962,13 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
             }
         }
 
+        /// What is left of the buckets is the queue's own bookkeeping, allocated without charging the pushing
+        /// query, so it is released the same way rather than credited to the query asking for the flush.
+        {
+            MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+            queues_to_flush.clear();
+        }
+
         /// Note that jobs scheduled before the call of 'flush' are not counted here.
         LOG_DEBUG(log,
             "Will wait for finishing of {} flushing jobs (about {} inserts, {} bytes, {} distinct queries) for tables: {}",
@@ -931,11 +996,21 @@ void AsynchronousInsertQueue::flushAll()
 
     std::vector<Queue> queues_to_flush(pool_size);
 
-    for (size_t i = 0; i < pool_size; ++i)
+    /// As in `flush`: the queue's nodes and keys were allocated without charging the pushing query, so moving
+    /// them out and releasing them must not credit this one.
+    SCOPE_EXIT({
+        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+        queues_to_flush.clear();
+    });
+
     {
-        std::lock_guard lock(queue_shards[i].mutex);
-        queues_to_flush[i] = std::move(queue_shards[i].queue);
-        queue_shards[i].iterators.clear();
+        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+        for (size_t i = 0; i < pool_size; ++i)
+        {
+            std::lock_guard lock(queue_shards[i].mutex);
+            queues_to_flush[i] = std::move(queue_shards[i].queue);
+            queue_shards[i].iterators.clear();
+        }
     }
 
     size_t total_queries = 0;
@@ -1082,7 +1157,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 }
 
 void AsynchronousInsertQueue::processData(
-    InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
+    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
 try
 {
     if (!data)
@@ -1119,8 +1194,19 @@ try
     /// We want the remote part to decide if the insert will be async or not.
     key.settings->setDefaultValue("async_insert");
 
+    /// Declared before `insert_context` so it's freed before the detach below reparents the tracker to
+    /// `total_memory_tracker`; it accumulates access info charged to the inserting user while attached.
+    DB::QueryScope query_scope;
+
     auto insert_context = Context::createCopy(global_context);
     insert_context->makeQueryContext();
+
+    /// Created before the scope exists, so nothing charged the flush for it; release it the same way, before
+    /// the scope ends, so what it accumulated while attached is settled with the flush instead.
+    SCOPE_EXIT_SAFE({
+        MemoryTrackerBlockerInThread flush_context_not_charged_to_the_flush;
+        insert_context.reset();
+    });
 
     /// Access rights must be checked for the user who executed the initial INSERT query.
     if (key.user_id)
@@ -1159,7 +1245,6 @@ try
     insert_context->setCurrentQueryId(insert_query_id);
     insert_context->setInitialQueryId(insert_query_id);
 
-    DB::QueryScope query_scope;
     if (current_query_thread_group)
     {
         /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE,
@@ -1172,6 +1257,9 @@ try
     }
     else
         query_scope = QueryScope::create(insert_context);
+
+    /// `system.query_thread_log` needs the query context, which now dies before the detach would write it.
+    SCOPE_EXIT_SAFE(CurrentThread::finalizePerformanceCounters());
 
     LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
     LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));

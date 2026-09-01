@@ -1,4 +1,5 @@
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>
@@ -45,7 +46,8 @@ bool CachedCompressedReadBuffer::nextImpl()
         initInput();
         file_in->seek(file_pos, SEEK_SET);
 
-        auto cell = std::make_shared<UncompressedCacheCell>();
+        /// Owned by the cache, not by this query; see `ServerOwnedCacheEntryAllocator`.
+        auto cell = std::allocate_shared<UncompressedCacheCell>(ServerOwnedCacheEntryAllocator<UncompressedCacheCell>());
 
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
@@ -54,7 +56,12 @@ bool CachedCompressedReadBuffer::nextImpl()
         if (cell->compressed_size)
         {
             cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
-            cell->data.resize(size_decompressed + cell->additional_bytes);
+            {
+                /// The cache owns this data and frees it later (whichever insertion evicts it), so don't charge
+                /// it to this query; the reader's own buffers above stay charged to it.
+                MemoryTrackerBlockerInThread cached_bytes_not_charged_to_the_query;
+                cell->data.resize(size_decompressed + cell->additional_bytes);
+            }
             decompressTo(cell->data.data(), size_decompressed, size_compressed_without_checksum);
         }
 

@@ -47,6 +47,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
@@ -589,6 +591,9 @@ void TCPHandler::runImpl()
         });
 
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
+        /// Declared before `query_scope` so it is freed after the thread detaches. Created before the scope
+        /// exists, so it's never charged to the query; releasing it while attached pushes the tracker negative.
+        ContextMutablePtr query_context_to_release_after_detaching;
         /// Initialized later. It has to be destroyed after query_state is destroyed.
         std::optional<QueryScope> query_scope;
         /// QueryState should be cleared before QueryScope, since otherwise
@@ -630,6 +635,8 @@ void TCPHandler::runImpl()
             /// Fatal error callback can be called at any time, including when we already destroyed TCPHandler object that created the callback.
             /// To avoid accessing invalid memory, we capture all needed fields by value.
             /// If TCPHandler object is already destroyed, we don't need to send logs so we capture shared_ptrs as weak_ptrs.
+            query_context_to_release_after_detaching = query_state->query_context;
+
             query_scope = QueryScope::create(
                 query_state->query_context,
                 /* fatal_error_callback */
@@ -1418,6 +1425,14 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     startInsertQuery(state);
     Squashing squashing(std::make_shared<const Block>(state.input_header), 0, state.query_context->getSettingsRef()[Setting::async_insert_max_data_size]);
 
+    /// The block being assembled here outlives this query once queued, but it sits under the query's own tracker
+    /// while buffering: an exception anywhere in this loop (timeout, disconnect, parse failure) then leaves the
+    /// buffered bytes charged to the query and settles nothing off the user.
+    auto queued_data_tracker = createTrackerForDataTheQueryMayHandOver();
+    std::optional<MemoryTrackerSwitcher> switcher;
+    if (queued_data_tracker)
+        switcher.emplace(queued_data_tracker.get());
+
     while (receivePacketsExpectDataConcurrentWithExecutor(state))
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
@@ -1426,13 +1441,20 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         auto result_chunk = Squashing::squash(squashing.generate(/*flush_if_enough_size*/ true), squashing.getHeader());
 
         {
+            /// Sending logs/profile events is the query's own work, not part of the data being queued.
+            switcher.reset();
             std::lock_guard lock(*callback_mutex);
             sendLogs(state);
             sendInsertProfileEvents(state);
+            if (queued_data_tracker)
+                switcher.emplace(queued_data_tracker.get());
         }
 
         if (result_chunk)
         {
+            switcher.reset();
+            /// Falls back to the synchronous path: the block never gets queued, so the tracker just goes out of
+            /// scope here; the bytes stay the query's, since that is where it sat all along.
             auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {
@@ -1447,11 +1469,14 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         squashing.getHeader());
     if (!result_chunk)
     {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader()->cloneWithoutColumns(), state.query_context);
+        switcher.reset();
+        return insert_queue.pushQueryWithBlock(
+            state.parsed_query, squashing.getHeader()->cloneWithoutColumns(), state.query_context, std::move(queued_data_tracker));
     }
 
     auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
-    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), state.query_context);
+    switcher.reset();
+    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), state.query_context, std::move(queued_data_tracker));
 }
 
 

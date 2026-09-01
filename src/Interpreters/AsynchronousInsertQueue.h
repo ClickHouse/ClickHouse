@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
 #include <Common/Logger.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SharedMutex.h>
@@ -76,7 +77,7 @@ public:
     void flush(const std::vector<StorageID> & tables);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
-    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
+    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker = nullptr);
     size_t getPoolSize() const { return pool_size; }
 
     /// This method should be called manually because it's not flushed automatically in dtor
@@ -192,7 +193,9 @@ private:
             const String query_id;
             const String async_dedup_token;
             const String format;
-            MemoryTracker * const user_memory_tracker;
+            /// Holds the queued bytes on behalf of the user that pushed them, so they keep counting against
+            /// `max_memory_usage_for_user` until this entry is gone, wherever the flush frees them.
+            const std::unique_ptr<MemoryTracker> queued_data_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
 
@@ -201,7 +204,7 @@ private:
                 String && query_id_,
                 const String & async_dedup_token_,
                 const String & format_,
-                MemoryTracker * user_memory_tracker_);
+                std::unique_ptr<MemoryTracker> queued_data_tracker_);
 
             void resetChunk();
             void finish(ResultProgress result = {});
@@ -226,14 +229,14 @@ private:
 
         ~InsertData()
         {
-            auto it = entries.begin();
-            // Entries must be destroyed in context of user who runs async insert.
-            // Each entry in the list may correspond to a different user,
-            // so we need to switch current thread's MemoryTracker parent on each iteration.
-            while (it != entries.end())
+            /// Each entry's data already went back to whoever is charged for it (see `resetChunk`); what remains,
+            /// the entries and list themselves, is queue bookkeeping not charged to whichever query flushes it.
+            for (auto & entry : entries)
+                entry->resetChunk();
+
             {
-                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
-                it = entries.erase(it);
+                MemoryTrackerBlockerInThread queued_data_not_charged_to_the_flush;
+                entries.clear();
             }
 
             ready_promise.set_value();
@@ -320,7 +323,7 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context);
+    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker);
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
@@ -334,7 +337,7 @@ private:
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
 
     static void processData(
-        InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(

@@ -139,12 +139,22 @@ private:
 
     bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
-    Int64 decrementLocalUsage(Int64 size) noexcept;
+    Int64 decrementLocalUsage(Int64 size, Int64 * owned_by_the_server = nullptr) noexcept;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
     bool isSizeOkForSampling(UInt64 size) const;
+
+    /// Credit the global tracker for bytes a query freed but never held, skipping the user, which does not hold
+    /// them either.
+    void freeBytesOwnedByTheServer(Int64 size);
+
+    /// Remove up to `size`, never going below zero however concurrent frees interleave, and tell how much was
+    /// actually removed.
+    Int64 subtractAtMostWhatIsThere(Int64 size);
+
+    std::atomic_bool drift_expected = false;
 
     /// helper fields for analyzing MemoryTracker
     /// amount which is not corrected by external source like RSS
@@ -181,12 +191,26 @@ public:
         return rss.load(std::memory_order_relaxed);
     }
 
-    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
-    // MemoryTracker for background task may have a non-zero counter.
-    // This method is intended to fix the counter inside of background_memory_tracker.
-    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
-    // of total_memory_tracker.
-    void adjustOnBackgroundTaskEnd(const MemoryTracker * child);
+    /// Marks memory the query deliberately leaves to something that outlives it (e.g. an in-memory table) so
+    /// the settle at query end isn't reported as a bug. Propagates up through the task trackers too.
+    void setDriftExpected()
+    {
+        for (auto * tracker = this; tracker; tracker = tracker->parent.load(std::memory_order_relaxed))
+        {
+            if (tracker->level == VariableContext::Process)
+                tracker->drift_expected.store(true, std::memory_order_relaxed);
+        }
+    }
+
+    /// Settle whatever is left on a query's tracker when the query ends, so that the per-user tracker ends at
+    /// zero for that query. Warns in debug builds when the amount is large enough to be a real bug.
+    void settleDriftOnQueryEnd();
+
+    /// Moves `size` bytes off this chain, up to but excluding the first tracker at `up_to_level`: still
+    /// allocated and counted there, just no longer charged below it. Not alloc/free, which would change the total.
+    void transferUpTo(VariableContext up_to_level, Int64 size);
+
+    void transferToGlobal(Int64 size) { transferUpTo(VariableContext::Global, size); }
 
     Int64 getPeak() const
     {
@@ -331,6 +355,13 @@ public:
 
     /// Reset the accumulated data.
     void reset();
+
+    /// Starts a new measurement period. Never below what is currently held, which belongs to whoever is still
+    /// charged here rather than to the period being ended.
+    void resetPeak()
+    {
+        peak.store(std::max<Int64>(amount.load(std::memory_order_relaxed), 0), std::memory_order_relaxed);
+    }
 
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);

@@ -841,6 +841,8 @@ The server successfully detected this situation and will download merged part fr
     M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
+    M(QueryMemoryDriftSettled, "Number of queries that ended with memory still charged to them, or with more freed against them than they ever allocated. The difference is handed over to the global memory tracker so that the per-user tracker ends at zero for the query.", ValueType::Number) \
+    M(QueryMemoryDriftSettledBytes, "Absolute amount of bytes handed over to the global memory tracker when queries ended, that is, how far per-query accounting was off. Positives and negatives are both counted as positive, so they do not cancel out.", ValueType::Bytes) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
     M(AzureUpload, "Number of Azure blob storage API Upload calls", ValueType::Number) \

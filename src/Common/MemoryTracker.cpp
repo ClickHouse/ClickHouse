@@ -138,6 +138,8 @@ namespace ProfileEvents
     extern const Event PageCacheOvercommitResize;
     extern const Event MemoryAllocatedWithoutCheck;
     extern const Event MemoryAllocatedWithoutCheckBytes;
+    extern const Event QueryMemoryDriftSettled;
+    extern const Event QueryMemoryDriftSettledBytes;
 }
 
 using namespace std::chrono_literals;
@@ -179,6 +181,18 @@ MemoryTracker::~MemoryTracker()
     {
         total_memory_tracker_initialized.store(false, std::memory_order_release);
         DB::MainThreadStatus::reset();
+    }
+
+    if (level == VariableContext::Process)
+    {
+        try
+        {
+            settleDriftOnQueryEnd();
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Exception in Logger, intentionally swallow, as for the peak usage log below.
+        }
     }
 
     if ((level == VariableContext::Process || level == VariableContext::User) && peak && log_peak_memory_usage_in_destructor)
@@ -495,7 +509,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     return allocation_trace;
 }
 
-Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
+Int64 MemoryTracker::decrementLocalUsage(Int64 size, Int64 * owned_by_the_server) noexcept
 {
     Int64 accounted_size = size;
     if (level == VariableContext::Global)
@@ -510,18 +524,29 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
     }
     else
     {
-        Int64 new_amount = amount.fetch_sub(accounted_size, std::memory_order_relaxed) - accounted_size;
-
         /** Sometimes, query could free some data, that was allocated outside of query context.
           * Example: cache eviction.
-          * To avoid negative memory usage, we "saturate" amount.
-          * Memory usage will be calculated with some error.
-          * NOTE: The code is not atomic. Not worth to fix.
+          * To avoid negative memory usage, take only what is there. Done with a compare-exchange rather than a
+          * subtract and a correction, so that a concurrent free cannot make the two disagree and leave this
+          * reporting more than `size` as never held, which would send a negative size up the parent chain.
           */
-        if (unlikely(new_amount < 0))
+        Int64 current = amount.load(std::memory_order_relaxed);
+        do
         {
-            amount.fetch_sub(new_amount, std::memory_order_relaxed);
-            accounted_size += new_amount;
+            /// A negative size gives bytes back rather than taking them, and there is nothing to saturate then.
+            accounted_size = size < 0 ? size : std::min(size, std::max<Int64>(current, 0));
+        }
+        while (!amount.compare_exchange_weak(current, current - accounted_size, std::memory_order_relaxed));
+
+        /// This tracker never held the rest: a nested group (view, merge) leaves them charged to the tracker
+        /// above it, but a query freeing another query's data of its own user credits the global tracker.
+        if (owned_by_the_server && accounted_size < size)
+        {
+            if (auto * loaded_parent = parent.load(std::memory_order_relaxed);
+                loaded_parent && loaded_parent->level == VariableContext::User)
+            {
+                *owned_by_the_server = size - accounted_size;
+            }
         }
     }
 
@@ -575,15 +600,116 @@ void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
         std::ignore = free(-untracked_memory);
 }
 
-void MemoryTracker::adjustOnBackgroundTaskEnd(const MemoryTracker * child)
-{
-    auto background_memory_consumption = child->amount.load(std::memory_order_relaxed);
-    amount.fetch_sub(background_memory_consumption, std::memory_order_relaxed);
 
-    // Also fix CurrentMetrics::MergesMutationsMemoryTracking
+void MemoryTracker::settleDriftOnQueryEnd()
+{
+    /// Drift is memory accounted globally already (allocated here but freed elsewhere, or vice versa); hand it
+    /// to the global tracker instead of letting it pile up on the user. Safety net, not a fix for each site.
+    Int64 drift = amount.load(std::memory_order_relaxed);
+    if (drift == 0)
+        return;
+
+    /// Only settle here if our parent is the user's tracker (a query or background task ending); nested groups
+    /// (a view, a merge inside `OPTIMIZE`) leave their drift to the query above them instead.
+    auto * user_tracker = parent.load(std::memory_order_relaxed);
+    if (!user_tracker || user_tracker->level != VariableContext::User)
+        return;
+
+    /// Never take more than the user currently holds: another query of theirs may already be releasing the
+    /// same bytes, so settle what was actually removed, not what was read before the subtraction.
+    if (drift > 0)
+    {
+        drift = user_tracker->subtractAtMostWhatIsThere(drift);
+        if (drift == 0)
+            return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::QueryMemoryDriftSettled);
+    ProfileEvents::increment(ProfileEvents::QueryMemoryDriftSettledBytes, drift < 0 ? -drift : drift);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// A leftover charge usually means the query allocated something that outlives it, hinting it wants a
+    /// longer-lived arena instead of the query's. Threshold is a starting point, lowered as flagged sites get fixed.
+    static constexpr Int64 warn_threshold = 1024 * 1024;
+    if ((drift > warn_threshold || drift < -warn_threshold) && !drift_expected.load(std::memory_order_relaxed))
+    {
+        const auto * description = description_ptr.load(std::memory_order_relaxed);
+        LOG_WARNING(
+            getLogger("MemoryTracker"),
+            "{}{} ended {} {}. Either it allocated something that outlives it, which should be accounted (and"
+            " likely allocated) where it belongs rather than on the query, or something freed against it memory"
+            " it never allocated. Settling the difference so the user ends at zero for this query.",
+            description ? std::string(description) : "",
+            description ? "" : "A query",
+            drift > 0 ? "still holding" : "over-credited by",
+            ReadableSize(drift > 0 ? drift : -drift));
+    }
+#endif
+
+    if (drift > 0)
+    {
+        /// The user's share is already gone, so only this tracker's own metric (e.g. `MergesMutationsMemoryTracking`)
+        /// is left to clear before destruction.
+        amount.fetch_sub(drift, std::memory_order_relaxed);
+
+        auto metric_loaded = metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, drift);
+    }
+    else
+    {
+        /// Giving bytes back cannot push anything below zero.
+        transferToGlobal(drift);
+    }
+}
+
+
+Int64 MemoryTracker::subtractAtMostWhatIsThere(Int64 size)
+{
+    Int64 current = amount.load(std::memory_order_relaxed);
+    Int64 removed = 0;
+    do
+    {
+        removed = std::min(size, current);
+        if (removed <= 0)
+            return 0;
+    }
+    while (!amount.compare_exchange_weak(current, current - removed, std::memory_order_relaxed));
+
+    /// Room under the limit appeared, same as after a free, so let anything waiting for it continue.
+    if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
+        overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(removed);
+
     auto metric_loaded = metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())
-        CurrentMetrics::sub(metric_loaded, background_memory_consumption);
+        CurrentMetrics::sub(metric_loaded, removed);
+
+    return removed;
+}
+
+
+void MemoryTracker::transferUpTo(VariableContext up_to_level, Int64 size)
+{
+    for (auto * tracker = this; tracker && tracker->level != up_to_level;
+         tracker = tracker->parent.load(std::memory_order_relaxed))
+    {
+        Int64 new_amount = tracker->amount.fetch_sub(size, std::memory_order_relaxed) - size;
+
+        /// A transfer back raises the amount, and the peak must not read below it.
+        if (size < 0)
+            tracker->updatePeak(new_amount, /*log_memory_usage*/ false);
+
+        /// Room under the limit appeared, same as after a free, so let anything waiting for it continue.
+        if (size > 0)
+        {
+            if (auto * overcommit_tracker_ptr = tracker->overcommit_tracker.load(std::memory_order_relaxed))
+                overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(size);
+        }
+
+        auto metric_loaded = tracker->metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, size);
+    }
 }
 
 
@@ -682,7 +808,8 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
         return AllocationTrace(_sample_probability);
     }
 
-    Int64 accounted_size = decrementLocalUsage(size);
+    Int64 owned_by_the_server = 0;
+    Int64 accounted_size = decrementLocalUsage(size, &owned_by_the_server);
     if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
         overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
 
@@ -691,10 +818,36 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (metric_loaded != CurrentMetrics::end())
         CurrentMetrics::sub(metric_loaded, accounted_size);
 
+    if (owned_by_the_server)
+        freeBytesOwnedByTheServer(owned_by_the_server);
+
     if (auto * loaded_next = parent.load(std::memory_order_acquire))
-        return loaded_next->free(size, _sample_probability);
+        return loaded_next->free(size - owned_by_the_server, _sample_probability);
 
     return AllocationTrace(_sample_probability);
+}
+
+
+void MemoryTracker::freeBytesOwnedByTheServer(Int64 size)
+{
+    for (auto * tracker = parent.load(std::memory_order_relaxed); tracker;
+         tracker = tracker->parent.load(std::memory_order_relaxed))
+    {
+        if (tracker->level != VariableContext::Global)
+            continue;
+
+        tracker->amount.fetch_sub(size, std::memory_order_relaxed);
+        tracker->rss.fetch_sub(size, std::memory_order_relaxed);
+
+        if (auto * overcommit_tracker_ptr = tracker->overcommit_tracker.load(std::memory_order_relaxed))
+            overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(size);
+
+        auto metric_loaded = tracker->metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, size);
+
+        return;
+    }
 }
 
 
