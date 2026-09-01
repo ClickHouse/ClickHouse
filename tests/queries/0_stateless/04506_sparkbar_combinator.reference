@@ -49,3 +49,15 @@ avgOrNullSparkbar with a NULL-only bucket (blank):
 ▁ █
 countSparkbar with an all-NULL forwarded argument:
 String
+avgSparkbar with a Nullable x-axis argument (String, NULLs skipped):
+String
+  █
+avgSparkbar with an all-NULL Nullable x-axis (empty sparkbar, not NULL):
+String
+[]
+sumSparkbar with a Nullable forwarded argument (String, NULLs skipped):
+String
+  █
+countSparkbar with a Nullable x-axis only (unary null adapter):
+String
+█ █
