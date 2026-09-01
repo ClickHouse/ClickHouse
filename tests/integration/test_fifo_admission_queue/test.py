@@ -41,6 +41,14 @@ node_without_admission_queue = cluster.add_instance(
     main_configs=["configs/no_admission_queue.xml"],
 )
 
+# A node whose in-loop liveness poll is far too slow to notice a disconnect on its
+# own, so that `test_client_disconnect_at_secondary_limit_wakeup` can only be
+# satisfied by the liveness recheck performed when the wait ends.
+node_slow_liveness_poll = cluster.add_instance(
+    "node_slow_liveness_poll",
+    main_configs=["configs/slow_liveness_poll.xml"],
+)
+
 # main_configs are mounted under /etc/clickhouse-server/config.d/.
 SERVER_CONFIG_PATH = "/etc/clickhouse-server/config.d/server.xml"
 
@@ -1655,3 +1663,234 @@ def test_zero_to_finite_reload_enforces_limit(started_cluster):
         # Restore the baseline limit for subsequent tests.
         set_max_concurrent_queries(node, 2)
         wait_for_max_concurrent_queries(node, 2)
+
+
+def test_background_query_ignores_the_submitting_connection(started_cluster):
+    """
+    A query submitted with `run_query_in_background = 1` is detached from the
+    connection that submitted it: `executeQueryInBackground` copies the query
+    context and schedules the real query on a background pool thread, while the
+    protocol handler returns immediately and the `HTTPServerRequest` it captured is
+    destroyed.
+
+    That context copy used to carry the connection-liveness callback installed for
+    the admission queue, so a background query parking in the admission wait polled
+    transport state belonging to a request that no longer exists, and hanging up
+    cancelled a query that is by definition detached from the connection. The
+    callback is now cleared on the background context.
+
+    Strategy: saturate both execution slots, submit a background `INSERT` over a raw
+    socket so that it has to queue, close that socket, and check that the waiter
+    stays in the queue for several alive-check intervals and still runs once a slot
+    frees.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    table = f"bg_admission_{prefix}"
+    node.query(f"CREATE TABLE default.{table} (n UInt8) ENGINE = Memory")
+
+    blocker_ids = [f"bg_blocker_{prefix}_{i}" for i in range(2)]
+    pool = Pool(4)
+
+    def run_blocker(qid):
+        try:
+            node.query(
+                "SELECT sleep(30) FORMAT Null",
+                settings={
+                    "function_sleep_max_microseconds_per_block": 0,
+                    "queue_max_wait_ms": 60000,
+                },
+                query_id=qid,
+            )
+        except Exception:
+            pass
+
+    sock = None
+    try:
+        for qid in blocker_ids:
+            pool.apply_async(run_blocker, (qid,))
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+
+        params = urllib.parse.urlencode({
+            "query": f"INSERT INTO default.{table} SELECT 1",
+            "run_query_in_background": "1",
+            "queue_max_wait_ms": "60000",
+        })
+        # `POST`: over HTTP, `GET` implies readonly mode, which rejects `INSERT`.
+        http_request = (
+            f"POST /?{params} HTTP/1.1\r\n"
+            f"Host: {node.ip_address}\r\n"
+            f"Content-Length: 0\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        )
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(10)
+        sock.connect((node.ip_address, 8123))
+        sock.sendall(http_request.encode())
+
+        # The background `INSERT` has to queue: both slots are taken by the blockers.
+        wait_for_queue_length(node, 1)
+
+        # Drop the submitting connection. `Connection: close` already made the handler
+        # finish with the request, and the RST makes any liveness check on it report a
+        # dead client — which must not affect the detached query.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
+        sock.close()
+        sock = None
+
+        # Four alive-check intervals (`admission_queue_alive_check_interval_ms` = 500 ms
+        # in this node's config): a query still consulting the submitting connection
+        # would have been cancelled well within this window.
+        time.sleep(2)
+        queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
+        assert queue_len == 1, (
+            f"the background query left the admission queue after its submitting "
+            f"connection was closed (queue length {queue_len}); a detached query must "
+            f"not inherit the connection liveness callback"
+        )
+
+        # Free the slots: the background query must now be admitted and actually run.
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+        deadline = time.monotonic() + 30
+        inserted = "0"
+        while time.monotonic() < deadline:
+            inserted = node.query(f"SELECT count() FROM default.{table}").strip()
+            if inserted == "1":
+                break
+            time.sleep(0.2)
+        assert inserted == "1", (
+            f"the background query did not run after a slot became free (rows: {inserted})"
+        )
+    finally:
+        if sock is not None:
+            sock.close()
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        pool.close()
+        pool.join()
+        node.query(f"DROP TABLE IF EXISTS default.{table} SYNC")
+
+
+def test_client_disconnect_at_secondary_limit_wakeup(started_cluster):
+    """
+    A waiter that already holds a transferred admission slot and is parked at a
+    secondary concurrency limit must not run its query if the client disappeared in
+    the very interval in which the limit became satisfiable.
+
+    The wait loop in `passes_secondary_limit` polls client liveness between wakeups,
+    but it exits as soon as the limit clears — so a disconnect racing with the
+    finishing query's teardown used to slip past every check and let a dead client's
+    query execute while holding the slot. A post-wakeup recheck (the same one the
+    FIFO admission wait does) closes that window.
+
+    Strategy:
+    1. Run a victim `SELECT` over a raw socket with `wait_end_of_query = 1` and a
+       result larger than the socket buffers. The response is written only in the
+       query-finish callback, which runs *after* the admission slot is released
+       early — so the victim sits in the early-release teardown window for as long
+       as we refuse to read it, still counted in `non_internal_processes`.
+    2. Send a second query over another raw socket with
+       `max_concurrent_queries_for_all_users = 1`. It takes the freed admission slot
+       on the fast path and then parks at the secondary limit, because a teardown is
+       pending and draining it can clear the limit.
+    3. Half-close that socket and immediately drain the victim's response, which
+       lets the victim's teardown finish within milliseconds. The waiter therefore
+       wakes with the limit satisfied and a client that is already gone — the exact
+       ordering the recheck exists for.
+    4. The waiter must not produce a `QueryStart` entry.
+
+    The test runs on `node_slow_liveness_poll`, whose
+    `admission_queue_alive_check_interval_ms` is 10 seconds. Nothing else wakes the
+    waiter between the half-close and the victim's teardown, so the in-loop liveness
+    poll — which pre-dates this recheck and would otherwise reject the waiter first,
+    with the same message — provably cannot be what ends the wait.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    victim_id = f"seclimit_victim_{prefix}"
+    waiter_id = f"seclimit_waiter_{prefix}"
+
+    victim_sock = None
+    waiter_sock = None
+    try:
+        # A couple of megabytes of response, buffered server-side and only written out
+        # at query finish, so a client that stops reading pins the query in its
+        # teardown. Kept small on purpose: once we do start reading, the write must
+        # complete — and the victim leave the process list — in milliseconds.
+        victim_params = urllib.parse.urlencode({
+            "query": "SELECT repeat('a', 999) FROM numbers(2000) FORMAT TSV",
+            "wait_end_of_query": "1",
+            "query_id": victim_id,
+            "queue_max_wait_ms": "60000",
+        })
+        victim_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # A small receive buffer keeps the in-flight window tiny, so the server blocks
+        # on the response after we stop reading instead of buffering it all in the kernel.
+        victim_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192)
+        victim_sock.settimeout(60)
+        victim_sock.connect((node_slow_liveness_poll.ip_address, 8123))
+        victim_sock.sendall((
+            f"GET /?{victim_params} HTTP/1.1\r\n"
+            f"Host: {node_slow_liveness_poll.ip_address}\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        ).encode())
+
+        # The first response bytes appear only once the query has finished and released
+        # its admission slot, i.e. exactly when the early-release teardown window opens.
+        assert victim_sock.recv(4096), "the victim query produced no response"
+        # ... and it is still in the process list, so it still counts towards the limit.
+        assert node_slow_liveness_poll.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{victim_id}'"
+        ).strip() == "1", "the victim query left the process list before the waiter was set up"
+
+        waiter_params = urllib.parse.urlencode({
+            "query": "SELECT 1",
+            "max_concurrent_queries_for_all_users": "1",
+            "query_id": waiter_id,
+            "queue_max_wait_ms": "60000",
+        })
+        waiter_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        waiter_sock.settimeout(60)
+        waiter_sock.connect((node_slow_liveness_poll.ip_address, 8123))
+        waiter_sock.sendall((
+            f"GET /?{waiter_params} HTTP/1.1\r\n"
+            f"Host: {node_slow_liveness_poll.ip_address}\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        ).encode())
+
+        # Let the waiter reach the secondary-limit wait. It must not be closed earlier:
+        # a disconnect noticed by the in-loop liveness poll would exercise the check that
+        # already existed rather than the post-wakeup one.
+        time.sleep(1.5)
+
+        # Half-close the waiter, then immediately let the victim go by draining the
+        # rest of its response. The victim's `ProcessListEntry` is destroyed — and
+        # `query_finished` broadcast — within milliseconds, far inside the 500 ms
+        # liveness poll interval, so the waiter wakes with the limit satisfied and a
+        # client that is already gone: only the post-wakeup recheck can catch it.
+        waiter_sock.shutdown(socket.SHUT_WR)
+        victim_sock.settimeout(30)
+        while victim_sock.recv(1 << 20):
+            pass
+
+        wait_for_query_finish(node_slow_liveness_poll, waiter_id)
+        node_slow_liveness_poll.query("SYSTEM FLUSH LOGS")
+        started = node_slow_liveness_poll.query(
+            f"SELECT count() FROM system.query_log "
+            f"WHERE query_id = '{waiter_id}' AND type = 'QueryStart'"
+        ).strip()
+        assert started == "0", (
+            f"the disconnected waiter was admitted at the secondary limit "
+            f"(QueryStart count: {started}); the post-wakeup liveness check is missing"
+        )
+    finally:
+        if victim_sock is not None:
+            victim_sock.close()
+        if waiter_sock is not None:
+            waiter_sock.close()
+        node_slow_liveness_poll.query(f"KILL QUERY WHERE query_id = '{victim_id}' SYNC")
