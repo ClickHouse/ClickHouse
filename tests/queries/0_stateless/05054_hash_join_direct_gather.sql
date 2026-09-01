@@ -159,10 +159,13 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0,
     log_comment = 'dg_arm3_by_ref_lists', ast_fuzzer_runs = 0;
 
+-- Every arm that asks for the limit and offset builder pins `enable_analyzer = 1`: only the
+-- `TableJoin` the analyzer builds carries `joined_block_split_single_row`, so with the old analyzer
+-- the arm silently takes the by-blocks builder instead, which arms 3 and 14 already cover.
 SELECT 'arm5 limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7,
+    max_joined_block_size_rows = 7, enable_analyzer = 1,
     log_comment = 'dg_arm5_limit_offset', ast_fuzzer_runs = 0;
 
 -- Arms 5b and 5c pin which builder ran, and with it the rule that the limit and offset builder is all
@@ -170,14 +173,16 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 -- generic path forces every column onto it. The two arms differ only in that switch. The
 -- `LowCardinality(String)` column is what keeps the output mixed: neither the gather nor the row
 -- store can take it. Only `a` is narrow enough for the row store to claim, so both arms also pin
--- the row store off to keep the emit path theirs to choose.
+-- the row store off to keep the emit path theirs to choose. Arm 5b is the one arm whose expected
+-- value depends on the analyzer pin above: the by-blocks builder decides per column, so without the
+-- pin it gathers `a` on its own.
 CREATE TABLE dg_list_mixed (k UInt64, a UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003, toString(number % 50) FROM numbers(2000);
 
 SELECT 'arm5b mixed limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0,
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1,
     log_comment = 'dg_arm5b_mixed_limit_offset', ast_fuzzer_runs = 0;
 
 SELECT 'arm5c mixed by blocks', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
@@ -402,7 +407,7 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 SELECT 'arm14c extended limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0,
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1,
     log_comment = 'dg_arm14c_ext_limit_offset', ast_fuzzer_runs = 0;
 
 -- Arm asof: `ASOF` is outside the gather's scope, so it never resolves the admission table and both
