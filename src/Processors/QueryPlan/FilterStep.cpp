@@ -422,7 +422,7 @@ void FilterStep::serialize(Serialization & ctx) const
 
 namespace
 {
-/// Cascades identity extras tags for `FilterStep`. Unique within the step; never reused.
+/// Full digest tags for `FilterStep`. Unique within the step; never reused.
 enum FilterStepIdentityTag : UInt64
 {
     PREVENT_INPUT_REMOVAL_TAG = 1,
@@ -431,22 +431,32 @@ enum FilterStepIdentityTag : UInt64
 };
 }
 
-void FilterStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
+void FilterStep::writeFullDigest(StepDigestWriter & writer) const
 {
+    /// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node. `isSerializable()` is
+    /// unconditionally true here, so this is the whole guard.
+    if (hasCorrelatedExpressions())
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
+
+    writer.addStepWireEncoding(*this);
+
     /// Blocks the input pruning a `FINAL` child depends on.
-    extras.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
+    writer.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
 
     /// `transformPipeline` wires `FilterTransform` to a `QueryConditionCache` keyed by this hash and
     /// text; two tags, so set-vs-unset stays distinguishable.
     if (condition)
     {
-        extras.addVarUInt(CONDITION_HASH_TAG, condition->first);
-        extras.addString(CONDITION_TEXT_TAG, condition->second);
+        writer.addVarUInt(CONDITION_HASH_TAG, condition->first);
+        writer.addString(CONDITION_TEXT_TAG, condition->second);
     }
     else
     {
-        extras.addAbsent(CONDITION_HASH_TAG);
-        extras.addAbsent(CONDITION_TEXT_TAG);
+        writer.addAbsent(CONDITION_HASH_TAG);
+        writer.addAbsent(CONDITION_TEXT_TAG);
     }
 }
 

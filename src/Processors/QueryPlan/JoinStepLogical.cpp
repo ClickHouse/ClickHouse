@@ -2219,77 +2219,88 @@ String encodeRuntimeFilterDescriptors(const std::vector<std::pair<String, String
     return payload.str();
 }
 
-void addOptionalRows(StepDigestWriter & extras, UInt64 tag, const std::optional<UInt64> & rows)
+void addOptionalRows(StepDigestWriter & writer, UInt64 tag, const std::optional<UInt64> & rows)
 {
     if (rows)
-        extras.addVarUInt(tag, *rows);
+        writer.addVarUInt(tag, *rows);
     else
-        extras.addAbsent(tag);
+        writer.addAbsent(tag);
 }
 }
 
-bool JoinStepLogical::supportsCascadesIdentity() const
+/// The wire guards of the content digest, all fail-closed to the whole-object witness:
+/// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node, and a zero in any of the four
+/// `NonZeroUInt64` plan settings `serializeSettings` assigns throws there. `isSerializable()` is
+/// unconditionally true, and is kept only so a future override is not silently bypassed.
+bool JoinStepLogical::canWriteWireEncoding() const
 {
     return isSerializable()
         && !hasCorrelatedExpressions()
-        /// Every `NonZeroUInt64` plan setting `serializeSettings` assigns; a zero throws there.
         && join_settings.grace_hash_join_initial_buckets != 0
         && join_settings.grace_hash_join_max_buckets != 0
         && join_settings.temporary_files_buffer_size != 0
         && sorting_settings.temporary_files_buffer_size != 0;
 }
 
-void JoinStepLogical::appendCascadesIdentityExtras(StepDigestWriter & extras) const
+void JoinStepLogical::writeFullDigest(StepDigestWriter & writer) const
 {
+    if (!canWriteWireEncoding())
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
+
+    writer.addStepWireEncoding(*this);
+
     /// `optimizeJoin` refuses to reorder a join that is already optimized, and correlated-subquery
     /// decorrelation relies on that to pin the layout of its result join (see `clone`).
-    extras.addBool(OPTIMIZED_TAG, optimized);
+    writer.addBool(OPTIMIZED_TAG, optimized);
 
     /// `filterPushDown` refuses to push a filter through a join that has it set.
-    extras.addBool(DISJUNCTIONS_OPTIMIZATION_APPLIED_TAG, disjunctions_optimization_applied);
+    writer.addBool(DISJUNCTIONS_OPTIMIZATION_APPLIED_TAG, disjunctions_optimization_applied);
 
     /// Read by the Cascades `StatisticsDerivation` (in preference to its own derivation) and reused by
     /// `optimizeJoin` as the statistics of an already-optimized sub-join. Included even though they
     /// are cost-only; revisit once a join-rebuild path that clears estimates lands (the
     /// eager-aggregation branch's `rebuildJoinWithNewInput` in `AggregationPushdown`), otherwise a
     /// rebuilt join will never deduplicate against an ingested one.
-    addOptionalRows(extras, RESULT_ROWS_ESTIMATION_TAG, result_rows_estimation);
-    extras.addBool(IMPRECISE_ESTIMATE_TAG, imprecise_estimate);
-    extras.addString(RESULT_COLUMN_STATS_TAG, encodeColumnStats(result_column_stats));
+    addOptionalRows(writer, RESULT_ROWS_ESTIMATION_TAG, result_rows_estimation);
+    writer.addBool(IMPRECISE_ESTIMATE_TAG, imprecise_estimate);
+    writer.addString(RESULT_COLUMN_STATS_TAG, encodeColumnStats(result_column_stats));
 
     /// `buildPhysicalJoin` turns it into the `JoinAlgorithmParams` hash-table key and the
     /// `StatsCollectingParams` key that seeds the right-side size estimate; `joinRuntimeFilter` reads
     /// it too.
-    extras.addVarUInt(RIGHT_HASH_TABLE_CACHE_KEY_TAG, right_hash_table_cache_key);
+    writer.addVarUInt(RIGHT_HASH_TABLE_CACHE_KEY_TAG, right_hash_table_cache_key);
 
     /// The right side's estimate becomes `JoinAlgorithmParams::rhs_size_estimation`, which picks the
     /// join algorithm; the left side's is read by `joinRuntimeFilter`.
-    addOptionalRows(extras, LEFT_ESTIMATED_ROWS_TAG, left_relation.estimated_rows);
-    addOptionalRows(extras, RIGHT_ESTIMATED_ROWS_TAG, right_relation.estimated_rows);
+    addOptionalRows(writer, LEFT_ESTIMATED_ROWS_TAG, left_relation.estimated_rows);
+    addOptionalRows(writer, RIGHT_ESTIMATED_ROWS_TAG, right_relation.estimated_rows);
 
     /// `optimizeJoin` passes it to the query-graph builder, which replaces the relation estimates.
-    extras.addString(TABLE_STATS_HINT_TAG, table_stats_hint);
+    writer.addString(TABLE_STATS_HINT_TAG, table_stats_hint);
 
     /// Set by `joinRuntimeFilter`; makes `HashJoin` publish shared runtime filters that prune rows.
-    extras.addString(
+    writer.addString(
         SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG, encodeRuntimeFilterDescriptors(join_operator.shared_runtime_filter_descriptors));
 
     /// Not covered by `JoinSettings::updatePlanSettings`; `MergeJoinTransform` and `MatchedRowsStats`
     /// branch on it.
-    extras.addVarUInt(JOIN_ANALYZE_MODE_TAG, static_cast<UInt64>(join_settings.join_analyze_mode));
+    writer.addVarUInt(JOIN_ANALYZE_MODE_TAG, static_cast<UInt64>(join_settings.join_analyze_mode));
 
     /// `JoinSettings::updatePlanSettings` assigns these three, but `serializeSettings` then runs
     /// `sorting_settings.updatePlanSettings`, which assigns the same three plan-setting names, so the
     /// sorting values overwrite them and the join's never reach the wire. The join algorithms read
     /// them when they spill, and nothing forces the two settings structs to agree.
-    extras.addVarUInt(JOIN_SETTINGS_MAX_BLOCK_SIZE_TAG, join_settings.max_block_size);
-    extras.addString(JOIN_SETTINGS_TEMPORARY_FILES_CODEC_TAG, join_settings.temporary_files_codec);
-    extras.addVarUInt(JOIN_SETTINGS_TEMPORARY_FILES_BUFFER_SIZE_TAG, join_settings.temporary_files_buffer_size);
+    writer.addVarUInt(JOIN_SETTINGS_MAX_BLOCK_SIZE_TAG, join_settings.max_block_size);
+    writer.addString(JOIN_SETTINGS_TEMPORARY_FILES_CODEC_TAG, join_settings.temporary_files_codec);
+    writer.addVarUInt(JOIN_SETTINGS_TEMPORARY_FILES_BUFFER_SIZE_TAG, join_settings.temporary_files_buffer_size);
 
     /// Not covered by `SortingStep::Settings::updatePlanSettings`; handed to the sorting steps the
     /// physical join builds.
-    extras.addBool(READ_IN_ORDER_USE_BUFFERING_TAG, sorting_settings.read_in_order_use_buffering);
-    extras.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sorting_settings.read_in_order_use_virtual_row_per_block);
+    writer.addBool(READ_IN_ORDER_USE_BUFFERING_TAG, sorting_settings.read_in_order_use_buffering);
+    writer.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sorting_settings.read_in_order_use_virtual_row_per_block);
 }
 
 namespace

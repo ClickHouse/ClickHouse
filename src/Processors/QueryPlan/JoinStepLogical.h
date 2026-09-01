@@ -107,12 +107,11 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    bool supportsCascadesIdentity() const override;
-    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
+    void writeFullDigest(StepDigestWriter & writer) const override;
 
     /// The logical digest writes the DAG, so the correlated-`PLACEHOLDER` guard stays; the four
-    /// `NonZeroUInt64` guards of `supportsCascadesIdentity` do not apply, because the logical digest
-    /// never calls `serializeSettings`.
+    /// `NonZeroUInt64` guards of the full digest's wire encoding do not apply, because the logical
+    /// digest never calls `serializeSettings`.
     bool hasLogicalDigest() const override { return isSerializable() && !hasCorrelatedExpressions(); }
     void writeLogicalDigest(StepDigestWriter & writer) const override;
 
@@ -244,6 +243,8 @@ protected:
     TemporaryDataOnDiskScopePtr tmp_data;
 
 private:
+    /// Whether this instance's wire encoding can be written without throwing; see the definition.
+    bool canWriteWireEncoding() const;
 
     bool disjunctions_optimization_applied = false;
 };

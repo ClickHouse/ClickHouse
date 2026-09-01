@@ -46,8 +46,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    bool supportsCascadesIdentity() const override { return isSerializable(); }
-    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
+    void writeFullDigest(StepDigestWriter & writer) const override;
 
     /// No DAG and no wire guard to fail on, but `memory_efficient_aggregation` - a merge-strategy
     /// knob the logical digest deliberately excludes - decides whether a configured truncation is

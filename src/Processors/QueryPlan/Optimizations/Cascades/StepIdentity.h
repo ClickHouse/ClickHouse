@@ -9,10 +9,9 @@ namespace DB
 
 class IQueryPlanStep;
 
-/// Content-based cross-group fingerprint of a step, over one of the digests written by
-/// Processors/QueryPlan/StepIdentity.h. Unlike `GroupExpression::structurallyEqualTo`, which
-/// compares step name and description, this compares the step's content. The same struct serves the
-/// full and the logical digest; which one a given instance holds is fixed by its owning member.
+/// Content-based fingerprint of a step, over one of the digests written by
+/// Processors/QueryPlan/StepIdentity.h. The same struct serves the full and the logical digest;
+/// which one a given instance holds is fixed by its owning member.
 struct StepFingerprint
 {
     UInt128 value;

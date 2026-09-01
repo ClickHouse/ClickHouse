@@ -807,44 +807,50 @@ enum SortingStepIdentityTag : UInt64
 };
 }
 
-bool SortingStep::supportsCascadesIdentity() const
+void SortingStep::writeFullDigest(StepDigestWriter & writer) const
 {
-    /// `serializeSettings` throws where `isSerializable()` does not: the `Settings(size_t)` constructor
-    /// leaves `temporary_files_buffer_size` at 0, its plan setting is a `NonZeroUInt64`, and
-    /// `optimizeGroupByTopK` builds exactly such a sort.
-    return isSerializable() && sort_settings.temporary_files_buffer_size != 0;
-}
+    /// Two guards, both fail-closed to the whole-object witness. `isSerializable()` excludes the
+    /// shapes `serialize` cannot encode: it throws outright for a type other than `Full` /
+    /// `FinishSorting`, and it has no place for a fixed-shard-count scatter, which would then digest
+    /// as an ordinary partitioned sort. `serializeSettings` throws where `isSerializable()` does not: the
+    /// `Settings(size_t)` constructor leaves `temporary_files_buffer_size` at 0, its plan setting is a
+    /// `NonZeroUInt64`, and `optimizeGroupByTopK` builds exactly such a sort.
+    if (!isSerializable() || sort_settings.temporary_files_buffer_size == 0)
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
 
-void SortingStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
-{
+    writer.addStepWireEncoding(*this);
+
     /// `scatterByPartitionIfNeeded` returns immediately when set, so a partitioned full sort either
     /// reshuffles rows across streams by the partition hash or does not.
-    extras.addBool(SKIP_SCATTER_BY_PARTITION_TAG, skip_scatter_by_partition);
+    writer.addBool(SKIP_SCATTER_BY_PARTITION_TAG, skip_scatter_by_partition);
 
     /// Both flags only tell the optimizer what the sort is for, but that is what decides whether other
     /// passes may reshard or reparallelize it, and `TwoStageTopN` builds its partial stage by cloning
     /// the sort and flipping only `is_partial_top_n` - an identity blind to it would let memo-wide
     /// deduplication fold the partial stage back into its source group and create a self-cycle.
-    extras.addBool(IS_SORTING_FOR_MERGE_JOIN_TAG, is_sorting_for_merge_join);
-    extras.addBool(IS_PARTIAL_TOP_N_TAG, is_partial_top_n);
+    writer.addBool(IS_SORTING_FOR_MERGE_JOIN_TAG, is_sorting_for_merge_join);
+    writer.addBool(IS_PARTIAL_TOP_N_TAG, is_partial_top_n);
 
     /// Passed to the final `MergingSortedTransform` on both serializable branches, where it decides
     /// whether exhausted-but-unneeded inputs are still drained. Not derivable from `type`: only the
     /// `MergingSorted` constructor sets it, but `convertToFinishSorting` can convert that instance.
-    extras.addBool(ALWAYS_READ_TILL_END_TAG, always_read_till_end);
+    writer.addBool(ALWAYS_READ_TILL_END_TAG, always_read_till_end);
 
     /// On the wire only for `FinishSorting`, but `fullSort` reads it too (it adds a
     /// `RemoveVirtualRowTransform` when no final merge is inserted).
-    extras.addBool(APPLY_VIRTUAL_ROW_CONVERSIONS_TAG, apply_virtual_row_conversions);
+    writer.addBool(APPLY_VIRTUAL_ROW_CONVERSIONS_TAG, apply_virtual_row_conversions);
 
     /// `addPerStreamLimitByIfNeeded` installs a row-dropping per-stream `LimitBySortedStreamTransform`
     /// when these describe a prefix of the stream sort order.
-    extras.addStrings(LIMIT_BY_COLUMNS_TAG, limit_by_columns);
-    extras.addVarUInt(LIMIT_BY_GROUP_LENGTH_TAG, limit_by_group_length);
+    writer.addStrings(LIMIT_BY_COLUMNS_TAG, limit_by_columns);
+    writer.addVarUInt(LIMIT_BY_GROUP_LENGTH_TAG, limit_by_group_length);
 
     /// `Settings::updatePlanSettings` writes neither, and `mergingSorted` reads both.
-    extras.addBool(READ_IN_ORDER_USE_BUFFERING_TAG, sort_settings.read_in_order_use_buffering);
-    extras.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sort_settings.read_in_order_use_virtual_row_per_block);
+    writer.addBool(READ_IN_ORDER_USE_BUFFERING_TAG, sort_settings.read_in_order_use_buffering);
+    writer.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sort_settings.read_in_order_use_virtual_row_per_block);
 }
 
 namespace

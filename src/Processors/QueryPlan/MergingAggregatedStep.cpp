@@ -324,33 +324,37 @@ enum MergingAggregatedStepIdentityTag : UInt64
 };
 }
 
-void MergingAggregatedStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
+void MergingAggregatedStep::writeFullDigest(StepDigestWriter & writer) const
 {
+    /// Unguarded: no DAG and no `NonZeroUInt64` plan setting, so neither wire method can throw for
+    /// any instance (`isSerializable()` is unconditionally true).
+    writer.addStepWireEncoding(*this);
+
     /// Not on the wire (`deserialize` re-derives both from session settings): they are the
     /// parallelism of the physical plan - how many streams `transformPipeline` resizes to, and the
     /// thread count of its memory-efficient merge branch. `max_threads` covers `params.max_threads`
     /// too: the two are equal at construction and re-resolved together in `transformPipeline`.
-    extras.addVarUInt(MAX_THREADS_TAG, max_threads);
-    extras.addVarUInt(MEMORY_EFFICIENT_MERGE_THREADS_TAG, memory_efficient_merge_threads);
+    writer.addVarUInt(MAX_THREADS_TAG, max_threads);
+    writer.addVarUInt(MEMORY_EFFICIENT_MERGE_THREADS_TAG, memory_efficient_merge_threads);
 
     /// `Aggregator::convertOneBucketToChunk` reads these unconditionally on `final` (already on
     /// the wire), regardless of `only_merge` - reachable from `MergingAggregatedTransform::generate`
     /// via `convertToChunks`. A provably-exact truncation is still a different result set.
-    extras.addVarUInt(BUCKET_TOP_K_TAG, params.bucket_top_k);
-    extras.addBool(BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
-    extras.addVarUInt(BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+    writer.addVarUInt(BUCKET_TOP_K_TAG, params.bucket_top_k);
+    writer.addBool(BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    writer.addVarUInt(BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
 
     /// `Aggregator::checkLimits` reads these for the single-level ("unknown bucket") sub-path of
     /// `mergeBlocks(BucketToChunks, ...)`, i.e. `MergingAggregatedTransform::generate`'s plain merge
     /// - it can throw, drop rows, or route them to the overflow row depending on the value.
-    extras.addVarUInt(MAX_ROWS_TO_GROUP_BY_TAG, params.max_rows_to_group_by);
-    extras.addVarUInt(GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
+    writer.addVarUInt(MAX_ROWS_TO_GROUP_BY_TAG, params.max_rows_to_group_by);
+    writer.addVarUInt(GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
 
     /// `Aggregator::convertToChunks` calls `prepareChunkAndFillSingleLevel<false>`, i.e. with
     /// `return_single_block = false`, so `params.max_block_size` (not necessarily equal to this
     /// step's own, wire-covered `max_block_size` - nothing enforces that the two stay in sync)
     /// controls how the single-level merge result is split into chunks.
-    extras.addVarUInt(PARAMS_MAX_BLOCK_SIZE_TAG, params.max_block_size);
+    writer.addVarUInt(PARAMS_MAX_BLOCK_SIZE_TAG, params.max_block_size);
 }
 
 namespace

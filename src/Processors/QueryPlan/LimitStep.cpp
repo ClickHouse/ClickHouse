@@ -126,19 +126,23 @@ void LimitStep::serialize(Serialization & ctx) const
 
 namespace
 {
-/// Cascades identity extras tags for `LimitStep`. Unique within the step; never reused.
+/// Full digest tags for `LimitStep`. Unique within the step; never reused.
 enum LimitStepIdentityTag : UInt64
 {
     IS_SHARD_LIMIT_TAG = 1,
 };
 }
 
-void LimitStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
+void LimitStep::writeFullDigest(StepDigestWriter & writer) const
 {
+    /// Unguarded: no DAG and no `NonZeroUInt64` plan setting, so neither wire method can throw for
+    /// any instance (`isSerializable()` is unconditionally true).
+    writer.addStepWireEncoding(*this);
+
     /// Not on the wire (`markAsShardLimit` sets it after construction).
     /// `QueryPipeline::initRowsBeforeLimit` special-cases a shard limit, so the rows it discards
     /// still count toward the parent limit's `rows_before_limit_at_least`, a user-visible field.
-    extras.addBool(IS_SHARD_LIMIT_TAG, is_shard_limit);
+    writer.addBool(IS_SHARD_LIMIT_TAG, is_shard_limit);
 }
 
 namespace

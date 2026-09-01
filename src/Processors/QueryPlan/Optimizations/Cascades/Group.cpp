@@ -10,11 +10,11 @@ namespace DB
 
 bool Group::addLogicalExpression(GroupExpressionPtr group_expression)
 {
-    /// Drop only a structurally-equal duplicate; a mere fingerprint hash collision keeps both.
-    auto & same_fingerprint = logical_expressions_by_fingerprint[group_expression->fingerprint()];
+    /// Drop only a fully-equal duplicate; a mere fingerprint hash collision keeps both.
+    auto & same_fingerprint = logical_expressions_by_full_fingerprint[group_expression->fullFingerprint()];
     for (const auto * existing : same_fingerprint)
     {
-        if (existing->structurallyEqualTo(*group_expression))
+        if (existing->fullyEqualTo(*group_expression))
             return false;
     }
 
@@ -26,11 +26,13 @@ bool Group::addLogicalExpression(GroupExpressionPtr group_expression)
 
 bool Group::addPhysicalExpression(GroupExpressionPtr group_expression)
 {
-    /// Drop only a structurally-equal duplicate; a mere fingerprint hash collision keeps both.
-    auto & same_fingerprint = physical_expressions_by_fingerprint[group_expression->fingerprint()];
+    /// Drop only a fully-equal duplicate; a mere fingerprint hash collision keeps both. This is what
+    /// bounds the enforcer fixed-point loop in `Task.cpp`: an enforcer that re-derives an expression
+    /// the group already holds inserts nothing, so it is not counted as progress.
+    auto & same_fingerprint = physical_expressions_by_full_fingerprint[group_expression->fullFingerprint()];
     for (const auto * existing : same_fingerprint)
     {
-        if (existing->structurallyEqualTo(*group_expression))
+        if (existing->fullyEqualTo(*group_expression))
             return false;
     }
 

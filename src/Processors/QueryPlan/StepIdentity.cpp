@@ -68,6 +68,38 @@ void StepDigestWriter::addSortDescription(UInt64 tag, const SortDescription & va
     addPayload(tag, payload.str());
 }
 
+void StepDigestWriter::addWitness(UInt64 tag, const void * ptr)
+{
+    if (!ptr)
+        addAbsent(tag);
+    else
+        addVarUInt(tag, static_cast<UInt64>(reinterpret_cast<uintptr_t>(ptr)));
+}
+
+void StepDigestWriter::addWholeObjectWitness(const void * object)
+{
+    addWitness(WHOLE_OBJECT_WITNESS_TAG, object);
+}
+
+void StepDigestWriter::addStepWireEncoding(const IQueryPlanStep & step)
+{
+    WriteBufferFromOwnString payload;
+
+    QueryPlanSerializationSettings settings;
+    step.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    settings.writeChangedBinary(payload);
+
+    /// `for_cache_key` must stay false on both the context and the registry: the cache-key mode
+    /// drops `AggregatingStep::final` and runtime-filter ids, which are identity-relevant here.
+    /// The registry is the writer's, so set ids stay in encounter order across the wire bytes and
+    /// the extras that follow.
+    IQueryPlanStep::Serialization ctx{
+        .out = payload, .registry = registry, .for_cache_key = false, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
+    step.serialize(ctx);
+
+    addPayload(STEP_WIRE_ENCODING_TAG, payload.str());
+}
+
 void StepDigestWriter::addDAG(UInt64 tag, const ActionsDAG * dag)
 {
     if (!dag)
@@ -96,19 +128,11 @@ void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out)
 {
     writeStepDigestPreamble(step, out);
 
-    QueryPlanSerializationSettings settings;
-    step.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    settings.writeChangedBinary(out);
-
-    /// `for_cache_key` must stay false on both the context and the registry: the cache-key mode
-    /// drops `AggregatingStep::final` and runtime-filter ids, which are identity-relevant here.
+    /// A fresh registry per digest: set ids are assigned in encounter order, so two independently
+    /// built steps holding equal sets encode equally.
     SerializedSetsRegistry registry;
-    IQueryPlanStep::Serialization ctx{
-        .out = out, .registry = registry, .for_cache_key = false, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
-    step.serialize(ctx);
-
-    StepDigestWriter extras(out, registry);
-    step.appendCascadesIdentityExtras(extras);
+    StepDigestWriter writer(out, registry);
+    step.writeFullDigest(writer);
 }
 
 void writeStepLogicalDigest(const IQueryPlanStep & step, WriteBuffer & out)

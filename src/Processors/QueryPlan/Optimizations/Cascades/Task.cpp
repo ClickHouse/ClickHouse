@@ -120,12 +120,15 @@ std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(CascadesO
                     continue;
 
                 /// No coarse pass-local dedup here: physically identical enforcer outputs are
-                /// dropped by `Group::addPhysicalExpression` (structural dedup), while sources
+                /// dropped by `Group::addPhysicalExpression` (full-identity dedup), while sources
                 /// that differ in sort direction or distribution keep their own enforced
                 /// alternative (e.g. a sorted gather for each requested direction).
-                /// Enforcers return only the expressions they actually inserted (structural
+                /// Enforcers return only the expressions they actually inserted (fully-equal
                 /// duplicates are dropped), so duplicate enforcer outputs are neither scheduled
-                /// nor counted as progress - they cannot exhaust the task budget.
+                /// nor counted as progress - they cannot exhaust the task budget. This is why every
+                /// step type an enforcer constructs (`SortingStep`, the four exchange steps) needs a
+                /// content full digest: on the whole-object witness default two freshly built
+                /// identical enforcer outputs would compare unequal and the loop would keep going.
                 auto new_expressions = enforcer->apply(expression, required_properties, optimizer.getMemo());
                 if (new_expressions.empty())
                     continue;
@@ -192,7 +195,11 @@ void ExploreExpressionTask::execute(CascadesOptimizer & optimizer)
     LOG_TEST(optimizer.log, "ExploreExpressionTask group_id: {}, expression: {}",
         expression->group_id, expression->getName());
 
-    /// Transformation rules produce logical alternatives, so they match against no required properties.
+    /// Transformation rules produce logical alternatives, so they match against no required
+    /// properties. Invariant: because the properties are always empty here, the (rule, properties)
+    /// applied-mask key of a transformation degenerates to the rule alone - a transformation fires at
+    /// most once per expression, whatever the context that reached it. Termination therefore does not
+    /// depend on how well duplicates are recognized.
     scheduleApplicableRules(optimizer, expression, ExpressionProperties{}, optimizer.getTransformationRules());
 }
 

@@ -126,17 +126,27 @@ void ExpressionStep::serialize(Serialization & ctx) const
 
 namespace
 {
-/// Cascades identity extras tags for `ExpressionStep`. Unique within the step; never reused.
+/// Full digest tags for `ExpressionStep`. Unique within the step; never reused.
 enum ExpressionStepIdentityTag : UInt64
 {
     PREVENT_INPUT_REMOVAL_TAG = 1,
 };
 }
 
-void ExpressionStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
+void ExpressionStep::writeFullDigest(StepDigestWriter & writer) const
 {
+    /// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node. `isSerializable()` is
+    /// unconditionally true here, so this is the whole guard.
+    if (hasCorrelatedExpressions())
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
+
+    writer.addStepWireEncoding(*this);
+
     /// Blocks the input pruning a `FINAL` child depends on.
-    extras.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
+    writer.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
 }
 
 namespace

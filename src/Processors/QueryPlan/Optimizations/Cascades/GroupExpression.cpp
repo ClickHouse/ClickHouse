@@ -63,51 +63,10 @@ String GroupExpression::dump(const CostConfig & cost_config) const
     return out.str();
 }
 
-/// Equality and the fingerprint hash must cover the same identity components, in this order:
-/// properties, inputs (group and required properties), step name, step description, strategy
-/// name. `getName` and `getDescription` build their strings, so equality compares the cheap
-/// components first and materializes the strings one at a time.
-bool GroupExpression::structurallyEqualTo(const GroupExpression & other) const
-{
-    if (!(properties == other.properties))
-        return false;
-
-    if (inputs.size() != other.inputs.size())
-        return false;
-    for (size_t i = 0; i < inputs.size(); ++i)
-    {
-        if (inputs[i].group_id != other.inputs[i].group_id)
-            return false;
-        if (!(inputs[i].required_properties == other.inputs[i].required_properties))
-            return false;
-    }
-
-    if (getName() != other.getName() || getDescription() != other.getDescription())
-        return false;
-
-    /// Strategies are per-type singletons (`strategySingleton`), so equal pointers mean the
-    /// same strategy type.
-    return strategy == other.strategy;
-}
-
-size_t GroupExpression::fingerprint() const
-{
-    size_t hash_value = ExpressionPropertiesHash()(properties);
-    for (const auto & input : inputs)
-    {
-        boost::hash_combine(hash_value, input.group_id);
-        boost::hash_combine(hash_value, ExpressionPropertiesHash()(input.required_properties));
-    }
-    boost::hash_combine(hash_value, std::hash<String>()(getName()));
-    boost::hash_combine(hash_value, std::hash<String>()(getDescription()));
-    if (strategy)
-        boost::hash_combine(hash_value, std::hash<String>()(strategy->getName()));
-    return hash_value;
-}
-
 const StepFingerprint * GroupExpression::cachedStepFingerprint() const
 {
-    if (!plan_step || !plan_step->supportsCascadesIdentity())
+    /// Every step has a full digest, so the only expression without one is a stepless expression.
+    if (!plan_step)
     {
         /// Drop an inherited entry so it stops pinning the step it was computed from.
         cached_step_fingerprint.reset();
@@ -148,7 +107,7 @@ size_t GroupExpression::fullFingerprint() const
     }
     else
     {
-        /// Without a fingerprint the step compares by pointer, so hash the pointer to stay consistent.
+        /// A stepless expression: nothing to digest, and `fullyEqualTo` compares it by pointer.
         boost::hash_combine(hash_value, reinterpret_cast<uintptr_t>(plan_step.get()));
     }
 
@@ -181,18 +140,18 @@ bool GroupExpression::fullyEqualTo(const GroupExpression & other) const
     if (description_suffix != other.description_suffix)
         return false;
 
+    /// Fast path, and the whole answer for a stepless expression: two of those are equal by their
+    /// (null) step, and a stepless one is never equal to one that has a step.
     if (plan_step == other.plan_step)
         return true;
-
-    const auto * fingerprint = cachedStepFingerprint();
-    const auto * other_fingerprint = other.cachedStepFingerprint();
-    if (!fingerprint || !other_fingerprint)
+    if (!plan_step || !other.plan_step)
         return false;
 
-    if (fingerprint->value != other_fingerprint->value)
+    /// The digest is total, so both fingerprints exist. It only narrows the candidates; the bytes
+    /// decide.
+    if (cachedStepFingerprint()->value != other.cachedStepFingerprint()->value)
         return false;
 
-    /// The fingerprint only narrows the candidates; the bytes decide.
     return stepFullDigestsEqual(*plan_step, *other.plan_step);
 }
 

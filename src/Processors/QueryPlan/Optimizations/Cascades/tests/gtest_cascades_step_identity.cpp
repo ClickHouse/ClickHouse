@@ -16,7 +16,9 @@
 #include <Interpreters/SetSerialization.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -25,6 +27,8 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/ScatterExchangeStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StepDigestCounters.h>
@@ -42,9 +46,10 @@
 
 using namespace DB;
 
-/// The Cascades cross-group identity compares the content of a step (its wire encoding plus the
-/// audited non-wire fields), not its name and description like the within-group
-/// `structurallyEqualTo`. It fails closed: a step type that has not opted in compares by pointer.
+/// The Cascades full identity compares the content of a step: for a content step its wire encoding
+/// plus the audited non-wire fields, for every other step - and for a content-step instance whose
+/// guard rejects it - a whole-object witness, i.e. pointer identity. It is total (every step has a
+/// digest, and writing one never throws) and fails closed per instance.
 
 namespace
 {
@@ -289,7 +294,7 @@ SortingStep::Settings makeSortSettings()
 }
 
 /// A bounded (top-N) full sort: `Type::Full` with `scatter_partitions == 0`, i.e. serializable, which
-/// `supportsCascadesIdentity` requires.
+/// the content full digest requires.
 std::unique_ptr<SortingStep> makeSortingStep(const SharedHeader & header)
 {
     return std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, makeSortSettings());
@@ -342,6 +347,27 @@ std::unique_ptr<JoinStepLogical> makeJoinStepLogical(bool with_correlated_column
         ActionsDAG::NodeRawConstPtrs{},
         JoinSettings(serialization_settings),
         makeSortSettings());
+}
+
+/// A step instance with no content full digest - a step type on the whole-object witness default, or
+/// a content step whose in-override guard rejects this instance - digests as a witness of itself. The
+/// digest exists and never throws (that is what makes it total), two distinct instances are unequal,
+/// and only a pointer-sharing shallow copy compares equal.
+void expectDigestsAsWitness(const GroupExpression & a, const GroupExpression & b)
+{
+    ASSERT_NE(a.plan_step, b.plan_step);
+
+    EXPECT_NE(a.cachedStepFingerprint(), nullptr);
+    EXPECT_NE(b.cachedStepFingerprint(), nullptr);
+
+    EXPECT_NE(a.fullFingerprint(), b.fullFingerprint());
+    EXPECT_FALSE(a.fullyEqualTo(b));
+
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization) - the shallow copy is the test subject
+    GroupExpression shared_step_copy(a);
+    ASSERT_EQ(shared_step_copy.plan_step, a.plan_step);
+    EXPECT_TRUE(a.fullyEqualTo(shared_step_copy));
+    EXPECT_EQ(a.fullFingerprint(), shared_step_copy.fullFingerprint());
 }
 
 }
@@ -443,21 +469,16 @@ TEST(CascadesStepIdentity, IndependentlyBuiltStepsShareFingerprint)
     EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
 }
 
-TEST(CascadesStepIdentity, StepWithoutOptInComparesByPointer)
+/// The witness default: a step type with no content digest still has a digest, and it identifies the
+/// object. Two equal-looking fresh instances are not interchangeable without a field audit; a
+/// pointer-sharing shallow copy is.
+TEST(CascadesStepIdentity, StepWithoutContentDigestComparesByWitness)
 {
     auto header = makeHeader();
     auto a = std::make_shared<GroupExpression>(std::make_unique<OffsetStep>(header, 10));
     auto b = std::make_shared<GroupExpression>(std::make_unique<OffsetStep>(header, 10));
 
-    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
-    /// Equal-looking but distinct instances are not interchangeable without a field audit.
-    EXPECT_FALSE(a->fullyEqualTo(*b));
-
-    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization) - the shallow copy is the test subject
-    GroupExpression shared_step_copy(*a);
-    EXPECT_EQ(shared_step_copy.plan_step, a->plan_step);
-    EXPECT_TRUE(a->fullyEqualTo(shared_step_copy));
-    EXPECT_EQ(a->fullFingerprint(), shared_step_copy.fullFingerprint());
+    expectDigestsAsWitness(*a, *b);
 }
 
 /// A rule may shallow-copy an expression and then replace its step. The inherited identity cache
@@ -702,9 +723,9 @@ TEST(CascadesStepIdentity, MergingAggregatedStepBucketTopKIsPartOfIdentity)
 }
 
 /// A correlated `PLACEHOLDER` node makes `ActionsDAG::serialize` throw, even though
-/// `isSerializable()` is unconditionally `true`. `supportsCascadesIdentity()` must additionally
-/// check `hasCorrelatedExpressions()` to keep its "never throws" invariant true by construction.
-TEST(CascadesStepIdentity, ExpressionStepWithCorrelatedExpressionsDoesNotSupportIdentity)
+/// `isSerializable()` is unconditionally `true`. The in-override guard must catch that and fall back
+/// to the whole-object witness, so the digest stays total without a try/catch.
+TEST(CascadesStepIdentity, ExpressionStepWithCorrelatedExpressionsDigestsAsWitness)
 {
     auto header = makeHeader();
     auto type = std::make_shared<DataTypeUInt64>();
@@ -712,15 +733,12 @@ TEST(CascadesStepIdentity, ExpressionStepWithCorrelatedExpressionsDoesNotSupport
     dag.addPlaceholder("correlated", type);
 
     ExpressionStep step(header, std::move(dag));
-
     ASSERT_TRUE(step.hasCorrelatedExpressions());
-    EXPECT_FALSE(step.supportsCascadesIdentity());
 
     auto a = std::make_shared<GroupExpression>(step.clone());
     auto b = std::make_shared<GroupExpression>(step.clone());
 
-    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
-    EXPECT_FALSE(a->fullyEqualTo(*b));
+    expectDigestsAsWitness(*a, *b);
 }
 
 /// AggregatingStep
@@ -835,8 +853,8 @@ TEST(CascadesStepIdentity, SortingStepLimitByHintIsPartOfIdentity)
 }
 
 /// A scattered full sort (`convertToScatteredFullSort`) is not serializable, because
-/// `scatter_partitions` has no place on the wire, so it must not get an identity either.
-TEST(CascadesStepIdentity, ScatteredSortingStepDoesNotSupportIdentity)
+/// `scatter_partitions` has no place on the wire, so it falls back to the witness.
+TEST(CascadesStepIdentity, ScatteredSortingStepDigestsAsWitness)
 {
     auto header = makeHeader();
     auto a_step = makeSortingStep(header);
@@ -845,33 +863,30 @@ TEST(CascadesStepIdentity, ScatteredSortingStepDoesNotSupportIdentity)
     b_step->convertToScatteredFullSort(4);
 
     ASSERT_FALSE(a_step->isSerializable());
-    EXPECT_FALSE(a_step->supportsCascadesIdentity());
 
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
-    EXPECT_FALSE(a->fullyEqualTo(*b));
+    expectDigestsAsWitness(*a, *b);
 }
 
 /// `isSerializable()` does not cover `serializeSettings`: a sort built from `Settings(size_t)` - as
 /// `optimizeGroupByTopK` builds one - has `temporary_files_buffer_size == 0`, and assigning 0 to that
-/// `NonZeroUInt64` plan setting throws. The predicate must reject such an instance so that the
-/// encoding never throws.
-TEST(CascadesStepIdentity, SortingStepWithZeroTemporaryFilesBufferDoesNotSupportIdentity)
+/// `NonZeroUInt64` plan setting throws. The in-override guard must catch that and fall back to the
+/// witness, without a try/catch and without letting the digest throw.
+TEST(CascadesStepIdentity, SortingStepWithZeroTemporaryFilesBufferDigestsAsWitness)
 {
     auto header = makeHeader();
     auto a_step = std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65536));
     auto b_step = std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65536));
 
     ASSERT_TRUE(a_step->isSerializable());
-    EXPECT_FALSE(a_step->supportsCascadesIdentity());
 
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
-    EXPECT_FALSE(a->fullyEqualTo(*b));
+    /// No throw: the digest is materialized twice inside this call.
+    expectDigestsAsWitness(*a, *b);
 }
 
 /// DistinctStep
@@ -1085,20 +1100,19 @@ TEST(CascadesStepIdentity, JoinStepLogicalOverwrittenJoinSettingsArePartOfIdenti
 }
 
 /// A correlated `PLACEHOLDER` node in the join's DAG makes `ActionsDAG::serialize` throw, so the
-/// predicate must reject such an instance even though `isSerializable()` is unconditionally `true`.
-TEST(CascadesStepIdentity, JoinStepLogicalWithCorrelatedExpressionsDoesNotSupportIdentity)
+/// in-override guard falls back to the witness even though `isSerializable()` is unconditionally
+/// `true`.
+TEST(CascadesStepIdentity, JoinStepLogicalWithCorrelatedExpressionsDigestsAsWitness)
 {
     auto a_step = makeJoinStepLogical(/*with_correlated_column=*/true);
     auto b_step = makeJoinStepLogical(/*with_correlated_column=*/true);
 
     ASSERT_TRUE(a_step->hasCorrelatedExpressions());
-    EXPECT_FALSE(a_step->supportsCascadesIdentity());
 
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
-    EXPECT_FALSE(a->fullyEqualTo(*b));
+    expectDigestsAsWitness(*a, *b);
 }
 
 /// ReadFromMergeTree
@@ -1236,12 +1250,11 @@ TEST(CascadesStepIdentity, ReadFromMergeTreeIdenticalReadsAreEqual)
     MergeTreeReadFixture fixture("identical");
     auto query_info = MergeTreeReadFixture::makeQueryInfo();
 
-    auto a_step = fixture.makeRead(query_info);
-    ASSERT_TRUE(a_step->supportsCascadesIdentity());
-
-    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto a = std::make_shared<GroupExpression>(fixture.makeRead(query_info));
     auto b = std::make_shared<GroupExpression>(fixture.makeRead(query_info));
 
+    /// Two distinct objects that compare equal is itself the proof that the content path ran: on the
+    /// witness fallback they could not be equal.
     EXPECT_NE(a->plan_step, b->plan_step);
     EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
     EXPECT_TRUE(a->fullyEqualTo(*b));
@@ -1260,7 +1273,6 @@ TEST(CascadesStepIdentity, ReadFromMergeTreeStepFilterActionsDagIsPartOfIdentity
 
     ASSERT_NE(step->getFilterActionsDAG(), nullptr);
     ASSERT_FALSE(step->hasPendingFilters());
-    ASSERT_TRUE(step->supportsCascadesIdentity());
     const auto with_step_dag = encodeIdentity(*step);
 
     /// Detaching clears only the step-level slot: `query_info` keeps the copy `applyFilters` made, and
@@ -1330,9 +1342,9 @@ TEST(CascadesStepIdentity, ReadFromMergeTreeAnalyzedResultPinningIsPartOfIdentit
     EXPECT_NE(encodeIdentity(*a_step), encodeIdentity(*b_step));
 }
 
-/// `serialize` rejects the STREAM modifier, so the predicate must reject such an instance before the
-/// encoding calls `serialize`.
-TEST(CascadesStepIdentity, ReadFromMergeTreeStreamReadDoesNotSupportIdentity)
+/// `serialize` rejects the STREAM modifier, so the in-override guard must catch such an instance
+/// before the digest calls `serialize`, and fall back to the witness.
+TEST(CascadesStepIdentity, ReadFromMergeTreeStreamReadDigestsAsWitness)
 {
     MergeTreeReadFixture fixture("stream");
     auto query_info = MergeTreeReadFixture::makeQueryInfo();
@@ -1340,13 +1352,129 @@ TEST(CascadesStepIdentity, ReadFromMergeTreeStreamReadDoesNotSupportIdentity)
 
     auto a_step = fixture.makeRead(query_info);
     ASSERT_TRUE(a_step->getQueryInfo().isStream());
-    EXPECT_FALSE(a_step->supportsCascadesIdentity());
 
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(fixture.makeRead(query_info));
 
-    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
-    EXPECT_FALSE(a->fullyEqualTo(*b));
+    expectDigestsAsWitness(*a, *b);
+}
+
+/// Exchange steps
+///
+/// They have no wire `serialize`, so their content digest is extras-only. Every field is pinned:
+/// nothing else in the digest could catch it, since the preamble of two exchanges of the same class
+/// over the same header is identical.
+
+TEST(CascadesStepIdentity, ExchangeStepsFreshInstancesAreEqual)
+{
+    auto header = makeHeader();
+    auto sorting = makeSortDescription();
+
+    auto expect_fresh_pair_equal = [](QueryPlanStepPtr first, QueryPlanStepPtr second)
+    {
+        auto a = std::make_shared<GroupExpression>(std::move(first));
+        auto b = std::make_shared<GroupExpression>(std::move(second));
+
+        ASSERT_NE(a->plan_step, b->plan_step);
+        EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+        EXPECT_TRUE(a->fullyEqualTo(*b));
+    };
+
+    expect_fresh_pair_equal(
+        std::make_unique<GatherExchangeStep>(header, 4, sorting), std::make_unique<GatherExchangeStep>(header, 4, sorting));
+    expect_fresh_pair_equal(
+        std::make_unique<ShuffleExchangeStep>(header, Names{"x"}, 4, 8), std::make_unique<ShuffleExchangeStep>(header, Names{"x"}, 4, 8));
+    expect_fresh_pair_equal(
+        std::make_unique<ScatterExchangeStep>(header, Names{"x"}, 8), std::make_unique<ScatterExchangeStep>(header, Names{"x"}, 8));
+    expect_fresh_pair_equal(
+        std::make_unique<BroadcastExchangeStep>(header, 8), std::make_unique<BroadcastExchangeStep>(header, 8));
+}
+
+TEST(CascadesStepIdentity, GatherExchangeFieldsArePartOfIdentity)
+{
+    auto header = makeHeader();
+    auto sorting = makeSortDescription();
+
+    SortDescription other_direction;
+    other_direction.emplace_back(SortColumnDescription("x", "x", /*direction_=*/-1));
+
+    auto plain = std::make_shared<GroupExpression>(std::make_unique<GatherExchangeStep>(header, 4));
+    auto sorted = std::make_shared<GroupExpression>(std::make_unique<GatherExchangeStep>(header, 4, sorting));
+    auto sorted_other_way = std::make_shared<GroupExpression>(std::make_unique<GatherExchangeStep>(header, 4, other_direction));
+    auto more_buckets = std::make_shared<GroupExpression>(std::make_unique<GatherExchangeStep>(header, 8));
+
+    /// A sorted gather merges its inputs instead of resizing them, and it must deliver that exact order.
+    EXPECT_FALSE(plain->fullyEqualTo(*sorted));
+    EXPECT_FALSE(sorted->fullyEqualTo(*sorted_other_way));
+    /// How many buckets are gathered.
+    EXPECT_FALSE(plain->fullyEqualTo(*more_buckets));
+}
+
+TEST(CascadesStepIdentity, ShuffleExchangeFieldsArePartOfIdentity)
+{
+    auto header = makeHeader();
+    DataTypes cast_to_uint64{std::make_shared<DataTypeUInt64>()};
+    DataTypes cast_to_int64{std::make_shared<DataTypeInt64>()};
+
+    auto base = std::make_shared<GroupExpression>(std::make_unique<ShuffleExchangeStep>(header, Names{"x"}, 4, 8));
+    auto other_key = std::make_shared<GroupExpression>(std::make_unique<ShuffleExchangeStep>(header, Names{"y"}, 4, 8));
+    auto no_key = std::make_shared<GroupExpression>(std::make_unique<ShuffleExchangeStep>(header, Names{}, 4, 8));
+    auto other_source_count = std::make_shared<GroupExpression>(std::make_unique<ShuffleExchangeStep>(header, Names{"x"}, 2, 8));
+    auto other_result_count = std::make_shared<GroupExpression>(std::make_unique<ShuffleExchangeStep>(header, Names{"x"}, 4, 16));
+    auto cast_uint64
+        = std::make_shared<GroupExpression>(std::make_unique<ShuffleExchangeStep>(header, Names{"x"}, 4, 8, cast_to_uint64));
+    auto cast_int64
+        = std::make_shared<GroupExpression>(std::make_unique<ShuffleExchangeStep>(header, Names{"x"}, 4, 8, cast_to_int64));
+
+    /// Which columns the hash is taken over, and how many buckets it is spread across.
+    EXPECT_FALSE(base->fullyEqualTo(*other_key));
+    EXPECT_FALSE(base->fullyEqualTo(*no_key));
+    EXPECT_FALSE(base->fullyEqualTo(*other_source_count));
+    EXPECT_FALSE(base->fullyEqualTo(*other_result_count));
+    /// The pre-hash cast aligns buckets across both sides of a shuffle join, so it decides the bucket.
+    EXPECT_FALSE(base->fullyEqualTo(*cast_uint64));
+    EXPECT_FALSE(cast_uint64->fullyEqualTo(*cast_int64));
+}
+
+TEST(CascadesStepIdentity, ScatterExchangeFieldsArePartOfIdentity)
+{
+    auto header = makeHeader();
+    DataTypes cast_to_int64{std::make_shared<DataTypeInt64>()};
+
+    auto base = std::make_shared<GroupExpression>(std::make_unique<ScatterExchangeStep>(header, Names{"x"}, 8));
+    auto other_key = std::make_shared<GroupExpression>(std::make_unique<ScatterExchangeStep>(header, Names{"y"}, 8));
+    /// An empty key list is a round-robin scatter, which `DistributionEnforcer` builds for a bare
+    /// node-count requirement - a different exchange from a keyed one.
+    auto round_robin = std::make_shared<GroupExpression>(std::make_unique<ScatterExchangeStep>(header, Names{}, 8));
+    auto other_result_count = std::make_shared<GroupExpression>(std::make_unique<ScatterExchangeStep>(header, Names{"x"}, 16));
+    auto cast_int64 = std::make_shared<GroupExpression>(std::make_unique<ScatterExchangeStep>(header, Names{"x"}, 8, cast_to_int64));
+
+    EXPECT_FALSE(base->fullyEqualTo(*other_key));
+    EXPECT_FALSE(base->fullyEqualTo(*round_robin));
+    EXPECT_FALSE(base->fullyEqualTo(*other_result_count));
+    EXPECT_FALSE(base->fullyEqualTo(*cast_int64));
+}
+
+TEST(CascadesStepIdentity, BroadcastExchangeResultBucketCountIsPartOfIdentity)
+{
+    auto header = makeHeader();
+
+    auto base = std::make_shared<GroupExpression>(std::make_unique<BroadcastExchangeStep>(header, 8));
+    auto other_result_count = std::make_shared<GroupExpression>(std::make_unique<BroadcastExchangeStep>(header, 16));
+
+    EXPECT_FALSE(base->fullyEqualTo(*other_result_count));
+}
+
+/// An exchange of one class never digests equal to one of another class: the serialization name in
+/// the shared preamble separates them even where the fields coincide.
+TEST(CascadesStepIdentity, ExchangeClassesAreDistinct)
+{
+    auto header = makeHeader();
+
+    auto scatter = std::make_shared<GroupExpression>(std::make_unique<ScatterExchangeStep>(header, Names{}, 8));
+    auto broadcast = std::make_shared<GroupExpression>(std::make_unique<BroadcastExchangeStep>(header, 8));
+
+    EXPECT_FALSE(scatter->fullyEqualTo(*broadcast));
 }
 
 /// Logical digest
@@ -1463,7 +1591,6 @@ TEST(CascadesStepIdentity, LogicalDigestExcludesReadFromMergeTree)
     auto query_info = MergeTreeReadFixture::makeQueryInfo();
 
     auto a_step = fixture.makeRead(query_info);
-    ASSERT_TRUE(a_step->supportsCascadesIdentity());
     EXPECT_FALSE(a_step->hasLogicalDigest());
 
     auto [a, b] = logicalPair(std::move(a_step), fixture.makeRead(query_info));
@@ -1726,14 +1853,13 @@ TEST(CascadesStepIdentity, LogicalDigestSurvivesZeroTemporaryFilesBuffer)
     auto a_step = std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65536));
     auto b_step = std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65536));
 
-    ASSERT_FALSE(a_step->supportsCascadesIdentity());
     EXPECT_TRUE(a_step->hasLogicalDigest());
 
     auto [a, b] = logicalPair(std::move(a_step), std::move(b_step));
 
     EXPECT_NE(a->cachedStepLogicalFingerprint(), nullptr);
-    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
     EXPECT_TRUE(a->logicallyEqualTo(*b));
+    /// The full digest of such a sort is the whole-object witness, so it merges with nothing.
     EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 

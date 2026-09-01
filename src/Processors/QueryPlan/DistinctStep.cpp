@@ -155,8 +155,8 @@ void DistinctStep::serialize(Serialization & ctx) const
 
 namespace
 {
-/// Cascades identity extras tags for `DistinctStep`. Unique within the step; never reused.
-/// `pre_distinct` needs no tag: it selects `getSerializationName()`, which the encoding writes first.
+/// Full digest tags for `DistinctStep`. Unique within the step; never reused.
+/// `pre_distinct` needs no tag: it selects `getSerializationName()`, which the digest writes first.
 enum DistinctStepIdentityTag : UInt64
 {
     LIMIT_HINT_TAG = 1,
@@ -165,19 +165,24 @@ enum DistinctStepIdentityTag : UInt64
 };
 }
 
-void DistinctStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
+void DistinctStep::writeFullDigest(StepDigestWriter & writer) const
 {
+    /// Unguarded: no DAG, and the three plain plan settings `serializeSettings` assigns take any
+    /// value, so neither wire method can throw for any instance (`isSerializable()` is
+    /// unconditionally true).
+    writer.addStepWireEncoding(*this);
+
     /// Both `DistinctTransform` and `DistinctSortedStreamTransform` stop once `limit_hint` distinct
     /// rows were produced, so it changes the row count, not only the cost.
-    extras.addVarUInt(LIMIT_HINT_TAG, limit_hint);
+    writer.addVarUInt(LIMIT_HINT_TAG, limit_hint);
 
     /// Selects `DistinctSortedStreamTransform`, which is only correct for an input sorted this way,
     /// and it is what `getSortDescription` reports to the optimizer.
-    extras.addSortDescription(DISTINCT_SORT_DESC_TAG, distinct_sort_desc);
+    writer.addSortDescription(DISTINCT_SORT_DESC_TAG, distinct_sort_desc);
 
     /// Lets the final DISTINCT skip the resize to a single stream - an assumption that the streams
     /// are already disjoint, so setting it changes which rows survive.
-    extras.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
+    writer.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
 }
 
 namespace

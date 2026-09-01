@@ -186,7 +186,7 @@ void LimitByStep::serialize(Serialization & ctx) const
 
 namespace
 {
-/// Cascades identity extras tags for `LimitByStep`. Unique within the step; never reused.
+/// Full digest tags for `LimitByStep`. Unique within the step; never reused.
 enum LimitByStepIdentityTag : UInt64
 {
     SORTED_COLUMNS_DESCR_TAG = 1,
@@ -194,12 +194,16 @@ enum LimitByStepIdentityTag : UInt64
 };
 }
 
-void LimitByStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
+void LimitByStep::writeFullDigest(StepDigestWriter & writer) const
 {
+    /// Unguarded: no DAG and no plan settings at all, so neither wire method can throw for any
+    /// instance (`isSerializable()` is unconditionally true).
+    writer.addStepWireEncoding(*this);
+
     /// Both decide whether `transformPipeline` may run one transform per stream instead of resizing
     /// to a single stream, and which of the two LIMIT BY transforms it instantiates.
-    extras.addSortDescription(SORTED_COLUMNS_DESCR_TAG, sorted_columns_descr);
-    extras.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
+    writer.addSortDescription(SORTED_COLUMNS_DESCR_TAG, sorted_columns_descr);
+    writer.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
 }
 
 namespace

@@ -23,8 +23,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    bool supportsCascadesIdentity() const override { return isSerializable(); }
-    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
+    void writeFullDigest(StepDigestWriter & writer) const override;
 
     /// `skip_stream_merging` asserts the input streams already hold disjoint `LIMIT BY` groups - a
     /// property of the input layout the memo does not model yet, so such an instance stays out of

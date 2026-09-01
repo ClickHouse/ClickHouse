@@ -42,8 +42,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    bool supportsCascadesIdentity() const override { return isSerializable(); }
-    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
+    void writeFullDigest(StepDigestWriter & writer) const override;
 
     /// No DAG and no wire guard to fail on, so every instance participates.
     bool hasLogicalDigest() const override { return true; }

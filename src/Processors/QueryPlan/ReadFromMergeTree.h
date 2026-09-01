@@ -531,10 +531,12 @@ public:
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
-    bool supportsCascadesIdentity() const override;
-    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
+    void writeFullDigest(StepDigestWriter & writer) const override;
 
 private:
+    /// Whether this instance's read state can be written as canonical content; see the definition.
+    bool canWriteContentDigest() const;
+
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 

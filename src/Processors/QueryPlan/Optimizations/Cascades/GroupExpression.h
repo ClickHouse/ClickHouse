@@ -59,27 +59,25 @@ public:
 
     void dump(WriteBuffer & out, const CostConfig & cost_config) const;
     String dump(const CostConfig & cost_config) const;
-    size_t fingerprint() const;
 
-    /// Structural identity used to deduplicate physical expressions. Compares the same
-    /// components the fingerprint hashes, so a fingerprint hash collision does not
-    /// silently drop a distinct alternative.
-    bool structurallyEqualTo(const GroupExpression & other) const;
-
-    /// Content-based fingerprint of `plan_step`, or nullptr when the step type has not opted in.
+    /// Content-based fingerprint of `plan_step`, or nullptr only for a stepless expression: the full
+    /// digest is total, every step has one.
     /// Recomputed when the cached entry was inherited from a copy whose step was then replaced.
     const StepFingerprint * cachedStepFingerprint() const;
 
-    /// Cross-group identity, for deduplication across the whole memo. Stronger than the
-    /// within-group `fingerprint` / `structurallyEqualTo` pair: it compares step content instead
-    /// of step name and the step's display description. Fails closed - a step type that has not
-    /// opted in compares by pointer, and every GroupExpression-side field that can change what
-    /// the expression means is compared, including `enforced_property` and `description_suffix`.
+    /// Are the two expressions interchangeable? Total, and the duplicate filter both inside a group
+    /// (`Group::addLogicalExpression` / `addPhysicalExpression`) and across the whole memo. Compares
+    /// step content through the full digest, and every GroupExpression-side field that can change
+    /// what the expression means, including `enforced_property` and `description_suffix`. Fails
+    /// closed per step instance: a step type with no content digest, and an instance whose content
+    /// digest is guarded off, digest to a whole-object witness and so compare equal only to
+    /// themselves - which the pointer fast path already answers.
     size_t fullFingerprint() const;
     bool fullyEqualTo(const GroupExpression & other) const;
 
     /// Content-based fingerprint of the step's logical digest, or nullptr when the step instance has
-    /// no logical digest. Cached and invalidated exactly like `cachedStepFingerprint`.
+    /// no logical digest (that digest stays opt-in). Cached and invalidated exactly like
+    /// `cachedStepFingerprint`.
     const StepFingerprint * cachedStepLogicalFingerprint() const;
 
     /// Group identity: do the two expressions compute the same relation? The frame is own

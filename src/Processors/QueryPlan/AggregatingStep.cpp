@@ -1280,52 +1280,66 @@ String encodeTopKParams(const Aggregator::Params::TopKParams & top_k)
 }
 }
 
-void AggregatingStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
+void AggregatingStep::writeFullDigest(StepDigestWriter & writer) const
 {
+    /// The field audit behind this content digest covers only the shapes `isSerializable()` admits:
+    /// the aggregation-in-order state (`sort_description_for_merging`,
+    /// `explicit_sorting_required_for_aggregation_in_order`, and the meaning `group_by_sort_description`
+    /// takes on beside them) was left out of it, so such an instance keeps pointer identity instead of
+    /// a digest that would ignore those fields. Not a throw guard: at the digest's serialization
+    /// version `serialize` does encode them.
+    if (!isSerializable())
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
+
+    writer.addStepWireEncoding(*this);
+
     /// Not on the wire (`deserialize` passes 0 and `updateThreadsValues` re-derives both from session
     /// settings): the parallelism of the merge stage of the physical plan.
-    extras.addVarUInt(MERGE_THREADS_TAG, merge_threads);
-    extras.addVarUInt(TEMPORARY_DATA_MERGE_THREADS_TAG, temporary_data_merge_threads);
+    writer.addVarUInt(MERGE_THREADS_TAG, merge_threads);
+    writer.addVarUInt(TEMPORARY_DATA_MERGE_THREADS_TAG, temporary_data_merge_threads);
 
     /// Finalize each stream on its own instead of merging them - only correct for disjoint streams.
-    extras.addBool(SKIP_MERGING_TAG, skip_merging);
+    writer.addBool(SKIP_MERGING_TAG, skip_merging);
 
     /// Suppresses the `resize` before the aggregation.
-    extras.addBool(STORAGE_HAS_EVENLY_DISTRIBUTED_READ_TAG, storage_has_evenly_distributed_read);
+    writer.addBool(STORAGE_HAS_EVENLY_DISTRIBUTED_READ_TAG, storage_has_evenly_distributed_read);
 
     /// Written by `serialize` only together with a non-empty `sort_description_for_merging`, which
     /// `isSerializable` excludes; a free field otherwise.
-    extras.addSortDescription(GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
+    writer.addSortDescription(GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
 
     /// Selects the shard-by-hash aggregation pipeline (`canUseShardedAggregation`).
-    extras.addBool(ENABLE_SHARDING_AGGREGATOR_TAG, enable_sharding_aggregator);
+    writer.addBool(ENABLE_SHARDING_AGGREGATOR_TAG, enable_sharding_aggregator);
 
     /// Truncates the aggregation result where it is read; a free field, set by
     /// `optimizeLimitForAggregationInOrder`.
-    extras.addVarUInt(LIMIT_HINT_TAG, limit_hint);
+    writer.addVarUInt(LIMIT_HINT_TAG, limit_hint);
 
     /// `deserialize` passes 0; `transformPipeline` resizes to it and derives the shard count from it.
-    extras.addVarUInt(PARAMS_MAX_THREADS_TAG, params.max_threads);
+    writer.addVarUInt(PARAMS_MAX_THREADS_TAG, params.max_threads);
 
     /// `serializeSettings` writes only the step's own `max_block_size`; nothing keeps the two in sync,
     /// and this one splits the aggregation result into chunks.
-    extras.addVarUInt(PARAMS_MAX_BLOCK_SIZE_TAG, params.max_block_size);
+    writer.addVarUInt(PARAMS_MAX_BLOCK_SIZE_TAG, params.max_block_size);
 
     /// Set by `requestOnlyMergeForAggregateProjection`; changes the step's header and the `Aggregator`
     /// path that runs.
-    extras.addBool(PARAMS_ONLY_MERGE_TAG, params.only_merge);
+    writer.addBool(PARAMS_ONLY_MERGE_TAG, params.only_merge);
 
     /// `Aggregator::convertOneBucketToChunk` reads these on `final` (already on the wire), so two
     /// aggregations differing only here produce different row counts.
-    extras.addVarUInt(BUCKET_TOP_K_TAG, params.bucket_top_k);
-    extras.addBool(BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
-    extras.addVarUInt(BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+    writer.addVarUInt(BUCKET_TOP_K_TAG, params.bucket_top_k);
+    writer.addBool(BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    writer.addVarUInt(BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
 
     /// The GROUP BY top-K heap keeps only `k` groups, so it changes the result.
     if (params.top_k)
-        extras.addString(PARAMS_TOP_K_TAG, encodeTopKParams(*params.top_k));
+        writer.addString(PARAMS_TOP_K_TAG, encodeTopKParams(*params.top_k));
     else
-        extras.addAbsent(PARAMS_TOP_K_TAG);
+        writer.addAbsent(PARAMS_TOP_K_TAG);
 }
 
 String encodeAggregateDescriptionsForDigest(const AggregateDescriptions & aggregates)

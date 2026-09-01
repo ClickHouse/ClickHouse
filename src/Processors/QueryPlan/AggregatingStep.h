@@ -132,8 +132,7 @@ public:
         return sort_description_for_merging.empty() && !explicit_sorting_required_for_aggregation_in_order;
     }
 
-    bool supportsCascadesIdentity() const override { return isSerializable(); }
-    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
+    void writeFullDigest(StepDigestWriter & writer) const override;
 
     /// Two instance opt-outs. `skip_merging` finalizes each stream on its own, which is correct only
     /// when the input streams carry disjoint key sets - a property of the input layout that the memo

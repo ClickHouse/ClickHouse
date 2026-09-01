@@ -59,8 +59,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    bool supportsCascadesIdentity() const override { return isSerializable() && !hasCorrelatedExpressions(); }
-    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
+    void writeFullDigest(StepDigestWriter & writer) const override;
 
     /// The logical digest writes the DAG, so the correlated-`PLACEHOLDER` guard stays.
     bool hasLogicalDigest() const override { return !hasCorrelatedExpressions(); }

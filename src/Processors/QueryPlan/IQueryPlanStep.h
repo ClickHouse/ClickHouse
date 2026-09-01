@@ -85,14 +85,16 @@ public:
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
 
-    /// Cascades cross-group identity: a step type opts in only after a complete field audit
-    /// (see Processors/QueryPlan/StepIdentity.h). Default is fail-closed: pointer identity.
-    /// MUST return false whenever `isSerializable()` is false, or whenever `serialize` would
-    /// throw for this concrete instance - the full digest calls `serialize` directly.
-    virtual bool supportsCascadesIdentity() const { return false; }
-    /// Appends the audited non-wire fields that constrain execution. Called only when
-    /// `supportsCascadesIdentity()`; must append the same tags in the same order every time.
-    virtual void appendCascadesIdentityExtras(StepDigestWriter & /*extras*/) const {}
+    /// Full digest: the step's whole content, a total obligation of every step type. The default
+    /// writes one whole-object witness of `this` - pointer identity expressed inside the digest
+    /// mechanism, O(1) and never throwing, so two distinct instances are never judged equal without
+    /// a field audit. An override writes canonical content after a complete field audit: the wire
+    /// encoding (`StepDigestWriter::addStepWireEncoding`, guarded per instance, since it can throw)
+    /// plus the audited non-wire fields, falling back to the whole-object witness on an instance the
+    /// guard rejects. Overrides are monotone: witness -> content only ever adds merges.
+    /// Must write the same tags in the same order every call.
+    /// See Processors/QueryPlan/StepIdentity.h.
+    virtual void writeFullDigest(StepDigestWriter & writer) const;
 
     /// Logical digest: the relation-defining fields only (same rows, same header, given the same
     /// inputs). Keys future memo-wide group deduplication, so it is opt-in per audited step type

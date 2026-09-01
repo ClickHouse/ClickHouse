@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 
+#include <limits>
 #include <string_view>
 
 namespace DB
@@ -32,6 +33,12 @@ struct SerializedSetsRegistry;
 class StepDigestWriter
 {
 public:
+    /// Reserved tags, so that a witness digest can never collide with a content digest: every
+    /// component of every digest is framed by a tag, a step's own tags are small per-step-type
+    /// constants, and these two are out of that range. A step must not use them.
+    static constexpr UInt64 WHOLE_OBJECT_WITNESS_TAG = std::numeric_limits<UInt64>::max();
+    static constexpr UInt64 STEP_WIRE_ENCODING_TAG = std::numeric_limits<UInt64>::max() - 1;
+
     StepDigestWriter(WriteBuffer & out_, SerializedSetsRegistry & registry_);
 
     void addBool(UInt64 tag, bool value);
@@ -43,6 +50,23 @@ public:
     void addDAG(UInt64 tag, const ActionsDAG * dag);
     void addAbsent(UInt64 tag);
 
+    /// Provenance witness: the address of an object the step owns stands in for content that has no
+    /// canonical encoding. Equal address means literally the same object, hence equal content; a
+    /// different address costs a merge and never produces a wrong one. See "Provenance witnesses" in
+    /// Optimizations/Cascades/ARCHITECTURE.md. nullptr writes the absent marker.
+    void addWitness(UInt64 tag, const void * ptr);
+
+    /// The whole-object witness of the `IQueryPlanStep::writeFullDigest` default: pointer identity
+    /// expressed inside the digest mechanism, for a step type that has no content digest yet and for
+    /// an instance whose content digest is guarded off.
+    void addWholeObjectWitness(const void * object);
+
+    /// The step's wire encoding - changed serialization settings plus `serialize` bytes - as one
+    /// framed component. Only a content `writeFullDigest` override calls it, and only on an instance
+    /// it has established neither method throws for: this is the one place in the digest that can
+    /// throw, which is why the guards live at the call site.
+    void addStepWireEncoding(const IQueryPlanStep & step);
+
 private:
     void addPayload(UInt64 tag, std::string_view payload);
 
@@ -50,13 +74,16 @@ private:
     SerializedSetsRegistry & registry;
 };
 
-/// Canonical full digest: serialization name, output header, changed serialization settings,
-/// wire `serialize` bytes, then the framed extras. The step description is deliberately excluded:
-/// it is display-only. Caller guarantees `step.supportsCascadesIdentity()`.
+/// Canonical full digest: the shared preamble (serialization name, output header), then everything
+/// the step writes through `writeFullDigest` - for a content step its wire encoding plus its framed
+/// extras, for every other step one whole-object witness. The step description is deliberately
+/// excluded: it is display-only. Total: defined for every step, and it never throws, because the
+/// only throwing component (the wire encoding) is written only by a step that has established its
+/// own instance encodes.
 /// Both the full fingerprint and the byte-exact full comparison in
 /// Optimizations/Cascades/StepIdentity.h go through it so they cannot diverge.
-/// How to opt a step in, or classify a new field: Optimizations/Cascades/ARCHITECTURE.md,
-/// "Step digests and cross-group identity".
+/// How to give a step a content digest, or classify a new field:
+/// Optimizations/Cascades/ARCHITECTURE.md, "Step digests and cross-group identity".
 void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out);
 
 /// Canonical logical digest: the same preamble (serialization name, output header), then the
