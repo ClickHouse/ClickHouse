@@ -795,7 +795,9 @@ arrow::Status ArrowFlightServer::GetSchema(
         const bool is_poll_descriptor = request.type == arrow::flight::FlightDescriptor::CMD && hasPollDescriptorPrefix(request.cmd);
 
         if (!is_poll_descriptor)
+        {
             ARROW_ASSIGN_OR_RAISE(schema, getCachedPreparedStatementSchema(request, *calls_data, auth.getUsername()))
+        }
 
         if (is_poll_descriptor)
         {
