@@ -51,6 +51,10 @@ struct BackupSettings
     /// acknowledged backup survives power loss. Applies to `File` destinations and to `Disk`
     /// destinations whose disk stores plain local files; object-storage destinations are already
     /// durable once uploaded.
+    /// For `BACKUP ON CLUSTER` the guarantee only holds for a cluster whose hosts all know this
+    /// setting: a value left at the default is not forwarded to the other hosts, so a host running
+    /// a version that predates the setting writes its share on the pre-fsync path. Naming the
+    /// setting in the query forwards it, which makes such a host refuse the backup instead.
     bool fsync_backup_files = true;
 
     /// Whether `fsync_backup_files` was named in the query's SETTINGS clause. A value equal to the
