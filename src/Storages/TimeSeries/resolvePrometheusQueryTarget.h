@@ -35,6 +35,6 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
 
 /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
 /// generated cluster() call's own declaration so ClusterProxy applies its usual precedence.
-std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage, const ContextPtr & context);
+std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage);
 
 }

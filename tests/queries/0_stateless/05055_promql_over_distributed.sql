@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-flaky-check
+-- Tags: no-parallel, no-fasttest, no-flaky-check, shard
 -- no-parallel: uses the global shard_0 / shard_1 databases of test_cluster_two_shards_different_databases.
 -- no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
@@ -101,6 +101,18 @@ DROP TABLE ts_skip_on;
 CREATE TABLE ts_mode_only AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards_mode = 'unavailable';
 SELECT count() > 0 FROM prometheusQuery(ts_mode_only, 'm', 140);
 DROP TABLE ts_mode_only;
+
+-- Only a shard that is really down tells a declared value apart from the default: with skipping
+-- declared the live shard answers alone, and a query-level 0 still turns that back into an error.
+SET send_logs_level = 'fatal';
+CREATE TABLE ts_dead AS ts_all ENGINE = Distributed(test_unavailable_shard, currentDatabase(), ts_all);
+CREATE TABLE ts_dead_skip AS ts_all ENGINE = Distributed(test_unavailable_shard, currentDatabase(), ts_all) SETTINGS skip_unavailable_shards = 1;
+SELECT count() FROM prometheusQuery(ts_dead, 'm', 140); -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT count() FROM prometheusQuery(ts_dead_skip, 'm', 140);
+SELECT count() FROM prometheusQuery(ts_dead, 'm', 140) SETTINGS skip_unavailable_shards = 1;
+SELECT count() FROM prometheusQuery(ts_dead_skip, 'm', 140) SETTINGS skip_unavailable_shards = 0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+DROP TABLE ts_dead_skip;
+DROP TABLE ts_dead;
 
 SELECT '--- row policies and additional_table_filters: distributed answers as the local table does ---';
 -- PromQL reads a TimeSeries table through its selector, which does not apply a row policy or an

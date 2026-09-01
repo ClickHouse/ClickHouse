@@ -13,7 +13,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/IStorage.h>
@@ -180,14 +179,11 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
     validated_shard_engines.insert(key);
 }
 
-std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage, const ContextPtr & context)
+std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage)
 {
     /// Handed to the generated cluster() call as its own declaration, so ClusterProxy applies the
     /// query-overrides-declaration rule itself rather than this file restating it.
-    DistributedSettings declared;
-    const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-    if (const auto & settings_changes = metadata->settings_changes)
-        declared.applyChanges(settings_changes->as<const ASTSetQuery &>().changes);
+    const auto & declared = typeid_cast<const StorageDistributed &>(storage).getDistributedSettingsRef();
     return {declared[DistributedSetting::skip_unavailable_shards].value,
             declared[DistributedSetting::skip_unavailable_shards_mode].toString()};
 }
