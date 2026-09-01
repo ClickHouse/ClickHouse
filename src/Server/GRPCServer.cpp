@@ -410,16 +410,24 @@ namespace
             /// so the callback owns itself (deletes itself upon invocation) and reaches the query
             /// status through the shared `cancellation_state`, which outlives both the call and the
             /// callback. `grpc_context` is dereferenced only while `query_finished == false`, which
-            /// guarantees the call (and hence the responder) is still alive: `close()` marks the
-            /// query as finished under the same mutex before it resets the responder, so it blocks
-            /// here until the callback is done. This is the only gRPC event that fires when a
-            /// client drops a mid-query RPC without sending an explicit `QueryInfo.cancel`.
+            /// guarantees the call (and hence the responder) is still alive: `close()` sets
+            /// `query_finished` under the same mutex before it resets the responder, so a tag that
+            /// runs after `close()` observes `query_finished == true` under that mutex and skips the
+            /// `IsCancelled()` deref of the already-destroyed responder. This is the only gRPC event
+            /// that fires when a client drops a mid-query RPC without sending an explicit `QueryInfo.cancel`.
             CompletionCallback * done_callback = new CompletionCallback;
             *done_callback = [state = cancellation_state, &context = grpc_context, done_callback](bool)
             {
+                bool recorded_transport_cancel = false;
                 {
                     std::lock_guard lock{state->mutex};
-                    if (context.IsCancelled())
+                    /// The responder may already be destroyed by the time this tag runs: `close()`
+                    /// sets `query_finished` under this same mutex before it resets the responder, so
+                    /// guarding the `grpc_context` deref with `!query_finished` makes a late tag skip
+                    /// the cancel entirely instead of touching the destroyed object. A tag that runs
+                    /// ahead of `close()` holds the mutex here while deref'ing the still-alive responder,
+                    /// so `close()` blocks until the deref is done.
+                    if (!state->query_finished && context.IsCancelled())
                     {
                         /// The client aborted the RPC at the transport level. Remember this even when the
                         /// query status has not been published yet, so that `executeQuery()` can replay
@@ -427,13 +435,19 @@ namespace
                         /// while the query is still being built would be lost and the query would keep
                         /// running against a dead client.
                         state->transport_cancelled = true;
-                        if (!state->query_finished && state->query_status)
+                        recorded_transport_cancel = true;
+                        if (state->query_status)
                             state->query_status->cancelQuery(
                                 CancelReason::CANCELLED_BY_USER,
                                 std::make_exception_ptr(
                                     Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
                     }
                 }
+                /// Pause outside the mutex (after recording the transport abort) so an integration test can
+                /// deterministically observe that a client abort reached the queue thread before it releases
+                /// the status-publication point (`grpc_call_execute_query_pause`) and before `close()`.
+                if (recorded_transport_cancel)
+                    FailPointInjection::pauseFailPoint("grpc_call_notify_done_pause");
                 delete done_callback;
             };
             grpc_context.AsyncNotifyWhenDone(done_callback);
@@ -1166,6 +1180,28 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
+
+        /// Inner executors that run during `::DB::executeQuery` (prepared-set building in
+        /// `PreparedSets`, scalar-subquery execution) cannot see the call thread's
+        /// `isQueryCancelled()` poll — they only poll the query context's interactive cancel
+        /// callback, which GRPCServer never installs otherwise. Install one that surfaces both the
+        /// explicit `QueryInfo.cancel` and a transport-level abort (recorded in
+        /// `RpcCancelState::transport_cancelled` by the `AsyncNotifyWhenDone` callback), so a cancel
+        /// received while the query is still being built reaches those executors instead of only
+        /// being replayed at status publication. `CompletedPipelineExecutor` and `PreparedSets`
+        /// respond to a `true` return by cancelling the executor, which aborts the set- or
+        /// subquery-build loop at its next poll.
+        query_context->setInteractiveCancelCallback(
+            [state = cancellation_state, this]()
+            {
+                if (want_to_cancel)
+                    return true;
+                {
+                    std::lock_guard lock{state->mutex};
+                    return state->transport_cancelled;
+                }
+            });
+
         io = ::DB::executeQuery(query, query_context).second;
 
         /// Publish the query status so the queue-thread cancel callback can record a cancel without

@@ -365,6 +365,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(pipeline_executor_soft_timeout_fired) \
     PAUSEABLE_ONCE(cancellation_checker_cancel_pause) \
     PAUSEABLE_ONCE(grpc_call_execute_query_pause) \
+    PAUSEABLE_ONCE(grpc_call_notify_done_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
     PAUSEABLE_ONCE(limit_by_transform_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \

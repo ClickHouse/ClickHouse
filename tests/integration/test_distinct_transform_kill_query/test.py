@@ -1131,6 +1131,17 @@ def test_lc_null_keys_break_then_client_cancel(started_cluster):
         ## is that the query is cancelled (the downstream transform must not keep running as a soft timeout).
         os.kill(req.process.pid, signal.SIGINT)
 
+        ## Release the paused scan. Note the deliberate (and only possible) discriminator for the TCP path:
+        ## with `interactive_delay = 0` the call thread is blocked in the executor pull while the scan is
+        ## paused, so the `Cancel` packet is read by `receivePacketsExpectCancel` only *after* the resumed
+        ## pre-latched scan runs the 8192-row chunk to the end (the LC failpoint fires at row 4096, the resumed
+        ## scan covers rows [4096, 8192) and crosses no further boundary). The recorded cancel therefore cannot
+        ## precede the resume, so a re-armed-failpoint-must-never-pause probe would fire in both the fixed and
+        ## the regressed case and prove nothing. That probe is applied where the recording IS independent of the
+        ## pull loop: `KILL QUERY` here in `test_lc_null_keys_break_then_kill` (server-side recording) and the
+        ## gRPC tests (queue-thread recording). For the TCP `Cancel` the `cancel_reason = CANCELLED_BY_USER`
+        ## query-log assertion below is the discriminator: without `TCPHandler::processCancel` propagating it
+        ## the query would be silently downgraded to a soft timeout and keep running.
         node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
         node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
     finally:
@@ -1253,6 +1264,12 @@ def test_lc_null_keys_break_then_client_disconnect(started_cluster):
         ## server-side `cancel_reason` in `system.query_log` is the discriminator.
         os.kill(req.process.pid, signal.SIGKILL)
 
+        ## Same read-thread serialization as the `Cancel` test above: with `interactive_delay = 0` the
+        ## EOF is only observed by `receivePacketsExpectCancel` after the resumed pre-latched scan runs the
+        ## chunk to the end (the LC failpoint at row 4096 is the only boundary the scan crosses, rows
+        ## [4096, 8192) have none), so the recording cannot precede the resume and a re-armed "must not
+        ## pause again" probe would fire in both the fixed and regressed cases. The query-log
+        ## `cancel_reason = CANCELLED_BY_USER` assertion is the discriminator.
         node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
         node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
     finally:
