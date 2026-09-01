@@ -128,8 +128,7 @@ public:
 
     DownloaderId getDownloader() const;
 
-    /// Wait for the change of state from DOWNLOADING to any other.
-    State wait(size_t offset);
+    State wait(size_t offset, size_t timeout_ms = 60000);
 
     bool isDownloaded() const;
 

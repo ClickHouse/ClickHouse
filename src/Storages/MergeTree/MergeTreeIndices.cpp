@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 bool indexFileExistsInChecksums(
@@ -50,6 +51,14 @@ String getIndexFileName(const String & index_name, bool escape_filename)
 {
     if (escape_filename)
         return escapeForFileName(String(SKIP_INDEX_FILE_PREFIX) + index_name);
+
+    /// Here the name becomes a part of the file name as is, so a '/' in it would turn into a path
+    /// separator. `getIndexFromAST` rejects such names, but `escape_index_filenames` can also be
+    /// switched off by `ALTER TABLE ... MODIFY SETTING` after the index was created.
+    if (index_name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Skip index name ({}) cannot contain '/' with `escape_index_filenames` disabled", index_name);
+
     return String(SKIP_INDEX_FILE_PREFIX) + index_name;
 }
 
