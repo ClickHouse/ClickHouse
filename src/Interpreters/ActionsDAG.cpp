@@ -350,9 +350,24 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) 
 
 UInt64 ActionsDAG::getOutputIdentity(const std::string & name) const
 {
+    const auto * node = tryFindInOutputs(name);
+    /// Every caller names an output of its own DAG - a filter column, an array-joined column - so a
+    /// miss is a broken invariant, not a shape to support.
+    chassert(node, fmt::format("No output named {} in the DAG", name));
+
     SipHash hash;
-    if (const auto * node = tryFindInOutputs(name))
+    if (node)
+    {
         node->updateHash(hash, /*build_independent=*/true);
+    }
+    else
+    {
+        /// Do not return the hash of an empty state: it is one value shared by every DAG that misses,
+        /// so unrelated plans would collapse onto a single cache key and be served each other's
+        /// statistics. Mixing in a marker and the (normalized) name keeps a miss distinguishable.
+        hash.update("<no such output>");
+        hash.update(normalizeGeneratedTableQualifiers(name));
+    }
     return hash.get64();
 }
 
