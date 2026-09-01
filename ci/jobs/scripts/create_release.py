@@ -237,7 +237,12 @@ class ReleaseInfo:
         return self
 
     def prepare(
-        self, commit_ref: str, release_type: str, dry_run: bool = False
+        self,
+        commit_ref: str,
+        release_type: str,
+        dry_run: bool = False,
+        skip_repo: bool = False,
+        skip_docker: bool = False,
     ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
@@ -352,6 +357,12 @@ class ReleaseInfo:
                     f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
                     f"superseded release, or there is a bug in the release/versioning logic"
                 )
+        # skip-repo/skip-docker only re-publish an existing release, so reject them against a ref that resolves to a new (untagged) release.
+        assert self.is_tag_pushed or not (skip_repo or skip_docker), (
+            "skip-repo/skip-docker re-publish an existing release and must be "
+            "run against its release tag (recovery); the given ref resolves to "
+            "a new release. Pass the release tag as the ref."
+        )
         self.release_type = release_type
         return self
 
@@ -861,6 +872,16 @@ def parse_args() -> argparse.Namespace:
         help="Initial step to prepare info like release branch, release tag, etc.",
     )
     parser.add_argument(
+        "--skip-repo",
+        action="store_true",
+        help="Recovery run that only re-exports repo packages for an already-created release",
+    )
+    parser.add_argument(
+        "--skip-docker",
+        action="store_true",
+        help="Recovery run that only rebuilds docker images for an already-created release",
+    )
+    parser.add_argument(
         "--download-packages",
         action="store_true",
         help="Downloads all required packages from s3",
@@ -913,6 +934,8 @@ if __name__ == "__main__":
                 commit_ref=args.ref,
                 release_type=args.release_type,
                 dry_run=args.dry_run,
+                skip_repo=args.skip_repo,
+                skip_docker=args.skip_docker,
             )
 
     if args.download_packages:

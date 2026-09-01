@@ -323,6 +323,8 @@ def main():
         command=[
             f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
             f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
+            f"{' --skip-repo' if args.skip_repo else ''}"
+            f"{' --skip-docker' if args.skip_docker else ''}"
             f" {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
@@ -332,22 +334,6 @@ def main():
     # they read (release_tag, is_tag_pushed, latest, is_bump_landed) are written by
     # prepare and stable for the rest of the run, so a single read is enough.
     release_info = ReleaseInfo.from_file() if ok else None
-
-    def _validate_recovery_ref():
-        # Fail fast, before Download Artifacts: skip-repo/skip-docker only
-        # re-publish an existing release, so reject them against a ref that
-        # resolves to a new (untagged) release.
-        assert release_info.is_tag_pushed or not (args.skip_repo or args.skip_docker), (
-            "skip-repo/skip-docker re-publish an existing release and must be "
-            "run against its release tag (recovery); the given ref resolves to "
-            "a new release. Pass the release tag as the ref."
-        )
-
-    step(
-        name="Validate Recovery Ref",
-        command=_validate_recovery_ref,
-        workdir=REPO_PATH,
-    )
 
     def _push_git_tag_for_release():
         with ReleaseContextManager(
@@ -400,23 +386,32 @@ def main():
 
     # patch pushes its changelog to master; detect whether it is already there so a rerun is idempotent. The "new" bump self-checks the master version instead.
     changelog_absent = False
-    if ok and args.release_type == "patch":
+
+    def _detect_changelog_absent():
+        nonlocal changelog_absent
         if args.dry_run:
             changelog_absent = not release_info.is_tag_pushed
-        else:
-            changelog_path = f"docs/changelogs/{release_info.release_tag}.md"
-            on_master = bool(
-                Shell.get_output(
-                    f"git ls-tree --name-only origin/master -- {shlex.quote(changelog_path)}"
-                ).strip()
-            )
-            changelog_absent = not on_master
-            print(
-                f"ChangeLog [{changelog_path}] on master: "
-                + ("yes — skipping" if on_master else "no — will push")
-            )
+            return
+        changelog_path = f"docs/changelogs/{release_info.release_tag}.md"
+        on_master = bool(
+            Shell.get_output(
+                f"git ls-tree --name-only origin/master -- {shlex.quote(changelog_path)}"
+            ).strip()
+        )
+        changelog_absent = not on_master
+        print(
+            f"ChangeLog [{changelog_path}] on master: "
+            + ("yes — skipping" if on_master else "no — will push")
+        )
 
-    if ok and args.release_type == "patch" and changelog_absent:
+    if args.release_type == "patch":
+        step(
+            name="Detect Changelog On Master",
+            command=_detect_changelog_absent,
+            workdir=REPO_PATH,
+        )
+
+    if args.release_type == "patch" and changelog_absent:
         uid = os.getuid()
         gid = os.getgid()
         step(
@@ -450,7 +445,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and not args.dry_run and changelog_absent:
+    if args.release_type == "patch" and not args.dry_run and changelog_absent:
 
         def push_changelog_to_master():
             commit_msg = f"Update version_date.tsv and changelogs after {release_info.release_tag}"
