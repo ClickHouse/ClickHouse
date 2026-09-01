@@ -90,9 +90,7 @@ LAYOUTS = [
 ]
 
 DICTIONARIES = []
-REGR_DICTIONARIES = []
-REGR_KEY_FIELD = Field("KeyField", "String", is_key=True, default_value_for_get="missing")
-REGR_LAYOUTS = [Layout("complex_key_cache")]
+
 
 def get_dict(source, layout, fields, suffix_name, dict_configs_path):
     structure = DictionaryStructure(layout, fields)
@@ -107,7 +105,6 @@ def get_dict(source, layout, fields, suffix_name, dict_configs_path):
 
 def generate_dict_configs():
     global DICTIONARIES
-    global REGR_DICTIONARIES
     global cluster
     dict_configs_path = os.path.join(SCRIPT_DIR, "configs/dictionaries")
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
@@ -116,8 +113,7 @@ def generate_dict_configs():
 
     if os.path.exists(dict_configs_path):
         shutil.rmtree(dict_configs_path)
-
-    os.makedirs(dict_configs_path, exist_ok=True)
+    os.mkdir(dict_configs_path)
 
     def make_source(name, db_index, storage_type):
         return SourceRedis(
@@ -155,6 +151,7 @@ def generate_dict_configs():
         "node", main_configs=main_configs, dictionaries=dictionaries, with_redis=True
     )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
@@ -163,12 +160,6 @@ def started_cluster():
         cluster.start()
         assert len(FIELDS) == len(VALUES)
         for dicts in DICTIONARIES:
-            for dictionary in dicts:
-                logging.debug(f"Preparing {dictionary.name}")
-                dictionary.prepare_source(cluster)
-                logging.debug(f"Prepared {dictionary.name}")
-
-        for dicts in REGR_DICTIONARIES:
             for dictionary in dicts:
                 logging.debug(f"Preparing {dictionary.name}")
                 dictionary.prepare_source(cluster)
@@ -222,6 +213,7 @@ def test_redis_dictionaries(started_cluster, id):
         for query, answer in queries_with_answers:
             assert node.query(query) == str(answer) + "\n"
 
+    # Checks that dictionaries can be reloaded.
     node.query("system reload dictionaries")
 
 
@@ -269,6 +261,51 @@ def test_redis_storage_type_key_constraints(started_cluster):
     )
     assert node.query("SELECT dictGet('test_redis_negative_key', 'value', tuple(toInt64(-1)))") == "v1\n"
     node.query("DROP DICTIONARY IF EXISTS test_redis_negative_key")
+
+    # an unsigned key above 2^63 must be serialized through `getUInt` and not `getInt`.
+    # reading a UInt64 column with `getInt` reinterprets the value as a negative Int64
+    # and sends the wrong Redis key, which reports a present key as missing.
+    redis_client.set("13824756489203974851", "v1")
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_large_uint_key")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_large_uint_key (key UInt64, value String)
+        PRIMARY KEY key
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
+        LIFETIME(MIN 1 MAX 1)
+        """
+    )
+    assert (
+        node.query(
+            "SELECT dictGet('test_redis_large_uint_key', 'value', tuple(toUInt64(13824756489203974851)))"
+        )
+        == "v1\n"
+    )
+    node.query("DROP DICTIONARY IF EXISTS test_redis_large_uint_key")
+
+    # the same signed-key serialization is used for the nested 'hash_map' path, which
+    # builds one array per row for HMGET rather than a flat key list for MGET.
+    redis_client.hset("-1", "field1", "v1")
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_negative_key")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_hash_negative_key (key1 Int64, key2 String, value String)
+        PRIMARY KEY key1, key2
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'hash_map'))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
+        LIFETIME(MIN 1 MAX 1)
+        """
+    )
+    assert (
+        node.query(
+            "SELECT dictGet('test_redis_hash_negative_key', 'value', tuple(toInt64(-1), 'field1'))"
+        )
+        == "v1\n"
+    )
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_negative_key")
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_simple_composite")
     node.query(
