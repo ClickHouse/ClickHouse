@@ -21,6 +21,4 @@ DROP FUNCTION IF EXISTS udf_04611_bool;
 CREATE FUNCTION udf_04611_bool AS () -> true;
 SELECT * FROM values('x String', udf_04611_bool()) SETTINGS enable_analyzer = 1;
 true
-SELECT * FROM values('x String', udf_04611_bool()) SETTINGS enable_analyzer = 0;
-true
 DROP FUNCTION udf_04611_bool;

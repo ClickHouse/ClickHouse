@@ -2,7 +2,6 @@
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -129,6 +128,8 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
+
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
     static ColumnsDescription resolveSchemaFromData(
@@ -156,7 +157,7 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
+    std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 

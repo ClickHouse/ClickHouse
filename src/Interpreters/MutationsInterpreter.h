@@ -28,6 +28,10 @@ struct IsStorageTouched
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
+/// Returns whether the analyzer should be used for mutations.
+/// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
+bool shouldUseAnalyzerForMutations(const ContextPtr & context);
+
 /// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
@@ -78,6 +82,9 @@ public:
         bool apply_deleted_mask = true;
         /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
         bool recalculate_dependencies_of_updated_columns = true;
+        /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
+        /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
+        bool apply_on_fly_for_read = false;
         /// Number of threads for resulting pipeline.
         size_t max_threads = 1;
     };
