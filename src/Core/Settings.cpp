@@ -2270,7 +2270,7 @@ each step, and per-step rows, bytes, time and parallelism.
 Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured
 are unaffected.
 
-The setting has no effect when there is no `system.query_plan_log` table to write to, which is the case in `clickhouse-local` and on servers whose configuration removes the `<query_plan_log>` section. Nothing is captured then, and the query pays none of the cost above.
+The setting has no effect when there is no `system.query_plan_log` table to write to. Nothing is captured then, and the query pays none of the cost above.
 
 It also causes step descriptions produced by plan optimizations (for example merged expressions) to be retained rather than discarded, which makes them visible in `system.processors_profile_log.plan_step_description` as well.
 
