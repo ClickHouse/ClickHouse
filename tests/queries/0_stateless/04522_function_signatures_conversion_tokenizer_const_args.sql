@@ -54,3 +54,14 @@ SELECT toTypeName(toTime64(0, 3));
 SELECT isDecimalOverflow(toDecimal32(1, 2), 9);
 SELECT length(arrayShuffle([1, 2, 3], 1234));
 SELECT splitByChar(',', 'a,b,c');
+
+-- A zero scale does not collapse the result of the DateTime64 / Time64 converters to
+-- DateTime / Time: only `toDateTime`, `toTime` and the `parseDateTimeBestEffort*` family
+-- (whose target type is DateTime) collapse, and their signatures say so.
+SELECT toTypeName(toDateTime64OrZero('2020-01-01 00:00:00', 0, 'UTC'));
+SELECT toTypeName(toDateTime64OrNull('2020-01-01 00:00:00', 0));
+SELECT toTypeName(toTime64OrZero('12:30:45', 0));
+SELECT toTypeName(toTime64OrNull('12:30:45', 0));
+SELECT toTypeName(parseDateTime64BestEffort('2020-01-01 00:00:00', 0, 'UTC'));
+SELECT toTypeName(parseDateTimeBestEffort('2020-01-01 00:00:00', 0, 'UTC'));
+SELECT signature FROM system.functions WHERE name = 'parseDateTimeBestEffort';

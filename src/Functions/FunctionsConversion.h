@@ -4704,9 +4704,9 @@ struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; sta
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Date"; static constexpr bool authoritative = true; };
 struct NameToDate32OrZero { static constexpr auto name = "toDate32OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Date32"; static constexpr bool authoritative = true; };
 struct NameToTimeOrZero { static constexpr auto name = "toTimeOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Time"; static constexpr bool authoritative = true; };
-struct NameToTime64OrZero { static constexpr auto name = "toTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Time64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> timeFromScale(scale)"; static constexpr bool authoritative = true; };
+struct NameToTime64OrZero { static constexpr auto name = "toTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Time64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Time64(scale)"; static constexpr bool authoritative = true; };
 struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime OR (MaybeNullable(StringOrFixedString), const tz String) -> DateTime(tz)"; static constexpr bool authoritative = true; };
-struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> dateTimeFromScale(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> dateTimeFromScale(scale, tz)"; static constexpr bool authoritative = true; };
+struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> DateTime64(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> DateTime64(scale, tz)"; static constexpr bool authoritative = true; };
 struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const Sc NativeUInt) -> Decimal(9, Sc)"; static constexpr bool authoritative = true; };
 struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const Sc NativeUInt) -> Decimal(18, Sc)"; static constexpr bool authoritative = true; };
 struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const Sc NativeUInt) -> Decimal(38, Sc)"; static constexpr bool authoritative = true; };
@@ -4791,9 +4791,9 @@ struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; sta
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString | NativeInteger)) -> Nullable(Date)"; static constexpr bool authoritative = true; };
 struct NameToDate32OrNull { static constexpr auto name = "toDate32OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Date32)"; static constexpr bool authoritative = true; };
 struct NameToTimeOrNull { static constexpr auto name = "toTimeOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Time)"; static constexpr bool authoritative = true; };
-struct NameToTime64OrNull { static constexpr auto name = "toTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Time64(3)) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Nullable(timeFromScale(scale))"; static constexpr bool authoritative = true; };
+struct NameToTime64OrNull { static constexpr auto name = "toTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(Time64(3)) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Nullable(Time64(scale))"; static constexpr bool authoritative = true; };
 struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString | NativeInteger)) -> Nullable(DateTime) OR (MaybeNullable(StringOrFixedString | NativeInteger), const tz String) -> Nullable(DateTime(tz))"; static constexpr bool authoritative = true; };
-struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString | NativeInteger)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8) -> Nullable(dateTimeFromScale(scale)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8, const tz String) -> Nullable(dateTimeFromScale(scale, tz))"; static constexpr bool authoritative = true; };
+struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString | NativeInteger)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8) -> Nullable(DateTime64(scale)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8, const tz String) -> Nullable(DateTime64(scale, tz))"; static constexpr bool authoritative = true; };
 struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const Sc NativeUInt) -> Nullable(Decimal(9, Sc))"; static constexpr bool authoritative = true; };
 struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const Sc NativeUInt) -> Nullable(Decimal(18, Sc))"; static constexpr bool authoritative = true; };
 struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const Sc NativeUInt) -> Nullable(Decimal(38, Sc))"; static constexpr bool authoritative = true; };
@@ -4917,37 +4917,37 @@ struct NameParseDateTime32BestEffortOrNull
 struct NameParseDateTime64BestEffort
 {
     static constexpr auto name = "parseDateTime64BestEffort";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> dateTimeFromScale(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> dateTimeFromScale(scale, tz)";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> DateTime64(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> DateTime64(scale, tz)";
     static constexpr bool authoritative = true;
 };
 struct NameParseDateTime64BestEffortOrZero
 {
     static constexpr auto name = "parseDateTime64BestEffortOrZero";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> dateTimeFromScale(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> dateTimeFromScale(scale, tz)";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> DateTime64(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> DateTime64(scale, tz)";
     static constexpr bool authoritative = true;
 };
 struct NameParseDateTime64BestEffortOrNull
 {
     static constexpr auto name = "parseDateTime64BestEffortOrNull";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Nullable(dateTimeFromScale(scale)) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> Nullable(dateTimeFromScale(scale, tz))";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Nullable(DateTime64(scale)) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> Nullable(DateTime64(scale, tz))";
     static constexpr bool authoritative = true;
 };
 struct NameParseDateTime64BestEffortUS
 {
     static constexpr auto name = "parseDateTime64BestEffortUS";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> dateTimeFromScale(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> dateTimeFromScale(scale, tz)";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> DateTime64(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> DateTime64(scale, tz)";
     static constexpr bool authoritative = true;
 };
 struct NameParseDateTime64BestEffortUSOrZero
 {
     static constexpr auto name = "parseDateTime64BestEffortUSOrZero";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> dateTimeFromScale(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> dateTimeFromScale(scale, tz)";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> DateTime64(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> DateTime64(scale, tz)";
     static constexpr bool authoritative = true;
 };
 struct NameParseDateTime64BestEffortUSOrNull
 {
     static constexpr auto name = "parseDateTime64BestEffortUSOrNull";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Nullable(dateTimeFromScale(scale)) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> Nullable(dateTimeFromScale(scale, tz))";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Nullable(DateTime64(scale)) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> Nullable(DateTime64(scale, tz))";
     static constexpr bool authoritative = true;
 };
 

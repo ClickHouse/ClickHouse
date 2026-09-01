@@ -143,8 +143,8 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     /// No declarative signature yet. These variants (`tumble`, `tumbleStart`,
-    /// `tumbleEnd`, `hop`, `hopStart`, `hopEnd`, `windowID`) return either a `DateTime`
-    /// (for `*Start`/`*End` and `windowID`) or a `Tuple(DateTime, DateTime)` (for
+    /// `tumbleEnd`, `hop`, `hopStart`, `hopEnd`) return either a `DateTime`
+    /// (for `*Start`/`*End`) or a `Tuple(DateTime, DateTime)` (for
     /// `tumble` and `hop`). The DSL has no return-type union, so a documentation-only
     /// `... -> DateTime | Tuple(...)` cannot be parsed — it raises `SYNTAX_ERROR` on the
     /// types-only path. Keep it empty until return-type unions are supported; the

@@ -1,8 +1,8 @@
 (V : Any, const S NativeUInt) -> DateTime64(S, timezoneOf(V)) OR (Any, const S NativeUInt, const tz String) -> DateTime64(S, tz)
 (Any, const S NativeUInt) -> Time64(S)
-(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> dateTimeFromScale(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> dateTimeFromScale(scale, tz)
-(MaybeNullable(StringOrFixedString | NativeInteger)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8) -> Nullable(dateTimeFromScale(scale)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8, const tz String) -> Nullable(dateTimeFromScale(scale, tz))
-(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Nullable(dateTimeFromScale(scale)) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> Nullable(dateTimeFromScale(scale, tz))
+(MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> DateTime64(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> DateTime64(scale, tz)
+(MaybeNullable(StringOrFixedString | NativeInteger)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8) -> Nullable(DateTime64(scale)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8, const tz String) -> Nullable(DateTime64(scale, tz))
+(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> Nullable(DateTime64(scale)) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> Nullable(DateTime64(scale, tz))
 (Decimal, [const UInt8]) -> UInt8
 (Array(T), [const Integer]) -> Array(T)
 (Array(T), [const Integer], [const Integer]) -> Array(T)
@@ -19,3 +19,10 @@ Time64(3)
 0
 3
 ['a','b','c']
+DateTime64(0, \'UTC\')
+Nullable(DateTime64(0))
+Time64(0)
+Nullable(Time64(0))
+DateTime64(0, \'UTC\')
+DateTime(\'UTC\')
+(MaybeNullable(StringOrFixedString)) -> DateTime OR (MaybeNullable(StringOrFixedString), const tz String) -> DateTime(tz) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> dateTimeFromScale(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> dateTimeFromScale(scale, tz)
