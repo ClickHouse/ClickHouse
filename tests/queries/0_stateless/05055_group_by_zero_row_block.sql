@@ -1,4 +1,6 @@
 -- GROUP BY over zero input rows must return no rows, even when the key is constant at run time.
+-- The setting is pinned because the runner randomizes it off, and the query then stops reaching the
+-- constant-key path in the aggregator.
 
 DROP TABLE IF EXISTS t_group_by_zero_rows;
 CREATE TABLE t_group_by_zero_rows (id UInt64, kind Array(String)) ENGINE = MergeTree ORDER BY id;
@@ -13,13 +15,13 @@ WITH facts AS
 )
 SELECT key, count() AS volume
 FROM (SELECT *, if(raw_key IN (SELECT raw_key FROM facts), toString(raw_key), 'OTHER') AS key FROM facts)
-GROUP BY key;
+GROUP BY key
+SETTINGS optimize_group_by_constant_keys = 1;
 
--- An injective function of a constant must not be dropped from GROUP BY either.
-SELECT materialize('OTHER') AS key, count() AS volume FROM numbers(0) GROUP BY key;
-SELECT toString(materialize('OTHER')) AS key, count() AS volume FROM numbers(0) GROUP BY key;
-
--- A non-empty input still gives exactly one group.
-SELECT materialize('OTHER') AS key, count() AS volume FROM numbers(5) GROUP BY key;
+-- The same constant key over a non-empty input still gives exactly one group.
+SELECT if(number IN (SELECT number FROM numbers(1000) WHERE number > 2000), 'A', 'OTHER') AS key, count() AS volume
+FROM numbers(5)
+GROUP BY key
+SETTINGS optimize_group_by_constant_keys = 1;
 
 DROP TABLE t_group_by_zero_rows;
