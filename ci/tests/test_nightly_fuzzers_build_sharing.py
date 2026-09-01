@@ -49,6 +49,7 @@ from ci.defs.defs import (  # noqa: E402
 )
 from ci.defs.job_configs import JobConfigs  # noqa: E402
 from ci.praktika import Workflow  # noqa: E402
+from ci.praktika.native_jobs import _publish_latest_docker_manifest  # noqa: E402
 from ci.workflows.master import workflow as master_workflow  # noqa: E402
 from ci.workflows.nightly_fuzzers import workflow as nightly_workflow  # noqa: E402
 from ci.workflows.nightly_jepsen import workflow as jepsen_workflow  # noqa: E402
@@ -181,6 +182,55 @@ class TestBuildIsSharedWithMasterCI:
         # The job provides it, so the workflow has to declare it or the upload
         # has nowhere to go.
         assert "CLICKHOUSE_EXAMPLES" in {a.name for a in nightly_workflow.artifacts}
+
+
+class TestLatestTagIsBaseBranchOnly:
+    """`latest` is a mutable alias every consumer of the images resolves, and the
+    generated workflow is dispatchable on any ref, so which branch a run is on
+    decides whether it may move the alias.
+    """
+
+    def test_the_declared_branches_still_publish(self):
+        # Enumerated over the flag rather than listed, so a workflow that starts
+        # tagging `latest` later is covered here too.
+        holders = [
+            w
+            for w in (master_workflow, nightly_workflow)
+            if w.set_latest_for_docker_merged_manifest
+        ]
+        assert holders, "no workflow tags `latest`: the arms below are vacuous"
+        for workflow in holders:
+            assert workflow.branches, workflow.name
+            for branch in workflow.branches:
+                assert _publish_latest_docker_manifest(workflow, branch), workflow.name
+
+    def test_a_dispatch_from_another_branch_does_not(self):
+        # Same workflow and same flag as the arm above, so the branch is the only
+        # difference between them.
+        assert nightly_workflow.set_latest_for_docker_merged_manifest
+        assert not _publish_latest_docker_manifest(
+            nightly_workflow, "groeneai/reland-fuzzer-dict-from-binary"
+        )
+
+    def test_a_workflow_that_does_not_tag_latest_never_publishes(self):
+        assert not sqlancer_workflow.set_latest_for_docker_merged_manifest
+        for branch in (*sqlancer_workflow.branches, "some/other-branch"):
+            assert not _publish_latest_docker_manifest(sqlancer_workflow, branch)
+
+    def test_every_workflow_in_the_tree_that_tags_latest_declares_a_branch(self):
+        # A workflow with no branches cannot name its base branch, so the gate
+        # falls back to publishing; that fallback has to stay unreachable.
+        holders = []
+        directory = os.path.join(os.path.dirname(__file__), "..", "workflows")
+        for name in sorted(os.listdir(directory)):
+            if not name.endswith(".py") or name == "__init__.py":
+                continue
+            module = importlib.import_module(f"ci.workflows.{name[:-3]}")
+            for workflow in getattr(module, "WORKFLOWS", []):
+                if workflow.set_latest_for_docker_merged_manifest:
+                    holders.append((workflow.name, list(workflow.branches)))
+        assert holders, "no workflow tags `latest`: this arm is vacuous"
+        assert [name for name, branches in holders if not branches] == []
 
 
 class TestConsumerRequiresTheReleaseBinary:

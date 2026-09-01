@@ -84,6 +84,17 @@ def _is_praktika_job(job_name):
     return False
 
 
+def _publish_latest_docker_manifest(workflow, branch):
+    """`latest` is a mutable alias shared by every consumer of the images, so only
+    a run on the workflow's own branch may move it. A workflow that declares no
+    branches cannot name that branch and keeps the unguarded behaviour."""
+    if not workflow.set_latest_for_docker_merged_manifest:
+        return False
+    if not workflow.branches:
+        return True
+    return branch in workflow.branches
+
+
 def _build_dockers(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     dockers = workflow.dockers
@@ -180,13 +191,14 @@ def _build_dockers(workflow, job_name):
         and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         print("Start docker manifest merge")
+        add_latest = _publish_latest_docker_manifest(workflow, Info().git_branch)
         for docker in dockers:
             results.append(
                 Docker.merge_manifest(
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=workflow.set_latest_for_docker_merged_manifest,
+                    add_latest=add_latest,
                 )
             )
 
