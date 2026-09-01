@@ -76,7 +76,7 @@ size_t MergeTreeReaderIndex::readRows(
     else
         max_rows_to_read = 0;
 
-    ColumnPtr & filter_column = res_columns.front();
+    MutableColumnPtr & filter_column = res_columns.front();
     size_t filter_size_before = 0;
     if (filter_column)
     {
@@ -87,14 +87,6 @@ size_t MergeTreeReaderIndex::readRows(
     /// If projection index is available, attempt to construct the filter column
     if (index_read_result && index_read_result->projection_index_read_result)
     {
-<<<<<<< HEAD
-||||||| 97a238dfc82ce0a1ea51fac7a9a946b96fcb0d87
-        ColumnPtr & filter_column = res_columns.front();
-
-=======
-        MutableColumnPtr & filter_column = res_columns.front();
-
->>>>>>> origin/master
         if (filter_column == nullptr)
         {
             filter_column = ColumnUInt8::create();
@@ -117,16 +109,6 @@ size_t MergeTreeReaderIndex::readRows(
 
     if (lazy_materializing_rows)
     {
-<<<<<<< HEAD
-        // std::cerr << "MergeTreeReaderIndex::readRows lazy_materializing_rows " << lazy_materializing_rows->size() << "\n";
-        // std::cerr << "from " << starting_row << " max_to_read " << max_rows_to_read << "\n";
-||||||| 97a238dfc82ce0a1ea51fac7a9a946b96fcb0d87
-        // std::cerr << "MergeTreeReaderIndex::readRows lazy_materializing_rows " << lazy_materializing_rows->size() << "\n";
-        // std::cerr << "from " << starting_row << " max_to_read " << max_rows_to_read << "\n";
-        ColumnPtr & filter_column = res_columns.front();
-=======
-        MutableColumnPtr & filter_column = res_columns.front();
->>>>>>> origin/master
 
         if (filter_column == nullptr)
         {
@@ -173,8 +155,7 @@ size_t MergeTreeReaderIndex::readRows(
                 "Illegal type {} of filter column for Bernoulli sampling. Must be UInt8",
                 filter_column->getName());
 
-        auto mutable_filter_column = filter_column->assumeMutable();
-        auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
+        auto & filter_data = static_cast<ColumnUInt8 &>(*filter_column).getData();
 
         /// If projection or lazy-materializing filters above already appended entries
         /// for these rows, AND Bernoulli with them. Otherwise just append.
@@ -188,8 +169,6 @@ size_t MergeTreeReaderIndex::readRows(
         {
             bernoulli_filter->appendToFilter(filter_data, starting_row, max_rows_to_read);
         }
-
-        filter_column = std::move(mutable_filter_column);
     }
 
     current_row += max_rows_to_read;
