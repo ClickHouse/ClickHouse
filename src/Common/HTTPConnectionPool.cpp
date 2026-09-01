@@ -414,8 +414,7 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 // - `Session::reconnect()` uses the pool as well
 // - comprehensive sensors
 // - session is reused according its inner state, automatically
-/// Mirrors `Poco::Net::HTTPClientSession::bypassProxy`, which is not accessible from here; keep in
-/// sync on Poco upgrades. When it holds, Poco connects straight to the target instead of the proxy.
+/// Mirrors `Poco::Net::HTTPClientSession::bypassProxy`; keep in sync on Poco upgrades.
 static bool isProxyBypassedForHost(const std::string & host, const Poco::Net::HTTPClientSession::ProxyConfig & proxy_config)
 {
     return !proxy_config.nonProxyHosts.empty()
@@ -458,8 +457,6 @@ private:
             }
             else
             {
-                /// The pool is gone (dropped cache, expired endpoint), so this connection dials on
-                /// its own - through `doConnect` too, like every other connect of this connection.
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
                 doConnect(connect_time);
                 ProfileEvents::increment(metrics.created);
@@ -651,8 +648,6 @@ private:
             }
         }
 
-        /// Deferred connect errors name the dialled endpoint inside `SocketImpl::connect` itself,
-        /// so pool-backed and pool-less sessions report the peer alike.
         void doConnect(UInt64 * connect_time)
         {
             Session::reconnect(connect_time);

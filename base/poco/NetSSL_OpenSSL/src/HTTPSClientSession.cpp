@@ -160,8 +160,6 @@ void HTTPSClientSession::connect(const SocketAddress& address)
 
 	if (useProxy && isProxyTunnel())
 	{
-		/// `address` is the proxy address reconnect() resolved; the tunnel must dial exactly it,
-		/// or a deferred connect error would be attributed to a different record of the proxy name.
 		StreamSocket proxySocket(proxyConnect(&address));
 		SecureStreamSocket secureSocket = SecureStreamSocket::attach(proxySocket, getHost(), _pContext, _pSession);
 		attachSocket(secureSocket);

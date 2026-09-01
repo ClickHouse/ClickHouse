@@ -747,7 +747,7 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
         /// target host was never resolved locally. Had local resolution run, the request would
         /// have failed first with a DNS error naming the target host. The positive signal is a
         /// connection-level failure ("Connection refused" from the listener-less proxy port);
-        /// both the synchronous and the deferred SO_ERROR connect paths name the peer.
+        /// both connect paths now name the peer.
         const std::string text = e.displayText();
         reached_proxy_connect = text.contains("Connection refused")
             || text.contains("127.0.0.1:1");
@@ -1126,16 +1126,8 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
 #if USE_SSL
 TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
 {
-    /// The HTTPS tunnel must dial the proxy address the caller already resolved instead of
-    /// resolving the proxy hostname again. Two same-process resolutions of one name always agree,
-    /// so DNS alone cannot tell the two apart; instead the pinned address and the hostname
-    /// deliberately disagree: the proxy config names a literal `127.0.0.1`, where the listener is
-    /// bound, while the address passed to connect() is 127.0.0.99, where nothing listens. A literal
-    /// instead of `localhost` keeps this deterministic on dual-stack hosts, where `localhost` can
-    /// resolve to `::1`: there a regression to re-resolution would hit an unbound `[::1]` port and
-    /// still raise ConnectionRefusedException, silently staying green. With the literal, honoring
-    /// the pinned address gets the TCP connect refused; a regression reaches the listener instead
-    /// and fails later, in the CONNECT exchange or the TLS handshake.
+    /// The tunnel must dial the caller-resolved proxy address, not re-resolve the name.
+    /// Proxy config names 127.0.0.1 (listener bound there); connect() gets 127.0.0.99 (nothing listens).
     Poco::Net::ServerSocket proxy_socket(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
     const auto proxy_port = proxy_socket.address().port();
     Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new HTTPRequestHandlerFactory(options);
@@ -1156,10 +1148,8 @@ TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
     proxy_config.port = proxy_port;
     session.setProxyConfig(proxy_config);
 
-    /// On Linux the connect to the unbound 127.0.0.99 is refused immediately; on macOS such
-    /// loopback addresses time out instead. Either way the dialed peer address in the message
-    /// proves the tunnel used the caller-resolved address; a regression would reach the listener
-    /// on 127.0.0.1 and fail later in the CONNECT exchange, naming that address instead.
+    /// On Linux connect to 127.0.0.99 is refused; on macOS it times out. Either way the message
+    /// proves the tunnel dialed the pinned address.
     bool dialed_the_pinned_address = false;
     try
     {
@@ -1178,8 +1168,7 @@ TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
 
 TEST_F(ConnectionPoolTest, ReconnectWithoutPoolNamesThePeer)
 {
-    /// A borrowed connection outlives its endpoint pool - a dropped cache, or a wiped idle endpoint -
-    /// and then reconnects on its own; that path must name the peer as well, not just the pooled one.
+    /// A borrowed connection outlives its pool and reconnects on its own; that path must name the peer.
     constexpr UInt16 dead_port = 9873;
     const String endpoint = "127.0.0.1:" + std::to_string(dead_port);
 
@@ -1218,11 +1207,8 @@ TEST_F(ConnectionPoolTest, ReconnectWithoutPoolNamesThePeer)
 
 TEST_F(ConnectionPoolTest, DirectSessionReconnectNamesThePeer)
 {
-    /// Sessions built without this pool - `src/IO/S3/Credentials.cpp`, `src/Client/JWTProvider.cpp`,
-    /// `src/Client/BuzzHouse/Generator/ExternalIntegrations.cpp` and the like - go straight through
-    /// `Poco::Net::HTTPClientSession::sendRequest` -> `reconnect` -> `connect`. The endpoint naming
-    /// lives in `SocketImpl::connect` itself precisely so those callers get it too, not just
-    /// pool-backed sessions.
+    /// Sessions without this pool go through sendRequest -> reconnect -> connect; the endpoint
+    /// naming lives in SocketImpl::connect so those callers get it too.
     Poco::Net::ServerSocket port_probe(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
     const auto dead_port = port_probe.address().port();
     port_probe.close();
@@ -1254,8 +1240,7 @@ TEST_F(ConnectionPoolTest, DirectSessionReconnectNamesThePeer)
 namespace
 {
 
-/// Stands for the layers beneath a successful dial (a TLS handshake stall, a proxy CONNECT
-/// exchange) raising the bare shapes `SocketImpl::error(int)` produces.
+/// Stands for failures beneath a successful dial (TLS handshake, proxy CONNECT).
 class BareConnectFailureSession : public Poco::Net::HTTPClientSession
 {
 public:
@@ -1275,10 +1260,7 @@ private:
 
 TEST_F(ConnectionPoolTest, BareFailuresBeneathConnectPassThroughUnlabeled)
 {
-    /// The deferred connect path names its endpoint inside `SocketImpl::connect` itself, so the
-    /// same bare shapes raised beneath a successful dial (a TLS handshake stall, a blackholed
-    /// proxy CONNECT exchange) must reach the caller untouched - relabeling them in `reconnect`
-    /// blamed the dialled endpoint for failures that happened after the TCP connect succeeded.
+    /// Failures beneath a successful dial must pass through untouched (not relabeled with the endpoint).
     const String endpoint = "127.0.0.99:9";
     {
         BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::TimeoutException(ETIMEDOUT); });

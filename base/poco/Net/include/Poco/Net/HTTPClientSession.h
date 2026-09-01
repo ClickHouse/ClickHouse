@@ -350,9 +350,7 @@ namespace Net
 
         StreamSocket proxyConnect(const SocketAddress * resolvedProxyAddress = nullptr);
         /// Sends a CONNECT request to the proxy server and returns
-        /// a StreamSocket for the resulting connection. When the caller
-        /// has already resolved the proxy host, passing that address makes
-        /// the tunnel dial it instead of resolving the hostname again.
+        /// a StreamSocket for the resulting connection.
 
         void proxyTunnel();
         /// Calls proxyConnect() and attaches the resulting StreamSocket

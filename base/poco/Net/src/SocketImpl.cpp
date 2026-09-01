@@ -136,7 +136,6 @@ void SocketImpl::connect(const SocketAddress& address, const Poco::Timespan& tim
 				error(err, address.toString());
 			if (!poll(timeout, SELECT_READ | SELECT_WRITE | SELECT_ERROR))
 				throw Poco::TimeoutException("connect timed out", address.toString());
-			/// Deferred SO_ERROR failures must name the endpoint like the two paths above.
 			throwSocketError(address.toString());
 		}
 	}
@@ -963,11 +962,6 @@ void SocketImpl::throwSocketError(const std::string& arg)
 	if (err == 0)
 		return;
 
-	/// `error` builds these three without `arg`, unlike every other code a connect can leave in
-	/// SO_ERROR (ENETDOWN, ENETUNREACH, ENETRESET, ECONNREFUSED, EHOSTDOWN, EHOSTUNREACH all carry
-	/// it), so the endpoint would be dropped exactly where it is most wanted. The single-string
-	/// constructors below match how the switch itself reports ECONNREFUSED: the address becomes the
-	/// message, and the exception class supplies the reason.
 	if (err == POCO_ETIMEDOUT)
 		throw Poco::TimeoutException("connect timed out", arg, err);
 	if (err == POCO_ECONNABORTED)
@@ -977,7 +971,6 @@ void SocketImpl::throwSocketError(const std::string& arg)
 
 	error(err, arg);
 }
-
 
 void SocketImpl::init(int af)
 {
