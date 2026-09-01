@@ -471,12 +471,6 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             }
         }
 #endif
-        /// Only a definition the server accepted describes a table that exists. Report every one of
-        /// them, so a name that stops being a parameterized view stops being called as one.
-        if (!have_error)
-            if (const auto * create = ast_to_process->as<ASTCreateQuery>())
-                fuzzer.rememberViewParameters(*create);
-
         // The server is still alive, so we're going to continue fuzzing.
         // Determine what we're going to use as the starting AST.
         if (have_error)

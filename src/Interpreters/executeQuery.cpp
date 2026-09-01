@@ -3375,15 +3375,6 @@ static bool isReadOnlyQuery(const ASTPtr & ast)
 
 static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr & context, Float64 ast_fuzzer_runs_value, bool any_query)
 {
-    /// This runs once the query has finished, so a `CREATE` that reaches here was accepted. Recorded
-    /// before every early return below: whether this query is itself fuzzable says nothing about
-    /// whether a later fuzzed `SELECT` will want to call the view it just defined.
-    if (const auto * seed_create = ast->as<ASTCreateQuery>())
-    {
-        auto [fuzzer, lock] = getGlobalASTFuzzer();
-        fuzzer->rememberViewParameters(*seed_create);
-    }
-
     if (!any_query && !isReadOnlyQuery(ast))
         return;
 
@@ -3519,12 +3510,11 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             if (fuzz_session_context)
                 fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
-            auto [fuzzer, lock] = getGlobalASTFuzzer();
             if (!succeeded)
+            {
+                auto [fuzzer, lock] = getGlobalASTFuzzer();
                 fuzzer->notifyQueryFailed(fuzzed_ast);
-            /// Only a definition the server accepted describes a view a later call can bind.
-            else if (const auto * fuzzed_create = fuzzed_ast->as<ASTCreateQuery>())
-                fuzzer->rememberViewParameters(*fuzzed_create);
+            }
         };
 
         try
