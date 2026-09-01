@@ -112,9 +112,9 @@ Go to ①
 Go to ①. 
 ```
 
-يمكن تهيئة عدد خيوط الإدراج المتوازية هذه باستخدام الإعداد [`max_insert_threads`](/ar/reference/settings/session-settings/max-insert#max_insert_threads). تكون القيمة الافتراضية `1` في ClickHouse مفتوح المصدر و4 في [ClickHouse Cloud](https://clickhouse.com/cloud).
+يمكن تهيئة عدد خيوط الإدراج المتوازية هذه باستخدام الإعداد [`max_insert_threads`](/ar/reference/settings/session-settings/max-insert#max_insert_threads). في ClickHouse مفتوح المصدر، تكون القيمة الافتراضية منذ الإصدار 26.8 هي `0` (تلقائي: عدد أنوية CPU، مع تقليله عند وجود ضغط على الذاكرة). أما في [ClickHouse Cloud](https://clickhouse.com/cloud)، فالقيمة الافتراضية هي `1` للعُقد ذات ذاكرة 8 GiB، و`2` للعُقد ذات ذاكرة 16 GiB، و`4` للعُقد الأكبر.
 
-عند وجود عدد كبير من الملفات، تعمل المعالجة المتوازية عبر عدة خيوط إدراج بكفاءة. ويمكنها الاستفادة بالكامل من كلٍّ من أنوية CPU المتاحة وعرض النطاق الترددي للشبكة (في تنزيلات الملفات المتوازية). وفي السيناريوهات التي يُحمَّل فيها عدد قليل فقط من الملفات الكبيرة إلى جدول، ينشئ ClickHouse تلقائيًا مستوىً عاليًا من التوازي في معالجة البيانات، ويُحسّن استخدام عرض النطاق الترددي للشبكة من خلال إنشاء خيوط قراءة إضافية لكل خيط إدراج لقراءة (تنزيل) المزيد من النطاقات المختلفة داخل الملفات الكبيرة بالتوازي.
+عند وجود عدد كبير من الملفات، تعمل المعالجة المتوازية عبر عدة خيوط إدراج بكفاءة. ويمكنها الاستفادة بالكامل من كلٍّ من أنوية CPU المتاحة وعرض نطاق الشبكة (في تنزيلات الملفات المتوازية). وفي السيناريوهات التي يُحمَّل فيها عدد قليل فقط من الملفات الكبيرة إلى جدول، ينشئ ClickHouse تلقائيًا مستوىً عاليًا من التوازي في معالجة البيانات، ويُحسّن استخدام عرض نطاق الشبكة من خلال إنشاء خيوط قراءة إضافية لكل خيط إدراج لقراءة (تنزيل) المزيد من النطاقات المختلفة داخل الملفات الكبيرة بالتوازي.
 
 بالنسبة إلى دالة s3 والجدول، يُحدَّد التنزيل المتوازي لملف واحد بواسطة القيم [max&#95;download&#95;threads](/ar/reference/settings/session-settings/max-download#max_download_threads) و[max&#95;download&#95;buffer&#95;size](/ar/reference/settings/session-settings/max-download#max_download_buffer_size). لن تُنزَّل الملفات بالتوازي إلا إذا كان حجمها أكبر من `2 * max_download_buffer_size`. افتراضيًا، تُضبط القيمة الافتراضية لـ `max_download_buffer_size` على 10MiB. وفي بعض الحالات، يمكنك بأمان زيادة حجم هذا المخزن المؤقت إلى 50 MB (`max_download_buffer_size=52428800`) بهدف ضمان تنزيل كل ملف بواسطة خيط واحد. ويمكن أن يقلل ذلك الوقت الذي يقضيه كل خيط في إجراء استدعاءات S3، وبالتالي يُخفِّض أيضًا وقت انتظار S3. علاوة على ذلك، بالنسبة إلى الملفات الصغيرة جدًا بحيث لا تناسب القراءة المتوازية، يزيد ClickHouse معدل النقل تلقائيًا من خلال الجلب المسبق للبيانات عبر القراءة المسبقة غير المتزامنة لهذه الملفات.
 
@@ -164,7 +164,7 @@ Go to ①.
 
 تتكون مجموعة البيانات هذه من 189 ملف Parquet، بواقع ملف واحد لكل شهر بين يوليو 2008 ومارس 2024.
 
-لاحظ أننا نستخدم Parquet لأسباب تتعلق بالأداء، وفقًا لـ[توصياتنا أعلاه](#formats)، مع تنفيذ جميع الاستعلامات على عنقود ClickHouse موجود في نفس المنطقة مثل الـ bucket. يحتوي هذا العنقود على 3 عقد، تضم كل واحدة منها 32GiB من RAM و8 vCPU.
+لاحظ أننا نستخدم Parquet لأسباب تتعلق بالأداء، وفقًا لـ[توصياتنا أعلاه](#formats)، مع تنفيذ جميع الاستعلامات على عنقود ClickHouse موجود في نفس المنطقة مثل الـ حاوية التخزين. يحتوي هذا العنقود على 3 عقد، تضم كل واحدة منها 32GiB من RAM و8 vCPU.
 
 من دون أي ضبط، نعرض أداء إدراج مجموعة البيانات هذه في محرك جدول MergeTree، وكذلك تنفيذ استعلام لتحديد المستخدمين الذين يطرحون أكبر عدد من الأسئلة. ويتطلب كل من هاتين العمليتين عمدًا إجراء فحص كامل للبيانات.
 
@@ -173,7 +173,7 @@ Go to ①.
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -196,7 +196,7 @@ Peak memory usage: 603.64 MiB.
 ```sql
 -- Load into posts table
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -228,7 +228,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -299,7 +299,7 @@ min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_thre
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -322,7 +322,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -333,7 +333,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -369,7 +369,7 @@ SETTINGS max_threads = 92
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -394,7 +394,7 @@ Peak memory usage: 176.74 MiB.
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -408,7 +408,7 @@ FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws
 ```sql
 INSERT INTO posts
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
@@ -435,7 +435,7 @@ Peak memory usage: 11.75 GiB.
 INSERT INTO posts
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 ```
 
@@ -448,13 +448,13 @@ Peak memory usage: 26.57 GiB.
   ### التحسين عند الإدراج
 </div>
 
-في ClickHouse، يتحكم الإعداد `optimize_on_insert` في ما إذا كانت data parts تُدمج أثناء عملية الإدراج. عند تفعيله (حيث تكون القيمة الافتراضية `optimize_on_insert = 1`)، تُدمج الأجزاء الصغيرة في أجزاء أكبر أثناء إدراجها، مما يحسّن query performance عبر تقليل عدد الأجزاء التي يلزم قراءتها. ومع ذلك، يضيف هذا الدمج عبئًا إضافيًا إلى عملية الإدراج، وقد يؤدي إلى إبطاء عمليات الإدراج عالية الإنتاجية.
+في ClickHouse، يتحكم الإعداد `optimize_on_insert` في ما إذا كانت جزء بيانات تُدمج أثناء عملية الإدراج. عند تفعيله (حيث تكون القيمة الافتراضية `optimize_on_insert = 1`)، تُدمج الأجزاء الصغيرة في أجزاء أكبر أثناء إدراجها، مما يحسّن أداء الاستعلامات عبر تقليل عدد الأجزاء التي يلزم قراءتها. ومع ذلك، يضيف هذا الدمج عبئًا إضافيًا إلى عملية الإدراج، وقد يؤدي إلى إبطاء عمليات الإدراج عالية الإنتاجية.
 
 يؤدي تعطيل هذا الإعداد (`optimize_on_insert = 0`) إلى تخطي الدمج أثناء عمليات الإدراج، مما يتيح كتابة البيانات بسرعة أكبر، خاصةً عند التعامل مع عمليات إدراج صغيرة ومتكررة. وتُؤجَّل عملية الدمج إلى الخلفية، مما يتيح أداءً أفضل لعمليات الإدراج، لكنه يزيد مؤقتًا من عدد الأجزاء الصغيرة، وهو ما قد يبطئ الاستعلامات إلى أن يكتمل الدمج في الخلفية. ويُعد هذا الإعداد مثاليًا عندما تكون أولوية الأداء لعمليات الإدراج، ويمكن لعملية الدمج في الخلفية أن تتولى التحسين بكفاءة لاحقًا. كما هو موضح أدناه، يمكن أن يؤدي تعطيل هذا الإعداد إلى تحسين إنتاجية الإدراج:
 
 ```sql
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
 ```
 
