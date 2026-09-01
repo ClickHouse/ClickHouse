@@ -196,7 +196,10 @@ ${CLICKHOUSE_CLIENT} -q "
     ORDER BY id
     TTL event_time + INTERVAL 1 DAY GROUP BY id SET value = max(value)
     SETTINGS
-        max_number_of_merges_with_ttl_in_pool = 1,
+        -- Compared against the SERVER-wide running TTL-merge count (StorageMergeTree), so a
+        -- low budget starves this table whenever sibling tests hold the slot; the gate under
+        -- test is the selector's, not the budget.
+        max_number_of_merges_with_ttl_in_pool = 100,
         merge_with_ttl_timeout = 0,
         apply_patches_on_merge = 1,
         enable_block_number_column = 1,
