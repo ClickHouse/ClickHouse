@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
@@ -436,6 +437,30 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
     default:
         return result;
     }
+}
+
+/// The pruning analysis orders constants with `FieldAccurateComparison`, which places `NaN` after every
+/// ordinary value. A comparison follows that order only where it ends in `IColumn::compareAt`, which stays
+/// faithful through every nested column, so only the top level has to be classified. Two shapes instead
+/// decompose the container into per-element applications of the comparison function, under which a
+/// comparison against a `NaN` is false and nothing is ordered: two top-level `Tuple`s, which `executeTuple`
+/// takes before the equal-types shortcut and therefore even for identical types, and two `Array`s with no
+/// least supertype, which reach `executeArrayLexicographic`. A `Map` has no such shape.
+static bool comparisonDecomposesContainer(const DataTypePtr & expr_type, const DataTypePtr & constant_type)
+{
+    const auto left = removeLowCardinality(expr_type);
+    auto right = removeLowCardinality(constant_type);
+
+    /// `executeWithConstString` converts a constant string to the other side's type once and the comparison
+    /// is then executed at that type, so classify it as that type.
+    if (isStringOrFixedString(right) && !isStringOrFixedString(left))
+        right = left;
+
+    if (isTuple(left) && isTuple(right))
+        return true;
+    if (isArray(left) && isArray(right))
+        return !tryGetLeastSupertype(DataTypes{left, right});
+    return false;
 }
 
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
@@ -926,6 +951,14 @@ static AddComparisonFilterResult addComparisonFilter(
     /// Non-lossless conversions and NaN constants never interact (`compareComparisonFilters`
     /// yields NONE for them), so keep them aside as-is.
     if (!new_filter.converted_value || is_nan_field(*new_filter.converted_value))
+    {
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
+    /// A comparison that is decomposed into per-element comparisons is neither a point nor a bound on the
+    /// order this analysis reasons in, so it must not be compared against the other conditions.
+    if (comparisonDecomposesContainer(raw_type, new_filter.constant_node->getResultType()))
     {
         filters.opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
