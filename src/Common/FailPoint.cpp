@@ -178,7 +178,8 @@ static struct InitFiu
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
-    REGULAR(query_metric_log_delay_collect)
+    REGULAR(query_metric_log_delay_collect) \
+    ONCE(zk_send_thread_request_window_throw)
 
 namespace FailPoints
 {
