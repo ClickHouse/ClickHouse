@@ -6903,10 +6903,10 @@ Enable use of software prefetch in hash join probe phase to hide memory access l
 )", 0) \
     DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, R"(
 Restores how `max_rows_in_join` and `max_bytes_in_join` worked before the spill threshold became the single trigger, for
-the part of a join that runs on disk: reaching one of them makes the join spill further instead of stopping the query, so
-it spills at whichever of the two and the spill threshold comes first. `join_algorithm = 'grace_hash'` also accepts a zero
-spill threshold again. The in-memory phase of `hash` / `parallel_hash` keeps treating the two as a hard cap, which is what
-it did before as well.
+the part of a join that runs on disk: reaching one of them makes the join spill further instead of stopping the query.
+`join_algorithm = 'grace_hash'` then spills on those two alone and ignores `max_bytes_before_external_join` entirely, zero
+included. `hash` / `parallel_hash` still go to disk on the spill threshold and spill on either one afterwards; their
+in-memory phase keeps treating the two as a hard cap, as it did before.
 
 For queries written against the earlier meaning of these two settings; `compatibility` enables it automatically.
 )", 0) \
