@@ -1757,7 +1757,9 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
     /// `cancelMutatingExecutor`) do not depend on the merge list entry still being alive: the raw
     /// `mutate_entry` generally outlives the context, but a concurrent teardown can destroy the entry
     /// while this context runs its destructor on the cancellation thread. Holding the state directly
-    /// makes the entry lifetime non-load-bearing. Set once in `setPipelineCancelHook`.
+    /// makes the entry lifetime non-load-bearing. Initialized once in the `MutateTask` constructor
+    /// (before the task becomes externally cancellable), so the member is never written or read from
+    /// two threads without synchronization.
     PipelineCancelStatePtr cancel_state;
 
     LoggerPtr log{getLogger("MutateTask")};
@@ -1868,10 +1870,11 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
     /// destroyed, and it locks only the state's own mutex. The context is captured weakly to avoid
     /// a reference cycle: the context owns a reference to the merge list entry, so capturing it
     /// strongly would keep the entry alive forever even after the hook has served its purpose.
+    /// Uses the context's own `cancel_state` copy (initialized in the constructor), which is never
+    /// written again, so `cancel_state` observes the state without any synchronization.
     void setPipelineCancelHook()
     {
-        auto state = (*mutate_entry)->pipeline_cancel_state;
-        cancel_state = state;
+        auto state = cancel_state;
         std::lock_guard lock{state->mutex};
         state->hook = [state, weak_ctx = weak_from_this()]()
         {
@@ -3451,6 +3454,7 @@ MutateTask::MutateTask(
     ctx->merges_blocker = &merges_blocker_;
     ctx->holder = &table_lock_holder_;
     ctx->mutate_entry = mutate_entry_;
+    ctx->cancel_state = (*mutate_entry_)->pipeline_cancel_state;
     ctx->commands = commands_;
     ctx->context = context_;
     ctx->time_of_mutation = time_of_mutation_;
