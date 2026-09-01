@@ -51,6 +51,7 @@ public:
     void preFinalize() override;
     std::string getFileName() const override { return key; }
     void sync() override { next(); }
+    void setCancellationHook(std::function<void()> cancellation_hook_) override { cancellation_hook = std::move(cancellation_hook_); }
 
 private:
     /// Receives response from the server after sending all data.

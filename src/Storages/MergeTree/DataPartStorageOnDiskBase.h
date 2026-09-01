@@ -90,7 +90,7 @@ public:
         const NameSet & file_names,
         PackedFilesWriter & target,
         const ReadSettings & read_settings,
-        const WriteSettings & write_settings) const;
+        const std::function<void()> & cancellation_hook) const;
 
     /// Rewrite this storage's skp_idx.packed into a fresh archive on @new_storage, dropping any
     /// virtual file whose name is in @dropped_skip_index_archive_file_names (exact match). Callers must
@@ -104,6 +104,7 @@ public:
         const NameSet & dropped_skip_index_archive_file_names,
         IDataPartStorage & new_storage,
         const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook,
         const ReadSettings & read_settings,
         MergeTreeDataPartChecksums & checksums,
         bool sync) const;
@@ -215,7 +216,7 @@ protected:
         const String & file_name,
         PackedFilesWriter & target,
         const ReadSettings & read_settings,
-        const WriteSettings & write_settings) const;
+        const std::function<void()> & cancellation_hook) const;
 
 public:
     /// Pre-populate the cached PackedFilesReader from an in-memory index produced by the

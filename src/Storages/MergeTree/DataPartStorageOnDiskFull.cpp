@@ -157,11 +157,14 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
     const String & name,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings)
+    const WriteSettings & settings,
+    std::function<void()> cancellation_hook)
 {
-    if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+    auto buffer = transaction
+        ? transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings)
+        : volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+    buffer->setCancellationHook(std::move(cancellation_hook));
+    return buffer;
 }
 
 void DataPartStorageOnDiskFull::createFile(const String & name)

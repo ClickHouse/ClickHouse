@@ -409,21 +409,26 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
     const String & name,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings)
+    const WriteSettings & settings,
+    std::function<void()> cancellation_hook)
 {
     if (isWrittenSeparately(name))
     {
         auto file_path = fs::path(root_path) / part_dir / name;
-        if (transaction)
-            return transaction->writeFile(file_path, buf_size, mode, settings);
-
-        return volume->getDisk()->writeFile(file_path, buf_size, mode, settings);
+        auto buffer = transaction
+            ? transaction->writeFile(file_path, buf_size, mode, settings)
+            : volume->getDisk()->writeFile(file_path, buf_size, mode, settings);
+        buffer->setCancellationHook(std::move(cancellation_hook));
+        return buffer;
     }
 
-    if (writer)
-        return writer->writeFile(name, settings);
+    if (!writer)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
 
-    throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
+    if (!writer->hasWriteSettings())
+        writer->setArchiveWriteSettings(settings, std::move(cancellation_hook));
+
+    return writer->writeFile(name);
 }
 
 void DataPartStorageOnDiskPacked::createFile(const String & name)
@@ -767,6 +772,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     auto buf = transaction->writeFile(
         archive_path, DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode::Rewrite, writer->getWriteSettings());
+    buf->setCancellationHook(writer->getCancellationHook());
 
     writer->finalize(*buf, plan);
 

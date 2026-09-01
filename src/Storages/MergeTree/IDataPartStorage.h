@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/TransactionID.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -333,14 +334,16 @@ public:
         const String & name,
         size_t buf_size,
         WriteMode mode,
-        const WriteSettings & settings) = 0;
+        const WriteSettings & settings,
+        std::function<void()> cancellation_hook = {}) = 0;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
         size_t buf_size,
-        const WriteSettings & settings)
+        const WriteSettings & settings,
+        std::function<void()> cancellation_hook = {})
     {
-        return writeFile(name, buf_size, WriteMode::Rewrite, settings);
+        return writeFile(name, buf_size, WriteMode::Rewrite, settings, std::move(cancellation_hook));
     }
 
     /// A special const method to write transaction file.
