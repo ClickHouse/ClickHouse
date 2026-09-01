@@ -618,3 +618,107 @@ def test_fetch_partition_prefers_same_region(start_cluster):
         for node in [apac2, us3, us4]:
             node.query("DROP TABLE IF EXISTS src_table SYNC")
         apac1.query("DROP TABLE IF EXISTS dst_table SYNC")
+
+
+def test_fetch_partition_falls_back_when_same_region_has_no_partition(start_cluster):
+    src_path = "/clickhouse/tables/fetch_partition_fallback_src"
+    try:
+        for node, replica in [(apac2, "apac2"), (us3, "us3")]:
+            node.query(
+                f"CREATE TABLE fallback_src(key UInt64, data String) ENGINE = ReplicatedMergeTree('{src_path}', '{replica}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+            )
+            time.sleep(1)
+
+        apac1.query(
+            "CREATE TABLE fallback_dst(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/fetch_partition_fallback_dst', 'apac1') ORDER BY tuple() PARTITION BY key"
+        )
+
+        # The same-region replica stays active, but never gets the data of the partition to fetch.
+        apac2.query("SYSTEM STOP FETCHES fallback_src")
+        us3.query("INSERT INTO fallback_src SELECT 1, '0'")
+        us3.query("SYSTEM SYNC REPLICA fallback_src LIGHTWEIGHT")
+
+        assert (
+            int(
+                apac2.query(
+                    "SELECT count() FROM system.parts WHERE table = 'fallback_src' AND active"
+                )
+            )
+            == 0
+        ), "The same-region replica must not have the partition for this test to be meaningful"
+
+        # A user query is never deferred, so an out-of-region replica has to be used here.
+        apac1.query(f"ALTER TABLE fallback_dst FETCH PARTITION 1 FROM '{src_path}'")
+
+        detached = int(
+            apac1.query(
+                "SELECT count() FROM system.detached_parts WHERE table = 'fallback_dst'"
+            )
+        )
+        assert detached == 1, "Expected one detached part, got {}".format(detached)
+
+    finally:
+        for node in [apac2, us3]:
+            node.query("DROP TABLE IF EXISTS fallback_src SYNC")
+        apac1.query("DROP TABLE IF EXISTS fallback_dst SYNC")
+
+
+def test_clone_part_from_shard_skips_lagging_same_region_replica(start_cluster):
+    src_shard = "/clickhouse/tables/clone_from_shard_src"
+    dst_shard = "/clickhouse/tables/clone_from_shard_dst"
+    move_settings = (
+        " SETTINGS part_moves_between_shards_enable = 1, part_moves_between_shards_delay_seconds = 0,"
+        " assign_part_uuids = 1, geo_replication_control_leader_wait = 1,"
+        " geo_replication_control_leader_wait_timeout = 60"
+    )
+    try:
+        for node, replica in [(apac2, "apac2"), (us3, "us3")]:
+            node.query(
+                f"CREATE TABLE clone_shard(key UInt64, data String) ENGINE = ReplicatedMergeTree('{src_shard}', '{replica}') ORDER BY tuple() PARTITION BY key"
+                + move_settings
+            )
+            time.sleep(1)
+
+        apac1.query(
+            f"CREATE TABLE clone_shard(key UInt64, data String) ENGINE = ReplicatedMergeTree('{dst_shard}', 'apac1') ORDER BY tuple() PARTITION BY key"
+            + move_settings
+        )
+
+        # The replica of the destination region stays active, but never gets the part to clone.
+        apac2.query("SYSTEM STOP FETCHES clone_shard")
+        us3.query("INSERT INTO clone_shard SELECT 1, '0'")
+
+        part_name = us3.query(
+            "SELECT name FROM system.parts WHERE table = 'clone_shard' AND active"
+        ).strip()
+
+        us3.query(
+            f"ALTER TABLE clone_shard MOVE PART '{part_name}' TO SHARD '{dst_shard}'"
+        )
+
+        # The destination replica prefers a source replica of its own region, but only among the replicas that
+        # really have the part - otherwise the move would never complete.
+        for _ in range(60):
+            if int(apac1.query("SELECT count() FROM clone_shard")) == 1:
+                break
+            time.sleep(1)
+
+        assert (
+            int(apac1.query("SELECT count() FROM clone_shard")) == 1
+        ), "The part was not cloned from the source shard: {}".format(
+            apac1.query(
+                "SELECT type, num_tries, last_exception FROM system.replication_queue WHERE table = 'clone_shard' FORMAT Vertical"
+            )
+        )
+
+        assert apac1.contains_in_log(
+            f"Will clone part from shard {src_shard} and replica us3"
+        ), "The part was not cloned from the replica that has it"
+        assert not apac1.contains_in_log(
+            f"Will clone part from shard {src_shard} and replica apac2"
+        ), "The part was cloned from the same-region replica that does not have it"
+
+    finally:
+        for node in [apac1, apac2, us3]:
+            node.query("DROP TABLE IF EXISTS clone_shard SYNC")

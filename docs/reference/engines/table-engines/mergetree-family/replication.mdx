@@ -366,7 +366,7 @@ Above constrains apply for `FETCH_PART` and `ATTACH_PART`. If an entry of type `
 
 When fetching from replica outside of the region, by default it only allows to fetch the exact part (not covering part), unless the exact part cannot be found in any replica. This is to avoid repeated data transmission across regions. To enable fetching covering parts across region, set `fetch_covered_part_within_region_only` to `0`.
 
-The `ALTER TABLE ... FETCH PARTITION` and `ALTER TABLE ... FETCH PART` queries also prefer the replicas of the same region when the source table is in the same ClickHouse Keeper cluster. This is a best effort: unlike replication queue entries, a user query is never deferred, so a replica outside of the region is used when no active replica of the same region has the requested data.
+The `ALTER TABLE ... FETCH PARTITION` and `ALTER TABLE ... FETCH PART` queries also prefer the replicas of the same region when the source table is in the same ClickHouse Keeper cluster. This is a best effort: unlike replication queue entries, a user query is never deferred, so a replica outside of the region is used when no active replica of the same region has the requested data. The same holds for cloning a part from another shard: a replica of the same region is preferred among the replicas of the source shard that already have the part.
 
 The leader is per-table. After being elected, the leader will maintain a _lease_ in ZooKeeper, so other node know that there is a leader. All replicas within a region will run leader election if leader is absented (currently leader election is done with ZooKeeper).
 
