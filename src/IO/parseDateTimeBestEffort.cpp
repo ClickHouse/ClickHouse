@@ -952,6 +952,8 @@ ReturnType parseDateTimeBestEffortImpl(
             if (has_explicit_zero_year == nullptr)
             {
                 res = 0;
+                if (fractional)
+                    fractional->value = 0;
                 return ReturnType(true);
             }
         }

@@ -1220,9 +1220,25 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     time_t whole = 0;
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
+    bool is_zero_date_placeholder = false;
 
     if (!is_empty)
     {
+        /// Check if the date is a zero-date placeholder, i.e. 0000-00-00, if so, set is_zero_date_placeholder
+        /// to true and later clear the fractional part prior to the zero-date placeholder branch clamping the
+        /// date to the Unix epoch.
+        const char * s = buf.position();
+        if (buf.available() >= 10 && !isNumericASCII(s[4])
+            && isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
+            && isNumericASCII(s[5]) && isNumericASCII(s[6])
+            && isNumericASCII(s[8]) && isNumericASCII(s[9]))
+        {
+            const UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+            const UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+            const UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+            is_zero_date_placeholder = (year == 0 && (month == 0 || day == 0));
+        }
+
         if constexpr (throw_exception)
         {
             try
@@ -1269,6 +1285,10 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         /// Ignore digits that are out of precision.
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
+
+        /// Given a zero-date placeholder, clear the fractional part.
+        if (is_zero_date_placeholder)
+            components.fractional = 0;
 
         /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
         /// E.g. `1925-12-12 13:14:15.123` is represented internally as timestamp `-1390214744.877`.
