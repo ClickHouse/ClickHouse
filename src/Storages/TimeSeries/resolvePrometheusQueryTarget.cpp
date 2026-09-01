@@ -128,7 +128,7 @@ void checkPrometheusQueryDistributedTargets(const IStorage & storage, const Cont
         return;
 
     const auto & remote_id = target->remote_time_series_storage_id;
-    const auto & distributed = typeid_cast<const StorageDistributed &>(storage);
+    const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
     const auto metadata = storage.getInMemoryMetadataPtr(context, false);
     const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
@@ -138,7 +138,7 @@ void checkPrometheusQueryDistributedTargets(const IStorage & storage, const Cont
     writeStringBinary(remote_id.database_name, key_buf);
     writeStringBinary(remote_id.table_name, key_buf);
     writeStringBinary(time_series_type, key_buf);
-    for (const auto & shard : distributed.getCluster()->getShardsAddresses())
+    for (const auto & shard : cluster->getShardsAddresses())
         for (const auto & replica : shard)
         {
             writeStringBinary(replica.host_name, key_buf);
@@ -166,12 +166,12 @@ void checkPrometheusQueryDistributedTargets(const IStorage & storage, const Cont
 
     /// Fans out like the read it guards: the wrapper's declared skip settings decide whether a dead
     /// shard is an error here too, and the query text is shipped for the same reason as there.
-    const String probe_query = "SELECT countIf(engine != 'TimeSeries'), countIf(" + type_mismatch
+    const String probe_query = "SELECT count(), countIf(engine != 'TimeSeries'), countIf(" + type_mismatch
         + "), arrayStringConcat(groupUniqArrayIf(ts_type, " + type_mismatch + "), ', ') FROM cluster("
-        + backQuoteIfNeed(target->cluster_name) + ", view(SELECT engine, (SELECT type FROM system.columns WHERE database = "
+        + backQuoteIfNeed(target->cluster_name) + ", view(SELECT (SELECT engine FROM system.tables WHERE database = "
+        + database_predicate + " AND name = " + table_predicate + ") AS engine, (SELECT type FROM system.columns WHERE database = "
         + database_predicate + " AND table = " + table_predicate + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries)
-        + ") AS ts_type FROM system.tables WHERE database = " + database_predicate + " AND name = " + table_predicate
-        + "), SETTINGS skip_unavailable_shards = " + String(skip_unavailable_shards ? "1" : "0")
+        + ") AS ts_type), SETTINGS skip_unavailable_shards = " + String(skip_unavailable_shards ? "1" : "0")
         + ", skip_unavailable_shards_mode = " + quoteString(skip_unavailable_shards_mode) + ")";
 
     /// On the server's own context, and only ever after the caller's grant check: the caller needs
@@ -190,6 +190,7 @@ void checkPrometheusQueryDistributedTargets(const IStorage & storage, const Cont
 
     auto [probe_ast, probe_io] = executeQuery(probe_query, probe_context, QueryFlags{ .internal = true });
     PullingPipelineExecutor executor(probe_io.pipeline);
+    UInt64 answered_shards = 0;
     UInt64 wrong_engine_shards = 0;
     UInt64 wrong_type_shards = 0;
     String wrong_types;
@@ -197,9 +198,10 @@ void checkPrometheusQueryDistributedTargets(const IStorage & storage, const Cont
     while (executor.pull(block))
         if (block.rows())
         {
-            wrong_engine_shards = block.getByPosition(0).column->getUInt(0);
-            wrong_type_shards = block.getByPosition(1).column->getUInt(0);
-            wrong_types = String(block.getByPosition(2).column->getDataAt(0));
+            answered_shards = block.getByPosition(0).column->getUInt(0);
+            wrong_engine_shards = block.getByPosition(1).column->getUInt(0);
+            wrong_type_shards = block.getByPosition(2).column->getUInt(0);
+            wrong_types = String(block.getByPosition(3).column->getDataAt(0));
         }
 
     if (wrong_engine_shards)
@@ -215,6 +217,11 @@ void checkPrometheusQueryDistributedTargets(const IStorage & storage, const Cont
             "while the table declares {}",
             storage.getStorageID().getNameForLogs(), wrong_type_shards, backQuoteIfNeed(remote_id.table_name),
             TimeSeriesColumnNames::TimeSeries, wrong_types, time_series_type);
+
+    /// count() is the number of shards that answered, one row each (NULL scalars where the table is
+    /// absent). A shard skipped as unavailable may come back as anything: no verdict outlives it.
+    if (answered_shards != cluster->getShardCount())
+        return;
 
     std::lock_guard lock(validated_shard_targets_mutex);
     validated_shard_targets[key] = std::chrono::steady_clock::now();

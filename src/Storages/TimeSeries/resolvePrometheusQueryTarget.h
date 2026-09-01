@@ -29,8 +29,8 @@ bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 /// (table functions are exempt from the planner's check), then the shard-local targets below.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
-/// Refuses shard-local tables that are not TimeSeries or declare another `time_series` type, which
-/// the sink and the rewrite would silently accept. Verdicts are cached for a minute. Call after the grant.
+/// Refuses shard-local tables that are not TimeSeries or declare another `time_series` type, which the
+/// sink and the rewrite would silently accept. A verdict that saw every shard is kept for a minute. Call after the grant.
 void checkPrometheusQueryDistributedTargets(const IStorage & storage, const ContextPtr & context);
 
 /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
