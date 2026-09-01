@@ -316,22 +316,14 @@ std::optional<size_t> selectedRowsOf(const QueryPlan::Node & branch)
 /// The match rate is the join's, so it is a rate over the fragment's *output* rows - the groups an
 /// aggregating fragment produces - while the predicate filters the fragment's *input* rows. The two agree
 /// only when a key's group size does not depend on whether it matches; treat this as the estimate it is.
-bool shouldShipJoinPredicate(
-    const RuntimeDataflowStatistics & stats, const JoinAboveFragment & join, size_t rows_to_read, size_t num_replicas)
+bool shouldShipJoinPredicate(const JoinAboveFragment & join, size_t rows_to_read, size_t num_replicas)
 {
-    if (!stats.join_probe_rows)
+    /// Keyed by the join's own node hash, not by the fragment's: the same aggregated subquery can appear
+    /// under different joins, and those queries share the fragment's entry.
+    const auto join_stats = getRuntimeDataflowStatisticsCache().getStats(join.node_hash);
+    if (!join_stats || !join_stats->join_probe_rows)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "No join match rate was measured, not shipping the join predicate");
-        return false;
-    }
-
-    if (stats.join_node_hash != join.node_hash)
-    {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "The measured join match rate belongs to another join (hash {}, now {}), not shipping the join predicate",
-            stats.join_node_hash,
-            join.node_hash);
         return false;
     }
 
@@ -342,7 +334,8 @@ bool shouldShipJoinPredicate(
         return false;
     }
 
-    const double match_rate = static_cast<double>(stats.join_matched_probe_rows) / static_cast<double>(stats.join_probe_rows);
+    const double match_rate
+        = static_cast<double>(join_stats->join_matched_probe_rows) / static_cast<double>(join_stats->join_probe_rows);
     const auto rows_saved_per_replica = static_cast<size_t>((1.0 - match_rate) * static_cast<double>(rows_to_read)) / num_replicas;
 
     LOG_DEBUG(
@@ -352,8 +345,8 @@ bool shouldShipJoinPredicate(
         rows_saved_per_replica,
         rows_to_read / num_replicas,
         *build_side_rows,
-        stats.join_matched_probe_rows,
-        stats.join_probe_rows);
+        join_stats->join_matched_probe_rows,
+        join_stats->join_probe_rows);
 
     return rows_saved_per_replica > *build_side_rows;
 }
@@ -573,7 +566,7 @@ void considerEnablingParallelReplicas(
                     const auto join_above_fragment
                         = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes);
 
-                    if (join_above_fragment && shouldShipJoinPredicate(*stats, *join_above_fragment, rows_to_read, num_replicas))
+                    if (join_above_fragment && shouldShipJoinPredicate(*join_above_fragment, rows_to_read, num_replicas))
                     {
                         /// `globalIn`: the initiator evaluates the set once and broadcasts it. Plain `in` would
                         /// make every replica repeat the scan of the build side, which costs more than sending
@@ -663,7 +656,9 @@ void considerEnablingParallelReplicas(
         /// for exactly the queries the rewrite can apply to.
         if (const auto join_above_fragment
             = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes))
+        {
             join_above_fragment->step->recordProbeMatchRateInto(updater, join_above_fragment->node_hash);
+        }
     }
 }
 

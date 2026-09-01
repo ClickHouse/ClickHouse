@@ -31,7 +31,7 @@ PR_SETTINGS="enable_parallel_replicas = 1, max_parallel_replicas = 3,
     merge_tree_min_bytes_per_task_for_remote_reading = 1"
 
 $CLICKHOUSE_CLIENT -q "
-    CREATE TABLE sjpa_probe (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
+    CREATE TABLE sjpa_probe (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
     AS SELECT number % 10000, cityHash64(number) FROM numbers(2000000);
 
     -- 10 of the probe's 10000 keys: a match rate of 0.001, so the predicate removes almost everything.
@@ -65,6 +65,31 @@ echo "shipped: $(shipped_predicate "$(run_query sjpa_selective_dim 1)")"
 echo 'join that matches everything: the predicate is not worth shipping'
 run_query sjpa_matching_dim 2 > /dev/null
 echo "shipped: $(shipped_predicate "$(run_query sjpa_matching_dim 1)")"
+
+# Shipping the predicate is worth nothing unless it reaches the read as a key condition, which is a separate
+# step from injecting it - the plan with parallel replicas normally reuses the single-node index analysis,
+# made before the predicate existed. Assert the pruning, not just the decision.
+echo 'shipping prunes what the replicas read'
+$CLICKHOUSE_CLIENT -q "
+    SELECT sum(agg.s) FROM (SELECT k, sum(v) AS s FROM sjpa_probe GROUP BY k) AS agg
+    JOIN sjpa_selective_dim AS d ON agg.k = d.k
+    FORMAT Null
+    SETTINGS $PR_SETTINGS, automatic_parallel_replicas_mode = 0, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_noship';
+
+    SELECT sum(agg.s) FROM (SELECT k, sum(v) AS s FROM sjpa_probe GROUP BY k) AS agg
+    JOIN sjpa_selective_dim AS d ON agg.k = d.k
+    FORMAT Null
+    SETTINGS $PR_SETTINGS, automatic_parallel_replicas_mode = 1, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_ship';
+"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT concat('shipped reads 10x fewer rows: ', toString(
+        10 * anyIf(read_rows, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_ship')
+            < anyIf(read_rows, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_noship')))
+    FROM system.query_log
+    WHERE log_comment IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_ship', '${CLICKHOUSE_TEST_UNIQUE_NAME}_noship')
+      AND type = 'QueryFinish' AND query_id = initial_query_id AND event_date >= yesterday()
+"
 
 echo 'the result does not depend on the decision'
 $CLICKHOUSE_CLIENT -q "

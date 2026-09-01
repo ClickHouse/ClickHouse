@@ -219,7 +219,11 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     // CTEs materialization should be done in the original plan, but not in the plan with parallel replicas.
     optimization_settings.materialize_ctes = false;
     // If the parallel replicas plan will be chosen, the index analysis result will be reused from the single-replica plan.
-    optimization_settings.query_plan_optimize_primary_key = false;
+    // Not when this plan ships a join predicate, though: that predicate exists in no other plan, so nothing else can put
+    // it on the read as a key condition, and without one the replicas prune nothing and read their whole share - which is
+    // the entire point of shipping it. `considerEnablingParallelReplicas` skips the transplant for the same reason, so
+    // the read analyzes itself once the set is there.
+    optimization_settings.query_plan_optimize_primary_key = ship_join_predicate != 0;
     // Depends on PK optimizations that we don't perform here
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;

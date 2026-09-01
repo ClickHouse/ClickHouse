@@ -81,23 +81,34 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         }
     }
 
+    auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
+
+    /// The join above the instrumented node gets an entry of its own - see `setJoinMatchRateProvider`.
     if (join_match_rate_provider)
     {
-        if (const auto match_rate = join_match_rate_provider())
+        if (const auto match_rate = join_match_rate_provider(); match_rate && match_rate->probe_rows)
         {
-            res.join_node_hash = join_node_hash;
-            res.join_probe_rows = match_rate->probe_rows;
-            res.join_matched_probe_rows = match_rate->matched_rows;
+            LOG_DEBUG(
+                getLogger("RuntimeDataflowStatisticsCacheUpdater"),
+                "Collected join match rate for {}: probe rows={}, matched probe rows={}",
+                join_cache_key,
+                match_rate->probe_rows,
+                match_rate->matched_rows);
+
+            dataflow_cache.update(
+                join_cache_key,
+                RuntimeDataflowStatistics{
+                    .total_rows_to_read = total_rows_to_read,
+                    .join_probe_rows = match_rate->probe_rows,
+                    .join_matched_probe_rows = match_rate->matched_rows});
         }
     }
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, output bytes={}, join probe rows={}, join matched probe rows={}",
+        "Collected statistics: input bytes={}, output bytes={}",
         res.input_bytes,
-        res.output_bytes,
-        res.join_probe_rows,
-        res.join_matched_probe_rows);
+        res.output_bytes);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
     {
@@ -105,7 +116,6 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         return;
     }
 
-    auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
     dataflow_cache.update(cache_key, res);
 }
 

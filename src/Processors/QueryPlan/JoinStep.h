@@ -54,11 +54,11 @@ public:
     /// otherwise would silently report zero output bytes.
     bool supportsDataflowStatisticsCollection() const override { return use_new_analyzer; }
 
-    /// Asks the updater to also record this join's probe match rate, which the automatic parallel
-    /// replicas cost model prices shipping the join's semi-join predicate with. Unlike
-    /// `setRuntimeDataflowStatisticsCacheUpdater` this adds no transform to the pipeline: the join
-    /// counts the rows itself, so nothing has to be measured on the way past.
-    void recordProbeMatchRateInto(const RuntimeDataflowStatisticsCacheUpdaterPtr & updater, size_t join_node_hash) const;
+    /// Asks `updater` to also record this join's probe match rate, under `join_cache_key`, which the
+    /// automatic parallel replicas cost model prices shipping the join's semi-join predicate with. Unlike
+    /// `setRuntimeDataflowStatisticsCacheUpdater` this adds no transform to the pipeline: the join counts
+    /// the rows itself, so nothing has to be measured on the way past.
+    void recordProbeMatchRateInto(const RuntimeDataflowStatisticsCacheUpdaterPtr & updater, size_t join_cache_key) const;
 
     void describePipeline(FormatSettings & settings) const override;
 

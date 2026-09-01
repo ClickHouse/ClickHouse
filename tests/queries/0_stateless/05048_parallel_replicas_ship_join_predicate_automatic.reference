@@ -4,6 +4,8 @@ selective join: the predicate is shipped once the match rate is known
 shipped: 1
 join that matches everything: the predicate is not worth shipping
 shipped: 0
+shipping prunes what the replicas read
+shipped reads 10x fewer rows: 1
 the result does not depend on the decision
 17003796609112082856
 17003796609112082856
