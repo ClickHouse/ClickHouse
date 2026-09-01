@@ -217,12 +217,16 @@ public:
         for (size_t i = 0; i < places.size(); ++i)
             two_level_ptrs.emplace_back(&accessor(places[i])->asTwoLevelChecked());
 
+        /// The same L2 gate as `insertMany` on the destination's total buffer, decided once before the
+        /// workers start mutating it (summing sub-table sizes mid-merge would race them).
+        const bool prefetch_merge = first_two_level.getBufferSizeInBytes() > getL2CacheSize();
+
         ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_MERGER);
         try
         {
             auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-            auto thread_func = [&two_level_ptrs, &first_two_level, next_bucket_to_merge, &is_cancelled]()
+            auto thread_func = [&two_level_ptrs, &first_two_level, prefetch_merge, next_bucket_to_merge, &is_cancelled]()
             {
                 while (true)
                 {
@@ -238,7 +242,11 @@ public:
                         if (is_cancelled.load(std::memory_order_seq_cst))
                             return;
 
-                        first_two_level.impls[bucket].merge(two_level_ptrs[j]->impls[bucket]);
+                        /// An empty destination sub-table keeps `merge` for its buffer-copy fast path.
+                        if (prefetch_merge && !first_two_level.impls[bucket].empty())
+                            two_level_ptrs[j]->impls[bucket].template mergeInto</*prefetch=*/ true>(first_two_level.impls[bucket]);
+                        else
+                            first_two_level.impls[bucket].merge(two_level_ptrs[j]->impls[bucket]);
                     }
                 }
             };
@@ -269,14 +277,34 @@ public:
 
         if (isSingleLevel())
         {
-            asSingleLevel().merge(other.asSingleLevel());
+            auto & lhs = asSingleLevel();
+            /// Once the destination spills out of L2 the merge is cache-miss bound (same gate as `insertMany`):
+            /// take the prefetching `mergeInto`, which also skips `merge`'s preemptive dst+src resize - for
+            /// high-overlap merges that over-allocates and forces a full rehash. Below the gate keep `merge`
+            /// unchanged, including its empty-destination buffer-copy fast path (an above-gate destination
+            /// cannot be empty: its buffer only grows past L2 by holding elements).
+            if (lhs.getBufferSizeInBytes() > getL2CacheSize())
+                other.asSingleLevel().template mergeInto</*prefetch=*/ true>(lhs);
+            else
+                lhs.merge(other.asSingleLevel());
         }
         else
         {
             auto & lhs = asTwoLevelChecked();
 
+            /// The same L2 gate on the two-level destination's total buffer, decided once up front: the buffer
+            /// only grows during the merge, and in the pool path summing sub-table sizes mid-merge would race
+            /// the worker threads.
+            const bool prefetch_merge = lhs.getBufferSizeInBytes() > getL2CacheSize();
+
             if (other.isSingleLevel())
-                return lhs.merge(other.asSingleLevel());
+            {
+                if (prefetch_merge)
+                    other.asSingleLevel().template mergeInto</*prefetch=*/ true>(lhs);
+                else
+                    lhs.merge(other.asSingleLevel());
+                return;
+            }
 
             /// `getTwoLevelSet` marked the pointee shared, so no other holder mutates it in place while we read it.
             const auto rhs_ptr = other.getTwoLevelSet();
@@ -285,7 +313,11 @@ public:
             {
                 for (size_t i = 0; i < rhs.NUM_BUCKETS; ++i)
                 {
-                    lhs.impls[i].merge(rhs.impls[i]);
+                    /// An empty destination sub-table keeps `merge` for its buffer-copy fast path.
+                    if (prefetch_merge && !lhs.impls[i].empty())
+                        rhs.impls[i].template mergeInto</*prefetch=*/ true>(lhs.impls[i]);
+                    else
+                        lhs.impls[i].merge(rhs.impls[i]);
                 }
             }
             else
@@ -297,7 +329,7 @@ public:
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled]()
+                    auto thread_func = [&lhs, &rhs, prefetch_merge, next_bucket_to_merge, is_cancelled]()
                     {
                         while (true)
                         {
@@ -307,7 +339,11 @@ public:
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
                             if (bucket >= rhs.NUM_BUCKETS)
                                 return;
-                            lhs.impls[bucket].merge(rhs.impls[bucket]);
+                            /// An empty destination sub-table keeps `merge` for its buffer-copy fast path.
+                            if (prefetch_merge && !lhs.impls[bucket].empty())
+                                rhs.impls[bucket].template mergeInto</*prefetch=*/ true>(lhs.impls[bucket]);
+                            else
+                                lhs.impls[bucket].merge(rhs.impls[bucket]);
                         }
                     };
 
