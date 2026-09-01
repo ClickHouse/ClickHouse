@@ -88,14 +88,17 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     {
         if (const auto match_rate = join_match_rate_provider(); match_rate && match_rate->probe_rows)
         {
+            const auto filter_rate
+                = join_runtime_filter_pass_rate_provider ? join_runtime_filter_pass_rate_provider() : RuntimeFilterPassRate{};
+
             LOG_DEBUG(
                 getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-                "Collected join match rate for {}: probe rows={}, matched probe rows={}, read passed {} of {} scanned rows",
+                "Collected join match rate for {}: probe rows={}, matched probe rows={}, runtime filters passed {} of {} checked rows",
                 join_cache_key,
                 match_rate->probe_rows,
                 match_rate->matched_rows,
-                read_passed_rows.load(std::memory_order_relaxed),
-                total_rows_to_read);
+                filter_rate.passed_rows,
+                filter_rate.checked_rows);
 
             dataflow_cache.update(
                 join_cache_key,
@@ -103,7 +106,8 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
                     .total_rows_to_read = total_rows_to_read,
                     .join_probe_rows = match_rate->probe_rows,
                     .join_matched_probe_rows = match_rate->matched_rows,
-                    .read_passed_rows = read_passed_rows.load(std::memory_order_relaxed)});
+                    .filter_checked_rows = filter_rate.checked_rows,
+                    .filter_passed_rows = filter_rate.passed_rows});
         }
     }
 
@@ -346,19 +350,6 @@ RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
 {
     static RuntimeDataflowStatisticsCache stats_cache;
     return stats_cache;
-}
-
-RuntimeDataflowReadRowCounter::RuntimeDataflowReadRowCounter(
-    SharedHeader header_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
-    : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/false)
-    , updater(std::move(updater_))
-{
-}
-
-void RuntimeDataflowReadRowCounter::transform(Chunk & chunk)
-{
-    if (updater)
-        updater->recordReadPassedRows(chunk.getNumRows());
 }
 
 RuntimeDataflowStatisticsCollector::RuntimeDataflowStatisticsCollector(

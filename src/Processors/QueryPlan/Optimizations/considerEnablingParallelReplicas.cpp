@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 
 #include <Core/Joins.h>
+#include <Columns/ColumnConst.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
@@ -12,6 +14,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -242,10 +246,52 @@ bool subtreeContains(const QueryPlan::Node & subtree, const QueryPlan::Node & ta
     return false;
 }
 
+/// The rendezvous keys of every join runtime filter applied inside a branch, wherever the filter ended up:
+/// pushed into the read's PREWHERE, or left as a `Filter` above it. Both are the same predicate doing the
+/// same work, and only the filter's own counters say how much of it survived - the read's output row count
+/// does not, since a filter above the read leaves that count untouched.
+std::vector<String> collectRuntimeFilterKeys(const QueryPlan::Node & branch)
+{
+    std::vector<String> keys;
+
+    auto collect_from_dag = [&](const ActionsDAG & dag)
+    {
+        for (const auto & node : dag.getNodes())
+        {
+            if (!node.is_runtime_filter_id)
+                continue;
+            if (const auto * column = typeid_cast<const ColumnConst *>(node.column.get()))
+                keys.push_back(column->getValue<String>());
+        }
+    };
+
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        const_cast<QueryPlan::Node &>(branch),
+        [&](auto & node)
+        {
+            if (const auto * filter = typeid_cast<const FilterStep *>(node.step.get()))
+                collect_from_dag(filter->getExpression());
+            else if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
+            {
+                if (const auto prewhere_info = source->getPrewhereInfo())
+                    collect_from_dag(prewhere_info->prewhere_actions);
+                if (const auto & filter_dag = source->getFilterActionsDAG())
+                    collect_from_dag(*filter_dag);
+            }
+        });
+
+    ::sort(keys.begin(), keys.end());
+    keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+    return keys;
+}
+
 struct JoinAboveFragment
 {
     const JoinStep * step = nullptr;
     UInt64 node_hash = 0;
+    const QueryPlan::Node * probe_side = nullptr;
     const QueryPlan::Node * build_side = nullptr;
 };
 
@@ -290,7 +336,11 @@ std::optional<JoinAboveFragment> findJoinAboveFragment(
     if (hash_it == node_hashes.end())
         return {};
 
-    return JoinAboveFragment{.step = join_step, .node_hash = hash_it->second, .build_side = join_node->children[1]};
+    return JoinAboveFragment{
+        .step = join_step,
+        .node_hash = hash_it->second,
+        .probe_side = join_node->children[0],
+        .build_side = join_node->children[1]};
 }
 
 /// The number of rows the previous run's index analysis says a read scans, or nothing when the branch
@@ -338,18 +388,17 @@ bool shouldShipJoinPredicate(
 
     /// The predicate is priced by the fraction of the fragment's rows that survive it, and that fraction can
     /// be split between two places, because a join runtime filter applies the very same predicate earlier.
-    /// The filter sits in the read, below the aggregation, so whatever it removed the join never sees and
-    /// the join reports almost nothing but matches; without a filter the read passes everything and the
-    /// join's rate is the whole story. Their product is the fraction either way, and it is a product rather
-    /// than a choice because the filter is approximate above `join_runtime_filter_exact_values_limit` - it
-    /// passes false positives that the join then rejects.
-    const double read_pass_rate = join_stats->total_rows_to_read && join_stats->read_passed_rows
-        ? std::min(
-              1.0, static_cast<double>(join_stats->read_passed_rows) / static_cast<double>(join_stats->total_rows_to_read))
+    /// The filter applies below the aggregation, so whatever it removed the join never sees and the join
+    /// reports almost nothing but matches; without a filter nothing is removed early and the join's rate is
+    /// the whole story. Their product is the fraction either way, and it is a product rather than a choice
+    /// because the filter is approximate above `join_runtime_filter_exact_values_limit` - it passes false
+    /// positives that the join then rejects.
+    const double filter_pass_rate = join_stats->filter_checked_rows
+        ? std::min(1.0, static_cast<double>(join_stats->filter_passed_rows) / static_cast<double>(join_stats->filter_checked_rows))
         : 1.0;
     const double join_match_rate
         = static_cast<double>(join_stats->join_matched_probe_rows) / static_cast<double>(join_stats->join_probe_rows);
-    const double match_rate = read_pass_rate * join_match_rate;
+    const double match_rate = filter_pass_rate * join_match_rate;
 
     /// What a filtered row is worth depends on where the predicate can act. When it can restrict the read's
     /// key range, a row it removes is a row the replica never reads. When it cannot, the replicas read their
@@ -364,13 +413,13 @@ bool shouldShipJoinPredicate(
     LOG_DEBUG(
         getLogger("optimizeTree"),
         "Shipping the join predicate would save {} {} per replica against a {} row scan to build the set "
-        "(match rate {}: {} of {} rows past the read, {}/{} matched by the join)",
+        "(match rate {}: {} of {} rows past the join's runtime filters, {}/{} matched by the join)",
         rows_saved_per_replica,
         can_restrict_ranges ? "rows read" : "groups produced (the predicate cannot restrict the read's key range)",
         *build_side_rows,
         match_rate,
-        join_stats->read_passed_rows,
-        join_stats->total_rows_to_read,
+        join_stats->filter_passed_rows,
+        join_stats->filter_checked_rows,
         join_stats->join_matched_probe_rows,
         join_stats->join_probe_rows);
 
@@ -616,10 +665,12 @@ void considerEnablingParallelReplicas(
                     if (join_above_fragment
                         && shouldShipJoinPredicate(*join_above_fragment, rows_to_read, num_replicas, /*can_restrict_ranges=*/true))
                     {
-                        /// `globalIn`: the initiator evaluates the set once and broadcasts it. Plain `in` would
-                        /// make every replica repeat the scan of the build side, which costs more than sending
-                        /// the keys it distills down to.
-                        auto plan_with_shipped_predicate = optimization_settings.query_plan_with_parallel_replicas_builder(2);
+                        /// Plain `in`, not `globalIn`. The set is materialized once on the initiator either
+                        /// way - `buildQueryTreeForShard` ships the set of an injected `IN` as a temporary
+                        /// table, so no replica repeats the scan of the build side - but `globalIn` would cost
+                        /// the replicas their PREWHERE, which `MergeTreeWhereOptimizer::cannotBeMoved` refuses
+                        /// to move, and they would read every column for every row instead of the key first.
+                        auto plan_with_shipped_predicate = optimization_settings.query_plan_with_parallel_replicas_builder(1);
                         const auto * shipped_final_node
                             = plan_with_shipped_predicate ? findTopNodeOfReplicasPlan(plan_with_shipped_predicate->getRootNode()) : nullptr;
                         ReadFromMergeTree * shipped_reading_step = shipped_final_node ? findReadingStep(*shipped_final_node) : nullptr;
@@ -721,6 +772,45 @@ void considerEnablingParallelReplicas(
             = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes))
         {
             join_above_fragment->step->recordProbeMatchRateInto(updater, join_above_fragment->node_hash);
+
+            /// The join's match rate alone cannot price the predicate when a join runtime filter already
+            /// applies it below the aggregation: everything that reaches the join then matches. Read that
+            /// part of the selectivity off the filters themselves, once they have run.
+            if (auto filter_keys = collectRuntimeFilterKeys(*join_above_fragment->probe_side); !filter_keys.empty())
+            {
+                updater->setJoinRuntimeFilterPassRateProvider(
+                    [lookup = source_reading_step->getContext()->getRuntimeFilterLookup(), keys = std::move(filter_keys)]
+                    {
+                        /// The filters are applied as one conjunction over the same rows, so no more rows
+                        /// survive them all than survive the strongest of them. Taking that one - rather
+                        /// than a product, which would assume the keys are independent - keeps the estimate
+                        /// on the side that under-states how much the predicate removes.
+                        RuntimeFilterPassRate strongest;
+                        for (const auto & key : keys)
+                        {
+                            const auto filter = lookup->find(key);
+                            if (!filter)
+                                continue;
+
+                            const auto & stats = filter->getStats();
+                            /// Rows the filter waved through while it was disabled for performing poorly
+                            /// count as checked and passed: they did meet the predicate's cost and none of
+                            /// them was removed.
+                            const auto skipped = static_cast<size_t>(stats.rows_skipped.load(std::memory_order_relaxed));
+                            const RuntimeFilterPassRate rate{
+                                .checked_rows = static_cast<size_t>(stats.rows_checked.load(std::memory_order_relaxed)) + skipped,
+                                .passed_rows = static_cast<size_t>(stats.rows_passed.load(std::memory_order_relaxed)) + skipped};
+
+                            if (!rate.checked_rows)
+                                continue;
+                            if (!strongest.checked_rows
+                                || static_cast<double>(rate.passed_rows) * static_cast<double>(strongest.checked_rows)
+                                    > static_cast<double>(strongest.passed_rows) * static_cast<double>(rate.checked_rows))
+                                strongest = rate;
+                        }
+                        return strongest;
+                    });
+            }
         }
     }
 }

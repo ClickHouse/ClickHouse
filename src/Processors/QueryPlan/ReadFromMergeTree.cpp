@@ -5282,14 +5282,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         });
     }
 
-    /// Count what the read passes on, for the automatic parallel replicas cost model: against the rows
-    /// index analysis said would be scanned, it gives the selectivity of whatever filtered inside the read.
-    if (dataflow_cache_updater)
-    {
-        pipe.addSimpleTransform([&](const SharedHeader & header)
-        { return std::make_shared<RuntimeDataflowReadRowCounter>(header, dataflow_cache_updater); });
-    }
-
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 

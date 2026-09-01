@@ -42,19 +42,28 @@ struct RuntimeDataflowStatistics
     size_t join_probe_rows = 0;
     size_t join_matched_probe_rows = 0;
 
-    /// Rows the read passed on, against the `total_rows_to_read` it scanned. Their ratio is the fraction
-    /// that survived whatever filtered them inside the read - in practice a join runtime filter moved into
-    /// PREWHERE, which is the same predicate the parallel-replicas rewrite ships and which applies before
-    /// the aggregation, where the join's own match rate cannot see it. It is written to the join's entry
-    /// and not to the fragment's, for the same reason the match rate is: the filter comes from the join, so
-    /// two queries aggregating one subquery under different joins do not share this number either.
-    size_t read_passed_rows = 0;
+    /// Rows a join runtime filter of this join checked, and how many of them it let through. Their ratio is
+    /// the fraction that survived the very predicate the parallel-replicas rewrite ships, applied before the
+    /// aggregation, where the join's own match rate can no longer see it. The filter's own counters are used
+    /// rather than the read's output, because the two say different things whenever the filter is not pushed
+    /// into the read: applied as a filter above it, the read still passes every row. It is written to the
+    /// join's entry and not to the fragment's, for the same reason the match rate is: the filter comes from
+    /// the join, so two queries aggregating one subquery under different joins do not share this number.
+    size_t filter_checked_rows = 0;
+    size_t filter_passed_rows = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
 {
     return RuntimeDataflowStatistics{lhs.input_bytes + rhs.input_bytes, lhs.output_bytes + rhs.output_bytes};
 }
+
+/// Rows a set of join runtime filters checked and let through, summed over them.
+struct RuntimeFilterPassRate
+{
+    size_t checked_rows = 0;
+    size_t passed_rows = 0;
+};
 
 class RuntimeDataflowStatisticsCache
 {
@@ -140,8 +149,14 @@ public:
 
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
-    /// Unsampled, unlike the byte statistics: the point is the exact ratio to `total_rows_to_read`.
-    void recordReadPassedRows(size_t rows) { read_passed_rows.fetch_add(rows, std::memory_order_relaxed); }
+    /// Registers where to read the pass rate of the join runtime filters applied to the instrumented
+    /// node once the query has run. Like the match rate below it is a callback, for the same reason: the
+    /// filters count as they execute and only know their totals at the end. It is filed under the same
+    /// `join_cache_key`, since it describes that join's predicate.
+    void setJoinRuntimeFilterPassRateProvider(std::function<RuntimeFilterPassRate()> provider)
+    {
+        join_runtime_filter_pass_rate_provider = std::move(provider);
+    }
 
     /// Registers where to read the match rate of the join above the instrumented node once the query has
     /// run, and the key to file it under. It is a callback because the join counts the rows as it executes
@@ -171,8 +186,7 @@ private:
 
     size_t join_cache_key = 0;
     std::function<std::optional<JoinProbeMatchRate>()> join_match_rate_provider;
-
-    std::atomic_size_t read_passed_rows{0};
+    std::function<RuntimeFilterPassRate()> join_runtime_filter_pass_rate_provider;
 
     std::atomic_bool unsupported_case{false};
 
@@ -195,22 +209,6 @@ private:
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
-
-/// Counts every row a read step passes on. Cheap enough to be unsampled - one atomic add per chunk - and
-/// it has to be, because it is compared against a row count from index analysis rather than to itself.
-class RuntimeDataflowReadRowCounter : public ISimpleTransform
-{
-public:
-    RuntimeDataflowReadRowCounter(SharedHeader header_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
-
-    String getName() const override { return "RuntimeDataflowReadRowCounter"; }
-
-protected:
-    void transform(Chunk & chunk) override;
-
-private:
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-};
 
 class RuntimeDataflowStatisticsCollector : public ISimpleTransform
 {
