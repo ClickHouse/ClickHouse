@@ -106,7 +106,7 @@ ClickHouse は 2 つの公式 Terraform プロバイダーを提供していま�
 
 各サービスの作成時に設定されるデフォルトのレプリカ数は、Scale tier と Enterprise tier では 3、Basic tier では 1 です。
 Scale tier と Enterprise tier では、サービス作成リクエストで `numReplicas` フィールドを指定することで、この数を調整できます。
-ウェアハウス内の最初のサービスでは、`numReplicas` フィールドの値は 2 ～ 20 である必要があります。既存のウェアハウス内に作成するサービスでは、レプリカ数を 1 まで下げることができます。
+ウェアハウス内の最初のサービスでは、`numReplicas` フィールドの値は最低でも 2 である必要があります。既存のウェアハウス内に作成するサービスでは、レプリカ数を 1 まで下げることができます。レプリカ数の上限については、[使用制限](/ja/cloud/bestpractices/usage-limits)を参照してください。
 
 <div id="support">
   ## サポート

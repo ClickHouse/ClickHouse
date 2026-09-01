@@ -36,13 +36,13 @@ L&#39;écart entre les seuils crée une hystérésis afin d&#39;éviter que le s
 
 L’autoscaling horizontal se configure depuis la page **Settings** de votre service ou via l’[API de mise à l’échelle des répliques ClickHouse Cloud](/fr/products/cloud/api-reference/service/update-service-auto-scaling-settings).
 
-Pour l’activer :
+Pour l’activer :
 
-1. Fixez la taille verticale de vos répliques en définissant la mémoire minimale à la même valeur que la mémoire maximale. L’autoscaling horizontal nécessite actuellement une taille de réplique fixe ; l’autoscaling vertical et horizontal ne peuvent pas être actifs simultanément sur un même service.
+1. Fixez la taille verticale de vos répliques en définissant la mémoire minimale à la même valeur que la mémoire maximale. L’autoscaling horizontal nécessite actuellement une taille de réplique fixe ; l’autoscaling vertical et horizontal ne peuvent pas être actifs simultanément sur un même service.
 2. Définissez un nombre maximal de répliques supérieur au nombre minimal de répliques. L’autoscaler fonctionne dans ces limites. Définir les deux valeurs à l’identique fixe le nombre de répliques du service et désactive l’autoscaling horizontal.
 
 <Note>
-  Les services peuvent être mis à l’échelle horizontalement jusqu’à un maximum de 20 répliques. Si vous avez besoin de répliques supplémentaires, contactez notre équipe d’assistance.
+  Pour connaître les limites de répliques applicables à votre service, consultez [Limites d’utilisation](/fr/cloud/bestpractices/usage-limits). Contactez notre équipe d’assistance si vous avez besoin de répliques supplémentaires.
 </Note>
 
 <div id="configure-your-clients">
@@ -90,5 +90,5 @@ Les événements de mise à l’échelle sont visibles dans le tableau de bord d
 
 * L&#39;autoscaling horizontal est en Private Preview et doit être activé pour votre organisation par l&#39;équipe d&#39;assistance ClickHouse.
 * La taille verticale des répliques doit être fixée en définissant la mémoire minimale sur une valeur égale à la mémoire maximale.
-* Chaque service est limité à 20 répliques maximum. Contactez l&#39;assistance si vous avez besoin de répliques supplémentaires.
-* Des recommandations sont formulées toutes les 10 minutes ; l&#39;autoscaling horizontal n&#39;est pas conçu pour absorber des pics de moins d&#39;une minute. Pour des pics prévisibles, envisagez le [scheduled scaling](/fr/products/cloud/features/autoscaling/scheduled-scaling).
+* Des limites de répliques s&#39;appliquent ; consultez [Limites d&#39;utilisation](/fr/cloud/bestpractices/usage-limits) pour connaître celles qui s&#39;appliquent à votre service, et contactez l&#39;assistance si vous avez besoin de répliques supplémentaires.
+* Des recommandations sont formulées toutes les 10 minutes ; l&#39;autoscaling horizontal n&#39;est pas conçu pour absorber des pics de moins d&#39;une minute. Pour des pics prévisibles, envisagez le [scheduled scaling](/fr/products/cloud/features/autoscaling/scheduled-scaling).

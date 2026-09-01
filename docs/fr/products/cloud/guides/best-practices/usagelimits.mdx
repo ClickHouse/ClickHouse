@@ -2,24 +2,44 @@
 slug: /cloud/bestpractices/usage-limits
 sidebarTitle: 'Limites d’utilisation'
 title: 'Limites d’utilisation'
-description: 'Décrit les limites d’utilisation recommandées dans ClickHouse Cloud'
+description: 'Décrit les limites d’utilisation applicables aux organisations, aux warehouses et aux services dans ClickHouse Cloud'
 doc_type: 'reference'
 keywords: ['limites d’utilisation', 'quotas', 'bonnes pratiques', 'gestion des ressources', 'fonctionnalités cloud']
 ---
 
-Si ClickHouse est réputé pour sa rapidité et sa fiabilité, des performances optimales
-ne sont obtenues que dans certaines limites de fonctionnement. Par exemple, un nombre trop élevé de tables,
+ClickHouse est conçu pour la rapidité et la fiabilité. Afin de maintenir des performances optimales, nous recommandons
+de respecter certains paramètres de fonctionnement. Par exemple, un nombre trop élevé de tables,
 de bases de données ou de parts peut nuire aux performances. Pour éviter cela, ClickHouse
-Cloud impose des limites selon plusieurs dimensions opérationnelles.
-Les valeurs par défaut de ces garde-fous sont indiquées ci-dessous. Sauf indication contraire,
-ces garde-fous s’appliquent au niveau du service.
+Cloud applique des limites sur plusieurs dimensions opérationnelles.
+
+Les soft limits s’appliquent à trois portées différentes. Les sections ci-dessous commencent par les
+limites au niveau du service, celles que la plupart des workloads rencontrent en premier.
+
+| Portée                                   | Ce qu’elle couvre                                                                                                          | Limites à cette portée                                                                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[Service](#service-limits)**           | Un service unique et son compute                                                                                           | Compute par service (concurrence des requêtes, ingestion par lots) ; limites sur les objets de données en mode standalone (voir ci-dessous) |
+| **[Warehouse](#warehouse-limits)**       | Un [warehouse](/fr/products/cloud/features/infrastructure/warehouses) — le groupe de services qui partagent les mêmes données | Nombre cumulé de répliques dans le warehouse ; objets de données dans le shared catalog (tables, bases de données, etc.)                           |
+| **[Organization](#organization-limits)** | L’ensemble de votre organisation ClickHouse Cloud (tous les warehouses et services confondus)                              | Nombre de services ; nombre de warehouses                                                                                                   |
+
+La portée des **limites d’objets de données** (bases de données, tables, colonnes, partitions et parts) dépend de la manière dont vous exécutez vos services.
+Si vous exécutez des **services standalone**, ces limites s’appliquent à chaque service.
+Dès lors que des services partagent des données au sein d’un **warehouse**, ces mêmes limites s’appliquent une seule fois au shared catalog du warehouse.
+Les valeurs ne changent pas — seul le niveau auquel elles sont mesurées diffère.
 
 <Tip>
-  Si vous vous heurtez à l’un de ces garde-fous, il est possible que votre
-  cas d’utilisation ne soit pas mis en œuvre de manière optimale. Contactez le [support](https://clickhouse.com/support/program) et
-  nous vous aiderons volontiers à affiner votre cas d’utilisation afin d’éviter de dépasser ces garde-fous
-  ou à étudier avec vous comment les augmenter de manière contrôlée.
+  Si vous vous heurtez à l’un de ces garde-fous, il se peut que votre use case
+  soit mis en œuvre de manière non optimisée. Contactez le [support](https://clickhouse.com/support/program) :
+  nous vous aiderons volontiers à affiner votre use case pour éviter de dépasser ces garde-fous,
+  ou nous examinerons ensemble comment les relever de façon maîtrisée.
 </Tip>
+
+<div id="service-limits">
+  ## Limites de service
+</div>
+
+Les limites ci-dessous s’appliquent à un **service standalone** (et, pour le nombre d’objets de données, au stockage de ce service).
+
+Si le service appartient à un **warehouse**, les limites d’objets de données (bases de données, tables, colonnes, partitions et parts) s’appliquent à la place au shared catalog du warehouse, comme décrit dans [Limites des warehouses](#warehouse-limits) ci-dessous — les valeurs restent inchangées, mais elles sont mesurées à l’échelle de l’ensemble du warehouse plutôt que du service seul. Les autres limites, telles que la **concurrence des requêtes** et l’**ingestion par lots**, restent par service (ou par réplique) dans les deux cas.
 
 | Dimension                              | Limite                                                                                                              |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -32,30 +52,57 @@ ces garde-fous s’appliquent au niveau du service.
 | **Partitions**                         | 50k                                                                                                                 |
 | **Parts**                              | 10k (voir le paramètre [`max_parts_in_total`](/fr/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000)) |
 | **Taille des parts**                   | 150 GB                                                                                                              |
-| **Services par organisation**          | 20 (souple)                                                                                                         |
-| **Répliques par service**              | 20 (souple)                                                                                                         |
-| **Répliques par warehouse**            | 50 (souple)                                                                                                         |
 | **Faible cardinalité**                 | 10k ou moins                                                                                                        |
 | **Clés primaires dans une table**      | 4 à 5, filtrant suffisamment les données                                                                            |
 | **Concurrence des requêtes**           | 1000 (par réplique)                                                                                                 |
 | **Ingestion par lots**                 | Tout volume &gt; 1M lignes est divisé en blocs de 1M lignes                                                         |
 
-Pour les limites relatives aux répliques et au scaling des warehouses, consultez les [warehouses](/fr/products/cloud/features/infrastructure/warehouses#scaling).
-
-Les valeurs ci-dessus constituent des garde-fous par défaut. La limite appliquée à un service donné peut être supérieure à la valeur indiquée ici, car les services plus importants disposent d’une marge supplémentaire. La limite réellement applicable à votre service est indiquée dans l’avertissement que vous recevez à l’approche de cette limite. Pour les services dépassant déjà les limites d’utilisation ci-dessus, les limites de tables et de bases de données sont fixées au nombre actuel de tables et de bases de données du service, majoré de 25 %.
+Les valeurs ci-dessus constituent des garde-fous par défaut. La limite appliquée à un service donné peut être supérieure à la valeur indiquée ici, car les services plus importants disposent d’une marge supplémentaire. La limite réellement applicable à votre service est indiquée dans l’avertissement que vous recevez à l’approche de cette limite. Pour les services dépassant déjà ces limites, les limites de tables et de bases de données sont fixées au nombre actuel du service, majoré de 25 %.
 
 <Note>
   Pour les services à réplique unique, le nombre maximal de bases de données est limité à
   100 et le nombre maximal de tables à 500. De plus, le stockage
-  des services du niveau Basic est limité à 1 TB. Les limites de vues, de dictionnaires et de
+  des services du niveau Basic est limité à 1 TB. Les limites de vues, de dictionnaires et de
   collections nommées indiquées ci-dessus correspondent à une valeur unique applicable à tous les services,
   y compris les services à réplique unique.
 </Note>
 
-Les seuils d’avertissement et de rejet spécifiques à votre service peuvent être vérifiés en interrogeant system.server&#95;settings. Par exemple,
+Les seuils d’avertissement et de rejet spécifiques à votre service peuvent être vérifiés en interrogeant `system.server_settings`. Par exemple :
 
-```
-SELECT * 
-FROM system.server_settings 
+```sql
+SELECT *
+FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
+
+<div id="warehouse-limits">
+  ## Limites des warehouses
+</div>
+
+Un [warehouse](/fr/products/cloud/features/infrastructure/warehouses) est un ensemble de services qui partagent les mêmes données.
+Les limites de warehouse s&#39;appliquent à ce groupe partagé dans son ensemble — et non à chaque service pris séparément ni à l&#39;échelle de l&#39;organisation.
+
+| Dimension                   | Limite      |
+| --------------------------- | ----------- |
+| **Répliques par warehouse** | 50 (souple) |
+
+La limite de répliques correspond au nombre **combiné** de répliques de l&#39;ensemble des services du warehouse.
+Comme tous les services d&#39;un warehouse partagent un unique ClickHouse Keeper, cette limite vise à préserver la stabilité de Keeper. La valeur par défaut de 50 est souple et dépend de vos données et de votre workload ; le plafond est plus élevé à partir de ClickHouse 26.6, et nous prévoyons de le relever davantage à l&#39;avenir.
+Contactez le [support](https://clickhouse.com/support/program) pour l&#39;augmenter ; pour plus de détails sur le scaling des warehouses, consultez [warehouses](/fr/products/cloud/features/infrastructure/warehouses#scaling).
+
+Il n&#39;existe **aucun plafond distinct sur le nombre de services** dans un warehouse : celui-ci est uniquement borné par la limite combinée de répliques ci-dessus.
+
+Comme les services d&#39;un warehouse partagent un même catalog (les mêmes tables, bases de données, vues, etc.), les [limites d&#39;objets de données au niveau du service](#service-limits) ci-dessus sont comptabilisées **une seule fois par warehouse** plutôt que multipliées par service. Les warehouses distincts sont isolés les uns des autres : chaque warehouse comptabilise donc ses propres tables et bases de données au regard de ces limites.
+
+<div id="organization-limits">
+  ## Limites par organisation
+</div>
+
+Ces limites s&#39;appliquent à l&#39;ensemble d&#39;une organisation ClickHouse Cloud, c&#39;est-à-dire à la totalité de ses warehouses et services réunis.
+
+| Dimension                       | Limite        |
+| ------------------------------- | ------------- |
+| **Warehouses par organisation** | Aucune limite |
+| **Services par organisation**   | 20 (souple)   |
+
+La limite de **services par organisation** comptabilise chaque service de *tous* les warehouses de l&#39;organisation. Il s&#39;agit d&#39;un garde-fou hérité du passé plutôt que d&#39;un plafond strict ; contactez le [support](https://clickhouse.com/support/program), qui peut généralement le relever après une brève vérification.

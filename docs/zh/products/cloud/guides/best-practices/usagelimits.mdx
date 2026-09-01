@@ -1,24 +1,38 @@
 ---
 slug: /cloud/bestpractices/usage-limits
-sidebarTitle: '用量限制'
-title: '用量限制'
-description: '介绍 ClickHouse Cloud 中建议的用量限制'
-doc_type: '参考'
-keywords: ['用量限制', '配额', '最佳实践', '资源管理', '云功能']
+sidebarTitle: '使用限制'
+title: '使用限制'
+description: '介绍 ClickHouse Cloud 中的组织、仓库和服务使用限制'
+doc_type: 'reference'
+keywords: ['usage limits', 'quotas', 'best practices', 'resource management', 'cloud features']
 ---
 
-ClickHouse 以速度和可靠性著称，但只有在特定的运行参数范围内才能实现最佳性能。例如，表、
-数据库或 parts 过多可能会对性能造成负面影响。为避免这种情况，ClickHouse
-Cloud 会在多个运行维度设置限制。
-下方列出了这些限制的默认值。除非另有说明，
-这些限制均适用于服务级别。
+ClickHouse 的设计目标是速度与可靠性。为保持最佳性能，我们建议遵循一定的运行参数。例如，表、数据库或 parts 过多都会对性能产生负面影响。为避免这种情况，ClickHouse Cloud 在多个运行维度上施加了限制。
+
+Soft limits 适用于三种不同的范围。以下各节从服务级限制开始介绍，这也是大多数工作负载最先遇到的限制。
+
+| 范围                             | 涵盖内容                                                                      | 该范围内的限制                                                 |
+| ------------------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **[服务](#service-limits)**      | 单个服务及其计算资源                                                                | 每个服务的计算能力 (查询并发度、批量摄取) ；以独立服务方式运行时的数据对象限制 (见下文)  |
+| **[仓库](#warehouse-limits)**    | 一个[仓库](/zh/products/cloud/features/infrastructure/warehouses)——即共享同一份数据的一组服务 | 整个仓库中的副本总数；共享 Shared Catalog 中的数据对象 (表、数据库等)                   |
+| **[组织](#organization-limits)** | 你的整个 ClickHouse Cloud 组织 (涵盖所有仓库和服务)                                      | 服务数量；仓库数量                                               |
+
+**数据对象限制** (数据库、表、列、分区和 parts) 适用于哪个范围，取决于你如何运行服务。
+如果运行的是 **独立服务**，这些限制按单个服务分别计算。
+一旦多个服务在**仓库**中共享数据，同样的限制就改为整体作用于该仓库的共享 Shared Catalog。
+数值本身不变——变化的只是衡量的层级。
 
 <Tip>
-  如果您触及其中某项限制，可能意味着您的
-  用例实现方式尚未优化。请联系[支持团队](https://clickhouse.com/support/program)，我们
-  很乐意帮助您优化用例，避免超出这些限制，
-  或共同探讨如何以可控的方式提高限制。
+  如果你触及了其中某项防护限制，可能说明你实现用例的方式还有优化空间。请联系[支持团队](https://clickhouse.com/support/program)，我们很乐意协助你优化用例以避免超出这些防护限制，或与你一起探讨如何以可控的方式提高上限。
 </Tip>
+
+<div id="service-limits">
+  ## 服务限制
+</div>
+
+以下限制适用于**独立服务** (对于数据对象数量，则适用于该服务的存储) 。
+
+如果该服务属于某个**仓库**，则数据对象限制 (数据库、表、列、分区和 parts) 改为适用于该仓库的 Shared Catalog，如下文[仓库限制](#warehouse-limits)所述——数值保持不变，但按整个仓库而非单个服务来计量。其余限制，例如**查询并发度**和**批量摄取**，在两种情况下都仍按服务 (或按副本) 计算。
 
 | 维度              | 限制                                                                                                       |
 | --------------- | -------------------------------------------------------------------------------------------------------- |
@@ -31,17 +45,12 @@ Cloud 会在多个运行维度设置限制。
 | **分区**          | 50k                                                                                                      |
 | **Parts**       | 10k (请参阅 [`max_parts_in_total`](/zh/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000) 设置) |
 | **Part 大小**     | 150 GB                                                                                                   |
-| **每个组织的服务数**    | 20 (软限制)                                                                                                 |
-| **每个服务的副本数**    | 20 (软限制)                                                                                                 |
-| **每个仓库的副本数**    | 50 (软限制)                                                                                                 |
 | **低基数**         | 10k 或以下                                                                                                  |
 | **表中的主键**       | 4–5 个，且应能充分筛选数据                                                                                          |
 | **查询并发度**       | 1000 (每个副本)                                                                                              |
 | **批量摄取**        | 超过 100 万行的数据会拆分为每块 100 万行                                                                                |
 
-有关仓库副本和扩缩容限制，请参阅[仓库](/zh/products/cloud/features/infrastructure/warehouses#scaling)。
-
-上述数值为默认限制。特定服务实际执行的限制可能高于此处显示的值，因为较大的服务会配置更多余量。实际适用于您服务的限制会显示在您接近该限制时收到的警告中。对于已超过上述用量限制的服务，表/数据库限制设为该服务当前表/数据库数量加上 25%。
+上述数值为默认防护限制。特定服务实际执行的限制可能高于此处显示的值，因为较大的服务会配置更多余量。实际适用于您服务的限制会显示在您接近该限制时收到的警告中。对于已超过这些限制的服务，表和数据库限制设为该服务当前数量加上 25%。
 
 <Note>
   对于单副本服务，数据库数量上限为
@@ -51,10 +60,42 @@ Cloud 会在多个运行维度设置限制。
   包括单副本服务。
 </Note>
 
-可通过查询 system.server&#95;settings 验证适用于您服务的具体警告和拒绝限制。例如，
+可通过查询 `system.server_settings` 验证适用于您服务的具体警告和拒绝限制。例如：
 
-```
-SELECT * 
-FROM system.server_settings 
+```sql
+SELECT *
+FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
+
+<div id="warehouse-limits">
+  ## 仓库限制
+</div>
+
+[仓库](/zh/products/cloud/features/infrastructure/warehouses)是一组共享同一份数据的服务。
+仓库限制针对该共享组整体生效，而非针对每个服务单独生效，也不是按组织整体计算。
+
+| 维度           | 限制        |
+| ------------ | --------- |
+| **每个仓库的副本数** | 50 (软限制)  |
+
+该副本限制指仓库中所有服务的**合计**副本数。
+由于仓库中的所有服务共享同一个 ClickHouse Keeper，设置此限制是为了保障 Keeper 的稳定性。默认值 50 为软限制，实际取决于你的数据和工作负载；在 ClickHouse 26.6+ 上该上限更高，我们也计划在未来进一步提高。
+如需调高此限制，请联系[支持团队](https://clickhouse.com/support/program)；有关仓库扩缩容的更多详情，请参阅[仓库](/zh/products/cloud/features/infrastructure/warehouses#scaling)。
+
+仓库中的**服务数量没有单独的上限**，仅受上述合计副本数限制的约束。
+
+由于同一仓库中的服务共享一个 catalog (相同的表、数据库、视图等) ，上文的[服务级数据对象限制](#service-limits)**按仓库计一次**，而不会随服务数量成倍增加。不同仓库之间相互隔离，因此每个仓库各自统计自己的表和数据库是否达到这些限制。
+
+<div id="organization-limits">
+  ## 组织限制
+</div>
+
+这些限制适用于整个 ClickHouse Cloud 组织，即该组织下所有仓库和服务的总和。
+
+| 维度           | 限制        |
+| ------------ | --------- |
+| **每个组织的仓库数** | 无限制       |
+| **每个组织的服务数** | 20 (软限制)  |
+
+**每个组织的服务数**限制会统计组织中*所有*仓库下的每一个服务。这是历史遗留的防护限制，而非硬性上限；您可以联系[支持团队](https://clickhouse.com/support/program)，通常经过简单审核后即可上调该限制。

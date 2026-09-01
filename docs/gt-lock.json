@@ -7,36 +7,36 @@
       "versionId": "e1eaf2ec1e2f85b8419d7b132e370f27c240dfc1938fcf27f60d9b10f0f11751",
       "translations": {
         "zh": {
-          "updatedAt": "2026-09-01T17:41:34.772Z",
+          "updatedAt": "2026-09-01T23:52:48.231Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-01T17:41:34.355Z",
+          "updatedAt": "2026-09-01T23:52:47.858Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-01T17:41:35.051Z",
+          "updatedAt": "2026-09-01T23:52:48.474Z",
           "fileName": "docs.json",
           "postProcessHash": "468aac88b1d402b19bdc586143a6a1fee42af29432f3ac1f2184ec7ff9f4a518"
         },
         "ar": {
-          "updatedAt": "2026-09-01T17:41:34.902Z",
+          "updatedAt": "2026-09-01T23:52:48.351Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-01T17:41:34.637Z",
+          "updatedAt": "2026-09-01T23:52:48.108Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-01T17:41:34.073Z",
+          "updatedAt": "2026-09-01T23:52:47.600Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-01T17:41:34.495Z",
+          "updatedAt": "2026-09-01T23:52:47.984Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-01T17:41:34.215Z",
+          "updatedAt": "2026-09-01T23:52:47.731Z",
           "fileName": "docs.json"
         }
       },
@@ -82432,51 +82432,50 @@
     },
     {
       "fileId": "73a007ec90c9214a936b42942ed3e4eb253eef7093a758daec18b0cf9cd1f6c6",
-      "versionId": "47b7cf94a842bc95766fa15cef4ecf752d407e7d8aa6a100e22fca25e85eeac0",
+      "versionId": "df220c62649ed7368e242c03e19e0f72ba6b6d37da9316d0b646ba68f68bdbf9",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
-          "fileName": "es/products/cloud/features/autoscaling/horizontal.mdx",
-          "postProcessHash": "7f929caf6d65b62a639de767bb1cca4c2217be01c27bc928efe781e00ab4109b"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
-          "fileName": "ja/products/cloud/features/autoscaling/horizontal.mdx",
-          "postProcessHash": "9e37046b298a99126f3549d39416cf0596133243c3dd784290914176d485b1fc"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
-          "fileName": "ko/products/cloud/features/autoscaling/horizontal.mdx",
-          "postProcessHash": "e7a2cd907f836593c719bc88041e84d9a9082f2e0e26a3fda46ce990d1e31150"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
-          "fileName": "pt-BR/products/cloud/features/autoscaling/horizontal.mdx",
-          "postProcessHash": "a6c09ebc13bce77abd709020ca0495cd25cf49458f4dca9504208b2c0e5354bb"
+        "zh": {
+          "updatedAt": "2026-09-01T23:52:52.257Z",
+          "fileName": "zh/products/cloud/features/autoscaling/horizontal.mdx",
+          "postProcessHash": "558044fd529e270f7fd246644df044c1f89c742aac0d9fb73927e6930ef17013"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
+          "updatedAt": "2026-09-01T23:52:52.258Z",
           "fileName": "ru/products/cloud/features/autoscaling/horizontal.mdx",
-          "postProcessHash": "b0c8cd89199289da45f64d1bc47ea4538f51d975252daae9adb9afaf3b7fa45a"
+          "postProcessHash": "2eb2fab613ed0040f1aed339df590d9f29fde88551da83fabe3bd6d49d228d55"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.084Z",
-          "fileName": "zh/products/cloud/features/autoscaling/horizontal.mdx",
-          "postProcessHash": "df8d862d54bc53822e0164b36151b25de82fd270653845a261f5011826f873c6"
+        "es": {
+          "updatedAt": "2026-09-01T23:52:52.260Z",
+          "fileName": "es/products/cloud/features/autoscaling/horizontal.mdx",
+          "postProcessHash": "183ff228c2e222bbb482ed660e086368c554b3f19a15fa8760d8f06b6ace3909"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.084Z",
-          "fileName": "ar/products/cloud/features/autoscaling/horizontal.mdx",
-          "postProcessHash": "1c8b967f122c5696f9a14679b5b70c06a76c50ddfae0e0f43484585d8eace8ef"
+        "ko": {
+          "updatedAt": "2026-09-01T23:52:52.262Z",
+          "fileName": "ko/products/cloud/features/autoscaling/horizontal.mdx",
+          "postProcessHash": "87ca7391a06ad27da3e8557e2bc21031e8b9458f1801916c7e43ad0acc1b7473"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.084Z",
+          "updatedAt": "2026-09-01T23:52:52.263Z",
           "fileName": "fr/products/cloud/features/autoscaling/horizontal.mdx",
-          "postProcessHash": "63b6dcbd6cc8c9de1528af0b34c025ec8ba3c0b944452b96abe6a6ee624ef84b"
+          "postProcessHash": "c79d6280d611e883cf281cf20c003bb229c0a0da5254006e761f1ca5c90bc02d"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-01T23:52:52.263Z",
+          "fileName": "pt-BR/products/cloud/features/autoscaling/horizontal.mdx",
+          "postProcessHash": "2fca650d19c39dcb8907f3532fc693ab741c9c84aca1f522dd110f5d779fff8e"
+        },
+        "ja": {
+          "updatedAt": "2026-09-01T23:52:52.264Z",
+          "fileName": "ja/products/cloud/features/autoscaling/horizontal.mdx",
+          "postProcessHash": "9e26784bac856e5f1e3bd593b8fda606158f1b3a1380fd5373575c7f9e140fbb"
+        },
+        "ar": {
+          "updatedAt": "2026-09-01T23:52:52.270Z",
+          "fileName": "ar/products/cloud/features/autoscaling/horizontal.mdx",
+          "postProcessHash": "4be748853c2ed205a3fcfa9c40a01a312cab32aad3ac6121e9da0cdffcbaadc3"
         }
       },
-      "fileName": "products/cloud/features/autoscaling/horizontal.mdx",
-      "staged": false
+      "fileName": "products/cloud/features/autoscaling/horizontal.mdx"
     },
     {
       "fileId": "8f9d1033b8ca097a9aafeed576b784d15bf59908b793ce6a8b758a4812fd099c",
@@ -83960,95 +83959,94 @@
     },
     {
       "fileId": "ae05c013395c21e25edce81eec74e4702918695a434c4998447944f66bf0087e",
-      "versionId": "08c373a2fc6f7b9f3ee9ba8c5c212119888f17bf4069d1220ab96af0830070f9",
+      "versionId": "212f2208c22b58593cc2626d5147872edd601d27982ee9a5e576cc7478e02844",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.123Z",
-          "fileName": "es/products/cloud/guides/best-practices/multitenancy.mdx",
-          "postProcessHash": "309d7a8ffbcbf2573ef82ec9ac216a3b7a7549ccf983d6bac2f17fc69a0daec8"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.124Z",
-          "fileName": "ja/products/cloud/guides/best-practices/multitenancy.mdx",
-          "postProcessHash": "72087f57e284b9c40c6dcb73b88f86cb66f7ff7d047f7768c26f4157fda7e117"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.124Z",
-          "fileName": "ko/products/cloud/guides/best-practices/multitenancy.mdx",
-          "postProcessHash": "376d9f4650f3a74e5dd05a1eb2de5c6df1686a173825767ae7ae121e92f7b784"
+        "zh": {
+          "updatedAt": "2026-09-01T23:52:52.259Z",
+          "fileName": "zh/products/cloud/guides/best-practices/multitenancy.mdx",
+          "postProcessHash": "f6d68c35ef42c8792280757b36c6db17e71bb06f318b1998ff1deeb57c8f5bc2"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.124Z",
+          "updatedAt": "2026-09-01T23:52:52.261Z",
           "fileName": "pt-BR/products/cloud/guides/best-practices/multitenancy.mdx",
-          "postProcessHash": "6198c3c8ef5121ce4c03f7c2c4b48d13c78a2385e36380103b42a4a11cabc178"
+          "postProcessHash": "e9577b6e84ea02a8dd158b90c967294d3894037133a94f9805ad0f9380205ec5"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.124Z",
+          "updatedAt": "2026-09-01T23:52:52.261Z",
           "fileName": "ru/products/cloud/guides/best-practices/multitenancy.mdx",
-          "postProcessHash": "0d1259bb0413506c688455973199c4ddc8e7894ab559d12de172814dc2261a91"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.124Z",
-          "fileName": "zh/products/cloud/guides/best-practices/multitenancy.mdx",
-          "postProcessHash": "892e12742e8cc6a065551bd5efa933612b4486e1fe8747b4791c94c8d8305ad3"
+          "postProcessHash": "5708805d461bc464d292efd83a2625c9523400e8ef01b681ac5dfc73ccb0775b"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.125Z",
+          "updatedAt": "2026-09-01T23:52:52.264Z",
           "fileName": "ar/products/cloud/guides/best-practices/multitenancy.mdx",
-          "postProcessHash": "2e5da0703fed863634ded5ce57bba43546d8260ed2152c07462cd109ebaf20c4"
+          "postProcessHash": "5c7ad887d961f6a31653e7ac80c8f598318442cfe7e66d043180a6601421be00"
+        },
+        "ja": {
+          "updatedAt": "2026-09-01T23:52:52.265Z",
+          "fileName": "ja/products/cloud/guides/best-practices/multitenancy.mdx",
+          "postProcessHash": "74a1d3d6e61a2cd40c7ee67794a20d5ab46ee054500825ae6bff07e85c8366ad"
+        },
+        "ko": {
+          "updatedAt": "2026-09-01T23:52:52.265Z",
+          "fileName": "ko/products/cloud/guides/best-practices/multitenancy.mdx",
+          "postProcessHash": "b554a8470cd97991d0c7d82abd5325093e559a80302dd1fd3b0b119bde4a346e"
+        },
+        "es": {
+          "updatedAt": "2026-09-01T23:52:52.267Z",
+          "fileName": "es/products/cloud/guides/best-practices/multitenancy.mdx",
+          "postProcessHash": "24e1a8c6ab1defde60e4b742037e021545e0a14914e0e38baf0db6efde2f0c86"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.125Z",
+          "updatedAt": "2026-09-01T23:52:52.269Z",
           "fileName": "fr/products/cloud/guides/best-practices/multitenancy.mdx",
-          "postProcessHash": "412f1f75fc367aaaa8e72318faa0f7d4205fedfd686d496610c188ae69ffbb10"
+          "postProcessHash": "d2c318e5991c9864daa13b4cf7befa9c11979242b463a8a9380bedbab51b28c0"
         }
       },
-      "fileName": "products/cloud/guides/best-practices/multitenancy.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/best-practices/multitenancy.mdx"
     },
     {
       "fileId": "a985dfac03d083ff1f7979a0dca075162ac42bc2c8ec12451302e2aed9ced7bf",
-      "versionId": "2edeab96a209a012b65d30f36ac9e3c592987924ccc8984b8a645b8d08d6a08d",
+      "versionId": "6263a412aa048a1d606299881b913c23cae56e11bbf32fe3eff1c0fb5f029141",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-26T08:10:31.136Z",
+          "updatedAt": "2026-09-01T23:52:52.271Z",
           "fileName": "es/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "3212d4bcdd7f70dae40dd41350631958c47ce3d146e40bc86031b037d6a1ef6d"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:31.138Z",
-          "fileName": "ja/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "8b76fe8a955b4879648779392de2de88c0864dcf6e7132256a8a6d05594b34b3"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:31.139Z",
-          "fileName": "ko/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "26c16fc29b5c006744c4bd45157ecb2ef7aa26cfc64da22f67c49c4d8bd49da7"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:31.140Z",
-          "fileName": "pt-BR/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "fbfd1577af24135e031561fa678f68ee4e646c7a7f64a61beecfeb7de539ec5b"
+          "postProcessHash": "cf7a803a43209816ad17ba211b1e964ed7f8f551df8f68fa4ce081cbdba15084"
         },
         "ru": {
-          "updatedAt": "2026-08-26T08:10:31.140Z",
+          "updatedAt": "2026-09-01T23:52:52.271Z",
           "fileName": "ru/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "c4093807a6ec8cdbf9724834fa5ead3d8b2dfd947e0d6c3f2f0e9b3b1b939149"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:31.141Z",
-          "fileName": "zh/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "52dc7b2a34ac5305b0a187ec2edb5420f0dc2c9f942d15f21aefa92a442943b5"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:31.141Z",
-          "fileName": "ar/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "886b90b962f71bd0da23e569d00baa92b509052231a569e01761214168e2e9c8"
+          "postProcessHash": "f7b95b602cdd5076922dfa0e01c76cde1ee962e946730fb4b94ac03a6c91a687"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:31.142Z",
+          "updatedAt": "2026-09-01T23:52:52.272Z",
           "fileName": "fr/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "8fbd38750415888f02a1305887803032e8e8f04e424a4c340271030ed6bd9ae6"
+          "postProcessHash": "6e44fe10237deaf0c32dbf08e246ae7315a5d9a2531dbe5c63e5626a4aeb012b"
+        },
+        "zh": {
+          "updatedAt": "2026-09-01T23:52:52.272Z",
+          "fileName": "zh/products/cloud/guides/best-practices/usagelimits.mdx",
+          "postProcessHash": "e75592d31e49f15260e2d04c99672a96d07cde9c6ef81d12c986889a2913fe7c"
+        },
+        "ar": {
+          "updatedAt": "2026-09-01T23:52:52.272Z",
+          "fileName": "ar/products/cloud/guides/best-practices/usagelimits.mdx",
+          "postProcessHash": "faf2357c3c02272db56e0b50dd2e9d517457eb193e6c0d99b2a8339a3cd2a4f9"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-01T23:52:52.273Z",
+          "fileName": "pt-BR/products/cloud/guides/best-practices/usagelimits.mdx",
+          "postProcessHash": "9c7685de922f159a2a647c8600a40ce4ad711364f4d5abb1024e7ba70e8f556d"
+        },
+        "ja": {
+          "updatedAt": "2026-09-01T23:52:52.273Z",
+          "fileName": "ja/products/cloud/guides/best-practices/usagelimits.mdx",
+          "postProcessHash": "602b3a7a100a7ac61295f19aa44c3365f0eaff8c53770353579bafd277cf110a"
+        },
+        "ko": {
+          "updatedAt": "2026-09-01T23:52:52.273Z",
+          "fileName": "ko/products/cloud/guides/best-practices/usagelimits.mdx",
+          "postProcessHash": "63f47b319eccb4a483ae9fb096e0f99ca8372d49528dd9445bd77346670593f5"
         }
       },
       "fileName": "products/cloud/guides/best-practices/usagelimits.mdx"
@@ -98316,47 +98314,47 @@
     },
     {
       "fileId": "aae36974e4ae7b0a44d96044c0c09d078f7cbb64ccabc04ff6a0f9fbb0ae0898",
-      "versionId": "428ce5b0b750506793f4266bbcf43a0fbcdf5712f95a3e9348b2b3aa93afd7b9",
+      "versionId": "3365165268495e2b010d2f5e5b1a624a3db762a81f11a806cf59320c57e2423a",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:32.344Z",
-          "fileName": "es/products/cloud/features/admin-features/api/api-overview.mdx",
-          "postProcessHash": "09af574518c41cfcec5c423893662b1d70120d25d5518ebd94cb6726dd6efcd7"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:32.345Z",
-          "fileName": "ja/products/cloud/features/admin-features/api/api-overview.mdx",
-          "postProcessHash": "ccded58d868d5163f117994acd0afef377c5c1db49e0064b1747294ae5190693"
-        },
         "ko": {
-          "updatedAt": "2026-08-26T08:10:32.346Z",
+          "updatedAt": "2026-09-01T23:52:52.256Z",
           "fileName": "ko/products/cloud/features/admin-features/api/api-overview.mdx",
-          "postProcessHash": "1d7cca9314a6d9a2b9685fb84a41c30c95999437147c8d332040aa26c3788d46"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:32.347Z",
-          "fileName": "pt-BR/products/cloud/features/admin-features/api/api-overview.mdx",
-          "postProcessHash": "1be2ee26ba0a27e95056e42125d381b5002ccab6f2df159995ff764687d7e5b8"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:32.347Z",
-          "fileName": "ru/products/cloud/features/admin-features/api/api-overview.mdx",
-          "postProcessHash": "167192b8ca01371aa017dea2918a089ab37b7cc8da9ad248bf24ff58e8e8e227"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:32.349Z",
-          "fileName": "zh/products/cloud/features/admin-features/api/api-overview.mdx",
-          "postProcessHash": "2fc18ea596a35dad08000cf64dee247ea93e3574a8434f0e810a8bb1a90601b5"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:32.351Z",
-          "fileName": "ar/products/cloud/features/admin-features/api/api-overview.mdx",
-          "postProcessHash": "900ac528229b94a2ce854498a7ca06aaaf00a71affa75f232395a48d6267d280"
+          "postProcessHash": "7368322424e7fd22ee7fe1a0e7832c540e4525ea2927e8e52184c9e0f788745a"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:32.351Z",
+          "updatedAt": "2026-09-01T23:52:52.257Z",
           "fileName": "fr/products/cloud/features/admin-features/api/api-overview.mdx",
-          "postProcessHash": "d61e8a9b8af9e24fc6ffbe1add8d7b4508d0b08d56274538178689a1bce4b75e"
+          "postProcessHash": "10847b8134f5afe8641118bb4f50118c44d7d8bd84a71eb5a999b38732c3b0b6"
+        },
+        "ru": {
+          "updatedAt": "2026-09-01T23:52:52.260Z",
+          "fileName": "ru/products/cloud/features/admin-features/api/api-overview.mdx",
+          "postProcessHash": "a9dcdb05b82570834a7c3184554bccb0486a12ff0d5affcdb7fc76036b58d1f3"
+        },
+        "zh": {
+          "updatedAt": "2026-09-01T23:52:52.262Z",
+          "fileName": "zh/products/cloud/features/admin-features/api/api-overview.mdx",
+          "postProcessHash": "c84823b5a09b2a29c1c0df9d6bdfc415fd9fdb4a98e713b6c9db9a7c0f9fea5d"
+        },
+        "ja": {
+          "updatedAt": "2026-09-01T23:52:52.264Z",
+          "fileName": "ja/products/cloud/features/admin-features/api/api-overview.mdx",
+          "postProcessHash": "f73202c3aa4e79715182e23260fda89dc1906dedae7c4c3f26daa753f568759c"
+        },
+        "es": {
+          "updatedAt": "2026-09-01T23:52:52.266Z",
+          "fileName": "es/products/cloud/features/admin-features/api/api-overview.mdx",
+          "postProcessHash": "ff5cfa139897af53affdb8b5c5edd8be4383617791418f141872669fdc682d10"
+        },
+        "ar": {
+          "updatedAt": "2026-09-01T23:52:52.267Z",
+          "fileName": "ar/products/cloud/features/admin-features/api/api-overview.mdx",
+          "postProcessHash": "d83b58ed2b424fd54d5b8d8428e1dc9607bb0474628696daedd98a524fdf7386"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-01T23:52:52.268Z",
+          "fileName": "pt-BR/products/cloud/features/admin-features/api/api-overview.mdx",
+          "postProcessHash": "6a98310b66a9dca60b843e40ad601c21de185b70a169baf849239bed9d1d02df"
         }
       },
       "fileName": "products/cloud/features/admin-features/api/api-overview.mdx"
@@ -134880,51 +134878,50 @@
     },
     {
       "fileId": "2fda107eed1f281ebe879c83c5a18ba5986b77198ec4525be0e0f2f3bda443e9",
-      "versionId": "bf3976350b475c885f3b7cb52f41d426f3c8ff51f5227a9212cfc6e10ce7ad15",
+      "versionId": "9648c590c98ae7cb61539c1f88a99e9f0ae4bd835c2cd5448e6c5944f4c170ea",
       "translations": {
+        "fr": {
+          "updatedAt": "2026-09-01T23:52:52.259Z",
+          "fileName": "fr/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
+          "postProcessHash": "c2e249354816cba9cbad8c86df44e1d4b3eed16dc7e53d778770fc376e5f5176"
+        },
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.082Z",
+          "updatedAt": "2026-09-01T23:52:52.260Z",
           "fileName": "es/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-          "postProcessHash": "22a788e730eaaf4e501b16438402a979a61582274bd02a626e235b0ceeeb89be"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.082Z",
-          "fileName": "ja/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-          "postProcessHash": "86e8e53a097722f5af054e97438e4f0248dc565e61c9450adbeacd9edc17f30f"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.082Z",
-          "fileName": "ko/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-          "postProcessHash": "265abff6f18adc3b64a06e4bcc66c6cf53ad68ef244c226422d635970574e024"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
-          "fileName": "pt-BR/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-          "postProcessHash": "06ee0ae30fae8a42cbb7aa62939a5084eb45b16aa9db61b8dee9a29142cd43ec"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
-          "fileName": "ru/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-          "postProcessHash": "a4f9fcacb05805dbf7b420d2e10ff4ac00e1b4cda61706a313c789867ca4b7a1"
+          "postProcessHash": "75f370c78d51c3e07c6b5018c6c5d81b5bb8936a87fab61aca3a95a84202aa20"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
+          "updatedAt": "2026-09-01T23:52:52.266Z",
           "fileName": "zh/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-          "postProcessHash": "7642df8ce59962160feee584da355af3d78e43f063861bd7739b7b8a9d27a5e0"
+          "postProcessHash": "4efd6a3e85bd1cc991c5e3d600ed2590e9023519ebc9b5c944a3c6a0f5fc0c6a"
+        },
+        "ko": {
+          "updatedAt": "2026-09-01T23:52:52.267Z",
+          "fileName": "ko/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
+          "postProcessHash": "319e0783b58f8c9b9f9492f79e93e8ba14bee1933bb5e2fc0848db2890ffd93a"
+        },
+        "ru": {
+          "updatedAt": "2026-09-01T23:52:52.268Z",
+          "fileName": "ru/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
+          "postProcessHash": "a33ce9983c3885bc5f017dcb72de300d49aa6cbdd22a9d908656076a66f339bb"
+        },
+        "ja": {
+          "updatedAt": "2026-09-01T23:52:52.269Z",
+          "fileName": "ja/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
+          "postProcessHash": "64cbd9b464b1f0b4dfd851494043b06f5224931c7fc7a306033a2d052d91b3fe"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-01T23:52:52.269Z",
+          "fileName": "pt-BR/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
+          "postProcessHash": "9acc57f869095766afb6dd20690bca76b0fdcb958a273a6dfac79aad2a6f3a1f"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
+          "updatedAt": "2026-09-01T23:52:52.270Z",
           "fileName": "ar/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-          "postProcessHash": "40fa4b811b85fe1ba27a51188bb9a7d994bb4c757502bf249323343e0755c1d2"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.083Z",
-          "fileName": "fr/products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-          "postProcessHash": "658b79204d42e4ae902c2d45057a1fa43109c938d7ea58ce8c0db064576ce94b"
+          "postProcessHash": "132f43846f9a3a656a287170701bff5f3a6196852440e853cbedc3dfe81b4b1e"
         }
       },
-      "fileName": "products/cloud/features/autoscaling/horizontal-autoscaling.mdx",
-      "staged": false
+      "fileName": "products/cloud/features/autoscaling/horizontal-autoscaling.mdx"
     },
     {
       "fileId": "ef78cbf63f48a0373c952e3c26f50226ce25d50f6c46160f64475f05cfc116ac",
