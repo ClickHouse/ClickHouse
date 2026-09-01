@@ -14,3 +14,8 @@ api_key
 stripe
 -- column-restricted grant on the DEFINER view: ungranted column is denied --
 ACCESS_DENIED
+-- ALIAS column without a grant on it: must be denied even with inlining --
+ACCESS_DENIED
+-- granted ordinary column of the same view is still readable --
+api_key
+stripe

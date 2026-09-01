@@ -52,7 +52,23 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT k FROM v_def ORDER BY k SE
 echo "-- column-restricted grant on the DEFINER view: ungranted column is denied --"
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT v FROM v_def SETTINGS analyzer_inline_views = 1" 2>&1 | grep -o "ACCESS_DENIED" | head -n 1
 
+# A view can expose ALIAS columns, which the planner checks as separate SELECT privileges. The
+# inline gate must cover them (getAll, not getOrdinary), otherwise an ALIAS column the caller has
+# no grant on would still be inlined and its SELECT check skipped.
 ${CLICKHOUSE_CLIENT} --query "
+DROP VIEW IF EXISTS v_alias;
+CREATE VIEW v_alias (k String, secret String ALIAS upper(k)) SQL SECURITY DEFINER AS SELECT k FROM secrets;
+GRANT SELECT(k) ON ${CLICKHOUSE_DATABASE}.v_alias TO ${user};
+"
+
+echo "-- ALIAS column without a grant on it: must be denied even with inlining --"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT secret FROM v_alias SETTINGS analyzer_inline_views = 1" 2>&1 | grep -o "ACCESS_DENIED" | head -n 1
+
+echo "-- granted ordinary column of the same view is still readable --"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT k FROM v_alias ORDER BY k SETTINGS analyzer_inline_views = 1"
+
+${CLICKHOUSE_CLIENT} --query "
+DROP VIEW IF EXISTS v_alias;
 DROP VIEW IF EXISTS v_def;
 DROP VIEW IF EXISTS v_invoker;
 DROP TABLE IF EXISTS secrets;

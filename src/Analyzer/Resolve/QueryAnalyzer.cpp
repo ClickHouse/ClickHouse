@@ -5804,11 +5804,14 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// is never checked against the view or against the tables behind it. Only inline when the
     /// caller may already read the whole view, so that inlining cannot change the access decision;
     /// otherwise leave the TableNode in place and let the planner apply its normal column-aware check.
+    /// Use getAll() rather than getOrdinary(): a view can expose ALIAS (and MATERIALIZED) columns,
+    /// which the planner's per-column SELECT check treats as separate privileges, so they must be
+    /// covered here too - otherwise a caller lacking SELECT on an ALIAS column would still inline.
     if (!scope.context->getAccess()->isGranted(
             AccessType::SELECT,
             storage_id.getDatabaseName(),
             storage_id.getTableName(),
-            storage_snapshot->metadata->getColumns().getOrdinary().getNames()))
+            storage_snapshot->metadata->getColumns().getAll().getNames()))
         return;
 
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
