@@ -1,9 +1,12 @@
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
 
@@ -24,7 +27,12 @@ class FunctionGetServerSetting final : public IFunction
 public:
     static constexpr auto name = "getServerSetting";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetServerSetting>(); }
+    /// The function returns the same values as `system.server_settings`, so it requires the same grant.
+    static FunctionPtr create(ContextPtr context)
+    {
+        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "server_settings");
+        return std::make_shared<FunctionGetServerSetting>();
+    }
 
     String getName() const override { return name; }
 
@@ -94,6 +102,8 @@ REGISTER_FUNCTION(GetServerSetting)
 {
     FunctionDocumentation::Description description = R"(
 Returns the currently set value, given a server setting name.
+
+Requires the `SELECT` privilege on `system.server_settings`, just like reading that table.
     )";
     FunctionDocumentation::Syntax syntax = "getServerSetting(setting_name')";
     FunctionDocumentation::Arguments arguments = {
