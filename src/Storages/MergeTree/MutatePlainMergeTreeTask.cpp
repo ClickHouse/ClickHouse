@@ -141,6 +141,15 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// the PreActive part to Active, "resurrecting" old data.
                 {
                     auto lock = storage.lockParts();
+                    /// Re-check under the parts lock, immediately before the rename: a `KILL MUTATION`
+                    /// that lands between the earlier check above and here must not publish the part
+                    /// either. The `renameTempPartAndReplaceUnlocked` that follows is the publication
+                    /// point for the non-replicated path, so the check has to sit right next to it.
+                    /// Throwing here is safe: the `transaction` object's destructor rolls back the
+                    /// operation if it has not committed when the exception unwinds.
+                    if ((*merge_list_entry)->is_cancelled)
+                        throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+
                     storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
                     transaction.commit(lock);
                 }

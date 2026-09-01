@@ -348,6 +348,17 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     /// while with the old ordering it is still on disk and the cleanup thread removes it.
     FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_after_temporary_part_released);
 
+    /// Re-check `is_cancelled` at the actual publication point. A `KILL MUTATION` that lands after
+    /// the check at the top of this method (but before the part is committed into the active set)
+    /// must not publish the part either. The part directory has already been renamed to its final
+    /// name by `renameParts()` above, so roll the transaction back to return the part to its
+    /// temporary name before the thrown exception propagates and the caller's `cancel()` removes it.
+    if ((*merge_mutate_entry)->is_cancelled)
+    {
+        transaction_ptr->rollback();
+        throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+    }
+
     Stopwatch commit_watch;
 
     try
