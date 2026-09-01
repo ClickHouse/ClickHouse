@@ -101,7 +101,45 @@ SELECT count() FROM t_element_wise_live WHERE s <= (1, 2) SETTINGS optimize_redu
 SELECT count() FROM t_element_wise_live WHERE s = '(1,2)' AND s <= (1, 2) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1; -- { serverError NO_COMMON_TYPE }
 SELECT count() FROM t_element_wise_live WHERE s = '(1,2)' AND s <= (1, 2) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1; -- { serverError NO_COMMON_TYPE }
 
+-- 12) A `NULL` nested in a container constant. `Field` orders it by its type tag, before every value,
+--     while `IColumn::compareAt` orders it after every value, so the bound the analysis keeps is not the
+--     one execution treats as tighter. Comparing two such containers yields a plain `UInt8`, so the
+--     nullable-result screen never sees this. The single-condition counts are the ground truth again.
+DROP TABLE IF EXISTS t_element_wise_nested_null;
+CREATE TABLE t_element_wise_nested_null (id UInt32, a Array(Nullable(UInt32)), alc Array(LowCardinality(Nullable(String))), m Map(String, Nullable(Float64))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_element_wise_nested_null VALUES (1, [NULL], [NULL], map('k', NULL));
+SELECT count() FROM t_element_wise_nested_null WHERE a <= [NULL] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE a <= [1] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE a <= [NULL] AND a <= [1] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE a <= [NULL] AND a <= [1] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+
+-- 13) The same with the `Nullable` under a `LowCardinality`, which a screen on the type would have to
+--     strip to see. A screen on the constant has no wrapper to strip.
+SELECT count() FROM t_element_wise_nested_null WHERE alc <= [NULL] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE alc <= ['b'] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE alc <= [NULL] AND alc <= ['b'] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE alc <= [NULL] AND alc <= ['b'] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+
+-- 14) The same for a `Map`, which is never decomposed, so this arm holds independently of which shapes
+--     the element-wise classifier covers.
+SELECT count() FROM t_element_wise_nested_null WHERE m <= map('k', NULL) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE m <= map('k', 1.) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE m <= map('k', NULL) AND m <= map('k', 1.) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_nested_null WHERE m <= map('k', NULL) AND m <= map('k', 1.) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+
+-- 15) The folds that must survive: the same nullable element types, with constants that carry no `NULL`.
+--     These are what distinguish screening the constant from screening the type, which would give them up.
+DROP TABLE IF EXISTS t_element_wise_nullable_live;
+CREATE TABLE t_element_wise_nullable_live (id UInt32, an Array(Nullable(UInt32)), mn Map(String, Nullable(Float64))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_element_wise_nullable_live VALUES (1, [5], map('k', 5.));
+SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_nullable_live WHERE an = [5] AND an >= [0] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_nullable_live WHERE an = [5] AND an >= [0] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_nullable_live WHERE mn = map('k', 5.) AND mn >= map('k', 0.) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_nullable_live WHERE mn = map('k', 5.) AND mn >= map('k', 0.) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+
 DROP TABLE t_element_wise_array;
 DROP TABLE t_element_wise_tuple;
 DROP TABLE t_element_wise_const_string;
 DROP TABLE t_element_wise_live;
+DROP TABLE t_element_wise_nested_null;
+DROP TABLE t_element_wise_nullable_live;
