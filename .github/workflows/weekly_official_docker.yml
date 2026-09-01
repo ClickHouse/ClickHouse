@@ -30,7 +30,7 @@ env:
         type: boolean
 
 concurrency:
-  group: ${{ github.workflow }}
+  group: CreateRelease
 
 jobs:
   UpdateOfficialDocker:
