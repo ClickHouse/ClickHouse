@@ -68,7 +68,6 @@ public:
         }
         else
         {
-            /// Detach key-value args for ITableFunctionFileLike, reattach after.
             HTTPHeaderEntries tmp_headers;
             String tmp_http_method;
             size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context, /*evaluate_arguments=*/ true, &tmp_http_method);

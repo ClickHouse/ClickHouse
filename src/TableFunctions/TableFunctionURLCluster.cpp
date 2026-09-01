@@ -16,7 +16,6 @@ namespace
 {
     void checkURLClusterDoesNotUseIndexPageWildcards(const String & filename)
     {
-        /// `StorageURLCluster` cannot list index pages.
         if (urlPathHasListableGlobs(filename))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
     }
