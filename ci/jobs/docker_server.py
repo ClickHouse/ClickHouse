@@ -643,7 +643,10 @@ def build_and_push_image(
 def test_docker_library(test_results) -> None:
     """we test our images vs the official docker library repository to track integrity"""
     arch = "amd64" if Utils.is_amd() else "arm64"
-    check_images = [tr.name for tr in test_results if tr.name.endswith(f"-{arch}")]
+    # An image whose build failed does not exist, so testing it only reports that.
+    check_images = [
+        tr.name for tr in test_results if tr.name.endswith(f"-{arch}") and tr.is_ok()
+    ]
     if not check_images:
         return
     test_name = "docker library image test"
