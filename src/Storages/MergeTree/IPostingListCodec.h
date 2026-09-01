@@ -15,9 +15,13 @@ namespace DB
 {
 
 struct TokenPostingsInfo;
+struct PostingListBuildContext;
 class ReadBuffer;
 class WriteBuffer;
 using PostingList = roaring::Roaring;
+
+/// Shared immutable array of UInt32 values of one posting-list block, e.g. row ids or term frequencies.
+using PaddedPODArrayPtr = std::shared_ptr<const PaddedPODArray<UInt32>>;
 
 /// Incrementally encodes the posting list of a single token during the text index build.
 /// Sorted row ids arrive in batches via `append`, are split into fixed-size segments and
@@ -32,8 +36,13 @@ public:
     virtual ~IPostingListEncoder() = default;
 
     /// Encodes a batch of sorted unique row ids (increasing across calls), appending to the open segment.
-    /// Each time the open segment reaches `segment_size` row ids, it is sealed and a new one is started.
-    virtual void append(std::span<const UInt32> row_ids, size_t segment_size) = 0;
+    /// Each time the open segment reaches `context.segment_size` row ids, it is sealed and a new one is started.
+    /// A non-empty `tf_minus_one` (parallel to `row_ids`) carries the per-row term frequencies
+    /// on the BM25 scoring path.
+    virtual void append(
+        std::span<const UInt32> row_ids,
+        std::span<const UInt32> tf_minus_one,
+        const PostingListBuildContext & context) = 0;
 
     /// Seals the last segment and writes all accumulated segments to `out`.
     /// Fills per-segment metadata (offsets, ranges) and header flags in `info`.
@@ -64,19 +73,24 @@ public:
     Type getType() const { return type; }
 
     /// Returns the effective segment size for the requested `posting_list_block_size`.
-    /// Codecs may round the requested size (e.g. `bitpacking` aligns it to the size of
-    /// the physical block expected by the SIMD bit-packing implementation).
+    /// Codecs may round the requested size.
     virtual size_t getSegmentSize(size_t posting_list_block_size) const { return posting_list_block_size; }
 
     /// Creates an accumulator that encodes segments of row ids into this codec's format.
     virtual std::unique_ptr<IPostingListEncoder> createEncoder() const = 0;
 
-    /// Reads a single encoded segment of a posting list and decodes it into `postings`, which must be empty.
-    /// `buffer` is a caller-owned scratch buffer, reused across calls.
-    virtual void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const = 0;
+    /// Reads a single encoded segment of a posting list, decodes it, and appends it to `postings`.
+    /// Term frequencies, if present, are skipped. `buffer` is a caller-owned scratch buffer, reused across calls.
+    virtual void decode(ReadBuffer & in, PostingList & postings, bool has_term_frequencies, PaddedPODArray<char> & buffer) const = 0;
 
     /// The same, but appends the decoded row ids to a plain array.
-    virtual void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const = 0;
+    virtual void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, bool has_term_frequencies, PaddedPODArray<char> & buffer) const = 0;
+
+    /// The same, but also appends the exact per-row term frequencies to `tfs`, parallel to `row_ids`.
+    /// Only valid for posting lists written with term frequencies.
+    virtual void decodeWithTermFrequencies(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs, PaddedPODArray<char> & buffer) const = 0;
+
+
 private:
     Type type{};
 };

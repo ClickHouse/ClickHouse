@@ -128,12 +128,16 @@ enum class TextIndexPostingsCacheKind : UInt8
     Roaring = 0,
     Segment = 1,
     Flat = 2,
-    Phrase = 3, /// phrase-search result, reusing the Flat (sorted doc-id) payload
+    /// Phrase search result, reusing the Flat (sorted doc-id) payload.
+    Phrase = 3,
+    /// Flat postings of one posting-list block (sorted row ids and per-row term frequencies), decoded for BM25 scoring.
+    ScoringPostings = 4,
 };
 
 /// A single cell of TextIndexPostingsCache. It holds one of:
 ///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block;
-///   - FlatPostingsPtr:       a flattened sorted array of analyzer-folded postings (prebuilt or embedded cursor);
+///   - PaddedPODArrayPtr:     a plain array of UInt32 values: a flattened sorted array of postings (Flat, Phrase);
+///   - ScoringPostingsPtr:    flat sorted row ids of one posting-list block with their term frequencies (BM25 scoring);
 ///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
 /// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
 /// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.
@@ -144,8 +148,13 @@ struct TextIndexPostingsCacheCell
     {
     }
 
-    explicit TextIndexPostingsCacheCell(FlatPostingsPtr flat)
-        : value(std::move(flat))
+    explicit TextIndexPostingsCacheCell(PaddedPODArrayPtr array)
+        : value(std::move(array))
+    {
+    }
+
+    explicit TextIndexPostingsCacheCell(ScoringPostingsPtr scoring_postings)
+        : value(std::move(scoring_postings))
     {
     }
 
@@ -154,7 +163,7 @@ struct TextIndexPostingsCacheCell
     {
     }
 
-    std::variant<PostingListPtr, FlatPostingsPtr, PostingListSegmentPtr> value;
+    std::variant<PostingListPtr, PaddedPODArrayPtr, ScoringPostingsPtr, PostingListSegmentPtr> value;
 };
 
 /// Estimate of the memory usage (bytes) of a posting cache cell
@@ -171,8 +180,10 @@ struct TextIndexPostingsWeightFunction
 
             if constexpr (std::is_same_v<T, PostingListPtr>)
                 return payload->getSizeInBytes();
-            else if constexpr (std::is_same_v<T, FlatPostingsPtr>)
+            else if constexpr (std::is_same_v<T, PaddedPODArrayPtr>)
                 return payload->allocated_bytes();
+            else if constexpr (std::is_same_v<T, ScoringPostingsPtr>)
+                return payload->row_ids.allocated_bytes() + payload->term_frequencies.allocated_bytes();
             else if constexpr (std::is_same_v<T, PostingListSegmentPtr>)
                 return payload->bytesAllocated();
             else

@@ -41,6 +41,7 @@ struct MergeTreeIndexSubstream
         TextIndexDictionary,
         TextIndexPostings,
         TextIndexPositions,
+        TextIndexDocLengths,
     };
 
     Type type;
@@ -76,12 +77,12 @@ using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, Merge
 
 struct MergeTreeIndexDeserializationState
 {
-    MergeTreeIndexVersion version;
-    const IMergeTreeIndexCondition * condition;
+    MergeTreeIndexVersion version = 0;
+    const IMergeTreeIndexCondition * condition = nullptr;
     const IMergeTreeDataPartInfoForReader & part_info;
     const IMergeTreeIndex & index;
-    const MarkRanges * readable_ranges;
-    bool skip_postings_deserialization;
+    const MarkRanges * readable_ranges = nullptr;
+    bool text_index_read_postings = true;
 };
 
 }

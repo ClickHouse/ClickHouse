@@ -108,6 +108,8 @@ private:
     absl::flat_hash_map<UInt128, QueryBuilder> query_builders;
     /// Active queries that still depend on a given token.
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
+    /// Tokens that stay "needed" regardless of the query state (the scoring tokens of `_bm25_score`).
+    absl::flat_hash_set<String> always_needed_tokens;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
 

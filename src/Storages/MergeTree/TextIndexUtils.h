@@ -114,6 +114,10 @@ private:
     void readDictionaryBlock(size_t source_num);
     /// Adjusts the part offset of the given row id according to merged part offsets.
     UInt32 adjustPartOffset(size_t part_index, UInt32 row_id) const;
+    /// Builds the merged per-row document lengths and the per-part BM25 collection statistics once,
+    /// before token iteration. Only called on the scoring path.
+    void buildDocLengthsAndStats();
+
     /// Adjusts all row ids in place; no-op without merged part offsets.
     void adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const;
 
@@ -136,6 +140,9 @@ private:
         /// Decoded and remapped row ids of the current segment.
         /// The sort cursor points at this column once, in the task constructor.
         ColumnUInt32::MutablePtr column;
+        /// Exact per-row term frequencies of the current segment, parallel to the row ids.
+        /// Empty when the segment carries none (every `tf == 1`) or the merge is not scoring.
+        PaddedPODArray<UInt32> tfs;
         SortCursorImpl impl;
 
         PaddedPODArray<UInt32> & rowIds() { return column->getData(); }
@@ -154,11 +161,14 @@ private:
     /// Decodes the source's next segment; returns false when the source is exhausted.
     bool advanceCursorSegment(PostingsMergeCursor & cursor);
 
-    /// Merges the postings of output_sources and passes sorted non-empty chunks of row ids
-    /// to the sink in the globally sorted order. A token from a single source is drained
-    /// directly, otherwise the sources are k-way merged through postings_queue.
+    /// Merges the postings of output_sources and passes sorted non-empty
+    /// chunks of row ids to the sink in the globally sorted order.
     template <typename Sink>
     void mergePostings(Sink && sink);
+
+    /// Appends the per-row `(tf - 1)` of one merged chunk to output_tfs_buffer, parallel to the row ids;
+    /// an empty `tfs` span means every `tf` of the chunk is 1.
+    void appendTermFrequencies(std::span<const UInt32> tfs, size_t num_row_ids);
 
     /// Serializes a merged posting list of up to MAX_CARDINALITY_FOR_RAW_POSTINGS row ids as raw or embedded postings.
     TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
@@ -205,6 +215,9 @@ private:
     std::vector<TokenSource> output_sources;
     /// Reusable buffer for the merged row ids of the current token.
     PaddedPODArray<UInt32> output_postings_buffer;
+    /// Merged exact per-row term frequencies of the current token, parallel to
+    /// output_postings_buffer. Filled only on the scoring path.
+    PaddedPODArray<UInt32> output_tfs_buffer;
     /// Resusable cursors for merging of posting lists.
     std::vector<PostingsMergeCursor> postings_merge_cursors;
     /// Min-queue over the postings cursors of the current token; drained by every mergePostings call.
@@ -223,6 +236,12 @@ private:
     std::vector<PostingsSerialization> source_postings_serializations;
 
     bool is_initialized = false;
+
+    /// BM25 scoring state.
+    /// Merged per-row `SmallFloat` document-length bytes, indexed by global merged row id.
+    PaddedPODArray<UInt8> merged_doc_lengths;
+    /// Total sum of the merged per-row document lengths.
+    UInt64 merged_sum_doc_length = 0;
 };
 
 using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;

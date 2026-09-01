@@ -243,6 +243,8 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
     auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
 
+    /// The index parameters already carry the version that can represent every enabled feature, so with
+    /// BM25 scoring this is `V3_WithScoring` and each token's `HasTermFrequencies` flag is valid.
     return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version);
 }
 
@@ -363,7 +365,7 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, /*with_postings=*/true);
     const auto & tokens = inputs[source_num].tokens;
     cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     queue.push(cursors[source_num]);
@@ -397,21 +399,27 @@ void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenS
 {
     cursor.source = &source;
     cursor.next_segment = 0;
+    cursor.rowIds().clear();
+    if (params.enable_scoring)
+        cursor.tfs.clear();
 
     const auto & info = source.info;
 
     if (!info.embedded_postings.empty())
     {
-        auto & row_ids = cursor.rowIds();
-        row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
-        adjustPartOffsets({row_ids.data(), row_ids.size()}, segments[source.source_num].part_index);
+        cursor.rowIds().assign(info.embedded_postings.begin(), info.embedded_postings.end());
+        adjustPartOffsets(cursor.rowIds(), segments[source.source_num].part_index);
+
+        if (params.enable_scoring && !info.embedded_term_frequencies.empty())
+            cursor.tfs.assign(info.embedded_term_frequencies.begin(), info.embedded_term_frequencies.end());
+
         cursor.next_segment = info.offsets.size();
         cursor.resetToColumnStart();
     }
     else
     {
-        bool refilled = advanceCursorSegment(cursor);
-        chassert(refilled);
+        bool advanced = advanceCursorSegment(cursor);
+        chassert(advanced);
     }
 }
 
@@ -424,16 +432,25 @@ bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
     size_t source_num = cursor.source->source_num;
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     stream->seekToMark({info.offsets[cursor.next_segment], 0});
+    const bool has_term_frequencies = params.enable_scoring && (info.header & PostingsSerialization::Flags::HasTermFrequencies);
 
-    auto & row_ids = cursor.rowIds();
-    row_ids.clear();
-    source_postings_serializations[source_num].deserializeToArray(*stream->getDataBuffer(), info.header, info.cardinality, row_ids);
-    adjustPartOffsets({row_ids.data(), row_ids.size()}, segments[source_num].part_index);
+    cursor.rowIds().clear();
+    cursor.tfs.clear();
+
+    source_postings_serializations[source_num].deserializeToArray(
+        *stream->getDataBuffer(),
+        info.header,
+        info.cardinality,
+        cursor.rowIds(),
+        has_term_frequencies ? &cursor.tfs : nullptr);
+
+    adjustPartOffsets(cursor.rowIds(), segments[source_num].part_index);
     ++cursor.next_segment;
     cursor.resetToColumnStart();
 
-    chassert(!row_ids.empty());
-    chassert(std::is_sorted(row_ids.begin(), row_ids.end()));
+    chassert(!cursor.rowIds().empty());
+    chassert(std::is_sorted(cursor.rowIds().begin(), cursor.rowIds().end()));
+    chassert(cursor.tfs.empty() || cursor.tfs.size() == cursor.rowIds().size());
     return true;
 }
 
@@ -455,11 +472,9 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
     if (num_cursors == 1)
     {
         auto & cursor = postings_merge_cursors.front();
-
         do
         {
-            const auto & row_ids = cursor.rowIds();
-            sink(std::span<const UInt32>(row_ids.data(), row_ids.size()));
+            sink(cursor.rowIds(), cursor.tfs);
         }
         while (advanceCursorSegment(cursor));
 
@@ -477,18 +492,20 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
         PostingsSortCursor & current = *current_ptr;
         auto & cursor = postings_merge_cursors[current->order];
 
-        const UInt32 * begin = cursor.rowIds().data() + current->getPos();
-
         /// Sources must own disjoint row sets.
-        if (begin[0] < last_row_id_watermark)
+        if (cursor.rowIds()[current->getPos()] < last_row_id_watermark)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Source posting lists have overlapping row ids: got row id {} after {}",
-                begin[0], last_row_id_watermark - 1);
+                cursor.rowIds()[current->getPos()], last_row_id_watermark - 1);
         }
 
-        last_row_id_watermark = static_cast<UInt64>(begin[batch_size - 1]) + 1;
-        sink(std::span<const UInt32>(begin, batch_size));
+        size_t end_pos = current->getPos() + batch_size - 1;
+        last_row_id_watermark = static_cast<UInt64>(cursor.rowIds()[end_pos]) + 1;
+
+        auto row_ids_chunk = std::span<const UInt32>(cursor.rowIds().data() + current->getPos(), batch_size);
+        auto tfs_chunk = cursor.tfs.empty() ? std::span<const UInt32>() : std::span<const UInt32>(cursor.tfs.data() + current->getPos(), batch_size);
+        sink(row_ids_chunk, tfs_chunk);
 
         if (!current->isLast(batch_size))
         {
@@ -505,32 +522,65 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
     }
 }
 
+void MergeTextIndexesTask::appendTermFrequencies(std::span<const UInt32> tfs, size_t num_row_ids)
+{
+    if (tfs.empty())
+    {
+        output_tfs_buffer.resize_fill(output_tfs_buffer.size() + num_row_ids, 0u);
+    }
+    else
+    {
+        chassert(tfs.size() == num_row_ids);
+        for (UInt32 tf : tfs)
+            output_tfs_buffer.push_back(tf - 1);
+    }
+}
+
 TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
     using enum PostingsSerialization::Flags;
     output_postings_buffer.clear();
     output_postings_buffer.reserve(total_cardinality);
+    output_tfs_buffer.clear();
+    bool write_term_frequencies = false;
 
-    mergePostings([&](std::span<const UInt32> row_ids)
+    mergePostings([&](std::span<const UInt32> row_ids, std::span<const UInt32> tfs)
     {
         output_postings_buffer.insert(row_ids.begin(), row_ids.end());
+
+        if (params.enable_scoring)
+        {
+            write_term_frequencies |= !tfs.empty();
+            appendTermFrequencies(tfs, row_ids.size());
+        }
     });
 
     TokenPostingsInfo token_info;
     token_info.cardinality = static_cast<UInt32>(output_postings_buffer.size());
 
+    if (write_term_frequencies)
+    {
+        token_info.header |= HasTermFrequencies;
+    }
+
     if (token_info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
-        /// Embedded postings are serialized into the dictionary block by flushDictionaryBlock.
-        token_info.header = RawPostings | EmbeddedPostings;
+        /// Embedded postings (and their inline term frequencies) are serialized into the dictionary block by flushDictionaryBlock.
+        token_info.header |= RawPostings | EmbeddedPostings;
         token_info.embedded_postings.assign(output_postings_buffer.begin(), output_postings_buffer.end());
+
+        if (write_term_frequencies)
+            token_info.embedded_term_frequencies.assign(output_tfs_buffer.begin(), output_tfs_buffer.end());
     }
     else
     {
-        token_info.header = RawPostings | SingleBlock;
+        token_info.header |= RawPostings | SingleBlock;
         token_info.offsets.emplace_back(postings_stream.plain_hashing.count());
         token_info.ranges.emplace_back(output_postings_buffer.front(), output_postings_buffer.back());
-        TextIndexSerialization::serializeRawPostings({output_postings_buffer.data(), output_postings_buffer.size()}, postings_stream.plain_hashing);
+
+        /// Per-row `(tf - 1)` parallel to the row ids, written as VarUInts after them.
+        auto tf_minus_one = write_term_frequencies ? std::span<const UInt32>(output_tfs_buffer) : std::span<const UInt32>{};
+        TextIndexSerialization::serializeRawPostings(output_postings_buffer, tf_minus_one, postings_stream.plain_hashing);
     }
 
     return token_info;
@@ -539,36 +589,55 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
 TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
     const auto * codec = postings_serialization.getPostingListCodec();
-    size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
     auto encoder = codec->createEncoder();
     constexpr size_t max_buffered_size = IPostingListEncoder::append_granularity * 16;
 
+    const PostingListBuildContext context
+    {
+        .codec = *codec,
+        .segment_size = codec->getSegmentSize(params.posting_list_block_size),
+        .enable_positions = params.enable_positions,
+        .enable_scoring = params.enable_scoring,
+        .doc_lengths = params.enable_scoring ? &merged_doc_lengths : nullptr,
+    };
+
     output_postings_buffer.clear();
     output_postings_buffer.reserve(max_buffered_size);
+    output_tfs_buffer.clear();
 
-    mergePostings([&](std::span<const UInt32> row_ids)
+    mergePostings([&](std::span<const UInt32> row_ids, std::span<const UInt32> tfs)
     {
-        /// A granularity-aligned chunk arriving on an empty buffer (typically a whole
-        /// segment of the only or a disjoint source) goes to the encoder directly, without staging.
-        if (output_postings_buffer.empty() && row_ids.size() % IPostingListEncoder::append_granularity == 0)
+        /// A granularity-aligned chunk arriving on an empty buffer goes to the encoder directly, without staging.
+        if (!params.enable_scoring && output_postings_buffer.empty() && row_ids.size() % IPostingListEncoder::append_granularity == 0)
         {
-            encoder->append(row_ids, segment_size);
+            encoder->append(row_ids, {}, context);
             return;
         }
 
         output_postings_buffer.insert(row_ids.begin(), row_ids.end());
 
+        if (params.enable_scoring)
+            appendTermFrequencies(tfs, row_ids.size());
+
         if (output_postings_buffer.size() >= max_buffered_size)
         {
             size_t count = output_postings_buffer.size() - output_postings_buffer.size() % IPostingListEncoder::append_granularity;
-            encoder->append({output_postings_buffer.data(), count}, segment_size);
+            auto output_row_ids = std::span<const UInt32>(output_postings_buffer.data(), count);
+            auto output_tfs = params.enable_scoring ? std::span<const UInt32>(output_tfs_buffer.data(), count) : std::span<const UInt32>{};
+
+            encoder->append(output_row_ids, output_tfs, context);
             output_postings_buffer.erase(output_postings_buffer.begin(), output_postings_buffer.begin() + count);
+
+            if (params.enable_scoring)
+                output_tfs_buffer.erase(output_tfs_buffer.begin(), output_tfs_buffer.begin() + count);
         }
     });
 
     if (!output_postings_buffer.empty())
     {
-        encoder->append({output_postings_buffer.data(), output_postings_buffer.size()}, segment_size);
+        auto output_row_ids = std::span<const UInt32>(output_postings_buffer.data(), output_postings_buffer.size());
+        auto output_tfs = std::span<const UInt32>(output_tfs_buffer.data(), output_tfs_buffer.size());
+        encoder->append(output_row_ids, output_tfs, context);
     }
 
     /// Sources own disjoint row sets, so the merged cardinality must equal the sum of source cardinalities.
@@ -605,6 +674,71 @@ void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostin
     output_positions.insert(output_positions.end(), position_entries_buffer.begin(), position_entries_buffer.end());
 }
 
+void MergeTextIndexesTask::buildDocLengthsAndStats()
+{
+    merged_sum_doc_length = 0;
+    merged_doc_lengths.clear();
+    merged_doc_lengths.resize(num_rows);
+
+    for (size_t source_num = 0; source_num < segments.size(); ++source_num)
+    {
+        auto * header_stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::Regular);
+        header_stream->seekToStart();
+        auto header = TextIndexSerialization::deserializeHeader(*header_stream->getDataBuffer());
+        merged_sum_doc_length += header.scoring_stats.sum_doc_length;
+
+        auto doc_lengths_stream_it = input_streams[source_num].find(MergeTreeIndexSubstream::Type::TextIndexDocLengths);
+        if (doc_lengths_stream_it == input_streams[source_num].end() || doc_lengths_stream_it->second == nullptr)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index merge: source segment '{}' of a scoring merge has no doc-lengths stream",
+                segments[source_num].index_file_name);
+        }
+
+        auto * doc_lengths_stream = doc_lengths_stream_it->second;
+        doc_lengths_stream->seekToStart();
+        auto * doc_lengths_buffer = doc_lengths_stream->getDataBuffer();
+
+        PaddedPODArray<UInt8> source_doc_lengths;
+        while (!doc_lengths_buffer->eof())
+        {
+            size_t available = doc_lengths_buffer->available();
+            size_t old_size = source_doc_lengths.size();
+            source_doc_lengths.resize(old_size + available);
+            doc_lengths_buffer->readStrict(reinterpret_cast<char *>(source_doc_lengths.data() + old_size), available);
+        }
+
+        const size_t doc_lengths_size = source_doc_lengths.size();
+        if (doc_lengths_size == 0)
+            continue;
+
+        if (header.scoring_stats.num_docs < doc_lengths_size)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index merge: segment header num_docs ({}) is smaller than its doc-lengths size ({})",
+                header.scoring_stats.num_docs, doc_lengths_size);
+        }
+
+        const UInt64 segment_base = header.scoring_stats.num_docs - doc_lengths_size;
+
+        if (merged_part_offsets)
+        {
+            size_t part_index = segments[source_num].part_index;
+
+            for (size_t i = 0; i < doc_lengths_size; ++i)
+            {
+                UInt32 new_offset = adjustPartOffset(part_index, static_cast<UInt32>(segment_base + i));
+                merged_doc_lengths[new_offset] = source_doc_lengths[i];
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < doc_lengths_size; ++i)
+                merged_doc_lengths[segment_base + i] = source_doc_lengths[i];
+        }
+    }
+}
+
 void MergeTextIndexesTask::flushPostingList()
 {
     chassert(!output_sources.empty());
@@ -623,7 +757,7 @@ void MergeTextIndexesTask::flushPostingList()
         token_info = flushEncodedPostings(*postings_stream, total_cardinality);
 
     /// Serialize position data if positions are enabled.
-    if (params.positions && !output_positions.empty())
+    if (params.enable_positions && !output_positions.empty())
         flushPositions(token_info);
 
     output_infos.push_back(token_info);
@@ -689,7 +823,13 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         TextIndexSerialization::serializeTokenInfo(ostr, output_infos[i]);
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
-            TextIndexSerialization::serializeRawPostings(output_infos[i].embedded_postings, ostr);
+        {
+            /// The per-row `(tf - 1)`, non-empty only when the token has HasTermFrequencies.
+            const auto & embedded = output_infos[i].embedded_postings;
+            const auto & term_frequencies = output_infos[i].embedded_term_frequencies;
+            chassert(term_frequencies.empty() || term_frequencies.size() == embedded.size());
+            TextIndexSerialization::serializeRawPostings(embedded, term_frequencies, ostr);
+        }
     }
 
     output_tokens = ColumnString::create();
@@ -719,6 +859,12 @@ bool MergeTextIndexesTask::executeStep()
             bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
             writeMarks(output_streams, can_use_adaptive_granularity);
         }
+
+        /// On the scoring path, build the merged per-row document lengths and per-part collection
+        /// statistics once, before token iteration. This reads the per-source `.dl` and `Regular`
+        /// (header) streams, which are independent of the dictionary / postings cursors used below.
+        if (params.enable_scoring)
+            buildDocLengthsAndStats();
     }
 
     if (!queue.isValid())
@@ -761,7 +907,7 @@ bool MergeTextIndexesTask::executeStep()
             auto & token_info = source_block.token_infos[row];
             output_sources.push_back({source_num, token_info});
 
-            if (params.positions && (token_info.header & PostingsSerialization::Flags::HasPositions))
+            if (params.enable_positions && (token_info.header & PostingsSerialization::Flags::HasPositions))
                 readAndAppendPositions(source_num, token_info);
         }
 
@@ -787,16 +933,48 @@ void MergeTextIndexesTask::finalize()
     if (!output_tokens->empty())
         flushDictionaryBlock();
 
-    auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
+    ScoringStats scoring_stats;
+
+    if (params.enable_scoring)
+    {
+        auto * doc_lengths_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexDocLengths);
+        if (!doc_lengths_stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merged text index with BM25 scoring is missing its document-lengths (.dl) output stream");
+
+        const size_t num_doc_length_rows = merged_doc_lengths.size();
+        VectorWithMemoryTracking<UInt64> doc_lengths_segment_offsets;
+
+        for (size_t seg_start = 0; seg_start < num_doc_length_rows; seg_start += ScoringStats::DOC_LENGTHS_SEGMENT_SIZE)
+        {
+            doc_lengths_stream->compressed_hashing.next();
+            auto mark = doc_lengths_stream->getCurrentMark();
+            chassert(mark.offset_in_decompressed_block == 0);
+            doc_lengths_segment_offsets.push_back(mark.offset_in_compressed_file);
+
+            const size_t seg_len = std::min<size_t>(ScoringStats::DOC_LENGTHS_SEGMENT_SIZE, num_doc_length_rows - seg_start);
+            doc_lengths_stream->compressed_hashing.write(reinterpret_cast<const char *>(merged_doc_lengths.data() + seg_start), seg_len);
+        }
+
+        scoring_stats = ScoringStats
+        {
+            .num_docs = num_rows,
+            .sum_doc_length = merged_sum_doc_length,
+            .doc_lengths_segment_size = ScoringStats::DOC_LENGTHS_SEGMENT_SIZE,
+            .doc_lengths_segment_offsets = std::move(doc_lengths_segment_offsets),
+        };
+    }
 
     TextIndexHeader header
     {
         .version = params.serialization_version,
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
-        .has_positions = params.positions != 0,
+        .has_positions = params.enable_positions,
+        .has_scoring = params.enable_scoring,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
+        .scoring_stats = std::move(scoring_stats),
     };
 
+    auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     TextIndexSerialization::serializeHeader(header, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)

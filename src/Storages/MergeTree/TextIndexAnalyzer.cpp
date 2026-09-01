@@ -160,6 +160,12 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
 {
     global_search_mode = condition_text.getGlobalSearchMode();
 
+    if (condition_text.isScoringEnabled())
+    {
+        auto scoring_tokens = condition_text.getScoringTokens();
+        always_needed_tokens.insert(scoring_tokens.begin(), scoring_tokens.end());
+    }
+
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
         auto & query_builder = query_builders[hash];
@@ -296,6 +302,9 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
 
 bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const
 {
+    if (always_needed_tokens.contains(token))
+        return true;
+
     auto it = queries_by_token.find(token);
     return it != queries_by_token.end() && !it->second.empty();
 }
@@ -461,10 +470,17 @@ void TextIndexAnalyzer::markAllQueriesFailed()
 template <typename Operation>
 void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation && operation)
 {
+    /// An always-needed (scoring) token can be re-observed after every query referencing it was
+    /// detached and its entry erased (e.g. its info is re-read for the score fill); no query state
+    /// needs updating then.
+    auto token_queries_it = queries_by_token.find(token);
+    if (token_queries_it == queries_by_token.end())
+        return;
+
     /// Copy the set of query hashes before iterating, because
     /// erasing a failed query from queries_by_token below may
     /// mutate this very set (when query_token == token).
-    auto token_queries = queries_by_token.at(token);
+    auto token_queries = token_queries_it->second;
 
     for (const auto & query_hash : token_queries)
     {
