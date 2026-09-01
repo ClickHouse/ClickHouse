@@ -85,7 +85,6 @@ public:
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
 
-    /// POST for reads when `http_method` is POST; GET otherwise (PUT applies to writes only).
     static std::string chooseReadMethod(const String & http_method);
 
 protected:
@@ -115,7 +114,6 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
     HTTPHeaderEntries headers;
-    /// Overrides the default HTTP method: POST for reads (default GET), POST or PUT for writes (default POST).
     String http_method;
     ASTPtr partition_by;
     bool distributed_processing;
@@ -292,7 +290,6 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
-    /// The effective read method (result of IStorageURLBase::getReadMethod).
     String http_method;
     bool need_only_count;
     StorageID storage_id;
@@ -399,9 +396,8 @@ public:
 
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
 
-    /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// Moves `headers(...)` and `http_method = '...'` (or `method = '...'`) key-value
-    /// arguments to the end of the array. Returns the count of remaining positional arguments.
+    /// Evaluates arguments, moves key-value args (`headers(...)`, `http_method='...'`) to the end.
+    /// Returns the count of remaining positional arguments.
     static size_t evalArgsAndCollectHeaders(
         ASTs & url_function_args,
         HTTPHeaderEntries & header_entries,

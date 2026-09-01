@@ -111,9 +111,8 @@ namespace ErrorCodes
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
                                                     "url, name of used format (taken from file extension by default), "
-                                                    "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`). "
-                                                    "An additional `http_method = 'POST'` key-value argument may be specified "
-                                                    "(POST overrides the default GET for SELECT; POST or PUT override the default POST for INSERT)";
+                                                    "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`), "
+                                                    "optional `http_method = 'POST'` key-value argument";
 
 static const std::unordered_set<std::string_view> required_configuration_keys = {
     "url",
@@ -153,12 +152,10 @@ static void validateHTTPMethod(const String & http_method)
         && http_method != Poco::Net::HTTPRequest::HTTP_PUT)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "HTTP method can be POST or PUT (current: {}). For INSERT the default is POST and PUT can override it. "
-            "For SELECT the default is GET and POST can override it (PUT applies to writes only)",
+            "HTTP method can be POST or PUT (current: {})",
             http_method);
 }
 
-/// POST and GET responses for the same URL are unrelated, so the read method is part of the schema cache key.
 static String schemaCacheSource(const String & url, const String & read_method)
 {
     if (read_method == Poco::Net::HTTPRequest::HTTP_GET)
@@ -1297,7 +1294,6 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    /// POST reads cannot expand `*`/`**` wildcards from index pages (listing is GET-only).
     if (urlPathHasListableGlobs(uri) && chooseReadMethod(http_method) == Poco::Net::HTTPRequest::HTTP_POST)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -1537,8 +1533,6 @@ void StorageURLWithFailover::read(
 
 SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
-    /// Use a local variable: the storage instance is shared between queries, so mutating
-    /// `http_method` would flip subsequent reads from GET to POST.
     const String write_method = http_method.empty() ? Poco::Net::HTTPRequest::HTTP_POST : http_method;
 
     bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
@@ -1596,7 +1590,6 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
-    /// POST-read cache validation has no modification time (HEAD/GET describes the GET representation).
     if (read_method != Poco::Net::HTTPRequest::HTTP_GET)
         return std::nullopt;
 
@@ -1703,9 +1696,6 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
 size_t StorageURL::evalArgsAndCollectHeaders(
     ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments, String * out_http_method)
 {
-    /// Key-value arguments (`headers(...)`, `http_method = '...'`) are moved to the end of
-    /// the array so positional arguments keep their meaning; they stay in the array to survive
-    /// in the CREATE AST (SHOW CREATE TABLE, DETACH/ATTACH).
     std::unordered_set<const IAST *> key_value_args;
     bool has_headers_arg = false;
     bool has_http_method_arg = false;
@@ -1760,11 +1750,10 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 
         if (headers_ast_function && headers_ast_function->name == "equals")
         {
-            /// `http_method = 'POST'` (or `method = 'POST'`), mirroring named collection keys.
             if (out_http_method)
             {
                 const auto * equals_args_expr = assert_cast<const ASTExpressionList *>(headers_ast_function->arguments.get());
-                ASTs equals_args = equals_args_expr->children;
+                const auto & equals_args = equals_args_expr->children;
 
                 String key;
                 if (equals_args.size() == 2)
@@ -2541,7 +2530,6 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             "The URL engine does not support headers(...) when dispatching to the {} engine (URL '{}')",
             engine_name, configuration.url);
 
-    /// `http_method` is meaningless for non-HTTP backends; clear it so it's ignored by the delegate.
     configuration.http_method.clear();
 
     const String & format = configuration.format;
@@ -2675,8 +2663,6 @@ void registerStorageURL(StorageFactory & factory)
 
             auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
 
-            /// A configured `http_method` keeps the plain literal-URL `StorageURL` backend
-            /// (the object-storage wildcard backend cannot write, and POST cannot list index pages).
             const bool use_object_storage = config.http_method.empty() && urlPathHasListableGlobs(config.url);
 
             if (!use_object_storage)
@@ -2811,17 +2797,9 @@ CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv',
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-The method can be overridden with the `http_method` key-value argument (also available as the
-`http_method` key of a [named collection](/reference/operations/named-collections)):
-`http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET`, for servers
-that accept only `POST`; for `INSERT` queries, `PUT` can be specified instead of the default
-`POST`. `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'`
-still uses `GET`. A configured `http_method` also disables `*`/`**` wildcard expansion from
-[HTTP index pages](#wildcards-with-http-index-pages): `http_method='PUT'` keeps the table on the
-plain literal-URL backend so that writes keep working (the object-storage backend serving such
-wildcards cannot write), and creating a table with `http_method='POST'` and such wildcards is
-rejected. If a named collection sets both `http_method` and `method`, `http_method` takes
-precedence.
+The method can be overridden with the `http_method` key-value argument (or the `http_method`/`method` key of a [named collection](/reference/operations/named-collections)):
+`http_method='POST'` makes `SELECT` use `POST` instead of the default `GET`; for `INSERT`, `PUT` can be specified instead of `POST`.
+`PUT` applies to writes only — a `SELECT` with `http_method='PUT'` still uses `GET`.
 
 ```sql
 CREATE TABLE post_only_source (word String, value UInt64)

@@ -122,7 +122,6 @@ VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(cons
             continue;
         }
 
-        /// `http_method = 'POST'` / `method = 'POST'`: the left-hand identifier must not be resolved as a column.
         if (function_node->getFunctionName() == "equals")
         {
             const auto & equals_arguments = function_node->getArguments().getNodes();
@@ -169,7 +168,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         size_t count = StorageURL::evalArgsAndCollectHeaders(
             args, configuration.headers, context, /*evaluate_arguments=*/ true, &configuration.http_method);
 
-        /// Detach key-value args (moved to end by evalArgsAndCollectHeaders) for ITableFunctionFileLike, reattach after.
         ASTs key_value_args(args.begin() + count, args.end());
         args.resize(count);
 
@@ -204,11 +202,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
                 "The url table function does not support headers(...) when dispatching to the {} engine (URL '{}')",
                 storageEngineNameForURLScheme(target), filename);
 
-        if (!configuration.http_method.empty())
-        {
-            /// `http_method` is meaningless for non-HTTP backends; clear it so the delegate ignores it.
-            configuration.http_method.clear();
-        }
+        configuration.http_method.clear();  /// meaningless for non-HTTP backends
 
         buildDelegate(target, context);
         return;
@@ -357,8 +351,6 @@ StoragePtr TableFunctionURL::getStorage(
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
 
-    /// POST reads cannot expand `*`/`**` from index pages (listing is GET-only).
-    /// An INSERT with auto-deduced structure (empty `columns`) would POST-probe the literal `*` URL.
     if ((!is_insert_query || columns.empty()) && urlPathHasListableGlobs(source)
         && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
         throw Exception(
@@ -554,7 +546,7 @@ url(URL [,format] [,structure] [,headers] [,http_method='POST'])
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
-| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET` (for servers that accept only `POST`); for `INSERT` queries, `POST` (the default) or `PUT` can be specified. The same value can be set through the `http_method` key of a [named collection](/reference/operations/named-collections). `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'` still uses `GET`. `http_method='POST'` cannot be combined with `*`/`**` wildcards expanded from HTTP index pages — such queries are rejected. If a named collection sets both `http_method` and `method`, `http_method` takes precedence. |
+| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` use `POST` instead of the default `GET`; for `INSERT`, `PUT` can be specified instead of `POST`. `PUT` applies to writes only. Also available as the `http_method`/`method` key of a [named collection](/reference/operations/named-collections). |
 
 ## Returned value {#returned-value}
 

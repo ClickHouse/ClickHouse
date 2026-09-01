@@ -158,7 +158,6 @@ bool ReadWriteBufferFromHTTP::checkIfActuallySeekable()
 {
     if (!file_info)
         file_info = getFileInfo();
-    /// Non-GET reads are not seekable (servers ignore Range for POST).
     return method == Poco::Net::HTTPRequest::HTTP_GET && file_info->seekable;
 }
 
@@ -421,7 +420,6 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
             /// Retry 200 OK
             if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
             {
-                /// Non-GET ranged retry cannot succeed (servers ignore Range for POST).
                 if (method != Poco::Net::HTTPRequest::HTTP_GET)
                     throw Exception(
                         ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
@@ -765,7 +763,6 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
     if (file_info)
         return *file_info;
 
-    /// HEAD describes the GET representation, not the POST response; skip it for non-GET reads.
     if (method != Poco::Net::HTTPRequest::HTTP_GET)
     {
         file_info = HTTPFileInfo{};
