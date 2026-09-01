@@ -1,6 +1,8 @@
 -- The -Tuple combinator takes one Tuple argument per argument of the underlying aggregate
 -- function; all tuples must have the same number of elements, and the aggregation at element
 -- position i receives the i-th element of every tuple.
+-- A ROWS frame is positional, so the windowed checks below order by a unique n. Neither fixture is
+-- stored in n order, so that ordering is load-bearing rather than incidental.
 
 SELECT 'two tuples';
 SELECT corrTuple((toFloat64(number), toFloat64(number * 2)), (toFloat64(number * 3), toFloat64(100 - number))) FROM numbers(10);
@@ -20,23 +22,29 @@ SELECT corrTuple((NULL, toFloat64(number)), (toFloat64(number), toFloat64(100 - 
 
 SELECT 'sparse elements with two tuples';
 DROP TABLE IF EXISTS test_tuple_multiple_sparse;
-CREATE TABLE test_tuple_multiple_sparse (x Tuple(a Int64, b Float64)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE test_tuple_multiple_sparse (n UInt64, x Tuple(a Int64, b Float64)) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
-INSERT INTO test_tuple_multiple_sparse SELECT if(number % 100 = 0, (number, toFloat64(number)), (0, 0.0)) FROM numbers(1000);
+-- Number 900 has the unique maximum x.a; stored first, its unordered frame is a single row.
+INSERT INTO test_tuple_multiple_sparse
+SELECT number, if(number % 100 = 0, (number, toFloat64(number)), (0, 0.0))
+FROM (SELECT number FROM numbers(1000) ORDER BY number = 900 DESC, number)
+SETTINGS max_insert_threads = 1;
 SELECT corrTuple(x, x) FROM test_tuple_multiple_sparse;
-SELECT corrTuple(x, x) OVER (ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) FROM test_tuple_multiple_sparse ORDER BY x.a DESC LIMIT 1;
+SELECT corrTuple(x, x) OVER (ORDER BY n ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) FROM test_tuple_multiple_sparse ORDER BY x.a DESC LIMIT 1;
 DROP TABLE test_tuple_multiple_sparse;
 
 SELECT 'mixed sparse and dense elements with two tuples';
 DROP TABLE IF EXISTS test_tuple_multiple_mixed;
-CREATE TABLE test_tuple_multiple_mixed (t1 Tuple(v Float64, w Float64), t2 Tuple(v Float64, w Float64)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE test_tuple_multiple_mixed (n UInt64, t1 Tuple(v Float64, w Float64), t2 Tuple(v Float64, w Float64)) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
 INSERT INTO test_tuple_multiple_mixed SELECT
+    number,
     (if(cityHash64(number) % 10 = 0, toFloat64(number % 83), 0), toFloat64(1 + number % 3)),
     (toFloat64(1 + number % 7), toFloat64(1 + number % 5))
-FROM numbers(1000);
+FROM (SELECT number FROM numbers(1000) ORDER BY cityHash64(number), number)
+SETTINGS max_insert_threads = 1;
 SELECT (round(r.1, 3), round(r.2, 3)) FROM (SELECT avgWeightedTuple(t1, t2) AS r FROM test_tuple_multiple_mixed);
-SELECT round(sum(x.1), 3), round(sum(x.2), 3) FROM (SELECT avgWeightedTuple(t1, t2) OVER (ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS x FROM test_tuple_multiple_mixed);
+SELECT round(sum(x.1), 3), round(sum(x.2), 3) FROM (SELECT avgWeightedTuple(t1, t2) OVER (ORDER BY n ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS x FROM test_tuple_multiple_mixed);
 DROP TABLE test_tuple_multiple_mixed;
 
 SELECT 'errors';
