@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <string>
+#include <string_view>
 
 #include <fmt/format.h>
 
@@ -172,6 +173,24 @@ inline std::ostream & operator<<(std::ostream & stream, const Identifier & ident
 }
 
 using Identifiers = std::vector<Identifier>;
+
+/// Strip a leading analyzer table qualifier (`__tableN.`) from a column identifier.
+/// `createUniqueAliasesIfNecessary` assigns aliases of the form `__table<digits>`.
+inline std::string_view stripTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && name[pos] >= '0' && name[pos] <= '9')
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
 
 /// View for Identifier
 class IdentifierView

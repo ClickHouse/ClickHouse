@@ -24,6 +24,7 @@
 #include <Processors/Sources/NullSource.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Analyzer/Identifier.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 
@@ -72,23 +73,6 @@ static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & r
     {
         result.push_back(expr);
     }
-}
-
-/// Strip a leading analyzer table qualifier (e.g. `__table1.`) from a column name.
-static std::string_view stripTableQualifier(std::string_view name)
-{
-    static constexpr std::string_view prefix = "__table";
-    if (!name.starts_with(prefix))
-        return name;
-
-    size_t pos = prefix.size();
-    while (pos < name.size() && isdigit(static_cast<unsigned char>(name[pos])))
-        ++pos;
-
-    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
-        return name.substr(pos + 1);
-
-    return name;
 }
 
 /// Structurally compare a query-filter DAG node against a projection-WHERE AST conjunct.

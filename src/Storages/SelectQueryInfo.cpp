@@ -40,7 +40,11 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
             if (table_expression_data.hasAliasColumn(column_name))
                 continue;
             const auto & column = table_expression_data.getColumnOrThrow(column_name);
-            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
+            ColumnWithTypeAndName input_column(nullptr, column.type, column_name);
+            node_name_to_input_node_column.emplace(column_identifier, input_column);
+            /// Also key by the storage name so wrap/subquery filters that use a different
+            /// `__tableN` (or the unqualified name) still resolve to this column.
+            node_name_to_input_node_column.emplace(column_name, input_column);
         }
     }
     return node_name_to_input_node_column;

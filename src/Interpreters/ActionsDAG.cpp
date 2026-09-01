@@ -1,6 +1,7 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Identifier.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -3879,9 +3880,25 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
         if (node->type != ActionsDAG::ActionType::INPUT)
             return nullptr;
         auto it = node_name_to_input_node_column.find(node->result_name);
-        if (it == node_name_to_input_node_column.end())
+        if (it != node_name_to_input_node_column.end())
+            return &it->second;
+
+        /// Wrap / subquery planning can restart `__tableN` while the filter DAG still
+        /// uses another index (or the storage name). Match on the unqualified name.
+        const auto stripped = stripTableQualifier(node->result_name);
+        if (stripped == node->result_name)
             return nullptr;
-        return &it->second;
+
+        it = node_name_to_input_node_column.find(std::string(stripped));
+        if (it != node_name_to_input_node_column.end())
+            return &it->second;
+
+        for (const auto & [_, column] : node_name_to_input_node_column)
+        {
+            if (column.name == stripped)
+                return &column;
+        }
+        return nullptr;
     };
 
     return buildFilterActionsDAGImpl(filter_nodes, replacement_lookup, single_output_condition_node);
