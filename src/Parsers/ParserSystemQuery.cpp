@@ -1262,7 +1262,8 @@ Its size is configured with the server-level setting [`primary_index_cache_size`
 
 ## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
 
-Clears the caches used for query planning with column statistics: the cache of deserialized data part statistics and the cache of selectivity estimators built from them.
+Clears the caches used for query planning with column statistics: the cache of deserialized data part statistics, the cache of selectivity estimators built from them, and the per-part estimates memoized for statistics-based part pruning.
+The next query that plans with statistics reads them from disk again.
 
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 

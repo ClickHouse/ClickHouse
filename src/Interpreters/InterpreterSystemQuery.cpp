@@ -514,7 +514,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::CLEAR_STATISTICS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_STATISTICS_CACHE);
-            system_context->clearStatisticsCaches();
+            clearStatisticsCaches(system_context);
             break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
@@ -2442,6 +2442,24 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
                     load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }
             }
+        }
+    }
+}
+
+void InterpreterSystemQuery::clearStatisticsCaches(const ContextPtr & system_context)
+{
+    system_context->clearStatisticsCaches();
+
+    /// Statistics-based part pruning uses the estimates memoized on the parts themselves and does
+    /// not consult the shared caches once they are set, so those are dropped too. The shared caches
+    /// go first: a query racing with this command then re-memoizes estimates read from disk rather
+    /// than from a cache entry that is about to be dropped.
+    for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    {
+        for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
+        {
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                merge_tree->resetPartEstimates();
         }
     }
 }

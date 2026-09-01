@@ -13664,6 +13664,12 @@ void MergeTreeData::unloadPrimaryKeys()
     }
 }
 
+void MergeTreeData::resetPartEstimates() const
+{
+    for (const auto & part : getAllDataPartsVector())
+        part->resetEstimates();
+}
+
 size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
 {
     /// If the method is already called from another thread, then we don't need to do anything.

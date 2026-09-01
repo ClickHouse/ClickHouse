@@ -254,6 +254,8 @@ public:
     UInt128 getStatisticsCacheKey() const;
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
+    /// Drops the memoized estimates, so the next `getEstimates` reads the statistics again.
+    void resetEstimates() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.

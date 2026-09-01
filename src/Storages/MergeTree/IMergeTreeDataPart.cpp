@@ -1486,6 +1486,12 @@ void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
     estimates = new_estimates;
 }
 
+void IMergeTreeDataPart::resetEstimates() const
+{
+    std::lock_guard lock(estimates_mutex);
+    estimates.reset();
+}
+
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
 {
     /// Memory should not be limited during ATTACH TABLE query.
