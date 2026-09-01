@@ -133,9 +133,17 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
     }
 
     size_t num_partitions = isPartitioned() ? max_threads : 1;
-    /// Cap the partition count by the scatter connection limit instead of failing on a huge `max_threads`.
-    for (const auto & cur_pipeline : pipelines)
-        num_partitions = std::min(num_partitions, std::max<size_t>(1, scatter_connection_count_limit / cur_pipeline->getNumStreams()));
+    if (num_partitions > 1)
+    {
+        /// Every partition costs one connection per input stream of every branch (the scatters), plus one
+        /// `IntersectOrExceptTransform` taking one output of every branch's scatter and producing one output.
+        /// Cap the partition count by that step-wide fan-out instead of failing on a huge `max_threads`.
+        size_t connections_per_partition = pipelines.size() + 1;
+        for (const auto & cur_pipeline : pipelines)
+            connections_per_partition += cur_pipeline->getNumStreams();
+
+        num_partitions = std::max<size_t>(1, std::min(num_partitions, scatter_connection_count_limit / connections_per_partition));
+    }
 
     for (auto & cur_pipeline : pipelines)
     {
