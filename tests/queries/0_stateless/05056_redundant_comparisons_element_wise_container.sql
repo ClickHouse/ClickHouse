@@ -6,9 +6,12 @@
 -- false and nothing is ordered. Placing such a comparison on the order therefore pruned a bound that
 -- excludes a row, and the row was returned.
 --
--- Both settings are pinned on every query: the runner randomizes them, an unpinned
--- `optimize_redundant_comparisons` makes the result arms vacuous, and `optimize_and_compare_chain`
--- adds `indexHint` operands that move the node counts.
+-- `optimize_redundant_comparisons` is pinned on every query because it is the setting under test and
+-- every scenario pins both its enabled and its disabled answer; `clickhouse-test` does not randomize
+-- it. `optimize_and_compare_chain` is pinned because `clickhouse-test` does randomize it: to 1 on the
+-- result scenarios, so they run the configuration a user has, and to 0 on the `EXPLAIN QUERY TREE`
+-- arms, where a derived conjunct wrapped in `indexHint` also matches the `ILIKE` pattern and would
+-- move the node counts.
 
 SET enable_analyzer = 1;
 
@@ -18,20 +21,20 @@ SET enable_analyzer = 1;
 DROP TABLE IF EXISTS t_element_wise_array;
 CREATE TABLE t_element_wise_array (id UInt32, a Array(Tuple(Float64, UInt64))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_element_wise_array VALUES (1, [(nan, toUInt64(9))]);
-SELECT count() FROM t_element_wise_array WHERE a >= [(1., toUInt64(1))] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_array WHERE a >= [(0., toInt64(0))] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_array WHERE a >= [(1., toUInt64(1))] AND a >= [(0., toInt64(0))] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_array WHERE a >= [(1., toUInt64(1))] AND a >= [(0., toInt64(0))] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
+SELECT count() FROM t_element_wise_array WHERE a >= [(1., toUInt64(1))] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_array WHERE a >= [(0., toInt64(0))] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_array WHERE a >= [(1., toUInt64(1))] AND a >= [(0., toInt64(0))] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_array WHERE a >= [(1., toUInt64(1))] AND a >= [(0., toInt64(0))] SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
 -- 2) A pair of top-level `Tuple`s. `executeTuple` is reached before the equal-types shortcut, so the
 --    top level is decomposed even here, where the two constants differ only one level down.
 DROP TABLE IF EXISTS t_element_wise_tuple;
 CREATE TABLE t_element_wise_tuple (id UInt32, tu Tuple(Array(Tuple(Float64, UInt64)))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_element_wise_tuple VALUES (1, tuple([(nan, toUInt64(9))]));
-SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(1., toUInt64(1))]) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(0., toInt64(0))]) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(1., toUInt64(1))]) AND tu >= tuple([(0., toInt64(0))]) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(1., toUInt64(1))]) AND tu >= tuple([(0., toInt64(0))]) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
+SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(1., toUInt64(1))]) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(0., toInt64(0))]) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(1., toUInt64(1))]) AND tu >= tuple([(0., toInt64(0))]) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(1., toUInt64(1))]) AND tu >= tuple([(0., toInt64(0))]) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
 -- 3) A constant `String` against a `Tuple` column. `executeWithConstString` converts the literal to
 --    the column's type and re-enters the dispatch, so the comparison is decomposed even though the
@@ -39,17 +42,17 @@ SELECT count() FROM t_element_wise_tuple WHERE tu >= tuple([(1., toUInt64(1))]) 
 DROP TABLE IF EXISTS t_element_wise_const_string;
 CREATE TABLE t_element_wise_const_string (id UInt32, tu Tuple(Float64, Float64)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_element_wise_const_string VALUES (1, (3., 3.));
-SELECT count() FROM t_element_wise_const_string WHERE tu = '(3,3)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_const_string WHERE tu <= '(nan,9)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_const_string WHERE tu = '(3,3)' AND tu <= '(nan,9)' SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0;
-SELECT count() FROM t_element_wise_const_string WHERE tu = '(3,3)' AND tu <= '(nan,9)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0;
+SELECT count() FROM t_element_wise_const_string WHERE tu = '(3,3)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_const_string WHERE tu <= '(nan,9)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_const_string WHERE tu = '(3,3)' AND tu <= '(nan,9)' SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_const_string WHERE tu = '(3,3)' AND tu <= '(nan,9)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
 -- The result arms above also pass if the optimization stops running altogether, so pin what still has
 -- to be pruned. Both the enabled and the disabled count are pinned: a relative comparison also holds
 -- if the predicates disappear entirely.
 DROP TABLE IF EXISTS t_element_wise_live;
-CREATE TABLE t_element_wise_live (id UInt32, a Array(Tuple(Float64, UInt64)), m Map(String, Float64), i UInt32, j Int32, tu Tuple(Int64, Int64), af Array(Float64)) ENGINE = MergeTree ORDER BY id;
-INSERT INTO t_element_wise_live VALUES (1, [(1., toUInt64(2))], map('k', 3.), 3, 3, (3, 3), [1.]);
+CREATE TABLE t_element_wise_live (id UInt32, a Array(Tuple(Float64, UInt64)), m Map(String, Float64), i UInt32, j Int32, tu Tuple(Int64, Int64), af Array(Float64), s String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_element_wise_live VALUES (1, [(1., toUInt64(2))], map('k', 3.), 3, 3, (3, 3), [1.], '(1,2)');
 
 -- 4) A same-type `Array` pair has a least supertype, is compared through `compareAt` and keeps folding.
 SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_live WHERE a = [(1., toUInt64(2))] AND a >= [(0., toUInt64(0))] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
@@ -75,6 +78,32 @@ SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_l
 --    fold has to survive as well. Testing type equality instead of the supertype would give up this one.
 SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_live WHERE af = [1.] AND af >= CAST([0.], 'Array(Float32)') SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_live WHERE af = [1.] AND af >= CAST([0.], 'Array(Float32)') SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+
+-- 10) Both operands constant. The pass takes the left operand as the constant whenever it is one, so a
+--     container constant on the left leaves the `String` playing the expression, and the comparison has
+--     to be classified from whichever side carries the string. An ASOF `JOIN ON` is what lets two
+--     constant comparisons reach the pass, a plain `WHERE` folds the conjunction first; and
+--     `enable_scalar_subquery_optimization = 0` is what keeps the multi-column scalar subquery a
+--     constant rather than a `__getScalar` call. The single-condition counts are the ground truth
+--     again: one operand is false, so the conjunction matches nothing.
+SELECT count() FROM (SELECT 1 AS k, 1 AS t) AS l ASOF INNER JOIN (SELECT 1 AS k, 1 AS t) AS r ON l.k = r.k AND l.t >= r.t AND (SELECT nan, 9.) >= '(3,3)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, enable_scalar_subquery_optimization = 0;
+SELECT count() FROM (SELECT 1 AS k, 1 AS t) AS l ASOF INNER JOIN (SELECT 1 AS k, 1 AS t) AS r ON l.k = r.k AND l.t >= r.t AND (SELECT 4., 4.) >= '(3,3)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, enable_scalar_subquery_optimization = 0;
+SELECT count() FROM (SELECT 1 AS k, 1 AS t) AS l ASOF INNER JOIN (SELECT 1 AS k, 1 AS t) AS r ON l.k = r.k AND l.t >= r.t AND (SELECT nan, 9.) >= '(3,3)' AND (SELECT 4., 4.) >= '(3,3)' SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, enable_scalar_subquery_optimization = 0;
+SELECT count() FROM (SELECT 1 AS k, 1 AS t) AS l ASOF INNER JOIN (SELECT 1 AS k, 1 AS t) AS r ON l.k = r.k AND l.t >= r.t AND (SELECT nan, 9.) >= '(3,3)' AND (SELECT 4., 4.) >= '(3,3)' SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, enable_scalar_subquery_optimization = 0;
+
+--     Mirrored, with the `String` constant on the left, which was already classified correctly. Same
+--     four answers whatever the classification, so this is what isolates the arm above to operand order.
+SELECT count() FROM (SELECT 1 AS k, 1 AS t) AS l ASOF INNER JOIN (SELECT 1 AS k, 1 AS t) AS r ON l.k = r.k AND l.t >= r.t AND '(3,3)' <= (SELECT nan, 9.) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, enable_scalar_subquery_optimization = 0;
+SELECT count() FROM (SELECT 1 AS k, 1 AS t) AS l ASOF INNER JOIN (SELECT 1 AS k, 1 AS t) AS r ON l.k = r.k AND l.t >= r.t AND '(3,3)' <= (SELECT 4., 4.) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, enable_scalar_subquery_optimization = 0;
+SELECT count() FROM (SELECT 1 AS k, 1 AS t) AS l ASOF INNER JOIN (SELECT 1 AS k, 1 AS t) AS r ON l.k = r.k AND l.t >= r.t AND '(3,3)' <= (SELECT nan, 9.) AND '(3,3)' <= (SELECT 4., 4.) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, enable_scalar_subquery_optimization = 0;
+SELECT count() FROM (SELECT 1 AS k, 1 AS t) AS l ASOF INNER JOIN (SELECT 1 AS k, 1 AS t) AS r ON l.k = r.k AND l.t >= r.t AND '(3,3)' <= (SELECT nan, 9.) AND '(3,3)' <= (SELECT 4., 4.) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, enable_scalar_subquery_optimization = 0;
+
+-- 11) A `String` column against a container constant is the other shape whose expression side carries
+--     the string. It has no common type at all, so all three spellings have to be rejected alike: the
+--     fold must not turn a query the server cannot execute into an answer.
+SELECT count() FROM t_element_wise_live WHERE s <= (1, 2) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1; -- { serverError NO_COMMON_TYPE }
+SELECT count() FROM t_element_wise_live WHERE s = '(1,2)' AND s <= (1, 2) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1; -- { serverError NO_COMMON_TYPE }
+SELECT count() FROM t_element_wise_live WHERE s = '(1,2)' AND s <= (1, 2) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1; -- { serverError NO_COMMON_TYPE }
 
 DROP TABLE t_element_wise_array;
 DROP TABLE t_element_wise_tuple;

@@ -448,13 +448,15 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
 /// least supertype, which reach `executeArrayLexicographic`. A `Map` has no such shape.
 static bool comparisonDecomposesContainer(const DataTypePtr & expr_type, const DataTypePtr & constant_type)
 {
-    const auto left = removeLowCardinality(expr_type);
+    auto left = removeLowCardinality(expr_type);
     auto right = removeLowCardinality(constant_type);
 
     /// `executeWithConstString` converts a constant string to the other side's type once and the comparison
-    /// is then executed at that type, so classify it as that type.
+    /// is then executed at that type, so classify it as that type. Either operand can be the string.
     if (isStringOrFixedString(right) && !isStringOrFixedString(left))
         right = left;
+    else if (isStringOrFixedString(left) && !isStringOrFixedString(right))
+        left = right;
 
     if (isTuple(left) && isTuple(right))
         return true;
