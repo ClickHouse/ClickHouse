@@ -5,9 +5,9 @@
 -- `GROUP BY toString(number, NULL)` into `GROUP BY number`, producing one group per
 -- row instead of one.
 --
--- The setting under test is analyzer-only by design, so force the new analyzer
--- regardless of the CI job's default. Under the old analyzer, `isInjective` is
--- reached through legacy passes that pass empty sample columns
+-- The setting under test is Analyzer-only by design, so force `enable_analyzer = 1`
+-- regardless of the CI job's default. Under the old query analyzer, `isInjective`
+-- is reached through legacy passes that pass empty sample columns
 -- (RemoveInjectiveFunctionsVisitor / TreeOptimizer), which the arity-based
 -- condition here does not cover; the type-aware condition needed for that path
 -- is tracked at #116931 / #116935 / #116828.
