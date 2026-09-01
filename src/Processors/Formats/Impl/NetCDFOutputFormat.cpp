@@ -14,10 +14,8 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/intExp.h>
-#include <Common/isValidUTF8.h>
 #include <Common/transformEndianness.h>
 
 #include <base/arithmeticOverflow.h>
@@ -149,50 +147,16 @@ void writeAttribute(WriteBuffer & out, std::string_view name, NetCDFType type, U
 }
 
 /// A name that the format cannot store would produce a file that no reader can open. The rules are
-/// the ones of the classic format: a name is UTF-8 text; the first character is a letter, a digit,
-/// an underscore or a character outside of ASCII; the rest are printable characters other than a
-/// slash; and there are no trailing spaces. The length bound is the one the reader enforces.
-/// See https://docs.unidata.ucar.edu/nug/current/file_format_specifications.html
+/// the ones the reader enforces, plus the NFC normalization, which the reader cannot require of the
+/// files of other writers but which this writer can guarantee for the files it produces.
 void checkName(const String & name)
 {
-    if (name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The NetCDF format cannot store a column with an empty name");
-
-    /// The bound of the reader: a longer name would be written successfully and then fail to read back.
-    if (name.size() > NETCDF_MAX_NAME_LENGTH)
+    String reason = checkNetCDFName(name);
+    if (!reason.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The NetCDF format cannot store a name of {} bytes because a reader accepts at most {}",
-            name.size(), NETCDF_MAX_NAME_LENGTH);
-
-    /// The names of the classic format are UTF-8 text, and an identifier of ClickHouse is an
-    /// arbitrary sequence of bytes: a name that is not valid UTF-8 would be written into the header
-    /// as is and make the whole file unreadable for the readers that decode the names.
-    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(name.data()), name.size()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The NetCDF format cannot store the name {} because it is not valid UTF-8", name);
+            "The NetCDF format cannot store the name {} because {}", name, reason);
 
     checkNameIsNFC(name);
-
-    auto first = static_cast<unsigned char>(name.front());
-    if (!isAlphaNumericASCII(name.front()) && first != '_' && first < 0x80)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The NetCDF format cannot store the name {} because a name has to begin with a letter, a digit or "
-            "an underscore", name);
-
-    for (char c : name)
-    {
-        if (c == '/')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The NetCDF format cannot store the name {} because it contains a slash", name);
-
-        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The NetCDF format cannot store the name {} because it contains a control character", name);
-    }
-
-    if (name.back() == ' ')
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The NetCDF format cannot store the name {} because it ends with a space", name);
 }
 
 /// The value that the NetCDF library writes for the data that is not there. It is used here to
@@ -209,11 +173,11 @@ String makeFillValue(T value)
 /// first choice, and the search goes over the bit patterns of the type, because the comparison of a
 /// reader is on the bytes of a value as they are stored in the file.
 ///
-/// Only a window of candidates is checked against the data at a time, so the memory of the search
-/// does not depend on the size of the column, which is already buffered in whole. A window where
-/// every candidate is taken proves that the data contains at least that many distinct values, and
-/// the window doubles after such a pass, so the number of passes over the data is logarithmic in
-/// its size.
+/// A column of `size` values takes at most `size` distinct values, so one of any `size + 1`
+/// candidates is free, and a single pass over the data that marks the candidates it takes in a
+/// bitmap of that many bits is enough. The search is therefore linear in the size of the column,
+/// and its memory is an eighth of the number of its values, which is a fraction of the column
+/// itself, already buffered in whole.
 template <typename T>
 String chooseFillValue(const T * data, size_t size, const UInt8 * null_map, T preferred)
 {
@@ -223,40 +187,37 @@ String chooseFillValue(const T * data, size_t size, const UInt8 * null_map, T pr
     /// Zero means that the domain of the type does not fit in the counter, and then it is larger
     /// than the number of values that any column can hold, so it never runs out.
     static constexpr UInt64 domain_size = UInt64(std::numeric_limits<Bits>::max()) + 1;
-    static constexpr size_t initial_window_size = 64;
-    static constexpr size_t max_window_size = 4096;
 
+    /// The candidates are the bit patterns that follow the preferred one, going down. There is no
+    /// point in looking further than the domain of the type.
+    UInt64 num_candidates = UInt64(size) + 1;
+    if (domain_size != 0)
+        num_candidates = std::min(num_candidates, domain_size);
+
+    static constexpr UInt64 bits_in_word = 64;
     const auto first_candidate = std::bit_cast<Bits>(preferred);
-    std::vector<UInt8> taken;
-    UInt64 checked = 0;
-    size_t window_size = initial_window_size;
+    std::vector<UInt64> taken((num_candidates + bits_in_word - 1) / bits_in_word, 0);
 
-    while (domain_size == 0 || checked < domain_size)
+    for (size_t i = 0; i < size; ++i)
     {
-        if (domain_size != 0)
-            window_size = static_cast<size_t>(std::min<UInt64>(window_size, domain_size - checked));
+        if (null_map && null_map[i])
+            continue;
 
-        /// The candidates of a window are the bit patterns that follow the preferred one, going
-        /// down, continuing where the previous window ended.
-        const auto window_begin = static_cast<Bits>(first_candidate - checked);
-        taken.assign(window_size, 0);
+        UInt64 offset = static_cast<Bits>(first_candidate - std::bit_cast<Bits>(data[i]));
+        if (offset < num_candidates)
+            taken[offset / bits_in_word] |= UInt64(1) << (offset % bits_in_word);
+    }
 
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (null_map && null_map[i])
-                continue;
+    for (size_t word = 0; word < taken.size(); ++word)
+    {
+        if (taken[word] == std::numeric_limits<UInt64>::max())
+            continue;
 
-            UInt64 offset = static_cast<Bits>(window_begin - std::bit_cast<Bits>(data[i]));
-            if (offset < window_size)
-                taken[offset] = 1;
-        }
-
-        for (size_t offset = 0; offset < window_size; ++offset)
-            if (!taken[offset])
-                return makeFillValue<T>(std::bit_cast<T>(static_cast<Bits>(window_begin - offset)));
-
-        checked += window_size;
-        window_size = std::min(window_size * 2, max_window_size);
+        /// The bits above the last candidate are zero, so the first free bit of the last word can
+        /// be past the end, and then every candidate is taken.
+        UInt64 offset = word * bits_in_word + std::countr_one(taken[word]);
+        if (offset < num_candidates)
+            return makeFillValue<T>(std::bit_cast<T>(static_cast<Bits>(first_candidate - offset)));
     }
 
     /// The data takes every value of the type, which is only possible for the small types.

@@ -3,6 +3,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
+#include <Common/isValidUTF8.h>
 
 #include <base/arithmeticOverflow.h>
 #include <base/unit.h>
@@ -144,6 +146,19 @@ String readName(ReadBuffer & in, UInt8 version)
     return name;
 }
 
+/// The names of the dimensions and of the variables become the names of the columns, so a
+/// malformed file must not be able to publish an arbitrary byte string as one of them. The names
+/// of the attributes are not checked: they never leave the reader, and an attribute this format
+/// does not use should not make a file unreadable.
+void checkNameOfHeaderObject(const String & name, const char * what)
+{
+    String reason = checkNetCDFName(name);
+    if (!reason.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The NetCDF file has a {} with the name {}, which is not a name of the classic format, because {}",
+            what, name, reason);
+}
+
 /// Reads the header of one of the three lists. Returns the number of elements in it.
 /// An empty list is stored as a zero tag followed by a zero count.
 UInt64 readListHeader(ReadBuffer & in, UInt8 version, Int32 expected_tag, const char * what)
@@ -261,6 +276,39 @@ NetCDFType checkNetCDFType(Int32 type, UInt8 version)
     return result;
 }
 
+String checkNetCDFName(const String & name)
+{
+    if (name.empty())
+        return "it is empty";
+
+    if (name.size() > NETCDF_MAX_NAME_LENGTH)
+        return fmt::format("it is {} bytes long, and a name can be at most {} bytes", name.size(), NETCDF_MAX_NAME_LENGTH);
+
+    /// The names of the classic format are UTF-8 text, and an identifier of ClickHouse is an
+    /// arbitrary sequence of bytes: a name that is not valid UTF-8 could neither be written into a
+    /// header that the readers which decode the names can open, nor become a column name here.
+    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(name.data()), name.size()))
+        return "it is not valid UTF-8";
+
+    auto first = static_cast<unsigned char>(name.front());
+    if (!isAlphaNumericASCII(name.front()) && first != '_' && first < 0x80)
+        return "a name has to begin with a letter, a digit or an underscore";
+
+    for (char c : name)
+    {
+        if (c == '/')
+            return "it contains a slash";
+
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F)
+            return "it contains a control character";
+    }
+
+    if (name.back() == ' ')
+        return "it ends with a space";
+
+    return {};
+}
+
 const NetCDFAttribute * NetCDFVariable::tryGetAttribute(std::string_view attribute_name) const
 {
     auto it = std::find_if(attributes.begin(), attributes.end(),
@@ -361,6 +409,7 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
     {
         NetCDFDimension dimension;
         dimension.name = readName(in, header.version);
+        checkNameOfHeaderObject(dimension.name, "dimension");
         dimension.length = readSize(in, header.version, "dimension length");
 
         /// A length of zero marks the unlimited dimension, of which there can be only one.
@@ -393,6 +442,7 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
     {
         NetCDFVariable variable;
         variable.name = readName(in, header.version);
+        checkNameOfHeaderObject(variable.name, "variable");
 
         UInt64 rank = readSize(in, header.version, "number of dimensions of a variable");
         if (rank > MAX_VARIABLE_RANK)

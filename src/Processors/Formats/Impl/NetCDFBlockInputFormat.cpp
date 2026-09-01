@@ -1062,6 +1062,12 @@ UTF-8, which a quoted identifier of ClickHouse may be - cannot be written, and t
 A name outside of ASCII has to be NFC-normalized as well, so that canonically equivalent names
 cannot collide; a build without ICU cannot check it, and rejects every name outside of ASCII.
 
+The reader requires the same of the names of the dimensions and of the variables of a file, because
+they become the names of the columns: a file that carries an empty name, a name that is not valid
+UTF-8, or a name with a control character or a trailing space is rejected instead of publishing
+that byte string as a column name. The NFC normalization is not required of a file, because a
+reader of another implementation accepts it either way.
+
 The names of the variables of a file are unique, so a result set with two columns of the same name,
 which a query such as `SELECT x, x FROM t` produces, cannot be written and throws an exception.
 
@@ -1088,7 +1094,7 @@ no way to mark a missing string.
 | [`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats#input_format_netcdf_fill_value_as_null)     | Read the values equal to the `_FillValue` or `missing_value` attribute of a variable as `NULL`. | `false` |
 | [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns) | Add a column with the index along every dimension that has no coordinate variable.              | `false` |
 )DOCS_MD",
-        .introduced_in = {26, 8},
+        .introduced_in = {26, 9},
         .related = {"Npy", "Parquet"}});
 }
 

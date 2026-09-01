@@ -51,6 +51,15 @@ NetCDFType checkNetCDFType(Int32 type, UInt8 version);
 /// hostile file. The writer enforces the same bound, or the file it produces could not be read back.
 constexpr UInt64 NETCDF_MAX_NAME_LENGTH = 1 << 16;
 
+/// The rules of a name of the classic format: a name is UTF-8 text; the first character is a
+/// letter, a digit, an underscore or a character outside of ASCII; the rest are printable
+/// characters other than a slash; and there are no trailing spaces.
+/// See https://docs.unidata.ucar.edu/nug/current/file_format_specifications.html
+/// Returns the reason why the name does not conform to them, or an empty string when it does.
+/// The reader uses it so that a malformed file cannot publish an arbitrary byte string as a column
+/// name, and the writer uses it so that it never produces a file its own reader rejects.
+String checkNetCDFName(const String & name);
+
 struct NetCDFDimension
 {
     String name;
