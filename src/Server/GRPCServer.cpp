@@ -766,6 +766,7 @@ namespace
         std::optional<Session> session;
         ContextMutablePtr query_context;
         std::mutex query_context_mutex;
+        QueryStatusPtr query_status;
         std::optional<QueryScope> query_scope;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
@@ -944,7 +945,10 @@ namespace
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
         }
 
-        query_context = session->makeQueryContext(std::move(client_info));
+        {
+            std::lock_guard lock{query_context_mutex};
+            query_context = session->makeQueryContext(std::move(client_info));
+        }
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -1104,6 +1108,17 @@ namespace
         }
         String query(begin, query_end);
         io = ::DB::executeQuery(query, query_context).second;
+
+        /// Publish the query status so the queue-thread cancel callback can record a cancel without
+        /// touching `query_context` or the `Context`'s process-list pointer, which are only safe to
+        /// access from the call thread. The publish happens here, on the call thread, before the
+        /// pipeline starts pulling, so cancels received after this point are applied immediately and
+        /// cancels received before it are simply deferred until the first `isQueryCancelled()` poll
+        /// in `generateOutput()` (the transform cannot have latched a soft timeout yet).
+        {
+            std::lock_guard lock{query_context_mutex};
+            query_status = query_context->getProcessListElementSafe();
+        }
     }
 
     void Call::processInput()
@@ -1569,6 +1584,7 @@ namespace
         {
             std::lock_guard lock{query_context_mutex};
             query_context.reset();
+            query_status.reset();
         }
         thread_trace_context.reset();
         session.reset();
@@ -1685,10 +1701,10 @@ namespace
 
     void Call::cancelQueryByUser()
     {
-        ContextMutablePtr context;
+        QueryStatusPtr status;
         {
             std::lock_guard lock{query_context_mutex};
-            context = query_context;
+            status = query_status;
         }
 
         /// A client-initiated gRPC cancel (`QueryInfo.cancel`) is a hard user cancellation.
@@ -1701,8 +1717,15 @@ namespace
         /// timeout. The `QUERY_WAS_CANCELLED_BY_CLIENT` exception is passed the same way TCP
         /// does: `Call::onException` recognizes this code and turns it back into a clean
         /// `cancelled` completion, preserving the gRPC wire contract (no exception payload).
-        if (auto process_list_element = context ? context->getProcessListElementSafe() : QueryStatusPtr{})
-            process_list_element->cancelQuery(
+        ///
+        /// Deliberately uses the cached `query_status` and never `Context`'s process-list pointer:
+        /// this method runs on the queue thread while the call thread may still be mutating the
+        /// context (`setProcessListElement`), which would be an unsynchronized data race. The
+        /// `QueryStatusPtr` is a strong reference captured on the call thread at publication time,
+        /// so the object stays alive and `cancelQuery` (thread-safe and idempotent by contract)
+        /// can always be applied.
+        if (status)
+            status->cancelQuery(
                 CancelReason::CANCELLED_BY_USER,
                 std::make_exception_ptr(
                     Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
