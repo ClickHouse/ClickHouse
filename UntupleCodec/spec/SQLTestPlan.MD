@@ -16,7 +16,7 @@ The initial suite consists of these files:
 | `05028_tuple_element_codecs_invalid.sql` | Non-column tuples, unsupported wrappers, and invalid element operations |
 | `05028_tuple_element_codecs_structural.sql` | Array and nullable structural streams and generic-only filtering |
 | `05028_tuple_element_codecs_compact.sql` | Compact-part stream construction, reads, merges, and mutations |
-| `05028_tuple_element_codec_experimental_gate.sql` | Default-off compatibility gate for CREATE/ADD/MODIFY, plus retained/removal/root-only controls |
+| `05028_tuple_element_codec_experimental_gate.sql` | Default-off compatibility gate for CREATE/ADD/MODIFY, plus retained/removal/root-only controls and retained suspicious-codec admission coverage |
 | `05028_tuple_element_codecs_shared_nested_offsets.sql` | Legacy flattened-`Nested` sibling codecs and canonical shared offsets in Wide and Compact parts |
 | `05028_tuple_element_codecs_wrapped_ast_nodes.sql` | Explicit rejection below `Nested` name/type and typed-`JSON` object-argument AST wrappers |
 
