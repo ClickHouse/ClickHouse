@@ -1,5 +1,8 @@
 -- Tags: no-fasttest, no-ordinary-database, no-old-analyzer, no-parallel-replicas
 -- no-old-analyzer: the last query uses a correlated subquery, which only the analyzer supports.
+-- The old-analyzer row-policy path is still covered here: `MergeTree` pushes old-analyzer row
+-- policies into `ReadFromMergeTree`, so the queries below that pin `enable_analyzer = 0` exercise
+-- that carrier explicitly.
 -- no-parallel-replicas: the test asserts that the no-rescoring optimization applies, and with
 -- parallel replicas the optimization is disabled (vector-search read hints are produced during
 -- local index analysis).
@@ -29,6 +32,14 @@ SELECT id FROM tab_vec_row_policy
 ORDER BY L2Distance(vec, [0., 2.]) ASC
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0, make_distributed_plan = 0;
+
+-- The old analyzer builds the row policy in `InterpreterSelectQuery::generateFilterActions` and
+-- pushes it into `ReadFromMergeTree` as well, so the consuming policy must keep the vector column
+-- there too.
+SELECT id FROM tab_vec_row_policy
+ORDER BY L2Distance(vec, [0., 2.]) ASC
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0, make_distributed_plan = 0, enable_analyzer = 0;
 
 -- `selectRangesToRead` may defer the row policy for FINAL before the optimizer's second pass.
 SELECT id FROM tab_vec_row_policy FINAL
@@ -73,6 +84,17 @@ SELECT count() FROM
 )
 WHERE explain LIKE '%Sort description: sqrt(_distance)%'
 SETTINGS make_distributed_plan = 0;
+
+-- The same pruning must happen for the storage-pushed old-analyzer row policy.
+SELECT count() FROM
+(
+    EXPLAIN SELECT id FROM tab_vec_row_policy
+    ORDER BY L2Distance(vec, [0., 2.]) ASC
+    LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0, make_distributed_plan = 0, enable_analyzer = 0
+)
+WHERE explain LIKE '%Sort description: sqrt(_distance)%'
+SETTINGS make_distributed_plan = 0, enable_analyzer = 0;
 
 -- With `FINAL`, this non-consuming policy is deferred and replayed by `FilterTransform`. Its
 -- redundant vector-column passthrough must be pruned there as well, so the no-rescoring rewrite
