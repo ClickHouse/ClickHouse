@@ -3,6 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ObjectStorageKey.h>
+#include <Common/FullyQualifiedObjectPath.h>
 
 #if USE_AWS_S3
 
@@ -81,26 +82,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-std::optional<std::pair<std::string, std::string>> tryParseFullyQualifiedS3Path(const std::string & path)
-{
-    static constexpr std::string_view scheme_delimiter = "://";
-
-    const size_t scheme_pos = path.find(scheme_delimiter);
-    if (scheme_pos == 0 || scheme_pos == std::string::npos)
-        return {};
-
-    const std::string_view scheme = std::string_view(path).substr(0, scheme_pos);
-    if (scheme.find('/') != std::string_view::npos)
-        return {};
-
-    const std::string_view rest = std::string_view(path).substr(scheme_pos + scheme_delimiter.size());
-    const size_t slash_pos = rest.find('/');
-    if (slash_pos == 0 || slash_pos == std::string_view::npos || slash_pos + 1 == rest.size())
-        return {};
-
-    return std::pair{std::string(rest.substr(0, slash_pos)), std::string(rest.substr(slash_pos + 1))};
-}
 
 template <typename Result, typename Error>
 void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
@@ -248,8 +229,8 @@ std::pair<std::string, std::string> S3ObjectStorage::splitBucketAndKey(const std
 {
     if (allow_fully_qualified_paths)
     {
-        if (auto bucket_and_key = tryParseFullyQualifiedS3Path(remote_path))
-            return std::move(*bucket_and_key);
+        if (auto qualified = trySplitFullyQualifiedObjectPath(remote_path))
+            return {std::string(qualified->object_namespace), std::string(qualified->key)};
     }
     return {uri.bucket, remote_path};
 }

@@ -198,7 +198,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         false,
         client_refresher,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials(),
-        /*allow_fully_qualified_paths=*/isDataLakeConfiguration());
+        /*allow_fully_qualified_paths=*/supportsFullyQualifiedPaths());
 }
 
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)

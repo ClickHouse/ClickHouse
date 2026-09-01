@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -360,18 +361,15 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    auto path = object_info.getPath();
-    if (path.starts_with("/"))
-        path = path.substr(1);
+    const auto path = object_info.getPath();
 
-    const size_t scheme_end
-        = configuration.isDataLakeConfiguration() && configuration.getType() == ObjectStorageType::S3
-        ? path.find("://")
-        : std::string::npos;
+    const auto qualified = configuration.supportsFullyQualifiedPaths()
+        ? trySplitFullyQualifiedObjectPath(path)
+        : std::nullopt;
 
     std::string result;
-    if (scheme_end != std::string::npos)
-        result = path.substr(scheme_end + 3);
+    if (qualified)
+        result = joinPathUnderPrefix(String(qualified->object_namespace), String(qualified->key));
     else
         result = joinPathUnderPrefix(
             include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
@@ -669,7 +667,7 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto reading_path = configuration->getPathForRead().path;
 
-            if (!full_path.starts_with(reading_path) && !full_path.contains("://"))
+            if (!full_path.starts_with(reading_path) && !trySplitFullyQualifiedObjectPath(full_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();

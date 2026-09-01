@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include <string_view>
+
 namespace DB
 {
 class FileNamesGenerator;
@@ -82,11 +84,17 @@ public:
     static TableRootDerivation
     deriveTableRoot(const String & table_location, const String & queried_path, const String & metadata_file_key);
 
-    IcebergPathResolver(String table_location_, String table_root_, String blob_storage_type_name_ = {}, String blob_storage_namespace_name_ = {})
+    IcebergPathResolver(
+        String table_location_,
+        String table_root_,
+        String blob_storage_type_name_ = {},
+        String blob_storage_namespace_name_ = {},
+        bool allow_foreign_namespaces_ = false)
         : table_location(std::move(table_location_))
         , table_root(std::move(table_root_))
         , blob_storage_type_name(std::move(blob_storage_type_name_))
         , blob_storage_namespace_name(std::move(blob_storage_namespace_name_))
+        , allow_foreign_namespaces(allow_foreign_namespaces_)
     {
         auto trim_backward_slashes = [](String & str)
         {
@@ -106,7 +114,7 @@ public:
     /// Convert a metadata path to an actual storage path for I/O operations.
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
 
-    static String parseNamespace(const String & path);
+    static String parseNamespace(std::string_view path);
 
     IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
@@ -137,6 +145,7 @@ private:
     String blob_storage_type_name;
     String blob_storage_namespace_name;
     String table_location_namespace;
+    bool allow_foreign_namespaces = false;
 };
 
 }

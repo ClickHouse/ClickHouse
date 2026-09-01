@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 #include <Common/Exception.h>
+#include <Common/FullyQualifiedObjectPath.h>
 
 namespace DB::ErrorCodes
 {
@@ -69,23 +70,16 @@ IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
     return {String(candidate), RootRelation::AdoptedDescendant};
 }
 
-String IcebergPathResolver::parseNamespace(const String & path)
+String IcebergPathResolver::parseNamespace(std::string_view path)
 {
-    const size_t scheme_end = path.find("://");
-    if (scheme_end == std::string::npos)
-        return {};
-
-    const size_t namespace_begin = scheme_end + 3;
-    const size_t namespace_end = path.find('/', namespace_begin);
-    if (namespace_end == std::string::npos || namespace_end == namespace_begin)
-        return {};
-
-    return path.substr(namespace_begin, namespace_end - namespace_begin);
+    if (auto qualified = trySplitFullyQualifiedObjectPath(path))
+        return String(qualified->object_namespace);
+    return {};
 }
 
 bool IcebergPathResolver::isInForeignNamespace(const String & raw_path) const
 {
-    if (blob_storage_type_name != "s3" || blob_storage_namespace_name.empty())
+    if (!allow_foreign_namespaces || blob_storage_namespace_name.empty())
         return false;
 
     auto path_namespace = parseNamespace(raw_path);
