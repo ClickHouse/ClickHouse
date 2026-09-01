@@ -64,7 +64,8 @@ SELECT 'rows-where bounds survive the blocked patch merge',
        rows_where_ttl_info.min[1] = toDateTime('2051-01-01 00:00:00'),
        rows_where_ttl_info.max[1] = toDateTime('2052-01-01 00:00:00')
 FROM system.parts
-WHERE database = currentDatabase() AND table = 't_ttl_patch_rows_where' AND active;
+-- The patch part is active alongside the merged part and carries no TTL infos of its own.
+WHERE database = currentDatabase() AND table = 't_ttl_patch_rows_where' AND active AND partition_id NOT LIKE 'patch-%';
 
 SELECT 'rows kept while blocked', count() FROM t_ttl_patch_rows_where WHERE y = 2;
 
