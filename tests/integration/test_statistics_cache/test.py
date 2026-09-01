@@ -185,7 +185,11 @@ def test_session_toggle_does_not_corrupt_cache():
         "SELECT count() FROM toggle_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='toggle-hit2' FORMAT Null"
     )
 
-def test_interval_zero_disables_cache():
+def test_interval_zero_disables_only_background_refresh():
+    # The statistics caches are populated by the queries themselves and keyed by the immutable
+    # parts, so `refresh_statistics_interval = 0` only disables the background prewarm: the
+    # cached entries survive both the setting change and a reattach, and the session setting
+    # `use_statistics_cache = 0` is the way to bypass them.
     _create_tbl(ch1, "z_tbl", 1)
     _wait_hit(
         ch1, "z-warm",
@@ -193,10 +197,10 @@ def test_interval_zero_disables_cache():
     )
     _query_retry(ch1, "ALTER TABLE z_tbl MODIFY SETTING refresh_statistics_interval = 0")
     _query_retry(ch1, "DETACH TABLE z_tbl; ATTACH TABLE z_tbl")
-    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-load1' FORMAT Null")
-    _assert_load(ch1, "z-load1")
-    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-load2' FORMAT Null")
-    _assert_load(ch1, "z-load2")
+    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-hit' FORMAT Null")
+    _assert_hit(ch1, "z-hit")
+    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=0, log_comment='z-bypass' FORMAT Null")
+    _assert_load(ch1, "z-bypass")
 
 def test_staleness_after_inserts_stays_hit():
     _create_tbl(ch1, "ins_tbl", 1)
