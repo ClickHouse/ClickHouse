@@ -1620,6 +1620,11 @@ namespace
 /// never shrinks the dictionary. Checked recursively over the whole column.
 bool mustAvoidInPlaceReuse(const IColumn & column)
 {
+    /// Dynamic and Object keep the variants and the JSON paths they have seen after popBack, and
+    /// their structureEquals ignores them, so reuse would accumulate structure in a one-row state.
+    if (column.hasDynamicStructure())
+        return true;
+
     auto is_unsafe_column = [](const IColumn & col)
     { return typeid_cast<const ColumnAggregateFunction *>(&col) || typeid_cast<const ColumnLowCardinality *>(&col); };
 
@@ -1635,9 +1640,7 @@ bool mustAvoidInPlaceReuse(const IColumn & column)
 void SingleValueDataGenericWithColumn::set(const IColumn & column, size_t row_num, Arena *)
 {
     /// Reuse the exclusively-owned, structurally-matching stored column instead of reallocating.
-    /// Both sides are checked: structureEquals doesn't imply the same runtime layout (e.g. two
-    /// Dynamic columns of the same declared type can have different active variants).
-    if (value && value->structureEquals(column) && !mustAvoidInPlaceReuse(*value) && !mustAvoidInPlaceReuse(column))
+    if (value && value->structureEquals(column) && !mustAvoidInPlaceReuse(column))
     {
         value->popBack(1);
         try
