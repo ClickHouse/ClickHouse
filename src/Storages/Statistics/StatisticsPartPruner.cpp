@@ -86,6 +86,14 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     }
 }
 
+NameOrderedSet StatisticsPartPruner::getStatsColumns() const
+{
+    NameOrderedSet columns;
+    for (const auto & [name, type] : stats_column_name_to_type_map)
+        columns.insert(name);
+    return columns;
+}
+
 KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns)
 {
     const auto column_names = columns.getNames();

@@ -764,6 +764,53 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     return res;
 }
 
+/// Two dotted column names overlap when they are equal or one is an ancestor of the other
+/// (`document` overlaps `document.country`), but not when they are sibling subcolumns.
+static bool columnNamesOverlap(std::string_view updated, std::string_view required)
+{
+    if (updated.size() > required.size())
+        std::swap(updated, required);
+    return required.starts_with(updated)
+        && (updated.size() == required.size() || required[updated.size()] == '.');
+}
+
+/// True when any column from `updated_columns` overlaps any column from `required_columns`.
+static bool anyColumnOverlaps(const NameSet & updated_columns, const NameOrderedSet & required_columns)
+{
+    for (const auto & updated : updated_columns)
+        for (const auto & required : required_columns)
+            if (columnNamesOverlap(updated, required))
+                return true;
+    return false;
+}
+
+/// True when the statistics a part stores under one of `statistics_columns` no longer describe
+/// the values a read of that column returns, because a pending mutation changed what the column's
+/// values (or the name itself) mean without rewriting the part:
+/// - ALTER MODIFY COLUMN converts values on the fly (tracked in getAllUpdatedColumns());
+/// - ALTER RENAME COLUMN re-points the name at a different column, so the statistics stored under
+///   it belong to another column (tracked in getRenameMap());
+/// - ALTER DROP COLUMN makes the part's data for the name invisible on read, so the name is only
+///   visible to the query because it has been re-added since (tracked by isColumnDropped()).
+static bool hasStaleStatisticsForColumns(
+    const AlterConversions & alter_conversions, const NameOrderedSet & statistics_columns)
+{
+    if (anyColumnOverlaps(alter_conversions.getAllUpdatedColumns(), statistics_columns))
+        return true;
+
+    for (const auto & column : statistics_columns)
+    {
+        if (alter_conversions.isColumnDropped(column))
+            return true;
+
+        for (const auto & rename_pair : alter_conversions.getRenameMap())
+            if (columnNamesOverlap(rename_pair.rename_to, column))
+                return true;
+    }
+
+    return false;
+}
+
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
@@ -771,18 +818,6 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
 {
     if (all_updated_columns.empty())
         return {};
-
-    /// Two dotted column names overlap when they are equal, or when one is an ancestor
-    /// of the other in the subcolumn hierarchy (a `.`-separated prefix). For example,
-    /// `document` overlaps `document.country` (parent/child), but `document.city` and
-    /// `document.country` do not (sibling subcolumns are independent).
-    auto overlaps = [](std::string_view updated, std::string_view required)
-    {
-        if (updated.size() > required.size())
-            std::swap(updated, required);
-        return required.starts_with(updated)
-            && (updated.size() == required.size() || required[updated.size()] == '.');
-    };
 
     auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
     auto required_columns_names = index->getColumnsRequiredForIndexCalc();
@@ -792,7 +827,7 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
     {
         for (const auto & updated_column : all_updated_columns)
         {
-            if (overlaps(updated_column, required_column.name))
+            if (columnNamesOverlap(updated_column, required_column.name))
             {
                 return std::unexpected(PreformattedMessage::create(
                     "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
@@ -819,7 +854,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// Disable statistics-based pruning when:
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
-    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    /// 3. There are on-the-fly data mutations or patch parts (statistics only reflects original data).
+    ///    Pending alter and metadata mutations are handled below per part.
     /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
     ///    the on-the-fly mutations above) no longer describe the values the query sees.
     if (!settings[Setting::use_statistics_for_part_pruning]
@@ -839,11 +875,30 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     if (statistics_pruner.isUseless())
         return parts;
 
+    /// Skip pruning for parts whose pending mutation invalidates the statistics of a pruning
+    /// column; parts written after the mutation completes carry fresh statistics.
+    NameOrderedSet statistics_columns;
+    if (mutations_snapshot
+        && (mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()))
+    {
+        statistics_columns = statistics_pruner.getStatsColumns();
+    }
+
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
 
     for (const auto & part : parts)
     {
+        if (!statistics_columns.empty())
+        {
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context);
+            if (hasStaleStatisticsForColumns(*alter_conversions, statistics_columns))
+            {
+                res_parts.push_back(part);
+                continue;
+            }
+        }
+
         auto estimates = part.data_part->getEstimates();
         try
         {
