@@ -341,3 +341,56 @@ def test_slot_allocation_fairness():
     total = production + development
     if total > 1000: # do not check if CI is too slow to run 1000 threads in 3 seconds
         assert (abs(production / 3.0 - development) / total) < 0.05 # unfairness should be around 1 slot in theory, but we allow up to 5 percent
+
+
+def test_priority_scheduling():
+    # End-to-end check of the per-query `priority` scheduler. Two sets of queries run in the SAME
+    # workload and differ ONLY by their per-query `priority` setting; under CPU contention the
+    # higher-priority ones must get the CPU first and therefore complete more often. This can only
+    # happen if the real request path (CurrentThread / ResourceGuard / ConcurrencyControl) tags each
+    # query's CPU requests with its scheduling context, so it exercises what the unit tests cannot.
+    node.query(
+        """
+        create resource cpu (master thread, worker thread);
+        create workload all settings max_concurrent_threads=2, scheduler='priority';
+    """
+    )
+
+    busy = BusyPeriod(workload="all", max_concurrent_threads=10)
+
+    stop_event = threading.Event()
+    counts = {"high": 0, "low": 0}
+    counts_lock = threading.Lock()
+
+    def query_thread(priority, label):
+        while not stop_event.is_set():
+            try:
+                node.query(
+                    f"select count(*) from numbers_mt(10000000) settings workload='all', priority={priority}, max_threads=2"
+                )
+                with counts_lock:
+                    counts[label] += 1
+            except QueryRuntimeException:
+                pass
+
+    threads = []
+    for i in range(4):
+        threads.append(threading.Thread(target=query_thread, args=(1, "high"))) # priority 1 = highest
+        threads.append(threading.Thread(target=query_thread, args=(2, "low")))  # priority 2 = lower
+
+    for thread in threads:
+        thread.start()
+
+    time.sleep(1) # ensure the competing queries are queued behind the busy period
+    busy.release()
+
+    time.sleep(5) # let the priority scheduler serve queries under contention
+    stop_event.set()
+    for thread in threads:
+        thread.join()
+
+    # Under strict priority the higher-priority queries win the CPU first, so they complete more
+    # often than the lower-priority ones (guard on a minimum total so a slow CI runner is not
+    # asserted against).
+    if counts["high"] + counts["low"] > 8:
+        assert counts["high"] > counts["low"], f"priority did not favor higher priority: high={counts['high']} low={counts['low']}"

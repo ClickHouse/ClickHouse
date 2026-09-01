@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/CostUnit.h>
+#include <Common/Priority.h>
 
 #include <base/types.h>
 #include <boost/intrusive/list.hpp>
@@ -90,11 +91,12 @@ public:
     std::pair<double, UInt64> scheduling_key{0.0, 0};
 
     /// Primary ordering key for the `priority` scheduler in `RequestQueue` (lower value first,
-    /// then `scheduling_key.second` for FIFO). The `priority` query setting is a full-range
-    /// `UInt64`, so it is kept here as an integer rather than routed through the `double` half of
-    /// `scheduling_key`, which would lose ordering above 2^53. Holds the mapped key (priority `0`
-    /// = "no priority" is mapped to the max value so it sorts last). Unused by other schedulers.
-    UInt64 scheduling_priority = 0;
+    /// then `scheduling_key.second` for FIFO). Uses the scheduler's `Priority` type (lower value =
+    /// higher priority) for consistency. The `priority` query setting (`UInt64`) is mapped into it
+    /// at enqueue: priority `0` = "no priority" → the max value so it sorts last. An integer key
+    /// avoids the precision loss of routing the value through the `double` half of `scheduling_key`
+    /// (which would collapse distinct priorities above 2^53). Unused by the other schedulers.
+    Priority scheduling_priority;
 
     /// Scheduler nodes to be notified on consumption finish
     /// Auto-filled during request dequeue
@@ -120,7 +122,7 @@ public:
         // thread-local `ResourceGuard::Request`) never carries stale state from a previous query.
         scheduling_context = nullptr;
         scheduling_key = {0.0, 0};
-        scheduling_priority = 0;
+        scheduling_priority = {};
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 

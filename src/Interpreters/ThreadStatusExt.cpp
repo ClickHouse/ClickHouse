@@ -181,10 +181,10 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
                 elem->throwIfKilled();
         }
     };
-    // NOTE: this borrowed constructor (used by `createForFlushAsyncInsertQueue`) deliberately does
-    // NOT inherit the parent's `scheduling_context`. An async-insert flush writes a batch aggregated
-    // from many independent inserts, so it is not a single query — leaving its context null keeps its
-    // IO anonymous rather than mis-attributing the whole batch to one query's fair/las accounting.
+    // NOTE: this borrowed constructor (used by `createForFlushAsyncInsertQueue`) does NOT inherit the
+    // parent's `scheduling_context` — an async-insert flush is not the parent (foreground) query.
+    // `createForFlushAsyncInsertQueue` instead mints a fresh context from the flushed batch's own
+    // settings bundle, so the flush is scheduled under the workload the inserts specified.
 }
 
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
@@ -297,6 +297,21 @@ ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, T
 {
     auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent_thread_group));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
+    // An async-insert flush writes a batch coalesced from inserts that share one effective settings
+    // bundle (async inserts are grouped by table/format/settings/identity), so mint a per-batch
+    // scheduling context from those settings. The flush's CPU/IO is then scheduled under the
+    // workload/weight/priority the inserts specified, instead of bypassing the query-aware
+    // schedulers as an anonymous background task. `context` carries the batch settings (the flush
+    // job applies `key.settings` to it before creating this group).
+    const auto & settings = context->getSettingsRef();
+    res_group->scheduling_context = std::make_shared<ResourceSchedulingContext>(
+        clock_gettime_ns(),
+        settings[Setting::weight],
+        settings[Setting::weight_lowering_factor],
+        settings[Setting::weight_lowering_age_seconds],
+        settings[Setting::weight_lowering_cpu_seconds],
+        settings[Setting::weight_lowering_io_bytes],
+        settings[Setting::priority]);
     return res_group;
 }
 

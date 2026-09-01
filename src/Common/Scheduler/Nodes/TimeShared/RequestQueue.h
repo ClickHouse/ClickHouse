@@ -397,9 +397,9 @@ public:
         UInt64 priority = request->scheduling_context ? request->scheduling_context->priority : 0;
         // `priority == 0` = no priority → lowest precedence: map to the max key so explicit
         // priorities (1 = highest) sort ahead of it; FIFO within equal priority via the sequence.
-        // The key is a full-width integer (not the `double` half of `scheduling_key`) so ordering
-        // stays exact across the whole UInt64 setting range (a double loses it above 2^53).
-        request->scheduling_priority = priority == 0 ? std::numeric_limits<UInt64>::max() : priority;
+        // The key is an integer `Priority` (not the `double` half of `scheduling_key`) so ordering
+        // stays exact for large values (a double loses it above 2^53).
+        request->scheduling_priority = Priority{priority == 0 ? std::numeric_limits<Int64>::max() : static_cast<Int64>(priority)};
         request->scheduling_key = {0.0, next_seq++};
         requests.insert(*request);
     }
@@ -449,9 +449,9 @@ private:
     {
         bool operator()(const ResourceRequest & lhs, const ResourceRequest & rhs) const noexcept
         {
-            // Integer priority first (exact across the full UInt64 range), then the sequence for FIFO.
-            if (lhs.scheduling_priority != rhs.scheduling_priority)
-                return lhs.scheduling_priority < rhs.scheduling_priority;
+            // Integer priority first (exact, lower value = higher priority), then the sequence for FIFO.
+            if (lhs.scheduling_priority.value != rhs.scheduling_priority.value)
+                return lhs.scheduling_priority.value < rhs.scheduling_priority.value;
             return lhs.scheduling_key.second < rhs.scheduling_key.second;
         }
     };

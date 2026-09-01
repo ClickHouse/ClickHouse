@@ -206,9 +206,9 @@ TEST(RequestQueue, PriorityStrictOrder)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{10, 20, 21, 0}));
 }
 
-/// priority ordering is exact across the full UInt64 range: two priorities that differ only above
-/// 2^53 (where a double key would collapse them to one value) still order correctly.
-TEST(RequestQueue, PriorityFullRangeUInt64)
+/// priority ordering is exact for large values: an integer `Priority` key keeps two priorities that
+/// differ only above 2^53 distinct, whereas a double key would collapse them to one value (→ FIFO).
+TEST(RequestQueue, PriorityLargeValuesOrderExactly)
 {
     Fixture f(SchedulerAlgorithm::Priority);
     const UInt64 p_lo = (1ULL << 53);      // 9007199254740992
@@ -297,12 +297,12 @@ TEST(RequestQueue, ResetClearsSchedulingState)
     TestRequest r(1, 5);
     r.scheduling_context = ctx.get();
     r.scheduling_key = {42.0, 7};
-    r.scheduling_priority = 123;
+    r.scheduling_priority = Priority{123};
     r.reset(9);
     EXPECT_EQ(r.scheduling_context, nullptr);
     EXPECT_EQ(r.scheduling_key.first, 0.0);
     EXPECT_EQ(r.scheduling_key.second, 0u);
-    EXPECT_EQ(r.scheduling_priority, 0u);
+    EXPECT_EQ(r.scheduling_priority.value, 0);
     EXPECT_EQ(r.cost, 9);
 }
 
