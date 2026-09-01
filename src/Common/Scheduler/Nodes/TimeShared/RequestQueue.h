@@ -150,7 +150,7 @@ public:
             auto & state = ctx->getResourceState(leaf);
             double effective_weight = effectiveWeight(*ctx, state);
             vstart = std::max(system_vruntime, state.vruntime);
-            state.vruntime = vstart + static_cast<double>(request->cost) / effective_weight;
+            state.vruntime = vstart + static_cast<double>(request->scheduling_cost) / effective_weight;
         }
         request->scheduling_key = {vstart, next_seq++};
         requests.insert(*request);
@@ -168,7 +168,7 @@ public:
         if (auto * ctx = request->scheduling_context)
         {
             auto & state = ctx->getResourceState(leaf);
-            state.attained_cost += request->cost;
+            state.attained_cost += request->scheduling_cost;
             state.last_activity_ns = clock_gettime_ns();
         }
         return request;
@@ -285,7 +285,7 @@ public:
         if (auto * ctx = request->scheduling_context)
         {
             auto & state = ctx->getResourceState(leaf);
-            state.attained_cost += request->cost;
+            state.attained_cost += request->scheduling_cost;
             state.last_activity_ns = clock_gettime_ns();
         }
         return request;

@@ -300,3 +300,29 @@ TEST(RequestQueue, WeightLoweringFactorClamped)
     ResourceSchedulingContext zero_weight(clock_gettime_ns(), 0.0, 1.0, 0, 0, 0, 0);
     EXPECT_EQ(zero_weight.weight, 1.0);
 }
+
+/// `fair` accounts virtual runtime from `scheduling_cost` (the query's DECLARED cost), not `cost`
+/// (which ResourceBudget::ask rewrites queue-wide). Simulate a budget that inflated query A's first
+/// request `cost` far above its declared cost: A must still interleave fairly with B instead of
+/// being pushed to the back by another query's estimation error bleeding through the shared budget.
+TEST(RequestQueue, FairUsesSchedulingCostNotBudgetAdjustedCost)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+
+    // A1: declared cost 1 (so scheduling_cost == 1), but `cost` inflated to 1000 as if
+    // ResourceBudget::ask() had rewritten it queue-wide after reset().
+    f.pool.emplace_back(11, 1);
+    TestRequest * a1 = &f.pool.back();
+    a1->scheduling_context = a;
+    a1->cost = 1000;
+    f.queue->enqueueRequest(a1);
+
+    f.enqueue(21, b);
+    f.enqueue(12, a);
+    f.enqueue(22, b);
+    // With scheduling_cost (=1) A and B interleave fairly: 11,21,12,22.
+    // Had fair used `cost` (=1000), A's vruntime would jump and A2 would be served last: 11,21,22,12.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 12, 22}));
+}

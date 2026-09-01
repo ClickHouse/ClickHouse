@@ -60,6 +60,14 @@ public:
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
     ResourceCost cost{};
 
+    /// Per-query scheduling cost, used by the query-aware schedulers (`fair`, `las`) for the query's
+    /// own virtual-runtime / attained-service accounting. It is the request's ORIGINAL declared cost,
+    /// captured by `reset()` before any `ResourceBudget` adjustment. `ResourceBudget::ask()` rewrites
+    /// `cost` queue-wide to smooth estimation error across the queue, which is correct for queue-level
+    /// throughput accounting but would let one query's misestimate bleed into another query's fairness
+    /// state; keeping a separate declared cost isolates per-query scheduling from that redistribution.
+    ResourceCost scheduling_cost{};
+
     /// If true, request is not throttled by the scheduler
     /// This is used for special requests that should not be throttled, e.g. for CPUSlotsAllocation
     bool ignore_throttling = false;
@@ -95,6 +103,9 @@ public:
     void reset(ResourceCost cost_)
     {
         cost = cost_;
+        // Capture the declared cost for per-query scheduling BEFORE any `ResourceBudget` adjustment
+        // (which later rewrites `cost` only). For queues without a budget the two stay equal.
+        scheduling_cost = cost_;
         for (auto & constraint : constraints)
             constraint = nullptr;
         // Clear per-request query identity and ordering key so a reused request (e.g. the
