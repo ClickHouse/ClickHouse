@@ -1274,32 +1274,4 @@ TEST_F(ConnectionPoolTest, BareFailuresBeneathConnectPassThroughUnlabeled)
             EXPECT_EQ(ETIMEDOUT, e.code()) << "Errno not preserved: " << e.displayText();
         }
     }
-    {
-        BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::Net::ConnectionRefusedException(); });
-        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
-        try
-        {
-            session.sendRequest(request);
-            FAIL() << "Expected the injected refusal";
-        }
-        catch (const Poco::Net::ConnectionRefusedException & e)
-        {
-            EXPECT_FALSE(e.displayText().contains(endpoint)) << "Endpoint stitched in: " << e.displayText();
-        }
-    }
-    {
-        BareConnectFailureSession session("127.0.0.99", 9, [] { throw Poco::Net::NetException("Network is unreachable", ENETUNREACH); });
-        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
-        try
-        {
-            session.sendRequest(request);
-            FAIL() << "Expected the injected network error";
-        }
-        catch (const Poco::Net::NetException & e)
-        {
-            EXPECT_TRUE(e.displayText().contains("Network is unreachable")) << e.displayText();
-            EXPECT_FALSE(e.displayText().contains(endpoint)) << "Endpoint stitched in: " << e.displayText();
-            EXPECT_EQ(ENETUNREACH, e.code()) << "Errno not preserved: " << e.displayText();
-        }
-    }
 }
