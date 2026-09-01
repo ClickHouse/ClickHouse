@@ -34,6 +34,11 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const final { return false; }
     bool useDefaultImplementationForNulls() const final { return false; }
+
+    /// The argument exists only to defeat common subexpression elimination; `executeImpl` never reads
+    /// it. Opting out of the sparse handling keeps a sparse argument from being materialized into a
+    /// full column that this function then ignores. See `ignore` for the same reasoning.
+    bool useDefaultImplementationForSparseColumns() const final { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return true; }
 

@@ -22,6 +22,11 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
+
+    /// The argument exists only to defeat common subexpression elimination; `executeImpl` never reads
+    /// it. Opting out of the sparse handling keeps a sparse argument from being materialized into a
+    /// full column that this function then ignores. See `ignore` for the same reasoning.
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }

@@ -691,7 +691,12 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
             return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
-        if (num_sparse_columns == 1 && num_full_columns == 0)
+        /// The branch below evaluates the function once for the sparse column's default value and
+        /// lets `createWithOffsets` repeat that one result across every default row. That is only
+        /// sound when the function returns the same value for the same argument: `rand`,
+        /// `generateUUIDv4` and friends are expected to produce an independent value per row, and
+        /// collapsing them hands out one shared value to the whole default run. Materialize instead.
+        if (num_sparse_columns == 1 && num_full_columns == 0 && isDeterministicInScopeOfQuery())
         {
             auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
             ColumnPtr sparse_offsets;

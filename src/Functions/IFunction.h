@@ -130,6 +130,15 @@ protected:
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
+    /** True if the function returns the same value for the same arguments within one query.
+      *
+      * The sparse fast path evaluates the function once for the column's default value and reuses
+      * that single result for every default row, so a function that is expected to produce an
+      * independent value per row must not take it. Mirrors `IFunction::isDeterministicInScopeOfQuery`;
+      * the default is `true` so that anything which does not report otherwise keeps its fast path.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+
     /** True if function might throw an exception during execution.
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
