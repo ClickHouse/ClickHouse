@@ -82,7 +82,7 @@ def in_session(node, session_id):
 
 def test_set_role_refused_mid_session():
     error, roles = in_session(node_on, "refused_mid_session")
-    assert "READONLY" in error
+    assert error and "READONLY" in error
     assert roles == "['ro_role']"
 
 

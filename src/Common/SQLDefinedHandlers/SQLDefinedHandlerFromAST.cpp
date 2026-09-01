@@ -480,7 +480,7 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
         && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Handler `{}` runs {}. The read-only mode of safe HTTP methods does not prevent these side effects, "
+            "Handler `{}` runs {}. The read-only mode of safe HTTP methods cannot be relied on to prevent these side effects, "
             "but the handler's allowed HTTP methods ({}) include read-only ones. "
             "List only mutating methods (POST, PUT, or DELETE) in the METHODS clause.",
             create.handler_name,
