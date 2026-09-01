@@ -1,1 +1,2 @@
-1	(1,'x')	Row(a UInt64, b String)
+1	(1,'x')	Row(x UInt64, y String)
+2	(2,'yy')	Row(x UInt64, y String)
