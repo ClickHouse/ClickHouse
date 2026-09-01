@@ -443,10 +443,10 @@ If `max_lag` is not provided, calculates for all possible lags.
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns an array of Float64. Returns NaN if variance is 0.", {"Array(Float64)"}};
     FunctionDocumentation::Examples examples
-        = {{"Linear", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);", "[1, 0.4, -0.1, -0.4, -0.4]"},
-           {"Symmetric", "SELECT arrayAutocorrelation([10, 20, 10]);", "[1, -0.6666666666666669, 0.16666666666666674]"},
-           {"Constant", "SELECT arrayAutocorrelation([5, 5, 5]);", "[nan, nan, nan]"},
-           {"Limited", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);", "[1, 0.4]"}};
+        = {{"Linear", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);", "[1,0.4,-0.1,-0.4,-0.4]"},
+           {"Symmetric", "SELECT arrayAutocorrelation([10, 20, 10]);", "[1,-0.6666666666666669,0.16666666666666674]"},
+           {"Constant", "SELECT arrayAutocorrelation([5, 5, 5]);", "[nan,nan,nan]"},
+           {"Limited", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);", "[1,0.4]"}};
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

@@ -144,8 +144,8 @@ All values in the tuple must be of the same type.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with `(name, value)` pairs.", {"Array(Tuple(String, T))"}};
     FunctionDocumentation::Examples examples = {
-        {"Named tuple", "SELECT tupleToNameValuePairs(tuple(1593 AS user_ID, 2502 AS session_ID))", "[('1', 1593), ('2', 2502)]"},
-        {"Unnamed tuple", "SELECT tupleToNameValuePairs(tuple(3, 2, 1))", "[('1', 3), ('2', 2), ('3', 1)]"}
+        {"Named tuple", "SELECT tupleToNameValuePairs(tuple(1593 AS user_ID, 2502 AS session_ID))", "[('1',1593),('2',2502)]"},
+        {"Unnamed tuple", "SELECT tupleToNameValuePairs(tuple(3, 2, 1))", "[('1',3),('2',2),('3',1)]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;

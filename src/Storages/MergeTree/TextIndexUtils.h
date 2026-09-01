@@ -8,7 +8,10 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
+#include <Columns/ColumnString.h>
 #include <Processors/ISimpleTransform.h>
+
+#include <span>
 
 namespace DB
 {
@@ -101,14 +104,24 @@ private:
     Block getHeader() const;
     void initializeQueue();
 
+    /// Cursor over the single String sort column with statically dispatched comparisons.
+    using TokenSortCursor = SpecializedSingleColumnSortCursor<ColumnString>;
+
     /// Returns true if the given cursor points to a new token.
-    bool isNewToken(const SortCursor & cursor) const;
+    bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
-    /// Reads the next posting lists for the next token in the given source index.
-    std::vector<PostingListPtr> readPostingLists(size_t source_num);
-    /// Adjusts row numbers in the postings list according to merged part offsets.
-    PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
+    /// Adjusts the part offset of the given row id according to merged part offsets.
+    UInt32 adjustPartOffset(size_t part_index, UInt32 row_id) const;
+
+    /// Unions the given row ids into output_postings_bitmap.
+    void appendPostingsToBitmap(std::span<UInt32> row_ids);
+    /// Appends the already adjusted row ids of one source to output_postings_array or output_postings_bitmap.
+    void appendPostings(size_t source_num, std::span<UInt32> row_ids);
+    /// Reads the postings of one source and appends them to output_postings_bitmap or output_postings_array.
+    void readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info);
+    /// Reads the positions of one source and appends them to output_positions.
+    void readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -136,16 +149,22 @@ private:
 
     SortCursorImpls cursors;
     std::vector<DictionaryBlock> inputs;
-    SortingQueue<SortCursor> queue;
+    SortingQueueBatch<TokenSortCursor> queue;
 
     /// Tokens accumulated for the current dictionary block.
     MutableColumnPtr output_tokens;
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
-    /// Postings accumulated for the current token.
-    PostingList output_postings;
+    /// Postings accumulated for the current token when they don't fit into output_postings_array.
+    PostingList output_postings_bitmap;
+    /// Buffer of at most MAX_CARDINALITY_FOR_RAW_POSTINGS postings of the current token.
+    PaddedPODArray<UInt32> output_postings_array;
+    /// Reusable buffer for row ids of one posting list block read from a source.
+    PaddedPODArray<UInt32> row_ids_buffer;
+    /// Reusable buffer for position entries of one token read from a source.
+    PODArray<RoaringishEntry> position_entries_buffer;
     /// Positions accumulated for the current token (phrase query support).
-    PODArray<RoaringishEntry> output_positions;
+    PaddedPODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

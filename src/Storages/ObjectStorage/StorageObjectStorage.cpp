@@ -35,6 +35,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
@@ -385,6 +387,18 @@ bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) con
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
+size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
+{
+    /// The key count of a globbed, archive, data lake or distributed read is unknown until the
+    /// storage is listed, which is too expensive at planning time, so report the request as is.
+    if (distributed_processing || configuration->isArchive() || configuration->supportsFileIterator()
+        || configuration->getPathForRead().hasGlobs())
+        return num_streams;
+
+    /// A static list of keys: the read creates at most one source per key.
+    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
+}
+
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
@@ -435,7 +449,7 @@ bool StorageObjectStorage::supportsParallelInsert() const
     return configuration->supportsParallelInsert();
 }
 
-IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
+std::shared_ptr<IDataLakeMetadata> StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())
     return nullptr;
@@ -672,7 +686,7 @@ void StorageObjectStorage::read(
         if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
             start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
-            if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
+            if (const auto delta_kernel_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadataDeltaKernel>(configuration->getExternalMetadata());
                 delta_kernel_metadata != nullptr)
             {
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -950,9 +964,56 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     return std::pair(columns, format);
 }
 
+namespace
+{
+bool hasPartitionStrategyArgument(const ASTs & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments)
+            continue;
+
+        const auto & children = function->arguments->children;
+        if (children.size() == 2 && children[0]->getColumnName() == "partition_strategy")
+            return true;
+    }
+
+    return false;
+}
+}
+
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+
+    if (configuration->partition_strategy_was_inferred
+        && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && !configuration->getRawPath().hasGlobsIgnorePlaceholders()
+        && !hasPartitionStrategyArgument(args))
+    {
+        /// An implicit strategy `none` on a non-globbed path (a `CREATE` under
+        /// `file_like_engine_default_partition_strategy = 'wildcard'`) is not recoverable from
+        /// the path shape on reload: `initPartitionStrategy` resolves such a path to `hive` when
+        /// loading from metadata. It must therefore be persisted as an explicit
+        /// `partition_strategy = 'none'` engine argument, which only the S3 and Azure parsers
+        /// accept. For any other backend, refuse the definition instead of creating a table
+        /// that silently switches to the `hive` strategy after a server restart.
+        const auto storage_type = configuration->getType();
+        if (storage_type != ObjectStorageType::S3 && storage_type != ObjectStorageType::Azure)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`PARTITION BY` without an explicit `partition_strategy` resolves to 'none' under "
+                "`file_like_engine_default_partition_strategy = 'wildcard'`, and this engine can not persist "
+                "`partition_strategy = 'none'` in the table metadata, so the table would change to the 'hive' "
+                "strategy after a server restart. Set `file_like_engine_default_partition_strategy = 'hive'` "
+                "or remove `PARTITION BY`");
+
+        ASTs partition_strategy_args{
+            make_intrusive<ASTIdentifier>("partition_strategy"),
+            make_intrusive<ASTLiteral>("none")};
+        args.push_back(makeASTOperator("equals", std::move(partition_strategy_args)));
+    }
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
@@ -1013,7 +1074,7 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
 
 Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
-    auto * metadata = getExternalMetadata(context);
+    auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
