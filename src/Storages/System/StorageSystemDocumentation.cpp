@@ -44,6 +44,7 @@
 #include <source_location>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <Poco/String.h>
@@ -117,6 +118,11 @@ constexpr std::string_view MERGE_TREE_SETTINGS_SOURCE = "src/Storages/MergeTree/
 constexpr std::string_view SERVER_SETTINGS_SOURCE = "src/Core/ServerSettings.cpp";
 constexpr std::string_view PROFILE_EVENTS_SOURCE = "src/Common/ProfileEvents.cpp";
 constexpr std::string_view CURRENT_METRICS_SOURCE = "src/Common/CurrentMetrics.cpp";
+
+constexpr std::pair<std::string_view, std::string_view> ASYNCHRONOUS_METRIC_DOCUMENTATION[] =
+{
+#include <Common/AsynchronousMetricDocumentation.inc>
+};
 
 /// The source paths captured by `std::source_location` (in `Documentation`/`FunctionDocumentation`) are produced by
 /// the compiler: relative to the repository root when the build remaps source paths (`ENABLE_BUILD_PATH_MAPPING`,
@@ -1224,6 +1230,11 @@ String renderSystemTableDoc(
             asynchronous_metrics.reserve(metric_values.size());
             for (const auto & [name, value] : metric_values)
                 asynchronous_metrics.emplace_back(name, value.documentation ? value.documentation : "");
+        }
+        else
+        {
+            for (const auto & [name, description] : ASYNCHRONOUS_METRIC_DOCUMENTATION)
+                asynchronous_metrics.emplace_back(String(name), String(description));
         }
         replaceDocumentationPlaceholder(result, "{{ASYNCHRONOUS_METRICS}}", renderDescriptionCatalog(std::move(asynchronous_metrics)));
     }

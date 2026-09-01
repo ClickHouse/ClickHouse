@@ -1669,6 +1669,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/docs",
                 "./utils/generate-async-metrics-docs",
                 "./utils/generate-system-tables-docs",
+                "./src/Common/AsynchronousMetricDocumentation.inc",
                 "./src/Common/AsynchronousMetrics.cpp",
                 "./src/Coordination/KeeperAsynchronousMetrics.cpp",
                 "./src/Interpreters/ServerAsynchronousMetrics.cpp",

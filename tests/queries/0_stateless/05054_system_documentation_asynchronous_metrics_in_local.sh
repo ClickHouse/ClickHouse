@@ -14,6 +14,7 @@ ${CLICKHOUSE_LOCAL} --query "
         description LIKE '%## Description {#description}%' AS has_description,
         description LIKE '%## Columns {#columns}%' AS has_columns,
         description LIKE '%## Metric descriptions {#metric-descriptions}%' AS has_metric_descriptions,
+        description LIKE '%### AsynchronousMetricsUpdateInterval {#asynchronousmetricsupdateinterval}%' AS has_known_metric,
         description LIKE '%## Examples {#examples}%' AS has_examples,
         description LIKE '%{{ASYNCHRONOUS_METRICS}}%' AS has_unresolved_placeholder
     FROM system.documentation

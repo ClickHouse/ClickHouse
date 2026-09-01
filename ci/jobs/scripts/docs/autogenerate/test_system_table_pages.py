@@ -19,6 +19,9 @@ NON_LITERAL_ATTACH_DOCUMENTATION_SOURCES = {
         SOURCE_ROOT / "Storages" / "System" / "StorageSystemAsynchronousMetrics.cpp"
     )
 }
+ASYNC_METRIC_DOCUMENTATION_CATALOG = (
+    SOURCE_ROOT / "Common" / "AsynchronousMetricDocumentation.inc"
+)
 
 EXPECTED_DOCUMENTATION_COUNT = 169
 EXPECTED_ATTACH_DOCUMENTATION_COUNT = 139
@@ -48,6 +51,7 @@ def load_generator():
 
 def main():
     generator = load_generator()
+    async_metrics_generator = generator.load_async_metrics_generator()
 
     attach_source = ATTACH_SOURCE.read_text(encoding="utf-8")
     attach_documents = dict(
@@ -282,7 +286,6 @@ This entry came from live runtime state.
     )
     assert metric_count > 200
     asynchronous_metrics_body = asynchronous_metrics_page["asynchronous_metrics"]
-    async_metrics_generator = generator.load_async_metrics_generator()
     assert async_metrics_generator.documentation_anchor("jemalloc.epoch") == "jemalloc-epoch"
     assert async_metrics_generator.documentation_anchor("metric_name") == "metric-name"
     try:
@@ -298,6 +301,13 @@ This entry came from live runtime state.
         raise AssertionError(
             "Conflicting platform descriptions must not be concatenated"
         )
+    generated_cpp_catalog = async_metrics_generator.render_cpp_catalog(
+        async_metrics_generator.collect_metrics()
+    )
+    assert (
+        ASYNC_METRIC_DOCUMENTATION_CATALOG.read_text(encoding="utf-8")
+        == generated_cpp_catalog
+    )
     assert "Source-backed introduction." in asynchronous_metrics_body
     assert "### AsynchronousMetricsUpdateInterval" in asynchronous_metrics_body
     assert "### jemalloc.epoch {#jemalloc-epoch}" in asynchronous_metrics_body
