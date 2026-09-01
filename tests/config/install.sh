@@ -148,7 +148,12 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 0 && "$PREVIOUS_RELEASE_CONFIG" -eq 0 ]]; the
     ln -sf $SRC_PATH/config.d/columns_cache.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/silk.xml $DEST_SERVER_PATH/config.d/
+# `enable_silk_runtime` and the `silk` section first exist in 26.9, so an older server rejects
+# them as unknown config elements and refuses to start. Gate the drop-in on the installed
+# server's version to keep the upgrade check's previous-release server bootable.
+if check_clickhouse_version 26.9; then
+    ln -sf $SRC_PATH/config.d/silk.xml $DEST_SERVER_PATH/config.d/
+fi
 
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
