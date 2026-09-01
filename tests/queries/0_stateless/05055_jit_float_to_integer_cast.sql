@@ -18,10 +18,10 @@ ORDER BY c0;
 SELECT CAST(-toFloat64(c0) * 1e9 AS Decimal32(2)) FROM t_jit_float_cast; -- { serverError DECIMAL_OVERFLOW }
 SELECT toDecimal32(-toFloat64(c0) * 1e9, 2) FROM t_jit_float_cast; -- { serverError DECIMAL_OVERFLOW }
 SELECT toUInt8(toFloat64(c0) / (toFloat64(c0) - toFloat64(c0))) FROM t_jit_float_cast; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST(toFloat64(c0) / (toFloat64(c0) - toFloat64(c0)) AS UInt8) FROM t_jit_float_cast; -- { serverError CANNOT_CONVERT_TYPE }
 
--- The value a float out of the destination's range converts to is undefined and differs between
--- architectures (`FunctionsConversion.h` notes x86 truncates where AArch64 saturates), so compare
--- the compiled and the interpreted evaluation of the same expression instead of pinning a literal.
+-- The value an out-of-range float converts to is not defined by the language, so compare the compiled
+-- and the interpreted evaluation of the same expression instead of pinning a literal.
 CREATE TABLE t_jit_float_cast_arms (c0 UInt8, lte UInt8) ENGINE = Memory;
 
 INSERT INTO t_jit_float_cast_arms
