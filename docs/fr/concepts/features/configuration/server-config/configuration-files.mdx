@@ -17,7 +17,7 @@ Le serveur ClickHouse peut être configuré à l’aide de fichiers de configura
 Dans la plupart des types d’installation, le serveur ClickHouse utilise `/etc/clickhouse-server/config.xml` comme fichier de configuration par défaut, mais il est également possible d’indiquer manuellement l’emplacement du fichier de configuration au démarrage du serveur à l’aide de l’option de ligne de commande `--config-file` ou `-C`.
 Des fichiers de configuration supplémentaires peuvent être placés dans le répertoire `config.d/`, relatif au fichier de configuration principal, par exemple dans le répertoire `/etc/clickhouse-server/config.d/`.
 Les fichiers de ce répertoire et la configuration principale sont fusionnés lors d’une étape de prétraitement avant que la configuration ne soit appliquée au serveur ClickHouse.
-Les fichiers de configuration sont fusionnés par ordre alphabétique.
+Les fragments de configuration sont fusionnés selon l’ordre lexicographique de leurs chemins complets. Pour les fichiers du répertoire standard `config.d/`, cela équivaut à les ordonner par nom de fichier. Le répertoire legacy `conf.d/` est également fusionné ; comme `conf.d` est trié avant `config.d`, tous ses fragments sont traités en premier lorsque les deux répertoires existent.
 Pour simplifier les mises à jour et améliorer la modularité, il est recommandé de ne pas modifier le fichier `config.xml` par défaut et de placer toute personnalisation supplémentaire dans `config.d/`.
 La configuration de ClickHouse Keeper se trouve dans `/etc/clickhouse-keeper/keeper_config.xml`.
 De même, les fichiers de configuration supplémentaires pour Keeper doivent être placés dans `/etc/clickhouse-keeper/keeper_config.d/`.
@@ -330,6 +330,7 @@ Le fichier `config.xml` peut spécifier une configuration distincte avec des par
 La configuration utilisateur peut être répartie dans des fichiers distincts, comme `config.xml` et `config.d/`.
 Le nom du répertoire est défini comme le paramètre `users_config` sans le suffixe `.xml`, auquel est concaténé `.d`.
 Le répertoire `users.d` est utilisé par défaut, car `users_config` vaut par défaut `users.xml`.
+Les fragments de configuration utilisateur sont fusionnés selon l’ordre lexicographique de leurs chemins complets. Pour les fichiers du répertoire standard `users.d/`, cela équivaut à un classement par nom de fichier. Le répertoire legacy `conf.d/` est également fusionné ; comme `conf.d` est classé avant `users.d`, tous ses fragments sont traités en premier lorsque les deux répertoires existent.
 
 Notez que les fichiers de configuration sont d’abord [fusionnés](#merging) en tenant compte des paramètres, puis les inclusions sont traitées.
 

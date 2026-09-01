@@ -1,0 +1,57 @@
+Test CREATE without target permission
+ACCESS_DENIED
+Test CREATE with target permission
+Test count without target SELECT permission
+ACCESS_DENIED
+Test count without target SELECT permission using the read path
+ACCESS_DENIED
+Test count without target SELECT permission using the old analyzer read path
+ACCESS_DENIED
+Test DESCRIBE without target permission
+ACCESS_DENIED
+Test SHOW CREATE without target permission
+ACCESS_DENIED
+Test SHOW COLUMNS without target permission
+Test table statistics without target permission
+1	1	1	1	1
+Test table metadata without target permission
+1	1	1	1	1	1
+Test persisted table metadata without target permission
+1	1
+Test column statistics without target permission
+0
+Test other metadata tables without target permission
+0	0	0
+Test index metadata and statistics without target permission
+0
+Test lifetime statistics without target permission
+1	1
+Test direct and Alias count with column-scoped target SELECT permission using the analyzer
+2	2
+Test direct and Alias count with column-scoped target SELECT permission using the read path
+2	2
+Test direct and Alias count with column-scoped target SELECT permission using the old analyzer read path
+2	2
+Test table statistics with target permission
+2	1	1	1	1
+Test table metadata with target permission
+1	1	1	1	1	1
+Test persisted table metadata with target permission
+1	1
+Test column statistics with column-scoped target permission
+value	1
+Test other metadata tables with target permission
+1	1	1
+Test index metadata and statistics with target permission
+1	1	1
+Test lifetime statistics with target permission
+1	1
+Test schema commands with target permission
+['id','value']
+DESCRIBE OK
+SHOW COLUMNS OK
+ENGINE = Alias
+Test system.tables with an Alias database-level grant
+1	1	1	1
+Test other metadata tables with an Alias database-level grant
+0	0	0	0	0

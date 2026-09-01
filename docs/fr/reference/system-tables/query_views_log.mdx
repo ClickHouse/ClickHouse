@@ -38,7 +38,7 @@ Vous pouvez utiliser le paramètre [log&#95;queries&#95;probability](/fr/referen
 * `event_time` ([DateTime](/fr/reference/data-types/datetime)) — Date et heure auxquelles la vue a terminé son exécution.
 * `event_time_microseconds` ([DateTime64(6)](/fr/reference/data-types/datetime64)) — Date et heure auxquelles la vue a terminé son exécution avec une précision à la microseconde.
 * `view_duration_ms` ([UInt64](/fr/reference/data-types/int-uint)) — Durée d’exécution de la vue (somme de ses étapes), en millisecondes.
-* `initial_query_id` ([String](/fr/reference/data-types/string)) — ID de la requête initiale (pour l’exécution distribuée des requêtes).
+* `initial_query_id` ([String](/fr/reference/data-types/string)) — ID de la requête initiale dans la même chaîne de requêtes.
 * `view_name` ([String](/fr/reference/data-types/string)) — Nom de la vue.
 * `view_uuid` ([UUID](/fr/reference/data-types/uuid)) — UUID de la vue.
 * `view_type` ([Enum8(&#39;Default&#39; = 1, &#39;Materialized&#39; = 2, &#39;Live&#39; = 3, &#39;Window&#39; = 4)](/fr/reference/data-types/enum)) — Type de la vue. Valeurs : &#39;Default&#39; = 1 — Vues par défaut. Ne devrait pas apparaître dans ce journal, &#39;Materialized&#39; = 2 — Vues matérialisées, &#39;Live&#39; = 3 — Vues Live.

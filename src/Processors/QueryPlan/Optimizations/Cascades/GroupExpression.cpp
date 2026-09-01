@@ -46,8 +46,8 @@ void GroupExpression::dump(WriteBuffer & out, const CostConfig & cost_config) co
     out << " '" << getDescription() << "'";
     if (strategy)
         out << " [" << strategy->getName() << "]";
-    if (enforcer_axis != EnforcerAxis::None)
-        out << " [enforcer:" << (enforcer_axis == EnforcerAxis::Sorting ? "Sorting" : "Distribution") << "]";
+    if (enforced_property != EnforcedProperty::None)
+        out << " [enforcer:" << (enforced_property == EnforcedProperty::Sorting ? "Sorting" : "Distribution") << "]";
     out << " inputs:";
     for (const auto & input : inputs)
         out << " #" << input.group_id;
@@ -84,9 +84,9 @@ bool GroupExpression::structurallyEqualTo(const GroupExpression & other) const
     if (getName() != other.getName() || getDescription() != other.getDescription())
         return false;
 
-    const String strategy_name = strategy ? strategy->getName() : String{};
-    const String other_strategy_name = other.strategy ? other.strategy->getName() : String{};
-    return strategy_name == other_strategy_name;
+    /// Strategies are per-type singletons (`strategySingleton`), so equal pointers mean the
+    /// same strategy type.
+    return strategy == other.strategy;
 }
 
 size_t GroupExpression::fingerprint() const

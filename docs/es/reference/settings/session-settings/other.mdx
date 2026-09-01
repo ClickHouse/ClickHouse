@@ -16,6 +16,26 @@ import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnly
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="adaptive_aggregator_freeze_threshold">
+  ## adaptive_aggregator_freeze_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16384" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "Nueva configuración para establecer el número de claves a partir del cual el agregador adaptativo (`enable_adaptive_aggregator`) congela la tabla hash local de un hilo."}]}]} />
+
+El número de claves a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulte `enable_adaptive_aggregator`). Los valores menores mantienen las tablas congeladas en caché, mientras que los valores mayores permiten que absorban más claves frecuentes. El valor 0 congela las tablas en la primera oportunidad, lo que hace que el algoritmo se comporte de forma similar al agregador con segmentación (`enable_sharding_aggregator`): cada clave se enruta según su hash y se agrega en un único propietario, pero se difiere a la fase de fusión en lugar de intercambiarse entre hilos durante el escaneo.
+
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nueva configuración que limita en bytes las tablas locales congeladas del agregador adaptativo; se aplica el límite que se alcance primero entre este y el umbral de recuento de claves. 0 desactiva el límite de bytes."}]}]} />
+
+El tamaño de memoria a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulta `enable_adaptive_aggregator`). Una tabla se congela al alcanzarse primero este valor o `adaptive_aggregator_freeze_threshold`. El tamaño corresponde a los bytes asignados por la propia tabla local (su búfer de tabla hash más sus arenas) y se comprueba entre bloques. El límite de bytes es relevante cuando las claves o los estados de agregación son anchos: el umbral de recuento de claves por sí solo permitiría que estas tablas superaran la capacidad de las cachés de CPU. Con el valor predeterminado, las tablas con claves y estados de ancho normal siguen congelándose según el recuento de claves. 0 desactiva el límite de bytes, por lo que decide únicamente el umbral de recuento de claves.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -149,6 +169,16 @@ Valor predeterminado en Cloud: `1`.
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Valida las sumas de comprobación al leer. Está habilitada de forma predeterminada y siempre debe estarlo en producción. No espere obtener ningún beneficio por deshabilitar este ajuste. Solo debería usarse para experimentos y benchmarks. Este ajuste solo se aplica a tablas de la familia MergeTree. Las sumas de comprobación siempre se validan en otros motores de tabla y al recibir datos a través de la red.
+
+<div id="compression">
+  ## compression
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para aplicar compresión genérica al cuerpo de la respuesta."}]}]} />
+
+Aplica compresión genérica al cuerpo de la respuesta, por ejemplo, `compression=gz`. Tenga en cuenta que es independiente de `Content-Encoding` (compresión HTTP) y del parámetro heredado `compress` (compresión nativa de ClickHouse). Especificar una extensión de archivo comprimido en la ruta de la URL tiene el mismo efecto.
+
+Esta configuración de la interfaz HTTP da forma a la respuesta: se procesa antes de ejecutar la consulta (los búferes de respuesta se configuran de antemano), por lo que debe proporcionarse mediante el parámetro URL de HTTP, la extensión de archivo de la ruta de la URL o un perfil de usuario, y no mediante una cláusula `SETTINGS` dentro de la consulta (donde no tiene efecto y se rechaza).
 
 <div id="connection_pool_max_wait_ms">
   ## connection_pool_max_wait_ms
@@ -515,6 +545,20 @@ Si especificas explícitamente las opciones `actions`, `compact` o `pretty` en l
 
 `EXPLAIN PLAN` con `json = 1` o `distributed = 1` mantiene los valores predeterminados de `legacy` (anteriores a la versión 26.7) independientemente de esta configuración, a menos que `actions`, `compact` o `pretty` se establezcan explícitamente. La salida Pretty no puede representar resultados JSON ni planes distribuidos por segmento, por lo que esos modos solo se muestran correctamente en el formato `legacy`.
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "A partir de la versión 26.8, `EXPLAIN SYNTAX` devuelve la consulta reformateada como un único registro (con saltos de línea incrustados), en lugar de un registro por línea. Establezca esta opción en `false` para restaurar la salida anterior a la versión 26.8, con un registro por línea."}]}]} />
+
+Devuelve la salida de `EXPLAIN SYNTAX` como un único registro (con saltos de línea incrustados), en lugar de un registro por línea, de modo que el resultado sea una única fila recuperable (por ejemplo, `SELECT count() FROM (EXPLAIN SYNTAX ...)` devuelve `1`).
+
+Especificar explícitamente la opción `single_record` en la sentencia `EXPLAIN SYNTAX` (por ejemplo, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) siempre tiene prioridad sobre esta configuración.
+
+Establezca esta opción en `false` para restaurar la salida anterior a la versión 26.8, con un registro por línea, o configure `compatibility` con cualquier versión anterior a `26.8`.
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -558,7 +602,7 @@ De forma predeterminada, 1 (habilitado).
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "Cambia la estrategia de partición predeterminada de los motores de tabla tipo archivo (S3, AzureBlobStorage, etc.) de `wildcard` a `hive` cuando no se proporciona `partition_strategy`."}]}]} />
 
-Estrategia de partición predeterminada para motores tipo archivo. Se aplica solo cuando la ruta no contiene un marcador de posición `{_partition_id}`: dicha ruta solo es compatible con la estrategia `wildcard`, por lo que siempre implica `wildcard`.
+Estrategia de partición predeterminada para motores tipo archivo. Se aplica solo a consultas `CREATE` con una ruta que no contiene ningún patrón glob ni el marcador de posición `{_partition_id}`. Una ruta con `{_partition_id}` siempre usa `wildcard`. Una ruta con otro patrón glob no utiliza ninguna estrategia de partición e ignora `PARTITION BY`. Si esta configuración es `wildcard`, pero la ruta no contiene `{_partition_id}`, no se utiliza ninguna estrategia de partición; los motores de tabla que no pueden persistir esta decisión en sus argumentos de motor (por ejemplo, `HDFS`) rechazan dicho `CREATE`.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit
@@ -567,6 +611,22 @@ Estrategia de partición predeterminada para motores tipo archivo. Se aplica sol
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 Número máximo de prefetches. Cero significa que no hay límite. Se recomienda más la configuración `filesystem_prefetches_max_memory_usage` si desea limitar el número de prefetches
+
+<div id="filter">
+  ## filter
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para añadir una cláusula WHERE alrededor de una consulta."}]}]} />
+
+Añade una cláusula `WHERE` a la consulta envolviéndola en una subconsulta. Varios filtros se combinan con AND. La interfaz HTTP permite varios parámetros URL `filter`, que se combinan con AND, en orden, y con el valor de esta configuración.
+
+Esta es una configuración para la construcción de consultas que el motor aplica a la consulta analizada (envolviéndola como una tabla derivada), por lo que se combina con la consulta existente y funciona con todos los protocolos: puede proporcionarse mediante el parámetro URL HTTP, una cláusula `SETTINGS` dentro de la consulta o un perfil de usuario.
+
+Afecta a las consultas `SELECT` / `UNION` que producen resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia instrucción `INSERT` / `CREATE`, no se propaga al `SELECT` de origen; se aplica la misma regla de no propagación que a cualquier otra configuración.
+
+<Danger>
+  `filter` **no** es un mecanismo de control de acceso y no debe utilizarse como sustituto de las [políticas de seguridad a nivel de fila](/es/concepts/features/security/access-rights#row-policy-management) ni de la configuración `additional_table_filters`. Solo añade un `WHERE` a la subconsulta envolvente, por lo que los datos subyacentes se siguen leyendo y procesando antes de aplicar el filtro; una consulta puede observar las filas excluidas por el filtro durante el procesamiento (por ejemplo, con `throwIf` para filtrar información a través de la ruta de error). Use seguridad a nivel de fila o `additional_table_filters` cuando el objetivo sea restringir las filas a las que puede acceder un usuario.
+</Danger>
 
 <div id="final">
   ## final
@@ -692,6 +752,14 @@ ORDER BY tuple()
 SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+<div id="format">
+  ## format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para sobrescribir el FORMAT de la consulta, tanto de entrada como de salida."}]}]} />
+
+Sobrescribe el `FORMAT` de la consulta, tanto de entrada como de salida. Tiene prioridad sobre el formato especificado en la consulta y en la extensión de archivo. Las configuraciones más específicas `input_format` y `output_format` tienen prioridad sobre esta configuración genérica `format` para sus respectivas direcciones.
 
 <div id="framing_output_format">
   ## framing_output_format
@@ -877,6 +945,14 @@ Se aplica solo cuando la profundidad de la subconsulta = 0. Las subconsultas e I
 Si la estructura de nivel superior es UNION, &#39;ORDER BY rand()&#39; se inserta en cada rama de forma independiente.
 Solo es útil para pruebas y desarrollo (la ausencia de ORDER BY es una fuente de resultados no deterministas en las consultas).
 
+<div id="input_format">
+  ## input_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para sobrescribir el formato de entrada de la consulta."}]}]} />
+
+Sobrescribe el formato de entrada de la consulta. Tiene prioridad sobre el formato especificado en ella.
+
 <div id="interactive_delay">
   ## interactive_delay
 </div>
@@ -914,17 +990,23 @@ Si está habilitada, las funciones &#39;least&#39; y &#39;greatest&#39; devuelve
 Enumera todos los nombres de los elementos de los literales de tupla grandes en los nombres de sus columnas en lugar del hash. Esta configuración existe solo por motivos de compatibilidad. Tiene sentido establecerla en &#39;true&#39; al realizar una actualización progresiva del clúster desde una versión anterior a la 21.7 a una posterior.
 
 <div id="limit">
-  ## limit
+  ## límite
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-Establece el número máximo de filas que se pueden obtener del resultado de la consulta. Ajusta el valor definido por la cláusula [LIMIT](/es/reference/statements/select/limit), de modo que el límite especificado en la consulta no pueda superar el límite establecido por esta opción.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "El tipo se amplió de UInt64 a Float para admitir valores negativos y fraccionarios, que se pasan directamente al soporte nativo de ClickHouse para `LIMIT` negativos/fraccionarios."}]}]} />
+
+Establece el número máximo de filas que se obtienen del resultado de la consulta. Ajusta el valor establecido por la cláusula [LIMIT](/es/reference/statements/select/limit). El valor se pasa directamente a `LIMIT` y acepta todo lo que admite `LIMIT`, incluidos los valores negativos (cuenta desde el final del resultado) y las fracciones en `(0, 1)` (interpretadas como una proporción del resultado).
 
 Valores posibles:
 
 * 0 — El número de filas no está limitado.
-* Entero positivo.
+* Entero positivo — número exacto de filas.
+* Entero negativo — devuelve las últimas N filas.
+* Un número real en el intervalo abierto `(0, 1)` — devuelve esa fracción del resultado.
+
+Esta configuración afecta a las consultas `SELECT` / `UNION` que generan resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo tiene efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen: se aplica la misma regla de no propagación que para cualquier otra configuración.
 
 <div id="load_marks_asynchronously">
   ## load_marks_asynchronously
@@ -1026,14 +1108,18 @@ Normalizar los nombres de las funciones a su forma canónica
   ## offset
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-Establece el número de filas que se omitirán antes de empezar a devolver filas de la consulta. Ajusta el desplazamiento establecido por la cláusula [OFFSET](/es/reference/statements/select/offset), de modo que ambos valores se sumen.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Tipo ampliado de UInt64 a Float para admitir valores negativos y fraccionarios, que se transfieren a la compatibilidad nativa de ClickHouse con `OFFSET` negativo/fraccionario."}]}]} />
 
-Posibles valores:
+Establece el número de filas que se omiten antes de empezar a devolver filas de la consulta. Ajusta el desplazamiento establecido por la cláusula [OFFSET](/es/reference/statements/select/offset). El valor se transfiere a `OFFSET` y admite todo lo que admite `OFFSET`, incluidos valores negativos y fracciones en `(0, 1)`.
+
+Valores posibles:
 
 * 0 — No se omite ninguna fila.
 * Entero positivo.
+* Entero negativo.
+* Un número real en el intervalo abierto `(0, 1)` — se omite esa fracción del resultado.
 
 **Ejemplo**
 
@@ -1061,6 +1147,42 @@ Resultado:
 │ 109 │
 └─────┘
 ```
+
+Esta configuración define el comportamiento de las consultas `SELECT` / `UNION` que producen resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen, conforme a la misma regla de no propagación aplicable a cualquier otra configuración.
+
+<div id="order">
+  ## order
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para añadir una cláusula ORDER BY alrededor de una consulta."}]}]} />
+
+Añade una cláusula `ORDER BY` a la consulta como subconsulta envolvente. Acepta una lista arbitraria de expresiones.
+
+Esta es una configuración de construcción de consultas que el engine aplica a la consulta analizada (envolviéndola como una tabla derivada), por lo que se combina con la consulta existente y funciona en todos los protocolos: se puede proporcionar mediante el parámetro de URL HTTP, una cláusula `SETTINGS` en la consulta o un perfil de usuario.
+
+Da forma a las consultas `SELECT` / `UNION` que generan resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen, igual que ocurre con cualquier otra configuración.
+
+<div id="output_format">
+  ## output_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para sobrescribir el formato de salida de la consulta."}]}]} />
+
+Sobrescribe el formato de salida de la consulta. Tiene prioridad sobre el formato especificado en la consulta, la extensión de archivo o mediante `default_format`.
+
+<div id="page">
+  ## página
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para respuestas HTTP paginadas, equivalente a offset = limit * (page - 1). Float para admitir valores negativos o fraccionarios (se transmite a `LIMIT`\/`OFFSET` de SQL)."}]}]} />
+
+Establece el número de página de los resultados paginados. Equivale a `offset = limit * (page - 1)`. Solo se puede especificar cuando se establece `limit` y no `offset`. Las páginas se numeran a partir de 1. Admite los mismos valores negativos o fraccionarios que `limit` y `offset`.
+
+Es una configuración de construcción de consultas que el engine aplica a la consulta analizada (envolviéndola como una tabla derivada), por lo que se combina con la consulta existente y funciona con todos los protocolos: se puede proporcionar mediante el parámetro URL de HTTP, una cláusula `SETTINGS` en la consulta o un perfil de usuario.
+
+Afecta a las consultas `SELECT` / `UNION` que producen resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia instrucción `INSERT` / `CREATE`, no se propaga al `SELECT` de origen: se aplica la misma regla de no propagación que a cualquier otra configuración.
 
 <div id="paimon_target_snapshot_id">
   ## paimon_target_snapshot_id
@@ -1398,6 +1520,21 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración experimental para habilitar `BACKUP FROM SNAPSHOT` reanudable."}]}]} />
+
+Habilita `BACKUP FROM SNAPSHOT` reanudable: se puede volver a ejecutar un intento fallido sin copiar de nuevo las
+entradas de los lotes ya completados. Solo está disponible en ClickHouse Cloud para destinos `S3` y
+`AzureBlobStorage` de tipo directorio. Habilitarla en compilaciones de código abierto de ClickHouse, donde
+`BACKUP FROM SNAPSHOT` no está disponible, provoca que `BACKUP` falle con `WRONG_BACKUP_SETTINGS`.
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1408,6 +1545,24 @@ FORMAT Null;
 
 Si está habilitado, ClickHouse proporcionará el valor exacto de la estadística rows&#95;before&#95;aggregation; representa el número de filas leídas antes de la agregación
 
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para ejecutar una consulta en segundo plano, desconectada de la conexión que la envió y descartando el resultado."}]}]} />
+
+Si está habilitada, el servidor programa la consulta en segundo plano, devuelve inmediatamente un resultado vacío satisfactorio y ejecuta la consulta hasta completarla, independientemente de lo que ocurra con la conexión.
+
+Una consulta en segundo plano no sobrevive a un reinicio del servidor. Durante el apagado, respeta la misma configuración del servidor que una consulta en primer plano: `shutdown_wait_unfinished_queries` determina si se cancela o se espera a que finalice (en ambos casos, las entradas en cola se descartan sin generar una entrada en `system.query_log`), y `shutdown_wait_unfinished` limita cuánto tiempo espera el servidor.
+
+Realice el seguimiento de la consulta mediante su `query_id`: en `system.processes` mientras se ejecuta y en `system.query_log` después de que finalice y se escriba la entrada en el registro de consultas.
+
+Se aplica a las consultas recibidas mediante los protocolos TCP nativo y HTTP. A través de HTTP, pase la configuración como parámetro de URL. No se puede cambiar con `SET`; habilítela por consulta o a nivel de usuario o perfil.
+
+El principal caso de uso es un `INSERT ... SELECT` de larga duración que no debe perderse cuando se interrumpe la conexión del client.
+
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering
 </div>
@@ -1417,6 +1572,18 @@ Si está habilitado, ClickHouse proporcionará el valor exacto de la estadístic
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Un nuevo algoritmo de filtrado con índices de omisión de datos"}]}]} />
 
 Activa el algoritmo de filtrado masivo para los índices. Se espera que siempre ofrezca mejores resultados, pero esta configuración se mantiene por compatibilidad y control.
+
+<div id="select">
+  ## select
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para envolver una consulta en `SELECT <expr_list> FROM (<query>)`."}]}]} />
+
+Envuelve la consulta en una subconsulta con una lista explícita de expresiones `SELECT`. Si no está vacía, la consulta que produce resultados se envuelve como `SELECT <expr_list> FROM (<query>)`.
+
+Es una configuración de construcción de consultas que el motor aplica a la consulta analizada (envolviéndola como una tabla derivada), por lo que se combina con la consulta existente y funciona con todos los protocolos: se puede especificar mediante el parámetro URL de HTTP, una cláusula `SETTINGS` en la consulta o un perfil de usuario.
+
+Da forma a las consultas `SELECT` / `UNION` que producen resultados. En el caso de una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen; se aplica la misma regla de no propagación que a cualquier otra configuración.
 
 <div id="select_sequential_consistency">
   ## select_sequential_consistency
@@ -1608,6 +1775,18 @@ Valores posibles:
 * `basic` — Formato de bloques snappy de Hadoop. Compatible con archivos leídos y escritos por Hadoop. Admite lectura y escritura.
 * `framed` — Formato framing de Snappy, el formato estándar de streaming definido por Google. Admite lectura y escritura.
 
+<div id="sort">
+  ## sort
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para añadir una cláusula ORDER BY simple que envuelve una consulta."}]}]} />
+
+Añade una cláusula `ORDER BY` simple a la consulta envolviéndola en una subconsulta. Acepta una lista de identificadores o referencias posicionales a columnas (enteros positivos) separada por comas, con un prefijo opcional `+` (ASC) o `-` (DESC). Ejemplo: `sort=a,-b` ordena por `a` de forma ascendente y por `b` de forma descendente; `sort=1,-2` ordena por la primera columna de forma ascendente y por la segunda de forma descendente. No se puede combinar con `order`.
+
+Esta es una configuración de construcción de consultas que el motor aplica a la consulta analizada (envolviéndola como una tabla derivada), por lo que se combina con la consulta existente y funciona en todos los protocolos: se puede especificar mediante el parámetro URL de HTTP, una cláusula `SETTINGS` dentro de la consulta o un perfil de usuario.
+
+Da forma a las consultas `SELECT` / `UNION` que producen resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo tiene efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen, igual que ocurre con cualquier otra configuración.
+
 <div id="sort_overflow_mode">
   ## sort_overflow_mode
 </div>
@@ -1633,6 +1812,16 @@ Valores posibles:
 
 * `0` - La cadena restante no se incluirá en el último elemento del array de resultados.
 * `1` - La cadena restante se incluirá en el último elemento del array de resultados. Este es el comportamiento de la función [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) de Spark y del método [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) de Python.
+
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "Nueva configuración para limitar el coste de estimar la selectividad de `IN` con un conjunto grande: por encima del límite, el estimador usa el tamaño del conjunto y su rango acotado en lugar de los rangos exactos. Antes de la versión 26.8, la estimación no tenía límite, por lo que el valor anterior es 0 (sin límite) y `compatibility` con una versión anterior restaura los rangos exactos para conjuntos de cualquier tamaño."}]}]} />
+
+El tamaño máximo del conjunto situado en el lado derecho del operador `IN` para el que el estimador de selectividad determina los rangos exactos que abarca el conjunto. Determinarlos requiere un `Field` por elemento, una ordenación y una sonda de estadísticas por elemento, lo que, en conjuntos grandes, domina la planificación de consultas. Por encima de este límite, el estimador calcula la selectividad a partir del tamaño del conjunto y de su rango acotado, mediante una única pasada lineal por el conjunto, sin ordenación ni sondas de estadísticas por elemento. Cero significa que no hay límite.
 
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
@@ -1669,6 +1858,18 @@ Tiempo de espera para bloquear la caché al reservar espacio para datos temporal
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite o prohíbe los INSERT vacíos; está habilitada de forma predeterminada (lanza un error si el insert está vacío). Solo se aplica a los INSERT que usan [`clickhouse-client`](/es/concepts/features/interfaces/cli) o la [interfaz gRPC](/es/concepts/features/interfaces/grpc).
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para leer de la tabla de muestras recientes de una tabla TimeSeries cuando el intervalo de tiempo solicitado se encuentra dentro de su ventana TTL."}]}]} />
+
+Lee de la tabla de muestras recientes de una tabla [TimeSeries](/es/reference/engines/table-engines/integrations/time-series) en lugar de la tabla de muestras principal cuando todo el intervalo de tiempo solicitado se encuentra dentro de la ventana TTL de la tabla de muestras recientes (consulta la configuración `recent_samples_ttl_seconds` del motor de tabla TimeSeries).
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

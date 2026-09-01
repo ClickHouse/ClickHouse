@@ -108,6 +108,7 @@
                 },
                 "ru/reference/statements/create/masking-policy",
                 "ru/reference/statements/create/function",
+                "ru/reference/statements/create/handler",
                 "ru/reference/statements/create/named-collection",
                 "ru/reference/statements/create/quota",
                 "ru/reference/statements/create/role",
@@ -185,8 +186,7 @@
             "ru/reference/statements/truncate",
             "ru/reference/statements/undrop",
             "ru/reference/statements/update",
-            "ru/reference/statements/use",
-            "ru/reference/statements/watch"
+            "ru/reference/statements/use"
           ]
         },
         {
@@ -557,6 +557,7 @@
                 "ru/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ru/reference/functions/aggregate-functions/first_value",
                 "ru/reference/functions/aggregate-functions/flame_graph",
+                "ru/reference/functions/aggregate-functions/gini",
                 "ru/reference/functions/aggregate-functions/groupArray",
                 "ru/reference/functions/aggregate-functions/groupArrayArray",
                 "ru/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -883,6 +884,7 @@
             "ru/reference/formats/Parquet/ParquetMetadata"
           ]
         },
+        "ru/reference/formats/PNG",
         "ru/reference/formats/PostgreSQLWire",
         {
           "expanded": false,
@@ -910,6 +912,14 @@
             "ru/reference/formats/Protobuf/Protobuf",
             "ru/reference/formats/Protobuf/ProtobufList",
             "ru/reference/formats/Protobuf/ProtobufSingle"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Puffin",
+          "pages": [
+            "ru/reference/formats/Puffin/Puffin",
+            "ru/reference/formats/Puffin/PuffinMetadata"
           ]
         },
         "ru/reference/formats/RawBLOB",
@@ -950,6 +960,15 @@
         "ru/reference/formats/Values",
         "ru/reference/formats/Vertical",
         "ru/reference/formats/XML"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
+      "group": "Interfaces",
+      "pages": [
+        "ru/reference/interfaces/specs/NativeProtocol",
+        "ru/reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1019,11 +1038,15 @@
         "ru/reference/system-tables/detached_parts",
         "ru/reference/system-tables/detached_tables",
         "ru/reference/system-tables/dictionaries",
+        "ru/reference/system-tables/dictionary_layouts",
+        "ru/reference/system-tables/dictionary_sources",
         "ru/reference/system-tables/dimensional_metrics",
         "ru/reference/system-tables/disks",
+        "ru/reference/system-tables/disk_types",
         "ru/reference/system-tables/distributed_ddl_queue",
         "ru/reference/system-tables/distribution_queue",
         "ru/reference/system-tables/dns_cache",
+        "ru/reference/system-tables/documentation",
         "ru/reference/system-tables/dropped_tables",
         "ru/reference/system-tables/dropped_tables_parts",
         "ru/reference/system-tables/enabled_roles",
@@ -1043,6 +1066,7 @@
         "ru/reference/system-tables/histogram_metric_log",
         "ru/reference/system-tables/histogram_metrics",
         "ru/reference/system-tables/hypothetical_indexes",
+        "ru/reference/system-tables/iceberg_files",
         "ru/reference/system-tables/iceberg_history",
         "ru/reference/system-tables/iceberg_metadata_log",
         "ru/reference/system-tables/information_schema",
@@ -1051,6 +1075,9 @@
         "ru/reference/system-tables/jemalloc_stats",
         "ru/reference/system-tables/jemalloc_profile_text",
         "ru/reference/system-tables/kafka_consumers",
+        "ru/reference/system-tables/keeper_changelogs",
+        "ru/reference/system-tables/keeper_cluster",
+        "ru/reference/system-tables/keeper_snapshots",
         "ru/reference/system-tables/keeper_storage",
         "ru/reference/system-tables/keywords",
         "ru/reference/system-tables/licenses",
@@ -1113,6 +1140,7 @@
         "ru/reference/system-tables/settings_profile_elements",
         "ru/reference/system-tables/settings_profiles",
         "ru/reference/system-tables/stack_trace",
+        "ru/reference/system-tables/statements",
         "ru/reference/system-tables/stemmers",
         "ru/reference/system-tables/storage_policies",
         "ru/reference/system-tables/symbols",

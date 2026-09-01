@@ -65,7 +65,7 @@ protected:
         replicated_distribution.is_replicated = true;
 
         auto replicated_expression = std::make_shared<GroupExpression>(*expression);
-        replicated_expression->strategy = std::make_shared<ReplicatedSubplanStrategy>();
+        replicated_expression->strategy = strategySingleton<ReplicatedSubplanStrategy>();
         for (auto & input : replicated_expression->inputs)
             input.required_properties.distribution = replicated_distribution;
         replicated_expression->properties.distribution = replicated_distribution;
