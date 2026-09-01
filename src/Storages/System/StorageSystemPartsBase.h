@@ -13,8 +13,10 @@ class QueryStatus;
 
 /// How often the column-oriented `system.parts` siblings consult `QueryStatus` while enumerating
 /// the columns of a part: a wide table can have many thousands of columns per part, and polling
-/// only at the part boundary would leave a long uninterruptible stretch.
-static constexpr size_t COLUMNS_CANCELLATION_CHECK_PERIOD = 128;
+/// only at the part boundary would leave a long uninterruptible stretch. The period is small,
+/// because a poll is a clock read, while filling the row of a single column allocates and copies
+/// much more than that.
+static constexpr size_t COLUMNS_CANCELLATION_CHECK_PERIOD = 16;
 
 /// Test-only instrumentation, a no-op unless the `slowdown_system_parts_enumeration` failpoint
 /// is enabled: sleeps while enumerating the parts of specially named tables, to make the eager

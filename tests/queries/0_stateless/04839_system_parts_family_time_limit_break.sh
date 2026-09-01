@@ -30,9 +30,9 @@
 # - the per-part checkpoints: the failpoint sleeps 500 ms on every enumerated part, so building
 #   the full result of a 10-part table performs 10 sleeps;
 # - the per-column checkpoints of `system.parts_columns` and `system.projection_parts_columns`:
-#   the failpoint sleeps 500 ms per `COLUMNS_CANCELLATION_CHECK_PERIOD` (128) enumerated
-#   columns of a part, so building the full result over a single part with 1025 columns performs
-#   8 sleeps;
+#   the failpoint sleeps 500 ms per `COLUMNS_CANCELLATION_CHECK_PERIOD` (16) enumerated
+#   columns of a part, so building the full result over a single part with 129 columns performs
+#   9 sleeps;
 # - the stop callback inside the parts-snapshot walks of MergeTree: for the tables with the
 #   '_snap' name marker the failpoint sleeps 500 ms per enumerated part inside the walk itself
 #   and polls the callback on every part (its regular cadence of 8192 parts cannot be reached
@@ -42,7 +42,7 @@
 #   fixture lives in a dedicated database so that the sleeps do not slow down the walk for the
 #   other checks;
 # - the checkpoints of the column-metadata prepass of the column-oriented tables: for the tables
-#   with the '_meta' name marker the failpoint sleeps 500 ms per 128 enumerated metadata
+#   with the '_meta' name marker the failpoint sleeps 500 ms per 16 enumerated metadata
 #   columns inside the prepass;
 # - the per-column checkpoints of the column-oriented tables after the parts snapshot itself has
 #   already stopped: the '_snap_wide' fixture combines the slowed down snapshot walk with parts
@@ -79,8 +79,10 @@ NUM_DROPPED_TABLES=10
 # would add discovery sleeps to every other check.
 NUM_DISCOVERY_TABLES=10
 # A table with many columns in a single part: exercises the checkpoints of the column-enumeration
-# loops, which fire every 128 enumerated columns: 1025 columns give 8 checkpoints per part.
-NUM_WIDE_COLUMNS=1024
+# loops, which fire every 16 enumerated columns: 129 columns give 9 checkpoints per part. The
+# fixture is kept as narrow as those checkpoints allow: writing a part costs time per column, and
+# in the debug and sanitizer builds a wider fixture alone takes minutes to create.
+NUM_WIDE_COLUMNS=128
 # The upper bound on the failpoint sleeps a query may perform before it stops. A query that stops
 # at the checkpoints performs at most 2-3 sleeps: the sleeps are 500 ms each, the deadline is
 # 0.5 seconds, and every sleep site is polled at the sleep cadence, so at most two sleeps fit
@@ -293,7 +295,7 @@ function counted_dropped_discovery()
     counted_query 12 projection_parts_snap_state projection_parts t_slowdown_system_parts_snap 'name, _state'
 
     # The '_meta' fixture runs into its deadline inside the column-metadata prepass (500 ms per
-    # 128 enumerated metadata columns, 8 sleeps for the full prepass over 1025 columns).
+    # 16 enumerated metadata columns, 9 sleeps for the full prepass over 129 columns).
     counted_query 13 parts_columns_meta parts_columns t_slowdown_system_parts_meta
     counted_query 14 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
 
