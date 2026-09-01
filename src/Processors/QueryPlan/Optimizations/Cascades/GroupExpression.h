@@ -47,7 +47,7 @@ public:
         , description_suffix(other_.description_suffix)
         , inputs(other_.inputs)
         , enforced_property(other_.enforced_property)
-        , step_identity(other_.step_identity)
+        , cached_step_fingerprint(other_.cached_step_fingerprint)
     {}
 
     String getName() const;
@@ -65,17 +65,17 @@ public:
     /// silently drop a distinct alternative.
     bool structurallyEqualTo(const GroupExpression & other) const;
 
-    /// Content-based identity of `plan_step`, or nullptr when the step type has not opted in.
+    /// Content-based fingerprint of `plan_step`, or nullptr when the step type has not opted in.
     /// Recomputed when the cached entry was inherited from a copy whose step was then replaced.
-    const StepIdentity * getStepIdentity() const;
+    const StepFingerprint * cachedStepFingerprint() const;
 
     /// Cross-group identity, for deduplication across the whole memo. Stronger than the
     /// within-group `fingerprint` / `structurallyEqualTo` pair: it compares step content instead
     /// of step name and the step's display description. Fails closed - a step type that has not
     /// opted in compares by pointer, and every GroupExpression-side field that can change what
     /// the expression means is compared, including `enforced_property` and `description_suffix`.
-    size_t globalFingerprint() const;
-    bool globallyEqualTo(const GroupExpression & other) const;
+    size_t fullFingerprint() const;
+    bool fullyEqualTo(const GroupExpression & other) const;
 
     GroupId group_id = INVALID_GROUP_ID;
     std::shared_ptr<const IQueryPlanStep> plan_step;
@@ -105,11 +105,11 @@ public:
     std::optional<Float64> physical_output_rows;
 
 private:
-    /// Lazily computed by `getStepIdentity`; shared with shallow copies, which is safe because it
-    /// records the step it was computed from and is dropped when that step no longer matches.
-    /// Mutated from a `const` getter with no synchronization - safe only because the Cascades
-    /// optimizer runs single-threaded.
-    mutable std::shared_ptr<const StepIdentity> step_identity;
+    /// Lazily computed by `cachedStepFingerprint`; shared with shallow copies, which is safe
+    /// because it records the step it was computed from and is dropped when that step no longer
+    /// matches. Mutated from a `const` getter with no synchronization - safe only because the
+    /// Cascades optimizer runs single-threaded.
+    mutable std::shared_ptr<const StepFingerprint> cached_step_fingerprint;
 };
 
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;

@@ -21,6 +21,7 @@ public:
 
     size_t getGroupCount() const { return groups_by_id.size(); }
 
+    OptimizerContext & getContext() { return context; }
     const OptimizerContext & getContext() const { return context; }
     void setContext(OptimizerContext context_) { context = std::move(context_); }
 

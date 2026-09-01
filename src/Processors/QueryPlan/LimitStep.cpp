@@ -133,7 +133,7 @@ enum LimitStepIdentityTag : UInt64
 };
 }
 
-void LimitStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void LimitStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// Not on the wire (`markAsShardLimit` sets it after construction).
     /// `QueryPipeline::initRowsBeforeLimit` special-cases a shard limit, so the rows it discards

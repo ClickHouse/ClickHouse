@@ -499,19 +499,19 @@ a zero-width row (a bare `count()`) making exchanges look free.
 
 **Key files**: `Statistics.h/cpp`, `StatisticsDerivation.cpp`
 
-### Cross-Group Expression Identity
+### Step digests and cross-group identity
 
 `GroupExpression::structurallyEqualTo` compares a step's name and description. That is enough
 inside one group, where only logically equivalent expressions live, but not across groups:
 two `FilterStep`s with different predicates, or two scans of the same table with different
 pruning, look identical that way. This directory's `StepIdentity.h` adds a *content* identity on
-top of the canonical encoding written by `writeCascadesIdentityEncoding`
+top of the canonical full digest written by `writeStepFullDigest`
 (`Processors/QueryPlan/StepIdentity.h`). That header is the contract for the framing, for what
-is stable across calls and for the rule that encoded bytes must never be cached and compared
+is stable across calls and for the rule that digest bytes must never be cached and compared
 later; it is not restated here.
 
 One writer, two consumers: the SipHash-128 fingerprint and the byte-exact confirmation both run
-over that same encoding, so a hash collision never decides equality on its own.
+over that same digest, so a fingerprint collision never decides equality on its own.
 
 Identity is **opt-in per audited step type**. `IQueryPlanStep::supportsCascadesIdentity`
 defaults to `false`, and a step that has not opted in compares equal only to itself. That
@@ -521,10 +521,10 @@ nothing, while a wrong one on a read returns wrong rows.
 **Opting a step in, or classifying a new field.**
 
 - Classify every member of the step and of its base classes as one of: *on the wire* (written by
-  `serialize` / `serializeSettings`, hence already in the encoding), *execution-constraining
-  non-wire* (appended through `CascadesIdentityExtras` in `appendCascadesIdentityExtras`), or
+  `serialize` / `serializeSettings`, hence already in the digest), *execution-constraining
+  non-wire* (appended through `StepDigestWriter` in `appendCascadesIdentityExtras`), or
   *derived or display-only* (excluded, with the reason).
-- `input_headers` is excluded for every step: `GroupExpression::globallyEqualTo` compares the
+- `input_headers` is excluded for every step: `GroupExpression::fullyEqualTo` compares the
   ordered child groups separately, and a step holding an `ActionsDAG` carries its inputs' names
   and types on the wire inside the serialized DAG anyway.
 - Wire-absence is never on its own a reason to exclude a field — check what the step's
@@ -532,7 +532,7 @@ nothing, while a wrong one on a read returns wrong rows.
   read. A field deliberately kept off the wire because a remote node re-derives it, or because
   losing an optimization there is the safe direction, is usually an extra: neither argument
   transfers to identity, where the two steps both run locally.
-- The encoding always serializes with `for_cache_key = false`, on both the `Serialization` context
+- The digest always serializes with `for_cache_key = false`, on both the `Serialization` context
   and the sets registry (set in `Processors/QueryPlan/StepIdentity.cpp`), so a field the wire format
   gates on `!for_cache_key` — `AggregatingStep::final`, the stats cache key, runtime-filter id
   values — counts as *on the wire* for the audit and needs no tag.
@@ -543,7 +543,7 @@ nothing, while a wrong one on a read returns wrong rows.
   wire.
 - A step holding an `ActionsDAG` guards with `!hasCorrelatedExpressions()`, because
   `ActionsDAG::serialize` throws on a `PLACEHOLDER` node; a step holding several DAGs must check
-  every DAG the encoding writes, not just the one that predicate looks at. Known residual gap:
+  every DAG the digest writes, not just the one that predicate looks at. Known residual gap:
   `hasCorrelatedColumns` is non-recursive, so a `PLACEHOLDER` inside a `FunctionCapture` sub-DAG
   escapes it, and `ActionsDAG::serialize` has further throw paths (duplicate nodes, unexpected
   constant columns). Both are pre-existing and shared with the distributed wire path, to be
@@ -556,17 +556,19 @@ part and settings snapshots, the query tree) is encoded as the address of an obj
 through a `shared_ptr`. An equal address means literally the same object, hence equal content; a
 different address makes the two steps unequal even when their contents match, which costs a
 deduplication but never produces a wrong one. This is sound only because equality is decided by
-re-encoding two live steps, so no address can be recycled behind the comparison. The expected
+re-digesting two live steps, so no address can be recycled behind the comparison. The expected
 consequence is a narrow merge scope: for `ReadFromMergeTree`, only reads that have not been
 analyzed yet and that share the part, mutation and metadata snapshots can merge.
 
 **Preconditions for memo-wide deduplication (Stage 2).**
 
 - The upstream `hasCorrelatedColumns` / `ActionsDAG::serialize` gap above.
-- The performance gate: `CascadesIdentityMetrics` ships the encoding counters, but the wall-time
-  measurement and the threshold it has to clear do not exist yet.
-- The insertion-time-hash rule: a memo-wide index must store the hash computed when the
-  expression was inserted, and must never look up or remove an expression by recomputing its
+- The performance gate: per-run `StepDigestCounters` on `OptimizerContext` plus the
+  `CascadesStepDigests` / `CascadesStepDigestBytes` / `CascadesStepDigestConfirmations`
+  ProfileEvents ship the digest counters, but the wall-time measurement and the threshold it has
+  to clear do not exist yet.
+- The insertion-time-fingerprint rule: a memo-wide index must store the fingerprint computed when
+  the expression was inserted, and must never look up or remove an expression by recomputing its
   current fingerprint — lazily populated analysis state changes the fingerprint over a step's
   lifetime.
 

@@ -1243,9 +1243,9 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
 namespace
 {
-/// Cascades identity extras tags for `AggregatingStep`. Unique within the step; never reused.
+/// Cascades digest extras tags for `AggregatingStep`. Unique within the step; never reused.
 /// `final` and `params.stats_collecting_params.key` need no tag: both are gated on `for_cache_key`,
-/// which the identity encoding always sets to `false`, so both are on the wire.
+/// which the full digest always sets to `false`, so both are on the wire.
 enum AggregatingStepIdentityTag : UInt64
 {
     MERGE_THREADS_TAG = 1,
@@ -1280,7 +1280,7 @@ String encodeTopKParams(const Aggregator::Params::TopKParams & top_k)
 }
 }
 
-void AggregatingStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void AggregatingStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// Not on the wire (`deserialize` passes 0 and `updateThreadsValues` re-derives both from session
     /// settings): the parallelism of the merge stage of the physical plan.

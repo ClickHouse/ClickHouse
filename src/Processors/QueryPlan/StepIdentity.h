@@ -22,16 +22,17 @@ struct SerializedSetsRegistry;
 /// Only the tags and their order are stable, not the values: a step may hold `mutable` state that
 /// populates lazily (`ReadFromMergeTree` memoizes its index analysis and its analysis result while
 /// being costed), so the same step can encode to different bytes before and after that. Equality is
-/// therefore defined only over two live steps re-encoded at compare time, which is what
-/// `cascadesIdentityEncodingsEqual` does; a cached hash can go stale and only ever lose a merge.
-/// Do not cache the encoded bytes and compare them against a step encoded at another time.
+/// therefore defined only over two live steps re-digested at compare time, which is what
+/// `stepFullDigestsEqual` does; a cached fingerprint can go stale and only ever lose a merge.
+/// Do not cache the digest bytes and compare them against a step digested at another time.
 /// Same reason a fingerprint taken at insertion into a memo-wide index goes stale as lazy analysis
-/// state populates: such an index must store the insertion-time hash alongside the expression, and
-/// must never look up or remove an expression by recomputing its current fingerprint.
-class CascadesIdentityExtras
+/// state populates: such an index must store the insertion-time fingerprint alongside the
+/// expression, and must never look up or remove an expression by recomputing its current
+/// fingerprint.
+class StepDigestWriter
 {
 public:
-    CascadesIdentityExtras(WriteBuffer & out_, SerializedSetsRegistry & registry_);
+    StepDigestWriter(WriteBuffer & out_, SerializedSetsRegistry & registry_);
 
     void addBool(UInt64 tag, bool value);
     void addVarUInt(UInt64 tag, UInt64 value);
@@ -49,13 +50,13 @@ private:
     SerializedSetsRegistry & registry;
 };
 
-/// Canonical identity encoding: serialization name, output header, changed serialization settings,
+/// Canonical full digest: serialization name, output header, changed serialization settings,
 /// wire `serialize` bytes, then the framed extras. The step description is deliberately excluded:
 /// it is display-only. Caller guarantees `step.supportsCascadesIdentity()`.
-/// This is the only encoding writer - both the hash and the byte-exact comparison in
+/// This is the only digest writer - both the fingerprint and the byte-exact comparison in
 /// Optimizations/Cascades/StepIdentity.h go through it so they cannot diverge.
 /// How to opt a step in, or classify a new field: Optimizations/Cascades/ARCHITECTURE.md,
-/// "Cross-Group Expression Identity".
-void writeCascadesIdentityEncoding(const IQueryPlanStep & step, WriteBuffer & out);
+/// "Step digests and cross-group identity".
+void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out);
 
 }

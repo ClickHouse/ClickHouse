@@ -6532,7 +6532,7 @@ void writePointerWitness(WriteBuffer & out, const void * ptr)
 
 /// See "Provenance witnesses" in Optimizations/Cascades/ARCHITECTURE.md: an owning `shared_ptr`
 /// keeps the address unique for as long as either compared step is alive.
-void addPointerWitness(CascadesIdentityExtras & extras, UInt64 tag, const void * ptr)
+void addPointerWitness(StepDigestWriter & extras, UInt64 tag, const void * ptr)
 {
     if (!ptr)
         extras.addAbsent(tag);
@@ -6540,7 +6540,7 @@ void addPointerWitness(CascadesIdentityExtras & extras, UInt64 tag, const void *
         extras.addVarUInt(tag, static_cast<UInt64>(reinterpret_cast<uintptr_t>(ptr)));
 }
 
-void addRowLevelFilter(CascadesIdentityExtras & extras, UInt64 dag_tag, UInt64 params_tag, const FilterDAGInfoPtr & filter)
+void addRowLevelFilter(StepDigestWriter & extras, UInt64 dag_tag, UInt64 params_tag, const FilterDAGInfoPtr & filter)
 {
     if (!filter)
     {
@@ -6557,7 +6557,7 @@ void addRowLevelFilter(CascadesIdentityExtras & extras, UInt64 dag_tag, UInt64 p
     extras.addString(params_tag, payload.str());
 }
 
-void addPrewhereInfo(CascadesIdentityExtras & extras, UInt64 dag_tag, UInt64 params_tag, const PrewhereInfoPtr & prewhere)
+void addPrewhereInfo(StepDigestWriter & extras, UInt64 dag_tag, UInt64 params_tag, const PrewhereInfoPtr & prewhere)
 {
     if (!prewhere)
     {
@@ -6707,7 +6707,7 @@ bool ReadFromMergeTree::supportsCascadesIdentity() const
     return true;
 }
 
-void ReadFromMergeTree::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void ReadFromMergeTree::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// Only the database and table name are on the wire; a re-created table reuses them.
     {

@@ -47,7 +47,7 @@ public:
     bool isSerializable() const override { return true; }
 
     bool supportsCascadesIdentity() const override { return isSerializable(); }
-    void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
+    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

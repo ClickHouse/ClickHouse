@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StepDigestCounters.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StepIdentity.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/StepIdentity.h>
@@ -216,8 +217,8 @@ TEST(CascadesStepIdentity, ClonesOfSameStepAreEqual)
     auto b = std::make_shared<GroupExpression>(step.clone());
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 TEST(CascadesStepIdentity, DifferentDagContentIsUnequal)
@@ -230,8 +231,8 @@ TEST(CascadesStepIdentity, DifferentDagContentIsUnequal)
     EXPECT_EQ(
         a->plan_step->getOutputHeader()->getNamesAndTypesList().toString(),
         b->plan_step->getOutputHeader()->getNamesAndTypesList().toString());
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 TEST(CascadesStepIdentity, StepDescriptionIsExcluded)
@@ -244,8 +245,8 @@ TEST(CascadesStepIdentity, StepDescriptionIsExcluded)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `prevent_input_removal` is not on the wire, but it blocks later input pruning, so the audit puts
@@ -260,8 +261,8 @@ TEST(CascadesStepIdentity, PreventInputRemovalIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `Group` uses `enforced_property` to keep a self-referential enforcer from satisfying its own
@@ -271,12 +272,12 @@ TEST(CascadesStepIdentity, EnforcedPropertyIsPartOfIdentity)
     auto header = makeHeader();
     auto a = exprWithExpressionStep(header, 1);
     auto b = exprWithExpressionStep(header, 1);
-    ASSERT_TRUE(a->globallyEqualTo(*b));
+    ASSERT_TRUE(a->fullyEqualTo(*b));
 
     b->enforced_property = EnforcedProperty::Sorting;
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `description_suffix` is GroupExpression state set by rules (e.g. "(by col)"), not the step's
@@ -286,12 +287,12 @@ TEST(CascadesStepIdentity, DescriptionSuffixIsPartOfIdentity)
     auto header = makeHeader();
     auto a = exprWithExpressionStep(header, 1);
     auto b = exprWithExpressionStep(header, 1);
-    ASSERT_TRUE(a->globallyEqualTo(*b));
+    ASSERT_TRUE(a->fullyEqualTo(*b));
 
     b->description_suffix = "(by k)";
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// The hash must be usable before any equality call, so that a memo can bucket expressions eagerly.
@@ -301,7 +302,7 @@ TEST(CascadesStepIdentity, IndependentlyBuiltStepsShareFingerprint)
     auto a = exprWithExpressionStep(header, 7);
     auto b = exprWithExpressionStep(header, 7);
 
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
 }
 
 TEST(CascadesStepIdentity, StepWithoutOptInComparesByPointer)
@@ -310,15 +311,15 @@ TEST(CascadesStepIdentity, StepWithoutOptInComparesByPointer)
     auto a = std::make_shared<GroupExpression>(std::make_unique<OffsetStep>(header, 10));
     auto b = std::make_shared<GroupExpression>(std::make_unique<OffsetStep>(header, 10));
 
-    EXPECT_EQ(a->getStepIdentity(), nullptr);
+    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
     /// Equal-looking but distinct instances are not interchangeable without a field audit.
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 
     // NOLINTNEXTLINE(performance-unnecessary-copy-initialization) - the shallow copy is the test subject
     GroupExpression shared_step_copy(*a);
     EXPECT_EQ(shared_step_copy.plan_step, a->plan_step);
-    EXPECT_TRUE(a->globallyEqualTo(shared_step_copy));
-    EXPECT_EQ(a->globalFingerprint(), shared_step_copy.globalFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(shared_step_copy));
+    EXPECT_EQ(a->fullFingerprint(), shared_step_copy.fullFingerprint());
 }
 
 /// A rule may shallow-copy an expression and then replace its step. The inherited identity cache
@@ -327,16 +328,16 @@ TEST(CascadesStepIdentity, ReplacedStepInvalidatesInheritedIdentity)
 {
     auto header = makeHeader();
     auto a = exprWithExpressionStep(header, 1);
-    const auto fingerprint_a = a->globalFingerprint();
+    const auto fingerprint_a = a->fullFingerprint();
 
     auto b = std::make_shared<GroupExpression>(*a);
-    ASSERT_EQ(b->globalFingerprint(), fingerprint_a);
+    ASSERT_EQ(b->fullFingerprint(), fingerprint_a);
 
     b->plan_step = std::make_shared<const ExpressionStep>(header, makeDag(2));
 
-    EXPECT_NE(b->globalFingerprint(), fingerprint_a);
-    EXPECT_FALSE(a->globallyEqualTo(*b));
-    EXPECT_FALSE(b->globallyEqualTo(*a));
+    EXPECT_NE(b->fullFingerprint(), fingerprint_a);
+    EXPECT_FALSE(a->fullyEqualTo(*b));
+    EXPECT_FALSE(b->fullyEqualTo(*a));
 }
 
 /// Moving a value between tags, or re-splitting two adjacent variable-length components, must
@@ -348,14 +349,14 @@ TEST(CascadesStepIdentity, ExtrasFramingIsInjective)
 
     WriteBufferFromOwnString dag_first;
     {
-        CascadesIdentityExtras extras(dag_first, registry);
+        StepDigestWriter extras(dag_first, registry);
         extras.addDAG(1, &dag);
         extras.addAbsent(2);
     }
 
     WriteBufferFromOwnString dag_second;
     {
-        CascadesIdentityExtras extras(dag_second, registry);
+        StepDigestWriter extras(dag_second, registry);
         extras.addAbsent(1);
         extras.addDAG(2, &dag);
     }
@@ -364,14 +365,14 @@ TEST(CascadesStepIdentity, ExtrasFramingIsInjective)
 
     WriteBufferFromOwnString split_left;
     {
-        CascadesIdentityExtras extras(split_left, registry);
+        StepDigestWriter extras(split_left, registry);
         extras.addStrings(1, Names{"a", "b"});
         extras.addStrings(2, Names{});
     }
 
     WriteBufferFromOwnString split_right;
     {
-        CascadesIdentityExtras extras(split_right, registry);
+        StepDigestWriter extras(split_right, registry);
         extras.addStrings(1, Names{"a"});
         extras.addStrings(2, Names{"b"});
     }
@@ -379,23 +380,24 @@ TEST(CascadesStepIdentity, ExtrasFramingIsInjective)
     EXPECT_NE(split_left.str(), split_right.str());
 }
 
-TEST(CascadesStepIdentity, MetricsCountEncodingPasses)
+TEST(CascadesStepIdentity, CountersCountDigestPasses)
 {
     auto header = makeHeader();
     auto a = exprWithExpressionStep(header, 1);
     auto b = exprWithExpressionStep(header, 1);
 
-    CascadesIdentityMetrics::reset();
+    StepDigestCounters counters;
+    CurrentStepDigestCounters counters_scope(counters);
 
-    a->globalFingerprint();
-    EXPECT_EQ(CascadesIdentityMetrics::encoded_steps.load(), 1u);
-    EXPECT_GT(CascadesIdentityMetrics::encoded_bytes.load(), 0u);
-    EXPECT_EQ(CascadesIdentityMetrics::exact_reencodes.load(), 0u);
+    a->fullFingerprint();
+    EXPECT_EQ(counters.digests_written, 1u);
+    EXPECT_GT(counters.digest_bytes_written, 0u);
+    EXPECT_EQ(counters.digest_confirmations, 0u);
 
-    EXPECT_TRUE(a->globallyEqualTo(*b));
-    /// One pass hashes `b`, then both steps are re-encoded to be compared byte for byte.
-    EXPECT_EQ(CascadesIdentityMetrics::exact_reencodes.load(), 2u);
-    EXPECT_EQ(CascadesIdentityMetrics::encoded_steps.load(), 4u);
+    EXPECT_TRUE(a->fullyEqualTo(*b));
+    /// One pass fingerprints `b`, then both steps are re-digested to be compared byte for byte.
+    EXPECT_EQ(counters.digest_confirmations, 2u);
+    EXPECT_EQ(counters.digests_written, 4u);
 }
 
 /// FilterStep
@@ -409,8 +411,8 @@ TEST(CascadesStepIdentity, FilterStepClonesAreEqual)
     auto b = std::make_shared<GroupExpression>(step.clone());
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `prevent_input_removal` is not on the wire, but it blocks later input pruning, so the audit puts
@@ -425,8 +427,8 @@ TEST(CascadesStepIdentity, FilterStepPreventInputRemovalIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `condition` is not on the wire, but when set it makes `transformPipeline` write to the query
@@ -441,8 +443,8 @@ TEST(CascadesStepIdentity, FilterStepConditionIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 TEST(CascadesStepIdentity, FilterStepDifferentDagContentIsUnequal)
@@ -453,8 +455,8 @@ TEST(CascadesStepIdentity, FilterStepDifferentDagContentIsUnequal)
     auto b = std::make_shared<GroupExpression>(
         std::make_unique<FilterStep>(header, makeFilterDag(2), "f", /*remove_filter_column_=*/false));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// LimitStep
@@ -468,8 +470,8 @@ TEST(CascadesStepIdentity, LimitStepClonesAreEqual)
     auto b = std::make_shared<GroupExpression>(step.clone());
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `is_shard_limit` is not on the wire, but `QueryPipeline::initRowsBeforeLimit` special-cases it
@@ -484,8 +486,8 @@ TEST(CascadesStepIdentity, LimitStepIsShardLimitIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 TEST(CascadesStepIdentity, LimitStepDifferentLimitIsUnequal)
@@ -494,8 +496,8 @@ TEST(CascadesStepIdentity, LimitStepDifferentLimitIsUnequal)
     auto a = std::make_shared<GroupExpression>(std::make_unique<LimitStep>(header, 10, 0));
     auto b = std::make_shared<GroupExpression>(std::make_unique<LimitStep>(header, 20, 0));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// MergingAggregatedStep
@@ -511,8 +513,8 @@ TEST(CascadesStepIdentity, MergingAggregatedStepClonesAreEqual)
     auto b = std::make_shared<GroupExpression>(step->clone());
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `max_threads` is not on the wire - `deserialize` re-derives it from the session setting - but it
@@ -525,8 +527,8 @@ TEST(CascadesStepIdentity, MergingAggregatedStepMaxThreadsIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4));
     auto b = std::make_shared<GroupExpression>(makeMergingAggregatedStep(/*max_threads=*/8, /*memory_efficient_merge_threads=*/4));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 TEST(CascadesStepIdentity, MergingAggregatedStepDifferentFinalFlagIsUnequal)
@@ -539,8 +541,8 @@ TEST(CascadesStepIdentity, MergingAggregatedStepDifferentFinalFlagIsUnequal)
     auto b = std::make_shared<GroupExpression>(
         makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/false));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `params.bucket_top_k` is not on the wire, but `Aggregator::convertOneBucketToChunk` reads it
@@ -557,8 +559,8 @@ TEST(CascadesStepIdentity, MergingAggregatedStepBucketTopKIsPartOfIdentity)
     auto b = std::make_shared<GroupExpression>(
         makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/true, /*bucket_top_k=*/100));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// A correlated `PLACEHOLDER` node makes `ActionsDAG::serialize` throw, even though
@@ -579,15 +581,15 @@ TEST(CascadesStepIdentity, ExpressionStepWithCorrelatedExpressionsDoesNotSupport
     auto a = std::make_shared<GroupExpression>(step.clone());
     auto b = std::make_shared<GroupExpression>(step.clone());
 
-    EXPECT_EQ(a->getStepIdentity(), nullptr);
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// AggregatingStep
 
-/// The identity encoding always serializes with `for_cache_key = false`, so `final` reaches the wire
+/// The full digest always serializes with `for_cache_key = false`, so `final` reaches the wire
 /// through the flags byte. With no aggregate functions the output header is the same for both values,
-/// so this fails the moment the cache-key mode leaks into the encoding.
+/// so this fails the moment the cache-key mode leaks into the digest.
 TEST(CascadesStepIdentity, AggregatingStepDifferentFinalFlagIsUnequal)
 {
     tryRegisterFunctions();
@@ -603,8 +605,8 @@ TEST(CascadesStepIdentity, AggregatingStepDifferentFinalFlagIsUnequal)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `merge_threads` is not on the wire (`deserialize` passes 0 and re-derives it from a session
@@ -617,8 +619,8 @@ TEST(CascadesStepIdentity, AggregatingStepMergeThreadsIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(makeAggregatingStep(/*final=*/true, /*merge_threads=*/4));
     auto b = std::make_shared<GroupExpression>(makeAggregatingStep(/*final=*/true, /*merge_threads=*/8));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `limit_hint` is not on the wire and truncates the aggregation result where it is read.
@@ -630,8 +632,8 @@ TEST(CascadesStepIdentity, AggregatingStepLimitHintIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(makeAggregatingStep(/*final=*/true, /*merge_threads=*/4, /*limit_hint=*/0));
     auto b = std::make_shared<GroupExpression>(makeAggregatingStep(/*final=*/true, /*merge_threads=*/4, /*limit_hint=*/10));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 TEST(CascadesStepIdentity, AggregatingStepIndependentlyBuiltStepsAreEqual)
@@ -643,8 +645,8 @@ TEST(CascadesStepIdentity, AggregatingStepIndependentlyBuiltStepsAreEqual)
     auto b = std::make_shared<GroupExpression>(makeAggregatingStep(/*final=*/true));
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// SortingStep
@@ -658,8 +660,8 @@ TEST(CascadesStepIdentity, SortingStepClonesAreEqual)
     auto b = std::make_shared<GroupExpression>(step->clone());
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `is_partial_top_n` is deliberately not serialized - the executed sort is the same - but
@@ -675,8 +677,8 @@ TEST(CascadesStepIdentity, SortingStepPartialTopNIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// The LIMIT BY hint installs a row-dropping per-stream transform (`addPerStreamLimitByIfNeeded`).
@@ -690,8 +692,8 @@ TEST(CascadesStepIdentity, SortingStepLimitByHintIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// A scattered full sort (`convertToScatteredFullSort`) is not serializable, because
@@ -710,8 +712,8 @@ TEST(CascadesStepIdentity, ScatteredSortingStepDoesNotSupportIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_EQ(a->getStepIdentity(), nullptr);
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `isSerializable()` does not cover `serializeSettings`: a sort built from `Settings(size_t)` - as
@@ -730,8 +732,8 @@ TEST(CascadesStepIdentity, SortingStepWithZeroTemporaryFilesBufferDoesNotSupport
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_EQ(a->getStepIdentity(), nullptr);
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// DistinctStep
@@ -745,8 +747,8 @@ TEST(CascadesStepIdentity, DistinctStepClonesAreEqual)
     auto b = std::make_shared<GroupExpression>(step.clone());
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `serialize` deliberately skips `limit_hint`, but both DISTINCT transforms stop consuming once that
@@ -759,8 +761,8 @@ TEST(CascadesStepIdentity, DistinctStepLimitHintIsPartOfIdentity)
     auto b = std::make_shared<GroupExpression>(
         std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/10, Names{"x"}, /*pre_distinct_=*/false));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `skip_stream_merging` lets the final DISTINCT skip the resize to one stream, which is only correct
@@ -775,8 +777,8 @@ TEST(CascadesStepIdentity, DistinctStepSkipStreamMergingIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `pre_distinct` is not a `serialize` payload: it selects the serialization name, which the identity
@@ -789,8 +791,8 @@ TEST(CascadesStepIdentity, PreDistinctAndDistinctAreUnequal)
     auto b = std::make_shared<GroupExpression>(
         std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/true));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `applyOrder` installs `distinct_sort_desc` after construction; it is not on the wire but it
@@ -805,8 +807,8 @@ TEST(CascadesStepIdentity, DistinctStepSortDescriptionIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// LimitByStep
@@ -820,8 +822,8 @@ TEST(CascadesStepIdentity, LimitByStepClonesAreEqual)
     auto b = std::make_shared<GroupExpression>(step.clone());
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `serialize` writes only length, offset and columns. `skip_stream_merging` decides whether
@@ -836,8 +838,8 @@ TEST(CascadesStepIdentity, LimitByStepSkipStreamMergingIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `sorted_columns_descr` selects the range-based `LimitBySortedStreamTransform`.
@@ -851,8 +853,8 @@ TEST(CascadesStepIdentity, LimitByStepSortedColumnsArePartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// JoinStepLogical
@@ -863,8 +865,8 @@ TEST(CascadesStepIdentity, JoinStepLogicalIndependentlyBuiltStepsAreEqual)
     auto b = std::make_shared<GroupExpression>(makeJoinStepLogical());
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `optimized` is not on the wire, but `optimizeJoin` refuses to reorder a join that has it set, and
@@ -881,8 +883,8 @@ TEST(CascadesStepIdentity, JoinStepLogicalOptimizedFlagIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `disjunctions_optimization_applied` is not on the wire either, and `filterPushDown` refuses to
@@ -896,8 +898,8 @@ TEST(CascadesStepIdentity, JoinStepLogicalDisjunctionsFlagIsPartOfIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// The right-side hash table cache key reaches `JoinAlgorithmParams` and the statistics key that
@@ -911,8 +913,8 @@ TEST(CascadesStepIdentity, JoinStepLogicalRightHashTableCacheKeyIsPartOfIdentity
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `JoinSettings::updatePlanSettings` assigns `max_block_size`, `temporary_files_codec` and
@@ -940,8 +942,8 @@ TEST(CascadesStepIdentity, JoinStepLogicalOverwrittenJoinSettingsArePartOfIdenti
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// A correlated `PLACEHOLDER` node in the join's DAG makes `ActionsDAG::serialize` throw, so the
@@ -957,8 +959,8 @@ TEST(CascadesStepIdentity, JoinStepLogicalWithCorrelatedExpressionsDoesNotSuppor
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_EQ(a->getStepIdentity(), nullptr);
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// ReadFromMergeTree
@@ -1042,7 +1044,7 @@ struct MergeTreeReadFixture
 
     /// `table_expression_modifiers` must be present: with no modifiers and no query tree `isFinal()`
     /// falls back to the (absent) select AST. Note that every call allocates its own `PreparedSets`,
-    /// which the identity encoding witnesses - reads meant to differ in one field only must share one
+    /// which the full digest witnesses - reads meant to differ in one field only must share one
     /// `SelectQueryInfo` (copies share the pointer).
     static SelectQueryInfo makeQueryInfo()
     {
@@ -1083,7 +1085,7 @@ ActionsDAG makeReadFilterDag()
 String encodeIdentity(const IQueryPlanStep & step)
 {
     WriteBufferFromOwnString out;
-    writeCascadesIdentityEncoding(step, out);
+    writeStepFullDigest(step, out);
     return out.str();
 }
 
@@ -1103,8 +1105,8 @@ TEST(CascadesStepIdentity, ReadFromMergeTreeIdenticalReadsAreEqual)
     auto b = std::make_shared<GroupExpression>(fixture.makeRead(query_info));
 
     EXPECT_NE(a->plan_step, b->plan_step);
-    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_TRUE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_TRUE(a->fullyEqualTo(*b));
 }
 
 /// `SourceStepWithFilter::filter_actions_dag` is not on the wire and is its own framed component,
@@ -1154,8 +1156,8 @@ TEST(CascadesStepIdentity, ReadFromMergeTreeQueryInfoFilterActionsDagIsPartOfIde
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
 
-    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
 /// `join_runtime_filters_for_index_analysis` is deliberately not serialized (a worker skips this
@@ -1205,6 +1207,6 @@ TEST(CascadesStepIdentity, ReadFromMergeTreeStreamReadDoesNotSupportIdentity)
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(fixture.makeRead(query_info));
 
-    EXPECT_EQ(a->getStepIdentity(), nullptr);
-    EXPECT_FALSE(a->globallyEqualTo(*b));
+    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
+    EXPECT_FALSE(a->fullyEqualTo(*b));
 }

@@ -444,6 +444,9 @@
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
+    M(CascadesStepDigests, "Number of step full-digest passes computed by the Cascades optimizer.", ValueType::Number) \
+    M(CascadesStepDigestBytes, "Total bytes produced by Cascades step full-digest passes.", ValueType::Number) \
+    M(CascadesStepDigestConfirmations, "Number of Cascades step full-digest passes run only to confirm a fingerprint match byte-exactly.", ValueType::Number) \
     M(QueryParseMicroseconds, "Total time spent parsing the query text into an AST.", ValueType::Microseconds) \
     M(QueryAnalysisMicroseconds, "Total time spent building the query tree and running analyzer passes (resolves identifiers, types, expressions).", ValueType::Microseconds) \
     M(QueryPlanBuildMicroseconds, "Total time spent building the QueryPlan from the analyzed query tree.", ValueType::Microseconds) \

@@ -815,7 +815,7 @@ bool SortingStep::supportsCascadesIdentity() const
     return isSerializable() && sort_settings.temporary_files_buffer_size != 0;
 }
 
-void SortingStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void SortingStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// `scatterByPartitionIfNeeded` returns immediately when set, so a partitioned full sort either
     /// reshuffles rows across streams by the partition hash or does not.

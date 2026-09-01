@@ -431,7 +431,7 @@ enum FilterStepIdentityTag : UInt64
 };
 }
 
-void FilterStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void FilterStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// Blocks the input pruning a `FINAL` child depends on.
     extras.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);

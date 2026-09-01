@@ -194,7 +194,7 @@ enum LimitByStepIdentityTag : UInt64
 };
 }
 
-void LimitByStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void LimitByStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// Both decide whether `transformPipeline` may run one transform per stream instead of resizing
     /// to a single stream, and which of the two LIMIT BY transforms it instantiates.

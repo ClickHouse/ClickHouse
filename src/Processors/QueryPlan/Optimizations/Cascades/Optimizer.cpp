@@ -1,6 +1,7 @@
 #include <Common/ThreadStatus.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StepDigestCounters.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
@@ -293,6 +294,10 @@ void CascadesOptimizer::optimize()
     Stopwatch optimizer_timer;
     auto query_context = getQueryContextOrThrow();
 
+    /// Makes this run's counters the target for the step-digest machinery (StepIdentity.cpp,
+    /// GroupExpression.cpp), which has no context parameter of its own.
+    CurrentStepDigestCounters step_digest_counters_scope(memo.getContext().step_digest_counters);
+
     LOG_TRACE(log, "Cost config: {}, cluster node count: {}",
         memo.getContext().cost_config.dump(), memo.getContext().cluster_node_count);
 
@@ -335,6 +340,10 @@ void CascadesOptimizer::optimize()
 
     /// Update the original plan in-place because there might be references to the root node of the original plan
     query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*best_plan));
+
+    const auto & step_digest_counters = memo.getContext().step_digest_counters;
+    LOG_TRACE(log, "Step digests written: {}, bytes written: {}, confirmations: {}",
+        step_digest_counters.digests_written, step_digest_counters.digest_bytes_written, step_digest_counters.digest_confirmations);
 
     LOG_TRACE(log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
 }

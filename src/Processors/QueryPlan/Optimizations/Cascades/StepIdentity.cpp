@@ -2,8 +2,17 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StepDigestCounters.h>
 #include <Processors/QueryPlan/StepIdentity.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+
+namespace ProfileEvents
+{
+    extern const Event CascadesStepDigests;
+    extern const Event CascadesStepDigestBytes;
+    extern const Event CascadesStepDigestConfirmations;
+}
 
 namespace DB
 {
@@ -11,7 +20,7 @@ namespace DB
 namespace
 {
 
-/// Feeds the encoding straight into SipHash. The block size only affects buffering, not the hash.
+/// Feeds the digest straight into SipHash. The block size only affects buffering, not the hash.
 class SipHashWriteBuffer final : public WriteBuffer
 {
 public:
@@ -38,44 +47,44 @@ private:
 
 }
 
-UInt128 computeCascadesIdentityHash(const IQueryPlanStep & step)
+UInt128 computeStepFullFingerprint(const IQueryPlanStep & step)
 {
     SipHashWriteBuffer buffer;
-    writeCascadesIdentityEncoding(step, buffer);
+    writeStepFullDigest(step, buffer);
     auto hash = buffer.getHash();
 
-    CascadesIdentityMetrics::encoded_steps.fetch_add(1, std::memory_order_relaxed);
-    CascadesIdentityMetrics::encoded_bytes.fetch_add(buffer.count(), std::memory_order_relaxed);
+    if (auto * counters = CurrentStepDigestCounters::get())
+    {
+        counters->digests_written += 1;
+        counters->digest_bytes_written += buffer.count();
+    }
+    ProfileEvents::increment(ProfileEvents::CascadesStepDigests);
+    ProfileEvents::increment(ProfileEvents::CascadesStepDigestBytes, buffer.count());
     return hash;
 }
 
-bool cascadesIdentityEncodingsEqual(const IQueryPlanStep & lhs, const IQueryPlanStep & rhs)
+bool stepFullDigestsEqual(const IQueryPlanStep & lhs, const IQueryPlanStep & rhs)
 {
     WriteBufferFromOwnString lhs_out;
-    writeCascadesIdentityEncoding(lhs, lhs_out);
+    writeStepFullDigest(lhs, lhs_out);
 
     WriteBufferFromOwnString rhs_out;
-    writeCascadesIdentityEncoding(rhs, rhs_out);
+    writeStepFullDigest(rhs, rhs_out);
 
     const auto lhs_bytes = std::string_view(lhs_out.str());
     const auto rhs_bytes = std::string_view(rhs_out.str());
 
-    CascadesIdentityMetrics::encoded_steps.fetch_add(2, std::memory_order_relaxed);
-    CascadesIdentityMetrics::encoded_bytes.fetch_add(lhs_bytes.size() + rhs_bytes.size(), std::memory_order_relaxed);
-    CascadesIdentityMetrics::exact_reencodes.fetch_add(2, std::memory_order_relaxed);
+    if (auto * counters = CurrentStepDigestCounters::get())
+    {
+        counters->digests_written += 2;
+        counters->digest_bytes_written += lhs_bytes.size() + rhs_bytes.size();
+        counters->digest_confirmations += 2;
+    }
+    ProfileEvents::increment(ProfileEvents::CascadesStepDigests, 2);
+    ProfileEvents::increment(ProfileEvents::CascadesStepDigestBytes, lhs_bytes.size() + rhs_bytes.size());
+    ProfileEvents::increment(ProfileEvents::CascadesStepDigestConfirmations, 2);
 
     return lhs_bytes == rhs_bytes;
-}
-
-std::atomic<UInt64> CascadesIdentityMetrics::encoded_steps = 0;
-std::atomic<UInt64> CascadesIdentityMetrics::encoded_bytes = 0;
-std::atomic<UInt64> CascadesIdentityMetrics::exact_reencodes = 0;
-
-void CascadesIdentityMetrics::reset()
-{
-    encoded_steps.store(0, std::memory_order_relaxed);
-    encoded_bytes.store(0, std::memory_order_relaxed);
-    exact_reencodes.store(0, std::memory_order_relaxed);
 }
 
 }

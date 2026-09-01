@@ -2219,7 +2219,7 @@ String encodeRuntimeFilterDescriptors(const std::vector<std::pair<String, String
     return payload.str();
 }
 
-void addOptionalRows(CascadesIdentityExtras & extras, UInt64 tag, const std::optional<UInt64> & rows)
+void addOptionalRows(StepDigestWriter & extras, UInt64 tag, const std::optional<UInt64> & rows)
 {
     if (rows)
         extras.addVarUInt(tag, *rows);
@@ -2239,7 +2239,7 @@ bool JoinStepLogical::supportsCascadesIdentity() const
         && sorting_settings.temporary_files_buffer_size != 0;
 }
 
-void JoinStepLogical::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void JoinStepLogical::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// `optimizeJoin` refuses to reorder a join that is already optimized, and correlated-subquery
     /// decorrelation relies on that to pin the layout of its result join (see `clone`).

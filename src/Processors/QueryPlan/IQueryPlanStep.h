@@ -39,7 +39,7 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
 
-class CascadesIdentityExtras;
+class StepDigestWriter;
 
 using StepProcessors = std::span<IProcessor * const>;
 
@@ -88,11 +88,11 @@ public:
     /// Cascades cross-group identity: a step type opts in only after a complete field audit
     /// (see Processors/QueryPlan/StepIdentity.h). Default is fail-closed: pointer identity.
     /// MUST return false whenever `isSerializable()` is false, or whenever `serialize` would
-    /// throw for this concrete instance - the identity encoding calls `serialize` directly.
+    /// throw for this concrete instance - the full digest calls `serialize` directly.
     virtual bool supportsCascadesIdentity() const { return false; }
     /// Appends the audited non-wire fields that constrain execution. Called only when
     /// `supportsCascadesIdentity()`; must append the same tags in the same order every time.
-    virtual void appendCascadesIdentityExtras(CascadesIdentityExtras & /*extras*/) const {}
+    virtual void appendCascadesIdentityExtras(StepDigestWriter & /*extras*/) const {}
 
     virtual QueryPlanStepPtr clone() const;
 

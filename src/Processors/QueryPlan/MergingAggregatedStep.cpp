@@ -324,7 +324,7 @@ enum MergingAggregatedStepIdentityTag : UInt64
 };
 }
 
-void MergingAggregatedStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void MergingAggregatedStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// Not on the wire (`deserialize` re-derives both from session settings): they are the
     /// parallelism of the physical plan - how many streams `transformPipeline` resizes to, and the

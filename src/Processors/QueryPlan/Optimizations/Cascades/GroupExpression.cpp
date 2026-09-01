@@ -104,30 +104,30 @@ size_t GroupExpression::fingerprint() const
     return hash_value;
 }
 
-const StepIdentity * GroupExpression::getStepIdentity() const
+const StepFingerprint * GroupExpression::cachedStepFingerprint() const
 {
     if (!plan_step || !plan_step->supportsCascadesIdentity())
     {
         /// Drop an inherited entry so it stops pinning the step it was computed from.
-        step_identity.reset();
+        cached_step_fingerprint.reset();
         return nullptr;
     }
 
     /// A rule may legally replace `plan_step` on a shallow copy before insertion, so a cached
-    /// identity that was computed for a different step must not be trusted.
-    if (!step_identity || step_identity->step != plan_step)
-        step_identity = std::make_shared<const StepIdentity>(StepIdentity{computeCascadesIdentityHash(*plan_step), plan_step});
+    /// fingerprint that was computed for a different step must not be trusted.
+    if (!cached_step_fingerprint || cached_step_fingerprint->source_step != plan_step)
+        cached_step_fingerprint = std::make_shared<const StepFingerprint>(StepFingerprint{computeStepFullFingerprint(*plan_step), plan_step});
 
-    return step_identity.get();
+    return cached_step_fingerprint.get();
 }
 
-/// `globallyEqualTo` and `globalFingerprint` must cover the same components in the same order:
+/// `fullyEqualTo` and `fullFingerprint` must cover the same components in the same order:
 /// properties, inputs (group and required properties), strategy, enforced property, description
 /// suffix, then the step. `enforced_property` and `description_suffix` are GroupExpression state,
-/// not the step's display description that the encoding excludes: `Group` relies on
+/// not the step's display description that the digest excludes: `Group` relies on
 /// `enforced_property` for enforcer cycle avoidance, and nothing guarantees `description_suffix`
 /// carries no meaning, so both are included to fail closed.
-size_t GroupExpression::globalFingerprint() const
+size_t GroupExpression::fullFingerprint() const
 {
     size_t hash_value = ExpressionPropertiesHash()(properties);
     for (const auto & input : inputs)
@@ -140,21 +140,21 @@ size_t GroupExpression::globalFingerprint() const
     boost::hash_combine(hash_value, static_cast<uint8_t>(enforced_property));
     boost::hash_combine(hash_value, std::hash<String>()(description_suffix));
 
-    if (const auto * identity = getStepIdentity())
+    if (const auto * fingerprint = cachedStepFingerprint())
     {
-        boost::hash_combine(hash_value, identity->hash.items[0]);
-        boost::hash_combine(hash_value, identity->hash.items[1]);
+        boost::hash_combine(hash_value, fingerprint->value.items[0]);
+        boost::hash_combine(hash_value, fingerprint->value.items[1]);
     }
     else
     {
-        /// Without an identity the step compares by pointer, so hash the pointer to stay consistent.
+        /// Without a fingerprint the step compares by pointer, so hash the pointer to stay consistent.
         boost::hash_combine(hash_value, reinterpret_cast<uintptr_t>(plan_step.get()));
     }
 
     return hash_value;
 }
 
-bool GroupExpression::globallyEqualTo(const GroupExpression & other) const
+bool GroupExpression::fullyEqualTo(const GroupExpression & other) const
 {
     if (!(properties == other.properties))
         return false;
@@ -183,16 +183,16 @@ bool GroupExpression::globallyEqualTo(const GroupExpression & other) const
     if (plan_step == other.plan_step)
         return true;
 
-    const auto * identity = getStepIdentity();
-    const auto * other_identity = other.getStepIdentity();
-    if (!identity || !other_identity)
+    const auto * fingerprint = cachedStepFingerprint();
+    const auto * other_fingerprint = other.cachedStepFingerprint();
+    if (!fingerprint || !other_fingerprint)
         return false;
 
-    if (identity->hash != other_identity->hash)
+    if (fingerprint->value != other_fingerprint->value)
         return false;
 
-    /// The hash only narrows the candidates; the bytes decide.
-    return cascadesIdentityEncodingsEqual(*plan_step, *other.plan_step);
+    /// The fingerprint only narrows the candidates; the bytes decide.
+    return stepFullDigestsEqual(*plan_step, *other.plan_step);
 }
 
 }

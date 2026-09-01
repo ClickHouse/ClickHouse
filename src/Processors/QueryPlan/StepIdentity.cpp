@@ -14,13 +14,13 @@
 namespace DB
 {
 
-CascadesIdentityExtras::CascadesIdentityExtras(WriteBuffer & out_, SerializedSetsRegistry & registry_)
+StepDigestWriter::StepDigestWriter(WriteBuffer & out_, SerializedSetsRegistry & registry_)
     : out(out_)
     , registry(registry_)
 {
 }
 
-void CascadesIdentityExtras::addPayload(UInt64 tag, std::string_view payload)
+void StepDigestWriter::addPayload(UInt64 tag, std::string_view payload)
 {
     writeVarUInt(tag, out);
     writeBinary(static_cast<UInt8>(1), out);
@@ -28,31 +28,31 @@ void CascadesIdentityExtras::addPayload(UInt64 tag, std::string_view payload)
     out.write(payload.data(), payload.size());
 }
 
-void CascadesIdentityExtras::addAbsent(UInt64 tag)
+void StepDigestWriter::addAbsent(UInt64 tag)
 {
     writeVarUInt(tag, out);
     writeBinary(static_cast<UInt8>(0), out);
 }
 
-void CascadesIdentityExtras::addBool(UInt64 tag, bool value)
+void StepDigestWriter::addBool(UInt64 tag, bool value)
 {
     const char byte = value ? 1 : 0;
     addPayload(tag, std::string_view(&byte, 1));
 }
 
-void CascadesIdentityExtras::addVarUInt(UInt64 tag, UInt64 value)
+void StepDigestWriter::addVarUInt(UInt64 tag, UInt64 value)
 {
     WriteBufferFromOwnString payload;
     writeVarUInt(value, payload);
     addPayload(tag, payload.str());
 }
 
-void CascadesIdentityExtras::addString(UInt64 tag, std::string_view value)
+void StepDigestWriter::addString(UInt64 tag, std::string_view value)
 {
     addPayload(tag, value);
 }
 
-void CascadesIdentityExtras::addStrings(UInt64 tag, const Names & value)
+void StepDigestWriter::addStrings(UInt64 tag, const Names & value)
 {
     WriteBufferFromOwnString payload;
     writeVarUInt(value.size(), payload);
@@ -61,14 +61,14 @@ void CascadesIdentityExtras::addStrings(UInt64 tag, const Names & value)
     addPayload(tag, payload.str());
 }
 
-void CascadesIdentityExtras::addSortDescription(UInt64 tag, const SortDescription & value)
+void StepDigestWriter::addSortDescription(UInt64 tag, const SortDescription & value)
 {
     WriteBufferFromOwnString payload;
     serializeSortDescription(value, payload);
     addPayload(tag, payload.str());
 }
 
-void CascadesIdentityExtras::addDAG(UInt64 tag, const ActionsDAG * dag)
+void StepDigestWriter::addDAG(UInt64 tag, const ActionsDAG * dag)
 {
     if (!dag)
     {
@@ -81,7 +81,7 @@ void CascadesIdentityExtras::addDAG(UInt64 tag, const ActionsDAG * dag)
     addPayload(tag, payload.str());
 }
 
-void writeCascadesIdentityEncoding(const IQueryPlanStep & step, WriteBuffer & out)
+void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out)
 {
     writeStringBinary(step.getSerializationName(), out);
 
@@ -101,7 +101,7 @@ void writeCascadesIdentityEncoding(const IQueryPlanStep & step, WriteBuffer & ou
         .out = out, .registry = registry, .for_cache_key = false, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
     step.serialize(ctx);
 
-    CascadesIdentityExtras extras(out, registry);
+    StepDigestWriter extras(out, registry);
     step.appendCascadesIdentityExtras(extras);
 }
 

@@ -165,7 +165,7 @@ enum DistinctStepIdentityTag : UInt64
 };
 }
 
-void DistinctStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+void DistinctStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
 {
     /// Both `DistinctTransform` and `DistinctSortedStreamTransform` stop once `limit_hint` distinct
     /// rows were produced, so it changes the row count, not only the cost.

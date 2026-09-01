@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StepDigestCounters.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
 #include <optional>
@@ -25,6 +26,8 @@ struct OptimizerContext
     /// Sort settings taken from the query (size limits, spill thresholds), used when
     /// SortingEnforcer builds a new sort so it matches the rest of the query's pipeline.
     std::optional<SortingStep::Settings> sort_settings;
+    /// Cost of the step-digest machinery for this run; see `CurrentStepDigestCounters`.
+    StepDigestCounters step_digest_counters;
 };
 
 }

@@ -532,7 +532,7 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
     bool supportsCascadesIdentity() const override;
-    void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
+    void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
 
 private:
     MergeTreeSettingsPtr data_settings;
