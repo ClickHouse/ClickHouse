@@ -86,3 +86,28 @@ for _ in {1..60}; do
 done
 echo "$ALTERED"
 
+
+# A presigned URL carries its credential in the query parameters rather than in the userinfo, and
+# `s3_base` is documented to hold that form. Both the query text and the `Settings` map must hide it.
+PRESIGNED_CANARY="c05056presignedsignature"
+PRESIGNED_QUERY_ID="05056_presigned_$CLICKHOUSE_DATABASE"
+PRESIGNED="https://bucket.s3.amazonaws.com/f.csv?X-Amz-Credential=AKIAIOSFODNN7EXAMPLE&X-Amz-Signature=$PRESIGNED_CANARY"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=$PRESIGNED_QUERY_ID&log_queries=1&log_formatted_queries=1" \
+    --data-binary "SELECT 1 SETTINGS s3_base = '$PRESIGNED'"
+
+for _ in {1..60}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    PRESIGNED_LOGGED=$($CLICKHOUSE_CLIENT -q "SELECT
+            position(query, '[HIDDEN]') > 0,
+            position(Settings['s3_base'], '[HIDDEN]') > 0,
+            position(concat(query, formatted_query, Settings['s3_base']), '$PRESIGNED_CANARY') = 0
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$PRESIGNED_QUERY_ID' AND type = 'QueryFinish'")
+    [ -n "$PRESIGNED_LOGGED" ] && break
+    sleep 0.5
+done
+echo "$PRESIGNED_LOGGED"
+
+# A setting that is not in the list is left alone, even when its value looks like a presigned URL.
+$CLICKHOUSE_CLIENT -q "SELECT value FROM system.settings WHERE name = 'log_comment'
+    SETTINGS log_comment = 'https://h/f?X-Amz-Signature=$PRESIGNED_CANARY'"
