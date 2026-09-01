@@ -901,8 +901,6 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCachePriorityWriteLockMicroseconds, "Lock filesystem cache time for write to priority queue", ValueType::Microseconds) \
     M(FilesystemCachePriorityReadLockMicroseconds, "Lock filesystem cache time for read in priority queue", ValueType::Microseconds) \
     M(FilesystemCacheStateLockMicroseconds, "Lock filesystem cache time for state lock", ValueType::Microseconds) \
-    M(FilesystemCacheQueryLimitLockMicroseconds, "Lock time of the per-query filesystem cache limit contexts", ValueType::Microseconds) \
-    M(FilesystemCacheQueryLimitRecordsLockMicroseconds, "Lock time of the per-query filesystem cache limit records of one query", ValueType::Microseconds) \
     M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time", ValueType::Microseconds) \
     M(FilesystemCacheReserveAttempts, "Filesystem cache space reservation attempt", ValueType::Number) \
     M(FilesystemCacheFailedReserveAttempts, "Number of failed file cache space reservation attempts.", ValueType::Number) \

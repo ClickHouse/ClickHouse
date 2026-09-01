@@ -1010,7 +1010,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         size_to_download -= size;
 
         std::string failure_reason;
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
+        /// Charged to the query which reserved this segment last, as this thread has no query.
+        if (!file_segment.reserve(
+                size, reserve_space_lock_wait_timeout_milliseconds, failure_reason, file_segment.getQueryBudget()))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "

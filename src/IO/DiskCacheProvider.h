@@ -62,7 +62,8 @@ public:
         size_t object_file_offset_,
         const FilesystemCacheSettings & cache_settings_,
         FileSegmentsHolderSharedPtr segment_holder_,
-        ByteRange aligned_range_in_file);
+        ByteRange aligned_range_in_file,
+        FileCacheQueryBudgetPtr query_budget_);
 
     ByteRange range() const override { return aligned_range; }
     IntervalSet committed() const override
@@ -82,6 +83,8 @@ private:
     FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
 
     FileCachePtr cache;
+    /// The budget of the query which reads through this provider; null when it set no limit.
+    FileCacheQueryBudgetPtr query_budget;
     /// The blob's start offset in the logical file (multi-blob files); cache coordinates are blob-local.
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
@@ -105,9 +108,7 @@ private:
 class DiskCacheProvider : public ICacheProvider
 {
 public:
-    /// `query_id` enforces `filesystem_cache_query_limit_bytes`. The provider keeps a
-    /// `QueryContextHolder` alive so `tryReserve` (inside `CacheWriter::write`) finds the per-query
-    /// budget. An empty `query_id` means no per-query limit.
+    /// Writes are charged to `query_budget`, the budget of the query which created the provider.
     DiskCacheProvider(
         FileCachePtr cache_,
         const FilesystemCacheSettings & cache_settings_,
@@ -133,7 +134,7 @@ private:
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
     /// Keeps the per-query budget context alive; see the constructor.
-    FileCache::QueryContextHolderPtr query_context_holder;
+    FileCacheQueryBudgetPtr query_budget;
     /// Keep-alive anchors for recently-used cache-segment readers; see
     /// `ReaderAnchorCache`.
     ReaderAnchorCache reader_anchors;

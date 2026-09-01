@@ -66,6 +66,8 @@ private:
     void completeFileSegment();
 
     FileCache * cache;
+    /// Charged by the writes below; null when this query set no limit or does not read this cache.
+    FileCacheQueryBudgetPtr query_budget;
     const FileSegment::Key key;
     const FileCacheOriginInfo origin;
     const size_t reserve_space_lock_wait_timeout_milliseconds;

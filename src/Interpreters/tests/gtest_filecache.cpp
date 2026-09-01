@@ -339,7 +339,7 @@ static void download(FileSegmentPtr file_segment, bool complete = true)
     ASSERT_EQ(file_segment->getDownloadedSize(), 0);
 
     std::string failure_reason;
-    ASSERT_TRUE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason));
+    ASSERT_TRUE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason, /* query_budget */nullptr));
     download(cache_base_path, *file_segment);
     ASSERT_EQ(file_segment->state(), State::DOWNLOADING);
 
@@ -355,7 +355,7 @@ static void assertDownloadFails(FileSegmentPtr file_segment)
     ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment->getDownloadedSize(), 0);
     std::string failure_reason;
-    ASSERT_FALSE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason));
+    ASSERT_FALSE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason, /* query_budget */nullptr));
     FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
 }
 
@@ -1064,7 +1064,7 @@ try
         for (auto & segment : *some_data_holder)
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000, failure_reason));
+            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000, failure_reason, /* query_budget */nullptr));
             download(segment);
         }
     }
@@ -2226,7 +2226,7 @@ TEST_F(FileCacheTest, DynamicResizeConcurrentWithReservations)
                         && segment->getOrSetDownloader() == FileSegment::getCallerId())
                     {
                         std::string failure_reason;
-                        if (segment->reserve(segment->range().size(), 1000, failure_reason))
+                        if (segment->reserve(segment->range().size(), 1000, failure_reason, /* query_budget */nullptr))
                             download(cache_path, *segment);
                         FileSegment::complete(
                             FileSegmentPtr(segment),
@@ -2779,7 +2779,7 @@ TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
         ASSERT_EQ(seg->state(), State::DOWNLOADING);
 
         std::string failure_reason;
-        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason));
+        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason, /* query_budget */nullptr));
 
         /// `seg->write` expects the key directory to exist, as in `download`.
         auto key_str = key.toString();
@@ -2880,7 +2880,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         auto seg = *holder->begin();
         ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
         std::string failure_reason;
-        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason));
+        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason, /* query_budget */nullptr));
 
         auto key_str = key.toString();
         auto subdir = fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;

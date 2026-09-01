@@ -80,7 +80,7 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     const FilesystemCacheSettings & cache_settings_,
     size_t local_fs_buffer_size_,
     size_t read_until_position_,
-    FileCacheQueryLimit::QueryContextPtr query_context_,
+    FileCacheQueryBudgetPtr query_budget_,
     ThrottlerPtr local_throttler_)
     : cache_key(cache_key_)
     , source_file_path(source_file_path_)
@@ -89,7 +89,7 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     , cache_settings(cache_settings_)
     , local_fs_buffer_size(local_fs_buffer_size_)
     , local_throttler(std::move(local_throttler_))
-    , query_context(std::move(query_context_))
+    , query_budget(std::move(query_budget_))
     , read_until_position(read_until_position_)
 {
 }
@@ -134,7 +134,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , cache_log(cache_settings_.enable_log ? cache_log_ : nullptr)
-    , query_context_holder(cache_->getQueryContextHolder(query_id, cache_settings_))
     , skip_cache_on_disk_failure(cache_->skipCacheOnDiskFailure())
     , info(
         cache_key_,
@@ -144,7 +143,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
         cache_settings_,
         local_fs_buffer_size_,
         read_until_position_.value_or(file_size_),
-        query_context_holder ? query_context_holder->context : nullptr,
+        cache_->getQueryBudget(cache_settings_),
         std::move(local_throttler_))
 {
     LOG_TEST(
@@ -1134,9 +1133,9 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 size,
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
+                info.query_budget,
                 /* reserve_stat */nullptr,
-                reserve_hint,
-                info.query_context);
+                reserve_hint);
 
             if (continue_predownload)
             {
@@ -1639,9 +1638,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 size,
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
+                info.query_budget,
                 /* reserve_stat */nullptr,
-                reserve_hint,
-                info.query_context);
+                reserve_hint);
 
             if (success)
             {
@@ -1840,7 +1839,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
-        /* read_until_position */range_begin + n, info.query_context, info.local_throttler);
+        /* read_until_position */range_begin + n, info.query_budget, info.local_throttler);
 
     if (info.cache_settings.temp_cache_only)
     {

@@ -218,15 +218,19 @@ public:
     /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
     /// current download offset (e.g. up to read_until_position), so the segment is never reserved
     /// ahead past what the read will consume.
-    /// `query_context` is the per-query budget of the caller, which read buffers already hold.
-    /// Callers which do not have one leave it empty and the reservation resolves it instead.
+    /// `query_budget` is what the caller's query may still write into this cache; null when the
+    /// query set no limit. Required, so that every caller decides whose budget a write belongs to.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
+        const FileCacheQueryBudgetPtr & query_budget,
         FileCacheReserveStat * reserve_stat = nullptr,
-        size_t reserve_hint = 0,
-        const FileCacheQueryLimit::QueryContextPtr & query_context = {});
+        size_t reserve_hint = 0);
+
+    /// The budget of the query which reserved last. A background download passes it back to
+    /// `reserve`, so its reservations stay charged to that query.
+    FileCacheQueryBudgetPtr getQueryBudget() const;
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -313,10 +317,6 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-    /// Whether `DownloadState::query_limit_owner` is set, readable without the segment lock so that
-    /// a reservation which is charged to no query does not have to take it.
-    std::atomic<bool> has_query_limit_owner = false;
-
     /// State needed only while a segment is being downloaded. Created lazily when a downloader
     /// is assigned and freed once the segment reaches a terminal state (DOWNLOADED/DETACHED),
     /// so an already-cached file segment (the common case) does not pay for it.
@@ -324,11 +324,9 @@ private:
     struct DownloadState
     {
         DownloaderId downloader_id; /// The one who prepares the download.
-        /// The query which reserved `reserved_size - downloaded_size` last, so that this
-        /// reserve-ahead is given back to it and not to whoever completes the segment. Empty when
-        /// the reservation was charged to no query, and expired once that query is gone, so that a
-        /// new query which happens to reuse its `query_id` is never charged for this segment.
-        FileCacheQueryLimit::QueryContextWeakPtr query_limit_owner;
+        /// The budget of the query which reserved last, so that a background continuation charges
+        /// it too. A handover replaces it, and each query keeps what its own reservations took.
+        FileCacheQueryBudgetPtr query_budget;
         RemoteFileReaderPtr remote_file_reader;
         LocalCacheWriterPtr cache_writer;
         /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.

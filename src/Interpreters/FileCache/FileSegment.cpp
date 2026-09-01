@@ -24,6 +24,7 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
+    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit;
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
@@ -281,7 +282,6 @@ FileSegment::DownloadState & FileSegment::getOrCreateDownloadDataUnlocked(const 
 void FileSegment::resetDownloadDataUnlocked(const FileSegmentGuard::Lock &)
 {
     download_data.reset();
-    has_query_limit_owner.store(false, std::memory_order_relaxed);
 }
 
 String FileSegment::getOrSetDownloader()
@@ -413,6 +413,12 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Remote file reader already exists");
 
     download.remote_file_reader = remote_file_reader_;
+}
+
+FileCacheQueryBudgetPtr FileSegment::getQueryBudget() const
+{
+    auto lk = lock();
+    return download_data ? download_data->query_budget : nullptr;
 }
 
 void FileSegment::write(char * from, size_t size, size_t offset_in_file)
@@ -668,9 +674,9 @@ bool FileSegment::reserve(
     size_t size_to_reserve,
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
+    const FileCacheQueryBudgetPtr & query_budget,
     FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint,
-    const FileCacheQueryLimit::QueryContextPtr & query_context)
+    size_t reserve_hint)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -745,25 +751,26 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    /// The query charged for what is reserved for this segment so far, so that a reservation made
-    /// by a thread which belongs to no query (a background download) is charged to it as well.
-    FileCacheQueryLimit::QueryContextWeakPtr owner_query_context;
-    /// Reserved by that query and not written yet, see the handover below.
-    size_t reserved_but_not_written = 0;
-    if (has_query_limit_owner.load(std::memory_order_relaxed))
+    /// Taken from the budget before the cache locks, so that a query which is over its limit is
+    /// refused without contending for them.
+    if (query_budget && !query_budget->tryChargeBytes(size_to_reserve))
     {
-        auto lk = lock();
-        if (download_data)
-        {
-            owner_query_context = download_data->query_limit_owner;
-            reserved_but_not_written = reserved_size - current_downloaded_size;
-        }
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit);
+        failure_reason = "query limit exceeded";
+        setDownloadFailedUnlocked(lock());
+        return false;
     }
 
-    FileCacheQueryLimit::QueryContextPtr charged_query_context;
-    bool reserved = cache->tryReserve(
+    bool reserved = false;
+    /// Nothing was reserved after all, so the budget must not stay charged for it.
+    SCOPE_EXIT({
+        if (query_budget && !reserved)
+            query_budget->unchargeBytes(size_to_reserve);
+    });
+
+    reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds,
-        failure_reason, &charged_query_context, owner_query_context, query_context);
+        failure_reason);
 
     if (!reserved)
     {
@@ -771,25 +778,13 @@ bool FileSegment::reserve(
         return false;
     }
 
-    /// The write which follows consumes what was reserved before, so the query charged now owns all
-    /// of it. Nothing to record while no query is charged for this segment.
-    if (charged_query_context || has_query_limit_owner.load(std::memory_order_relaxed))
+    /// Remembered for the background download, which continues on a thread with no query of its
+    /// own and charges the query which reserved last.
     {
         auto lk = lock();
         chassert(download_data || download_state == State::DETACHED);
         if (download_data)
-        {
-            auto previous_owner = download_data->query_limit_owner.lock();
-            download_data->query_limit_owner = charged_query_context;
-            has_query_limit_owner.store(charged_query_context != nullptr, std::memory_order_relaxed);
-
-            /// Those bytes are now owned by the query charged above, so give them back to the query
-            /// which reserved them, leaving it charged for what it did write.
-            /// Without this a handover (or a write which fails right after this reservation) would
-            /// keep those bytes charged to a query which never wrote them.
-            if (previous_owner && previous_owner != charged_query_context && reserved_but_not_written)
-                previous_owner->tryDecrementSize(key(), offset(), reserved_but_not_written);
-        }
+            download_data->query_budget = query_budget;
     }
 
     return true;
@@ -997,16 +992,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     {
         const size_t reserved_but_not_written = reserved_size - downloaded_size;
         queue_iterator->decrementSize(reserved_but_not_written);
-        /// Those bytes were never written, so they must not stay charged against a query quota either.
-        if (download_data)
-        {
-            if (auto owner = download_data->query_limit_owner.lock())
-                owner->tryDecrementSize(key(), offset(), reserved_but_not_written);
-            download_data->query_limit_owner.reset();
-            has_query_limit_owner.store(false, std::memory_order_relaxed);
-            /// `resetDownloadDataUnlocked` clears the mark as well, for the paths which drop the
-            /// whole download state without giving those bytes back.
-        }
         reserved_size = downloaded_size.load();
     }
 
@@ -1159,17 +1144,6 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
             {
                 bool added_to_download_queue = false;
                 size_t background_download_size = allow_background_download ? getSizeForBackgroundDownloadUnlocked(segment_lock) : 0;
-
-                /// The continuation reserves on a thread with no query of its own, charged to the
-                /// query which owns this segment's reservation. Starting one that query has no
-                /// budget for would only fail the reservation and leave the segment unfinishable.
-                if (const size_t reserved_ahead = reserved_size - current_downloaded_size;
-                    background_download_size > reserved_ahead && download_data)
-                {
-                    auto owner = download_data->query_limit_owner.lock();
-                    if (owner && !owner->fits(background_download_size - reserved_ahead))
-                        background_download_size = 0;
-                }
 
                 if (background_download_size)
                 {
@@ -1522,12 +1496,6 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 {
     if (download_state == State::DETACHED)
         return;
-
-    /// The segment is leaving the cache, so its bytes must stop counting against the quota of every
-    /// query which cached it - not only of the query removing it here. Done before
-    /// `setDetachedState`, which drops the key metadata this needs.
-    if (cache)
-        cache->unchargeQueryLimitForRemovedSegment(key(), offset());
 
     if (!getDownloaderUnlocked(lock).empty())
         resetDownloaderUnlocked(lock);

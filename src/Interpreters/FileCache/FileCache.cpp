@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
@@ -57,7 +58,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadErrors;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
-    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
@@ -446,8 +446,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
                          "per-client usage; idle-client eviction is disabled");
 
-    if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
-        query_limit = std::make_unique<FileCacheQueryLimit>();
+    query_limit_allowed = settings[FileCacheSetting::enable_filesystem_query_cache_limit];
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
 }
@@ -507,6 +506,33 @@ String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegment
 String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
 {
     return metadata.getKeyPath(key, origin);
+}
+
+FileCacheQueryBudgetPtr FileCache::getQueryBudget(const FilesystemCacheSettings & settings) const
+{
+    if (!query_limit_allowed || settings.query_limit_bytes == 0)
+        return nullptr;
+
+    /// The budget belongs to a query and dies with it. Work which is not a query (merges,
+    /// background downloads) has none, as before this limit was per query only.
+    if (!CurrentThread::isInitialized() || !CurrentThread::get().tryGetQueryContext()
+        || CurrentThread::getQueryId().empty())
+        return nullptr;
+
+    auto thread_group = CurrentThread::getGroup();
+    if (!thread_group)
+        return nullptr;
+
+    return thread_group->getFilesystemCacheQueryBudget(*this, settings.query_limit_bytes);
+}
+
+FileCacheQueryBudgetPtr FileCache::getQueryBudgetIfExists() const
+{
+    if (!query_limit_allowed)
+        return nullptr;
+
+    auto thread_group = CurrentThread::getGroup();
+    return thread_group ? thread_group->tryGetFilesystemCacheQueryBudget(*this) : nullptr;
 }
 
 void FileCache::assertInitialized() const
@@ -1300,10 +1326,7 @@ bool FileCache::tryReserve(
     FileCacheReserveStat & reserve_stat,
     const OriginInfo & origin_info,
     size_t lock_wait_timeout_milliseconds,
-    std::string & failure_reason,
-    FileCacheQueryLimit::QueryContextPtr * charged_query_context,
-    const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context,
-    const FileCacheQueryLimit::QueryContextPtr & caller_query_context)
+    std::string & failure_reason)
 {
     CurrentMetrics::Increment increment(CurrentMetrics::FilesystemCacheReserveThreads);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
@@ -1330,7 +1353,7 @@ bool FileCache::tryReserve(
 
     const bool success = doTryReserve(
         file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
-        failure_reason, charged_query_context, owner_query_context, caller_query_context);
+        failure_reason);
     if (!success)
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedReserveAttempts);
     return success;
@@ -1342,10 +1365,7 @@ bool FileCache::doTryReserve(
     FileCacheReserveStat & reserve_stat,
     const OriginInfo & origin_info,
     size_t lock_wait_timeout_milliseconds,
-    std::string & failure_reason,
-    FileCacheQueryLimit::QueryContextPtr * charged_query_context,
-    const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context,
-    const FileCacheQueryLimit::QueryContextPtr & caller_query_context)
+    std::string & failure_reason)
 {
     auto main_priority_iterator = file_segment.getQueueIterator();
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -1358,14 +1378,7 @@ bool FileCache::doTryReserve(
         chassert(file_segment.getReservedSize() == 0);
 #endif
 
-    /// In case of per query cache limit (by default disabled),
-    /// we add/remove entries from both (main_priority and query_priority) priority queues,
-    /// but iterate entries in order of query_priority, while checking the limits in both.
-    Priority * query_priority = nullptr;
-    FileCacheQueryLimit::QueryContextPtr query_context;
-
-    std::unique_ptr<EvictionInfo> main_eviction_info; /// Server scoped cache limits eviction info.
-    std::unique_ptr<EvictionInfo> query_eviction_info; /// Query scoped cache limits eviction info.
+    std::unique_ptr<EvictionInfo> main_eviction_info;
 
     /// First collect "eviction info" under cache state lock, which will tell us
     /// how much do we need to evict in order to make sure we have enough space in cache.
@@ -1382,52 +1395,6 @@ bool FileCache::doTryReserve(
             failure_reason = "cache contention";
             return false;
         }
-        /// Check per-query cache limits.
-        if (isQueryLimitInUse())
-        {
-            /// Read buffers hold their query's context, so the common path needs no lookup.
-            query_context = caller_query_context;
-            if (!query_context)
-            {
-                /// A background download reserves from a thread which belongs to no query, so
-                /// charge the query which reserved this segment so far - otherwise those bytes
-                /// escape the per-query limit. A thread which does belong to a query is never
-                /// charged for another one. Once the owner's context is gone, its weak handle is
-                /// empty and the bytes are charged to no one.
-                query_context = FileCacheQueryLimit::isCurrentThreadInQuery()
-                    ? query_limit->tryGetQueryContext()
-                    : owner_query_context.lock();
-            }
-
-            if (query_context)
-            {
-                /// Reported to the caller, which remembers who to give the unwritten part back to.
-                if (charged_query_context)
-                    *charged_query_context = query_context;
-
-                query_priority = &query_context->getPriority();
-                if (!query_priority->canFit(size, required_elements_num, lock, /* reservee */nullptr, origin_info)
-                    && !query_context->recacheOnFileCacheQueryLimitExceeded())
-                {
-                    LOG_TEST(
-                        log, "Query limit exceeded, space reservation failed, "
-                        "recache_on_query_limit_exceeded is disabled (while reserving for {}:{} with size {}): {}",
-                        file_segment.key(), file_segment.offset(), size, query_priority->getStateInfoForLog(lock));
-
-                    ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit);
-                    failure_reason = "query limit exceeded";
-                    return false;
-                }
-                query_eviction_info = query_priority->collectEvictionInfo(
-                    size,
-                    required_elements_num,
-                    main_priority_iterator.get(),
-                    /* is_total_space_cleanup */false,
-                    origin_info,
-                    lock);
-            }
-        }
-
         /// Check server-wide cache limits.
         main_eviction_info = main_priority->collectEvictionInfo(
             size,
@@ -1438,8 +1405,7 @@ bool FileCache::doTryReserve(
             lock);
 
         /// Can we already just increment size for the queue entry and quit?
-        /// TODO: allow to quit here if query_context != nullptr.
-        if (main_priority_iterator && !main_eviction_info->requiresEviction() && !query_context)
+        if (main_priority_iterator && !main_eviction_info->requiresEviction())
         {
             main_eviction_info->releaseHoldSpace(lock);
             main_priority_iterator->incrementSize(size, lock);
@@ -1450,12 +1416,6 @@ bool FileCache::doTryReserve(
         }
     }
 
-    /// Queue entries of the segments which left the cache since the previous reservation of this
-    /// query. Their charge is already released, this takes them out of the per-query queue, so that
-    /// neither it nor the eviction walk over it grows with every segment the query has ever cached.
-    if (query_context)
-        query_context->removeInvalidatedEntries(invalidated_entries_cleanup_remove_batch);
-
     EvictionCandidates eviction_candidates(main_priority->getOnEvictCallback());
 
     FailPointInjection::pauseFailPoint(FailPoints::file_cache_pause_before_do_eviction);
@@ -1465,17 +1425,14 @@ bool FileCache::doTryReserve(
     /// Evicted segments stop counting against the queries which cached them in
     /// `FileSegment::detach`, together with every other way a segment leaves the cache.
     if (!doEviction(
-        *main_eviction_info, query_eviction_info.get(), file_segment, origin_info,
-        main_priority_iterator, reserve_stat, eviction_candidates,
-        query_priority, failure_reason))
+        *main_eviction_info, origin_info,
+        main_priority_iterator, reserve_stat, eviction_candidates, failure_reason))
     {
         chassert(!failure_reason.empty());
         return false;
     }
 
     bool added_new_main_entry = !main_priority_iterator;
-    bool added_new_query_entry = false;
-    Priority::IteratorPtr query_priority_iterator;
 
     if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite())
     {
@@ -1496,34 +1453,13 @@ bool FileCache::doTryReserve(
 
     try
     {
-        /// Query-side accounting must mirror every reservation, not only the first one for this
-        /// file segment: a segment is reserved in steps, and all the following steps would
-        /// otherwise bypass the per-query limit.
-        /// Inside the `try` on purpose: if `add` throws, the size-0 main entry must be invalidated.
-        if (query_context)
-        {
-            query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset());
-            if (!query_priority_iterator)
-            {
-                query_priority_iterator = query_context->add(
-                    file_segment.getKeyMetadata(), file_segment.offset(), /* size */0);
-                added_new_query_entry = true;
-            }
-        }
-
         /// Blocking, unlike the timed `tryLockFor` taken before eviction: eviction has already
         /// deleted files from disk, so giving up now would throw that work away and still fail.
         auto lock = cache_state_guard.lock();
         main_eviction_info->releaseHoldSpace(lock);
-        if (query_eviction_info)
-            query_eviction_info->releaseHoldSpace(lock);
-
         eviction_candidates.afterEvictState(lock);
         main_priority_iterator->incrementSize(size, lock);
         main_size_incremented = true;
-
-        if (query_priority_iterator)
-            query_priority_iterator->incrementSize(size, lock);
     }
     catch (...)
     {
@@ -1542,11 +1478,6 @@ bool FileCache::doTryReserve(
             /// Roll it back so `main_priority` stays consistent with `FileSegment::reserved_size`.
             main_priority_iterator->decrementSize(size);
         }
-
-        /// Drop the record as well, not just the entry: otherwise a later reservation for the
-        /// same key/offset gets this iterator back from `tryGet` and accounts into it.
-        if (added_new_query_entry)
-            query_context->tryRemove(file_segment.key(), file_segment.offset());
 
         throw;
     }
@@ -1569,21 +1500,14 @@ bool FileCache::doTryReserve(
 
 bool FileCache::doEviction(
     EvictionInfo & main_eviction_info,
-    EvictionInfo * query_eviction_info,
-    FileSegment & file_segment,
     const OriginInfo & origin_info,
     const IFileCachePriority::IteratorPtr & main_priority_iterator,
     FileCacheReserveStat & reserve_stat,
     EvictionCandidates & eviction_candidates,
-    Priority * query_priority,
     std::string & failure_reason)
 {
     LOG_TEST(log, "Main eviction info {}", main_eviction_info.toString());
-    if (query_priority)
-        LOG_TEST(log, "Query eviction info {}", query_eviction_info->toString());
-
-    if (!main_eviction_info.requiresEviction()
-        && (!query_eviction_info || !query_eviction_info->requiresEviction()))
+    if (!main_eviction_info.requiresEviction())
         return true;
 
     /// If there is at least something we need to evict,
@@ -1612,28 +1536,6 @@ bool FileCache::doEviction(
             : IFileCachePriority::EvictionCursor::FromHead;
         if (!resume_reserve_cursor)
             main_priority->resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
-
-        if (query_eviction_info && query_eviction_info->requiresEviction())
-        {
-            chassert(query_priority);
-            if (!query_priority->collectCandidatesForEviction(
-                    *query_eviction_info,
-                    reserve_stat,
-                    eviction_candidates,
-                    /* reservee */{},
-                    eviction_cursor,
-                    /* max_candidates_size */0,
-                    /* is_total_space_cleanup */false,
-                    origin_info,
-                    cache_state_guard))
-            {
-                failure_reason = on_cannot_evict_enough_space_message(*query_priority);
-                return false;
-            }
-
-            LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})",
-                     file_segment.key(), file_segment.offset());
-        }
 
         if (!main_priority->collectCandidatesForEviction(
                 main_eviction_info,
@@ -2004,8 +1906,6 @@ void FileCache::backgroundCleanupTaskFunc()
 
             /// Contexts of queries which finished without releasing their last holder. Swept here,
             /// so that no reservation pays for cleaning up after other queries.
-            if (query_limit)
-                query_limit->cleanupContextsOfFinishedQueries();
         }
         catch (...)
         {
@@ -3292,22 +3192,6 @@ bool FileCache::doDynamicResizeImpl(
     }
 
     return false;
-}
-
-FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
-    const String & query_id, const FilesystemCacheSettings & cache_settings)
-{
-    if (!query_limit || cache_settings.query_limit_bytes == 0)
-        return {};
-
-    auto context = query_limit->getOrSetQueryContext(query_id, cache_settings);
-    return std::make_unique<QueryContextHolder>(query_id, query_limit.get(), std::move(context));
-}
-
-void FileCache::unchargeQueryLimitForRemovedSegment(const Key & key, size_t offset)
-{
-    if (query_limit)
-        query_limit->unchargeRemovedSegment(key, offset);
 }
 
 

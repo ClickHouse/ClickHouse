@@ -50,6 +50,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     const String & source_path_,
     bool is_distributed_cache_)
     : cache(cache_)
+    , query_budget(cache_->getQueryBudgetIfExists())
     , key(key_)
     , origin(origin_)
     , reserve_space_lock_wait_timeout_milliseconds(reserve_space_lock_wait_timeout_milliseconds_)
@@ -199,7 +200,8 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
         }
         size_t size_to_write = std::min(available_size, size);
 
-        bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason);
+        bool reserved = file_segment->reserve(
+            size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason, query_budget);
         if (!reserved)
         {
             appendFilesystemCacheLog(*file_segment);

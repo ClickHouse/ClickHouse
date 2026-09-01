@@ -122,7 +122,6 @@ struct FilesystemCacheSettings
     /// before bypassing the cache and reading directly from remote storage.
     size_t wait_for_concurrent_download_timeout_milliseconds = 1000;
     size_t query_limit_bytes = 0;
-    bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
     bool verbose_logging = false;
 };

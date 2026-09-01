@@ -26,7 +26,6 @@ namespace DB
  *   > CacheStateGuard                 (makes growth atomic: `canFit` + `entryAdd`; decrements are lock-free, so
  *                                      `entrySub` is callable under KeyGuard, and `getSize(Lock)` is exact only
  *                                      with respect to concurrent growth - its sole difference from `getSizeApprox`)
- *   > FileCacheQueryLimit::mutex      (`doTryReserve` calls `tryGetQueryContext` under the state lock)
  *   > CachePriorityGuard              (one per queue; taken by the priority itself, or by `EvictionCandidates`
  *                                      through `Iterator::getPriorityGuard`;
  *                                      SLRU: both sub-queues share one guard, entries move between them;

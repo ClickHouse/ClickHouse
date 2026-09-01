@@ -13,9 +13,9 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/Metadata.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
@@ -99,10 +99,8 @@ class FileCache : private boost::noncopyable
 {
 public:
     using Key = DB::FileCacheKey;
-    using QueryLimit = DB::FileCacheQueryLimit;
     using Priority = IFileCachePriority;
     using PriorityEntry = IFileCachePriority::Entry;
-    using QueryContextHolder = FileCacheQueryLimit::QueryContextHolder;
     using OriginInfo = FileCacheOriginInfo;
     using UserID = FileCacheOriginInfo::UserID;
     using Type = FileSegmentKeyType;
@@ -225,21 +223,23 @@ public:
 
     size_t getBoundaryAlignment() const { return boundary_alignment; }
 
+    /// The budget of the current query for this cache. Null when this cache forbids the limit, the
+    /// query sets none, or there is no query at all (a background operation).
+    FileCacheQueryBudgetPtr getQueryBudget(const FilesystemCacheSettings & settings) const;
+
+    /// The budget of the current query if it already has one for this cache. Used by writes, which
+    /// do not know the limit themselves: they take part in it only when the query also reads.
+    FileCacheQueryBudgetPtr getQueryBudgetIfExists() const;
+
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 
-    /// `charged_query_context`, if given, receives the query charged for the reservation in its
-    /// per-query limit, or null when it is charged to no query. `owner_query_context` is charged
-    /// when the reserving thread belongs to no query itself, as a background download does.
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
         const OriginInfo & origin,
         size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason,
-        FileCacheQueryLimit::QueryContextPtr * charged_query_context = nullptr,
-        const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context = {},
-        const FileCacheQueryLimit::QueryContextPtr & caller_query_context = {});
+        std::string & failure_reason);
 
     bool tryIncreasePriority(FileSegment & file_segment);
 
@@ -258,20 +258,6 @@ public:
 
     std::vector<FileSegment::Info> sync();
 
-    using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
-    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
-
-    /// `key`:`offset` left the cache (evicted, dropped or removed): stop counting its bytes against
-    /// every query which cached it. Called from `FileSegment::detach`, the single point where a
-    /// segment leaves the cache.
-    void unchargeQueryLimitForRemovedSegment(const Key & key, size_t offset);
-
-    /// Whether any query currently writes into this cache under a per-query limit. False both when
-    /// the cache does not permit the limit and while no query enables it, which is the default.
-    bool isQueryLimitInUse() const { return query_limit && query_limit->hasQueryContexts(); }
-
-    /// Number of queries currently limited in this cache. For tests and introspection.
-    size_t getQueryLimitContextsCount() const { return query_limit ? query_limit->getQueryContextsCount() : 0; }
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
@@ -398,12 +384,7 @@ private:
     };
     CheckCacheProbability check_cache_probability;
 
-    /**
-     * A QueryLimit allows to control cache write limit per query.
-     * E.g. if a query needs n bytes from cache, but it has only k bytes, where 0 <= k <= n
-     * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
-     */
-    FileCacheQueryLimitPtr query_limit;
+    bool query_limit_allowed = false;
 
     void initializeImpl(bool load_metadata);
 
@@ -474,20 +455,14 @@ private:
         FileCacheReserveStat & stat,
         const OriginInfo & origin_info,
         size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason,
-        FileCacheQueryLimit::QueryContextPtr * charged_query_context,
-        const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context,
-        const FileCacheQueryLimit::QueryContextPtr & caller_query_context);
+        std::string & failure_reason);
 
     bool doEviction(
         EvictionInfo & main_eviction_info,
-        EvictionInfo * query_eviction_info,
-        FileSegment & file_segment,
         const OriginInfo & origin_info,
         const IFileCachePriority::IteratorPtr & main_priority_iterator,
         FileCacheReserveStat & reserve_stat,
         EvictionCandidates & eviction_candidates,
-        Priority * query_priority,
         std::string & failure_reason);
 
     /// How much still needs to be evicted to reach the desired free-space ratio, given the live
