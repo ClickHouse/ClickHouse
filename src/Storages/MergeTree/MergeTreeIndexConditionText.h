@@ -256,6 +256,7 @@ private:
         String column_name;
         UInt64 max_token_bytes;
         DataTypePtr json_type;
+        std::shared_ptr<const JSONPathValues::PathMatcher> path_matcher;
     };
 
     Block header;

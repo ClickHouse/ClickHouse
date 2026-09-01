@@ -15,6 +15,7 @@ struct JSONSubcolumnIndexInfo
 {
     String json_column_name;       /// e.g., "json"
     String path;                   /// e.g., "a.b"
+    String escaped_path;           /// literal brackets/backslashes escaped; structural Array(JSON) [] retained
     size_t header_position;        /// position of JSONAllPaths column in the index header
     size_t array_json_levels = 0;  /// number of Array(JSON) levels represented by [] in path
 };
