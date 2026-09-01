@@ -1793,11 +1793,19 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// Additional columns might only be needed if there are more steps in the chain.
         if (!is_last_reader)
         {
+            const bool filter_column_is_removed = prewhere_info->type == PrewhereExprStep::Filter && prewhere_info->remove_filter_column;
+
             for (auto & col : additional_columns)
             {
                 /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
                 /// TODO: also need to exclude the columns that are not needed for the next steps.
-                if (block.has(col.name))
+                ///
+                /// The filter column is still in the block here but is erased from the result further down,
+                /// so it does not survive as a result column and has to be stored like a projected-out one.
+                /// Otherwise a single-step `PREWHERE` over a column that is itself the condition loses it,
+                /// and a later step cannot evaluate the DEFAULT expression of a column missing in the part:
+                /// `SELECT b FROM t PREWHERE a` with `b DEFAULT a % 13` filled `b` with the type default.
+                if (block.has(col.name) && !(filter_column_is_removed && col.name == prewhere_info->filter_column_name))
                     continue;
                 result.additional_columns.insert(col);
             }
