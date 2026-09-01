@@ -339,6 +339,11 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns);
 ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
 
+/// Return the columns read by a default expression after expanding column matchers and replacing
+/// table-scope `ALIAS` references exactly as default evaluation does.
+NameSet getDefaultExpressionRequiredColumns(
+    const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
+
 /// Insert into `dependencies` the columns from `candidate_names` that `node` reads,
 /// excluding names bound by lambda arguments inside the expression. With
 /// `follow_subcolumns = true`, subcolumn references (e.g. `t.x`) are canonicalized to their owning

@@ -3,7 +3,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
@@ -195,10 +194,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
     {
         const auto & col_default = column_defaults.at(col_name);
-        RequiredSourceColumnsVisitor::Data columns_context;
-        auto expr_clone = cloneAndExpandColumnDefaultExpressionWithAliases(col_default, columns, context);
-        RequiredSourceColumnsVisitor(columns_context).visit(expr_clone);
-        NameSet required = columns_context.requiredColumns();
+        NameSet required = getDefaultExpressionRequiredColumns(col_default, columns, context);
 
         NameSet deps;
         for (const auto & req : required)

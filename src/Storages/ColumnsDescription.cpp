@@ -1945,6 +1945,15 @@ ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & co
     return expression;
 }
 
+NameSet getDefaultExpressionRequiredColumns(
+    const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context)
+{
+    auto expression = cloneAndExpandColumnDefaultExpressionWithAliases(column_default, columns, context);
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(expression);
+    return columns_context.requiredColumns();
+}
+
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns)
 {
     expandColumnMatchersImpl(expression_list, columns);
