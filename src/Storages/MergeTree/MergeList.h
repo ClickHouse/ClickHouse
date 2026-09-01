@@ -196,21 +196,29 @@ public:
     {
         /// Collect hooks under the merge list mutex and invoke them after it is released:
         /// the hook cancels a running pipeline, which must not touch the merge list under a lock.
+        /// Marking and hook collection are split so the (allocation-free) marking pass is infallible:
+        /// even if copying a hook throws (e.g. OOM), no matching entry escapes cancellation; the
+        /// (best-effort) hook pass only affects how promptly the in-flight pipeline is interrupted.
         std::vector<std::function<void()>> hooks_to_invoke;
         {
             std::lock_guard lock{mutex};
-            for (auto & merge_element : entries)
+            auto matches = [&](const MergeListElement & merge_element)
             {
-                if ((partition_id.empty() || merge_element.partition_id == partition_id)
+                return (partition_id.empty() || merge_element.partition_id == partition_id)
                     && merge_element.table_id == table_id
                     && merge_element.source_data_version < mutation_version
-                    && merge_element.result_part_info.getDataVersion() >= mutation_version)
-                {
+                    && merge_element.result_part_info.getDataVersion() >= mutation_version;
+            };
+            for (auto & merge_element : entries)
+                if (matches(merge_element))
                     merge_element.is_cancelled = true;
-                    std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
-                    if (merge_element.pipeline_cancel_state->hook)
-                        hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
-                }
+            for (auto & merge_element : entries)
+            {
+                if (!matches(merge_element))
+                    continue;
+                std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
+                if (merge_element.pipeline_cancel_state->hook)
+                    hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
             }
         }
         for (const auto & hook : hooks_to_invoke)
@@ -223,13 +231,16 @@ public:
     {
         /// Cancel every running merge/mutation in the table, including a still in-flight pipeline.
         /// `all_cancelled` prevents new entries from being inserted after this point (checked in `insert`).
+        /// As in `cancelPartMutations`, the (allocation-free) marking pass is infallible so that even
+        /// if hook collection throws (OOM during `OOMCanary` shutdown) no entry escapes cancellation.
         all_cancelled = true;
         std::vector<std::function<void()>> hooks_to_invoke;
         {
             std::lock_guard lock{mutex};
             for (auto & merge_element : entries)
-            {
                 merge_element.is_cancelled = true;
+            for (auto & merge_element : entries)
+            {
                 std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
                 if (merge_element.pipeline_cancel_state->hook)
                     hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
@@ -251,20 +262,26 @@ public:
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
     {
         /// Cancel every running merge/mutation in the partition, including a still in-flight pipeline.
+        /// Same split into an infallible marking pass and a best-effort hook pass as the other cancels.
         std::vector<std::function<void()>> hooks_to_invoke;
         {
             std::lock_guard lock{mutex};
+            auto matches = [&](const MergeListElement & merge_element)
+            {
+                return merge_element.table_id == table_id
+                    && merge_element.partition_id == partition_id
+                    && merge_element.result_part_info.min_block < delimiting_block_number;
+            };
+            for (auto & merge_element : entries)
+                if (matches(merge_element))
+                    merge_element.is_cancelled = true;
             for (auto & merge_element : entries)
             {
-                if (merge_element.table_id == table_id
-                    && merge_element.partition_id == partition_id
-                    && merge_element.result_part_info.min_block < delimiting_block_number)
-                {
-                    merge_element.is_cancelled = true;
-                    std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
-                    if (merge_element.pipeline_cancel_state->hook)
-                        hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
-                }
+                if (!matches(merge_element))
+                    continue;
+                std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
+                if (merge_element.pipeline_cancel_state->hook)
+                    hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
             }
         }
         for (const auto & hook : hooks_to_invoke)
