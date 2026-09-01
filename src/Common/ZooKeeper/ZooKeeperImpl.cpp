@@ -903,6 +903,9 @@ void ZooKeeper::sendThread()
                         operations[info.request->xid] = info;
                     }
 
+                    /// `operations` owns the callback now, so the scope guard must not invoke it.
+                    callback_registered = true;
+
                     if (requests_queue.isFinished() && info.request->xid != close_xid)
                     {
                         break;
