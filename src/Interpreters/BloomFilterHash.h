@@ -123,8 +123,7 @@ struct BloomFilterHash
             {
                 auto hashes = ColumnUInt64::create();
                 hashes->getData().push_back(getNumberTypeHash<Float64, Float64>(field));
-                /// Raw bits of Float64 -0. (Float32 values are hashed after a conversion to Float64).
-                hashes->getData().push_back(DefaultHash64<UInt64>(UInt64(1) << 63));
+                hashes->getData().push_back(legacyNegativeZeroHash());
                 return hashes;
             }
             return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
@@ -187,6 +186,22 @@ struct BloomFilterHash
         return index_column;
     }
 
+    /// The hash of a canonicalized floating point zero: all of its bits are zero
+    /// (Float32 values are hashed after a conversion to Float64).
+    static UInt64 canonicalZeroHash() { return DefaultHash64<UInt64>(0); }
+
+    /// The hash of the raw bits of Float64 -0. Parts written by versions that did not canonicalize
+    /// negative zero before hashing (see `base/normalizeNegativeZero.h`) contain it for -0. values,
+    /// and servers of those versions probe -0. with it.
+    static UInt64 legacyNegativeZeroHash() { return DefaultHash64<UInt64>(UInt64(1) << 63); }
+
+    /// Whether the values of this index type are hashed as floating point values.
+    static bool isFloatingPointIndexType(const DataTypePtr & data_type)
+    {
+        WhichDataType which(BloomFilter::getPrimitiveType(data_type));
+        return which.isFloat32() || which.isFloat64();
+    }
+
     /// Predicate-side adjustment of a hash column built by [hashWithColumn] for floating point types.
     /// Parts written by versions that did not canonicalize negative zero before hashing
     /// (see `base/normalizeNegativeZero.h`) store the raw-bit hashes of -0., so a probe for
@@ -197,17 +212,14 @@ struct BloomFilterHash
     /// Never apply this to the hashes that are written to the filter, only to the probes.
     static ColumnPtr addLegacyNegativeZeroProbes(const DataTypePtr & data_type, ColumnPtr hash_column, bool match_all)
     {
-        WhichDataType which(BloomFilter::getPrimitiveType(data_type));
-        if (!which.isFloat32() && !which.isFloat64())
+        if (!isFloatingPointIndexType(data_type))
             return hash_column;
 
         const auto * hashes = typeid_cast<const ColumnUInt64 *>(hash_column.get());
         if (!hashes)
             return hash_column;
 
-        /// The hash of a canonicalized floating point zero (all bits are zero;
-        /// Float32 values are hashed after a conversion to Float64).
-        const UInt64 zero_hash = DefaultHash64<UInt64>(0);
+        const UInt64 zero_hash = canonicalZeroHash();
 
         const auto & data = hashes->getData();
         size_t num_zeros = 0;
@@ -230,7 +242,7 @@ struct BloomFilterHash
         else
         {
             res_data.assign(data.begin(), data.end());
-            res_data.push_back(DefaultHash64<UInt64>(UInt64(1) << 63)); /// Raw bits of Float64 -0.
+            res_data.push_back(legacyNegativeZeroHash());
         }
 
         return res;

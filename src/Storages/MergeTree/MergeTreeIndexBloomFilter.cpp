@@ -1251,8 +1251,24 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
         const auto & index_data = index_col.getData();
+
+        /// A floating point zero is hashed with negative zero canonicalized away
+        /// (see `base/normalizeNegativeZero.h`), but a server of an older version probes -0. with the
+        /// raw-bit hash, and would skip this granule. Both hashes are written, so that the readers of
+        /// both versions find it. Extra hashes only make the filter more permissive, and at most one
+        /// of them is added per granule and column.
+        const bool is_floating_point = BloomFilterHash::isFloatingPointIndexType(column_and_type.type);
+        const UInt64 zero_hash = BloomFilterHash::canonicalZeroHash();
+        bool has_zero = false;
+
         for (const auto & hash: index_data)
+        {
             column_hashes[column].insert(hash);
+            has_zero |= hash == zero_hash;
+        }
+
+        if (is_floating_point && has_zero)
+            column_hashes[column].insert(BloomFilterHash::legacyNegativeZeroHash());
     }
 
     *pos += max_read_rows;
