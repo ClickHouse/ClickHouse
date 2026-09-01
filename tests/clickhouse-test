@@ -1876,8 +1876,6 @@ class SettingsRandomizer:
         "materialized_views_populate_atomically": lambda: random.random() > 0.05,
         "allow_metadata_only_named_tuple_alter": lambda: random.random() < 0.3,
         "optimize_mutations_with_partition_pruning": lambda: random.random() > 0.05,
-        "enable_identifier_resolve_cache": lambda: random.random() > 0.05,
-        "merge_tree_generic_exclusion_search_max_steps": lambda: random.choice([0, 1, 8, 64, 1000]),
     }
 
     dependent_settings = {
