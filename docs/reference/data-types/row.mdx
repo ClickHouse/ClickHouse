@@ -84,8 +84,13 @@ two wrappers that share a source column is an error.
 Default: `0` (disabled).
 
 Allows creation of `Row` columns in tables. Until the on-disk format and the
-optimizer rule have matured, `CREATE TABLE` and `ALTER TABLE ... ADD/MODIFY
-COLUMN` with a `Row` column are rejected unless this setting is enabled.
+optimizer rule have matured, every statement that would persist a `Row` column
+is rejected unless this setting is enabled: `CREATE TABLE`, a full-definition
+`ATTACH TABLE`, `ALTER TABLE ... ADD/MODIFY COLUMN`, a table function structure,
+and a `CREATE MATERIALIZED VIEW` that creates its own inner table. Re-attaching a
+definition already stored on this server does not need the setting, and neither
+does a materialized view writing into an existing target table, since that table
+was gated when it was created.
 
 ### `query_plan_use_row_wrappers` {#query-plan-use-row-wrappers}
 
