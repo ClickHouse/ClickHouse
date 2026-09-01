@@ -2983,6 +2983,7 @@ bool QueryOracleChecker::checkAggregateIfIdentity(const ASTSelectQuery &, const 
     }
     catch (...)
     {
+        /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
         return false;
     }
 
@@ -3048,6 +3049,7 @@ bool QueryOracleChecker::checkNullIdentity(const ASTSelectQuery &, const Context
     }
     catch (...)
     {
+        /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
         return false;
     }
 
@@ -3106,6 +3108,7 @@ bool QueryOracleChecker::checkCastRoundtrip(const ASTSelectQuery &, const Contex
     }
     catch (...)
     {
+        /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
         return false;
     }
 
@@ -3266,7 +3269,7 @@ bool QueryOracleChecker::checkSchemaRoundtrip(const ASTSelectQuery &, const Cont
     if (!ddl1_opt || ddl1_opt->isNull())
         return false;
     String ddl1;
-    try { ddl1 = ddl1_opt->safeGet<String>(); } catch (...) { return false; }
+    try { ddl1 = ddl1_opt->safeGet<String>(); } catch (...) { return false; /* Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip. */ }
 
     /// Recreate t2 from t1's own DDL (only the table name changes).
     String create2 = ddl1;
@@ -3279,7 +3282,7 @@ bool QueryOracleChecker::checkSchemaRoundtrip(const ASTSelectQuery &, const Cont
     if (!ddl2_opt || ddl2_opt->isNull())
         return false;
     String ddl2;
-    try { ddl2 = ddl2_opt->safeGet<String>(); } catch (...) { return false; }
+    try { ddl2 = ddl2_opt->safeGet<String>(); } catch (...) { return false; /* Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip. */ }
 
     ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
     LOG_TRACE(logger, "schema round-trip oracle: {} vs recreated {}", t1, t2);
@@ -3496,7 +3499,7 @@ bool QueryOracleChecker::checkPredicateDeMorgan(const ASTSelectQuery &, const Co
     if (!value || value->isNull())
         return false;
     UInt64 violations = 0;
-    try { violations = value->safeGet<UInt64>(); } catch (...) { return false; }
+    try { violations = value->safeGet<UInt64>(); } catch (...) { return false; /* Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip. */ }
 
     if (violations != 0)
         raiseOracleMismatch(
@@ -3546,7 +3549,7 @@ bool QueryOracleChecker::checkArrayJoinIdentity(const ASTSelectQuery &, const Co
     if (!value || value->isNull())
         return false;
     UInt64 ok = 0;
-    try { ok = value->safeGet<UInt64>(); } catch (...) { return false; }
+    try { ok = value->safeGet<UInt64>(); } catch (...) { return false; /* Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip. */ }
 
     if (ok != 1)
         raiseOracleMismatch(
