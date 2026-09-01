@@ -134,10 +134,12 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query "SHOW CREATE DICTIONARY ${db}.loca
 ${CLICKHOUSE_CLIENT} --user="${user}" --query "SHOW CREATE TABLE ${db}.dict_engine_tbl" 2>&1 | grep -o -m1 ACCESS_DENIED
 
 echo "--- another database's table names are filtered out of the dependency arrays ---"
-# Database names are random per run, so every assertion is a membership test. The four
-# `hidden` flags come first: run as admin they must all be 1, otherwise the cross-database
-# edges are absent from the fixture and the restricted arm below would agree for the wrong
-# reason. `visible` is the same-database edge that must survive the filter.
+# Database names are random per run, so every assertion is a membership test. The `hidden` flags
+# come first: run as admin they must all be 1, otherwise the cross-database edges are absent from
+# the fixture and the restricted arm below would agree for the wrong reason -- and for the target
+# pair the admin arm is also what proves both halves are populated before the restricted arm reads
+# them. `visible` is the same-database edge that must survive the filter. The two target columns are
+# filled by separate inserts, so each is asserted on its own.
 dependency_probe() {
     ${CLICKHOUSE_CLIENT} "$@" --query "
         SELECT
@@ -152,10 +154,12 @@ dependency_probe() {
         FROM system.tables WHERE database = '${db}' AND name = 'leaky_dict';
         SELECT has(loading_dependencies_table, 'dict_src') AS visible_loading_dependency
         FROM system.tables WHERE database = '${db}' AND name = 'local_dict';
-        SELECT target_database = '${dbx}' AS hidden_target FROM system.tables
-            WHERE database = '${db}' AND name = 'mv_cross';
-        SELECT target_database = '${db}' AS visible_target FROM system.tables
-            WHERE database = '${db}' AND name = 'mv_local';
+        SELECT target_database = '${dbx}' AS hidden_target_database,
+               target_table = 'mv_target' AS hidden_target_table
+        FROM system.tables WHERE database = '${db}' AND name = 'mv_cross';
+        SELECT target_database = '${db}' AS visible_target_database,
+               target_table = 'local_target' AS visible_target_table
+        FROM system.tables WHERE database = '${db}' AND name = 'mv_local';
     "
 }
 dependency_probe

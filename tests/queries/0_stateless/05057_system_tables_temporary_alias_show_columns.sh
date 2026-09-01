@@ -38,6 +38,9 @@ admin "CREATE USER ${user} NOT IDENTIFIED"
 admin "GRANT SELECT ON system.tables TO ${user}"
 admin "GRANT SHOW TABLES ON ${db}.* TO ${user}"
 admin "GRANT CREATE ARBITRARY TEMPORARY TABLE ON *.* TO ${user}"
+# An explicit engine needs TABLE ENGINE independently of CREATE ARBITRARY TEMPORARY TABLE, and the
+# functional-test config enables table_engines_require_grant.
+admin "GRANT TABLE ENGINE ON Alias TO ${user}"
 # Creating an Alias requires table-level SHOW COLUMNS on the target, so the withheld state below can
 # only be reached by revoking it after the alias exists.
 admin "GRANT SHOW COLUMNS ON ${db}.tmp_target TO ${user}"

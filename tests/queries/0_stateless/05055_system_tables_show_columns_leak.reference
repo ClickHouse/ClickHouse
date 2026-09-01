@@ -30,14 +30,14 @@ ACCESS_DENIED
 1	1
 1
 1
-1
-1
+1	1
+1	1
 0	1
 0	1
 0
 1
-0
-1
+0	0
+1	1
 --- each dependency pair stays index-aligned ---
 1	1	1
 1	1	1
