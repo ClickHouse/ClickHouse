@@ -37,6 +37,34 @@ WHERE r.id AND l.id = r.id;
 
 DROP TABLE t_merge_filter_wide;
 
+-- A plain `UInt8` conjunct is not a normalized boolean either: a value like 2 passes the filter,
+-- but the value of the predicate in the result must still be 0 or 1.
+DROP TABLE IF EXISTS t_merge_filter_u8;
+
+CREATE TABLE t_merge_filter_u8 (id UInt32, u UInt8, n Nullable(UInt8)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_merge_filter_u8 SELECT number, if(number % 3 = 0, 0, 2), if(number % 3 = 0, NULL, 2) FROM numbers(10);
+
+SELECT l.id, (r.u AND l.id = r.id) AS c
+FROM t_merge_filter_u8 AS l LEFT JOIN t_merge_filter_u8 AS r ON l.id = r.id
+WHERE r.u AND l.id = r.id
+ORDER BY l.id
+SETTINGS query_plan_merge_filter_into_join_condition = 1;
+
+SELECT l.id, (r.u AND l.id = r.id) AS c
+FROM t_merge_filter_u8 AS l LEFT JOIN t_merge_filter_u8 AS r ON l.id = r.id
+WHERE r.u AND l.id = r.id
+ORDER BY l.id
+SETTINGS query_plan_merge_filter_into_join_condition = 0;
+
+-- The same for `Nullable(UInt8)`.
+SELECT l.id, (r.n AND l.id = r.id) AS c
+FROM t_merge_filter_u8 AS l LEFT JOIN t_merge_filter_u8 AS r ON l.id = r.id
+WHERE r.n AND l.id = r.id
+ORDER BY l.id
+SETTINGS query_plan_merge_filter_into_join_condition = 1;
+
+DROP TABLE t_merge_filter_u8;
+
 -- A `NULL` condition is false, and the conversion keeps the value nullable.
 DROP TABLE IF EXISTS t_merge_filter_null;
 

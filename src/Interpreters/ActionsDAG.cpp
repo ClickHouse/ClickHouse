@@ -3762,7 +3762,8 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
                 /// Preserve the original type if the column is needed in the result.
                 /// A cast alone is not enough: `and` implicitly converts its arguments to booleans,
                 /// while a cast maps values like 256 or 0.1 to 0, which is inconsistent with e.g. "1 and 256".
-                if (!WhichDataType(removeLowCardinalityAndNullable(child->result_type)).isUInt8())
+                /// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
+                if (!isBool(removeLowCardinalityAndNullable(child->result_type)))
                 {
                     auto uint8_type = std::make_shared<DataTypeUInt8>();
                     const auto & true_node = addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");

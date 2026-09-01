@@ -27,3 +27,33 @@ WHERE id IN (0, 255, 256, 512)
 ORDER BY id;
 
 DROP TABLE t_push_down_filter;
+
+-- A plain `UInt8` conjunct is not a normalized boolean either: a value like 2 passes the filter,
+-- but the value of the predicate in the result must still be 0 or 1.
+SELECT id, f FROM
+(
+    SELECT id, (id != 1000 AND s) AS f
+    FROM (SELECT number AS id, toUInt8(sum(number)) AS s FROM numbers(10) GROUP BY id)
+    WHERE id != 1000 AND s
+)
+ORDER BY id
+SETTINGS query_plan_filter_push_down = 1;
+
+SELECT id, f FROM
+(
+    SELECT id, (id != 1000 AND s) AS f
+    FROM (SELECT number AS id, toUInt8(sum(number)) AS s FROM numbers(10) GROUP BY id)
+    WHERE id != 1000 AND s
+)
+ORDER BY id
+SETTINGS query_plan_filter_push_down = 0;
+
+-- The same for `Nullable(UInt8)`.
+SELECT id, f FROM
+(
+    SELECT id, (id != 1000 AND s) AS f
+    FROM (SELECT number AS id, max(if(number % 3 = 0, NULL, 2)::Nullable(UInt8)) AS s FROM numbers(10) GROUP BY number)
+    WHERE id != 1000 AND s
+)
+ORDER BY id
+SETTINGS query_plan_filter_push_down = 1;

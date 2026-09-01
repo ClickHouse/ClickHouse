@@ -130,13 +130,13 @@ ExpressionSide getExpressionSide(
 
 using JoinConditionParts = std::vector<ActionsDAG>;
 
-/// `and` implicitly converts its arguments to booleans, so a conjunct that is left alone after the other
-/// conjuncts have been moved into the JOIN has to be converted the same way. A cast to the type of the
-/// original predicate does not do it: it maps values like 256 to `false`.
-/// Same approach as `toBoolIfNeeded` in JoinStepLogical.cpp.
+/// `and` implicitly converts its arguments to booleans and returns 0 or 1, so a conjunct that is left
+/// alone after the other conjuncts have been moved into the JOIN has to be normalized the same way.
+/// A cast to the type of the original predicate does not do it: it maps values like 256 to `false`.
+/// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
 const ActionsDAG::Node & convertToBoolIfNeeded(ActionsDAG & filter_dag, const ActionsDAG::Node * predicate_expr)
 {
-    if (WhichDataType(removeLowCardinalityAndNullable(predicate_expr->result_type)).isUInt8())
+    if (isBool(removeLowCardinalityAndNullable(predicate_expr->result_type)))
         return *predicate_expr;
 
     auto uint8_type = std::make_shared<DataTypeUInt8>();
@@ -151,8 +151,6 @@ const ActionsDAG::Node & createResultPredicate(
     const ActionsDAG::Node * original_predicate,
     const ActionsDAG::Node * new_predicate_expr)
 {
-    new_predicate_expr = &convertToBoolIfNeeded(filter_dag, new_predicate_expr);
-
     if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
     {
         return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name, nullptr);
@@ -250,10 +248,12 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
         if (rejected_conjuncts.size() == 1)
         {
-            filter_dag.addOrReplaceInOutputs(createResultPredicate(filter_dag, predicate, rejected_conjuncts.front()));
+            filter_dag.addOrReplaceInOutputs(createResultPredicate(
+                filter_dag, predicate, &convertToBoolIfNeeded(filter_dag, rejected_conjuncts.front())));
         }
         else if (rejected_conjuncts.size() > 1)
         {
+            /// `and` of the remaining conjuncts normalizes the values itself.
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             filter_dag.addOrReplaceInOutputs(createResultPredicate(
                 filter_dag,
