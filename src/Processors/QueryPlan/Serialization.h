@@ -27,6 +27,13 @@ struct IQueryPlanStep::Serialization
 
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
+
+    /// Write a column name carried by a step's payload (a GROUP BY key, an aggregate argument, a sort
+    /// column, ...). In cache-key mode the index of the analyzer-generated table qualifier is erased
+    /// first, because it is branch-local: the same column is `__table3.o_custkey` in one plan build and
+    /// `__table4.o_custkey` in the other. Everything else about the name is kept, so two different
+    /// columns still hash apart. See `normalizeGeneratedTableQualifiers` and `ActionsDAG::Node::updateHash`.
+    void writeColumnName(const String & name) const;
 };
 
 struct SerializedSetsRegistry;

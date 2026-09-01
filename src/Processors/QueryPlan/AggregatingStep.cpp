@@ -1226,13 +1226,13 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (!sort_description_for_merging.empty())
     {
-        serializeSortDescription(sort_description_for_merging, ctx.out);
-        serializeSortDescription(group_by_sort_description, ctx.out);
+        serializeSortDescription(sort_description_for_merging, ctx.out, ctx.for_cache_key);
+        serializeSortDescription(group_by_sort_description, ctx.out, ctx.for_cache_key);
     }
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, ctx.out);
+        ctx.writeColumnName(key);
 
     if (!grouping_sets_params.empty())
     {
@@ -1242,11 +1242,11 @@ void AggregatingStep::serialize(Serialization & ctx) const
             /// Only used keys are needed.
             writeVarUInt(grouping_set.used_keys.size(), ctx.out);
             for (const auto & used_key : grouping_set.used_keys)
-                writeStringBinary(used_key, ctx.out);
+                ctx.writeColumnName(used_key);
         }
     }
 
-    serializeAggregateDescriptions(params.aggregates, ctx.out);
+    serializeAggregateDescriptions(params.aggregates, ctx.out, ctx.for_cache_key);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);

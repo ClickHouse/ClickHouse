@@ -161,7 +161,7 @@ void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & 
 
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
 {
-    writeStringBinary(filter_column_name, ctx.out);
+    ctx.writeColumnName(filter_column_name);
     encodeDataType(filter_column_type, ctx.out);
     writeStringBinary(filter_name, ctx.out);
     writeBinary(allow_to_use_not_exact_filter, ctx.out);

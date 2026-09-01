@@ -339,8 +339,8 @@ void WindowStep::serialize(Serialization & ctx) const
 
     writeStringBinary(window_description.window_name, ctx.out);
 
-    serializeSortDescription(window_description.partition_by, ctx.out);
-    serializeSortDescription(window_description.order_by, ctx.out);
+    serializeSortDescription(window_description.partition_by, ctx.out, ctx.for_cache_key);
+    serializeSortDescription(window_description.order_by, ctx.out, ctx.for_cache_key);
 
     serializeWindowFrame(window_description.frame, ctx.out);
 
