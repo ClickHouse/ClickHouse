@@ -2,14 +2,15 @@
 -- are merged into the JOIN condition: every non-zero value is true, not only the ones that survive
 -- a cast to UInt8.
 
+SET query_plan_merge_filter_into_join_condition = 1;
+
 DROP TABLE IF EXISTS t_merge_filter;
 
 CREATE TABLE t_merge_filter (id UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_merge_filter SELECT number FROM numbers(600);
 
 SELECT count() FROM t_merge_filter AS l LEFT JOIN t_merge_filter AS r ON l.id = r.id
-WHERE r.id AND l.id = r.id
-SETTINGS query_plan_merge_filter_into_join_condition = 1;
+WHERE r.id AND l.id = r.id;
 
 SELECT count() FROM t_merge_filter AS l LEFT JOIN t_merge_filter AS r ON l.id = r.id
 WHERE r.id AND l.id = r.id
@@ -19,7 +20,7 @@ SETTINGS query_plan_merge_filter_into_join_condition = 0;
 -- the filter push down is disabled so that the filter stays above the JOIN for the merge pass.
 SELECT count() FROM t_merge_filter AS l INNER JOIN t_merge_filter AS r ON l.id = r.id
 WHERE r.id AND l.id = r.id
-SETTINGS query_plan_merge_filter_into_join_condition = 1, query_plan_filter_push_down = 0;
+SETTINGS query_plan_filter_push_down = 0;
 
 SELECT l.id FROM t_merge_filter AS l LEFT JOIN t_merge_filter AS r ON l.id = r.id
 WHERE r.id AND l.id = r.id AND l.id IN (0, 255, 256, 512)
@@ -53,8 +54,7 @@ INSERT INTO t_merge_filter_u8 SELECT number, if(number % 3 = 0, 0, 2), if(number
 SELECT l.id, (r.u AND l.id = r.id) AS c
 FROM t_merge_filter_u8 AS l LEFT JOIN t_merge_filter_u8 AS r ON l.id = r.id
 WHERE r.u AND l.id = r.id
-ORDER BY l.id
-SETTINGS query_plan_merge_filter_into_join_condition = 1;
+ORDER BY l.id;
 
 SELECT l.id, (r.u AND l.id = r.id) AS c
 FROM t_merge_filter_u8 AS l LEFT JOIN t_merge_filter_u8 AS r ON l.id = r.id
@@ -66,8 +66,7 @@ SETTINGS query_plan_merge_filter_into_join_condition = 0;
 SELECT l.id, (r.n AND l.id = r.id) AS c
 FROM t_merge_filter_u8 AS l LEFT JOIN t_merge_filter_u8 AS r ON l.id = r.id
 WHERE r.n AND l.id = r.id
-ORDER BY l.id
-SETTINGS query_plan_merge_filter_into_join_condition = 1;
+ORDER BY l.id;
 
 DROP TABLE t_merge_filter_u8;
 
@@ -80,13 +79,11 @@ CREATE TABLE t_merge_filter_lc (id UInt32, x LowCardinality(UInt32)) ENGINE = Me
 INSERT INTO t_merge_filter_lc SELECT number, number FROM numbers(600);
 
 SELECT count() FROM t_merge_filter_lc AS l LEFT JOIN t_merge_filter_lc AS r ON l.id = r.id
-WHERE r.x AND l.id = r.id
-SETTINGS query_plan_merge_filter_into_join_condition = 1;
+WHERE r.x AND l.id = r.id;
 
 SELECT l.id, (r.x AND l.id = r.id) AS c FROM t_merge_filter_lc AS l LEFT JOIN t_merge_filter_lc AS r ON l.id = r.id
 WHERE r.x AND l.id = r.id AND l.id IN (0, 255, 256, 512)
-ORDER BY l.id
-SETTINGS query_plan_merge_filter_into_join_condition = 1;
+ORDER BY l.id;
 
 DROP TABLE t_merge_filter_lc;
 
