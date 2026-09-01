@@ -184,6 +184,9 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+    /// Set once a split failed to shrink the in-memory table: the threshold is smaller than a hash
+    /// table's own floor, so there is nothing left to gain from more buckets.
+    std::atomic<bool> threshold_below_hash_table_floor = false;
 
     /// What the buckets built and already released held, for the `max_rows_in_join` /
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.

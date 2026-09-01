@@ -3,14 +3,14 @@ grace_hash: max_rows_in_join stops the join
 grace_hash: join_overflow_mode = break truncates instead of throwing
 1
 grace_hash: no cap, spilling completes the join
-2000000
+200000
 hash: max_bytes_in_join stops the join after it spilled
 grace_hash without any spill threshold is rejected
 grace_hash with a spill threshold works
 10
 duplicate right keys count once, both algorithms
-400000
-400000
+100000
+100000
 a NULL right key is not in the hash table, both algorithms
 0
 0

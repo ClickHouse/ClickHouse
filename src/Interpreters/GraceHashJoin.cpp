@@ -409,7 +409,8 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
         return false;
     /// Only the threshold decides when to spill now, the size limits are caps checked in `addBlockToJoin`.
     /// Half of it, because the hash table doubles in power-of-two steps and briefly holds 3x while resizing.
-    bool has_overflow = external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold;
+    bool has_overflow
+        = external_join_threshold > 0 && !threshold_below_hash_table_floor && total_bytes * 2 >= external_join_threshold;
 
     /// Legacy mode: the size limits spill as well. Standalone `grace_hash` is built with no threshold
     /// then, `SpillingHashJoin` still passes one, so whichever comes first wins for the adaptive path.
@@ -939,15 +940,19 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         /// the actual hash-table cost (cell overhead, load-factor padding, resize peaks),
         /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
         /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`.
-        const bool pre_threshold_overflow = external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
+        const bool pre_threshold_overflow = external_join_threshold > 0 && !threshold_below_hash_table_floor
+            && pre_total_bytes * 2 >= external_join_threshold;
 
         bool block_added = false;
+        /// The size the split has to shrink, see the check after it below.
+        size_t bytes_before_split = pre_total_bytes;
         if (!pre_threshold_overflow)
         {
             hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
             block_added = true;
             size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
+            bytes_before_split = hash_join_total_bytes;
             if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
                 return;
         }
@@ -997,6 +1002,23 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
 
         if (current_block.rows() > 0)
             hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+
+        /// A hash table has a floor size of its own, so a threshold below it makes every freshly split
+        /// bucket look oversized again. Once halving the rows stops shrinking the table, splitting
+        /// further cannot help either, and without this we would double the bucket count until
+        /// `grace_hash_join_max_buckets` and fail the query instead of just spilling what we can.
+        if (bytes_before_split > 0 && hash_join->getTotalByteCount() * 4 >= bytes_before_split * 3)
+        {
+            LOG_DEBUG(
+                log,
+                "Splitting bucket {} did not shrink it ({} -> {}), the spill threshold {} is below what a hash "
+                "table costs; not splitting further",
+                bucket_index,
+                ReadableSize(bytes_before_split),
+                ReadableSize(hash_join->getTotalByteCount()),
+                ReadableSize(external_join_threshold));
+            threshold_below_hash_table_floor = true;
+        }
     }
 }
 

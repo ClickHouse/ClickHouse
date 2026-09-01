@@ -31,3 +31,12 @@ SELECT countIf(explain LIKE '%Algorithm: GraceHashJoin%') FROM (
     SELECT * FROM (SELECT number AS k FROM numbers(10)) AS t1
     INNER JOIN (SELECT number AS k FROM numbers(10)) AS t2 USING (k)
 );
+
+SELECT 'a threshold below what a hash table costs still completes';
+-- Every freshly split bucket looks oversized under such a threshold. Splitting has to stop once it
+-- no longer shrinks the table, or the bucket count runs into `grace_hash_join_max_buckets`.
+SELECT count()
+FROM (SELECT number AS k FROM numbers(200000)) AS t1
+INNER JOIN (SELECT number AS k FROM numbers(200000)) AS t2
+USING (k)
+SETTINGS max_bytes_before_external_join = 1, grace_hash_join_initial_buckets = 1;
