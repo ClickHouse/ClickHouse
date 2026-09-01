@@ -93,7 +93,6 @@
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
             <allow_experimental_unique_key>1</allow_experimental_unique_key>
             <allow_experimental_url_wildcard_from_index_pages>1</allow_experimental_url_wildcard_from_index_pages>
-            <allow_experimental_window_view>1</allow_experimental_window_view>
             <allow_experimental_ytsaurus_dictionary_source>1</allow_experimental_ytsaurus_dictionary_source>
             <allow_experimental_ytsaurus_table_engine>1</allow_experimental_ytsaurus_table_engine>
             <allow_experimental_ytsaurus_table_function>1</allow_experimental_ytsaurus_table_function>

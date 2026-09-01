@@ -96,11 +96,14 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
 /// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
 /// or `WITH CUBE` can be shipped under `make_distributed_plan`.
-/// Version 10 adds the query-condition-cache flag bit on `ReadFromMergeTree`, which carries the
+/// Version 10 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
+/// properties of individual steps, so a remote plan fragment would otherwise execute with its default
+/// execution limits after deserialization.
+/// Version 11 adds the query-condition-cache flag bit on `ReadFromMergeTree`, which carries the
 /// optimizer's correctness decision to turn the cache off (lazy `FINAL`, vector search). A peer below
 /// this version ignores the bit and would re-enable the cache, so such a read fails closed instead of
 /// being shipped.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 10;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 11;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -117,11 +120,13 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 /// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
 /// `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
+/// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 10;
 /// First query-plan serialization version that carries the `allow_query_condition_cache` flag bit of
 /// `ReadFromMergeTree`. A read whose query-condition cache was disabled for correctness cannot be
 /// shipped to a peer below this version: the peer would ignore the bit and rebuild the read with the
 /// cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 10;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 11;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
