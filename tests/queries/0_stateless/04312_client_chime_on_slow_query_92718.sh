@@ -36,6 +36,7 @@ tty9="${CLICKHOUSE_TMP}/04312_tty9_${CLICKHOUSE_DATABASE}.txt"
 tty10="${CLICKHOUSE_TMP}/04312_tty10_${CLICKHOUSE_DATABASE}.txt"
 tty11="${CLICKHOUSE_TMP}/04312_tty11_${CLICKHOUSE_DATABASE}.txt"
 tty12="${CLICKHOUSE_TMP}/04312_tty12_${CLICKHOUSE_DATABASE}.txt"
+tty13="${CLICKHOUSE_TMP}/04312_tty13_${CLICKHOUSE_DATABASE}.txt"
 
 # -----------------------------------------------------------------------------
 # Non-TTY cases (stderr redirected to a regular file). With the TTY guard, the
@@ -62,12 +63,15 @@ echo "3. clickhouse-client (no --chime), 1.5s < default 5s threshold: $(bel_coun
 # test would loudly notice if `throwIf` semantics or the error path itself changes.
 # `sleep` is nested inside `throwIf`'s argument so it always runs before the throw;
 # as sibling projection columns their evaluation order would be unspecified.
+# The error is identified by its error code name and not by the `expected error` message: the client
+# echoes the failed query text, which contains that message, so grepping for it would also match a
+# completely different failure.
 ${CLICKHOUSE_CLIENT} --chime 1 -q "SELECT throwIf(sleep(1.5) = 0, 'expected error')" 2> "$err4" > /dev/null
 rc=$?
 if [ "$rc" -eq 0 ]; then
     case4_status="FAIL: query unexpectedly succeeded"
-elif ! grep -q 'expected error' "$err4"; then
-    case4_status="FAIL: missing 'expected error' message in stderr"
+elif ! grep -q 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' "$err4"; then
+    case4_status="FAIL: missing FUNCTION_THROW_IF_VALUE_IS_NON_ZERO in stderr"
 else
     case4_status=$(bel_count "$err4")
 fi
@@ -132,8 +136,8 @@ echo "10. clickhouse-client (no --chime), slow query (~6s > default 5s threshold
 rc=$?
 if [ "$rc" -eq 0 ]; then
     case11_status="FAIL: query unexpectedly succeeded"
-elif ! grep -q 'expected error' "$tty11"; then
-    case11_status="FAIL: missing 'expected error' message in pty output"
+elif ! grep -q 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' "$tty11"; then
+    case11_status="FAIL: missing FUNCTION_THROW_IF_VALUE_IS_NON_ZERO in pty output"
 else
     case11_status=$(bel_count "$tty11")
 fi
@@ -149,4 +153,25 @@ echo "11. clickhouse-client --chime 1, slow query then error, pty stderr: $case1
 /usr/bin/script -qc "${CLICKHOUSE_CLIENT} -q 'SELECT sleepEachRow(2) FROM numbers(3) FORMAT Null SETTINGS function_sleep_max_microseconds_per_block = 0' --chime" /dev/null > "$tty12" 2>&1
 echo "12. clickhouse-client --chime (implicit value), slow query (~6s > default 5s threshold), pty stderr: $(bel_count "$tty12")"
 
-rm -f "$err1" "$err2" "$err3" "$err4" "$err5" "$err6" "$tty7" "$tty8" "$tty9" "$tty10" "$tty11" "$tty12"
+# Case 13: same contract as case 11 (`--chime 1`, slow query that ends in an error, pty stderr, expect
+# `BEL`), but with `interactive_delay` raised so that the server sends exactly one `Progress` packet,
+# at ~0.9s, and none after that: `2 * 0.9s` is past the moment the query throws. The client tracks the
+# elapsed time reported by the server whenever it is available, and the server sends no final
+# `Progress` packet on the error path, so the server-reported time stays at ~0.9s - under the
+# 1-second threshold - even though the query really ran for ~1.5s. The chime must be gated on the
+# real duration of the query, so it must still fire here. Without the gate using the client's own
+# clock this case reports `no BEL`, which is also what made case 11 flaky under CI load: there the
+# same staleness comes from a delayed `TCPHandler` loop iteration rather than from a large
+# `interactive_delay`.
+/usr/bin/script -eqc "${CLICKHOUSE_CLIENT} --chime 1 -q \"SELECT throwIf(sleep(1.5) = 0, 'expected error') SETTINGS interactive_delay = 900000\"" /dev/null > "$tty13" 2>&1
+rc=$?
+if [ "$rc" -eq 0 ]; then
+    case13_status="FAIL: query unexpectedly succeeded"
+elif ! grep -q 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' "$tty13"; then
+    case13_status="FAIL: missing FUNCTION_THROW_IF_VALUE_IS_NON_ZERO in pty output"
+else
+    case13_status=$(bel_count "$tty13")
+fi
+echo "13. clickhouse-client --chime 1, slow query then error, stale server-side progress, pty stderr: $case13_status"
+
+rm -f "$err1" "$err2" "$err3" "$err4" "$err5" "$err6" "$tty7" "$tty8" "$tty9" "$tty10" "$tty11" "$tty12" "$tty13"
