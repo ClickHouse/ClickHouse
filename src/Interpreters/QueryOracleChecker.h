@@ -195,6 +195,50 @@ public:
     /// equal recomputing its defining expression.
     bool checkMaterializedColumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// ALTER MODIFY COLUMN oracle (self-seeded): a value-preserving column widening must equal an
+    /// element-wise CAST of the pre-ALTER snapshot.
+    bool checkAlterModifyWiden(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Lightweight-update oracle (self-seeded): a lightweight UPDATE (patch part) must leave a table
+    /// in the same state as the equivalent heavy ALTER UPDATE, apply_patch_parts must toggle the
+    /// patch coherently, and OPTIMIZE FINAL materialization must be a no-op on the applied result.
+    bool checkLightweightUpdate(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Window-frame equivalence oracle (self-seeded): the implicit default frame equals the explicit
+    /// RANGE UNBOUNDED PRECEDING..CURRENT ROW, and a whole-partition frame is identical across the
+    /// ROWS/RANGE/GROUPS modes.
+    bool checkWindowEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Join-order/algorithm sweep oracle (self-seeded): a multi-join result must be invariant under
+    /// the join-order optimizer and the physical join algorithm.
+    bool checkJoinOrderSweep(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Sequence/funnel oracle (self-seeded): windowFunnel is monotonic non-decreasing in its window,
+    /// its result lies in [0,k], and sequenceMatch(p) == (sequenceCount(p) >= 1).
+    bool checkSequenceFunnel(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Composite-subcolumn oracle (self-seeded): reading a subcolumn of a Tuple/Array/Map/Nullable
+    /// value equals the corresponding extraction function (pure syntactic-sugar identity).
+    bool checkDynamicSubcolumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Materialized-view / recompression-TTL oracle (self-seeded): an incrementally-maintained MV
+    /// target equals the ground truth recomputed from the base, and a RECOMPRESS TTL merge preserves
+    /// every row (delete-TTL, which is not result-invariant, is intentionally out of scope).
+    bool checkViewTtlConsistency(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Correlated-subquery oracle (self-seeded, experimental-gated): a correlated scalar subquery
+    /// equals its decorrelated JOIN form. Runs the correlated side under
+    /// allow_experimental_correlated_subqueries=1 and skips (fail-close) if unsupported.
+    bool checkCorrelatedSubquery(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// CERT cardinality-monotonicity oracle (self-seeded): asserts monotonic count inequalities that
+    /// must hold for ANY data (restriction never increases count, DISTINCT never exceeds count, etc.).
+    bool checkCardinalityMonotonicity(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// PQS pivot-containment oracle (self-seeded): a set of predicates all rectified TRUE for a
+    /// chosen pivot row must return that row — otherwise the filter/index wrongly dropped it.
+    bool checkPivotedContainment(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

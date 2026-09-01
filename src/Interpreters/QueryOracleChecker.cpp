@@ -89,6 +89,16 @@ extern const Event ASTFuzzerOracleWithFillChecks;
 extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
 extern const Event ASTFuzzerOracleDictGetChecks;
 extern const Event ASTFuzzerOracleMaterializedColumnChecks;
+extern const Event ASTFuzzerOracleAlterModifyChecks;
+extern const Event ASTFuzzerOracleLightweightUpdateChecks;
+extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
+extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
+extern const Event ASTFuzzerOracleSequenceFunnelChecks;
+extern const Event ASTFuzzerOracleSubcolumnChecks;
+extern const Event ASTFuzzerOracleViewTtlChecks;
+extern const Event ASTFuzzerOracleCorrelatedSubqueryChecks;
+extern const Event ASTFuzzerOracleCardinalityChecks;
+extern const Event ASTFuzzerOraclePivotContainmentChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -3937,6 +3947,644 @@ bool QueryOracleChecker::checkMaterializedColumn(const ASTSelectQuery &, const C
             context, &fixture);
 
     LOG_TRACE(logger, "materialized column oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkAlterModifyWiden(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_41): a value-preserving `ALTER TABLE t MODIFY COLUMN c NewType` must
+    /// equal an element-wise CAST of the pre-ALTER snapshot. We snapshot toInt64(c) BEFORE the ALTER,
+    /// widen Int32 -> Int64 (lossless), then read c back — the two must be identical. A divergence is a
+    /// real ALTER-MODIFY conversion bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("altermod", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (id UInt32, c Int32) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number, toInt32(number) - 500 FROM numbers(400)"))
+        return false;
+
+    /// Reference: the element-wise CAST to the widened type, computed on the pre-ALTER snapshot.
+    auto ref_opt = OracleExec::executeRows("SELECT id, toInt64(c) FROM " + tbl, context, ResultShape::SortedBag);
+    if (!ref_opt)
+        return false;
+
+    /// Value-preserving widening (Int32 -> Int64). Synchronous so the read below sees the converted data.
+    if (!fixture.execute(
+            "ALTER TABLE " + tbl + " MODIFY COLUMN c Int64",
+            {{"alter_sync", Field(UInt64(2))}, {"mutations_sync", Field(UInt64(2))}}))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "ALTER MODIFY widen oracle: {}", tbl);
+
+    auto after_opt = OracleExec::executeRows("SELECT id, c FROM " + tbl, context, ResultShape::SortedBag);
+    if (!after_opt)
+        return false;
+
+    if (!OracleCompare::equal(*ref_opt, *after_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "ALTER MODIFY widen oracle mismatch!\n"
+                "toInt64(c) before ALTER ({} rows) vs c after MODIFY COLUMN c Int64 ({} rows) on {}\n{}",
+                ref_opt->size(), after_opt->size(), tbl,
+                OracleCompare::diffSummary(*ref_opt, *after_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "ALTER MODIFY widen oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkLightweightUpdate(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_42): the lightweight (patch-part) UPDATE path must be semantically
+    /// identical to the long-standing heavy ALTER UPDATE mutation. Three sound relations on twin
+    /// tables seeded with identical data:
+    ///   (1) lightweight(apply_patch_parts=1) == heavy ALTER UPDATE
+    ///   (2) lightweight(apply_patch_parts=0) == the original pre-update seed
+    ///   (3) OPTIMIZE FINAL materialization is a no-op on the applied (apply=1) result
+    /// A divergence in any arm is a real patch-part correctness bug.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("lwupdate", context);
+    if (!fixture.valid())
+        return false;
+
+    const String a = fixture.allocName("a");
+    const String b = fixture.allocName("b");
+    /// Lightweight updates require the materialized _block_number / _block_offset columns.
+    if (!fixture.execute("CREATE TABLE " + a + " (id UInt32, v Int64) ENGINE = MergeTree ORDER BY id "
+                         "SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + b + " (id UInt32, v Int64) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + a + " SELECT number, toInt64(number) FROM numbers(500)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + b + " SELECT number, toInt64(number) FROM numbers(500)"))
+        return false;
+
+    /// Snapshot the original seed before any update.
+    auto seed_opt = OracleExec::executeRows("SELECT id, v FROM " + a, context, ResultShape::SortedBag);
+    if (!seed_opt)
+        return false;
+
+    const String predicate = "id % 3 = 0";
+    const String assignment = "v = v * 10";
+    if (!fixture.execute("UPDATE " + a + " SET " + assignment + " WHERE " + predicate,
+                         {{"enable_lightweight_update", Field(UInt64(1))}}))
+        return false;
+    if (!fixture.execute("ALTER TABLE " + b + " UPDATE " + assignment + " WHERE " + predicate,
+                         {{"mutations_sync", Field(UInt64(2))}}))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "lightweight update oracle: {} vs {}", a, b);
+
+    const std::vector<std::pair<String, Field>> apply1{{"apply_patch_parts", Field(UInt64(1))}};
+    const std::vector<std::pair<String, Field>> apply0{{"apply_patch_parts", Field(UInt64(0))}};
+
+    /// Arm 1: lightweight (patch applied) == heavy mutation.
+    auto lw1_opt = OracleExec::executeRows("SELECT id, v FROM " + a, context, ResultShape::SortedBag, apply1);
+    auto heavy_opt = OracleExec::executeRows("SELECT id, v FROM " + b, context, ResultShape::SortedBag);
+    if (!lw1_opt || !heavy_opt)
+        return false;
+    if (!OracleCompare::equal(*lw1_opt, *heavy_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "lightweight update oracle mismatch (lightweight vs heavy)!\n"
+                "UPDATE with apply_patch_parts=1 ({} rows) vs ALTER UPDATE ({} rows) on {}/{}\n{}",
+                lw1_opt->size(), heavy_opt->size(), a, b,
+                OracleCompare::diffSummary(*lw1_opt, *heavy_opt)),
+            context, &fixture);
+
+    /// Arm 2: patch not applied == the original seed.
+    auto lw0_opt = OracleExec::executeRows("SELECT id, v FROM " + a, context, ResultShape::SortedBag, apply0);
+    if (!lw0_opt)
+        return false;
+    if (!OracleCompare::equal(*lw0_opt, *seed_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "lightweight update oracle mismatch (apply_patch_parts=0 not original)!\n"
+                "apply_patch_parts=0 ({} rows) vs original seed ({} rows) on {}\n{}",
+                lw0_opt->size(), seed_opt->size(), a,
+                OracleCompare::diffSummary(*lw0_opt, *seed_opt)),
+            context, &fixture);
+
+    /// Arm 3: materialization is a no-op on the applied result.
+    if (!fixture.execute("OPTIMIZE TABLE " + a + " FINAL"))
+        return false;
+    auto lw1_post_opt = OracleExec::executeRows("SELECT id, v FROM " + a, context, ResultShape::SortedBag, apply1);
+    if (!lw1_post_opt)
+        return false;
+    if (!OracleCompare::equal(*lw1_opt, *lw1_post_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "lightweight update oracle mismatch (materialization changed result)!\n"
+                "apply_patch_parts=1 before OPTIMIZE FINAL ({} rows) vs after ({} rows) on {}\n{}",
+                lw1_opt->size(), lw1_post_opt->size(), a,
+                OracleCompare::diffSummary(*lw1_opt, *lw1_post_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "lightweight update oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkWindowEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_03): two provably-equivalent window-frame spellings must return the
+    /// identical per-row result.
+    ///   A. default-frame explicitness — with ORDER BY over a unique key, the implicit default frame
+    ///      equals the explicit RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
+    ///   B. whole-partition frame-mode equivalence — a BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED
+    ///      FOLLOWING frame covers the entire partition regardless of the ROWS/RANGE/GROUPS mode, so an
+    ///      order-insensitive aggregate (sum/count) is identical across all three.
+    /// A divergence is a real window-frame bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("window", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (id UInt32, k UInt8, x Int64) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number, number % 5, toInt64(number % 13) - 6 FROM numbers(500)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "window equivalence oracle: {}", tbl);
+
+    /// Relation A: default frame == explicit RANGE UNBOUNDED PRECEDING .. CURRENT ROW (id is unique).
+    auto def_opt = OracleExec::executeRows(
+        "SELECT id, sum(x) OVER (PARTITION BY k ORDER BY id) FROM " + tbl, context, ResultShape::SortedBag);
+    auto exp_opt = OracleExec::executeRows(
+        "SELECT id, sum(x) OVER (PARTITION BY k ORDER BY id RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM " + tbl,
+        context, ResultShape::SortedBag);
+    if (!def_opt || !exp_opt)
+        return false;
+    if (!OracleCompare::equal(*def_opt, *exp_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "window equivalence oracle mismatch (default vs explicit default frame)!\n"
+                "implicit default ({} rows) vs RANGE UNBOUNDED PRECEDING..CURRENT ROW ({} rows) on {}\n{}",
+                def_opt->size(), exp_opt->size(), tbl,
+                OracleCompare::diffSummary(*def_opt, *exp_opt)),
+            context, &fixture);
+
+    /// Relation B: whole-partition frame is identical across ROWS / RANGE / GROUPS modes.
+    const String whole = " OVER (PARTITION BY k ORDER BY id %MODE% BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM " + tbl;
+    auto make = [&](std::string_view mode)
+    {
+        String q = "SELECT id, sum(x)" + whole;
+        const std::string tok = "%MODE%";
+        q.replace(q.find(tok), tok.size(), mode);
+        return OracleExec::executeRows(q, context, ResultShape::SortedBag);
+    };
+    auto rows_opt = make("ROWS");
+    auto range_opt = make("RANGE");
+    auto groups_opt = make("GROUPS");
+    if (!rows_opt || !range_opt || !groups_opt)
+        return false;
+    if (!OracleCompare::equal(*rows_opt, *range_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "window equivalence oracle mismatch (whole-partition ROWS vs RANGE)!\n"
+                "ROWS ({} rows) vs RANGE ({} rows) on {}\n{}",
+                rows_opt->size(), range_opt->size(), tbl,
+                OracleCompare::diffSummary(*rows_opt, *range_opt)),
+            context, &fixture);
+    if (!OracleCompare::equal(*rows_opt, *groups_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "window equivalence oracle mismatch (whole-partition ROWS vs GROUPS)!\n"
+                "ROWS ({} rows) vs GROUPS ({} rows) on {}\n{}",
+                rows_opt->size(), groups_opt->size(), tbl,
+                OracleCompare::diffSummary(*rows_opt, *groups_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "window equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkJoinOrderSweep(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_14): the join-order optimizer and every physical join algorithm are
+    /// result-preserving — they change which order tables are joined and how, never what rows come out.
+    /// A three-way INNER JOIN run under a randomly chosen (join_algorithm, join-order-limit) variant
+    /// must return the same row multiset as the default. A divergence is a real join-reordering or
+    /// join-algorithm wrong-result bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("joinorder", context);
+    if (!fixture.valid())
+        return false;
+
+    const String j1 = fixture.allocName("a");
+    const String j2 = fixture.allocName("b");
+    const String j3 = fixture.allocName("c");
+    if (!fixture.execute("CREATE TABLE " + j1 + " (a UInt32, x Int64) ENGINE = MergeTree ORDER BY a")
+        || !fixture.execute("CREATE TABLE " + j2 + " (a UInt32, y Int64) ENGINE = MergeTree ORDER BY a")
+        || !fixture.execute("CREATE TABLE " + j3 + " (a UInt32, z Int64) ENGINE = MergeTree ORDER BY a"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + j1 + " SELECT number % 80, toInt64(number) FROM numbers(400)")
+        || !fixture.execute("INSERT INTO " + j2 + " SELECT number % 60, toInt64(number) + 1 FROM numbers(300)")
+        || !fixture.execute("INSERT INTO " + j3 + " SELECT number % 40, toInt64(number) + 2 FROM numbers(200)"))
+        return false;
+
+    const String sql =
+        "SELECT " + j1 + ".a, " + j1 + ".x, " + j2 + ".y, " + j3 + ".z FROM " + j1
+        + " INNER JOIN " + j2 + " ON " + j1 + ".a = " + j2 + ".a"
+        + " INNER JOIN " + j3 + " ON " + j2 + ".a = " + j3 + ".a";
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+
+    static constexpr std::array<std::string_view, 5> algos = {
+        "hash", "parallel_hash", "full_sorting_merge", "grace_hash", "partial_merge"};
+    const std::string_view algo = algos[thread_local_rng() % algos.size()];
+    const UInt64 jo_limit = (thread_local_rng() % 2) ? 0 : 100;
+    LOG_TRACE(logger, "join-order sweep oracle ({}, join_order_limit={}): {}", algo, jo_limit, sql);
+
+    auto ref_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag);
+    auto var_opt = OracleExec::executeRows(
+        sql, context, ResultShape::SortedBag,
+        {{"join_algorithm", Field(String(algo))}, {"query_plan_optimize_join_order_limit", Field(jo_limit)}});
+    if (!ref_opt || !var_opt)
+        return false;
+
+    if (!OracleCompare::equal(*ref_opt, *var_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "join-order sweep oracle mismatch!\n"
+                "default ({} rows) vs join_algorithm='{}', query_plan_optimize_join_order_limit={} ({} rows)\n{}\n{}",
+                ref_opt->size(), algo, jo_limit, var_opt->size(), sql,
+                OracleCompare::diffSummary(*ref_opt, *var_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "join-order sweep oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkSequenceFunnel(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_37): three data-independent invariants of the sequence aggregates over
+    /// a per-entity timestamped event list:
+    ///   (1) windowFunnel is monotonic non-decreasing in its window w — a wider window can only match a
+    ///       same-or-longer prefix (note: the empirically-correct direction; the SQLancer brief has it
+    ///       inverted).
+    ///   (2) windowFunnel's result lies in [0, k] for a k-condition chain.
+    ///   (3) sequenceMatch(p) == (sequenceCount(p) >= 1).
+    /// A violation of any is a real sequence-aggregate bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("seqfunnel", context);
+    if (!fixture.valid())
+        return false;
+
+    const String ev = fixture.allocName();
+    if (!fixture.execute(
+            "CREATE TABLE " + ev + " (uid UInt32, ts DateTime, c1 UInt8, c2 UInt8, c3 UInt8) "
+            "ENGINE = MergeTree ORDER BY (uid, ts)"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + ev + " SELECT number % 50, toDateTime('2020-01-01 00:00:00') + (number % 20), "
+            "toUInt8(number % 2), toUInt8(number % 3 = 0), toUInt8(number % 5 = 0) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "sequence funnel oracle: {}", ev);
+
+    /// Each probe returns a single scalar row: the number of per-entity violations, which must be 0.
+    struct Probe { const char * name; std::string sql; };
+    const std::vector<Probe> probes = {
+        {"windowFunnel window-monotonicity",
+         "SELECT countIf(big < small) FROM (SELECT uid, "
+         "windowFunnel(3)(ts, c1 = 1, c2 = 1, c3 = 1) AS small, "
+         "windowFunnel(100000)(ts, c1 = 1, c2 = 1, c3 = 1) AS big FROM " + ev + " GROUP BY uid)"},
+        {"windowFunnel range [0,k]",
+         "SELECT countIf(f < 0 OR f > 3) FROM (SELECT uid, "
+         "windowFunnel(100)(ts, c1 = 1, c2 = 1, c3 = 1) AS f FROM " + ev + " GROUP BY uid)"},
+        {"sequenceMatch == (sequenceCount >= 1)",
+         "SELECT countIf(m != (c >= 1)) FROM (SELECT uid, "
+         "sequenceMatch('(?1)(?2)')(ts, c1 = 1, c2 = 1) AS m, "
+         "sequenceCount('(?1)(?2)')(ts, c1 = 1, c2 = 1) AS c FROM " + ev + " GROUP BY uid)"},
+    };
+
+    for (const auto & probe : probes)
+    {
+        auto viol_opt = OracleExec::executeRows(probe.sql, context, ResultShape::SortedBag);
+        if (!viol_opt)
+            return false;
+        if (viol_opt->size() != 1 || (*viol_opt)[0] != "0")
+            raiseOracleMismatch(
+                fmt::format(
+                    "sequence funnel oracle mismatch ({})!\n"
+                    "{} per-entity violations on {}\nprobe: {}",
+                    probe.name, viol_opt->empty() ? "?" : (*viol_opt)[0], ev, probe.sql),
+                context, &fixture);
+    }
+
+    LOG_TRACE(logger, "sequence funnel oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkDynamicSubcolumn(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_36): reading a subcolumn of a composite value is, by definition,
+    /// identical to extracting that component with the corresponding function — a pure syntactic-sugar
+    /// identity in the type system. We use the stable composite types (Tuple/Array/Map/Nullable) and
+    /// the verified extraction forms (NOT the SQLancer CAST form, which is documented-wrong). A
+    /// divergence is a real subcolumn-resolution bug (cf. the Map-subcolumn getSubstreamPosition class).
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("subcol", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute(
+            "CREATE TABLE " + tbl + " (id UInt32, tup Tuple(a Int64, b String), arr Array(Int64), "
+            "m Map(String, Int64), n Nullable(Int64)) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, (toInt64(number), toString(number * 2)), range(number % 5), "
+            "map('k', toInt64(number), 'j', toInt64(number * 3)), if(number % 4 = 0, NULL, toInt64(number)) "
+            "FROM numbers(300)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "composite subcolumn oracle: {}", tbl);
+
+    /// Sum of per-row disagreements across every subcolumn == extraction-function identity; must be 0.
+    auto viol_opt = OracleExec::executeRows(
+        "SELECT countIf(tup.a != tupleElement(tup, 'a')) + countIf(tup.b != tupleElement(tup, 'b')) "
+        "+ countIf(arr.size0 != length(arr)) + countIf(mapKeys(m) != m.keys) "
+        "+ countIf(mapValues(m) != m.values) + countIf(n.null != isNull(n)) FROM " + tbl,
+        context, ResultShape::SortedBag);
+    if (!viol_opt)
+        return false;
+
+    if (viol_opt->size() != 1 || (*viol_opt)[0] != "0")
+        raiseOracleMismatch(
+            fmt::format(
+                "composite subcolumn oracle mismatch!\n"
+                "{} rows on {} disagree between a subcolumn read and its extraction function",
+                viol_opt->empty() ? "?" : (*viol_opt)[0], tbl),
+            context, &fixture);
+
+    LOG_TRACE(logger, "composite subcolumn oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkViewTtlConsistency(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_33 arms b, c):
+    ///   (b) MATERIALIZED VIEW consistency — a SummingMergeTree MV target, incrementally maintained
+    ///       across inserts, must equal the ground truth recomputed by a full scan of the base.
+    ///   (c) recompression-TTL result-invariance — a `TTL ... RECOMPRESS` merge changes storage
+    ///       compression only, so OPTIMIZE FINAL must preserve every row. (Delete-TTL is NOT
+    ///       result-invariant and is intentionally excluded.)
+    /// A divergence in either arm is a real MV-maintenance or TTL-recompression bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("viewttl", context);
+    if (!fixture.valid())
+        return false;
+
+    /// ---- Arm b: materialized-view consistency ----
+    const String base = fixture.allocName("base");
+    const String tgt = fixture.allocName("tgt");
+    if (!fixture.execute("CREATE TABLE " + base + " (k UInt8, v Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + tgt + " (k UInt8, s Int64, c UInt64) ENGINE = SummingMergeTree ORDER BY k"))
+        return false;
+    const String mv = "__oracle_mv_" + base.substr(base.rfind('_') + 1);
+    if (!fixture.createAuxiliary(
+            "CREATE MATERIALIZED VIEW " + mv + " TO " + tgt + " AS SELECT k, sum(v) AS s, count() AS c FROM " + base + " GROUP BY k",
+            "DROP VIEW IF EXISTS " + mv))
+        return false;
+    /// Two inserts so the MV maintains state incrementally across parts.
+    if (!fixture.execute("INSERT INTO " + base + " SELECT number % 8, toInt64(number) - 100 FROM numbers(400)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + base + " SELECT number % 8, toInt64(number) FROM numbers(250)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "view/TTL consistency oracle: {} / {} / {}", base, tgt, mv);
+
+    auto mv_opt = OracleExec::executeRows("SELECT k, sum(s), sum(c) FROM " + tgt + " GROUP BY k", context, ResultShape::SortedBag);
+    auto gt_opt = OracleExec::executeRows("SELECT k, sum(v), count() FROM " + base + " GROUP BY k", context, ResultShape::SortedBag);
+    if (!mv_opt || !gt_opt)
+        return false;
+    if (!OracleCompare::equal(*mv_opt, *gt_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "view/TTL consistency oracle mismatch (MV vs ground truth)!\n"
+                "MV target ({} rows) vs recomputed from base ({} rows) on {}/{}\n{}",
+                mv_opt->size(), gt_opt->size(), tgt, base,
+                OracleCompare::diffSummary(*mv_opt, *gt_opt)),
+            context, &fixture);
+
+    /// ---- Arm c: recompression-TTL result-invariance ----
+    const String rc = fixture.allocName("rc");
+    if (!fixture.execute(
+            "CREATE TABLE " + rc + " (id UInt32, d Date, v Int64) ENGINE = MergeTree ORDER BY id "
+            "TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(3)) SETTINGS min_bytes_for_wide_part = 0"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + rc + " SELECT number, today() - 10, toInt64(number) FROM numbers(500)"))
+        return false;
+
+    auto pre_opt = OracleExec::executeRows("SELECT id, v FROM " + rc, context, ResultShape::SortedBag);
+    if (!pre_opt)
+        return false;
+    if (!fixture.execute("OPTIMIZE TABLE " + rc + " FINAL"))
+        return false;
+    auto post_opt = OracleExec::executeRows("SELECT id, v FROM " + rc, context, ResultShape::SortedBag);
+    if (!post_opt)
+        return false;
+    if (!OracleCompare::equal(*pre_opt, *post_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "view/TTL consistency oracle mismatch (recompression changed data)!\n"
+                "before RECOMPRESS TTL merge ({} rows) vs after OPTIMIZE FINAL ({} rows) on {}\n{}",
+                pre_opt->size(), post_opt->size(), rc,
+                OracleCompare::diffSummary(*pre_opt, *post_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "view/TTL consistency oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkCorrelatedSubquery(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_17): a correlated scalar subquery must equal its decorrelated JOIN form.
+    ///   correlated:   SELECT id, (SELECT count() FROM u WHERE u.k = t.k) FROM t
+    ///   decorrelated: SELECT t.id, cnt.c FROM t INNER JOIN (SELECT k, count() c FROM u GROUP BY k) cnt
+    ///                 ON cnt.k = t.k
+    /// The fixture seeds every t.k with matching u rows, so the INNER JOIN is total and the two forms
+    /// are exactly equal. The correlated side runs under allow_experimental_correlated_subqueries=1;
+    /// if the feature is unsupported the read returns nullopt and the oracle skips (fail-close). A
+    /// divergence is a real decorrelation bug.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("corrsub", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName("t");
+    const String u = fixture.allocName("u");
+    if (!fixture.execute("CREATE TABLE " + t + " (id UInt32, k UInt8) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + u + " (k UInt8, w Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    /// t.k and u.k both span [0, 7], so every t row has matching u rows (INNER JOIN is total).
+    if (!fixture.execute("INSERT INTO " + t + " SELECT number, number % 8 FROM numbers(200)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + u + " SELECT number % 8, toInt64(number) FROM numbers(160)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "correlated subquery oracle: {} / {}", t, u);
+
+    auto corr_opt = OracleExec::executeRows(
+        "SELECT id, (SELECT count() FROM " + u + " WHERE " + u + ".k = " + t + ".k) AS c FROM " + t,
+        context, ResultShape::SortedBag,
+        {{"allow_experimental_correlated_subqueries", Field(UInt64(1))}});
+    auto deco_opt = OracleExec::executeRows(
+        "SELECT " + t + ".id, cnt.c FROM " + t
+        + " INNER JOIN (SELECT k, count() AS c FROM " + u + " GROUP BY k) AS cnt ON cnt.k = " + t + ".k",
+        context, ResultShape::SortedBag);
+    if (!corr_opt || !deco_opt)
+        return false;
+
+    if (!OracleCompare::equal(*corr_opt, *deco_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "correlated subquery oracle mismatch!\n"
+                "correlated ({} rows) vs decorrelated JOIN ({} rows) on {}/{}\n{}",
+                corr_opt->size(), deco_opt->size(), t, u,
+                OracleCompare::diffSummary(*corr_opt, *deco_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "correlated subquery oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkCardinalityMonotonicity(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_47, CERT technique): assert monotonic cardinality inequalities that must
+    /// hold for ANY data. Unlike the equality oracles this catches row-count / restriction-monotonicity
+    /// bugs (a filter dropping too many rows, a DISTINCT counting more than the total, etc.). Every probe
+    /// must evaluate to 1; a 0 is a real cardinality bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("cert", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + t + " (a Int64, b UInt8) ENGINE = MergeTree ORDER BY a"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + t + " SELECT toInt64(number % 37) - 18, toUInt8(number % 11) FROM numbers(600)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "cardinality monotonicity oracle: {}", t);
+
+    struct Probe { const char * name; std::string sql; };
+    const std::vector<Probe> probes = {
+        {"count >= uniqExact(a)", "(SELECT count() FROM " + t + ") >= (SELECT uniqExact(a) FROM " + t + ")"},
+        {"restriction never increases count", "(SELECT count() FROM " + t + " WHERE a > 0) <= (SELECT count() FROM " + t + ")"},
+        {"AND restriction monotone", "(SELECT count() FROM " + t + " WHERE a > 0 AND b < 3) <= (SELECT count() FROM " + t + " WHERE a > 0)"},
+        {"count(DISTINCT) <= count", "(SELECT count(DISTINCT a, b) FROM " + t + ") <= (SELECT count() FROM " + t + ")"},
+        {"UNION ALL doubles count", "(SELECT count() FROM (SELECT * FROM " + t + " UNION ALL SELECT * FROM " + t + ")) = 2 * (SELECT count() FROM " + t + ")"},
+        {"finer DISTINCT >= coarser", "(SELECT uniqExact(a) FROM " + t + ") <= (SELECT uniqExact(a, b) FROM " + t + ")"},
+    };
+
+    for (const auto & probe : probes)
+    {
+        auto ok_opt = OracleExec::executeRows("SELECT " + probe.sql, context, ResultShape::SortedBag);
+        if (!ok_opt)
+            return false;
+        if (ok_opt->size() != 1 || (*ok_opt)[0] != "1")
+            raiseOracleMismatch(
+                fmt::format(
+                    "cardinality monotonicity oracle mismatch ({})!\n"
+                    "probe returned {} (expected 1) on {}\nprobe: {}",
+                    probe.name, ok_opt->empty() ? "?" : (*ok_opt)[0], t, probe.sql),
+                context, &fixture);
+    }
+
+    LOG_TRACE(logger, "cardinality monotonicity oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkPivotedContainment(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_46, PQS technique): pick a real pivot row, build a conjunction of
+    /// predicates each rectified to be TRUE for that pivot (via scalar subqueries reading the pivot's
+    /// own values), and assert the pivot survives the filter. By construction every predicate holds for
+    /// the pivot, so a correct filter MUST return it; if the rectified query drops the pivot, a
+    /// predicate-construction / index-filtering bug dropped a row that had to be returned.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("pqs", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + t + " (id UInt32, a Int64, b Int64, g UInt8) ENGINE = MergeTree ORDER BY (g, id)"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + t + " SELECT number, toInt64(number % 50) - 25, toInt64(number * 7 % 40), toUInt8(number % 4) "
+            "FROM numbers(300)"))
+        return false;
+
+    /// Pivot id in [10, 259] (present in the 300-row fixture); varied per invocation for coverage.
+    const UInt64 pid = 10 + thread_local_rng() % 250;
+    const String p = std::to_string(pid);
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "pivot containment oracle: {} pivot id={}", t, pid);
+
+    /// Every clause is rectified TRUE for the pivot via scalar subqueries over the pivot's own row.
+    const String sub = " FROM " + t + " WHERE id = " + p + ")";
+    const String where =
+        "a <= (SELECT a" + sub + " AND a >= (SELECT a" + sub
+        + " AND b != (SELECT b" + sub + " + 1"
+        + " AND g = (SELECT g" + sub
+        + " AND (a + b) <= (SELECT a + b" + sub
+        + " AND modulo(id, 7) = (SELECT id % 7" + sub;
+
+    auto hit_opt = OracleExec::executeRows(
+        "SELECT count() FROM (SELECT id FROM " + t + " WHERE " + where + ") WHERE id = " + p,
+        context, ResultShape::SortedBag);
+    if (!hit_opt)
+        return false;
+
+    if (hit_opt->size() != 1 || (*hit_opt)[0] != "1")
+        raiseOracleMismatch(
+            fmt::format(
+                "pivot containment oracle mismatch!\n"
+                "pivot id={} was dropped by a filter of predicates all rectified TRUE for it "
+                "(containment count={}, expected 1) on {}\nWHERE {}",
+                pid, hit_opt->empty() ? "?" : (*hit_opt)[0], t, where),
+            context, &fixture);
+
+    LOG_TRACE(logger, "pivot containment oracle passed");
     return true;
 }
 

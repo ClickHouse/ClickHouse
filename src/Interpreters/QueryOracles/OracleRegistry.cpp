@@ -42,6 +42,16 @@ extern const Event ASTFuzzerOracleWithFillChecks;
 extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
 extern const Event ASTFuzzerOracleDictGetChecks;
 extern const Event ASTFuzzerOracleMaterializedColumnChecks;
+extern const Event ASTFuzzerOracleAlterModifyChecks;
+extern const Event ASTFuzzerOracleLightweightUpdateChecks;
+extern const Event ASTFuzzerOracleWindowEquivalenceChecks;
+extern const Event ASTFuzzerOracleJoinOrderSweepChecks;
+extern const Event ASTFuzzerOracleSequenceFunnelChecks;
+extern const Event ASTFuzzerOracleSubcolumnChecks;
+extern const Event ASTFuzzerOracleViewTtlChecks;
+extern const Event ASTFuzzerOracleCorrelatedSubqueryChecks;
+extern const Event ASTFuzzerOracleCardinalityChecks;
+extern const Event ASTFuzzerOraclePivotContainmentChecks;
 }
 
 namespace DB
@@ -127,6 +137,16 @@ OracleRegistry::OracleRegistry()
     add("pipe equivalence", ProfileEvents::ASTFuzzerOraclePipeEquivalenceChecks, &QueryOracleChecker::checkPipeEquivalence);
     add("dictGet vs JOIN", ProfileEvents::ASTFuzzerOracleDictGetChecks, &QueryOracleChecker::checkDictGetVsJoin);
     add("materialized column", ProfileEvents::ASTFuzzerOracleMaterializedColumnChecks, &QueryOracleChecker::checkMaterializedColumn);
+    add("ALTER MODIFY widen", ProfileEvents::ASTFuzzerOracleAlterModifyChecks, &QueryOracleChecker::checkAlterModifyWiden);
+    add("lightweight update", ProfileEvents::ASTFuzzerOracleLightweightUpdateChecks, &QueryOracleChecker::checkLightweightUpdate);
+    add("window equivalence", ProfileEvents::ASTFuzzerOracleWindowEquivalenceChecks, &QueryOracleChecker::checkWindowEquivalence);
+    add("join-order sweep", ProfileEvents::ASTFuzzerOracleJoinOrderSweepChecks, &QueryOracleChecker::checkJoinOrderSweep);
+    add("sequence funnel", ProfileEvents::ASTFuzzerOracleSequenceFunnelChecks, &QueryOracleChecker::checkSequenceFunnel);
+    add("composite subcolumn", ProfileEvents::ASTFuzzerOracleSubcolumnChecks, &QueryOracleChecker::checkDynamicSubcolumn);
+    add("view/TTL consistency", ProfileEvents::ASTFuzzerOracleViewTtlChecks, &QueryOracleChecker::checkViewTtlConsistency);
+    add("correlated subquery", ProfileEvents::ASTFuzzerOracleCorrelatedSubqueryChecks, &QueryOracleChecker::checkCorrelatedSubquery);
+    add("cardinality monotonicity", ProfileEvents::ASTFuzzerOracleCardinalityChecks, &QueryOracleChecker::checkCardinalityMonotonicity);
+    add("pivot containment", ProfileEvents::ASTFuzzerOraclePivotContainmentChecks, &QueryOracleChecker::checkPivotedContainment);
 }
 
 const OracleRegistry & OracleRegistry::instance()
