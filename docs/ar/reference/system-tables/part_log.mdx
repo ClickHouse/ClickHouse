@@ -15,7 +15,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
   ## الوصف
 </div>
 
-لا يُنشأ جدول `system.part_log` إلا إذا تم تحديد إعداد الخادم [part&#95;log](/ar/reference/settings/server-settings/settings/other#part_log).
+لا يُنشأ جدول `system.part_log` إلا إذا تم تحديد إعداد الخادم [part&#95;log](/ar/reference/settings/server-settings/settings#part_log).
 
 يحتوي هذا الجدول على معلومات عن الأحداث التي طرأت على [أجزاء البيانات](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key) في جداول عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، مثل إضافة البيانات أو دمجها.
 
@@ -43,7 +43,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `partition_id` ([String](/ar/reference/data-types/string)) — معرّف القسم الذي أُدرج فيه جزء البيانات. يأخذ العمود القيمة `all` إذا كان التقسيم يتم بواسطة `tuple()`.
 * `partition` ([String](/ar/reference/data-types/string)) — اسم القسم.
 * `part_type` ([String](/ar/reference/data-types/string)) — نوع الجزء. القيم الممكنة: Wide و Compact.
-* `part_storage_type` ([String](/ar/reference/data-types/string)) — نوع `DataPartStorage`. القيم الممكنة: `Packed` - تُخزَّن معظم ملفات الجزء في أرشيف واحد (تُكتب الإسقاطات وبعض ملفات الخدمة مثل `txn_version.txt` بشكل منفصل)، `Full` - يُخزَّن كل ملف بشكل منفصل.
+* `part_storage_type` ([String](/ar/reference/data-types/string)) — نوع DataPartStorage. القيم الممكنة: Packed - تُخزَّن جميع الملفات في blob واحد، Full - blob واحد لكل ملف.
 * `disk_name` ([String](/ar/reference/data-types/string)) — اسم القرص الموجود عليه جزء البيانات.
 * `path_on_disk` ([String](/ar/reference/data-types/string)) — المسار المطلق إلى المجلد الذي يحتوي على ملفات جزء البيانات.
 * `rows` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف في جزء البيانات.
@@ -97,7 +97,6 @@ part_name:               all_1_7_1
 partition_id:            all
 partition:               tuple()
 part_type:               Wide
-part_storage_type:       Full
 disk_name:               default
 path_on_disk:            ./data/store/1ad/1ad33424-f5f5-402b-ac03-ec82282634ab/all_1_7_1/
 rows:                    3285726 -- 3.29 million

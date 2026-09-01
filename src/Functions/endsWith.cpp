@@ -25,9 +25,9 @@ Checks whether a string ends with the provided suffix.
         "Usage example",
         "SELECT endsWith('ClickHouse', 'House');",
         R"(
-┌─endsWith('ClickHouse', 'House')─┐
-│                               1 │
-└─────────────────────────────────┘
+┌─endsWith('Cl⋯', 'House')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };
@@ -54,9 +54,9 @@ Checks whether a string ends with the provided case-insensitive suffix.
         "Usage example",
         "SELECT endsWithCaseInsensitive('ClickHouse', 'HOUSE');",
         R"(
-┌─endsWithCaseInsensitive('ClickHouse', 'HOUSE')─┐
-│                                              1 │
-└────────────────────────────────────────────────┘
+┌─endsWithCaseInsensitive('Cl⋯', 'HOUSE')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
         )"
     }
     };

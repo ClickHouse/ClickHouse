@@ -1,0 +1,222 @@
+---
+slug: /cloud/managed-postgres/benchmarks
+sidebarTitle: '基准测试'
+title: '性能基准测试'
+description: '比较由 ClickHouse 托管的 Postgres 与 AWS Aurora、RDS 及其他托管 PostgreSQL 服务的性能表现'
+keywords: ['Postgres 基准测试', '性能', 'pgbench', 'aurora', 'rds', 'tps', '延迟', 'NVMe 性能']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  **简而言之**
+
+  * 使用标准的 [`pgbench`](https://www.postgresql.org/docs/current/pgbench.html) 测试，对 **由 ClickHouse 托管的 Postgres**、AWS RDS (16k 预配置 IOPS) 和 Aurora IO Optimized 进行了**基准测试**
+  * **性能**：ClickHouse 基于 NVMe 的 Postgres 在 IO 密集型工作负载下可实现 **4.3–9 倍性能提升**，在 CPU 密集型场景下快 **12%**
+  * **非常适合快速增长的 AI 驱动型工作负载**，这类工作负载需要高事务速率、低延迟数据访问，以及不受 IO 瓶颈影响的稳定可预测性能
+</Info>
+
+<div id="overview">
+  ## 基准测试概览
+</div>
+
+我们使用 PostgreSQL 的标准基准测试工具 `pgbench` 进行了全面的性能测试，以评估中等并发和高并发场景下的工作负载性能。
+
+<div id="benchmarks">
+  ## 基准测试
+</div>
+
+所有性能测试均使用计算能力相同的客户端 VM 进行。为确保比较公平，该 VM 与 PostgreSQL 数据库部署在同一区域和同一可用区。
+
+<div id="test1">
+  ### 测试 1：IO 密集型——读+写 (500 GB 数据集)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/io-intensive-readwrite.webp" alt="IO 密集型读+写基准测试结果" size="md" border />
+
+**相较于 RDS (16k IOPS) 的性能提升：**
+
+* **TPS 提升 326%** (快 4.3 倍)
+
+**相较于 Aurora IO Optimized 的性能提升：**
+
+* **TPS 提升 345%** (快 4.5 倍)
+
+**分析**：混合读写工作负载最能体现 NVMe 存储的显著性能优势，也代表了**快速增长的 AI 驱动型工作负载中最贴近真实的场景**——这类场景既需要高吞吐的数据摄取，也需要低延迟读取。**由 ClickHouse 托管的 Postgres 在更高并发下达到 19.8K TPS**，表明 NVMe 存储在负载升高时依然能够有效扩展。这比 **RDS 和 Aurora 快 4.3-4.5 倍**。网络附加存储方案在写密集型操作中明显吃力，RDS 和 Aurora 的 TPS 即使在已预配容量、Aurora 甚至启用 IO Optimized 配置的情况下，最高也只有 4.4K-4.6K。
+
+<div id="test1-setup">
+  #### 测试设置
+</div>
+
+此测试评估在大型 500 GB 数据集下的混合读写性能，同时对存储子系统的读路径和写路径施加压力。
+
+**实例配置：**
+
+| 配置        | 由 ClickHouse 托管的 Postgres | 配备 16k IOPS 的 RDS    | Aurora IO Optimized   |
+| --------- | ------------------------- | -------------------- | --------------------- |
+| **PG 版本** | 17                        | 17                   | 17                    |
+| **vCPU**  | 16                        | 16                   | 16                    |
+| **RAM**   | 64 GB                     | 64 GB                | 128 GB                |
+| **磁盘大小**  | 1 TB                      | 1 TB                 | 1 TB                  |
+| **磁盘类型**  | NVMe (无限制 IOPS)           | 网络附加存储 (16,000 IOPS)  | 网络附加存储 (IO Optimized)  |
+
+**测试配置：**
+
+```bash
+# 初始化数据库（500 GB 数据集）
+pgbench -i -s 34247
+
+# 读写基准测试
+pgbench -c 256 -j 16 -T 600 -M prepared -P 30
+```
+
+<div id="test2">
+  ### 测试 2：IO 密集型 - 只读 (500 GB 数据集)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/io-intensive-readonly.webp" alt="IO 密集型只读基准测试结果" size="md" border />
+
+**相较于 RDS (16k IOPS) 的性能提升：**
+
+* **TPS 高出 802%** (速度快 9.0 倍)
+
+**分析**：对于受 IO 瓶颈限制的读密集型工作负载，性能差距会显著拉大。**由 ClickHouse 托管的 Postgres 实现了 84.8K TPS**，而在计算资源相同的情况下，配置了 16,000 预配置 IOPS 的 RDS 仅达到 9.4K TPS。关键差异在于：ClickHouse 的 NVMe 存储能够随并发度提升而扩展，而网络附加存储仍受限于预配置 IOPS 的上限。即使配置了预配置 IOPS，RDS 仍比 ClickHouse 慢 9 倍，这表明对于 IO 密集型工作负载而言，存储架构至关重要。
+
+<div id="test2-setup">
+  #### 设置
+</div>
+
+此测试评估在 500 GB 的大型数据集无法完全装入内存时的读取性能，重点考察磁盘 I/O 能力。
+
+**实例配置：**
+
+| 配置        | 由 ClickHouse 托管的 Postgres | 配备 16k IOPS 的 RDS   |
+| --------- | ------------------------- | ------------------- |
+| **PG 版本** | 17                        | 17                  |
+| **vCPU**  | 16                        | 16                  |
+| **RAM**   | 64 GB                     | 64 GB               |
+| **磁盘大小**  | 1 TB                      | 1 TB                |
+| **磁盘类型**  | NVMe (IOPS 不受限)           | 网络附加存储 (16,000 IOPS)  |
+
+**测试配置：**
+
+```bash
+# 初始化数据库（500 GB 数据集）
+pgbench -i -s 34247
+
+# 只读基准测试
+pgbench -c 256 -j 16 -T 600 -M prepared -P 30 -S
+```
+
+<div id="test3">
+  ### 测试 3：CPU 密集型 (数据可放入内存)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/compute-intensive.webp" alt="CPU 密集型基准测试结果" size="md" border />
+
+**性能提升：**
+
+* **TPS 比 RDS PostgreSQL 高 12.3%**
+
+**分析**：即使在磁盘 I/O 极少、主要受 CPU 限制的场景下，**由 ClickHouse 托管的 Postgres 仍以 36.5K TPS 领跑**。尽管两项服务的 CPU 利用率都达到 100%，ClickHouse 的 NVMe 存储仍凭借更高的缓存命中率带来了更优的性能。相较于 RDS 的 12% 优势表明，即使在工作负载主要受 CPU 限制时，底层基础设施依然具备很高的效率。
+
+<div id="test2-setup">
+  #### 设置
+</div>
+
+此测试评估在工作集完全驻留于内存中时的 CPU 性能，从而将磁盘 I/O 的影响降到最低。
+
+**实例配置：**
+
+| 配置        | 由 ClickHouse 托管的 Postgres | RDS PostgreSQL |
+| --------- | ------------------------- | -------------- |
+| **PG 版本** | 17                        | 17             |
+| **vCPU**  | 2                         | 2              |
+| **RAM**   | 8 GB                      | 8 GB           |
+| **磁盘类型**  | NVMe                      | 网络附加存储 (gp3)    |
+
+**测试配置：**
+
+```bash
+# 初始化数据库（2 GB 数据集）
+pgbench -i -s 136
+
+# 预热运行，将数据集加载到内存中
+pgbench -c 1 -T 60 -S -M prepared
+
+# 运行基准测试（只读，预处理语句）
+pgbench -c 32 -j 16 -T 300 -S -M prepared -P 30
+```
+
+<div id="summary">
+  ## 性能概述
+</div>
+
+<div id="key-findings">
+  ### 关键发现
+</div>
+
+在这三种基准测试场景中，由 ClickHouse 托管的 Postgres 均持续展现出更优的性能：
+
+1. **IO 密集型读写工作负载**：与 RDS (16k IOPS) 和 Aurora IO Optimized 相比，TPS 高出 4.3–4.5 倍
+2. **IO 密集型读取工作负载**：与 16k IOPS 的 RDS 相比，TPS 高出 9 倍
+3. **CPU 密集型工作负载**：TPS 比 RDS 高出 12%
+
+<div id="when-it-excels">
+  ### Postgres by ClickHouse 何时更具优势
+</div>
+
+Postgres by ClickHouse 非常适合以下应用：
+
+* **支撑快速增长的 AI 驱动型工作负载**，这类工作负载需要高吞吐量的数据摄取、频繁的 upsert、实时特征更新，以及通过与 ClickHouse 的无缝集成直接获得面向 OLAP 工作负载的分析能力
+* 需要频繁写入、更新，或混合读写操作
+* 需要稳定可预测的高性能存储
+* 当前受传统托管 Postgres 服务的 IOPS 限制
+
+**如果你预计后续会开展分析**，并预期会与 ClickHouse 深度集成——这在现代 AI 工作负载中很常见，因为事务型数据会流向实时仪表盘、特征存储和 ML 管道——**那么 Postgres by ClickHouse 应该成为你的默认选择**。原生集成免除了复杂的 ETL 管道，并让数据能够在业务数据库与分析查询之间无缝流动。
+
+<div id="nvme-advantage">
+  ### NVMe 架构优势
+</div>
+
+性能优势源于底层架构的根本差异：
+
+| 方面        | NVMe 存储 (Managed Postgres)  | 网络附加存储 (预配置 IOPS)  |
+| --------- | --------------------------- | ----------------- |
+| **IOPS**  | 10 万到几乎不设上限                 | 预配 16,000         |
+| **网络跳数**  | 零 (本地设备)                    | 每次磁盘操作都需要一次网络往返   |
+| **性能扩展性** | 随并发提升近似线性扩展                 | 受预配 IOPS 限制       |
+
+如需进一步了解 NVMe 存储的性能优势，请参见 [NVMe 驱动的性能](/zh/products/managed-postgres/overview#nvme-performance)。
+
+<div id="cost-effectiveness">
+  ## 成本效益
+</div>
+
+除了原始性能外，由 ClickHouse 托管的 Postgres 还具备更出色的性价比：
+
+* **单位成本吞吐量更高**：与配备 16k 预配置 IOPS 的 RDS 和 Aurora IO Optimized 相比，TPS 可提高 4-9 倍
+* **成本更可预测**：无需额外预配 IOPS 容量——已包含无限本地 IOPS
+* **计算资源需求更低**：凭借更高的 I/O 效率，使用更小的实例规格即可达到目标性能
+* **对只读副本的需求更少**：更高的单实例吞吐量可降低对横向扩缩容的需求
+
+对于当前受 IOPS 限制的工作负载，切换到 Managed Postgres 可以免去昂贵的 预配置 IOPS 或 IO Optimized 配置，同时显著提升性能。
+
+<div id="references">
+  ## 参考资料
+</div>
+
+完整的基准测试数据、配置以及详细指标可在我们的[基准测试结果电子表格](https://docs.google.com/spreadsheets/d/17TLWmwNKZb3Ie1vSQqvjtqByHskvoX6CF2eQ_FRx1cA/edit?gid=845104392#gid=845104392)中查看。
+
+<div id="resources">
+  ## 其他资源
+</div>
+
+* [PeerDB：Postgres 托管服务对比](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
+* [pgbench 文档](https://www.postgresql.org/docs/current/pgbench.html)
+* [Managed Postgres 概览](/zh/products/managed-postgres/overview)
+* [扩缩容你的 Postgres 实例](/zh/products/managed-postgres/scaling)

@@ -35,8 +35,8 @@ requêtes en créant une réorganisation des données selon les attributs pertin
   ## Comment fonctionnent les projections ?
 </div>
 
-En pratique, une projection peut être considérée comme une table supplémentaire (masquée)
-associée à la table d’origine. La projection peut avoir un ordre de tri différent, et donc un
+En pratique, une projection peut être considérée comme une table cachée
+supplémentaire associée à la table d’origine. La projection peut avoir un ordre de tri différent, et donc un
 index primaire différent de celui de la table d’origine, et elle peut
 pré-calculer automatiquement et de manière incrémentielle des agrégats. Par conséquent, l’utilisation des projections
 offre deux « leviers d’optimisation » pour accélérer l’exécution des requêtes :
@@ -287,7 +287,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-Le paramètre [`mutations_sync`](/fr/reference/settings/session-settings/mutations#mutations_sync) est
+Le paramètre [`mutations_sync`](/fr/reference/settings/session-settings#mutations_sync) est
 utilisé pour forcer l’exécution synchrone.
 
 Nous créons et peuplons la projection `prj_gby_county` — une table supplémentaire (masquée)
@@ -460,7 +460,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-Les requêtes suivantes comparent les performances avec et sans projections. Pour désactiver l’utilisation des projections, nous utilisons le paramètre [`optimize_use_projections`](/fr/reference/settings/session-settings/optimize-use#optimize_use_projections), activé par défaut.
+Les requêtes suivantes comparent les performances avec et sans projections. Pour désactiver l’utilisation des projections, nous utilisons le paramètre [`optimize_use_projections`](/fr/reference/settings/session-settings#optimize_use_projections), activé par défaut.
 
 <div id="average-price-projections">
   #### Requête 1. Prix moyen par année
@@ -699,6 +699,6 @@ ce qui améliore les performances tout en maintenant un faible surcoût de stock
   ## Contenu connexe
 </div>
 
-* [Une introduction pratique aux index primaires dans ClickHouse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [Introduction pratique aux index primaires dans ClickHouse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [Vues matérialisées](/fr/concepts/features/materialized-views/index)
 * [ALTER PROJECTION](/fr/reference/statements/alter/projection)

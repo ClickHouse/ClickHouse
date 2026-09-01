@@ -93,10 +93,6 @@ static constexpr int32_t PASSWORD_LENGTH = 16;
 /// ZooKeeper has 1 MB node size and serialization limit by default,
 /// but it can be raised up, so we have a slightly larger limit on our side.
 static constexpr int32_t MAX_STRING_OR_ARRAY_SIZE = 1 << 28;  /// 256 MiB
-/// Request length prefix is a signed int32, so this is a hard limit
-static constexpr uint64_t MAX_REQUEST_SIZE_HARD_LIMIT = std::numeric_limits<int32_t>::max();
-/// Smallest server-advertised max_request_size we accept; anything below is treated as bogus and ignored
-static constexpr uint64_t MIN_SANE_ADVERTISED_REQUEST_SIZE_LIMIT = 1024;
 static constexpr int32_t DEFAULT_SESSION_TIMEOUT_MS = 30000;
 static constexpr int32_t DEFAULT_MIN_SESSION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_MAX_SESSION_TIMEOUT_MS = 100000;

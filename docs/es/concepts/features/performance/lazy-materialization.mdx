@@ -51,7 +51,7 @@ La materialización diferida se integra limpiamente con estas optimizaciones, pe
 
 Considere la siguiente consulta de ejemplo, que encuentra las reseñas de Amazon con el mayor número de votos útiles, independientemente de la fecha, el producto, la calificación o el estado de verificación, y devuelve las 3 primeras junto con su título, encabezado y texto completo.
 
-Primero, ejecute la consulta (con las cachés del sistema de archivos en frío) con la materialización diferida desactivada (mediante [`query_plan_optimize_lazy_materialization`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization)):
+Primero, ejecute la consulta (con las cachés del sistema de archivos en frío) con la materialización diferida desactivada (mediante [`query_plan_optimize_lazy_materialization`](/es/reference/settings/session-settings#query_plan_optimize_lazy_materialization)):
 
 ```sql title="Query"
 SELECT

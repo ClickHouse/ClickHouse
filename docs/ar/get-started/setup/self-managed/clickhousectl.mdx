@@ -19,7 +19,9 @@ doc_type: 'guide'
 وإدارتها، وبدء الخوادم، وتشغيل الاستعلامات.
 
 <Steps>
-  <Step title="تثبيت ClickHouse CLI" id="install-the-cli">
+  <Step>
+    ## تثبيت ClickHouse CLI
+
     ```bash
     curl https://clickhouse.com/cli | sh
     ```
@@ -27,7 +29,9 @@ doc_type: 'guide'
     يُنشأ أيضًا الاسم المستعار `chctl` تلقائيًا لتسهيل الاستخدام.
   </Step>
 
-  <Step title="تثبيت ClickHouse" id="cli-install-clickhouse">
+  <Step>
+    ## تثبيت ClickHouse
+
     ثبّت أحدث إصدار من ClickHouse واجعله الإصدار `default` لديك:
 
     ```bash
@@ -56,7 +60,9 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step title="بدء clickhouse-server" id="cli-start-clickhouse-server">
+  <Step>
+    ## بدء clickhouse-server
+
     ```bash
     clickhousectl local server start
     ```
@@ -68,7 +74,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="بدء clickhouse-client" id="cli-start-clickhouse-client">
+  <Step>
+    ## بدء clickhouse-client
+
     ```bash
     clickhousectl local client
     ```

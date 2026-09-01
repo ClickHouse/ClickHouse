@@ -25,7 +25,7 @@ Dictionary は、特定の種類の `JOIN` を高速化するために使用で�
 
 <Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="LEFT ANY JOIN で Dictionary を使用する" />
 
-この条件に該当する場合、ClickHouse は Dictionary を利用して [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join) を実行できます。これは ClickHouse で最も高速な JOIN アルゴリズムで、右側のテーブルの基盤となる[テーブルエンジン](/ja/reference/engines/table-engines/index)が低レイテンシのキー・バリュー リクエストをサポートしている場合に適用できます。ClickHouse には、これを実現する 3 つのテーブルエンジンがあります: [Join](/ja/reference/engines/table-engines/special/join) (基本的には事前計算済みの hash table)、[EmbeddedRocksDB](/ja/reference/engines/table-engines/integrations/embedded-rocksdb)、および [Dictionary](/ja/reference/engines/table-engines/special/dictionary) です。ここでは Dictionary ベースのアプローチを説明しますが、仕組みはこれら 3 つのエンジンすべてで同じです。
+この条件に該当する場合、ClickHouse は Dictionary を利用して [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join) を実行できます。これは ClickHouse で最も高速な JOIN アルゴリズムで、右側のテーブルの基盤となる[テーブルエンジン](/ja/reference/engines/table-engines/index)が低レイテンシのキー・バリュー リクエストをサポートしている場合に適用できます。ClickHouse には、これを実現する 3 つのテーブルエンジンがあります: [Join](/ja/reference/engines/table-engines/special/join) (基本的には事前計算済みの hash table) 、[EmbeddedRocksDB](/ja/reference/engines/table-engines/integrations/embedded-rocksdb)、および [Dictionary](/ja/reference/engines/table-engines/special/dictionary) です。ここでは Dictionary ベースのアプローチを説明しますが、仕組みはこれら 3 つのエンジンすべてで同じです。
 
 Direct Join アルゴリズムでは、右側のテーブルが Dictionary を基盤としている必要があります。つまり、そのテーブルの JOIN 対象データが、低レイテンシのキー・バリュー データ構造として、あらかじめメモリ上に存在している必要があります。
 
@@ -366,6 +366,6 @@ ClickHouse は、[Hierarchical](/ja/reference/statements/create/dictionary/layou
   ### 参考資料
 </div>
 
-* [Dictionaryのベストプラクティス](/ja/concepts/features/dictionaries/best-practices) — レイアウトの選択、DictionaryとJOINの比較、監視
-* [Dictionaryを使ってクエリを高速化する](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
-* [Dictionaryの高度な設定](/ja/reference/statements/create/dictionary)
+* [Dictionary のベストプラクティス](/ja/concepts/features/dictionaries/best-practices) — レイアウトの選択、Dictionary と JOIN の使い分け、監視
+* [Dictionary を使ってクエリを高速化する](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [Dictionary の高度な設定](/ja/reference/statements/create/dictionary)

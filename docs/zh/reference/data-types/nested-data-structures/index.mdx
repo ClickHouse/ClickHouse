@@ -55,9 +55,9 @@ VALUES
 ```
 
 上述 `CREATE TABLE` DDL 语句声明了 `Goals` 嵌套数据结构，其中包含有关转化或已实现目标的数据。
-&#39;visits&#39; 表中的每一行都对应零次或多次转化。
+`visits` 表中的每一行都对应零次或多次转化。
 
-当 [`flatten_nested`](/zh/reference/settings/session-settings/other#flatten_nested) 设置为 `0` 时 (默认值为 `flatten_nested=1`) ，支持任意级别的嵌套。
+当 [`flatten_nested`](/zh/reference/settings/session-settings#flatten_nested) 设置为 `0` 时 (默认值为 `flatten_nested=1`) ，支持任意级别的嵌套。
 
 在大多数情况下，处理嵌套数据结构时，其列使用以点分隔的列名来指定。
 这些列构成一个由对应类型组成的数组。

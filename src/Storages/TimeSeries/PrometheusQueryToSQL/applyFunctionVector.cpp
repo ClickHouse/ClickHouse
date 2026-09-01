@@ -15,8 +15,7 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    void checkArgumentTypes(
-        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
         if (arguments.size() != 1)
@@ -38,8 +37,7 @@ namespace
 }
 
 
-SQLQueryPiece applyFunctionVector(
-    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyFunctionVector(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
     chassert(isFunctionVector(function_name));

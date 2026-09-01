@@ -1,4 +1,4 @@
-50
+100
 distributed_index_analysis=0
 {
   "Type": "PrimaryKey",
@@ -7,10 +7,10 @@ distributed_index_analysis=0
   ],
   "Condition": "(key in [100001, +Inf))",
   "Search Algorithm": "binary search",
-  "Initial Parts": 50,
-  "Selected Parts": 40,
-  "Initial Granules": 50,
-  "Selected Granules": 40
+  "Initial Parts": 100,
+  "Selected Parts": 90,
+  "Initial Granules": 100,
+  "Selected Granules": 90
 }
 distributed_index_analysis=1
 {
@@ -19,10 +19,10 @@ distributed_index_analysis=1
     "key"
   ],
   "Condition": "(key in [100001, +Inf))",
-  "Initial Parts": 50,
-  "Selected Parts": 40,
-  "Initial Granules": 50,
-  "Selected Granules": 40,
+  "Initial Parts": 100,
+  "Selected Parts": 90,
+  "Initial Granules": 100,
+  "Selected Granules": 90,
   "Distributed": [
     {
       "Address": "",
@@ -33,73 +33,73 @@ distributed_index_analysis=1
     },
     {
       "Address": "127.0.0.10:9000",
-      "Parts send": 2,
-      "Parts received": 2,
-      "Granules send": 2,
-      "Granules received": 2
+      "Parts send": 8,
+      "Parts received": 8,
+      "Granules send": 8,
+      "Granules received": 8
     },
     {
       "Address": "127.0.0.1:9000",
-      "Parts send": 7,
-      "Parts received": 5,
-      "Granules send": 7,
-      "Granules received": 5
+      "Parts send": 14,
+      "Parts received": 12,
+      "Granules send": 14,
+      "Granules received": 12
     },
     {
       "Address": "127.0.0.2:9000",
-      "Parts send": 9,
-      "Parts received": 7,
-      "Granules send": 9,
-      "Granules received": 7
+      "Parts send": 16,
+      "Parts received": 14,
+      "Granules send": 16,
+      "Granules received": 14
     },
     {
       "Address": "127.0.0.3:9000",
-      "Parts send": 1,
-      "Parts received": 1,
-      "Granules send": 1,
-      "Granules received": 1
-    },
-    {
-      "Address": "127.0.0.4:9000",
-      "Parts send": 5,
-      "Parts received": 5,
-      "Granules send": 5,
-      "Granules received": 5
-    },
-    {
-      "Address": "127.0.0.5:9000",
-      "Parts send": 5,
-      "Parts received": 4,
-      "Granules send": 5,
-      "Granules received": 4
-    },
-    {
-      "Address": "127.0.0.6:9000",
-      "Parts send": 7,
-      "Parts received": 6,
-      "Granules send": 7,
-      "Granules received": 6
-    },
-    {
-      "Address": "127.0.0.7:9000",
-      "Parts send": 6,
-      "Parts received": 4,
-      "Granules send": 6,
-      "Granules received": 4
-    },
-    {
-      "Address": "127.0.0.8:9000",
       "Parts send": 3,
       "Parts received": 3,
       "Granules send": 3,
       "Granules received": 3
     },
     {
+      "Address": "127.0.0.4:9000",
+      "Parts send": 14,
+      "Parts received": 14,
+      "Granules send": 14,
+      "Granules received": 14
+    },
+    {
+      "Address": "127.0.0.5:9000",
+      "Parts send": 6,
+      "Parts received": 5,
+      "Granules send": 6,
+      "Granules received": 5
+    },
+    {
+      "Address": "127.0.0.6:9000",
+      "Parts send": 9,
+      "Parts received": 8,
+      "Granules send": 9,
+      "Granules received": 8
+    },
+    {
+      "Address": "127.0.0.7:9000",
+      "Parts send": 13,
+      "Parts received": 11,
+      "Granules send": 13,
+      "Granules received": 11
+    },
+    {
+      "Address": "127.0.0.8:9000",
+      "Parts send": 9,
+      "Parts received": 9,
+      "Granules send": 9,
+      "Granules received": 9
+    },
+    {
       "Address": "127.0.0.9:9000",
-      "Parts send": 5,
-      "Parts received": 3,
-      "Granules send": 5,
-      "Granules received": 3
+      "Parts send": 8,
+      "Parts received": 6,
+      "Granules send": 8,
+      "Granules received": 6
     }
   ]
 }

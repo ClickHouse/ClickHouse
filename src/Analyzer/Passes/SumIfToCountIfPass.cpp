@@ -8,7 +8,7 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 
@@ -129,9 +129,15 @@ public:
             return;
         }
 
-        if (if_true_condition_value == 0 && !isNullableOrLowCardinalityNullable(cond_argument->getResultType()))
+        if (if_true_condition_value == 0 && !cond_argument->getResultType()->isNullable())
         {
-            /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` only if the condition cannot be NULL
+            /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
+            DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
+
+            const auto & condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
+            if (condition_result_type->isNullable())
+                not_function_result_type = makeNullable(not_function_result_type);
+
             auto not_function = std::make_shared<FunctionNode>("not");
             not_function->markAsOperator();
 
@@ -147,7 +153,7 @@ public:
 
             if (if_false_condition_value != 1)
             {
-                /// Same NULL restriction as above.
+                /// Rewrite `sum(if(cond, 0, 123))` into `123 * countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
                 node = getMultiplyFunction(nested_if_function_arguments_nodes[2], node);
             }
             return;

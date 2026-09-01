@@ -90,9 +90,9 @@ L’obtention de ce comportement en OSS dépend de votre topologie de shards et 
 
 Lorsque vous n’avez qu’un seul shard et des répliques (cas fréquent, puisque ClickHouse monte en charge verticalement), les utilisateurs sélectionnent le nœud côté client et interrogent directement une réplique, en veillant à ce qu’elle soit choisie de manière déterministe.
 
-Bien que des topologies comportant plusieurs shards et répliques soient possibles sans table Distributed, ces déploiements avancés disposent généralement de leur propre infrastructure de routage. Nous partons donc du principe que les déploiements avec plus d’un shard utilisent une table Distributed (les tables Distributed peuvent être utilisées avec des déploiements à shard unique, mais elles sont généralement superflues).
+Bien que des topologies comportant plusieurs shards et répliques soient possibles sans table distribuée, ces déploiements avancés disposent généralement de leur propre infrastructure de routage. Nous partons donc du principe que les déploiements avec plus d’un shard utilisent une table Distributed (les tables distribuées peuvent être utilisées avec des déploiements à shard unique, mais elles sont généralement superflues).
 
-Dans ce cas, vous devez vous assurer qu’un routage cohérent vers les nœuds est effectué sur la base d’une propriété, par exemple `session_id` ou `user_id`. Les paramètres [`prefer_localhost_replica=0`](/fr/reference/settings/session-settings/prefer#prefer_localhost_replica), [`load_balancing=in_order`](/fr/reference/settings/session-settings/load-balancing#load_balancing) doivent être [définis au niveau de la requête](/fr/concepts/features/configuration/settings/settings-query-level). Cela garantit que les répliques locales des shards sont privilégiées ; sinon, les répliques sont préférées dans l’ordre indiqué dans la configuration, à condition qu’elles aient le même nombre d’erreurs. En cas de nombre d’erreurs plus élevé, le basculement se fera par sélection aléatoire. [`load_balancing=nearest_hostname`](/fr/reference/settings/session-settings/load-balancing#load_balancing) peut également être utilisé comme alternative pour cette sélection déterministe du shard.
+Dans ce cas, vous devez vous assurer qu’un routage cohérent vers les nœuds est effectué sur la base d’une propriété, par exemple `session_id` ou `user_id`. Les paramètres [`prefer_localhost_replica=0`](/fr/reference/settings/session-settings#prefer_localhost_replica), [`load_balancing=in_order`](/fr/reference/settings/session-settings#load_balancing) doivent être [définis au niveau de la requête](/fr/concepts/features/configuration/settings/settings-query-level). Cela garantit que les répliques locales des shards sont privilégiées ; sinon, les répliques sont préférées dans l’ordre indiqué dans la configuration, à condition qu’elles aient le même nombre d’erreurs. En cas de nombre d’erreurs plus élevé, le basculement se fera par sélection aléatoire. [`load_balancing=nearest_hostname`](/fr/reference/settings/session-settings#load_balancing) peut également être utilisé comme alternative pour cette sélection déterministe du shard.
 
 > Lors de la création d’une table Distributed, vous spécifiez un cluster. Cette définition du cluster, indiquée dans config.xml, liste les shards (et leurs répliques), ce qui permet aux utilisateurs de contrôler l’ordre dans lequel ils sont utilisés depuis chaque nœud. Vous pouvez ainsi garantir une sélection déterministe.
 
@@ -109,7 +109,7 @@ Cela peut être réalisé de plusieurs façons (par ordre de préférence) :
 
 1. **Lire/écrire sur le même nœud** - Si vous utilisez le protocole natif, ou une [session pour effectuer vos écritures/lectures via HTTP](/fr/concepts/features/interfaces/http#default-database), vous devez alors être connecté à la même réplique : dans ce cas, vous lisez directement depuis le nœud sur lequel vous écrivez, votre lecture sera donc toujours cohérente.
 2. **Synchroniser manuellement les répliques** - Si vous écrivez sur une réplique et lisez depuis une autre, vous pouvez utiliser `SYSTEM SYNC REPLICA LIGHTWEIGHT` avant la lecture.
-3. **Activer la cohérence séquentielle** - via le paramètre de requête [`select_sequential_consistency = 1`](/fr/reference/settings/session-settings/other#select_sequential_consistency). En OSS, le paramètre `insert_quorum = 'auto'` doit également être spécifié.
+3. **Activer la cohérence séquentielle** - via le paramètre de requête [`select_sequential_consistency = 1`](/fr/reference/settings/session-settings#select_sequential_consistency). En OSS, le paramètre `insert_quorum = 'auto'` doit également être spécifié.
 
 <br />
 
@@ -172,10 +172,10 @@ GROUP BY `table`
 Vous trouverez plus d’informations sur l’optimisation et la mesure de la compression [ici](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="data-type-mappings">
-  ## Correspondance des types de données
+  ## Correspondances de types de données
 </div>
 
-Le tableau suivant présente les types de données ClickHouse équivalents à ceux de Postgres.
+Le tableau suivant indique les types de données ClickHouse équivalents pour Postgres.
 
 | Type de données Postgres | Type ClickHouse                                                                                                                                                                        |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -207,5 +207,6 @@ Le tableau suivant présente les types de données ClickHouse équivalents à ce
 | `HSTORE`                 | [Map(K, V)](/fr/reference/data-types/map), [Map](/fr/reference/data-types/map)(K,[Variant](/fr/reference/data-types/variant))                                                                   |
 | `UUID`                   | [UUID](/fr/reference/data-types/uuid)                                                                                                                                                     |
 | `ARRAY<T>`               | [ARRAY(T)](/fr/reference/data-types/array)                                                                                                                                                |
+| `JSON`                   | [String](/fr/reference/data-types/string), [Variant](/fr/reference/data-types/variant), [Nested](/fr/reference/data-types/nested-data-structures/index), [Tuple](/fr/reference/data-types/tuple)   |
 | `JSON`                   | [String](/fr/reference/data-types/string), [Variant](/fr/reference/data-types/variant), [Nested](/fr/reference/data-types/nested-data-structures), [Tuple](/fr/reference/data-types/tuple)         |
 | `JSONB`                  | [String](/fr/reference/data-types/string)                                                                                                                                                 |

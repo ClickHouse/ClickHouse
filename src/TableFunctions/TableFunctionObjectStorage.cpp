@@ -317,8 +317,8 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionObjectStorage<S3Definition, StorageS3Configuration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Provides a table-like interface to select/insert files in [Amazon S3](https://aws.amazon.com/s3/) and [Google Cloud Storage](https://cloud.google.com/storage/). This table function is similar to the [hdfs function](/reference/functions/table-functions/hdfs), but provides S3-specific features.
 
@@ -353,9 +353,9 @@ For GCS, substitute your HMAC key and HMAC secret where you see `access_key_id` 
 | `session_token`                         | Session token to use with the given keys. Optional when passing keys.                                                                                                                                                                                                                                                                                                            |
 | `format`                                | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                |
 | `structure`                             | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                    |
-| `compression_method`                    | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `deflate`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression method by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).  |
+| `compression_method`                    | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.                                                                                                                                                                                         |
 | `headers`                               | Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                               |
-| `partition_strategy`                    | Parameter is optional. Supported values: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy. |
+| `partition_strategy`                    | Parameter is optional. Supported values: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `wildcard` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise). |
 | `partition_columns_in_data_file`        | Parameter is optional. Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                          |
 | `extra_credentials`                     | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps. |
 | `storage_class_name`                    | Parameter is optional. Supported values: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). Defaults to `STANDARD`. |
@@ -381,7 +381,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`             | disabled by default.                                                                                                                                                              |
 | `expiration_window_seconds`   | default value is 120.                                                                                                                                                             |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -393,7 +393,6 @@ Selecting the first 5 rows from the table from S3 file `https://datasets-documen
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
-   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -415,8 +414,7 @@ ClickHouse uses filename extensions to determine the format of the data. For exa
 ```sql
 SELECT *
 FROM s3(
-   'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
-   NOSIGN
+   'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
 )
 LIMIT 5;
 ```
@@ -457,7 +455,7 @@ Count the number of rows in files ending with numbers from 1 to 3:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -470,7 +468,7 @@ Count the total amount of rows in all files in these two directories:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -483,11 +481,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 </Tip>
 
-Count the total number of rows in files named `file-1.csv`, ..., `file-4.csv`:
+Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -513,18 +511,18 @@ SELECT name, value FROM existing_table;
 Glob ** can be used for recursive directory traversal. Consider the below example, it will fetch all files from `my-test-bucket-768` directory recursively:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 The below get data from all `test-data.csv.gz` files from any folder inside `my-test-bucket` directory recursively:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 Note. It is possible to specify custom URL mappers in the server configuration file. Example:
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 The URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` would be replaced to `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
 
@@ -559,9 +557,7 @@ FROM s3(creds, url='https://s3-object-url.csv')
 
 Supported for INSERT queries only.
 
-`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. It is selected by default when the path contains `{_partition_id}`.
-
-When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
+`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Selected by default when the path contains a `{_partition_id}` placeholder (the only strategy compatible with such a path), and otherwise under `compatibility` settings older than `26.6`; in the remaining cases the default is `hive` (see the `file_like_engine_default_partition_strategy` setting).
 
 `hive` implements hive style partitioning for reads & writes. It generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -654,8 +650,7 @@ Extracting data from these archives is possible using ::. Globs can be used both
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
-   NOSIGN
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
 );
 ```
 
@@ -708,25 +703,11 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-## Resolving relative URLs {#resolving-relative-urls}
-
-The [s3_base](/reference/settings/session-settings/s3#s3_base) setting allows passing a relative URL to the `s3` function. When `s3_base` is set and the function argument has no scheme, it is resolved against the base URL per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), using the same rules as the [url_base](/reference/settings/session-settings/url#url_base) setting of the [url](/reference/functions/table-functions/url#resolving-relative-urls) function. Absolute URLs are passed through unchanged.
-
-The setting also applies to the [S3](/reference/engines/table-engines/integrations/s3) table engine and to the table functions sharing the `s3` configuration (`s3Cluster`, `gcs`, `oss`). For the `S3` table engine, the resolved URL is materialized into the stored table definition, so the table does not depend on the value of `s3_base` after creation.
-
-**Example**
-
-```sql
-SET s3_base = 's3://clickhouse-public-datasets/';
-SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
-```
-
 ## Storage Settings {#storage-settings}
 
-- [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
-- [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the `s3` function. Empty (disabled) by default.
+- [s3_truncate_on_insert](/reference/settings/session-settings#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [s3_create_new_file_on_insert](/reference/settings/session-settings#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [s3_skip_empty_files](/reference/settings/session-settings#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
 
 ## Nested Avro Schemas {#nested-avro-schemas}
 
@@ -755,7 +736,6 @@ SELECT
     data
 FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
-```
 
 ## Related {#related}
 
@@ -796,8 +776,8 @@ See the [Google interoperability docs](https://cloud.google.com/storage/docs/int
 | `hmac_key` and `hmac_secret` | Keys that specify credentials to use with given endpoint. Optional.                                                                                                                      |
 | `format`                     | The [format](/reference/formats/index) of the file.                                                                                                                                        |
 | `structure`                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                            |
-| `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `deflate`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression method by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default). |
-| `partition_strategy`         | Optional. Supported values: `wildcard` or `hive`. `wildcard` requires `{_partition_id}` in the path. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy. |
+| `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension. |
+| `partition_strategy`         | Optional. Supported values: `wildcard` or `hive`. `wildcard` requires `{_partition_id}` in the path. It is the default when the path contains `{_partition_id}` (the only strategy compatible with such a path), or when `compatibility` is older than `26.6`; otherwise, including when current defaults apply, the default is `hive`. |
 
 <Info>
 **GCS**
@@ -822,7 +802,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`             | Disabled by default.                                                                                                                                                                                                              |
 | `expiration_window_seconds`   | Default value is 120.                                                                                                                                                                                                             |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -954,7 +934,7 @@ FROM gcs(creds, url='https://s3-object-url.csv')
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 
-A path containing `{_partition_id}` implies the `wildcard` partition strategy, so the explicit `partition_strategy='wildcard'` in the examples below is optional. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
+A path containing `{_partition_id}` implies the `wildcard` partition strategy, so the explicit `partition_strategy='wildcard'` in the examples below is optional. For paths without the placeholder, the default is `hive` when `compatibility` is `26.6` or later (including current defaults); see the `file_like_engine_default_partition_strategy` setting.
 
 **Examples**
 
@@ -986,7 +966,7 @@ As a result, the data is written into three files in different buckets: `my_buck
     factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, StorageS3Configuration>>(
         {
             .description=R"(The table function can be used to read the data stored on COSN.)",
-            .syntax = "cosn(url, access_key_id, secret_access_key)",
+            .examples{{COSNDefinition::name, "SELECT * FROM cosn(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -995,7 +975,7 @@ As a result, the data is written into three files in different buckets: `my_buck
     factory.registerFunction<TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>>(
         {
             .description=R"(The table function can be used to read the data stored on OSS.)",
-            .syntax = "oss(url, access_key_id, secret_access_key)",
+            .examples{{OSSDefinition::name, "SELECT * FROM oss(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -1005,8 +985,8 @@ As a result, the data is written into three files in different buckets: `my_buck
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Provides a table-like interface to select/insert files in [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). This table function is similar to the [s3 function](/reference/functions/table-functions/s3).
 
@@ -1053,9 +1033,9 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | `account_name`                   | Storage account name. **Required** when using `storage_account_url` without SAS; must **not** be passed when using `connection_string`.                                                                                                                                                                                                                               |
 | `account_key`                    | Storage account key. **Required** when using `storage_account_url` without SAS; must **not** be passed when using `connection_string`.                                                                                                                                                                                                                                |
 | `format`                         | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                         |
-| `compression`                    | Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default). |
+| `compression`                    | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension (same as setting to `auto`).                                                                                                                                                                                       |
 | `structure`                      | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                             |
-| `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `WILDCARD`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `HIVE` when `file_like_engine_default_partition_strategy` is `HIVE`; otherwise it uses no partition strategy. |
+| `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `WILDCARD` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise). |
 | `partition_columns_in_data_file` | Optional. Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                 |
 | `extra_credentials`              | Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.                                                                                                                                                                                                     |
 
@@ -1105,7 +1085,7 @@ FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'C
 LIMIT 5;
 ```
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -1141,7 +1121,7 @@ LIMIT 5;
 
 ### Writing with partitions {#writing-with-partitions}
 
-A path containing `{_partition_id}` implies the `WILDCARD` partition strategy. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `HIVE` when `file_like_engine_default_partition_strategy` is `HIVE`; otherwise it uses no partition strategy.
+A path containing `{_partition_id}` implies the `WILDCARD` partition strategy. For paths without the placeholder, the default is `HIVE` when `compatibility` is `26.6` or later (including current defaults); see the `file_like_engine_default_partition_strategy` setting.
 
 ```sql
 INSERT INTO TABLE FUNCTION azureBlobStorage(
@@ -1189,9 +1169,7 @@ FROM azureBlobStorage(
 
 Supported for INSERT queries only.
 
-`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. It is selected by default when the path contains `{_partition_id}`.
-
-When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `HIVE` when `file_like_engine_default_partition_strategy` is `HIVE`; otherwise it uses no partition strategy.
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Selected by default when the path contains a `{_partition_id}` placeholder (the only strategy compatible with such a path), and otherwise under `compatibility` settings older than `26.6`; in the remaining cases the default is `HIVE` (see the `file_like_engine_default_partition_strategy` setting).
 
 `HIVE` implements hive style partitioning for reads & writes. It generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -1280,8 +1258,8 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 #if USE_HDFS
     factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Creates a table from files in HDFS. This table function is similar to the [url](/reference/functions/table-functions/url) and [file](/reference/functions/table-functions/file) table functions.
 
@@ -1299,7 +1277,7 @@ hdfs(URI, format, structure)
 | `format`  | The [format](/reference/formats/index) of the file.                                                                                                                          |
 | `structure`| Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                           |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -1320,7 +1298,7 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-## Globs in path {#globs-in-path}
+## Globs in path {#globs_in_path}
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
@@ -1395,9 +1373,9 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 ## Storage Settings {#storage-settings}
 
-- [hdfs_truncate_on_insert](/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_new_file_on_insert](/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [hdfs_skip_empty_files](/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [hdfs_truncate_on_insert](/reference/settings/session-settings#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [hdfs_create_new_file_on_insert](/reference/settings/session-settings#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_skip_empty_files](/reference/settings/session-settings#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 ## Related {#related}
 
@@ -1476,7 +1454,7 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionIceberg>(
          {.description = R"DOCS_MD(
-Provides a table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
+Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
 ## Syntax {#syntax}
 
@@ -1512,7 +1490,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial; deletion vectors and manifest compaction aren't supported.
+ClickHouse currently supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `icebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines.
 </Warning>
 
 ## Defining a named collection {#defining-a-named-collection}
@@ -1588,9 +1566,10 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ## Processing of tables with deleted rows {#deleted-rows}
 
-ClickHouse supports Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) and [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files). Equality deletes are supported from v25.8.
+Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
 
-The following deletion method is **not supported**:
+The following deletion methods are **not supported**:
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
 - [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
@@ -1617,7 +1596,7 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 ### Example scenarios {#example-scenarios}
 
-These scenarios use Spark to illustrate schema changes made by an external Iceberg writer.
+All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
 
 #### Scenario 1: Schema Changes Without New Snapshots {#scenario-1}
 
@@ -1740,7 +1719,7 @@ The second one is that while doing time travel you can't get state of table befo
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
-In ClickHouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with ClickHouse Select queries and it will work the same way.
+In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
 
 ## Metadata File Resolution {#metadata-file-resolution}
 
@@ -1798,9 +1777,9 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 ## Writes into iceberg table {#writes-into-iceberg-table}
 
-Starting from version 25.7, ClickHouse supports modifications of Iceberg tables on writable storage backends.
+Starting from version 25.7, ClickHouse supports modifications of user’s Iceberg tables.
 
-Before modifying or maintaining an Iceberg table, enable the [`allow_insert_into_iceberg` setting](/reference/settings/session-settings/allow#allow_insert_into_iceberg). Some operations require additional settings, as noted below:
+Currently, this is an experimental feature, so you first need to enable it:
 
 ```sql
 SET allow_insert_into_iceberg = 1;
@@ -1808,7 +1787,7 @@ SET allow_insert_into_iceberg = 1;
 
 ### Creating table {#create-iceberg-table}
 
-To create a new standalone Iceberg table on a writable backend, use an Iceberg table engine and specify the schema explicitly.
+To create your own empty Iceberg table, use the same commands as for reading, but specify the schema explicitly.
 Writes supports all data formats from iceberg specification, such as Parquet, Avro, ORC.
 
 ### Example {#example-iceberg-writes-create}
@@ -1826,8 +1805,6 @@ Note: To create a version hint file, enable the `iceberg_use_version_hint` setti
 If you want to compress the metadata.json file, specify the codec name in the `iceberg_metadata_compression_method` setting.
 
 ### INSERT {#writes-inserts}
-
-<BetaBadge/>
 
 After creating a new table, you can insert data using the usual ClickHouse syntax.
 
@@ -2191,29 +2168,29 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = false});
     factory.registerFunction<TableFunctionIcebergS3>(
-         {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on S3 object storage.)",
-            .syntax = "icebergS3(url, access_key_id, secret_access_key)",
+         {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store.)",
+            .examples{{IcebergS3Definition::name, "SELECT * FROM icebergS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = false});
 
 #endif
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionIcebergAzure>(
-         {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on Azure object storage.)",
-            .syntax = "icebergAzure(url, access_key_id, secret_access_key)",
+         {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store.)",
+            .examples{{IcebergAzureDefinition::name, "SELECT * FROM icebergAzure(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionIcebergHDFS>(
          {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
-            .syntax = "icebergHDFS(url)",
+            .examples{{IcebergHDFSDefinition::name, "SELECT * FROM icebergHDFS(url)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionIcebergLocal>(
-         {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored locally.)",
-            .syntax = "icebergLocal(filename)",
+         {.description = R"(The table function can be used to read the Iceberg table stored locally.)",
+            .examples{{IcebergLocalDefinition::name, "SELECT * FROM icebergLocal(filename)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 }
@@ -2227,7 +2204,7 @@ void registerTableFunctionPaimon(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimon>(
          {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -2295,7 +2272,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 
 ## Data Types supported {#data-types-supported}
 
-| Paimon Data Type | ClickHouse Data Type
+| Paimon Data Type | Clickhouse Data Type 
 |-------|--------|
 |BOOLEAN     |Int8      |
 |TINYINT     |Int8      |
@@ -2339,7 +2316,7 @@ Data types supported in Paimon partition keys:
          {.allow_readonly = false});
     factory.registerFunction<TableFunctionPaimonS3>(
          {.description = R"(The table function can be used to read the Paimon table stored on S3 object store.)",
-            .syntax = "paimonS3(url, access_key_id, secret_access_key)",
+            .examples{{"paimonS3", "SELECT * FROM paimonS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 
@@ -2347,20 +2324,20 @@ Data types supported in Paimon partition keys:
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionPaimonAzure>(
          {.description = R"(The table function can be used to read the Paimon table stored on Azure object store.)",
-            .syntax = "paimonAzure(url, access_key_id, secret_access_key)",
+            .examples{{"paimonAzure", "SELECT * FROM paimonAzure(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionPaimonHDFS>(
          {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem.)",
-            .syntax = "paimonHDFS(url)",
+            .examples{{"paimonHDFS", "SELECT * FROM paimonHDFS(url)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionPaimonLocal>(
          {.description = R"(The table function can be used to read the Paimon table stored locally.)",
-            .syntax = "paimonLocal(filename)",
+            .examples{{"paimonLocal", "SELECT * FROM paimonLocal(filename)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 }
@@ -2396,7 +2373,7 @@ The `format` argument stands for the format of data files in the Delta lake tabl
 
 An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 Returns a table with the specified structure for reading or writing data from/to the specified Delta Lake table.
 
@@ -2479,7 +2456,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 
     factory.registerFunction<TableFunctionDeltaLakeS3>(
          {.description = R"(The table function can be used to read the DeltaLake table stored on S3.)",
-            .syntax = "deltaLakeS3(url, access_key_id, secret_access_key)",
+            .examples{{DeltaLakeS3Definition::name, "SELECT * FROM deltaLakeS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
@@ -2487,14 +2464,15 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
          {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
-            .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
+            .examples{{DeltaLakeAzureDefinition::name, "SELECT * FROM deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, \"\n"
+ "                \"[account_name, account_key, format, compression, structure])", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
     // Register the new local Delta Lake table function
     factory.registerFunction<TableFunctionDeltaLakeLocal>(
          {.description = R"(The table function can be used to read the DeltaLake table stored locally.)",
-            .syntax = "deltaLakeLocal(path)",
+            .examples{{DeltaLakeLocalDefinition::name, "SELECT * FROM deltaLakeLocal(path)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 }
@@ -2522,10 +2500,10 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `aws_access_key_id`, `aws_secret_access_key` | Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).  |
 | `format`                                     | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                         |
 | `structure`                                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                          |
-| `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, compression will be autodetected by the file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                           |
+| `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.                                                                                                                                                                                                                    |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.                                                                                                                                                                                                                    |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified structure for reading data in the specified Hudi table in S3.
 

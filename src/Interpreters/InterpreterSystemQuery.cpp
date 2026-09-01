@@ -40,8 +40,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -96,9 +94,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
-#include <Common/formatReadable.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
@@ -120,10 +116,6 @@
 #if USE_JEMALLOC
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
-#endif
-
-#if ENABLE_DISTRIBUTED_CACHE
-#include <DistributedCache/Utils.h>
 #endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
@@ -606,12 +598,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-
-#if ENABLE_DISTRIBUTED_CACHE
-            const auto user_id = DistributedCache::getFilesystemCacheUserId(getContext());
-#else
             const auto user_id = FileCache::getCommonOrigin().user_id;
-#endif
 
             if (query.filesystem_cache_name.empty())
             {
@@ -645,14 +632,6 @@ BlockIO InterpreterSystemQuery::execute()
             }
             break;
         }
-#if ENABLE_DISTRIBUTED_CACHE
-        case Type::CLEAR_DISTRIBUTED_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
-            DistributedCache::clearDistributedCache(getContext(), query, log);
-            break;
-        }
-#endif
         case Type::SYNC_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
@@ -995,21 +974,9 @@ BlockIO InterpreterSystemQuery::execute()
                 task->cancel();
             break;
         case Type::TEST_VIEW:
-        {
-            /// The parser keeps the literal text; resolving it needs the server timezone.
-            std::optional<Int64> fake_time;
-            if (query.fake_time_for_view)
-            {
-                ReadBufferFromString buf(*query.fake_time_for_view);
-                time_t time = 0;
-                readDateTimeText(time, buf);
-                assertEOF(buf);
-                fake_time = Int64(time);
-            }
             for (const auto & task : getRefreshTasks())
-                task->setFakeTime(fake_time);
+                task->setFakeTime(query.fake_time_for_view);
             break;
-        }
         case Type::STOP:
         case Type::START:
         case Type::PAUSE:
@@ -1462,11 +1429,6 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     table->is_being_restarted = true;
     table->flushAndShutdown();
 
-    /// The definition re-attached below was read back from this server's own metadata, so it must be
-    /// accepted as it is. `system_context` is shared by every branch of `execute`, hence the copy.
-    auto attach_context = Context::createCopy(system_context);
-    attach_context->setRecoveryFromStoredMetadata(true);
-
     /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
     /// The table is removed from the in-memory tables map between detach and attach, making it
     /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
@@ -1526,7 +1488,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
                 new_table = StorageFactory::instance().get(create,
                     data_path,
-                    attach_context,
+                    system_context,
                     system_context->getGlobalContext(),
                     columns,
                     constraints,
@@ -1901,10 +1863,6 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
         query_context->setDDLOrOnClusterInternal(true);
         query_context->setCurrentDatabase(restoring_database_name);
         query_context->setCurrentQueryId("");
-
-        /// The CREATE queries below come from metadata a Replicated database stored in Keeper, so they
-        /// must be accepted as they are: they re-derive tables that exist elsewhere.
-        query_context->setRecoveryFromStoredMetadata(true);
 
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
@@ -2363,20 +2321,11 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto start = std::chrono::steady_clock::now();
-    const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
-    /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
-    /// `now + max_execution_time` is not representable for the largest values `max_execution_time`
-    /// accepts, and both capping the deadline at the end of the clock's range and clamping the
-    /// timeout with `saturatedMilliseconds` (a one-year bound meant for a `wait_for` slice) would
-    /// time the command out long before the configured limit.
-    while (true)
+    const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+    const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+    while (std::chrono::steady_clock::now() < deadline)
     {
-        if (max_execution_time_us != 0
-            && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count()
-                >= max_execution_time_us)
-            break;
-
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
@@ -2780,105 +2729,41 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
-        /// Each cache command requires the same privilege as its non-ON CLUSTER counterpart above.
-        /// CLEAR INDEX MARK CACHE and CLEAR INDEX UNCOMPRESSED CACHE have no privilege of their own
-        /// and reuse the one of the cache they clear.
         case Type::CLEAR_DNS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_DNS_CACHE);
-            break;
         case Type::CLEAR_CONNECTIONS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
-            break;
         case Type::CLEAR_MARK_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_MARK_CACHE);
-            break;
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
-            break;
         case Type::CLEAR_PAIMON_METADATA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE);
-            break;
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE);
-            break;
         case Type::CLEAR_PARQUET_METADATA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
-            break;
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
-            break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
-            break;
         case Type::CLEAR_MMAP_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_MMAP_CACHE);
-            break;
         case Type::CLEAR_QUERY_CONDITION_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
-            break;
         case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE);
-            break;
         case Type::CLEAR_QUERY_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            break;
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
-            break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            break;
         case Type::CLEAR_INDEX_MARK_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_MARK_CACHE);
-            break;
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
-            break;
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
-            break;
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
-            break;
         case Type::CLEAR_TEXT_INDEX_CACHES:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
-            break;
         case Type::CLEAR_FILESYSTEM_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            break;
-        case Type::SYNC_FILESYSTEM_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
-            break;
-        case Type::CLEAR_PAGE_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_PAGE_CACHE);
-            break;
-        case Type::CLEAR_SCHEMA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
-            break;
-        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
-            break;
-        case Type::CLEAR_S3_CLIENT_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
-            break;
         case Type::CLEAR_DISTRIBUTED_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
+        case Type::CLEAR_PAGE_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
         {
-            required_access.emplace_back(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
+            required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
         case Type::CLEAR_DISK_METADATA_CACHE:
-#if CLICKHOUSE_CLOUD
-            required_access.emplace_back(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            break;
-#else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-#endif
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
@@ -2966,9 +2851,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_CLEANUP:
         {
             if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_CLEANUP);
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
             else
-                required_access.emplace_back(AccessType::SYSTEM_CLEANUP, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_FETCHES:
@@ -3017,9 +2902,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_VIRTUAL_PARTS_UPDATE:
         {
             if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
             else
-                required_access.emplace_back(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_REDUCE_BLOCKING_PARTS:

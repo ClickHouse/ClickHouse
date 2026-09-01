@@ -112,16 +112,11 @@ struct JoinSettings
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;
     bool use_hash_table_stats_for_join_reordering;
-    bool enable_hash_join_row_store;
-    Float64 min_rows_ratio_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
     bool join_runtime_filter_from_fixed_hash_table;
 
-    /// Which statistics the join must collect for EXPLAIN ANALYZE
-    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
-
-    explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
+    explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
 
     void updatePlanSettings(QueryPlanSerializationSettings & settings) const;

@@ -13,7 +13,6 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
@@ -21,7 +20,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/Session.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
@@ -74,9 +72,6 @@ namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool calculate_text_stack_trace;
-    extern const SettingsString format;
-    extern const SettingsString input_format;
-    extern const SettingsString output_format;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
@@ -92,14 +87,8 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsString default_session_user;
-}
-
 namespace ErrorCodes
 {
-    extern const int AUTHENTICATION_FAILED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_GRPC_QUERY_INFO;
     extern const int INVALID_SESSION_TIMEOUT;
@@ -892,26 +881,14 @@ namespace
         std::string quota_key = query_info.quota();
         Poco::Net::SocketAddress user_address = responder->getClientAddress();
 
-        /// Authentication. The session is created before the empty-user-name check below, so that
-        /// a prohibited anonymous attempt is recorded in `system.session_log` as a login failure.
-        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
-
         if (user.empty())
         {
-            /// An empty user name means the default session user (the `default_session_user` server setting).
-            user = iserver.context()->getServerSettings()[ServerSetting::default_session_user];
-
-            /// The default session user can be explicitly configured to be empty to prohibit
-            /// connections without a user name, matching the native and Arrow Flight protocols.
-            if (user.empty())
-            {
-                auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
-                session->onAuthenticationFailure(user, user_address, exception);
-                throw exception; /// NOLINT
-            }
+            user = "default";
+            password = "";
         }
 
+        /// Authentication.
+        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
         session->authenticate(user, password, user_address);
         session->setQuotaClientKey(quota_key);
 
@@ -973,19 +950,9 @@ namespace
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
         }
 
-        /// Set the current database if specified. Mirror it into the `database` setting too — with the
-        /// same constraint check used by `USE` and the HTTP path — so it survives `executeQuery`'s
-        /// re-application of the `database` setting after the query `SETTINGS` are resolved. Without this,
-        /// an inherited profile / `QueryInfo.settings` `database` value would switch the query back to a
-        /// different database before analysis, making unqualified names resolve in the wrong one.
+        /// Set the current database if specified.
         if (!query_info.database().empty())
-        {
-            SettingsChanges database_change;
-            database_change.setSetting("database", query_info.database());
-            query_context->checkSettingsConstraints(database_change, SettingSource::QUERY);
-            query_context->applySettingsChanges(database_change);
             query_context->setCurrentDatabase(query_info.database());
-        }
 
         /// Apply transport compression for this call.
         if (auto transport_compression = TransportCompression::fromQueryInfo(query_info))
@@ -1002,52 +969,26 @@ namespace
         ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
         ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-        /// Apply the query text's own `SETTINGS` clause to `query_context` now — before resolving the
-        /// formats below and before `executeQuery`. `settings` is a live reference to the context's
-        /// settings, so the format resolution then sees the final values, and the `input()` table
-        /// function (whose reader is initialized during planning, inside `executeQuery`, before any
-        /// post-execution step) also reads the final `input_format` / `format` / `default_format`.
-        /// `applySettingsFromQuery` is idempotent, so `executeQuery` re-applying the clause is harmless.
-        InterpreterSetQuery::applySettingsFromQuery(ast, query_context);
-
-        /// Choose input format. The explicit `input_format` / `format` settings (e.g. supplied via
-        /// `QueryInfo.settings`) win over the `INSERT`'s `FORMAT` clause, matching the server query
-        /// path (`InterpreterSetQuery::applySettingsFromQuery` -> `setInsertFormat`).
+        /// Choose input format.
         insert_query = ast->as<ASTInsertQuery>();
         if (insert_query)
         {
-            if (const String & input_format_setting = settings[Setting::input_format]; !input_format_setting.empty())
-                input_format = input_format_setting;
-            else if (const String & format_setting = settings[Setting::format]; !format_setting.empty())
-                input_format = format_setting;
-            else
-            {
-                input_format = insert_query->format;
-                if (input_format.empty())
-                    input_format = "Values";
-            }
+            input_format = insert_query->format;
+            if (input_format.empty())
+                input_format = "Values";
         }
 
         input_data_delimiter = query_info.input_data_delimiter();
 
-        /// Choose output format. The explicit `output_format` / `format` settings (e.g. supplied via
-        /// `QueryInfo.settings`) win over the query's `FORMAT` clause and the default format, matching
-        /// the server query path (`resolveOutputFormatName`).
+        /// Choose output format.
         query_context->setDefaultFormat(query_info.output_format());
-        if (const String & output_format_setting = settings[Setting::output_format]; !output_format_setting.empty())
-            output_format = output_format_setting;
-        else if (const String & format_setting = settings[Setting::format]; !format_setting.empty())
-            output_format = format_setting;
-        else
+        if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+            ast_query_with_output && ast_query_with_output->format_ast)
         {
-            if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-                ast_query_with_output && ast_query_with_output->format_ast)
-            {
-                output_format = getIdentifierName(ast_query_with_output->format_ast);
-            }
-            if (output_format.empty())
-                output_format = query_context->getDefaultFormat();
+            output_format = getIdentifierName(ast_query_with_output->format_ast);
         }
+        if (output_format.empty())
+            output_format = query_context->getDefaultFormat();
 
         send_output_columns_names_and_types = query_info.send_output_columns();
 
@@ -1747,7 +1688,6 @@ namespace
         static_assert(::clickhouse::grpc::LOG_INFORMATION == static_cast<int>(Poco::Message::PRIO_INFORMATION));
         static_assert(::clickhouse::grpc::LOG_DEBUG       == static_cast<int>(Poco::Message::PRIO_DEBUG));
         static_assert(::clickhouse::grpc::LOG_TRACE       == static_cast<int>(Poco::Message::PRIO_TRACE));
-        static_assert(::clickhouse::grpc::LOG_TEST        == static_cast<int>(Poco::Message::PRIO_TEST));
 
         MutableColumns columns;
         while (logs_queue->tryPop(columns))

@@ -7,7 +7,7 @@ doc_type: 'guide'
 ---
 
 <Note>
-  Le cache des conditions de requête fonctionne uniquement lorsque [enable&#95;analyzer](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer) est défini sur true, qui est la valeur par défaut.
+  Le cache des conditions de requête fonctionne uniquement lorsque [enable&#95;analyzer](/fr/reference/settings/session-settings#enable_analyzer) est défini sur true, qui est la valeur par défaut.
 </Note>
 
 De nombreuses charges de travail réelles impliquent des requêtes répétées sur les mêmes données, ou presque (par exemple, des données existantes auxquelles s’ajoutent de nouvelles données).
@@ -34,7 +34,7 @@ Le cache des conditions de requête est efficace si trois prérequis sont rempli
 </div>
 
 Comme le cache des conditions de requête ne stocke qu’un seul bit par condition de filtrage et par granule, il consomme très peu de mémoire.
-La taille maximale du cache des conditions de requête peut être configurée à l’aide du paramètre de serveur [`query_condition_cache_size`](/fr/reference/settings/server-settings/settings/query-condition#query_condition_cache_size) (par défaut : 100 MB).
+La taille maximale du cache des conditions de requête peut être configurée à l’aide du paramètre de serveur [`query_condition_cache_size`](/fr/reference/settings/server-settings/settings#query_condition_cache_size) (par défaut : 100 MB).
 Une taille de cache de 100 MB correspond à 100 * 1024 * 1024 * 8 = 838,860,800 entrées.
 Comme chaque entrée représente un mark (8192 lignes par défaut), le cache peut couvrir jusqu’à 6,871,947,673,600 (6,8 billions) lignes d’une seule colonne.
 En pratique, les filtres sont évalués sur plusieurs colonnes, ce nombre doit donc être divisé par le nombre de colonnes filtrées.
@@ -43,7 +43,7 @@ En pratique, les filtres sont évalués sur plusieurs colonnes, ce nombre doit d
   ## Paramètres de configuration et utilisation
 </div>
 
-Le paramètre [use&#95;query&#95;condition&#95;cache](/fr/reference/settings/session-settings/use-query#use_query_condition_cache) détermine si une requête spécifique ou toutes les requêtes de la session en cours utilisent le cache des conditions de requête.
+Le paramètre [use&#95;query&#95;condition&#95;cache](/fr/reference/settings/session-settings#use_query_condition_cache) détermine si une requête spécifique ou toutes les requêtes de la session en cours utilisent le cache des conditions de requête.
 
 Par exemple, la première exécution de la requête
 
@@ -56,14 +56,6 @@ SETTINGS use_query_condition_cache = true;
 
 stockera des plages de la table qui ne satisfont pas le prédicat.
 Les exécutions suivantes de la même requête, également avec le paramètre `use_query_condition_cache = true`, utiliseront le cache des conditions de requête pour parcourir moins de données.
-
-<div id="top-k-queries">
-  ### Requêtes `ORDER BY ... LIMIT n` (TopK)
-</div>
-
-Les requêtes qui utilisent l’optimisation TopK (`ORDER BY <column> LIMIT n`, accélérée par le filtrage dynamique ou par un index d’omission minmax sur la colonne de tri) utilisent également le cache des conditions de requête.
-Les lectures TopK peuvent ignorer des granules en fonction d’un seuil qui évolue pendant l’exécution de la requête. Leurs entrées de cache sont donc partitionnées selon les paramètres du plan TopK et l’ensemble des parts lues : seule une requête ayant le même plan sur les mêmes parts les réutilise.
-Ces lectures peuvent être entièrement exclues du cache avec le paramètre [`use_query_condition_cache_for_top_k`](/fr/reference/settings/session-settings/use-query) (activé par défaut), qui ne prend effet que si `use_query_condition_cache` est également activé.
 
 <div id="administration">
   ## Administration

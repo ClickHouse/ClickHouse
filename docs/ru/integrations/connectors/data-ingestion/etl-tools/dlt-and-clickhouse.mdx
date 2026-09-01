@@ -7,7 +7,7 @@ slug: /integrations/data-ingestion/etl-tools/dlt-and-clickhouse
 doc_type: 'guide'
 ---
 
-import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -30,7 +30,9 @@ pip install "dlt[clickhouse]"
 </div>
 
 <Steps>
-  <Step title="Инициализируйте проект dlt" id="1-initialize-the-dlt-project">
+  <Step>
+    ### Инициализируйте проект dlt
+
     Начните с инициализации нового проекта `dlt`:
 
     ```bash
@@ -50,7 +52,9 @@ pip install "dlt[clickhouse]"
     или с помощью `pip install dlt[clickhouse]`, которая устанавливает библиотеку `dlt` и необходимые зависимости для работы с ClickHouse в качестве пункта назначения.
   </Step>
 
-  <Step title="Настройте базу данных ClickHouse" id="2-setup-clickhouse-database">
+  <Step>
+    ### Настройте базу данных ClickHouse
+
     Чтобы загружать данные в ClickHouse, вам нужно создать базу данных ClickHouse. Вот общий порядок действий:
 
     1. Вы можете использовать существующую базу данных ClickHouse или создать новую.
@@ -68,7 +72,9 @@ pip install "dlt[clickhouse]"
     ```
   </Step>
 
-  <Step title="Добавьте учетные данные" id="3-add-credentials">
+  <Step>
+    ### Добавьте учетные данные
+
     Затем настройте учетные данные ClickHouse в файле `.dlt/secrets.toml`, как показано ниже:
 
     ```bash
@@ -132,7 +138,7 @@ pip install "dlt[clickhouse]"
   ## Наборы данных
 </div>
 
-`ClickHouse` не поддерживает несколько наборов данных в одной базе данных, тогда как `dlt` по ряду причин использует наборы данных. Чтобы `ClickHouse` работал с `dlt`, к именам таблиц, создаваемых `dlt` в вашей базе данных `ClickHouse`, будет добавляться префикс с именем набора данных, отделённый настраиваемым `dataset_table_separator`. Кроме того, будет создана специальная служебная таблица-индикатор, не содержащая данных, которая позволит `dlt` определять, какие виртуальные наборы данных уже существуют в пункте назначения `ClickHouse`.
+`Clickhouse` не поддерживает несколько наборов данных в одной базе данных, тогда как `dlt` по ряду причин использует наборы данных. Чтобы `Clickhouse` работал с `dlt`, к именам таблиц, создаваемых `dlt` в вашей базе данных `Clickhouse`, будет добавляться префикс с именем набора данных, отделённый настраиваемым `dataset_table_separator`. Кроме того, будет создана специальная служебная таблица-индикатор, не содержащая данных, которая позволит `dlt` определять, какие виртуальные наборы данных уже существуют в пункте назначения `Clickhouse`.
 
 <div id="supported-file-formats">
   ## Поддерживаемые форматы файлов

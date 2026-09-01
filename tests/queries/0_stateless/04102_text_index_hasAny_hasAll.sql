@@ -8,7 +8,6 @@ SET query_plan_text_index_add_hint = 1;
 SET query_plan_remove_unused_columns = 1;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab_array;
 DROP TABLE IF EXISTS tab_split;

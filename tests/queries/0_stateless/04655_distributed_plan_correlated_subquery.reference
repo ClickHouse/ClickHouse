@@ -1,8 +1,0 @@
-correlated scalar aggregate subquery works under make_distributed_plan
-5000
-5000
-correlated EXISTS works under make_distributed_plan
-5000
-5000
-the query distributes
-distributes

@@ -12,6 +12,25 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+template <typename Mapped>
+class KeyGetterEmpty
+{
+public:
+    struct MappedType
+    {
+        using mapped_type = Mapped;
+    };
+
+    using FindResult = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+
+    KeyGetterEmpty() = default;
+
+    size_t getKeyHolder(size_t, Arena &) const { return 0; }
+
+    FindResult findKey(MappedType, size_t, const Arena &) { return FindResult(); }
+};
 
 template <HashJoin::Type type, typename Value, typename Mapped>
 struct KeyGetterForTypeImpl;
@@ -43,8 +62,7 @@ struct LowCardinalityKeyGetterForJoin
     BaseMethod base;
     const IColumn * positions = nullptr;
     size_t size_of_index_type = 0;
-    /// Dictionary positions outside it have no saved hash and are hashed from the key.
-    std::span<const UInt64> saved_hash;
+    const UInt64 * saved_hash = nullptr;
     ColumnPtr dictionary_holder;
 
     /// Per-dictionary-index probe cache. We cache a POINTER into the hash-table cell (stable for the
@@ -116,7 +134,7 @@ struct LowCardinalityKeyGetterForJoin
         if (!isLowCardinality())
             return base.getHash(data, row, pool);
         const size_t index = getIndexAt(row);
-        if (index < saved_hash.size())
+        if (saved_hash)
             return saved_hash[index];
         return base.getHash(data, index, pool);
     }
@@ -138,7 +156,7 @@ struct LowCardinalityKeyGetterForJoin
 
         typename Data::LookupResult it;
         bool inserted = false;
-        if (row < saved_hash.size())
+        if (saved_hash)
             data.emplace(key_holder, it, inserted, saved_hash[row]);
         else
             data.emplace(key_holder, it, inserted);
@@ -165,7 +183,7 @@ struct LowCardinalityKeyGetterForJoin
         auto key_holder = base.getKeyHolder(row, pool);
         const auto key = keyHolderGetKey(key_holder);
 
-        auto it = row < saved_hash.size() ? data.find(key, saved_hash[row]) : data.find(key);
+        auto it = saved_hash ? data.find(key, saved_hash[row]) : data.find(key);
 
         const bool found = it;
         Mapped * mapped = found ? &it->getMapped() : nullptr;

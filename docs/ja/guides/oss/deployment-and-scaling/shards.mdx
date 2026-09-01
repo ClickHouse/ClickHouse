@@ -15,7 +15,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Note>
 
 <div id="what-are-table-shards-in-clickhouse">
-  ## ClickHouse のテーブルの分片とは何ですか？
+  ## ClickHouse のテーブル分片とは何ですか？
 </div>
 
 従来の [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) アーキテクチャの ClickHouse クラスターでは、① データ量が大きすぎて単一のサーバーに収まらない場合、または ② 単一のサーバーではデータ処理が遅すぎる場合に、シャーディングが使用されます。次の図は、[uk&#95;price&#95;paid&#95;simple](/ja/concepts/core-concepts/parts) テーブルが単一マシンの容量を超えるケース①を示しています。
@@ -24,13 +24,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-このような場合、データはテーブルの分片として複数の ClickHouse サーバーに分割できます。
+このような場合、データはテーブル分片として複数の ClickHouse サーバーに分割できます。
 
 <Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
 
 <br />
 
-各分片はデータの一部を保持し、個別にクエリできる通常の ClickHouse テーブルとして機能します。ただし、クエリで処理されるのはその一部だけであり、データの分布によってはそれで十分なユースケースもあります。通常は、[分散テーブル](/ja/reference/engines/table-engines/special/distributed) (多くの場合、各サーバー上に作成) がデータセット全体を統一的に参照するためのビューを提供します。分散テーブル自体はデータを保存せず、**SELECT** クエリをすべての分片に転送して結果をまとめ、データが均等に分散されるよう **INSERTS** を振り分けます。
+各分片はデータの一部を保持し、個別にクエリできる通常の ClickHouse テーブルとして機能します。ただし、クエリで処理されるのはその一部だけであり、データの分布によってはそれで十分な場合もあります。通常は、[分散テーブル](/ja/reference/engines/table-engines/special/distributed) (多くの場合、各サーバー上に作成) がデータセット全体を統一的に参照するためのビューを提供します。分散テーブル自体はデータを保存せず、**SELECT** クエリをすべての分片に転送して結果をまとめ、データが均等に分散されるよう **INSERTS** を振り分けます。
 
 <div id="distributed-table-creation">
   ## 分散テーブルの作成
@@ -93,7 +93,7 @@ ClickHouse のレプリケーションは、複数のサーバーに**分片デ�
 
 なお、レプリケーションには、[クラスターアーキテクチャ](/ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)内の[Keeper](https://clickhouse.com/clickhouse/keeper)コンポーネントが必要です。
 
-次の図は、6 台のサーバーで構成された ClickHouse クラスターを示しています。ここでは、先に紹介した 2 つのテーブルの分片 `Shard-1` と `Shard-2` が、それぞれ 3 つのレプリカを持っています。このクラスターにクエリが送信されます。
+次の図は、6 台のサーバーで構成された ClickHouse クラスターを示しています。ここでは、先に紹介した 2 つのテーブル分片 `Shard-1` と `Shard-2` が、それぞれ 3 つのレプリカを持っています。このクラスターにクエリが送信されます。
 
 <Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
 
@@ -109,7 +109,7 @@ ClickHouse のレプリケーションは、複数のサーバーに**分片デ�
 
 残りの処理は、レプリカのない構成の場合と[同じ](#select-forwarding)であり、上の図には示していません。最初に対象となった分散テーブルをホストする ClickHouse サーバーが、すべてのローカル結果を収集し、それらを最終的なグローバル結果にマージして、クエリの送信元に返します。
 
-なお、ClickHouse では ② のクエリ転送戦略を設定できます。デフォルトでは、上の図とは異なり、分散テーブルは利用可能であればローカルレプリカを[優先](/ja/reference/settings/session-settings/prefer#prefer_localhost_replica)しますが、ほかのロードバランシング[戦略](/ja/reference/settings/session-settings/load-balancing#load_balancing)も使用できます。
+なお、ClickHouse では ② のクエリ転送戦略を設定できます。デフォルトでは、上の図とは異なり、分散テーブルは利用可能であればローカルレプリカを[優先](/ja/reference/settings/session-settings#prefer_localhost_replica)しますが、ほかのロードバランシング[戦略](/ja/reference/settings/session-settings#load_balancing)も使用できます。
 
 <div id="where-to-find-more-information">
   ## さらに詳しい情報

@@ -43,20 +43,26 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step title="Клонируйте репозиторий" id="clone-repository">
+  <Step>
+    ### Клонируйте репозиторий
+
     ```shell
     git clone https://github.com/ClickHouse/clickstack-session-replay-demo
     cd clickstack-session-replay-demo
     ```
   </Step>
 
-  <Step title="Запустите ClickStack" id="start-clickstack">
+  <Step>
+    ### Запустите ClickStack
+
     ```shell
     docker-compose up -d clickstack
     ```
   </Step>
 
-  <Step title="Получите ключ API" id="get-api-key">
+  <Step>
+    ### Получите ключ API
+
     1. Откройте HyperDX по адресу [http://localhost:8080](http://localhost:8080)
     2. Создайте аккаунт или войдите в него, если это необходимо
     3. Перейдите в **Team Settings → API Keys**
@@ -71,7 +77,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step title="Запустите демо-приложение" id="start-demo-app">
+  <Step>
+    ### Запустите демо-приложение
+
     ```shell
     docker-compose --profile demo up demo-app
     ```
@@ -84,10 +92,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     <Image img="/images/clickstack/session-replay/demo-app.webp" alt="Демо-приложение для воспроизведения сеанса" />
 
-    Все взаимодействия автоматически собираются ClickStack Browser SDK.
+    Все взаимодействия автоматически собираются Browser SDK ClickStack.
   </Step>
 
-  <Step title="Просмотрите воспроизведение сеанса" id="view-session-replay">
+  <Step>
+    ### Просмотрите воспроизведение сеанса
+
     Вернитесь в HyperDX по адресу [http://localhost:8080](http://localhost:8080) и в левой боковой панели перейдите в **Client Sessions**.
 
     <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Поиск воспроизведения сеанса" />
@@ -182,7 +192,7 @@ docker-compose down -v
   ## Подробнее
 </div>
 
-* [Воспроизведение сеанса](/ru/clickstack/features/session-replay) — обзор возможности, параметры SDK и настройки конфиденциальности
+* [воспроизведение сеанса](/ru/clickstack/features/session-replay) — обзор возможности, параметры SDK и настройки конфиденциальности
 * [Справочник по Browser SDK](/ru/clickstack/ingesting-data/sdks/browser) — полный набор параметров SDK и расширенная конфигурация
 * [Начало работы с ClickStack](/ru/clickstack/getting-started/index) — разверните ClickStack и отправьте первые данные
 * [Все демонстрационные наборы данных](/ru/clickstack/example-datasets/index) — другие демонстрационные наборы данных и руководства

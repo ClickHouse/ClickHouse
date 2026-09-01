@@ -19,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -282,16 +281,6 @@ namespace
                                                const std::vector<UUID> roles_to_grant,
                                                const RolesOrUsersSet & roles_to_revoke)
     {
-        /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot
-        /// administer roles at all (the clause cannot express the admin option), so we deny it here following
-        /// the fail-close principle. The ON CLUSTER role path below authorizes role DDL through plain `ROLE_ADMIN`
-        /// checks, bypassing `ContextAccess::checkAdminOption` where the same guard lives, so it must be repeated here.
-        if (current_user_access.getParams().authentication_grants)
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "Not enough privileges. "
-                "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
-                "and such sessions cannot administer roles");
-
         if (roles_to_revoke.all)
         {
             /// Revoking all the roles on cluster always requires ROLE_ADMIN privilege
@@ -409,8 +398,6 @@ namespace
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
-        query.access_rights_elements.throwIfFilterIsNotCompilable();
-
         AccessRightsElements elements_to_grant;
         AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
@@ -452,11 +439,6 @@ BlockIO InterpreterGrantQuery::execute()
         }
     }
 
-    /// The parser does not compile the pattern of `GRANT READ ON S3('s3://foo/.*')` - that would
-    /// put a regex engine in it - so it is validated here, and on every other path that turns an
-    /// `ASTGrantQuery` into access rights.
-    query.access_rights_elements.throwIfFilterIsNotCompilable();
-
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
     /// Collect access rights and roles we're going to grant or revoke.
@@ -467,19 +449,6 @@ BlockIO InterpreterGrantQuery::execute()
     std::vector<UUID> roles_to_grant;
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
-
-    /// A role cannot be granted to itself.
-    for (const auto & grantee_id : grantees)
-    {
-        if (std::find(roles_to_grant.begin(), roles_to_grant.end(), grantee_id) != roles_to_grant.end())
-        {
-            auto entity = access_control.tryRead(grantee_id);
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot grant role '{}' to itself",
-                entity ? entity->getName() : String{});
-        }
-    }
 
     /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
     String current_database = getContext()->getCurrentDatabase();

@@ -1,17 +1,17 @@
 ---
 slug: /cloud/managed-postgres/migrations/overview
 sidebarTitle: 'Overview'
-title: 'ClickHouse Managed Postgres data migration'
+title: 'Managed Postgres data migration'
 description: 'Compare the four migration paths into ClickHouse Managed Postgres and pick the one that fits your source database and downtime requirements.'
 keywords: ['managed postgres', 'migration', 'postgres migration', 'clickpipes', 'peerdb', 'pg_dump', 'pg_restore', 'logical replication']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-overview-beta" />
 
-You can migrate to ClickHouse Managed Postgres through four different paths. Which one
+You can migrate to Managed Postgres through four different paths. Which one
 fits depends on whether you need ongoing replication, what source you're
 migrating from, and how much downtime your application can tolerate during
 cutover.
@@ -68,4 +68,4 @@ covers common errors and recovery steps.
 
 ## Migrating from Supabase {#supabase}
 
-If you're migrating from Supabase, see the [Supabase to ClickHouse Managed Postgres migration guide](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) for a step-by-step walkthrough.
+If you're migrating from Supabase, see the [Supabase to Managed Postgres migration guide](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) for a step-by-step walkthrough.
