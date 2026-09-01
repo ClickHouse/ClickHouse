@@ -1,0 +1,105 @@
+<test>
+    <!--
+        Exercises rb_and_cardinality and rb_intersect on Roaring-backed operands.
+        Operands are built in scalar subqueries so that construction is evaluated once
+        and the measured loop contains only the operation under test. Elements are cast
+        to UInt32 because UInt64 operands are backed by Roaring64Map, which takes a
+        different code path.
+    -->
+
+    <!-- Dense operands: ~46 bitset containers per side, half of them overlapping. -->
+    <query>
+        WITH
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number)))
+                FROM numbers(3000000)
+            ) AS a,
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number + 1500000)))
+                FROM numbers(3000000)
+            ) AS b
+        SELECT sum(bitmapAndCardinality(a, b))
+        FROM numbers(2000)
+    </query>
+
+    <!-- Sparse operands: ~458 array containers per side, half of them overlapping. -->
+    <query>
+        WITH
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number * 100)))
+                FROM numbers(300000)
+            ) AS a,
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number * 100 + 15000000)))
+                FROM numbers(300000)
+            ) AS b
+        SELECT sum(bitmapAndCardinality(a, b))
+        FROM numbers(2000)
+    </query>
+
+    <!-- bitmapOrCardinality reaches rb_and_cardinality through inclusion-exclusion. -->
+    <query>
+        WITH
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number)))
+                FROM numbers(3000000)
+            ) AS a,
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number + 1500000)))
+                FROM numbers(3000000)
+            ) AS b
+        SELECT sum(bitmapOrCardinality(a, b))
+        FROM numbers(2000)
+    </query>
+
+    <!--
+        bitmapHasAny where the operands share their lowest element, so the predicate can
+        answer from the first container pair instead of intersecting the whole operand.
+        The iteration count is kept low because the unoptimised path materialises a
+        3M-element intersection on every call.
+    -->
+    <query>
+        WITH
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number)))
+                FROM numbers(3000000)
+            ) AS a,
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number)))
+                FROM numbers(3000000)
+            ) AS b
+        SELECT sum(bitmapHasAny(a, b))
+        FROM numbers(200)
+    </query>
+
+    <!--
+        bitmapHasAny on evens against odds: both operands occupy the same container keys
+        but share no element, so there is no early exit and every container pair has to
+        be examined. This is the worst case for the predicate.
+    -->
+    <query>
+        WITH
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number * 2)))
+                FROM numbers(1500000)
+            ) AS a,
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number * 2 + 1)))
+                FROM numbers(1500000)
+            ) AS b
+        SELECT sum(bitmapHasAny(a, b))
+        FROM numbers(2000)
+    </query>
+
+    <!-- Large x Small operand order, which previously promoted the small set to Roaring. -->
+    <query>
+        WITH
+            (
+                SELECT bitmapBuild(groupArray(toUInt32(number)))
+                FROM numbers(3000000)
+            ) AS a,
+            bitmapBuild([toUInt32(7), toUInt32(1000000), toUInt32(2999999)]) AS b
+        SELECT sum(bitmapAndCardinality(a, b))
+        FROM numbers(2000)
+    </query>
+</test>

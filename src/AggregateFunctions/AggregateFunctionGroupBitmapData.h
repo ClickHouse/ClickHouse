@@ -301,10 +301,22 @@ public:
                     ++ret;
             }
         }
+        else if (r1.isSmall())
+        {
+            for (const auto & x : r1.small)
+            {
+                if (roaring_bitmap->contains(static_cast<Value>(x.getValue())))
+                    ++ret;
+            }
+        }
+        else if constexpr (sizeof(T) < 8)
+        {
+            ret = roaring_bitmap->and_cardinality(*r1.roaring_bitmap);
+        }
         else
         {
-            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
-            ret = (*roaring_bitmap & *new_rb).cardinality();
+            /// Roaring64Map exposes no and_cardinality, so the intersection must be materialized.
+            ret = (*roaring_bitmap & *r1.roaring_bitmap).cardinality();
         }
         return ret;
     }
@@ -384,8 +396,14 @@ public:
                     return 1;
             }
         }
+        else if constexpr (sizeof(T) < 8)
+        {
+            if (roaring_bitmap->intersect(*r1.roaring_bitmap))
+                return 1;
+        }
         else
         {
+            /// Roaring64Map exposes no intersect, so the intersection must be materialized.
             if ((*roaring_bitmap & *r1.roaring_bitmap).cardinality() > 0)
                 return 1;
         }
