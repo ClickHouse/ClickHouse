@@ -14,6 +14,7 @@ import glob
 # Not requests, to avoid requiring extra dependency.
 import http.client
 import io
+import ipaddress
 import itertools
 import json
 import math
@@ -3458,7 +3459,9 @@ class TestCase:
                         or "Attempt to read after eof" in stderr
                     )
                     and "Received exception from server" not in stderr
-                    and not check_server_liveness(self.args)
+                    # Only a server that is really gone stops the whole run: a
+                    # stalled but live server keeps the plain exit-code failure.
+                    and probed_server_is_gone(self.args)
                 ):
                     reason = FailureReason.LIVENESS_CHECK_FAILED
 
@@ -3932,7 +3935,10 @@ class TestCase:
                 except Exception:
                     # If health-check failed, double-check server liveness. A single
                     # check may fail because of memory exhaustion, for example.
-                    if not check_server_liveness(self.args):
+                    # A server that is unresponsive but still holds its
+                    # listening socket is stalled, not dead - do not stop the
+                    # run for it; the parent hung check owns that verdict.
+                    if probed_server_is_gone(self.args):
                         return TestResult(
                             self.name,
                             TestStatus.FAIL,
@@ -4075,7 +4081,7 @@ class TestCase:
             exc_description = self.add_info_about_settings(
                 self.get_description_from_exception_info(sys.exc_info())
             )
-            if not check_server_liveness(self.args):
+            if probed_server_is_gone(self.args):
                 return TestResult(
                     self.name,
                     TestStatus.FAIL,
@@ -4083,7 +4089,8 @@ class TestCase:
                     total_time,
                     exc_description,
                 )
-            # Server is alive — this was a transient network error.
+            # Server is alive (answering, or silent but still holding its
+            # listening socket) - this was a transient network error or a stall.
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -4119,13 +4126,16 @@ class TestCase:
         try:
             self._cleanup_database(args, timeout)
         except (ConnectionError, http.client.ImproperConnectionState) as e:
-            # Cleanup is best-effort only when the server is actually dead.
+            # Cleanup is best-effort only when the server is actually dead -
+            # positively so: with the hung check's grace a stalled server can
+            # recover and the run continues, and a database left behind by a
+            # DROP that only timed out would then leak into later tests.
             # If the server is still alive, this was a real cleanup failure
             # (leftover state, unfinished DROP) and must propagate so the
             # outer handler in run() classifies it as CONNECTION_ERROR — a
             # silent swallow would let a test stay OK while leaving its
             # database behind, hiding the bug.
-            if check_server_liveness(args):
+            if not probed_server_is_gone(args):
                 raise
             # Server died between the test finishing and cleanup running.
             # The test's database is moot; the hung-check or the next test
@@ -5119,8 +5129,63 @@ def check_server_liveness(args, max_retries=10) -> bool:
 _TCP_LISTEN_STATE = "0A"
 
 
-def _listening_socket_inodes(port: int) -> Optional[Set[str]]:
-    """Inodes of the sockets listening on `port` on this host.
+def _unpack_proc_net_address(hex_address: str) -> Optional[bytes]:
+    """The address of a `/proc/net/{tcp,tcp6}` row, in network byte order.
+
+    The kernel prints the address as host-endian 32-bit words, so every word is
+    byte-swapped on a little-endian machine: 8 hex characters for IPv4, four
+    such words for IPv6.
+    """
+    try:
+        raw = bytes.fromhex(hex_address)
+    except ValueError:
+        return None
+    if len(raw) not in (4, 16):
+        return None
+    if sys.byteorder == "little":
+        raw = b"".join(raw[i : i + 4][::-1] for i in range(0, len(raw), 4))
+    return raw
+
+
+def _normalized_address(packed: bytes) -> bytes:
+    """An IPv4-mapped IPv6 address as its plain IPv4 form, everything else as is."""
+    if len(packed) == 16 and packed[:12] == b"\x00" * 10 + b"\xff\xff":
+        return packed[12:]
+    return packed
+
+
+def _listener_serves_probe(listening: bytes, probed: Set[bytes]) -> bool:
+    """Does a socket listening on `listening` answer a probe to `probed`?
+
+    A wildcard listener (`0.0.0.0` or `::`) answers on every local address, so
+    it always does; otherwise the addresses must be the same one.
+    """
+    if not any(listening):
+        return True
+    return _normalized_address(listening) in {_normalized_address(a) for a in probed}
+
+
+def _resolve_addresses(host: str) -> Set[bytes]:
+    """The addresses `host` resolves to, packed, or an empty set when it does not."""
+    try:
+        infos = socket.getaddrinfo(host.strip("[]"), None, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError):
+        return set()
+    packed = set()
+    for family, _, _, _, sockaddr in infos:
+        if family in (socket.AF_INET, socket.AF_INET6):
+            packed.add(socket.inet_pton(family, sockaddr[0].split("%")[0]))
+    return packed
+
+
+def _listening_socket_inodes(port: int, addresses: Set[bytes]) -> Optional[Set[str]]:
+    """Inodes of the sockets listening on `port` for one of `addresses`.
+
+    Filtering by address as well as by port is what keeps the identity tied to
+    the endpoint the liveness probe talks to: another process bound to the same
+    port on a different local address (`127.0.0.2` next to `127.0.0.1`) is a
+    different server, and must neither buy a grace for the probed one nor keep
+    its identity alive across a swap.
 
     `None` when the tables cannot be read at all (no `/proc`, i.e. not Linux) -
     that is "cannot tell", not "nothing is listening".
@@ -5139,10 +5204,14 @@ def _listening_socket_inodes(port: int) -> Optional[Set[str]]:
             # local_address, st, ..., inode
             if len(fields) < 10 or fields[3] != _TCP_LISTEN_STATE:
                 continue
+            local_address, _, local_port = fields[1].rpartition(":")
             try:
-                if int(fields[1].rsplit(":", 1)[-1], 16) != port:
+                if int(local_port, 16) != port:
                     continue
             except ValueError:
+                continue
+            listening = _unpack_proc_net_address(local_address)
+            if listening is None or not _listener_serves_probe(listening, addresses):
                 continue
             inodes.add(fields[9])
     return inodes if read_any else None
@@ -5173,12 +5242,29 @@ def _pid_owning_sockets(inodes: Set[str]) -> Optional[int]:
     return None
 
 
-def _probed_host_is_local(args) -> bool:
-    """True when the liveness probe talks to a server on this host."""
+def _probed_local_addresses(args) -> Optional[Set[bytes]]:
+    """The addresses on this host that the liveness probe talks to.
+
+    `None` when the probe does not talk to this host at all - either the name
+    does not resolve, or it resolves to an address that is neither a loopback
+    address nor one of this host's own.  Resolving instead of matching literal
+    spellings is what makes local aliases (`127.0.0.2`, an entry in
+    `/etc/hosts`, the machine's own name) read as local, rather than falling
+    through to "cannot tell" and losing the grace.
+    """
     host = getattr(args, "tcp_host", None) or "localhost"
-    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "[::1]"):
-        return True
-    return host in (socket.gethostname(), socket.getfqdn())
+    addresses = _resolve_addresses(host)
+    if not addresses:
+        return None
+    own = _resolve_addresses(socket.gethostname()) | _resolve_addresses(
+        socket.getfqdn()
+    )
+    for packed in addresses:
+        address = ipaddress.ip_address(packed)
+        if address.is_loopback or address.is_unspecified or packed in own:
+            continue
+        return None
+    return addresses
 
 
 def probed_server_process(
@@ -5187,12 +5273,12 @@ def probed_server_process(
     """Is the server the liveness probe talks to still running?
 
     Returns `(alive, pid, inodes)`, where `alive` is True when a process on
-    this host still holds the listening socket on the probed port, False when
-    nothing listens there any more, and None when it cannot be told (a server
-    on another host, or no `/proc`).  `pid` is best-effort and only used in
-    messages.  `inodes` is the set of listening-socket inodes behind `alive` -
-    the identity of the listener, which is what tells the original server
-    apart from a replacement that re-bound the same port.
+    this host still holds the listening socket for the probed address and
+    port, False when nothing listens there any more, and None when it cannot
+    be told (a server on another host, or no `/proc`).  `pid` is best-effort
+    and only used in messages.  `inodes` is the set of listening-socket inodes
+    behind `alive` - the identity of the listener, which is what tells the
+    original server apart from a replacement that re-bound the same port.
 
     The socket, not `pgrep`: `get_all_server_pids` sees every
     `clickhouse-server` of this user, and the multi-replica functional harness
@@ -5201,15 +5287,38 @@ def probed_server_process(
     socket is owned by exactly one process and the kernel drops it when that
     process dies, while a process merely parked - the stall this whole class
     exists for - keeps it.
+
+    The address is part of the identity, not only the port: a listener bound to
+    a different local address on the same port is a different server, and would
+    otherwise be able to buy the grace for a probed endpoint that is already
+    dead.
     """
-    if not _probed_host_is_local(args):
+    addresses = _probed_local_addresses(args)
+    if addresses is None:
         return None, None, None
-    inodes = _listening_socket_inodes(args.http_port)
+    inodes = _listening_socket_inodes(args.http_port, addresses)
     if inodes is None:
         return None, None, None
     if not inodes:
         return False, None, None
     return True, _pid_owning_sockets(inodes), inodes
+
+
+def probed_server_is_gone(args, max_retries=10) -> bool:
+    """Did the liveness probe fail *and* is the server it talks to really gone?
+
+    The same live-vs-gone split `HungCheckMonitor` makes in the parent loop, for
+    the worker side.  A failed probe alone only says the server is not
+    answering, and a sanitizer build can stop the world for minutes and then
+    carry on; turning every failed probe into a global abort would keep killing
+    such runs at the old `~165 s` latency no matter what the parent monitor
+    decides.  Without positive evidence of a live listener (no `/proc`, a
+    server on another host) the answer is "gone", as in the parent monitor.
+    """
+    if check_server_liveness(args, max_retries=max_retries):
+        return False
+    alive, _, _ = probed_server_process(args)
+    return alive is not True
 
 
 class HungCheckMonitor:
