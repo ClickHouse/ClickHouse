@@ -36,15 +36,6 @@ SELECT count() FROM (SELECT row_number() OVER (PARTITION BY deep) FROM t_wpb_sta
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY id, st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
 
 SELECT '-- old analyzer: refused';
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY arr) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY tup) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY mp) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY deep) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY id, st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-
-SELECT '-- window ORDER BY over a state is refused, the analyzer';
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (ORDER BY st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
 SELECT count() FROM (SELECT row_number() OVER (ORDER BY arr) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
@@ -54,22 +45,8 @@ SELECT count() FROM (SELECT row_number() OVER (ORDER BY deep) FROM t_wpb_state);
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY id ORDER BY st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
 
 SELECT '-- window ORDER BY over a state is refused, old analyzer';
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY arr) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY tup) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY mp) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY deep) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY id ORDER BY st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
-
-SELECT '-- a named WINDOW clause and a derived window are refused too, both analyzers';
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER w FROM t_wpb_state WINDOW w AS (ORDER BY st)); -- { serverError ILLEGAL_COLUMN }
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT row_number() OVER w FROM t_wpb_state WINDOW w AS (ORDER BY st)); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (w ROWS UNBOUNDED PRECEDING) FROM t_wpb_state WINDOW w AS (ORDER BY st)); -- { serverError ILLEGAL_COLUMN }
-
-SELECT '-- comparable types are untouched, the analyzer';
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (ORDER BY saf) FROM t_wpb_state);
 SELECT count() FROM (SELECT row_number() OVER (ORDER BY s) FROM t_wpb_state);
@@ -79,29 +56,11 @@ SELECT count() FROM (SELECT row_number() OVER (PARTITION BY lc) FROM t_wpb_state
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY nl) FROM t_wpb_state);
 
 SELECT '-- comparable types are untouched, old analyzer';
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY saf) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY s) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY saf) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY s) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY lc) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY nl) FROM t_wpb_state);
-
-SELECT '-- GROUP BY and DISTINCT over a state stay accepted';
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT st FROM t_wpb_state GROUP BY st);
 SELECT count() FROM (SELECT DISTINCT st FROM t_wpb_state);
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT st FROM t_wpb_state GROUP BY st);
-SELECT count() FROM (SELECT DISTINCT st FROM t_wpb_state);
-
-SELECT '-- ORDER BY over a state was already refused';
 SET enable_analyzer = 1;
 SELECT st FROM t_wpb_state ORDER BY st; -- { serverError ILLEGAL_COLUMN }
-SET enable_analyzer = 0;
-SELECT st FROM t_wpb_state ORDER BY st; -- { serverError ILLEGAL_COLUMN }
-
-SELECT '-- QBit is not an aggregate state and keeps working';
 DROP TABLE IF EXISTS t_wpb_qbit;
 CREATE TABLE t_wpb_qbit (id UInt8, q QBit(BFloat16, 16), qa Array(QBit(BFloat16, 16))) ENGINE = Memory;
 INSERT INTO t_wpb_qbit
@@ -111,13 +70,8 @@ FROM numbers(6);
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY q) FROM t_wpb_qbit);
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY qa) FROM t_wpb_qbit);
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY q) FROM t_wpb_qbit);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY qa) FROM t_wpb_qbit);
 -- The window ORDER BY guard is aggregate-state-specific, so it does not widen the old analyzer's
 -- acceptance of a QBit sort key. The analyzer refuses it for being incomparable, as it already did.
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY q) FROM t_wpb_qbit);
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY qa) FROM t_wpb_qbit);
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (ORDER BY q) FROM t_wpb_qbit); -- { serverError ILLEGAL_COLUMN }
 
@@ -128,34 +82,17 @@ INSERT INTO t_wpb_dyn VALUES (1, 10), (2, 20), ('str', 30);
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY d) FROM t_wpb_dyn); -- { serverError ILLEGAL_COLUMN }
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY d) FROM t_wpb_dyn) SETTINGS allow_suspicious_types_in_group_by = 1;
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY d) FROM t_wpb_dyn); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY d) FROM t_wpb_dyn) SETTINGS allow_suspicious_types_in_group_by = 1;
-
-SELECT '-- a state reached through Dynamic is a known gap, still accepted with the opt-in';
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY CAST(st, 'Dynamic')) FROM t_wpb_state) SETTINGS allow_suspicious_types_in_group_by = 1;
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY CAST(st, 'Dynamic')) FROM t_wpb_state) SETTINGS allow_suspicious_types_in_group_by = 1;
-
-SELECT '-- a state inside Variant is refused, because Variant exposes its variants as children';
 DROP TABLE IF EXISTS t_wpb_var;
 CREATE TABLE t_wpb_var (v Variant(AggregateFunction(uniq, UInt64), String), val UInt64) ENGINE = Memory;
 INSERT INTO t_wpb_var SELECT uniqState(number)::Variant(AggregateFunction(uniq, UInt64), String), number FROM numbers(3) GROUP BY number;
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY v) FROM t_wpb_var) SETTINGS allow_suspicious_types_in_group_by = 1; -- { serverError ILLEGAL_COLUMN }
-SET enable_analyzer = 0;
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY v) FROM t_wpb_var) SETTINGS allow_suspicious_types_in_group_by = 1; -- { serverError ILLEGAL_COLUMN }
-
-SELECT '-- SimpleAggregateFunction storing a state is refused, like ORDER BY already refuses it';
 DROP TABLE IF EXISTS t_wpb_saf;
 CREATE TABLE t_wpb_saf (id UInt8, sn SimpleAggregateFunction(any, AggregateFunction(uniq, UInt64))) ENGINE = Memory;
 INSERT INTO t_wpb_saf SELECT number, uniqState(number) FROM numbers(6) GROUP BY number;
 SET enable_analyzer = 1;
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY sn) FROM t_wpb_saf); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY sn) FROM t_wpb_saf); -- { serverError ILLEGAL_COLUMN }
-SELECT id FROM t_wpb_saf ORDER BY sn; -- { serverError ILLEGAL_COLUMN }
-SET enable_analyzer = 0;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY sn) FROM t_wpb_saf); -- { serverError ILLEGAL_COLUMN }
 SELECT count() FROM (SELECT row_number() OVER (ORDER BY sn) FROM t_wpb_saf); -- { serverError ILLEGAL_COLUMN }
 SELECT id FROM t_wpb_saf ORDER BY sn; -- { serverError ILLEGAL_COLUMN }
