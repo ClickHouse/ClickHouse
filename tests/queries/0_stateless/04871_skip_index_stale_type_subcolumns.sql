@@ -1,5 +1,4 @@
--- Tags: no-fasttest, no-random-merge-tree-settings, no-parallel-replicas
--- no-fasttest: the Quantized cases need enable_quantized_codec.
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).

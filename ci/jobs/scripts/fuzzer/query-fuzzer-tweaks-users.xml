@@ -121,7 +121,6 @@
             <!-- Not just a default: this pin is what stops `compatibility` from reverting the
                  analyzer behind the constraint's back. See the constraint comment above. -->
             <enable_analyzer>1</enable_analyzer>
-            <enable_deflate_qpl_codec>1</enable_deflate_qpl_codec>
             <enable_full_text_index>1</enable_full_text_index>
             <enable_lightweight_delete>1</enable_lightweight_delete>
             <enable_lightweight_update>1</enable_lightweight_update>
@@ -133,7 +132,6 @@
             <enable_streaming_queries>1</enable_streaming_queries>
             <enable_sz3_codec>1</enable_sz3_codec>
             <enable_time_time64_type>1</enable_time_time64_type>
-            <enable_zstd_qat_codec>1</enable_zstd_qat_codec>
             <enable_zxc_codec>1</enable_zxc_codec>
             <input_format_parquet_allow_geoparquet_parser>1</input_format_parquet_allow_geoparquet_parser>
             <insert_allow_materialized_columns>1</insert_allow_materialized_columns>
