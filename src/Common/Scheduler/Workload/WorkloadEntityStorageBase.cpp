@@ -454,18 +454,18 @@ bool WorkloadEntityStorageBase::storeEntity(
             // unit) would be accepted and then silently ignored, so reject it at DDL time. The
             // referenced resource is created before the referencing workload, so it is already in
             // `entities`; if it cannot be resolved here, reference validation reports the error.
-            for (const auto & [name, value, resource] : workload->changes)
+            for (const auto & [name, value, res_name] : workload->changes)
             {
-                if (name != "scheduler" || resource.empty())
+                if (name != "scheduler" || res_name.empty())
                     continue;
-                if (auto it = entities.find(resource); it != entities.end())
+                if (auto it = entities.find(res_name); it != entities.end())
                 {
                     auto * res = typeid_cast<ASTCreateResourceQuery *>(it->second.get());
                     if (res && res->unit != CostUnit::IOByte && res->unit != CostUnit::CPUNanosecond)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Workload setting 'scheduler' can only be set for a time-shared CPU or IO resource, "
                             "but resource '{}' manages {}; remove the `FOR {}` clause or target a CPU/IO resource",
-                            resource, costUnitToString(res->unit), resource);
+                            res_name, costUnitToString(res->unit), res_name);
                 }
             }
         }
