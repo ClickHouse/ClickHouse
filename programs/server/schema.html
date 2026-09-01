@@ -733,17 +733,16 @@ if (passFromUrl) {
 /// can offer to save and later autofill them — same as `play.html`. Guarded because
 /// `PasswordCredential` exists only in Chromium-based browsers.
 ///
-/// Persist only for a same-origin target. `PasswordCredential` is scoped to the page origin,
-/// not to the backend named in `#url` (its `name` field is a display label, not an isolation
-/// key). Storing a cross-origin login here would let the browser autofill it on a later plain
-/// visit; because the page then auto-loads the same-origin default (`isSameOriginTarget` at the
-/// bottom of the script), those remembered credentials would be POSTed to this page's own server
-/// instead of the cross-origin one they belong to. `play.html` can store unconditionally because
-/// it never auto-contacts a server on open; `/schema` does, so it must not persist a credential
-/// that its own auto-load could later misdirect. This is the same `isSameOriginTarget` invariant
-/// that already gates the page-load auto-load and the paste probe.
+/// Persist only when the configured server is the endpoint this page was served from
+/// (`isOwnServerTarget`). `PasswordCredential` is scoped to the page origin, not to the backend
+/// named in `#url` (its `name` field is a display label, not an isolation key). Storing another
+/// server's login here would let the browser autofill it on a later plain visit; because the page
+/// then auto-loads its own default endpoint, those remembered credentials would be POSTed to this
+/// page's own server instead of the one they belong to. The origin alone is not a fine enough gate:
+/// on a path-routed proxy `https://proxy.example/b/` and a page served from
+/// `https://proxy.example/a/schema` share it while being different servers.
 function storeCredentials() {
-    if (window.PasswordCredential && $('password').value && isSameOriginTarget($('url').value)) {
+    if (window.PasswordCredential && $('password').value && isOwnServerTarget($('url').value)) {
         try {
             navigator.credentials.store(new PasswordCredential({
                 id: $('user').value,
@@ -2236,6 +2235,28 @@ function isSameOriginTarget(value) {
         return false;
     }
 }
+
+/// The configured server is exactly the endpoint this page was served from (`defaultServerAddress`),
+/// scheme, host, path prefix and query string included. This is the gate for everything that hands a
+/// credential to the browser's password manager, which keys a `PasswordCredential` by page origin
+/// only. The origin alone is too coarse there: a path-routed reverse proxy serves unrelated backends
+/// under one origin, so a handed-over `https://proxy.example/b/` would otherwise have its login
+/// remembered for a page served from `https://proxy.example/a/schema` and autofilled on a later plain
+/// visit, which auto-loads `https://proxy.example/a/`. The path is compared verbatim except for the
+/// root, where the URL parser already yields `/` for both `origin` and `origin/`.
+function isOwnServerTarget(value) {
+    try {
+        const target = new URL(value, window.location.href);
+        const own = new URL(defaultServerAddress());
+        const rootNormalized = (p) => (p === '/' || p === '') ? '/' : p;
+        return target.protocol === own.protocol
+            && target.host === own.host
+            && rootNormalized(target.pathname) === rootNormalized(own.pathname)
+            && target.search === own.search;
+    } catch (e) {
+        return false;
+    }
+}
 /// Auto-load the same-origin default on open. First give the browser a chance to supply a
 /// remembered same-origin login: `storeCredentials` saves one via the Credential Management API,
 /// but that stored credential is only surfaced through `navigator.credentials.get` — the bare
@@ -2249,7 +2270,11 @@ function isSameOriginTarget(value) {
 /// because it never auto-contacts a server on open).
 async function autoLoadOnOpen() {
     if (openedLocally || !isSameOriginTarget($('url').value)) return;
-    if (window.PasswordCredential && !$('user').value && !$('password').value) {
+    /// Retrieving a remembered login is gated on the full endpoint identity, not merely on the
+    /// same origin the auto-load above accepts: the password manager keys its entry by page origin,
+    /// so on a path-routed proxy the entry saved for `https://proxy.example/a/` would be filled in
+    /// for a `?url=https://proxy.example/b/` visit and sent to that other backend.
+    if (window.PasswordCredential && isOwnServerTarget($('url').value) && !$('user').value && !$('password').value) {
         /// `navigator.credentials.get` is async, so the same-origin target and empty fields checked
         /// above can change while it is pending: the user could paste a cross-origin URL into `#url`
         /// or start typing their own credentials. Filling the saved same-origin login and then

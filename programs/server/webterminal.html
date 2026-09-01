@@ -124,13 +124,23 @@
     // an unrelated site. The page is attached with `attachNonStrictPath` (see `HTTPHandlerFactory`),
     // so the served path may carry a suffix - `/webterminal/`, `/webterminalfoo` - and the route is
     // therefore cut at its last occurrence in the path.
+    // The query string of that address is part of the endpoint as well: a proxy route can select a
+    // cluster or a namespace with `?cluster=a`, and `play.html` carries such parameters over into the
+    // terminal URL (`getTerminalURL`). Dropping them here would authenticate this terminal against the
+    // proxy's default backend instead of the server selected in the page that opened it. Only `user`
+    // and `password` are removed: they are this page's own parameters (`user` is read above, and a
+    // password must never travel in a URL), not routing of the endpoint.
     function getWebSocketURL() {
         var loc = window.location;
         var protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
         var path = loc.pathname;
         var route = path.lastIndexOf('/webterminal');
         if (route !== -1) path = path.slice(0, route) + '/webterminal';
-        return protocol + '//' + loc.host + path;
+        var query = new URLSearchParams(loc.search || '');
+        query.delete('user');
+        query.delete('password');
+        var suffix = query.toString();
+        return protocol + '//' + loc.host + path + (suffix ? '?' + suffix : '');
     }
 
     function initTerminal() {

@@ -91,7 +91,16 @@ origins=$(exact_origins "$content")
 ws_route=$(echo "$content" | grep -qF "lastIndexOf('/webterminal')" \
     && ! echo "$content" | grep -qF "loc.host + '/webterminal'" \
     && echo prefixed || echo root)
-echo "webterminal handshake=${handshake} accepts=${accepts} origins=${origins} ws_route=${ws_route}"
+# The query string of that route is part of the endpoint too: a proxy route can select a cluster or a
+# namespace with `?cluster=a`, and `/play` opens the terminal at the address it is configured with.
+# Dropping it here would authenticate the terminal against the proxy's default backend. The page's own
+# `user` and `password` parameters are credentials rather than routing and must not be forwarded.
+ws_query=$(echo "$content" | sed -n '/function getWebSocketURL()/,/^    }/p' \
+    | grep -qF "query.delete('user')" \
+    && echo "$content" | sed -n '/function getWebSocketURL()/,/^    }/p' | grep -qF "query.delete('password')" \
+    && echo "$content" | sed -n '/function getWebSocketURL()/,/^    }/p' | grep -qF "loc.search" \
+    && echo preserved || echo dropped)
+echo "webterminal handshake=${handshake} accepts=${accepts} origins=${origins} ws_route=${ws_route} ws_query=${ws_query}"
 
 content=$(fetch_page play)
 relay=$(echo "$content" | grep -qF "clickhouse-docs-relay-ready" && echo yes || echo no)
@@ -112,6 +121,34 @@ terminal_route=$(echo "$content" | grep -qF "+ 'webterminal';" \
 # `PasswordCredential` is scoped to the page origin rather than to that server. Persisting a
 # cross-origin login here would let the browser autofill it on a later plain visit, where the page
 # defaults back to its own origin and would send that login to the wrong server.
-credential_store=$(echo "$content" | grep -qF "password_elem.value && isSameOriginTarget(url_elem.value)" \
-    && echo same-origin || echo any-origin)
-echo "play terminal_route=${terminal_route} credential_store=${credential_store}"
+# The origin alone is too coarse a gate: a path-routed reverse proxy serves unrelated backends under
+# one origin, so a login handed over for `https://proxy.example/b/` must not be remembered by a page
+# served from `https://proxy.example/a/play`. The whole endpoint identity is compared instead.
+credential_store=$(echo "$content" | grep -qF "password_elem.value && isOwnServerTarget(url_elem.value)" \
+    && echo "$content" | sed -n '/function isOwnServerTarget(value)/,/^}/p' \
+        | grep -qF "sameServerAddress(value, defaultServerAddress())" \
+    && echo endpoint || echo origin)
+# The Documentation and Web Terminal URLs are written into a link `href`, an iframe `src` and the
+# `docs_relay` parameter of the relay page. A `user:password@` userinfo of the configured address
+# would therefore be put back into browser history, referrers and access logs.
+derived_url_userinfo=$(test "$(echo "$content" | grep -cF 'stripURLCredentials(url);')" = 2 \
+    && echo "$content" | sed -n '/function stripURLCredentials(url)/,/^}/p' | grep -qF "url.password = '';" \
+    && echo stripped || echo kept)
+# The query string of the configured address selects the endpoint (a proxy route can name a cluster or
+# a namespace), so the Web Terminal has to be opened on that same endpoint. Only `user` and `password`
+# are dropped - they are the terminal page's own parameters, and a password must not travel in a URL.
+terminal_query=$(echo "$content" | sed -n '/function getTerminalURL()/,/^    }/p' \
+    | grep -qF "url.searchParams.delete('user');" \
+    && ! echo "$content" | sed -n '/function getTerminalURL()/,/^    }/p' | grep -qF "url.search = '';" \
+    && echo preserved || echo dropped)
+echo "play terminal_route=${terminal_route} terminal_query=${terminal_query} credential_store=${credential_store} derived_url_userinfo=${derived_url_userinfo}"
+
+# `/schema` persists a credential under the same rule, and additionally retrieves a remembered one on
+# open, which is the path that would fill a login saved for one endpoint into a page pointed at another.
+content=$(fetch_page schema)
+credential_store=$(echo "$content" | grep -qF "\$('password').value && isOwnServerTarget(\$('url').value)" \
+    && echo "$content" | sed -n '/function isOwnServerTarget(value)/,/^}/p' | grep -qF "defaultServerAddress()" \
+    && echo endpoint || echo origin)
+credential_retrieval=$(echo "$content" | grep -qF "window.PasswordCredential && isOwnServerTarget(\$('url').value)" \
+    && echo endpoint || echo origin)
+echo "schema credential_store=${credential_store} credential_retrieval=${credential_retrieval}"

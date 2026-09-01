@@ -7750,6 +7750,18 @@ const opened_locally = location.protocol == 'file:';
 /// The built-in pages are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`),
 /// so the served URL may carry a suffix - `/play/`, `/play?user=x` - and the prefix is therefore taken
 /// as everything up to and including the last `/` before the route name.
+/// Remove a `user:password@` userinfo from a URL that is about to be exposed - as a link `href`, an
+/// iframe `src`, or a query parameter naming another page. The configured server address may carry
+/// one (the browser strips it from the address bar, but the field accepts it), and every place that
+/// serializes such a URL would leak the password into browser history, referrer headers and access
+/// logs. Credentials reach the derived pages over `postMessage` instead.
+function stripURLCredentials(url)
+{
+    url.username = '';
+    url.password = '';
+    return url;
+}
+
 function defaultServerAddress() {
     if (opened_locally) return 'http://localhost:8123/';
     const url = new URL(location.href);
@@ -7949,10 +7961,15 @@ checkURL(true);
 /// The non-empty Play username is carried over as a `user` query parameter so the docs page connects as
 /// the same user instead of falling back to the server default user. The password is intentionally
 /// omitted (it would leak in the URL).
+/// Any `user:password@` userinfo of the configured address is removed as well: this URL is written into
+/// the `href` of a link, into the `docs_relay` parameter of the relay page, and into an iframe `src`, so
+/// keeping it would put the password back into browser history, referrers and access logs - the leak the
+/// whole handover exists to remove.
 function docsURL() {
     const url = new URL(url_elem.value, location.href);
     url.search = '';
     url.hash = '';
+    stripURLCredentials(url);
     url.pathname = url.pathname.replace(/\/?$/, '/') + 'docs';
     return url;
 }
@@ -15233,27 +15250,30 @@ async function cancel()
     progressEl.clear();
 }
 
-/// The configured server is this page's own origin - the only case where a credential may be
-/// persisted by the browser (see `storeCredentials`).
-function isSameOriginTarget(value) {
-    try {
-        return new URL(value, location.href).origin === location.origin;
-    } catch (e) {
-        return false;
-    }
+/// The configured server is exactly the endpoint this page was served from - the only case where a
+/// credential may be persisted by the browser (see `storeCredentials`).
+/// The whole endpoint identity is compared, not just the origin: this page treats the path prefix and
+/// the query string of the address as part of the endpoint everywhere else (`sameServerAddress`,
+/// `defaultServerAddress`), and a path-routed proxy serves unrelated backends under one origin, so
+/// `https://proxy.example/a/` and `https://proxy.example/b/` are different servers whose logins must
+/// not be interchangeable.
+function isOwnServerTarget(value) {
+    return sameServerAddress(value, defaultServerAddress());
 }
 
 /// Browser Credential Management API: remember the entered credentials so the browser can offer to
 /// save them and later autofill them.
 ///
-/// Persist only for a same-origin target, the same rule `schema.html` follows. A `PasswordCredential`
-/// is scoped to the page origin, not to the server named in the URL input - its `name` field is a
-/// display label, not an isolation key. A trusted host can hand this page a connection to a different
-/// server (`applyConnectionFromHost`), so storing the login it sent would let the browser autofill it
-/// on a later plain visit to this page, where the connection defaults back to the server that served
-/// it (`defaultServerAddress`) and the next Run would send the other server's login to this one.
+/// Persist only when the configured server is the endpoint this page was served from, the same rule
+/// `schema.html` follows. A `PasswordCredential` is scoped to the page origin, not to the server named
+/// in the URL input - its `name` field is a display label, not an isolation key. A trusted host can hand
+/// this page a connection to a different server (`applyConnectionFromHost`), so storing the login it sent
+/// would let the browser autofill it on a later plain visit to this page, where the connection defaults
+/// back to the server that served it (`defaultServerAddress`) and the next Run would send the other
+/// server's login to this one. The origin alone is not enough: on a path-routed proxy a handed-over
+/// `https://proxy.example/b/` shares the origin of a page served from `https://proxy.example/a/play`.
 function storeCredentials() {
-    if (password_elem.value && isSameOriginTarget(url_elem.value)) {
+    if (password_elem.value && isOwnServerTarget(url_elem.value)) {
         const cred = new PasswordCredential({
             id: user_elem.value,
             password: password_elem.value,
@@ -19505,15 +19525,24 @@ document.getElementById('download-button').addEventListener('click', async funct
     /// `docsURL`: a server exposed as `https://proxy.example/clickhouse/` serves its terminal at
     /// `https://proxy.example/clickhouse/webterminal`, while `https://proxy.example/webterminal`
     /// belongs to an unrelated site. So `webterminal` is appended to the configured path instead of
-    /// resolving a root-absolute route. The query string of the configured address is dropped: it
-    /// selects the query endpoint (see `sameServerAddress`) and means nothing to the terminal page.
+    /// resolving a root-absolute route. The query string of the configured address is part of the
+    /// endpoint too (see `sameServerAddress`): a proxy route can select a cluster or a namespace with
+    /// `?cluster=a`, and a terminal that dropped it would authenticate against the proxy's default
+    /// backend instead of the server selected here. It is therefore carried over, and
+    /// `webterminal.html` passes it on to the WebSocket endpoint it dials.
+    /// The `user` and `password` parameters are the exception: they are credentials rather than
+    /// routing, `webterminal.html` reads `user` from its own URL (which would stop the embedded
+    /// terminal from waiting for the credentials sent over `postMessage`), and a password must never
+    /// travel in a URL. Any `user:password@` userinfo is removed for the same reason.
     /// Returns `null` if the configured URL cannot be parsed, so the caller can treat the terminal
     /// as unavailable instead of letting the exception abort `play.html` initialization.
     function getTerminalURL() {
         try {
             const url = new URL(url_elem.value, location.href);
-            url.search = '';
             url.hash = '';
+            stripURLCredentials(url);
+            url.searchParams.delete('user');
+            url.searchParams.delete('password');
             url.pathname = url.pathname.replace(/\/?$/, '/') + 'webterminal';
             return url.href;
         } catch (e) {
