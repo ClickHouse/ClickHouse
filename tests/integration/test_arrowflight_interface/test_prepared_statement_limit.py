@@ -257,14 +257,31 @@ def test_prepared_statement_parameter_types(test_case):
 
 
 def test_prepared_statement_schema_returned_on_prepare():
-    """When NULL substitution succeeds, prepare should return dataset_schema."""
+    """GetSchema returns the cached dataset schema until parameters are bound."""
     client = get_client()
 
     stmt = client.prepare("SELECT ? AS result")
-    assert stmt.dataset_schema is not None
-    assert len(stmt.dataset_schema) == 1
-    assert stmt.dataset_schema.field(0).name == "result"
-    stmt.close()
+    try:
+        assert stmt.dataset_schema is not None
+        assert len(stmt.dataset_schema) == 1
+        assert stmt.dataset_schema.field(0).name == "result"
+
+        schema_before_binding = client.get_prepared_statement_schema(stmt.handle).schema
+        assert schema_before_binding.equals(stmt.dataset_schema, check_metadata=True)
+
+        params = pa.record_batch([pa.array([42], type=pa.int64())], names=["parameter_1"])
+        stmt.bind_parameters(params)
+
+        schema_after_binding = client.get_prepared_statement_schema(stmt.handle).schema
+        flight_info = client.get_prepared_statement_flight_info(stmt.handle)
+        result = client.do_get(flight_info.endpoints[0].ticket).read_all()
+
+        assert not schema_after_binding.equals(schema_before_binding, check_metadata=True)
+        assert schema_after_binding.equals(flight_info.schema, check_metadata=True)
+        assert schema_after_binding.equals(result.schema, check_metadata=True)
+        assert result.column("result").to_pylist() == [42]
+    finally:
+        stmt.close()
 
 
 def test_prepared_statement_no_schema_when_null_invalid():
@@ -277,10 +294,17 @@ def test_prepared_statement_no_schema_when_null_invalid():
     assert stmt.parameter_schema is not None
     assert len(stmt.parameter_schema) == 1
 
+    with pytest.raises(flight.FlightServerError, match="Parameters were not bound"):
+        client.get_prepared_statement_schema(stmt.handle)
+
     # Executing with a real value should work.
     params = pa.record_batch([pa.array([5], type=pa.int64())], names=["0"])
     stmt.bind_parameters(params)
-    result = stmt.execute()
+    schema = client.get_prepared_statement_schema(stmt.handle).schema
+    flight_info = client.get_prepared_statement_flight_info(stmt.handle)
+    result = client.do_get(flight_info.endpoints[0].ticket).read_all()
+    assert schema.equals(flight_info.schema, check_metadata=True)
+    assert schema.equals(result.schema, check_metadata=True)
     assert result.column("number").to_pylist() == [0, 1, 2, 3, 4]
     stmt.close()
 

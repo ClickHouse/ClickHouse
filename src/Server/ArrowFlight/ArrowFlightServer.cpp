@@ -41,6 +41,8 @@
 #include <arrow/ipc/writer.h>
 #include <arrow/scalar.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -342,6 +344,32 @@ namespace
         auto ch_to_arrow_converter = std::make_shared<CHColumnToArrowColumn>(header, "Arrow", arrow_settings);
         ch_to_arrow_converter->initializeArrowSchema();
         return ch_to_arrow_converter;
+    }
+
+    arrow::Result<std::shared_ptr<arrow::Schema>> getCachedPreparedStatementSchema(
+        const arrow::flight::FlightDescriptor & descriptor, const CallsData & calls_data, const std::string & username)
+    {
+        if (descriptor.type != arrow::flight::FlightDescriptor::CMD
+            || descriptor.cmd.size() > static_cast<size_t>(std::numeric_limits<int>::max()))
+            return std::shared_ptr<arrow::Schema>{};
+
+        google::protobuf::Any any_msg;
+        if (!any_msg.ParseFromArray(descriptor.cmd.data(), static_cast<int>(descriptor.cmd.size()))
+            || !any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementQuery>())
+            return std::shared_ptr<arrow::Schema>{};
+
+        arrow::flight::protocol::sql::CommandPreparedStatementQuery command;
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
+
+        if (command.prepared_statement_handle().empty())
+            return std::shared_ptr<arrow::Schema>{};
+
+        ARROW_ASSIGN_OR_RAISE(auto ps_info, calls_data.getPreparedStatement(command.prepared_statement_handle(), username))
+        if (ps_info.bound_parameters && ps_info.bound_parameters->num_rows() > 0)
+            return std::shared_ptr<arrow::Schema>{};
+
+        return ps_info.dataset_schema;
     }
 }
 
@@ -764,8 +792,12 @@ arrow::Status ArrowFlightServer::GetSchema(
         auto session = auth.getSession();
 
         std::shared_ptr<arrow::Schema> schema;
+        const bool is_poll_descriptor = request.type == arrow::flight::FlightDescriptor::CMD && hasPollDescriptorPrefix(request.cmd);
 
-        if ((request.type == arrow::flight::FlightDescriptor::CMD) && hasPollDescriptorPrefix(request.cmd))
+        if (!is_poll_descriptor)
+            ARROW_ASSIGN_OR_RAISE(schema, getCachedPreparedStatementSchema(request, *calls_data, auth.getUsername()))
+
+        if (is_poll_descriptor)
         {
             const String & poll_descriptor = request.cmd;
             ARROW_RETURN_NOT_OK(calls_data->extendPollDescriptorExpirationTime(poll_descriptor));
@@ -774,7 +806,7 @@ arrow::Status ArrowFlightServer::GetSchema(
             const auto & poll_info = poll_info_res.ValueOrDie();
             schema = poll_info->schema;
         }
-        else
+        else if (!schema)
         {
             std::string sql;
             ArrowFlight::SchemaModifier schema_modifier;
