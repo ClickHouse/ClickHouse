@@ -1,6 +1,6 @@
 Expression ((Project names + Projection))
   Aggregating
-    Expression
+    Expression ((Before GROUP BY + Post Join Actions))
       Join (JOIN FillRightFirst)
         Expression (Left Pre Join Actions)
           ReadFromMerge

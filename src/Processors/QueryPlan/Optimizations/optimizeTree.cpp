@@ -305,7 +305,10 @@ void optimizeTreeSecondPass(
         });
 
     /// If join runtime filters were added re-run push down optimizations
-    /// to move newly added runtime filter as deep in the tree as possible
+    /// to move newly added runtime filter as deep in the tree as possible.
+    /// `extra_settings` has to be the same one the main passes use: with a default-constructed struct
+    /// `parallel_replicas_filter_pushdown` reads as off, and the filter then stops above the opaque
+    /// `ReadFromLocalReplica` instead of entering the local plan.
     if (join_runtime_filters_were_added)
     {
         traverseQueryPlan(stack, root,
@@ -315,9 +318,9 @@ void optimizeTreeSecondPass(
                 while (true)
                 {
                     size_t changed_nodes = 0;
-                    changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
-                    changed_nodes += tryMergeFilters(&frame_node, nodes, {});
-                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
+                    changed_nodes += tryMergeExpressions(&frame_node, nodes, extra_settings);
+                    changed_nodes += tryMergeFilters(&frame_node, nodes, extra_settings);
+                    changed_nodes += tryPushDownFilter(&frame_node, nodes, extra_settings);
 
                     if (!changed_nodes)
                         break;

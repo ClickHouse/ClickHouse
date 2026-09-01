@@ -360,12 +360,24 @@ void FilterStep::describeActions(FormatSettings & settings) const
         }
     }
 
-    settings.out << prefix << "Filter column: "
-                 << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
+    /// A condition made only of join runtime filters renders as an empty pretty expression plus an
+    /// annotation, the same `Runtime filters:` line a read step shows. Print the annotation on its own
+    /// rather than an empty `Filter column:`.
+    const auto annotation = settings.pretty ? QueryPlanFormat::getColumnAnnotation(filter_column_name, settings) : std::string_view{};
+    const String pretty_column
+        = settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name;
 
-    if (!settings.pretty && remove_filter_column)
-        settings.out << " (removed)";
-    settings.out << '\n';
+    if (!pretty_column.empty() || annotation.empty())
+    {
+        settings.out << prefix << "Filter column: " << pretty_column;
+
+        if (!settings.pretty && remove_filter_column)
+            settings.out << " (removed)";
+        settings.out << '\n';
+    }
+
+    if (!annotation.empty())
+        settings.out << prefix << annotation << '\n';
 
     auto expression = std::make_shared<ExpressionActions>(std::move(cloned_dag));
     if (!settings.compact)
