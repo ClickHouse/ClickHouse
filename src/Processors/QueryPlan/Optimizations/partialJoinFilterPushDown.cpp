@@ -1,3 +1,5 @@
+#include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -81,6 +83,39 @@ bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet 
     }
 }
 
+bool dependsOnSomeColumn(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::INPUT)
+        return true;
+
+    for (const auto * child : node.children)
+    {
+        if (dependsOnSomeColumn(*child))
+            return true;
+    }
+
+    return false;
+}
+
+/// A condition that reads no column is the same for every row, so pre-filtering a side with it can
+/// only do one useful thing: a constant that is already known to be false makes the side's read
+/// provably empty. Anything else - a `materialize(1)`, a folded true constant - removes nothing and
+/// only interposes a `Filter` step, which changes what later optimizations recognize: a `Filter`
+/// above a key-value right side hides the prepared storage, so a forced `join_algorithm = 'direct'`
+/// had no algorithm left and the query failed with `NOT_IMPLEMENTED` as soon as such a conjunct was
+/// added to the `WHERE` clause.
+bool isUsefulToPreFilterWith(const ActionsDAG::Node & node)
+{
+    if (dependsOnSomeColumn(node))
+        return true;
+
+    if (!node.column)
+        return false;
+
+    const ConstantFilterDescription constant_filter(*node.column);
+    return constant_filter.always_false;
+}
+
 /// Extract all conditions from the filter that use only columns from the list.
 /// The resulting condition is broader then the full filter but can be used to early pre-filtering of the data
 ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameSet & available_columns)
@@ -121,6 +156,9 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
     {
         if (!onlyDependsOnAvailableColumns(node, available_columns))
             return ConditionList{}; /// If the subtree depends on other columns then we cannot include it into partial predicate, so assume it's True
+
+        if (!isUsefulToPreFilterWith(node))
+            return ConditionList{}; /// Nothing to pre-filter with, so assume it's True
 
         return ConditionList{
             .condition_type = ConditionList::SingleCondition,
