@@ -222,6 +222,20 @@ TEST(RequestQueue, PriorityLargeValuesOrderExactly)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2}));
 }
 
+/// "no priority" (`priority = 0`) sorts strictly after every explicit priority — even the maximum
+/// representable one — instead of colliding with it (both mapping to the max key → FIFO).
+TEST(RequestQueue, PriorityNoPrioritySortsLast)
+{
+    Fixture f(SchedulerAlgorithm::Priority);
+    const UInt64 huge = static_cast<UInt64>(std::numeric_limits<Int64>::max()); // extreme explicit priority
+    auto * no_priority = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 0);
+    auto * explicit_low = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ huge);
+    f.enqueue(1, no_priority);   // enqueue "no priority" first
+    f.enqueue(2, explicit_low);
+    // The explicit priority (even INT64_MAX) outranks "no priority", so id 2 is served first.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 1}));
+}
+
 /// The swap hook migrates all pending requests to the new algorithm; none are lost, and the
 /// node identity is unchanged.
 TEST(RequestQueue, SwapSchedulerKeepsRequests)

@@ -395,11 +395,19 @@ public:
     void push(ResourceRequest * request) override
     {
         UInt64 priority = request->scheduling_context ? request->scheduling_context->priority : 0;
-        // `priority == 0` = no priority → lowest precedence: map to the max key so explicit
-        // priorities (1 = highest) sort ahead of it; FIFO within equal priority via the sequence.
-        // The key is an integer `Priority` (not the `double` half of `scheduling_key`) so ordering
-        // stays exact for large values (a double loses it above 2^53).
-        request->scheduling_priority = Priority{priority == 0 ? std::numeric_limits<Int64>::max() : static_cast<Int64>(priority)};
+        // Map the `UInt64` `priority` query setting onto the Int64 `Priority` key (lower value =
+        // higher precedence). `priority == 0` = "no priority" → the max key so it sorts strictly
+        // last. Explicit priorities are clamped into `[1, max-1]` so (a) they always sort ahead of
+        // "no priority" (0 and a huge explicit value no longer collide), and (b) a value above
+        // `INT64_MAX` cannot wrap to a negative (spuriously high-precedence) key. This uses an
+        // integer key rather than the `double` half of `scheduling_key`, which would lose ordering
+        // above 2^53. Priorities beyond `INT64_MAX` are not distinguishable (the `Priority` type is
+        // Int64), which is well beyond any realistic query priority. FIFO within equal priority.
+        constexpr Int64 max_key = std::numeric_limits<Int64>::max();
+        Int64 key = priority == 0
+            ? max_key
+            : static_cast<Int64>(std::min<UInt64>(priority, static_cast<UInt64>(max_key) - 1));
+        request->scheduling_priority = Priority{key};
         request->scheduling_key = {0.0, next_seq++};
         requests.insert(*request);
     }
