@@ -335,7 +335,7 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large array size ({}) in groupArrayIntersect deserialization", size);
         /// Reserving is only an optimization here, so it is derived from payload that already arrived.
-        /// A serialized element is at least one byte, its varint length.
+        /// An element costs at least one varint byte.
         set.reserve(std::min(size, buf.available()));
         for (size_t i = 0; i < size; ++i)
         {

@@ -370,8 +370,7 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Malformed serialized string in aggregation state: size {} is smaller than the zero-byte terminator", string_size);
 
-    /// Callers of this method wrap one complete in-memory record, never a refillable stream, so a size
-    /// reaching past its end can never be satisfied and must not become an allocation first.
+    /// Callers wrap one complete in-memory record, never a refillable stream, so a size past its end can never be satisfied.
     if (string_size - serialize_string_with_zero_byte > in.available())
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Cannot read all data. Bytes read: {}. Bytes expected: {}.",

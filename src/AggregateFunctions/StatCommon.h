@@ -116,8 +116,7 @@ struct StatisticalSample
         buf.write(reinterpret_cast<const char *>(y.data()), size_y * sizeof(y[0]));
     }
 
-    /// Fills `sample` with `count` elements, growing it only by what the buffer already holds, the way
-    /// `addX`/`addY` grow it. `MixedAlignedArenaAllocator` reallocates and frees for real at these sizes.
+    /// Grows `sample` by what the buffer already holds; `MixedAlignedArenaAllocator` reallocates and frees for real at these sizes.
     template <typename Sample>
     static void readSample(Sample & sample, size_t count, ReadBuffer & buf, Arena * arena)
     {
