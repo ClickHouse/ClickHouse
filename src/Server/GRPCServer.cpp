@@ -380,11 +380,57 @@ namespace
 
     using CompletionCallback = std::function<void(bool)>;
 
+    /// The state shared between the call thread and the queue-thread RPC termination
+    /// notification (the `AsyncNotifyWhenDone` callback). The call thread publishes the
+    /// query status and marks the query as finished; the notification callback reads both.
+    struct RpcCancelState
+    {
+        std::mutex mutex;
+        bool query_finished = false;
+        QueryStatusPtr query_status;
+    };
+
     /// Requests a connection and provides low-level interface for reading and writing.
     class BaseResponder
     {
     public:
+        BaseResponder() : cancellation_state(std::make_shared<RpcCancelState>())
+        {
+            /// Register a self-owning completion callback as the `AsyncNotifyWhenDone` tag, i.e.
+            /// it will be invoked on the queue thread when the RPC terminates (client abort, server
+            /// finish, etc.). The tag is delivered with `ok == true` regardless of whether the RPC
+            /// was cancelled, so cancellation is detected with `IsCancelled()`, which is only legal
+            /// to call after the tag has been delivered. On a client-initiated cancel of a still
+            /// running query the RPC has terminated, so the callback records `CANCELLED_BY_USER` on
+            /// the query status the same way an explicit `QueryInfo.cancel` would. The tag must be
+            /// set before the RPC starts, and it must not reference the responder once the call is
+            /// destroyed: the call may be cleaned up (`finished_calls`) before the tag is delivered,
+            /// so the callback owns itself (deletes itself upon invocation) and reaches the query
+            /// status through the shared `cancellation_state`, which outlives both the call and the
+            /// callback. `grpc_context` is dereferenced only while `query_finished == false`, which
+            /// guarantees the call (and hence the responder) is still alive: `close()` marks the
+            /// query as finished under the same mutex before it resets the responder, so it blocks
+            /// here until the callback is done. This is the only gRPC event that fires when a
+            /// client drops a mid-query RPC without sending an explicit `QueryInfo.cancel`.
+            CompletionCallback * done_callback = new CompletionCallback;
+            *done_callback = [state = cancellation_state, &context = grpc_context, done_callback](bool)
+            {
+                {
+                    std::lock_guard lock{state->mutex};
+                    if (!state->query_finished && state->query_status && context.IsCancelled())
+                        state->query_status->cancelQuery(
+                            CancelReason::CANCELLED_BY_USER,
+                            std::make_exception_ptr(
+                                Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
+                }
+                delete done_callback;
+            };
+            grpc_context.AsyncNotifyWhenDone(done_callback);
+        }
+
         virtual ~BaseResponder() = default;
+
+        std::shared_ptr<RpcCancelState> cancellation_state;
 
         virtual void start(GRPCService & grpc_service,
                            grpc::ServerCompletionQueue & new_call_queue,
@@ -767,6 +813,7 @@ namespace
         ContextMutablePtr query_context;
         std::mutex query_context_mutex;
         QueryStatusPtr query_status;
+        std::shared_ptr<RpcCancelState> cancellation_state;
         std::optional<QueryScope> query_scope;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
@@ -827,6 +874,7 @@ namespace
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
+        cancellation_state = responder->cancellation_state;
     }
 
     Call::~Call()
@@ -1118,6 +1166,11 @@ namespace
         {
             std::lock_guard lock{query_context_mutex};
             query_status = query_context->getProcessListElementSafe();
+        }
+
+        {
+            std::lock_guard lock{cancellation_state->mutex};
+            cancellation_state->query_status = query_status;
         }
     }
 
@@ -1571,6 +1624,11 @@ namespace
 
     void Call::close()
     {
+        {
+            std::lock_guard lock{cancellation_state->mutex};
+            cancellation_state->query_finished = true;
+            cancellation_state->query_status.reset();
+        }
         responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;

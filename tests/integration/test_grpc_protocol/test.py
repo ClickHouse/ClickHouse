@@ -871,6 +871,91 @@ def test_cancel_latched_timeout_after_distinct_grpc():
     )
 
 
+def test_rpc_abort_cancel_latched_timeout_after_distinct_grpc():
+    # Same BREAK-mode soft-timeout scenario as `test_cancel_latched_timeout_after_distinct_grpc`
+    # (the nullable-key prepass pauses at its first 4096-row boundary while `max_execution_time`
+    # latches a soft timeout inside `DistinctTransform`), but the cancel is a transport-level RPC
+    # abort (`Future.cancel()` on the unary `ExecuteQuery`), not an explicit `QueryInfo.cancel`
+    # message. A client that drops the call never sends that message, and a unary `ExecuteQuery`
+    # has no server-side reads pending mid-query, so the only event the server sees is the
+    # 'notify on done' tag (recv-close delivering `ok == false`). With the `AsyncNotifyWhenDone`
+    # hook the server must apply `CANCELLED_BY_USER` from that tag the same way it does from
+    # `QueryInfo.cancel`; otherwise `cancel_reason` stays `UNDEFINED` and, once the paused scan is
+    # released, the latched soft timeout makes the resumed scan continue instead of aborting.
+    node.query("CREATE TABLE IF NOT EXISTS null_keys_mt_lc_grpc_abort (k LowCardinality(Nullable(UInt64))) "
+               "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+               "SETTINGS allow_suspicious_low_cardinality_types=1")
+    node.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc_grpc_abort")
+    node.query("INSERT INTO null_keys_mt_lc_grpc_abort SELECT toNullable(0) FROM numbers(1000000)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc_abort SELECT toNullable(1) FROM numbers(100)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc_abort SELECT toNullable(2) FROM numbers(100)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc_abort SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+     WHERE number IN (SELECT k FROM null_keys_mt_lc_grpc_abort)
+     FORMAT Null
+     SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+              max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+
+    node.query("SYSTEM ENABLE FAILPOINT distinct_transform_null_pause")
+
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    rpc = stub.ExecuteQuery.future(clickhouse_grpc_pb2.QueryInfo(query=query, query_id=query_id))
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fn, timeout=60):
+        future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {fn} PAUSE")
+        done, _ = concurrent.futures.wait([future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fn} not triggered within {timeout} s"
+        future.result()
+
+    try:
+        wait_failpoint("distinct_transform_null_pause")
+
+        time.sleep(6)
+
+        assert rpc.cancel(), "client-side RPC abort did not succeed"
+
+        # Wait for the server to record `CANCELLED_BY_USER` from the 'notify on done' tag. The
+        # queue-thread notification calls `QueryStatus::cancelQuery` immediately, so
+        # `system.processes.is_cancelled` flips to 1 deterministically (no fixed sleep).
+        deadline = time.monotonic() + 30
+        while True:
+            if time.monotonic() >= deadline:
+                assert False, "RPC abort did not cancel the query within 30 s"
+            is_cancelled = node.query(
+                f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}' FORMAT TSV"
+            ).strip()
+            if is_cancelled == "1":
+                break
+            time.sleep(0.1)
+
+        node.query("SYSTEM NOTIFY FAILPOINT distinct_transform_null_pause")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT distinct_transform_null_pause")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    # The client aborted the call, so the unary future must surface as cancelled.
+    deadline = time.monotonic() + 90
+    while not rpc.cancelled():
+        if time.monotonic() >= deadline:
+            assert False, "client-side unary RPC did not complete as cancelled within 90 s"
+        time.sleep(0.1)
+
+    node.query("SYSTEM FLUSH LOGS")
+    cancel_reason = node.query(
+        f"SELECT cancel_reason FROM system.query_log WHERE query_id = '{query_id}' "
+        f"ORDER BY event_time DESC LIMIT 1 FORMAT TSV"
+    ).strip()
+    assert cancel_reason == "CANCELLED_BY_USER", (
+        f"expected RPC abort after latched timeout to set cancel_reason='CANCELLED_BY_USER', got: {cancel_reason!r}"
+    )
+
+
 def test_compressed_output():
     query_info = clickhouse_grpc_pb2.QueryInfo(
         query="SELECT 0 FROM numbers(1000)", output_compression_type="lz4"
