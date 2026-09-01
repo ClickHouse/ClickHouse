@@ -849,11 +849,13 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 
 # The recalculated recompression info reflects the patched values, so a later
-# recompression merge applies the codec once the TTL is really due.
+# recompression merge applies the codec once the TTL is really due - and the irreversible half,
+# the codec itself, must still be the table default rather than the rule's ZSTD(3).
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT any(recompression_ttl_info.max[1]) > now()
+    SELECT any(recompression_ttl_info.max[1]) > now(), any(default_compression_codec) != 'ZSTD(3)'
     FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_ttl_patch_recompress' AND active AND rows = 100;
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_recompress' AND active
+      AND partition_id NOT LIKE 'patch-%';
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_recompress;"
 
