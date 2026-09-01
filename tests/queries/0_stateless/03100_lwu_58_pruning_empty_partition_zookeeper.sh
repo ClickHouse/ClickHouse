@@ -53,6 +53,9 @@ $CLICKHOUSE_CLIENT --query "
 	ALTER TABLE $R1 DELETE WHERE p = 2 SETTINGS mutations_sync = 2;
 
 	SYSTEM STOP REPLICATION QUEUES $R1;
+
+	SELECT count() FROM system.parts
+	WHERE database = currentDatabase() AND table = '$R1' AND partition_id = '2' AND active AND rows = 0;
 "
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO $R2 SELECT 2, 1000000 + number, 1 FROM numbers(30)"
