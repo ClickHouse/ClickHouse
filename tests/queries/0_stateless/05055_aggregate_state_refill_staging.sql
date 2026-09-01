@@ -1,6 +1,6 @@
 -- An aggregate state value that arrives across compressed-block boundaries must round-trip
 -- unchanged, and staging it must cost the value rather than the number of pieces it arrives in.
--- A CAST(unhex(...)) blob is always fully buffered, so only a state read back from a table
+-- A `CAST(unhex(...))` blob is always fully buffered, so only a state read back from a table
 -- reaches the staged path.
 
 -- Part type and both block sizes are randomized per run, so all three are pinned: the state below
@@ -41,7 +41,7 @@ SELECT sum(length(x)) FROM (SELECT arrayJoin(groupUniqArrayMerge(gua)) AS x FROM
 DROP TABLE t_deserialize_allocation_bomb_chunks;
 
 -- Both limbs of a statistics state arrive one element at a time here: at 4-byte blocks
--- `available()` is below `sizeof(Float64)`, so every element spans a refill and the sample grows
+-- `available` is below `sizeof(Float64)`, so every element spans a refill and the sample grows
 -- once per element. A fully buffered blob reads all of it in a single batch instead.
 DROP TABLE IF EXISTS t_deserialize_allocation_bomb_stat;
 CREATE TABLE t_deserialize_allocation_bomb_stat
