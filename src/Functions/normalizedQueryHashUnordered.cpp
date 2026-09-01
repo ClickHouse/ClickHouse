@@ -69,6 +69,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// the parser settings are read from the session, so another context can hash the same text differently
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+
     /// the adaptor wraps it in Nullable itself, otherwise a Dynamic argument would make the result Dynamic
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt64>(); }
 
