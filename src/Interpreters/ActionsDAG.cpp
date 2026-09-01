@@ -4472,24 +4472,63 @@ static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reorde
 };
 
 
+/// An `ALIAS` only gives a node another name, and names are not part of a cache key, so it resolves to
+/// whatever it renames.
+static const ActionsDAG::Node * resolveAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node;
+}
+
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
-    size_t nodes_size = nodes.size();
-    writeVarUInt(nodes_size, out);
-
     /// Reorder nodes so that children are serialized before parents. Otherwise deserialization will be more complicated.
     std::vector<const Node *> reordered_nodes;
+    if (registry.for_cache_key)
+    {
+        /// A cache key must not depend on how a particular plan build happened to lay the DAG out. Two
+        /// builds of one query - the single-node plan and the parallel-replicas one - compute the same
+        /// columns from the same inputs, but not with the same nodes in the same order: one keeps an
+        /// `ALIAS` per column where the other reads the input directly, and the nodes come out in a
+        /// different order. Serializing the DAG as it is would give those two plans different keys, and
+        /// the fragment of a query whose subquery computes anything at all would never match its
+        /// single-node counterpart.
+        ///
+        /// So write a canonical form instead: the inputs in header order, then everything the outputs
+        /// depend on, children first, with aliases resolved away and nodes no output depends on left
+        /// out. What that encodes is what the step computes, which is all a key should distinguish.
+        /// It is never read back - this encoding exists only to be hashed.
+        std::unordered_set<const Node *> added;
+        auto add_with_children = [&](const Node * node, auto && self) -> void
+        {
+            node = resolveAliases(node);
+            if (!added.insert(node).second)
+                return;
+            for (const auto * child : node->children)
+                self(child, self);
+            reordered_nodes.push_back(node);
+        };
+
+        for (const auto * input : inputs)
+            add_with_children(input, add_with_children);
+        for (const auto * output : outputs)
+            add_with_children(output, add_with_children);
+    }
+    else
     {
         std::unordered_set<const Node *> already_added_nodes;
         for (const auto & node : nodes)
             addChildrenBeforeNode(reordered_nodes, already_added_nodes, &node);
     }
 
+    writeVarUInt(reordered_nodes.size(), out);
+
     std::unordered_map<const Node *, size_t> node_to_id;
     for (const auto * node : reordered_nodes)
         node_to_id.emplace(node, node_to_id.size());
 
-    if (nodes.size() != node_to_id.size())
+    if (!registry.for_cache_key && nodes.size() != node_to_id.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
 
     for (size_t node_id = 0; node_id < reordered_nodes.size(); ++node_id)
@@ -4507,7 +4546,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         writeVarUInt(node.children.size(), out);
         for (const auto * child : node.children)
         {
-            auto child_id = node_to_id.at(child);
+            auto child_id = node_to_id.at(registry.for_cache_key ? resolveAliases(child) : child);
             chassert(child_id < node_id, fmt::format("Node {} references child node {} that has not been serialized yet", node_id, child_id));
             writeVarUInt(child_id, out);
         }
@@ -4580,7 +4619,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
     writeVarUInt(outputs.size(), out);
     for (const auto * output : outputs)
-        writeVarUInt(node_to_id.at(output), out);
+        writeVarUInt(node_to_id.at(registry.for_cache_key ? resolveAliases(output) : output), out);
 }
 
 ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity)
