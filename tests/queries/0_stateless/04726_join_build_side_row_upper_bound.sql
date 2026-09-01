@@ -127,6 +127,20 @@ SELECT 'deleted right side keeps orientation',
 DROP TABLE deleted_04726;
 DROP TABLE small_04726;
 
+-- A relation of exactly one row bounds its own row count from above too, and a composite bound is
+-- the product of both children's bounds, so a one-row leaf carrying none erases the bound of every
+-- join above it. `system.one` is what backs constant subqueries such as `(SELECT 1)`.
+-- The first condition keeps the assertion non-vacuous: were the one-row leaf dropped from the join
+-- graph, the query would degenerate into the two-relation case that already passes without it.
+SELECT 'one-row leaf preserves the composite bound',
+        countIf(explain ILIKE '%system.one%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM (
+        SELECT dim_04726.id AS id FROM dim_04726 JOIN system.one ON 1 WHERE dim_04726.nation_id = 5
+    ) AS d JOIN fact_04726 ON d.id = fact_04726.id
+) WHERE explain ILIKE '%Join:%';
+
 -- The plan arms above assert the orientation; this one asserts the effect it exists for, so a
 -- future change cannot keep the plan shape while losing the small build side at runtime.
 SELECT avg(val)

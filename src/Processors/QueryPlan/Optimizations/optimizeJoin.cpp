@@ -439,7 +439,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (step->getName() == "ReadFromSystemOne")
     {
         /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
-        return RelationStats{.estimated_rows = 1, .estimated_rows_is_lower_bound = true, .table_name = "system.one"};
+        return RelationStats{
+            .estimated_rows = 1,
+            .estimated_rows_upper = 1,
+            .estimated_rows_is_lower_bound = true,
+            .table_name = "system.one"};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
