@@ -6138,3 +6138,99 @@ def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster)
         f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
         f"found {retry_hits} hits — the stale-token retry path was not exercised."
     )
+
+
+SNAPSHOT_LOAD_PAUSE_FAILPOINT = "delta_kernel_snapshot_load_pause"
+
+
+def prepare_paused_snapshot_load(started_cluster, table_name):
+    """Writes a small Delta table to S3 and arms the failpoint that keeps the thread running the
+    delta-kernel snapshot load paused, simulating a kernel call which never returns.
+    Returns the engine arguments of the table."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    delta_path = f"/{table_name}"
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+    return f"s3, filename = '{table_name}/', url = 'http://minio1:9001/{started_cluster.minio_bucket}/'"
+
+
+def release_paused_snapshot_load(instance):
+    # Wake up the paused worker thread, so it finishes the kernel call and frees its handles.
+    instance.query(f"SYSTEM NOTIFY FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+    instance.query(f"SYSTEM DISABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+
+
+def test_kill_query_during_snapshot_load(started_cluster):
+    """A snapshot load stuck inside delta-kernel must not make the query unkillable:
+    KILL QUERY has to abort the waiting query although the kernel call has not returned yet."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    instance = started_cluster.instances["node1"]
+    TABLE_NAME = randomize_table_name("test_kill_query_during_snapshot_load")
+    engine_args = prepare_paused_snapshot_load(started_cluster, TABLE_NAME)
+    query_id = f"{TABLE_NAME}_kill"
+    executor = ThreadPoolExecutor(max_workers=2)
+    try:
+        wait_future = executor.submit(
+            lambda: instance.query(
+                f"SYSTEM WAIT FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT} PAUSE",
+                timeout=60,
+            )
+        )
+        query_future = executor.submit(
+            lambda: instance.query_and_get_error(
+                f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})",
+                query_id=query_id,
+                timeout=120,
+            )
+        )
+        # The worker thread is paused inside the snapshot load and the query waits for it.
+        wait_future.result(timeout=60)
+        assert (
+            instance.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+            ).strip()
+            == "1"
+        )
+
+        instance.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        error = query_future.result(timeout=60)
+        assert "QUERY_WAS_CANCELLED" in error, error
+    finally:
+        release_paused_snapshot_load(instance)
+        executor.shutdown(wait=False)
+
+    # The cancelled CREATE left nothing behind and the table is readable once the kernel answers.
+    assert instance.query(f"EXISTS TABLE {TABLE_NAME}").strip() == "0"
+    assert int(instance.query(f"SELECT count() FROM deltaLake({engine_args})")) == 10
+
+
+@pytest.mark.parametrize(
+    "settings, expected_error",
+    [
+        (
+            {"delta_lake_snapshot_load_timeout_ms": 1000},
+            "delta_lake_snapshot_load_timeout_ms",
+        ),
+        ({"max_execution_time": 1}, "TIMEOUT_EXCEEDED"),
+    ],
+)
+def test_snapshot_load_timeout(started_cluster, settings, expected_error):
+    """A snapshot load stuck inside delta-kernel is bounded by delta_lake_snapshot_load_timeout_ms
+    and by max_execution_time instead of blocking the query forever."""
+    instance = started_cluster.instances["node1"]
+    TABLE_NAME = randomize_table_name("test_snapshot_load_timeout")
+    engine_args = prepare_paused_snapshot_load(started_cluster, TABLE_NAME)
+    try:
+        error = instance.query_and_get_error(
+            f"SELECT count() FROM deltaLake({engine_args})",
+            settings=settings,
+            timeout=120,
+        )
+        assert "TIMEOUT_EXCEEDED" in error and expected_error in error, error
+    finally:
+        release_paused_snapshot_load(instance)
+
+    assert int(instance.query(f"SELECT count() FROM deltaLake({engine_args})")) == 10

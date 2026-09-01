@@ -21,11 +21,13 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
@@ -34,13 +36,18 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <delta_kernel_ffi.hpp>
+#include <base/scope_guard.h>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
+
+#include <chrono>
+#include <future>
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace DB::Setting
@@ -49,6 +56,7 @@ namespace DB::Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
     extern const SettingsBool delta_lake_enable_engine_predicate;
+    extern const SettingsMilliseconds delta_lake_snapshot_load_timeout_ms;
 }
 
 namespace ProfileEvents
@@ -61,6 +69,7 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
+    extern const char delta_kernel_snapshot_load_pause[];
 }
 
 namespace DeltaLake
@@ -904,19 +913,92 @@ void TableSnapshot::initOrUpdateSnapshot() const
 
     try
     {
-        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
+        kernel_snapshot_state = buildKernelSnapshotState(version_to_build);
     }
     catch (const DB::Exception & e)
     {
         if (!tryRefreshAfterStaleTokenError(e, current_credentials_fingerprint, "snapshot init"))
             throw;
-        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
+        kernel_snapshot_state = buildKernelSnapshotState(version_to_build);
     }
     kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
 
     LOG_TRACE(
         log, "Initialized snapshot. Snapshot version: {}",
         kernel_snapshot_state->snapshot_version);
+}
+
+std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::buildKernelSnapshotState(std::optional<size_t> version_to_build) const
+{
+    /// The kernel FFI is synchronous and has no cancellation hook: `snapshot_builder_build` reads
+    /// `_delta_log` through the kernel's own object store client and blocks on a channel fed by
+    /// the kernel's background executor. If the object store never answers, the call never
+    /// returns; a query stuck there could not be killed, was not bounded by any timeout and, when
+    /// executed by `DDLWorker`, blocked the whole distributed DDL queue
+    /// (https://github.com/ClickHouse/ClickHouse/issues/117280).
+    /// So the kernel call runs on a separate thread and the query waits for it here, re-checking
+    /// its status on every poll: `KILL QUERY`, `max_execution_time` and
+    /// `delta_lake_snapshot_load_timeout_ms` all abort the wait. An abandoned worker does not touch
+    /// `this`; it keeps the kernel handles alive and releases them when the kernel call returns.
+    DB::QueryStatusPtr process_list_element;
+    UInt64 timeout_ms = 0;
+    auto context = DB::CurrentThread::tryGetQueryContext();
+    if (!context)
+        context = DB::Context::getGlobalContextInstance();
+    if (context)
+    {
+        process_list_element = context->getProcessListElementSafe();
+        timeout_ms = context->getSettingsRef()[DB::Setting::delta_lake_snapshot_load_timeout_ms].totalMilliseconds();
+    }
+
+    auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
+        [helper = helper, version_to_build]
+        {
+            /// Simulates a kernel call which never returns (used by tests).
+            DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
+            return std::make_shared<KernelSnapshotState>(*helper, version_to_build);
+        });
+    auto future = task->get_future();
+
+    ThreadFromGlobalPool thread(
+        [task, thread_group = DB::CurrentThread::getGroup()]
+        {
+            /// Attach to the query thread group to keep memory accounting and the query id in logs.
+            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
+            (*task)();
+        });
+
+    Stopwatch watch;
+    /// Leave the worker running if the wait below is aborted: `ThreadFromGlobalPool` aborts the
+    /// process when it is destroyed while still joinable.
+    SCOPE_EXIT({
+        if (thread.joinable())
+        {
+            LOG_WARNING(
+                log,
+                "Abandoning the delta-kernel snapshot load of the table at {} after {} ms; "
+                "the worker thread keeps running until the kernel call returns",
+                helper->getTableLocation(), watch.elapsedMilliseconds());
+            thread.detach();
+        }
+    });
+
+    while (future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+    {
+        /// Throws if the query was killed or `max_execution_time` is exceeded.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        if (timeout_ms && watch.elapsedMilliseconds() >= timeout_ms)
+            throw DB::Exception(
+                DB::ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded while loading the snapshot of the Delta Lake table at {}: "
+                "waited {} ms, delta_lake_snapshot_load_timeout_ms is {} ms",
+                helper->getTableLocation(), watch.elapsedMilliseconds(), timeout_ms);
+    }
+
+    thread.join();
+    return future.get();
 }
 
 std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::getKernelSnapshotState() const

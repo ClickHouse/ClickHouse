@@ -29,6 +29,8 @@ namespace DB::ErrorCodes
 namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsUInt64 connect_timeout_ms;
+    extern const S3AuthSettingsUInt64 request_timeout_ms;
 }
 
 namespace DB::FailPoints
@@ -105,6 +107,8 @@ public:
             url.addRegionToURI(region);
 
         no_sign = auth_settings[DB::S3AuthSetting::no_sign_request];
+        connect_timeout_ms = auth_settings[DB::S3AuthSetting::connect_timeout_ms];
+        request_timeout_ms = auth_settings[DB::S3AuthSetting::request_timeout_ms];
     }
 
     const std::string & getTableLocation() const override { return table_location; }
@@ -183,12 +187,23 @@ public:
             set_option("aws_endpoint", url.endpoint);
         }
 
+        /// The kernel talks to S3 through its own object_store client, which the server's S3
+        /// client settings do not reach. Give it the same per-request bounds as the server's
+        /// S3 client (`s3_connect_timeout_ms` / `s3_request_timeout_ms`), so that a request the
+        /// object store never answers fails instead of hanging.
+        if (connect_timeout_ms)
+            set_option("connect_timeout", fmt::format("{}ms", connect_timeout_ms));
+        if (request_timeout_ms)
+            set_option("timeout", fmt::format("{}ms", request_timeout_ms));
+
         LOG_TRACE(
             log,
             "Using endpoint: {}, uri: {}, region: {}, bucket: {}, no sign: {}, "
-            "has access_key_id: {}, has secret_access_key: {}, has token: {}",
+            "has access_key_id: {}, has secret_access_key: {}, has token: {}, "
+            "connect timeout: {} ms, request timeout: {} ms",
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
-            !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
+            !access_key_id.empty(), !secret_access_key.empty(), !token.empty(),
+            connect_timeout_ms, request_timeout_ms);
 
         return guard.release();
     }
@@ -201,6 +216,8 @@ private:
 
     std::string region;
     bool no_sign;
+    UInt64 connect_timeout_ms;
+    UInt64 request_timeout_ms;
 
     static std::string getTableLocation(const DB::S3::URI & url)
     {

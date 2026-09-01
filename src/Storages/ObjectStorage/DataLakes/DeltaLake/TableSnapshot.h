@@ -136,6 +136,13 @@ private:
         const char * context_for_log) const TSA_REQUIRES(mutex);
 
     std::shared_ptr<KernelSnapshotState> getKernelSnapshotState() const TSA_REQUIRES(mutex);
+
+    /// Builds `KernelSnapshotState` on a separate thread and waits for it, re-checking the query
+    /// status while waiting. The kernel FFI is synchronous and has no cancellation hook, so this
+    /// is the only place where `KILL QUERY`, `max_execution_time` and
+    /// `delta_lake_snapshot_load_timeout_ms` can interrupt a snapshot load that is stuck inside
+    /// the kernel (for example, waiting for an object store which never answers).
+    std::shared_ptr<KernelSnapshotState> buildKernelSnapshotState(std::optional<size_t> version_to_build) const;
 };
 
 using TableSnapshotPtr = std::shared_ptr<TableSnapshot>;
