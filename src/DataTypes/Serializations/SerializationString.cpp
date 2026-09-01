@@ -679,6 +679,36 @@ void accumulateCheckedStringSize(UInt64 & accumulated, UInt64 size)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserialization of string sizes leads to an overflow of offsets");
 }
 
+/// The sizes and the offsets come from untrusted input, so their validation can throw after some of
+/// them have already been appended to the destination column. Restore the column to its previous state
+/// in that case, so that a caller which catches the exception does not observe a column with more
+/// offsets than characters.
+class ColumnStringRollbackGuard
+{
+public:
+    explicit ColumnStringRollbackGuard(ColumnString & column_)
+        : column(column_), num_offsets(column_.getOffsets().size()), num_chars(column_.getChars().size())
+    {
+    }
+
+    ~ColumnStringRollbackGuard()
+    {
+        if (committed)
+            return;
+
+        column.getOffsets().resize_assume_reserved(num_offsets);
+        column.getChars().resize_assume_reserved(num_chars);
+    }
+
+    void commit() { committed = true; }
+
+private:
+    ColumnString & column;
+    const size_t num_offsets;
+    const size_t num_chars;
+    bool committed = false;
+};
+
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
@@ -942,6 +972,9 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     auto & string_column = assert_cast<ColumnString &>(column);
     const size_t prev_num_rows = string_column.size();
 
+    /// Everything below appends to the column incrementally and can throw in the middle on malformed input.
+    ColumnStringRollbackGuard rollback_guard(string_column);
+
     settings.path.back() = Substream::StringSizes;
     const size_t bytes_to_read = deserializeStringOffsetsAndGetDataSize(string_column, limit, settings, cache);
 
@@ -951,6 +984,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     /// either, so leave the column empty.
     if (!stream)
     {
+        rollback_guard.commit();
         settings.path.pop_back();
         return;
     }
@@ -962,6 +996,8 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     const size_t initial_size = data.size();
     data.resize(initial_size + bytes_to_read);
     stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+
+    rollback_guard.commit();
 
     /// Nothing is shared across reads, so the rows read equal the growth of the offsets column.
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), string_column.size() - prev_num_rows);

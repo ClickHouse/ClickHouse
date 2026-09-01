@@ -225,3 +225,58 @@ TEST(NativeStringSizeStream, AllEmptyNestedString)
     addColumn(nested, "m", "Map(String, String)", {Map{}, Map{}});
     assertBlocksEqual(nested, roundTrip(nested, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
 }
+
+TEST(NativeStringSizeStream, RejectionLeavesTheColumnUnchanged)
+{
+    /// A rejected batch must not leave the destination column in an inconsistent state: the offsets
+    /// are appended before the sizes are known to be valid, so the deserialization has to restore both
+    /// the offsets and the characters when it throws.
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    auto column = ColumnString::create();
+    column->insert(Field("previous"));
+    column->insert(Field("rows"));
+
+    const size_t num_rows_before = column->size();
+    const size_t num_chars_before = column->getChars().size();
+
+    /// Two cumulative offsets whose difference is above `MAX_STRING_SIZE`, and a data stream that is
+    /// nowhere near large enough for them.
+    const UInt64 offsets[2] = {8, 8 + SerializationString::MAX_STRING_SIZE + 1};
+    String offsets_data(reinterpret_cast<const char *>(offsets), sizeof(offsets));
+    String chars_data(16, 'z');
+
+    ReadBufferFromString offsets_stream(offsets_data);
+    ReadBufferFromString chars_stream(chars_data);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.position_independent_encoding = false;
+    settings.native_format = true;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        if (!path.empty() && path.back().type == ISerialization::Substream::StringSizes)
+            return &offsets_stream;
+        return &chars_stream;
+    };
+
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    int error_code = 0;
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, 2, settings, state, nullptr);
+    }
+    catch (const Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    ASSERT_EQ(error_code, ErrorCodes::TOO_LARGE_STRING_SIZE);
+    ASSERT_EQ(column->size(), num_rows_before);
+    ASSERT_EQ(column->getChars().size(), num_chars_before);
+    ASSERT_EQ(column->getOffsets().back(), column->getChars().size());
+    ASSERT_EQ(column->getDataAt(0).toString(), "previous");
+    ASSERT_EQ(column->getDataAt(1).toString(), "rows");
+}
