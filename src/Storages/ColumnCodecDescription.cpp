@@ -237,7 +237,8 @@ void collectEffectiveDeclarationTypes(
 ColumnCodecDescription validateEffectivePolicy(
     const ColumnCodecDescription & policy,
     const DataTypePtr & logical_type,
-    const CodecValidationSettings & settings)
+    const CodecValidationSettings & settings,
+    const ColumnCodecDescription * declarations_to_admit = nullptr)
 {
     ColumnCodecDescription canonical_policy;
     if (policy.hasRoot())
@@ -255,12 +256,18 @@ ColumnCodecDescription validateEffectivePolicy(
     collectEffectiveDeclarationTypes(logical_type, path, canonical_policy, declaration_types);
 
     ColumnCodecDescription normalized;
+    const auto trusted_settings = CodecValidationSettings::trusted();
     const auto validate_declaration = [&](const CodecPath & declaration_path, const ASTPtr & ast)
     {
+        const bool use_session_settings = !declarations_to_admit
+            || (declaration_path.empty()
+                ? declarations_to_admit->hasRoot()
+                : declarations_to_admit->getSubcolumns().contains(declaration_path));
+        const auto & declaration_settings = use_session_settings ? settings : trusted_settings;
         auto types_it = declaration_types.find(declaration_path);
         if (types_it == declaration_types.end() || types_it->second.empty())
         {
-            CompressionCodecFactory::instance().validateCodecDeclaration(ast, settings);
+            CompressionCodecFactory::instance().validateCodecDeclaration(ast, declaration_settings);
             if (declaration_path.empty())
                 normalized.setRoot(ast);
             else
@@ -272,7 +279,7 @@ ColumnCodecDescription validateEffectivePolicy(
         bool all_normalized_equal = true;
         for (const auto & type : types_it->second)
         {
-            auto candidate = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(ast, type, settings);
+            auto candidate = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(ast, type, declaration_settings);
             if (!common_normalized)
                 common_normalized = candidate;
             else if (common_normalized->formatWithSecretsOneLine() != candidate->formatWithSecretsOneLine())
@@ -321,6 +328,15 @@ ColumnCodecDescription validateColumnCodecDescription(
     const CodecValidationSettings & settings)
 {
     return validateEffectivePolicy(policy, logical_type, settings);
+}
+
+ColumnCodecDescription validateColumnCodecDescriptionForAlter(
+    const ColumnCodecDescription & policy,
+    const DataTypePtr & logical_type,
+    const ColumnCodecDescription & declarations_to_admit,
+    const CodecValidationSettings & settings)
+{
+    return validateEffectivePolicy(policy, logical_type, settings, &declarations_to_admit);
 }
 
 ColumnCodecDescription codecDescriptionFromAST(

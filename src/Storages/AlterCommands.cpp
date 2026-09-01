@@ -855,18 +855,19 @@ static void applyTupleCodecPatch(
         policy.set(path, codec_ast);
 }
 
-static bool changesTupleCodecDeclarations(
+static ColumnCodecDescription getChangedTupleCodecDeclarations(
     const ColumnCodecDescription & current_policy,
     const ColumnCodecDescription & declarations)
 {
+    ColumnCodecDescription changed;
     for (const auto & [path, codec] : declarations.getSubcolumns())
     {
         auto current = current_policy.getSubcolumns().find(path);
         if (current == current_policy.getSubcolumns().end()
             || current->second->formatWithSecretsOneLine() != codec->formatWithSecretsOneLine())
-            return true;
+            changed.set(path, codec);
     }
-    return false;
+    return changed;
 }
 
 void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
@@ -2330,8 +2331,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             const auto & current_owner = all_columns.get(column_name);
             const DataTypePtr resulting_type = command.data_type ? command.data_type : current_owner.type;
-            const bool changes_tuple_codec = changesTupleCodecDeclarations(current_owner.codec, command.declared_codec);
-            if (changes_tuple_codec && !context->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
+            const auto changed_tuple_codecs = getChangedTupleCodecDeclarations(current_owner.codec, command.declared_codec);
+            if (!changed_tuple_codecs.empty() && !context->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Tuple-element CODEC declarations are experimental. Set allow_experimental_tuple_element_codecs = 1 to enable them");
@@ -2349,14 +2350,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
                 resulting_codec.resetRoot();
 
-            if (command.codec)
-                validateColumnCodecDescription(ColumnCodecDescription(command.codec), resulting_type, codec_validation_settings);
-
             if (!resulting_codec.empty())
-                resulting_codec = validateColumnCodecDescription(
-                    resulting_codec,
-                    resulting_type,
-                    changes_tuple_codec ? codec_validation_settings : CodecValidationSettings::trusted());
+            {
+                auto declarations_to_admit = changed_tuple_codecs;
+                if (command.codec)
+                    declarations_to_admit.setRoot(command.codec);
+                resulting_codec = declarations_to_admit.empty()
+                    ? validateColumnCodecDescription(resulting_codec, resulting_type, CodecValidationSettings::trusted())
+                    : validateColumnCodecDescriptionForAlter(
+                        resulting_codec, resulting_type, declarations_to_admit, codec_validation_settings);
+            }
 
             if (command.codec || !command.declared_codec.empty() || !command.codec_removals.empty())
             {

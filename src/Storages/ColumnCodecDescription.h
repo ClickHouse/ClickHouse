@@ -89,6 +89,15 @@ ColumnCodecDescription validateColumnCodecDescription(
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings);
 
+/// Validate the complete effective policy, but apply session admission settings only to declarations
+/// supplied or changed by the current ALTER. Other declarations are already accepted metadata, so
+/// they use trusted admission while still undergoing structural, path, and type-compatibility checks.
+ColumnCodecDescription validateColumnCodecDescriptionForAlter(
+    const ColumnCodecDescription & policy,
+    const DataTypePtr & logical_type,
+    const ColumnCodecDescription & declarations_to_admit,
+    const CodecValidationSettings & settings);
+
 ColumnCodecDescription codecDescriptionFromAST(
     const ASTColumnDeclaration & declaration,
     const DataTypePtr & logical_type,
