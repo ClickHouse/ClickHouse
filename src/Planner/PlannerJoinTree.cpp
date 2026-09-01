@@ -395,7 +395,8 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
-/// Same restrictions as JOIN filter pushdown (`canPrefilterJoinSide`).
+/// Same restrictions as ordinary JOIN filter pushdown: `canPrefilterJoinSide`
+/// plus `isAnyInnerJoin` (do not prefilter either side of `ANY INNER`).
 bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
 {
     std::vector<QueryTreeNodePtr> stack = {join_tree};
@@ -411,6 +412,8 @@ bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const Que
             const bool table_on_left = extractTableExpressionsSet(join->getLeftTableExpressionNodeTyped()).contains(table.get());
             const bool table_on_right = extractTableExpressionsSet(join->getRightTableExpressionNodeTyped()).contains(table.get());
 
+            if (isAnyInnerJoin(join->getKind(), join->getStrictness()) && (table_on_left || table_on_right))
+                return false;
             if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
                 return false;
             if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))

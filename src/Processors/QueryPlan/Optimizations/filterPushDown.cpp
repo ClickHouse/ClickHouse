@@ -455,11 +455,6 @@ static void projectDagInputs(ActionsDAG & actions_dag)
     }
 }
 
-static bool isAnyInnerJoin(JoinKind kind, JoinStrictness strictness)
-{
-    return kind == JoinKind::Inner && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny);
-}
-
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
