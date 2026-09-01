@@ -1124,9 +1124,10 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_sched;"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by_sched;"
 
 # The eighty still-expired rows collapse to one per key; the twenty patched into the
-# future stay. A part hidden from the selector would sit at 100 forever.
+# future stay. A part hidden from the selector would sit at 100 forever; a visible one only
+# needs the pool to get to it, which under sanitizers can take minutes - poll long, break early.
 sleep 11
-for _ in $(seq 1 15); do
+for _ in $(seq 1 120); do
     sched_rows=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_sched;")
     [[ "$sched_rows" -lt 100 ]] && break
     sleep 1
