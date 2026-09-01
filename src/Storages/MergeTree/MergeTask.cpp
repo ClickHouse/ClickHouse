@@ -3080,7 +3080,9 @@ public:
         time_t current_time,
         bool force_,
         const NamesAndTypesList & expired_columns_)
-        : ITransformingStep(input_header_, input_header_, getTraits())
+        /// Same declared output as TTLStep: the transform re-adds the columns this merge expired,
+        /// so everything built after it must be planned for them.
+        : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLCalcTransform>(
             context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_, expired_columns_);
