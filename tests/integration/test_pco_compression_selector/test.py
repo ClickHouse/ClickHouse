@@ -72,7 +72,7 @@ def test_experimental_codec_in_compression_selector_is_rejected(start_cluster):
         node_zxc.query("INSERT INTO t_zxc_selector SELECT number FROM numbers(1000)")
 
     message = str(exc.value)
-    assert "allow_experimental_codecs" in message, message
+    assert "enable_zxc_codec" in message, message
     assert "ZXC" in message, message
 
     # The query-level setting does not open the server-level configuration.
@@ -81,7 +81,7 @@ def test_experimental_codec_in_compression_selector_is_rejected(start_cluster):
             "INSERT INTO t_zxc_selector SELECT number FROM numbers(1000)",
             settings={"allow_experimental_codecs": 1},
         )
-    assert "allow_experimental_codecs" in str(exc.value), str(exc.value)
+    assert "enable_zxc_codec" in str(exc.value), str(exc.value)
 
     node_zxc.query("DROP TABLE t_zxc_selector")
 
@@ -146,7 +146,7 @@ def test_compression_selector_reloads_default_profile_policy(start_cluster):
         node_zxc_allowed.query(
             "INSERT INTO t_zxc_reload_policy SELECT number FROM numbers(1000)"
         )
-    assert "allow_experimental_codecs" in str(exc.value), str(exc.value)
+    assert "enable_zxc_codec" in str(exc.value), str(exc.value)
 
     node_zxc_allowed.query("DROP TABLE t_zxc_reload_policy")
 

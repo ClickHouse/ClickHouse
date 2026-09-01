@@ -37,13 +37,15 @@ SYSTEM FLUSH LOGS system.query_log;
 -- `current_database` directly: the serialized plan carries fully qualified table names, so the
 -- shard query is logged with the default database rather than the database of the test.
 -- They are attributed to this test through the initiator query, which does have
--- `current_database = currentDatabase()`.
+-- `current_database = currentDatabase()`. The log comments are matched exactly: `clickhouse-test`
+-- gives every other query of the file the default log comment `<test name>.sql-default`, which a
+-- prefix match would pick up as well.
 SELECT log_comment, sum(ProfileEvents['ExternalProcessingCompressedBytesTotal']) > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
     AND type != 1
     AND is_initial_query = 0
-    AND log_comment LIKE '04647_distributed_external_aggregation_temporary_files_codec%'
+    AND log_comment IN ('04647_distributed_external_aggregation_temporary_files_codec', '04647_distributed_external_aggregation_temporary_files_codec_dedicated')
     AND initial_query_id IN (
         SELECT query_id
         FROM system.query_log
@@ -51,6 +53,6 @@ WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
             AND type != 1
             AND is_initial_query
             AND current_database = currentDatabase()
-            AND log_comment LIKE '04647_distributed_external_aggregation_temporary_files_codec%')
+            AND log_comment IN ('04647_distributed_external_aggregation_temporary_files_codec', '04647_distributed_external_aggregation_temporary_files_codec_dedicated'))
 GROUP BY log_comment
 ORDER BY log_comment;

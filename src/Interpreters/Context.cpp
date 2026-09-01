@@ -2218,6 +2218,13 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+void Context::resetCompressionCodecSelector()
+{
+    std::lock_guard lock(shared->mutex);
+    shared->compression_codec_selector.reset();
+    ++shared->compression_codec_selector_generation;
+}
+
 void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.

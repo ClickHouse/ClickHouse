@@ -346,14 +346,32 @@ void registerCodecPco(CompressionCodecFactory & factory)
 #else
 
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
 #include <Compression/registerCompressionCodecs.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
 
-/// pco (pcodec) is not available in this build (Rust disabled); the `PCO` codec is not registered.
-void registerCodecPco(CompressionCodecFactory &)
+namespace ErrorCodes
 {
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+/// pco (pcodec) is not available in this build (Rust disabled). The family is still registered, so that the
+/// `enable_pco_codec` setting and the `PCO` documentation point at a codec that reports why it cannot be used,
+/// instead of at `UNKNOWN_CODEC`. The creator throws for every request, including the one `system.codecs` and
+/// `system.documentation` make to describe the family, so `PCO` is absent from them in such a build.
+void registerCodecPco(CompressionCodecFactory & factory)
+{
+    auto method_code = static_cast<UInt8>(CompressionMethodByte::PCO);
+    auto codec_builder = [](const ASTPtr &, const IDataType *) -> CompressionCodecPtr
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The codec 'PCO' is disabled because ClickHouse was built without Rust support (the pcodec library)");
+    };
+    factory.registerCompressionCodecWithType("PCO", method_code, codec_builder);
 }
 
 }

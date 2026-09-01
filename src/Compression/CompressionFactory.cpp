@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
     extern const int BAD_ARGUMENTS;
     extern const int OPENSSL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 void CompressionCodecFactory::upperCaseCodecFamilyNames(const ASTPtr & codec_ast)
@@ -330,9 +331,10 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
             catch (const Exception & e)
             {
                 /// Ok: the encryption codecs register a creator that throws `OPENSSL_ERROR` when the server is built
-                /// without SSL support. They cannot expose a description, so skip them rather than failing the whole
+                /// without SSL support, and `PCO` registers one that throws `SUPPORT_IS_DISABLED` when the server is
+                /// built without Rust. They cannot expose a description, so skip them rather than failing the whole
                 /// `system.codecs` query. Any other failure is unexpected and must propagate.
-                if (e.code() == ErrorCodes::OPENSSL_ERROR)
+                if (e.code() == ErrorCodes::OPENSSL_ERROR || e.code() == ErrorCodes::SUPPORT_IS_DISABLED)
                     return;
                 throw;
             }
@@ -366,9 +368,10 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
         catch (const Exception & e)
         {
             /// Ok: the encryption codecs register a creator that throws `OPENSSL_ERROR` when the server is built
-            /// without SSL support. They have no documentation to expose, so skip them rather than failing the whole
+            /// without SSL support, and `PCO` registers one that throws `SUPPORT_IS_DISABLED` when the server is built
+            /// without Rust. They have no documentation to expose, so skip them rather than failing the whole
             /// `system.documentation` query. Any other failure is unexpected and must propagate.
-            if (e.code() == ErrorCodes::OPENSSL_ERROR)
+            if (e.code() == ErrorCodes::OPENSSL_ERROR || e.code() == ErrorCodes::SUPPORT_IS_DISABLED)
                 continue;
             throw;
         }

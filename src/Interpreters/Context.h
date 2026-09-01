@@ -910,6 +910,11 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
+    /// Drops the cached server-level `<compression>` codec selector, so that it is rebuilt from the
+    /// current default-profile policy. The selector validates its codecs against the codec gates of
+    /// that profile, so every path that reloads the profiles has to call this.
+    void resetCompressionCodecSelector();
+
     /// Sets the current user, assuming they are already authenticated.
     /// WARNING: This function doesn't check the password!
     /// `authentication_grants_` limits the access rights to the intersection with these elements
