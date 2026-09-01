@@ -225,6 +225,9 @@ public:
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
     bool hasUpdateInfo() const { return update_info != nullptr; }
+    /// Drop the registration of one particular `UpdateInfo`, keeping any later one. Used when the
+    /// pipeline graph reclaims the edge that owns `info`, so that the port cannot outlive it.
+    void resetUpdateInfo(const UpdateInfo * info) { if (update_info == info) update_info = nullptr; }
 
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }

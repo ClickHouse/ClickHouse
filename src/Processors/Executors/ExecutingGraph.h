@@ -208,10 +208,58 @@ private:
     RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
     RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
 
-    /// An edge of a removed processor is moved here instead of being destroyed, and lives until the
-    /// graph does: a `updateNode` frame may hold it queued across a gap it makes in `nodes_mutex`,
-    /// and that pointer has to stay valid.
-    Edges retired_edges;
+    /// An edge of a removed processor is moved here instead of being destroyed: an `updateNode`
+    /// frame may hold it queued across a gap it makes in `nodes_mutex`, and that pointer has to
+    /// stay valid. Retention is bounded by the frames that can still hold the edge and not by the
+    /// lifetime of the query: retirement also unqueues the edge everywhere a frame could still
+    /// pick it up, so only the frames already running when the batch was retired are of interest,
+    /// and the batch is destroyed once all of them have left the graph. A long-lived subscribed
+    /// query, which retires a sub-pipeline per read round, therefore does not accumulate rounds.
+    struct RetiredEdges
+    {
+        Edges edges;
+        /// Value `retirement_generation` was bumped to when this batch was retired.
+        uint64_t generation = 0;
+    };
+
+    /// An `updateNode` frame in flight, living on that frame's own stack.
+    struct Frame
+    {
+        /// Value of `retirement_generation` when the frame entered the graph. The frame can hold
+        /// edges of every batch retired later, that is of every generation greater than this one.
+        uint64_t generation = 0;
+        Frame * prev = nullptr;
+        Frame * next = nullptr;
+    };
+
+    /// Registers an `updateNode` frame for as long as it can hold queued edge pointers, and
+    /// reclaims what its departure makes unreachable.
+    class FrameGuard
+    {
+    public:
+        explicit FrameGuard(ExecutingGraph & graph_) : graph(graph_) { graph.registerFrame(frame); }
+        ~FrameGuard() { graph.unregisterFrame(frame); }
+
+        FrameGuard(const FrameGuard &) = delete;
+        FrameGuard & operator=(const FrameGuard &) = delete;
+
+    private:
+        ExecutingGraph & graph;
+        Frame frame;
+    };
+
+    /// Guards `retirement_generation`, `retired_edge_batches` and the `active_frames` list. It
+    /// cannot be `nodes_mutex`: a frame parked at a gap it made in `nodes_mutex` holds no lock at
+    /// all, so its presence is not observable through that mutex.
+    std::mutex retirement_mutex;
+    uint64_t retirement_generation = 0;
+    /// In increasing order of `generation`.
+    std::list<RetiredEdges> retired_edge_batches;
+    /// Intrusive, unordered list of the frames currently in `updateNode`.
+    Frame * active_frames = nullptr;
+
+    void registerFrame(Frame & frame);
+    void unregisterFrame(Frame & frame);
 
     /// Permanently `Finished` node every retired edge is pointed at. `updateNode` skips a
     /// `Finished` node without reaching its processor, so a retired edge cannot reach the removed

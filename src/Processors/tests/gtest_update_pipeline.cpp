@@ -926,35 +926,44 @@ TEST(Processors, UpdatePipelineConcurrentRemovalDoesNotFreeQueuedEdges)
     constexpr size_t num_streams = 4;
     constexpr size_t fan_in = 16;
     constexpr size_t total_batches = 40;
+    /// The race is timing-dependent: without the fix it was measured at roughly one failure in six
+    /// runs of a single pipeline, so a single pass would usually let a reintroduction through. Every
+    /// repetition is an independent pipeline, and each of them performs `num_streams * total_batches`
+    /// removals over 16 threads.
+    constexpr size_t num_repetitions = 32;
+
     auto header = makeHeader();
 
-    Pipes pipes;
-    for (size_t i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<WideFanInCyclingCoordinator>(header, fan_in, total_batches));
-
-    auto united = Pipe::unitePipes(std::move(pipes));
-    united.resize(1, /*strict=*/false, /*min_outstreams_per_resize_after_split=*/0);
-
-    QueryPipeline pipeline(std::move(united));
-    pipeline.setNumThreads(16);
-
-    size_t pulled = 0;
+    for (size_t repetition = 0; repetition < num_repetitions; ++repetition)
     {
-        PullingAsyncPipelineExecutor executor(pipeline);
+        Pipes pipes;
+        for (size_t i = 0; i < num_streams; ++i)
+            pipes.emplace_back(std::make_shared<WideFanInCyclingCoordinator>(header, fan_in, total_batches));
 
-        Chunk chunk;
-        while (executor.pull(chunk))
+        auto united = Pipe::unitePipes(std::move(pipes));
+        united.resize(1, /*strict=*/false, /*min_outstreams_per_resize_after_split=*/0);
+
+        QueryPipeline pipeline(std::move(united));
+        pipeline.setNumThreads(16);
+
+        size_t pulled = 0;
         {
-            if (!chunk)
-                continue;
-            ASSERT_EQ(chunk.getNumRows(), 1u);
-            ++pulled;
-        }
-    }
+            PullingAsyncPipelineExecutor executor(pipeline);
 
-    /// The assertion is the ASan report; this only distinguishes "clean because the pipeline ran"
-    /// from "clean because nothing executed".
-    EXPECT_GT(pulled, 0u);
+            Chunk chunk;
+            while (executor.pull(chunk))
+            {
+                if (!chunk)
+                    continue;
+                ASSERT_EQ(chunk.getNumRows(), 1u);
+                ++pulled;
+            }
+        }
+
+        /// The assertion is the ASan report; this only distinguishes "clean because the pipeline ran"
+        /// from "clean because nothing executed".
+        EXPECT_GT(pulled, 0u) << "repetition " << repetition;
+    }
 }
 
 TEST(Processors, UpdatePipelineRemovalIsNotStrandedByCancellation)

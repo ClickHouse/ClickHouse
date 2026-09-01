@@ -172,6 +172,13 @@ void ExecutingGraph::retireAffectedEdges(const std::unordered_set<const Node *> 
         retired_edge_target = std::move(target);
     }
 
+    /// Open a batch for this retirement. The frame doing the retirement is registered itself, and
+    /// its generation is lower, so no concurrent frame departure can reclaim this batch yet.
+    std::lock_guard retirement_lock(retirement_mutex);
+    ++retirement_generation;
+    retired_edge_batches.push_back({{}, retirement_generation});
+    Edges & batch = retired_edge_batches.back().edges;
+
     auto retire = [&](Edges & edges, bool retire_every_edge)
     {
         for (auto it = edges.begin(); it != edges.end();)
@@ -180,11 +187,30 @@ void ExecutingGraph::retireAffectedEdges(const std::unordered_set<const Node *> 
 
             if (retire_every_edge || removed_nodes.contains(it->to))
             {
+                /// Unqueue the edge from the update list of the node owning it. Otherwise a frame
+                /// entering after this retirement could still drain the pointer from there, which
+                /// is what would make the batch reachable again after it becomes reclaimable.
+                /// Delivering the update would do nothing anyway: the edge now points at a
+                /// `Finished` stand-in. Nobody is draining that list right now, because a frame
+                /// only touches it under `status_mutex` of its node while holding `nodes_mutex`,
+                /// and this runs with `nodes_mutex` held exclusively.
+                if (auto * update_list = it->update_info.update_list)
+                    std::erase(*update_list, it->update_info.id);
+
+                /// The surviving side of the connection, if any, must not point at an edge that
+                /// can be reclaimed. In a well-formed removal the peer port was disconnected
+                /// first, which already cleared this; if it was reconnected since, it points at
+                /// the newer edge and keeps it.
+                if (it->backward)
+                    it->input_port->resetUpdateInfo(&it->update_info);
+                else
+                    it->output_port->resetUpdateInfo(&it->update_info);
+
                 it->to = retired_edge_target.get();
                 /// The list belongs to the node owning the edge, which may itself be going away,
                 /// and a retired edge is never visited again to drain what was pushed to it.
                 it->update_info.update_list = nullptr;
-                retired_edges.splice(retired_edges.end(), edges, it);
+                batch.splice(batch.end(), edges, it);
             }
 
             it = next;
@@ -198,6 +224,51 @@ void ExecutingGraph::retireAffectedEdges(const std::unordered_set<const Node *> 
         const bool owner_is_removed = removed_nodes.contains(&node);
         retire(node.back_edges, owner_is_removed);
         retire(node.direct_edges, owner_is_removed);
+    }
+}
+
+void ExecutingGraph::registerFrame(Frame & frame)
+{
+    std::lock_guard lock(retirement_mutex);
+
+    frame.generation = retirement_generation;
+    frame.prev = nullptr;
+    frame.next = active_frames;
+
+    if (active_frames)
+        active_frames->prev = &frame;
+
+    active_frames = &frame;
+}
+
+void ExecutingGraph::unregisterFrame(Frame & frame)
+{
+    /// Destroyed with no lock held: a removed processor can hold the last reference to data, and
+    /// an edge destructor is not the place to run that.
+    Edges reclaimed;
+
+    {
+        std::lock_guard lock(retirement_mutex);
+
+        if (frame.prev)
+            frame.prev->next = frame.next;
+        else
+            active_frames = frame.next;
+
+        if (frame.next)
+            frame.next->prev = frame.prev;
+
+        /// A batch is unreachable once every frame that was running when it was retired is gone.
+        /// With no frame left, that holds for every batch.
+        uint64_t oldest_generation = retirement_generation;
+        for (const auto * active = active_frames; active; active = active->next)
+            oldest_generation = std::min(oldest_generation, active->generation);
+
+        while (!retired_edge_batches.empty() && retired_edge_batches.front().generation <= oldest_generation)
+        {
+            reclaimed.splice(reclaimed.end(), retired_edge_batches.front().edges);
+            retired_edge_batches.pop_front();
+        }
     }
 }
 
@@ -441,6 +512,8 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Queue & queue, Queue & async_queue)
 {
     Processors delayed_destruction;
+    /// Declared before the lock below, so that it outlives every pointer this frame can queue.
+    FrameGuard frame_guard(*this);
     boost::container::devector<Edge *> updated_edges;
     boost::container::devector<Node *> updated_processors;
     updated_processors.push_back(start_node);
