@@ -10144,6 +10144,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 void StorageReplicatedMergeTree::movePartitionToShard(
     const ASTPtr & partition, bool move_part, const String & to, ContextPtr /*query_context*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::movePartitionToShard");
+
     /// This is a lightweight operation that only optimistically checks if it could succeed and queues tasks.
 
     if (!move_part)
