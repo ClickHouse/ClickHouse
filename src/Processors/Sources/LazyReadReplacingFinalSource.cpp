@@ -27,6 +27,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
+extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
 extern const SettingsBool collect_hash_table_stats_during_aggregation;
 extern const SettingsBool enable_adaptive_aggregator;
@@ -287,6 +288,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation],
             /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
             /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
+            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
             /*group_by_each_block_no_merge_=*/false);
 
         auto merge_threads = settings[Setting::max_threads];
@@ -309,8 +311,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*group_by_sort_description_=*/SortDescription{},
             /*should_produce_results_in_order_of_bucket_number_=*/false,
             /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
-            /*explicit_sorting_required_for_aggregation_in_order_=*/false,
-            /*enable_sharding_aggregator_=*/false);
+            /*explicit_sorting_required_for_aggregation_in_order_=*/false);
         plan.addStep(std::move(aggregating_step));
 
         /// Rename aggregate columns back to original names and project only needed columns.

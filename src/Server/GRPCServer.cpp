@@ -13,6 +13,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
@@ -91,8 +92,14 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
+
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_GRPC_QUERY_INFO;
     extern const int INVALID_SESSION_TIMEOUT;
@@ -885,14 +892,26 @@ namespace
         std::string quota_key = query_info.quota();
         Poco::Net::SocketAddress user_address = responder->getClientAddress();
 
+        /// Authentication. The session is created before the empty-user-name check below, so that
+        /// a prohibited anonymous attempt is recorded in `system.session_log` as a login failure.
+        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
+
         if (user.empty())
         {
-            user = "default";
-            password = "";
+            /// An empty user name means the default session user (the `default_session_user` server setting).
+            user = iserver.context()->getServerSettings()[ServerSetting::default_session_user];
+
+            /// The default session user can be explicitly configured to be empty to prohibit
+            /// connections without a user name, matching the native and Arrow Flight protocols.
+            if (user.empty())
+            {
+                auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
+                session->onAuthenticationFailure(user, user_address, exception);
+                throw exception; /// NOLINT
+            }
         }
 
-        /// Authentication.
-        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
         session->authenticate(user, password, user_address);
         session->setQuotaClientKey(quota_key);
 
