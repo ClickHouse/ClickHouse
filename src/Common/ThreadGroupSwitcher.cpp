@@ -60,6 +60,14 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
                 /// setThreadName below renames it, so we can restore it with the group.
                 prev_thread_name = getThreadName();
                 should_restore_prev_thread_name = true;
+                /// Stepping into an accounting scope of the very group being left keeps the thread
+                /// on the same query: its per-query tallies must survive this detach and the attach
+                /// that ends the scope, and neither may write a `system.query_thread_log` row.
+                if (prev_thread && thread_group->isAccountingScopeOf(*prev_thread_group))
+                {
+                    prev_thread->enterAccountingScope();
+                    entered_accounting_scope = true;
+                }
                 CurrentThread::detachFromGroupIfNotDetached();
             }
         }
@@ -116,6 +124,13 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         {
             DB::tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+        /// The destructor early-returns on this path (both groups are nulled below), so the scope
+        /// opened above has to be closed here.
+        if (entered_accounting_scope)
+        {
+            prev_thread->leaveAccountingScope();
+            entered_accounting_scope = false;
+        }
         thread_group = nullptr;
         prev_thread_group = nullptr;
     }
@@ -155,6 +170,13 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
     catch (...)
     {
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    /// Closed after the reattach above, so that it too is covered by the scope.
+    if (entered_accounting_scope)
+    {
+        prev_thread->leaveAccountingScope();
+        entered_accounting_scope = false;
     }
 }
 

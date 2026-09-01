@@ -109,6 +109,9 @@ public:
     /// async insert's user counters.
     ProfileEvents::Counters * rollup_counters = nullptr;
 
+    /// Set by `createForScope`, see `isAccountingScopeOf`.
+    bool is_accounting_scope = false;
+
     /// When true, the destructor runs `background_memory_tracker.adjustOnBackgroundTaskEnd(&memory_tracker)`.
     /// Set for the ownerless background groups that parent their tracker directly to
     /// `background_memory_tracker` and have no external cleanup owner (scope / materialized-view /
@@ -157,6 +160,12 @@ public:
 
     /// That method either creates a new thread group linked to current thread group which has to exist
     static ThreadGroupPtr createForScope();
+
+    /// True for the groups made by `createForScope`: they are accounting roll-ups inside a query
+    /// (their counters are rolled up into the group they were created under), not separate threads
+    /// of work. `other` must be the group they were created under, i.e. the group the thread is
+    /// stepping out of while the scope lasts.
+    bool isAccountingScopeOf(const ThreadGroup & other) const { return is_accounting_scope && parent.get() == &other; }
 
     /// Creates a new thread group for materialized view execution: linked to the current thread
     /// group if it exists, otherwise created from the given query context. The context matters for
@@ -277,6 +286,13 @@ protected:
     ThreadGroup::SharedData local_data;
 
     bool performance_counters_finalized = false;
+
+    /// Nesting depth of the accounting scopes (`ThreadGroup::createForScope`) the thread is inside,
+    /// maintained by `ThreadGroupSwitcher`. While it is non-zero the thread keeps serving the query
+    /// it was already serving, so its per-query tallies (`performance_counters`, `progress_in`,
+    /// `progress_out`, `thread_attach_time`) must survive the detach/attach pair, and the pair must
+    /// not add rows of its own to `system.query_thread_log`.
+    size_t accounting_scope_depth = 0;
 
     String query_id;
     /// The query_id can be read by signal handlers. If the signal interrupts the thread while it is updating the query_id, it can lead to a race.
@@ -410,6 +426,11 @@ public:
         sample_max_allocation_size = c.max_allocation_size;
     }
     void resolveMemorySampleConfig() { setMemorySampleConfig(memory_tracker.getResolvedSampleConfig()); }
+
+    /// See `accounting_scope_depth`.
+    void enterAccountingScope() { ++accounting_scope_depth; }
+    void leaveAccountingScope() { chassert(accounting_scope_depth > 0); --accounting_scope_depth; }
+    bool insideAccountingScope() const { return accounting_scope_depth > 0; }
 
 private:
     void applyGlobalSettings();

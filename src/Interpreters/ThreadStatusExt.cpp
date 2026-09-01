@@ -395,6 +395,7 @@ ThreadGroupPtr ThreadGroup::createForScope()
         res_group->adjust_background_memory_tracker_on_destroy = true;
     }
     res_group->memory_tracker.setDescription("ThreadGroupScope");
+    res_group->is_accounting_scope = true;
     return res_group;
 }
 
@@ -544,7 +545,11 @@ void ThreadStatus::applyQuerySettings()
 
 void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
-    thread_attach_time.setUp();
+    /// Inside an accounting scope the thread keeps working on the query it was already working on,
+    /// so the row it eventually writes to `system.query_thread_log` must still cover the whole of
+    /// it, starting from the attach to the query itself. See `accounting_scope_depth`.
+    if (!insideAccountingScope())
+        thread_attach_time.setUp();
 
     if (boundToOSThread())
         thread_group_->linkThread(thread_id);
@@ -711,11 +716,17 @@ void ThreadStatus::initPerformanceCounters()
 
     /// Clear stats from previous query if a new query is started
     /// TODO: make separate query_thread_performance_counters and thread_performance_counters
-    performance_counters.resetCounters();
-    memory_tracker.resetCounters();
+    /// Stepping into an accounting scope of the current query (and back out of it) is not a new
+    /// query: keeping the tallies makes the thread report the query as a whole, exactly as it did
+    /// before the query started using scopes. See `accounting_scope_depth`.
+    if (!insideAccountingScope())
+    {
+        performance_counters.resetCounters();
+        memory_tracker.resetCounters();
+        progress_in.reset();
+        progress_out.reset();
+    }
     memory_tracker.setDescription("Thread");
-    progress_in.reset();
-    progress_out.reset();
 
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
@@ -796,7 +807,10 @@ void ThreadStatus::finalizePerformanceCounters()
         if (global_context_ptr && query_context_ptr)
         {
             const auto & settings = query_context_ptr->getSettingsRef();
-            if (settings[Setting::log_queries] && settings[Setting::log_query_threads])
+            /// The detach that enters an accounting scope, and the one that leaves it, are internal
+            /// to the query: the thread neither started nor finished working on it, so neither may
+            /// add a row. See `accounting_scope_depth`.
+            if (settings[Setting::log_queries] && settings[Setting::log_query_threads] && !insideAccountingScope())
             {
                 Int64 query_duration_ms = thread_attach_time.elapsedMilliseconds();
                 if (query_duration_ms >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())

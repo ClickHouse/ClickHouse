@@ -54,6 +54,9 @@ private:
     /// destructor. A separate bool gates the restore because UNKNOWN is a valid saved name, not a sentinel.
     ThreadName prev_thread_name = ThreadName::UNKNOWN;
     bool should_restore_prev_thread_name = false;
+    /// True while this switcher holds an accounting scope open on the thread it borrowed, see
+    /// `ThreadStatus::accounting_scope_depth`.
+    bool entered_accounting_scope = false;
 };
 
 
