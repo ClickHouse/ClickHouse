@@ -2728,6 +2728,16 @@ void MergeTreeSettingsImpl::sanityCheck(
             (*this)[MergeTreeSetting::shared_merge_tree_range_for_merge_window_size].value);
     }
 
+    /// The oldest kept log record names the threshold that log pointers of inactive replicas are
+    /// compared with, so the kept window cannot be empty.
+    if ((*this)[MergeTreeSetting::max_replicated_logs_to_keep] < 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "max_replicated_logs_to_keep: value {} makes no sense",
+            (*this)[MergeTreeSetting::max_replicated_logs_to_keep].value);
+    }
+
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
     // If index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
     // min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
