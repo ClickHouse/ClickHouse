@@ -126,6 +126,16 @@ String 유형의 URL 컬럼(값당 평균 크기 60바이트)을 기록한다고
 
 `Resize` 노드의 split을 비활성화하려면 이 설정을 0으로 설정합니다. 그러면 파이프라인 생성 중 `Resize` 노드가 분할되지 않아 더 작은 노드로 나뉘지 않고 원래 구조를 유지합니다.
 
+<div id="min_rows_ratio_for_hash_join_row_store">
+  ## min_rows_ratio_for_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Double" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "해시 조인 페이로드를 행 우선 형식으로 변환하기 위한 조인 출력 행과 빌드 측 행 간 최소 예상 비율을 제어하는 새로운 설정입니다. 0이면 변환이 항상 허용됩니다."}]}]} />
+
+해시 조인 페이로드를 행 우선 형식으로 변환하기 위한 조인 출력 행과 빌드 측 행 간 최소 예상 비율입니다. 0이면 변환이 항상 허용됩니다.
+
 <div id="min_table_rows_to_use_projection_index">
   ## min_table_rows_to_use_projection_index
 </div>
