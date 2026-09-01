@@ -3486,6 +3486,21 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
         if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
+    else if (alter && alter->partitions)
+    {
+        bool part_in_partitions = false;
+        for (const auto & partition_ast : alter->partitions->children)
+        {
+            auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
+            if (part->info.getPartitionId() == command_partition_id)
+            {
+                part_in_partitions = true;
+                break;
+            }
+        }
+        if (!part_in_partitions)
+            return true;
+    }
 
     /// APPLY PATCHES command is handled separately.
     if (command.type == MutationCommand::APPLY_PATCHES)

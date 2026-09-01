@@ -362,12 +362,12 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         BackupInfo effective_base_backup_info = *base_backup_info;
         if (params.use_same_s3_credentials_for_base_backup)
         {
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+            backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
         }
-        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
+        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info, params.context))
         {
             /// Metadata marker asks to copy credentials from this backup locator at restore time.
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+            backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
@@ -517,16 +517,16 @@ void BackupImpl::writeBackupMetadata()
             /// Persist base backup locators without inline `S3` credentials.
             BackupInfo effective_base_backup_info = *base_backup_info;
             if (params.use_same_s3_credentials_for_base_backup)
-                backup_info.copyS3CredentialsTo(effective_base_backup_info);
+                backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
 
             const BackupInfo base_backup_info_for_metadata = effective_base_backup_info.withoutS3Credentials(params.context);
             const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != effective_base_backup_info.toString();
             bool base_backup_can_use_this_backup_credentials = false;
 
-            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
+            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata, params.context))
             {
                 BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
-                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials);
+                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials, params.context);
                 base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
             }
 
