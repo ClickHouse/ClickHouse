@@ -3,6 +3,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFromJSON.h>
 
+#include <Core/SettingsSecrets.h>
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -15,10 +16,7 @@
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
-#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
-
-static constexpr std::string_view format_avro_schema_registry_url = "format_avro_schema_registry_url";
 
 namespace DB
 {
@@ -154,15 +152,12 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 return true;
             }
 
-            if (change.name == format_avro_schema_registry_url)
+            /// Matches `hasSecretParts`: a non-String value cannot embed a URI password, and the
+            /// AST JSON path can carry any `Field` type here.
+            String masked;
+            if (change.value.tryGet<String>(masked) && CoreSettings::maskSettingValue(change.name, masked))
             {
-                /// Matches `hasSecretParts`: a non-String value cannot embed a URI password, and the
-                /// AST JSON path can carry any `Field` type here.
-                String uri_string;
-                if (!change.value.tryGet<String>(uri_string) || !maskURIPassword(&uri_string))
-                    return false;
-
-                ostr << " = '" << uri_string << "'";
+                ostr << " = " << quoteString(masked);
                 return true;
             }
 
@@ -406,17 +401,14 @@ bool ASTSetQuery::hasSecretParts() const
         if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
             return true;
 
-        if (change.name == format_avro_schema_registry_url)
-        {
-            /// Secret only if there is actually a password embedded in it. The value need not be a
-            /// String: a valueless `SETTINGS format_avro_schema_registry_url` carries Bool `true`,
-            /// and the AST JSON path can carry any `Field` type. This runs before any settings
-            /// validation - `executeQueryImpl` masks the query for logging first - so demanding a
-            /// String here would report `BAD_GET` instead of the setting's own `TYPE_MISMATCH`.
-            String uri_string;
-            if (change.value.tryGet<String>(uri_string) && maskURIPassword(&uri_string))
-                return true;
-        }
+        /// Secret only if there is actually a password embedded in it. The value need not be a
+        /// String: a valueless `SETTINGS format_avro_schema_registry_url` carries Bool `true`,
+        /// and the AST JSON path can carry any `Field` type. This runs before any settings
+        /// validation - `executeQueryImpl` masks the query for logging first - so demanding a
+        /// String here would report `BAD_GET` instead of the setting's own `TYPE_MISMATCH`.
+        String masked;
+        if (change.value.tryGet<String>(masked) && CoreSettings::maskSettingValue(change.name, masked))
+            return true;
     }
     return false;
 }

@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Core/SettingsSecrets.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
@@ -77,21 +78,30 @@ void ASTSettingsProfileElement::formatImpl(WriteBuffer & ostr, const FormatSetti
 
     formatSettingName(setting_name, ostr);
 
+    /// `FieldVisitorToString` quotes strings; `maskURIPassword` is unaffected by the surrounding quotes.
+    const auto render = [&](const Field & field)
+    {
+        String str = applyVisitor(FieldVisitorToString{}, field);
+        if (!settings.show_secrets)
+            CoreSettings::maskSettingValue(setting_name, str);
+        return str;
+    };
+
     if (value)
     {
-        ostr << " = " << applyVisitor(FieldVisitorToString{}, *value);
+        ostr << " = " << render(*value);
     }
 
     if (min_value)
     {
         ostr << " MIN "
-                      << applyVisitor(FieldVisitorToString{}, *min_value);
+                      << render(*min_value);
     }
 
     if (max_value)
     {
         ostr << " MAX "
-                      << applyVisitor(FieldVisitorToString{}, *max_value);
+                      << render(*max_value);
     }
 
     if (writability)
