@@ -12,7 +12,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Access/Common/AccessFlags.h>
-#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -136,9 +135,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     /// Grant before existence and before the cast's engine error.
     context->checkAccess(AccessType::SELECT, time_series_storage_id);
-    auto storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
-    checkTimeSeriesWrapperReadContract(time_series_storage_id, context);
-    auto time_series_storage = storagePtrToTimeSeries(storage);
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -819,9 +816,7 @@ void StorageTimeSeriesSelector::readImpl(
 {
     /// Same gate order as getConfiguration; this entry is reachable on its own.
     context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
-    auto storage = DatabaseCatalog::instance().getTable(config.time_series_storage_id, context);
-    checkTimeSeriesWrapperReadContract(config.time_series_storage_id, context);
-    auto time_series_storage = storagePtrToTimeSeries(storage);
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;

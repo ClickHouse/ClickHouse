@@ -25,12 +25,8 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
 /// True when the parsed PromQL contains a selector, i.e. would actually read the table.
 bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 
-/// Refuses what every TimeSeries rewrite silently skips: a non-trivial row policy on the table,
-/// and an additional_table_filters entry aimed at it (matched the way the planner matches keys).
-void checkTimeSeriesWrapperReadContract(const StorageID & storage_id, const ContextPtr & context);
-
-/// Enforces on the Distributed wrapper what its rewrite skips (SELECT grant, row policies,
-/// unmappable settings and filters). Call before reading through a resolved distributed target.
+/// Enforces the wrapper's SELECT grant, which its rewrite would otherwise bypass.
+/// Call before reading through a resolved distributed target.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
 /// The effective {skip_unavailable_shards, skip_unavailable_shards_mode} of a read through the
