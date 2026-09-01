@@ -30,6 +30,18 @@ extern const Event ASTFuzzerOracleCastRoundtripChecks;
 extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
 extern const Event ASTFuzzerOracleTupleSummingChecks;
 extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
+extern const Event ASTFuzzerOracleDeleteMutationChecks;
+extern const Event ASTFuzzerOracleUpdateMutationChecks;
+extern const Event ASTFuzzerOracleMaterializeIndexChecks;
+extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
+extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
+extern const Event ASTFuzzerOracleGroupingSetsChecks;
+extern const Event ASTFuzzerOracleRowPolicyChecks;
+extern const Event ASTFuzzerOracleFinalMergeChecks;
+extern const Event ASTFuzzerOracleWithFillChecks;
+extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
+extern const Event ASTFuzzerOracleDictGetChecks;
+extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 }
 
 namespace DB
@@ -103,6 +115,18 @@ OracleRegistry::OracleRegistry()
     add("aggregate-state column", ProfileEvents::ASTFuzzerOracleAggregateStateColumnChecks, &QueryOracleChecker::checkAggregateStateColumn);
     add("tuple summing", ProfileEvents::ASTFuzzerOracleTupleSummingChecks, &QueryOracleChecker::checkTupleSumming);
     add("schema round-trip", ProfileEvents::ASTFuzzerOracleSchemaRoundtripChecks, &QueryOracleChecker::checkSchemaRoundtrip);
+    add("DELETE mutation", ProfileEvents::ASTFuzzerOracleDeleteMutationChecks, &QueryOracleChecker::checkDeleteMutation);
+    add("UPDATE mutation", ProfileEvents::ASTFuzzerOracleUpdateMutationChecks, &QueryOracleChecker::checkUpdateMutation);
+    add("MATERIALIZE INDEX invariance", ProfileEvents::ASTFuzzerOracleMaterializeIndexChecks, &QueryOracleChecker::checkMaterializeIndexInvariance);
+    add("De-Morgan predicate", ProfileEvents::ASTFuzzerOraclePredicateDeMorganChecks, &QueryOracleChecker::checkPredicateDeMorgan);
+    add("ARRAY JOIN identity", ProfileEvents::ASTFuzzerOracleArrayJoinIdentityChecks, &QueryOracleChecker::checkArrayJoinIdentity);
+    add("grouping-set equivalence", ProfileEvents::ASTFuzzerOracleGroupingSetsChecks, &QueryOracleChecker::checkGroupingSetsEquivalence);
+    add("row-policy equivalence", ProfileEvents::ASTFuzzerOracleRowPolicyChecks, &QueryOracleChecker::checkRowPolicyEquivalence);
+    add("FINAL-merge dedup", ProfileEvents::ASTFuzzerOracleFinalMergeChecks, &QueryOracleChecker::checkFinalMergeReplacing);
+    add("WITH FILL grid", ProfileEvents::ASTFuzzerOracleWithFillChecks, &QueryOracleChecker::checkWithFillGrid);
+    add("pipe equivalence", ProfileEvents::ASTFuzzerOraclePipeEquivalenceChecks, &QueryOracleChecker::checkPipeEquivalence);
+    add("dictGet vs JOIN", ProfileEvents::ASTFuzzerOracleDictGetChecks, &QueryOracleChecker::checkDictGetVsJoin);
+    add("materialized column", ProfileEvents::ASTFuzzerOracleMaterializedColumnChecks, &QueryOracleChecker::checkMaterializedColumn);
 }
 
 const OracleRegistry & OracleRegistry::instance()

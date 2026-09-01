@@ -71,6 +71,18 @@
     M(ASTFuzzerOracleAggregateStateColumnChecks, "Number of aggregate-state-column oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleTupleSummingChecks, "Number of tuple-summing oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleSchemaRoundtripChecks, "Number of schema round-trip oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleDeleteMutationChecks, "Number of DELETE-mutation oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleUpdateMutationChecks, "Number of UPDATE-mutation oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleMaterializeIndexChecks, "Number of MATERIALIZE-INDEX invariance oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOraclePredicateDeMorganChecks, "Number of De-Morgan/comparison-symmetry oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleArrayJoinIdentityChecks, "Number of ARRAY JOIN identity oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleGroupingSetsChecks, "Number of grouping-modifier equivalence oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleRowPolicyChecks, "Number of row-policy equivalence oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleFinalMergeChecks, "Number of FINAL-merge (ReplacingMergeTree dedup) oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleWithFillChecks, "Number of ORDER BY WITH FILL grid oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOraclePipeEquivalenceChecks, "Number of pipe-operator equivalence oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleDictGetChecks, "Number of dictGet-vs-JOIN oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerOracleMaterializedColumnChecks, "Number of MATERIALIZED/ALIAS column recomputation oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerOracleMismatches, "Number of oracle mismatches detected by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \

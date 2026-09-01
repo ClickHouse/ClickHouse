@@ -141,6 +141,60 @@ public:
     /// (modulo the table name). A difference is a real metadata serialization bug.
     bool checkSchemaRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// DELETE-mutation oracle (self-seeded): after DELETE FROM t WHERE p (non-null p), the
+    /// surviving rows must equal a never-mutated snapshot filtered by NOT p. A difference is a
+    /// real lightweight-delete / mutation bug.
+    bool checkDeleteMutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// UPDATE-mutation oracle (self-seeded): after ALTER UPDATE x = e WHERE p, the table must equal
+    /// a snapshot with e applied to x on rows matching p and x unchanged elsewhere. A difference is
+    /// a real mutation bug.
+    bool checkUpdateMutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// MATERIALIZE-INDEX invariance oracle (self-seeded): adding and materializing a skip index
+    /// must not change the data. The table after ADD INDEX + MATERIALIZE INDEX must equal a
+    /// never-mutated snapshot; a difference is a real index-materialization bug.
+    bool checkMaterializeIndexInvariance(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// De-Morgan / comparison-symmetry oracle (self-seeded): three-valued-logic identities that
+    /// must hold row-for-row over Nullable data (De Morgan, comparison operator symmetry).
+    bool checkPredicateDeMorgan(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// ARRAY JOIN identity oracle (self-seeded): INNER ARRAY JOIN emits one row per array element,
+    /// so count() over an array-joined table == sum(length(arr)) and sum(element) == sum(arraySum(arr)).
+    /// A difference is a real ARRAY JOIN bug.
+    bool checkArrayJoinIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Grouping-modifier equivalence oracle (self-seeded): CUBE(a,b) and ROLLUP(a,b) are defined as
+    /// GROUPING SETS expansions, so their result multisets must be identical. A difference is a real
+    /// grouping-modifier bug.
+    bool checkGroupingSetsEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Row-policy equivalence oracle (self-seeded): a single permissive row policy USING p must make
+    /// SELECT * FROM t return exactly the rows that WHERE p returns without the policy. Self-checks
+    /// that the policy actually applies in the oracle context and skips otherwise (keeps it sound).
+    bool checkRowPolicyEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// FINAL-merge oracle (self-seeded): reading a ReplacingMergeTree(ver) table with FINAL must equal
+    /// the hand-written per-key max-version dedup argMax(v, ver) GROUP BY key.
+    bool checkFinalMergeReplacing(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// WITH FILL oracle (self-seeded): with all real values on the fill grid and inside [FROM, TO),
+    /// ORDER BY x WITH FILL FROM f TO t STEP s must produce exactly the grid {f, f+s, ...} positionally.
+    bool checkWithFillGrid(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Pipe-operator equivalence oracle (self-seeded): a classic SELECT and its pipe rendering
+    /// (FROM t |> WHERE p |> SELECT ...) must return the same multiset (pipe is pure syntax).
+    bool checkPipeEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Dictionary oracle (self-seeded): dictGet/dictHas against a hashed dictionary must equal the
+    /// equivalent LEFT JOIN / IN lookup against the dictionary's own source table.
+    bool checkDictGetVsJoin(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Materialized/ALIAS column oracle (self-seeded): reading a MATERIALIZED or ALIAS column must
+    /// equal recomputing its defining expression.
+    bool checkMaterializedColumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);

@@ -77,6 +77,18 @@ extern const Event ASTFuzzerOracleCastRoundtripChecks;
 extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
 extern const Event ASTFuzzerOracleTupleSummingChecks;
 extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
+extern const Event ASTFuzzerOracleDeleteMutationChecks;
+extern const Event ASTFuzzerOracleUpdateMutationChecks;
+extern const Event ASTFuzzerOracleMaterializeIndexChecks;
+extern const Event ASTFuzzerOraclePredicateDeMorganChecks;
+extern const Event ASTFuzzerOracleArrayJoinIdentityChecks;
+extern const Event ASTFuzzerOracleGroupingSetsChecks;
+extern const Event ASTFuzzerOracleRowPolicyChecks;
+extern const Event ASTFuzzerOracleFinalMergeChecks;
+extern const Event ASTFuzzerOracleWithFillChecks;
+extern const Event ASTFuzzerOraclePipeEquivalenceChecks;
+extern const Event ASTFuzzerOracleDictGetChecks;
+extern const Event ASTFuzzerOracleMaterializedColumnChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -2365,10 +2377,18 @@ bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, 
     if (select.prewhere() || select.qualify())
         return false;
 
-    /// A bare/qualified `*` becomes a context-sensitive GROUP BY `*` after the rewrite (the
-    /// global gate rejects asterisks in GROUP BY); keep them out.
+    /// The rewrite below clones each SELECT expression into a GROUP BY key and calls setAlias("") on
+    /// it. Only ASTWithAlias nodes accept an alias; calling setAlias on an asterisk, a `COLUMNS(...)`
+    /// matcher, or a column transformer (APPLY/EXCEPT/REPLACE) hits the base IAST::setAlias, which
+    /// throws LOGICAL_ERROR. That is harmlessly caught on release but ABORTS the server on
+    /// debug/sanitizer builds, so we must never reach it. Such nodes also become a context-sensitive
+    /// GROUP BY `*`/matcher that the global gate rejects anyway. Skip the oracle unless every SELECT
+    /// expression is a plain aliasable expression.
+    /// NOTE: use dynamic_cast, not as<ASTWithAlias>(): IAST::as is an exact-typeid cast and returns
+    /// null for every concrete node against the ASTWithAlias base, which would disable the oracle
+    /// entirely.
     for (const auto & expr : select.select()->children)
-        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+        if (!dynamic_cast<const ASTWithAlias *>(expr.get()))
             return false;
 
     if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
@@ -2562,7 +2582,7 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
     /// never change the result, so a divergence is a real bug. Both sides run the same text, so the
     /// structural gates that protect AST rewrites do not apply — only determinism + read stability.
     /// Settings already covered by checkDQP are intentionally NOT repeated here.
-    static constexpr std::array<std::string_view, 10> flips = {
+    static constexpr std::array<std::string_view, 13> flips = {
         /// Caches / read-time optimizations.
         "use_query_condition_cache",
         "query_plan_optimize_lazy_materialization",
@@ -2576,6 +2596,10 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
         /// Plan-shape optimizations that keep the result set.
         "query_plan_merge_filters",
         "query_plan_remove_unused_columns",
+        /// Aggregation / sorting execution strategies — a different algorithm, identical result.
+        "optimize_aggregation_in_order",
+        "enable_memory_bound_merging_of_aggregation_results",
+        "optimize_sorting_by_input_stream_properties",
     };
 
     if (!select.tables())
@@ -3321,6 +3345,598 @@ bool QueryOracleChecker::checkSchemaRoundtrip(const ASTSelectQuery &, const Cont
     }
 
     LOG_TRACE(logger, "schema round-trip oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkDeleteMutation(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded mutation oracle (task_40/41): DELETE removes exactly the rows where the predicate
+    /// is true. Against a never-mutated snapshot, the surviving rows of a mutated table must equal
+    /// the snapshot filtered by NOT p. The predicate is on a non-null Int64 column so 3-valued logic
+    /// cannot make "survivors" ambiguous. OracleMutationLifecycle: snapshot -> mutate (synchronously)
+    /// -> compare -> preserve-on-mismatch.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("del", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName("t");
+    const String snap = fixture.allocName("snap");
+    const String cols = " (k UInt64, g UInt8, v Int64) ENGINE = MergeTree ORDER BY k";
+    if (!fixture.execute("CREATE TABLE " + t + cols) || !fixture.execute("CREATE TABLE " + snap + cols))
+        return false;
+    const String seed = " SELECT number, number % 8, toInt64(number) - 500 FROM numbers(1000)";
+    if (!fixture.execute("INSERT INTO " + t + seed) || !fixture.execute("INSERT INTO " + snap + seed))
+        return false;
+
+    /// Apply the mutation synchronously so the read below sees the finished state.
+    const std::vector<std::pair<String, Field>> sync{
+        {"mutations_sync", Field(UInt64(2))}, {"alter_sync", Field(UInt64(2))}, {"lightweight_deletes_sync", Field(UInt64(2))}};
+    if (!fixture.execute("DELETE FROM " + t + " WHERE v > 100", sync))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "DELETE-mutation oracle: {} vs snapshot {}", t, snap);
+
+    auto actual_opt = OracleExec::executeRows("SELECT k, g, v FROM " + t, context, ResultShape::SortedBag);
+    auto expected_opt = OracleExec::executeRows("SELECT k, g, v FROM " + snap + " WHERE v <= 100", context, ResultShape::SortedBag);
+    if (!actual_opt || !expected_opt)
+        return false;
+
+    if (!OracleCompare::equal(*actual_opt, *expected_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "DELETE-mutation oracle mismatch!\n"
+                "after DELETE FROM {} WHERE v > 100 ({} rows) vs snapshot WHERE v <= 100 ({} rows)\n{}",
+                t, actual_opt->size(), expected_opt->size(),
+                OracleCompare::diffSummary(*actual_opt, *expected_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "DELETE-mutation oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkUpdateMutation(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded mutation oracle (task_41/42): ALTER UPDATE x = e WHERE p sets x to e on rows where
+    /// p is true and leaves x unchanged elsewhere. Against a never-mutated snapshot, the mutated table
+    /// must equal the snapshot with the same transform applied: if(p, e, x). Deterministic integer
+    /// expression (v + 10) so both the mutation and the expected side share identical arithmetic
+    /// (incl. any overflow). Non-null p (g = 1).
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("upd", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName("t");
+    const String snap = fixture.allocName("snap");
+    const String cols = " (k UInt64, g UInt8, v Int64) ENGINE = MergeTree ORDER BY k";
+    if (!fixture.execute("CREATE TABLE " + t + cols) || !fixture.execute("CREATE TABLE " + snap + cols))
+        return false;
+    const String seed = " SELECT number, number % 8, toInt64(number) - 500 FROM numbers(1000)";
+    if (!fixture.execute("INSERT INTO " + t + seed) || !fixture.execute("INSERT INTO " + snap + seed))
+        return false;
+
+    const std::vector<std::pair<String, Field>> sync{
+        {"mutations_sync", Field(UInt64(2))}, {"alter_sync", Field(UInt64(2))}};
+    if (!fixture.execute("ALTER TABLE " + t + " UPDATE v = v + 10 WHERE g = 1", sync))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "UPDATE-mutation oracle: {} vs transformed snapshot {}", t, snap);
+
+    auto actual_opt = OracleExec::executeRows("SELECT k, g, v FROM " + t, context, ResultShape::SortedBag);
+    auto expected_opt = OracleExec::executeRows(
+        "SELECT k, g, if(g = 1, v + 10, v) FROM " + snap, context, ResultShape::SortedBag);
+    if (!actual_opt || !expected_opt)
+        return false;
+
+    if (!OracleCompare::equal(*actual_opt, *expected_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "UPDATE-mutation oracle mismatch!\n"
+                "after ALTER UPDATE v=v+10 WHERE g=1 on {} ({} rows) vs transformed snapshot ({} rows)\n{}",
+                t, actual_opt->size(), expected_opt->size(),
+                OracleCompare::diffSummary(*actual_opt, *expected_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "UPDATE-mutation oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkMaterializeIndexInvariance(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded mutation oracle (task_40): a data-skipping index only prunes granules; adding one
+    /// and materializing it must not change the data. After ADD INDEX + MATERIALIZE INDEX the table
+    /// must equal a never-mutated snapshot; a difference is a real index-materialization / mutation
+    /// bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("matidx", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t = fixture.allocName("t");
+    const String snap = fixture.allocName("snap");
+    const String cols = " (k UInt64, g UInt8, v Int64, s String) ENGINE = MergeTree ORDER BY k";
+    if (!fixture.execute("CREATE TABLE " + t + cols) || !fixture.execute("CREATE TABLE " + snap + cols))
+        return false;
+    const String seed = " SELECT number, number % 8, toInt64(number) - 500, toString(number % 43) FROM numbers(1000)";
+    if (!fixture.execute("INSERT INTO " + t + seed) || !fixture.execute("INSERT INTO " + snap + seed))
+        return false;
+
+    const std::vector<std::pair<String, Field>> sync{
+        {"mutations_sync", Field(UInt64(2))}, {"alter_sync", Field(UInt64(2))}};
+    if (!fixture.execute("ALTER TABLE " + t + " ADD INDEX ix v TYPE minmax GRANULARITY 1", sync))
+        return false;
+    if (!fixture.execute("ALTER TABLE " + t + " MATERIALIZE INDEX ix", sync))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "MATERIALIZE-INDEX invariance oracle: {} vs snapshot {}", t, snap);
+
+    auto actual_opt = OracleExec::executeRows("SELECT k, g, v, s FROM " + t, context, ResultShape::SortedBag);
+    auto expected_opt = OracleExec::executeRows("SELECT k, g, v, s FROM " + snap, context, ResultShape::SortedBag);
+    if (!actual_opt || !expected_opt)
+        return false;
+
+    if (!OracleCompare::equal(*actual_opt, *expected_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "MATERIALIZE-INDEX invariance oracle mismatch!\n"
+                "after ADD INDEX + MATERIALIZE INDEX on {} ({} rows) vs snapshot ({} rows)\n{}",
+                t, actual_opt->size(), expected_opt->size(),
+                OracleCompare::diffSummary(*actual_opt, *expected_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "MATERIALIZE-INDEX invariance oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkPredicateDeMorgan(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: three-valued-logic identities that must hold for every row over Nullable
+    /// data (each checked with IS NOT DISTINCT FROM so NULL==NULL counts as equal):
+    ///   NOT(p AND q) == (NOT p) OR (NOT q)      (De Morgan, valid in Kleene 3VL)
+    ///   NOT(p OR q)  == (NOT p) AND (NOT q)
+    ///   (a < b)  == (b > a),  (a <= b) == (b >= a),  (a = b) == (b = a)   (comparison symmetry)
+    /// The probe counts violating rows across all identities; a non-zero count is a real bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("demorgan", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, a Nullable(Int64), b Nullable(Int64)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number,"
+            " if(number % 4 = 0, NULL, toInt64(number % 11) - 5),"
+            " if(number % 5 = 0, NULL, toInt64(number % 11) - 5) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "De-Morgan predicate oracle: {}", tbl);
+
+    const String probe =
+        "SELECT countIf(NOT ((NOT((a > 0) AND (b > 0))) IS NOT DISTINCT FROM (NOT(a > 0) OR NOT(b > 0))))"
+        " + countIf(NOT ((NOT((a > 0) OR (b > 0))) IS NOT DISTINCT FROM (NOT(a > 0) AND NOT(b > 0))))"
+        " + countIf(NOT ((a < b) IS NOT DISTINCT FROM (b > a)))"
+        " + countIf(NOT ((a <= b) IS NOT DISTINCT FROM (b >= a)))"
+        " + countIf(NOT ((a = b) IS NOT DISTINCT FROM (b = a)))"
+        " FROM " + tbl;
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false;
+    UInt64 violations = 0;
+    try { violations = value->safeGet<UInt64>(); } catch (...) { return false; }
+
+    if (violations != 0)
+        raiseOracleMismatch(
+            fmt::format(
+                "De-Morgan predicate oracle mismatch!\n"
+                "{} rows violate a De Morgan / comparison-symmetry identity on table {}.\nProbe: {}",
+                violations, tbl, probe),
+            context, &fixture);
+
+    LOG_TRACE(logger, "De-Morgan predicate oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkArrayJoinIdentity(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_04): INNER ARRAY JOIN emits exactly one output row per element of the
+    /// joined array (empty arrays contribute nothing), so over an array-joined table:
+    ///   count()               == sum(length(arr))
+    ///   sum(element)           == sum(arraySum(arr))
+    /// A difference is a real ARRAY JOIN bug. Compared as one server-side boolean via scalar
+    /// subqueries (typed-computation policy).
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("arrayjoin", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, arr Array(Int32)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    /// Varied array lengths including empty (number % 7 = 0).
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number,"
+            " if(number % 7 = 0, emptyArrayInt32(), arrayMap(x -> toInt32(x) - 2, range(number % 5)))"
+            " FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "ARRAY JOIN identity oracle: {}", tbl);
+
+    const String probe =
+        "SELECT ((SELECT count() FROM " + tbl + " ARRAY JOIN arr) IS NOT DISTINCT FROM (SELECT sum(length(arr)) FROM " + tbl + "))"
+        " AND ((SELECT sum(e) FROM " + tbl + " ARRAY JOIN arr AS e) IS NOT DISTINCT FROM (SELECT sum(arraySum(arr)) FROM " + tbl + "))";
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false;
+    UInt64 ok = 0;
+    try { ok = value->safeGet<UInt64>(); } catch (...) { return false; }
+
+    if (ok != 1)
+        raiseOracleMismatch(
+            fmt::format(
+                "ARRAY JOIN identity oracle mismatch!\n"
+                "count()/sum over ARRAY JOIN disagrees with sum(length)/sum(arraySum) on table {}.\nProbe: {}",
+                tbl, probe),
+            context, &fixture);
+
+    LOG_TRACE(logger, "ARRAY JOIN identity oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkGroupingSetsEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_05): CUBE and ROLLUP are defined as GROUPING SETS expansions, so their
+    /// result multisets must be identical to the explicit expansion:
+    ///   GROUP BY CUBE(a,b)   == GROUP BY GROUPING SETS ((a,b),(a),(b),())
+    ///   GROUP BY ROLLUP(a,b) == GROUP BY GROUPING SETS ((a,b),(a),())
+    /// Exact integer aggregates only. A difference is a real grouping-modifier lowering bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("groupmod", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (a UInt8, b UInt8, v Int64) ENGINE = MergeTree ORDER BY (a, b)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 5, number % 3, toInt64(number) - 300 FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "grouping-set equivalence oracle: {}", tbl);
+
+    const String proj = "SELECT a, b, sum(v), count() FROM " + tbl + " GROUP BY ";
+    struct Pair { std::string_view modifier; std::string_view sets; };
+    static constexpr std::array<Pair, 2> pairs = {{
+        {"CUBE(a, b)", "GROUPING SETS ((a, b), (a), (b), ())"},
+        {"ROLLUP(a, b)", "GROUPING SETS ((a, b), (a), ())"},
+    }};
+    for (const auto & p : pairs)
+    {
+        auto mod_opt = OracleExec::executeRows(proj + String(p.modifier), context, ResultShape::SortedBag);
+        auto sets_opt = OracleExec::executeRows(proj + String(p.sets), context, ResultShape::SortedBag);
+        if (!mod_opt || !sets_opt)
+            return false;
+        if (!OracleCompare::equal(*mod_opt, *sets_opt))
+            raiseOracleMismatch(
+                fmt::format(
+                    "grouping-set equivalence oracle mismatch!\n"
+                    "GROUP BY {} ({} rows) vs GROUP BY {} ({} rows) on {}\n{}",
+                    p.modifier, mod_opt->size(), p.sets, sets_opt->size(), tbl,
+                    OracleCompare::diffSummary(*mod_opt, *sets_opt)),
+                context, &fixture);
+    }
+
+    LOG_TRACE(logger, "grouping-set equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkRowPolicyEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_44): a single PERMISSIVE row policy `USING p` on a table must make an
+    /// unqualified read return exactly the rows that `WHERE p` returns without the policy. We compute
+    /// the reference (WHERE p) and the full unfiltered read before creating the policy, create it, then
+    /// read the now-filtered table. If the read is not actually filtered (the oracle context is not
+    /// subject to the policy) we skip rather than raise — that keeps the oracle sound in any environment.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("rowpol", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (id UInt32, k UInt8, v Int64) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number, number % 7, toInt64(number) FROM numbers(500)"))
+        return false;
+
+    const String predicate = "k < 3";
+    const String projection = "id, k, v";
+
+    /// Reference (no policy yet) and the full unfiltered read.
+    auto ref_opt = OracleExec::executeRows("SELECT " + projection + " FROM " + tbl + " WHERE " + predicate, context, ResultShape::SortedBag);
+    auto full_opt = OracleExec::executeRows("SELECT " + projection + " FROM " + tbl, context, ResultShape::SortedBag);
+    if (!ref_opt || !full_opt)
+        return false;
+
+    const String policy = "__oracle_rp_" + tbl.substr(tbl.rfind('_') + 1);
+    if (!fixture.createAuxiliary(
+            "CREATE ROW POLICY " + policy + " ON " + tbl + " AS PERMISSIVE FOR SELECT USING " + predicate + " TO ALL",
+            "DROP ROW POLICY IF EXISTS " + policy + " ON " + tbl))
+        return false;
+
+    auto filtered_opt = OracleExec::executeRows("SELECT " + projection + " FROM " + tbl, context, ResultShape::SortedBag);
+    if (!filtered_opt)
+        return false;
+
+    /// Soundness self-check: if the policy did not filter (read still returns every row while the
+    /// reference is a strict subset), the oracle context is not subject to the policy — skip.
+    if (filtered_opt->size() == full_opt->size() && ref_opt->size() < full_opt->size())
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "row-policy equivalence oracle: {} policy {}", tbl, policy);
+
+    if (!OracleCompare::equal(*ref_opt, *filtered_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "row-policy equivalence oracle mismatch!\n"
+                "WHERE {} (no policy) returned {} rows, but SELECT under row policy USING {} returned {} rows on {}\n{}",
+                predicate, ref_opt->size(), predicate, filtered_opt->size(), tbl,
+                OracleCompare::diffSummary(*ref_opt, *filtered_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "row-policy equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkFinalMergeReplacing(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_01): a ReplacingMergeTree(ver) table read with FINAL keeps exactly the
+    /// maximum-version row per sorting-key tuple, which equals the hand-written dedup
+    /// argMax(v, ver) GROUP BY k. Versions are unique per row here, so argMax is deterministic and the
+    /// relation is exact. A difference is a real FINAL dedup-correctness bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("finalmerge", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt32, v Int64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k"))
+        return false;
+    /// Three separate parts with overlapping keys and disjoint, unique version ranges (0..199,
+    /// 10000..10199, 500..619) so the max version per key is unambiguous.
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 50, toInt64(number), number FROM numbers(200)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 50, toInt64(number) + 1000, number + 10000 FROM numbers(200)"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 30, toInt64(number) + 5, number + 500 FROM numbers(120)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "FINAL-merge dedup oracle: {}", tbl);
+
+    auto final_opt = OracleExec::executeRows("SELECT k, v FROM " + tbl + " FINAL", context, ResultShape::SortedBag);
+    auto ref_opt = OracleExec::executeRows("SELECT k, argMax(v, ver) FROM " + tbl + " GROUP BY k", context, ResultShape::SortedBag);
+    if (!final_opt || !ref_opt)
+        return false;
+
+    if (!OracleCompare::equal(*final_opt, *ref_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "FINAL-merge dedup oracle mismatch!\n"
+                "SELECT k, v FROM {} FINAL ({} rows) vs argMax(v, ver) GROUP BY k ({} rows)\n{}",
+                tbl, final_opt->size(), ref_opt->size(),
+                OracleCompare::diffSummary(*final_opt, *ref_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "FINAL-merge dedup oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkWithFillGrid(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_02): with every real value lying on the fill grid and strictly inside
+    /// [FROM, TO), ORDER BY x WITH FILL FROM f TO t STEP s must emit exactly the grid points
+    /// {f, f+s, ..., t-s} in ascending order (real rows coincide with grid points; gaps are
+    /// synthesised). Compared positionally (order-aware), unlike the sorted-multiset oracles.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("withfill", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (x Int64) ENGINE = MergeTree ORDER BY x"))
+        return false;
+    /// Real values 0, 6, 12, ..., 54 — all multiples of the step (3) and inside [0, 60).
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number * 6 FROM numbers(10)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "WITH FILL grid oracle: {}", tbl);
+
+    /// Grid {0, 3, ..., 57} = 20 points; TO (60) is exclusive.
+    auto actual_opt = OracleExec::executeRows(
+        "SELECT x FROM " + tbl + " ORDER BY x WITH FILL FROM 0 TO 60 STEP 3", context, ResultShape::Ordered);
+    auto grid_opt = OracleExec::executeRows(
+        "SELECT toInt64(number) * 3 FROM numbers(20) ORDER BY number", context, ResultShape::Ordered);
+    if (!actual_opt || !grid_opt)
+        return false;
+
+    if (!OracleCompare::equal(*actual_opt, *grid_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "WITH FILL grid oracle mismatch!\n"
+                "ORDER BY x WITH FILL FROM 0 TO 60 STEP 3 ({} rows) vs expected grid {{0,3,..,57}} ({} rows) on {}\n{}",
+                actual_opt->size(), grid_opt->size(), tbl,
+                OracleCompare::diffSummary(*actual_opt, *grid_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "WITH FILL grid oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkPipeEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_16): pipe syntax is a pure syntactic re-rendering — the pipe form's AST
+    /// is meant to be identical to the equivalent nested-subquery query — so a classic SELECT and its
+    /// pipe rendering must return the same multiset. A divergence is a real pipe-parser/analyzer bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("pipe", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (a Int64, b Int64) ENGINE = MergeTree ORDER BY a"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " SELECT number % 13, toInt64(number) FROM numbers(300)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "pipe equivalence oracle: {}", tbl);
+
+    auto classic_opt = OracleExec::executeRows(
+        "SELECT a, b FROM " + tbl + " WHERE a < 5", context, ResultShape::SortedBag);
+    auto pipe_opt = OracleExec::executeRows(
+        "FROM " + tbl + " |> WHERE a < 5 |> SELECT a, b", context, ResultShape::SortedBag);
+    if (!classic_opt || !pipe_opt)
+        return false;
+
+    if (!OracleCompare::equal(*classic_opt, *pipe_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "pipe equivalence oracle mismatch!\n"
+                "classic SELECT ({} rows) vs pipe rendering ({} rows) on {}\n{}",
+                classic_opt->size(), pipe_opt->size(), tbl,
+                OracleCompare::diffSummary(*classic_opt, *pipe_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "pipe equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkDictGetVsJoin(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_34): dictGet/dictHas against a hashed dictionary must equal the
+    /// equivalent lookup against the dictionary's own source table. If the dictionary cannot be
+    /// created or loaded in this environment the oracle skips (fail-close).
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("dict", context);
+    if (!fixture.valid())
+        return false;
+
+    const String src = fixture.allocName("src");
+    if (!fixture.execute("CREATE TABLE " + src + " (id UInt64, val Int64) ENGINE = MergeTree ORDER BY id"))
+        return false;
+    /// Sparse key set (even ids only) so probe keys 0..99 include present and absent keys.
+    if (!fixture.execute("INSERT INTO " + src + " SELECT number * 2, toInt64(number) + 7 FROM numbers(50)"))
+        return false;
+
+    const String dict = "__oracle_dict_" + src.substr(src.rfind('_') + 1);
+    if (!fixture.createAuxiliary(
+            "CREATE DICTIONARY " + dict + " (id UInt64, val Int64 DEFAULT -1) PRIMARY KEY id "
+            "SOURCE(CLICKHOUSE(TABLE '" + src + "' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(0)",
+            "DROP DICTIONARY IF EXISTS " + dict))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "dictGet vs JOIN oracle: {} dict {}", src, dict);
+
+    /// dictGet(...,'val',key) with declared default -1 == ifNull of the source lookup, defaulting to -1.
+    auto dict_opt = OracleExec::executeRows(
+        "SELECT k, dictGet(" + dict + ", 'val', k), dictHas(" + dict + ", k) "
+        "FROM (SELECT number AS k FROM numbers(100))",
+        context, ResultShape::SortedBag);
+    /// join_use_nulls=1 makes unmatched LEFT JOIN rows yield NULL (not the type default), so ifNull
+    /// falls back to the declared dictionary default and IS NOT NULL reflects real presence.
+    auto join_opt = OracleExec::executeRows(
+        "SELECT k, ifNull(any(s.val), -1), toUInt8(any(s.id) IS NOT NULL) "
+        "FROM (SELECT number AS k FROM numbers(100)) AS n "
+        "LEFT JOIN " + src + " AS s ON n.k = s.id GROUP BY k",
+        context, ResultShape::SortedBag, {{"join_use_nulls", Field(UInt64(1))}});
+    if (!dict_opt || !join_opt)
+        return false;
+
+    if (!OracleCompare::equal(*dict_opt, *join_opt))
+        raiseOracleMismatch(
+            fmt::format(
+                "dictGet vs JOIN oracle mismatch!\n"
+                "dictGet/dictHas ({} rows) vs LEFT JOIN lookup ({} rows) on {} via {}\n{}",
+                dict_opt->size(), join_opt->size(), src, dict,
+                OracleCompare::diffSummary(*dict_opt, *join_opt)),
+            context, &fixture);
+
+    LOG_TRACE(logger, "dictGet vs JOIN oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkMaterializedColumn(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_33 arm a): a MATERIALIZED column (computed at insert time) and an ALIAS
+    /// column (computed at read time) must both equal recomputing their defining expression on every
+    /// row. A divergence is a real materialized-column / alias-recomputation bug.
+    if (thread_local_rng() % 45 != 0)
+        return false;
+
+    OracleFixture fixture("matcol", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute(
+            "CREATE TABLE " + tbl + " (a Int64, b Int64, "
+            "m Int64 MATERIALIZED a * 2 + b, al Int64 ALIAS a + b) ENGINE = MergeTree ORDER BY a"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + tbl + " (a, b) SELECT number % 17, toInt64(number) - 100 FROM numbers(400)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "materialized column oracle: {}", tbl);
+
+    /// Count rows where the stored / aliased value disagrees with a fresh recomputation.
+    auto viol_opt = OracleExec::executeRows(
+        "SELECT countIf(m != a * 2 + b) + countIf(al != a + b) FROM " + tbl,
+        context, ResultShape::SortedBag);
+    if (!viol_opt)
+        return false;
+
+    if (viol_opt->size() != 1 || (*viol_opt)[0] != "0")
+        raiseOracleMismatch(
+            fmt::format(
+                "materialized column oracle mismatch!\n"
+                "{} rows on {} disagree with the recomputed MATERIALIZED/ALIAS expression",
+                viol_opt->empty() ? "?" : (*viol_opt)[0], tbl),
+            context, &fixture);
+
+    LOG_TRACE(logger, "materialized column oracle passed");
     return true;
 }
 
