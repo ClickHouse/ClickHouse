@@ -1,6 +1,8 @@
--- `optimize_redundant_comparisons` must not prune a comparison that is evaluated element by element:
--- a pair of top-level `Tuple`s, or a pair of `Array`s with no least supertype, is not ordered by the
--- total order the pruning analysis uses, so pruning one dropped a bound that excludes a row.
+-- `optimize_redundant_comparisons` prunes a comparison implied by another using a total order over the
+-- constants, and two things break that order: a comparison decomposed into per-element ones (a
+-- top-level `Tuple` pair, an `Array` pair with no least supertype) is not ordered by it at all, and a
+-- `NULL` nested in a container is ordered the other way round. Pruning either dropped a bound that
+-- excludes a row.
 --
 -- `optimize_redundant_comparisons` is pinned on every query because it is the setting under test and
 -- every scenario pins both its enabled and its disabled answer; `clickhouse-test` does not randomize
@@ -154,6 +156,36 @@ SELECT count() FROM t_element_wise_json WHERE j <= '{"a":null}'::JSON(a Nullable
 SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_json WHERE j = '{"a":5}'::JSON(a Nullable(UInt32)) AND j >= '{"a":0}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_json WHERE j = '{"a":5}'::JSON(a Nullable(UInt32)) AND j >= '{"a":0}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 
+-- 18) Such a comparison must also stay out of the `notEquals` merge into `NOT IN`, whose set membership
+--     uses the same order it is not a point in. Three constants of one value at three declared types
+--     stay three entries here, because the merge deduplicates by node structure, and three is the
+--     threshold; the resulting `notIn` holds `nan` equal to `nan` where the element-wise `notEquals` it
+--     replaces does not. The threshold is pinned rather than left at its default so that changing that
+--     default cannot silently take the arm below it. There is no disabled-setting spelling because
+--     disabling the setting routes every filter to the same merge, which is what master already does.
+DROP TABLE IF EXISTS t_element_wise_not_in;
+CREATE TABLE t_element_wise_not_in (id UInt32, tu Tuple(Float64, Float64), a Array(Tuple(Float64, UInt64)), f Float64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_element_wise_not_in VALUES (1, (nan, 9.), [(nan, toUInt64(9))], 5.);
+SELECT count() FROM t_element_wise_not_in WHERE tu != tuple(toFloat32(nan), toUInt8(9)) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
+SELECT count() FROM t_element_wise_not_in WHERE tu != tuple(toFloat32(nan), toUInt8(9)) AND tu != tuple(nan, toUInt16(9)) AND tu != tuple(nan, toUInt32(9)) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
+SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_not_in WHERE tu != tuple(toFloat32(nan), toUInt8(9)) AND tu != tuple(nan, toUInt16(9)) AND tu != tuple(nan, toUInt32(9)) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0, optimize_min_inequality_conjunction_chain_length = 3) WHERE explain ILIKE '%function_name: notIn,%';
+
+-- 19) The same for the no-supertype `Array` spelling.
+SELECT count() FROM t_element_wise_not_in WHERE a != [(toFloat32(nan), toInt8(9))] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
+SELECT count() FROM t_element_wise_not_in WHERE a != [(toFloat32(nan), toInt8(9))] AND a != [(nan, toInt16(9))] AND a != [(nan, toInt32(9))] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
+SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_not_in WHERE a != [(toFloat32(nan), toInt8(9))] AND a != [(nan, toInt16(9))] AND a != [(nan, toInt32(9))] SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0, optimize_min_inequality_conjunction_chain_length = 3) WHERE explain ILIKE '%function_name: notIn,%';
+
+-- 20) The merge that must survive: a bare `NaN` constant is also held aside from the pruning analysis,
+--     but by the order it is a point in, so it still merges. Two ordinary conjuncts make up the three
+--     entries. The second query drops the `NaN` conjunct and leaves two, which is what shows the held
+--     aside one is carrying the merge here rather than the arm passing for some other reason.
+SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_not_in WHERE f != nan AND f != 1. AND f != 2. SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0, optimize_min_inequality_conjunction_chain_length = 3) WHERE explain ILIKE '%function_name: notIn,%';
+SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_not_in WHERE f != 1. AND f != 2. SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0, optimize_min_inequality_conjunction_chain_length = 3) WHERE explain ILIKE '%function_name: notIn,%';
+
+-- 21) The merge also has to leave the rejection of arm 11 alone: a `String` against a container has no
+--     common type, and `NOT IN` reports a different error for it than the comparison does.
+SELECT count() FROM t_element_wise_live WHERE s != CAST((1, 2), 'Tuple(UInt8, UInt8)') AND s != CAST((1, 2), 'Tuple(UInt16, UInt16)') AND s != CAST((1, 2), 'Tuple(UInt32, UInt32)') SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3; -- { serverError NO_COMMON_TYPE }
+
 DROP TABLE t_element_wise_array;
 DROP TABLE t_element_wise_tuple;
 DROP TABLE t_element_wise_const_string;
@@ -161,3 +193,4 @@ DROP TABLE t_element_wise_live;
 DROP TABLE t_element_wise_nested_null;
 DROP TABLE t_element_wise_nullable_live;
 DROP TABLE t_element_wise_json;
+DROP TABLE t_element_wise_not_in;

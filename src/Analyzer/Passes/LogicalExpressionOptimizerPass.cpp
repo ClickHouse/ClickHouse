@@ -397,6 +397,11 @@ struct ComparisonFilterInfo
     /// Set when folding changed `function` or the constant: the node must be rebuilt on emission,
     /// so that the tightened predicate reaches downstream analysis.
     bool modified = false;
+    /// Set when the filter went to `opaque_filters` because this analysis and execution do not order
+    /// its constant the same way. Such a filter is not a point in that order, so it must stay out of
+    /// the `notEquals` merge into `NOT IN`, whose set membership uses that order, as well as out of
+    /// the pairwise comparison.
+    bool order_inconsistent = false;
 };
 
 /// A `Bool` column constant may be stored as `Types::Bool` (strict conversion) or as an integer
@@ -1006,6 +1011,7 @@ static AddComparisonFilterResult addComparisonFilter(
     /// by execution, so its position relative to the other conditions is not usable.
     if (fieldContainsNull(*new_filter.converted_value))
     {
+        new_filter.order_inconsistent = true;
         filters.opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
     }
@@ -1014,6 +1020,7 @@ static AddComparisonFilterResult addComparisonFilter(
     /// order this analysis reasons in, so it must not be compared against the other conditions.
     if (comparisonDecomposesContainer(raw_type, new_filter.constant_node->getResultType()))
     {
+        new_filter.order_inconsistent = true;
         filters.opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
     }
@@ -2133,7 +2140,7 @@ private:
 
             for (auto & filter : filters.opaque_filters)
             {
-                if (filter.function == ComparisonFunction::NOT_EQUALS)
+                if (filter.function == ComparisonFunction::NOT_EQUALS && !filter.order_inconsistent)
                     not_equals_infos.push_back(&filter);
                 else
                     all_operands.emplace_back(filter.original_index, std::move(filter.original_node));
