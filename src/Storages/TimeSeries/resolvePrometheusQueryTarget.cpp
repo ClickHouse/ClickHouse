@@ -143,9 +143,12 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
         {
             const auto & name_and_filter = filter_entry.safeGet<Tuple>();
             const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
+            /// With no declared remote database each shard resolves in its own default database,
+            /// unknowable here, so any qualified spelling of the remote table may match on a shard.
             bool matches = filtered_table == remote_id.table_name
                 || (!remote_id.database_name.empty()
-                    && filtered_table == remote_id.database_name + "." + remote_id.table_name);
+                    ? filtered_table == remote_id.database_name + "." + remote_id.table_name
+                    : filtered_table.ends_with("." + remote_id.table_name));
             if (matches && !name_and_filter.at(1).safeGet<String>().empty())
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
