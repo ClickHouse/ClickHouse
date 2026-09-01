@@ -1,10 +1,16 @@
--- `CLEAR COLUMN` recomputes the MATERIALIZED columns derived from the cleared one. When
--- `_block_number` or `_block_offset` is enabled, the mutation carries an extra READ_COLUMN command
--- for that virtual column, which used to freeze the set of written columns before the recompute
--- stages existed, so the MATERIALIZED column silently kept its pre-clear value on a Wide part.
+-- `CLEAR COLUMN` recomputes the MATERIALIZED columns derived from the cleared one. The set of
+-- written columns used to be frozen before the recompute stages were appended, whenever anything had
+-- already put a stage in place - not only for the spelling covered here. An enabled `_block_number`
+-- or `_block_offset` reaches it with a single setting and no extra SQL, because the mutation then
+-- carries an extra `READ_COLUMN` command for that virtual column, and the MATERIALIZED column
+-- silently kept its pre-clear value on a Wide part.
+-- `04869_clear_column_materialized_coalesced_mutation` covers a pending `ALTER UPDATE` coalescing
+-- with the `CLEAR`, which reaches the same defect at pure defaults with no block column.
 --
--- The settings are pinned because the runner randomizes all three, and the recompute is skipped only
--- when a block column is enabled AND the part is Wide - with the defaults the case is never reached.
+-- Four settings are pinned because the runner randomizes every one of them and each alone hides the
+-- defect: a block column has to be enabled, the part has to be Wide, and the part has to use full
+-- storage. Packed storage makes `MutateTask` rewrite every column (`rewritesAllPartColumns` checks
+-- `isFullPartStorage`), which repairs the value and makes these assertions pass on unfixed code.
 
 SET mutations_sync = 2;
 
@@ -12,7 +18,8 @@ DROP TABLE IF EXISTS t_clear_both_block_columns;
 
 CREATE TABLE t_clear_both_block_columns (x Int32, y Int32, mk Int32 MATERIALIZED x + 1)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_clear_both_block_columns (x, y) VALUES (1, 0);
 SELECT x, mk FROM t_clear_both_block_columns;
@@ -27,7 +34,8 @@ DROP TABLE IF EXISTS t_clear_block_number;
 
 CREATE TABLE t_clear_block_number (x Int32, y Int32, mk Int32 MATERIALIZED x + 1)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 0, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 0,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_clear_block_number (x, y) VALUES (1, 0);
 ALTER TABLE t_clear_block_number CLEAR COLUMN x IN PARTITION tuple();
@@ -39,7 +47,8 @@ DROP TABLE IF EXISTS t_clear_block_offset;
 
 CREATE TABLE t_clear_block_offset (x Int32, y Int32, mk Int32 MATERIALIZED x + 1)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple()
-SETTINGS enable_block_number_column = 0, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_clear_block_offset (x, y) VALUES (1, 0);
 ALTER TABLE t_clear_block_offset CLEAR COLUMN x IN PARTITION tuple();
@@ -53,7 +62,8 @@ DROP TABLE IF EXISTS t_clear_unrelated_block_columns;
 
 CREATE TABLE t_clear_unrelated_block_columns (x Int32, y Int32, mk Int32 MATERIALIZED x + 1)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_clear_unrelated_block_columns (x, y) VALUES (1, 5);
 ALTER TABLE t_clear_unrelated_block_columns CLEAR COLUMN y IN PARTITION tuple();
