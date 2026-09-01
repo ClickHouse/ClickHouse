@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -18,6 +19,8 @@
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -65,6 +68,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -240,6 +244,148 @@ static int compareValuesWithOffsetNullable(const IColumn * _compared_column,
         nest_reference_column.get(), reference_row, _offset, offset_is_preceding);
 }
 
+// A variant of compareValuesWithOffset for month-based intervals, which have
+// no fixed length and require calendar arithmetic. The offset is in months.
+// Only Date and Date32 keys get here: a month shift of a DateTime is not
+// monotonic (DST and day-of-month clamping), and the frame search requires it.
+template <typename ColumnType>
+static int compareValuesWithOffsetCalendar(const IColumn * _compared_column,
+    size_t compared_row, const IColumn * _reference_column,
+    size_t reference_row,
+    const Field & _offset,
+    bool offset_is_preceding,
+    const DateLUTImpl & time_zone)
+{
+    const auto * compared_column = assert_cast<const ColumnType *>(
+        _compared_column);
+    const auto * reference_column = assert_cast<const ColumnType *>(
+        _reference_column);
+
+    using ValueType = typename ColumnType::ValueType;
+    const Int64 months = static_cast<Int64>(_offset.safeGet<UInt64>()) * (offset_is_preceding ? -1 : 1);
+
+    const ValueType compared_value = compared_column->getData()[compared_row];
+    const ValueType reference_value = reference_column->getData()[reference_row];
+
+    ValueType shifted_value;
+    if constexpr (std::is_same_v<ValueType, UInt16>)
+        shifted_value = static_cast<ValueType>(time_zone.addMonths(DayNum(reference_value), months));
+    else
+    {
+        static_assert(std::is_same_v<ValueType, Int32>);
+        shifted_value = static_cast<ValueType>(time_zone.addMonths(ExtendedDayNum(reference_value), months));
+    }
+
+    return compared_value < shifted_value ? -1 : compared_value == shifted_value ? 0 : 1;
+}
+
+static WindowTransform::CompareValuesWithOffset makeCalendarComparator(const IColumn * column, const DateLUTImpl & time_zone)
+{
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column))
+    {
+        auto nested_comparator = makeCalendarComparator(&nullable_column->getNestedColumn(), time_zone);
+        return [nested_comparator](const IColumn * compared_column, size_t compared_row,
+            const IColumn * reference_column, size_t reference_row,
+            const Field & offset, bool offset_is_preceding)
+        {
+            const auto * compared_nullable = assert_cast<const ColumnNullable *>(compared_column);
+            const auto * reference_nullable = assert_cast<const ColumnNullable *>(reference_column);
+            const bool compared_is_null = compared_nullable->isNullAt(compared_row);
+            const bool reference_is_null = reference_nullable->isNullAt(reference_row);
+            if (compared_is_null || reference_is_null)
+                return compared_is_null == reference_is_null ? 0 : (compared_is_null ? -1 : 1);
+            return nested_comparator(&compared_nullable->getNestedColumn(), compared_row,
+                &reference_nullable->getNestedColumn(), reference_row, offset, offset_is_preceding);
+        };
+    }
+
+    auto make = [&time_zone]<typename ColumnType>()
+    {
+        return [&time_zone](const IColumn * compared_column, size_t compared_row,
+            const IColumn * reference_column, size_t reference_row,
+            const Field & offset, bool offset_is_preceding)
+        {
+            return compareValuesWithOffsetCalendar<ColumnType>(compared_column, compared_row,
+                reference_column, reference_row, offset, offset_is_preceding, time_zone);
+        };
+    };
+
+    if (typeid_cast<const ColumnVector<UInt16> *>(column))
+        return make.template operator()<ColumnVector<UInt16>>();
+    if (typeid_cast<const ColumnVector<Int32> *>(column))
+        return make.template operator()<ColumnVector<Int32>>();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Calendar interval offset is not supported for ORDER BY column {}", column->getName());
+}
+
+// Converts an INTERVAL offset into the units of the ORDER BY key: days for
+// Date/Date32, seconds for DateTime. Month-based kinds are converted to months
+// and `is_calendar` is set, since they need calendar arithmetic. They are
+// rejected for DateTime keys, see compareValuesWithOffsetCalendar.
+static Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataTypePtr & key_type, bool & is_calendar)
+{
+    WhichDataType which(key_type);
+    if (!which.isDate() && !which.isDate32() && !which.isDateTime())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Interval window frame offset requires a Date, Date32 or DateTime ORDER BY column, got {}",
+            key_type->getName());
+
+    const Int64 count = offset.safeGet<Int64>();
+    if (count < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Window frame offset must be nonnegative, INTERVAL {} {} given", count, kind.toKeyword());
+
+    is_calendar = false;
+    UInt64 units_per_interval = 0;
+    switch (kind.kind)
+    {
+        case IntervalKind::Kind::Month:
+            is_calendar = true;
+            units_per_interval = 1;
+            break;
+        case IntervalKind::Kind::Quarter:
+            is_calendar = true;
+            units_per_interval = 3;
+            break;
+        case IntervalKind::Kind::Year:
+            is_calendar = true;
+            units_per_interval = 12;
+            break;
+        default:
+            if (which.isDateTime())
+            {
+                if (kind.kind < IntervalKind::Kind::Second)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Interval window frame offset INTERVAL {} {} is finer than the resolution of the DateTime ORDER BY column",
+                        count, kind.toKeyword());
+                units_per_interval = kind.toAvgSeconds();
+            }
+            else
+            {
+                if (kind.kind == IntervalKind::Kind::Day)
+                    units_per_interval = 1;
+                else if (kind.kind == IntervalKind::Kind::Week)
+                    units_per_interval = 7;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Interval window frame offset INTERVAL {} {} is finer than the resolution of the {} ORDER BY column",
+                        count, kind.toKeyword(), key_type->getName());
+            }
+    }
+
+    if (is_calendar && which.isDateTime())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Interval window frame offset INTERVAL {} {} is not supported for a DateTime ORDER BY column, use a Date key instead",
+            count, kind.toKeyword());
+
+    UInt64 result = 0;
+    if (common::mulOverflow(static_cast<UInt64>(count), units_per_interval, result))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Window frame offset INTERVAL {} {} is too large", count, kind.toKeyword());
+    return Field(result);
+}
+
 // Helper macros to dispatch on type of the ORDER BY column
 #define APPLY_FOR_ONE_TYPE(FUNCTION, TYPE) \
 else if (typeid_cast<const TYPE *>(column)) \
@@ -374,39 +520,43 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         chassert(order_by_indices.size() == 1);
         const auto & entry = input_header.getByPosition(order_by_indices[0]);
         const IColumn * column = entry.column.get();
+        CompareValuesWithOffset compare_values_with_offset;
         APPLY_FOR_TYPES(compareValuesWithOffset)
+        compare_values_with_begin_offset = compare_values_with_offset;
+        compare_values_with_end_offset = compare_values_with_offset;
 
-        // Convert the offsets to the ORDER BY column type. We can't just check
-        // that the type matches, because e.g. the int literals are always
-        // (U)Int64, but the column might be Int8 and so on.
-        if (window_description.frame.begin_type
-            == WindowFrame::BoundaryType::Offset)
+        const auto key_type = removeNullable(entry.type);
+        auto prepare_offset = [&](Field & offset, const std::optional<IntervalKind> & interval_kind, CompareValuesWithOffset & comparator)
         {
-            window_description.frame.begin_offset = convertFieldToTypeOrThrow(
-                window_description.frame.begin_offset,
-                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
+            if (interval_kind)
+            {
+                bool is_calendar = false;
+                offset = convertIntervalOffset(offset, *interval_kind, key_type, is_calendar);
+                if (is_calendar)
+                {
+                    comparator = makeCalendarComparator(column, DateLUT::instance());
+                }
+                return;
+            }
 
-            if (accurateLess(window_description.frame.begin_offset, Field(0)))
+            // Convert the offsets to the ORDER BY column type. We can't just check
+            // that the type matches, because e.g. the int literals are always
+            // (U)Int64, but the column might be Int8 and so on.
+            offset = convertFieldToTypeOrThrow(offset, *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
+
+            if (accurateLess(offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
-                    window_description.frame.begin_offset);
+                    "Window frame offset must be nonnegative, {} given", offset);
             }
-        }
-        if (window_description.frame.end_type
-            == WindowFrame::BoundaryType::Offset)
-        {
-            window_description.frame.end_offset = convertFieldToTypeOrThrow(
-                window_description.frame.end_offset,
-                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
+        };
 
-            if (accurateLess(window_description.frame.end_offset, Field(0)))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
-                    window_description.frame.end_offset);
-            }
-        }
+        if (window_description.frame.begin_type == WindowFrame::BoundaryType::Offset)
+            prepare_offset(window_description.frame.begin_offset,
+                window_description.frame.begin_offset_interval_kind, compare_values_with_begin_offset);
+        if (window_description.frame.end_type == WindowFrame::BoundaryType::Offset)
+            prepare_offset(window_description.frame.end_offset,
+                window_description.frame.end_offset_interval_kind, compare_values_with_end_offset);
     }
 
     for (const auto & workspace : workspaces)
@@ -706,7 +856,7 @@ void WindowTransform::advanceFrameStartRangeOffset()
         // while [frames_start] < [current_row] with offset.
         const auto * compared_column
             = inputAt(frame_start)[order_by_indices[0]].get();
-        if (compare_values_with_offset(compared_column, frame_start.row,
+        if (compare_values_with_begin_offset(compared_column, frame_start.row,
             reference_column, current_row.row,
             window_description.frame.begin_offset,
             preceding)
@@ -999,7 +1149,7 @@ void WindowTransform::advanceFrameEndRangeOffset()
         // [frame_end] <= [current_row] with offset.
         const auto * compared_column
             = inputAt(frame_end)[order_by_indices[0]].get();
-        if (compare_values_with_offset(compared_column, frame_end.row,
+        if (compare_values_with_end_offset(compared_column, frame_end.row,
             reference_column, current_row.row,
             window_description.frame.end_offset,
             preceding)

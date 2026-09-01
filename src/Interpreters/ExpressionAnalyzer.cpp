@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/validateGroupByKeyType.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -755,16 +756,20 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
 
     if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {
-        auto [value, _] = evaluateConstantExpression(definition.frame_end_offset,
+        auto [value, value_type] = evaluateConstantExpression(definition.frame_end_offset,
             context_.shared_from_this());
         desc.frame.end_offset = value;
+        if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(removeNullable(value_type).get()))
+            desc.frame.end_offset_interval_kind = interval_type->getKind();
     }
 
     if (definition.frame_begin_type == WindowFrame::BoundaryType::Offset)
     {
-        auto [value, _] = evaluateConstantExpression(definition.frame_begin_offset,
+        auto [value, value_type] = evaluateConstantExpression(definition.frame_begin_offset,
             context_.shared_from_this());
         desc.frame.begin_offset = value;
+        if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(removeNullable(value_type).get()))
+            desc.frame.begin_offset_interval_kind = interval_type->getKind();
     }
 
     desc.checkValid();

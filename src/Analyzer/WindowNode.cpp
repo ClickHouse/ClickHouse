@@ -92,9 +92,15 @@ void WindowNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) cons
     hash_state.update(window_frame.type);
     hash_state.update(window_frame.begin_type);
     applyVisitor(FieldVisitorHash(hash_state), window_frame.begin_offset);
+    hash_state.update(window_frame.begin_offset_interval_kind.has_value());
+    if (window_frame.begin_offset_interval_kind)
+        hash_state.update(window_frame.begin_offset_interval_kind->kind);
     hash_state.update(window_frame.begin_preceding);
     hash_state.update(window_frame.end_type);
     applyVisitor(FieldVisitorHash(hash_state), window_frame.end_offset);
+    hash_state.update(window_frame.end_offset_interval_kind.has_value());
+    if (window_frame.end_offset_interval_kind)
+        hash_state.update(window_frame.end_offset_interval_kind->kind);
     hash_state.update(window_frame.end_preceding);
 
     hash_state.update(parent_window_name);
