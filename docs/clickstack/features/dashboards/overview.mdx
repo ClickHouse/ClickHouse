@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualizations and dashboards with ClickStack'
-sidebarTitle: 'Overview'
+sidebarTitle: 'Dashboards'
 description: 'Visualizations and dashboards with ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
@@ -205,14 +205,6 @@ With a number tile selected, open **Display Settings** and set **Background char
 
 Background charts apply to query-builder number tiles. Raw SQL number tiles return a single value with no time dimension to bucket, so the option appears but is disabled for them.
 
-Table tiles can stripe their rows with **Alternate Row Background**, which tints every other row so wide tables are easier to scan. It is off by default.
-
-With a table tile selected, open **Display Settings** and turn on **Alternate Row Background**. Striping is purely visual, so it works on both query-builder and raw SQL table tiles.
-
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Display Settings drawer for a table tile, with Alternate Row Background turned on" size="lg"/>
-
-Table tiles also keep a separator between the header row and the data as you scroll, so the column headers stay distinct.
-
 ## Dashboard - Listing and search {#dashboard-listing-search}
 
 Dashboards are accessible on the dashboards page. They are organized by tag, with built-in search and filtering to quickly locate specific dashboards.
@@ -295,7 +287,7 @@ This dashboard uses tabs to separate monitoring of **Selects**, **Inserts**, and
 <Info>
 **Required system table access**
 
-This dashboard queries the ClickHouse [system tables](/reference/system-tables/overview) to expose key metrics. The following grants are required:
+This dashboard queries the ClickHouse [system tables](/reference/system-tables/index) to expose key metrics. The following grants are required:
 
 `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

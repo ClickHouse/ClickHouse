@@ -15,6 +15,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -102,6 +103,13 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
 {
     switch (type)
     {
+        case HashJoin::Type::EMPTY:
+            [[fallthrough]];
+        case HashJoin::Type::CROSS:
+            /// Do nothing. We will only save block, and it is enough
+            is_inserted = true;
+            break;
+
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         if (selector.isContinuousRange()) \
@@ -323,6 +331,21 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
     switch (type)
     {
+        case HashJoin::Type::EMPTY: {
+            if constexpr (!is_asof_join)
+            {
+                using KeyGetter = KeyGetterEmpty<typename MapsTemplate::MappedType>;
+                std::vector<KeyGetter> key_getter_vector;
+                key_getter_vector.emplace_back();
+
+                using MapTypeVal = typename KeyGetter::MappedType;
+                std::vector<const MapTypeVal *> a_map_type_vector;
+                a_map_type_vector.emplace_back();
+                return joinRightColumnsSwitchNullability<KeyGetter>(
+                    std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags);
+            }
+            throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys. Type: {}", type);
+        }
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using MapTypeVal = const typename std::remove_reference_t<decltype(MapsTemplate::TYPE)>::element_type; \
@@ -341,6 +364,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
 
+        default:
+            throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", type);
     }
 }
 
@@ -1130,6 +1155,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
     if constexpr (join_features.need_replication)
     {
         added_columns.offsets_to_replicate.resize(left_block_rows);
+        added_columns.filter.resize(left_block_rows);
+    }
+    else if (need_filter)
+    {
+        /// The loop above may break early at max_joined_block_rows, producing fewer left rows
+        /// than the selector size the filter was allocated for. Trim the filter to the number of
+        /// processed rows so the required right key column built from it matches the left block,
+        /// which is cut to left_block_rows downstream.
         added_columns.filter.resize(left_block_rows);
     }
     added_columns.applyLazyDefaults();

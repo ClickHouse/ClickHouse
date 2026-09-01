@@ -131,6 +131,10 @@ public:
     UInt64 getNonNullRowCount() const;
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
     bool hasNullCount() const;
+    /// True iff `estimateCardinality` is backed by a uniq sketch. When it is not, that method returns a
+    /// fixed fraction of the row count, which callers dividing by the cardinality must not mistake for
+    /// a measurement.
+    bool hasCardinality() const;
     UInt64 estimateCardinality() const;
     UInt64 estimateDefaults() const;
 
@@ -219,10 +223,5 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 
-/// Validates a value of the `auto_statistics_types` MergeTree setting and rejects deprecated types
-/// (currently `minmax`). This must be called only on the setting-change path (CREATE / ALTER ...
-/// MODIFY SETTING), never when loading existing metadata, so that tables which still carry `minmax`
-/// in the setting keep loading and remain alterable.
-void validateAutoStatisticsTypes(const String & statistics_types_str);
 
 }

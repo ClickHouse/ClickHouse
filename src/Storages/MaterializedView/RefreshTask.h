@@ -290,7 +290,7 @@ private:
         std::atomic_bool interrupt_execution {false};
         PipelineExecutor * executor = nullptr;
         /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
-        /// killed. Set/cleared together with `executor`.
+        /// killed. Set as soon as the query enters the process list, before it is interpreted.
         std::shared_ptr<QueryStatus> executing_query_status;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;

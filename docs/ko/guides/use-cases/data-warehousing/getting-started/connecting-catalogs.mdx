@@ -8,7 +8,7 @@ keywords: ['데이터 레이크', '레이크하우스', '카탈로그', 'glue', 
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 [이전 섹션](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly)에서는 스토리지 경로를 직접 지정해 오픈 테이블 포맷을 쿼리했습니다. 실제 운영 환경에서는 대부분의 조직이 **데이터 카탈로그**를 통해 테이블 메타데이터를 관리합니다. 데이터 카탈로그는 테이블 위치, 스키마, 파티션을 추적하는 중앙 레지스트리입니다. ClickHouse를 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진으로 카탈로그에 연결하면 카탈로그 전체가 ClickHouse 데이터베이스로 노출됩니다. 카탈로그의 모든 테이블이 자동으로 표시되며, 개별 테이블 경로를 알거나 테이블별 자격 증명을 관리할 필요 없이 전체 ClickHouse SQL로 쿼리할 수 있습니다.
 
@@ -32,10 +32,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog)은 Databricks lakehouse 데이터에 대한 중앙 집중식 거버넌스를 제공합니다.
 
-Databricks는 lakehouse에 대해 여러 데이터 포맷을 지원합니다. ClickHouse를 사용하면 외부 스토리지 위치를 사용하는 Unity Catalog Delta 및 Iceberg 테이블을 쿼리할 수 있습니다.
+Databricks는 lakehouse에 대해 여러 데이터 포맷을 지원합니다. ClickHouse를 사용하면 Unity Catalog 테이블을 Delta와 Iceberg 형식 모두로 쿼리할 수 있습니다.
 
 <Note>
-  이 통합은 현재 AWS에서만 지원됩니다. Databricks 관리형 스토리지의 테이블은 Unity Catalog가 해당 위치에 대한 자격 증명을 제공하지 않으므로 지원되지 않습니다. 자세한 내용은 [Unity Catalog 참고](/ko/guides/use-cases/data-warehousing/unity-catalog)를 참조하십시오.
+  Unity Catalog와의 통합은 관리형 테이블과 외부 테이블 모두에서 작동합니다.
+  이 통합은 현재 AWS에서만 지원됩니다.
 </Note>
 
 <div id="configuring-unity-in-databricks">

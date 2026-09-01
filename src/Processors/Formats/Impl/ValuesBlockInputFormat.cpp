@@ -266,18 +266,7 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
 
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
     const auto & settings = context->getSettingsRef();
-    bool parsed = false;
-    try
-    {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
-        parsed = templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings);
-    }
-    catch (Exception & e)
-    {
-        e.recordToSystemErrors();
-        throw;
-    }
-    if (parsed)
+    if (templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings))
     {
         ++rows_parsed_using_template[column_idx];
         return true;
@@ -309,7 +298,6 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     bool rollback_on_exception = false;
     try
     {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
         bool read = true;
         if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
@@ -332,15 +320,12 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         assertDelimiterAfterValue(column_idx);
         return read;
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
         bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
         if (!isParseError(e.code()) || decimal_overflow)
-        {
-            e.recordToSystemErrors();
             throw;
-        }
         if (rollback_on_exception)
             column.popBack(1);
 
@@ -506,7 +491,6 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         bool ok = false;
         try
         {
-            Exception::SuppressErrorCodesScope suppress_error_codes;
             const auto & serialization = serializations[column_idx];
             serialization->deserializeTextQuoted(column, *buf, format_settings);
             rollback_on_exception = true;
@@ -514,14 +498,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             if (checkDelimiterAfterValue(column_idx))
                 ok = true;
         }
-        catch (Exception & e)
+        catch (const Exception & e)
         {
             bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
             if (!isParseError(e.code()) || decimal_overflow)
-            {
-                e.recordToSystemErrors();
                 throw;
-            }
         }
         if (ok)
         {
@@ -543,7 +524,6 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         std::exception_ptr exception;
         try
         {
-            Exception::SuppressErrorCodesScope suppress_error_codes;
             bool found_in_cache = false;
             const auto & result_type = header.getByPosition(column_idx).type;
             const char * delimiter = (column_idx + 1 == num_columns) ? ")" : ",";
@@ -582,17 +562,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (!format_settings.values.interpret_expressions)
         {
             if (exception)
-            {
-                try
-                {
-                    std::rethrow_exception(exception);
-                }
-                catch (Exception & e)
-                {
-                    e.recordToSystemErrors();
-                    throw;
-                }
-            }
+                std::rethrow_exception(exception);
             else
             {
                 buf->rollbackToCheckpoint();

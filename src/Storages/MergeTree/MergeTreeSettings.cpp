@@ -228,14 +228,17 @@ it is recommended to set it below the maximum filename length (usually 255
 bytes) with some gap to avoid filesystem errors.
 )", 0) \
     DECLARE(UInt64, min_bytes_for_full_part_storage, 0, R"(
-    Minimal uncompressed size in bytes to use full type of storage for data part instead of packed
-    )", 0) \
+Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
+use full type of storage for data part instead of packed
+)", 0) \
     DECLARE(UInt32, min_level_for_full_part_storage, 0, R"(
-    Minimal part level to use full type of storage for data part instead of packed
-    )", 0) \
+Only available in ClickHouse Cloud. Minimal part level to
+use full type of storage for data part instead of packed
+)", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
-    Minimal number of rows to use full type of storage for data part instead of packed
-    )", 0) \
+Only available in ClickHouse Cloud. Minimal number of rows to use full type
+of storage for data part instead of packed
+)", 0) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal number of bytes to write in a
 single stripe in compact parts
@@ -700,6 +703,22 @@ Can be overridden by explicit `posting_list_codec` index argument.
 Allow creating text indexes with the experimental `support_phrase_search` argument
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
+    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V1_WithCodec, R"(
+The preferred on-disk serialization format version for writing text indexes.
+
+The setting is a preference rather than a hard constraint: if the configured version cannot
+represent an index, a newer version that can represent it is chosen automatically, and
+writing a text index never fails because of this setting.
+
+During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
+the already upgraded servers, so that they keep writing the format that older servers can still read.
+
+Possible values:
+
+- `v0_initial` — The original format. Does not persist the posting list codec type.
+- `v1_with_codec` — Persists the posting list codec type in the text index header.
+- `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
+)", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
 parts were selected. A lower setting will trigger selecting tasks in

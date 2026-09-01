@@ -751,8 +751,12 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
             "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
-            "google_adc_client_secret, google_adc_refresh_token), or enable the setting "
-            "`s3_allow_server_credentials_in_user_queries`.");
+            "google_adc_client_secret, google_adc_refresh_token)"
+#if CLICKHOUSE_CLOUD
+            ".");
+#else
+            ", or enable the setting `s3_allow_server_credentials_in_user_queries`.");
+#endif
 
     /// GCP metadata service (works inside GCP infrastructure)
     /// https://cloud.google.com/compute/docs/metadata/overview
@@ -1308,10 +1312,14 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const DB::Exception & ex)
+    catch (const DB::HTTPException & ex)
     {
-        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
-        return false;
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(log, "Table {}.{} does not exist: {}", namespace_name, table_name, ex.displayText());
+            return false;
+        }
+        throw;
     }
 }
 
@@ -1466,6 +1474,22 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const auto state_snapshot = state.get();
+
+    /// Check existence first: creation may be denied to a principal that is still
+    /// allowed to use a pre-provisioned namespace.
+    const std::string check_endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
+    try
+    {
+        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
+        return;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            throw;
+    }
+
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
@@ -1484,16 +1508,16 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     {
         sendRequest(*state_snapshot, endpoint, request_body);
     }
-    catch (...)
+    catch (const DB::HTTPException & e)
     {
-        DB::tryLogCurrentException(log);
+        /// Lost the race to a concurrent creator.
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            throw;
     }
 }
 
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
 {
-    createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
-
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 

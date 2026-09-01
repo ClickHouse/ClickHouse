@@ -35,7 +35,9 @@ description: "将 ClickHouse Private 组件——operator 和 ClickHouse 集群�
 </div>
 
 <Steps>
-  <Step title="1. 升级 Operator Helm 图表" id="1-upgrade-the-operator-helm-chart">
+  <Step>
+    ### 1. 升级 Operator Helm 图表
+
     保持现有的所有 helm 配置值不变，只将 operator 版本更新为新的目标版本。
 
     ```bash
@@ -48,7 +50,9 @@ description: "将 ClickHouse Private 组件——operator 和 ClickHouse 集群�
     > **注意：** 升级 operator 可能会触发其管理的所有 ClickHouse 集群滚动重启。如果你有多个集群，并希望先在其中一个集群上验证升级，再让 operator 对其他集群执行协调，请参阅下方的[升级期间保护集群](#protecting-clusters-during-upgrade)。
   </Step>
 
-  <Step title="2. 验证升级后的 Operator" id="2-validate-the-upgraded-operator">
+  <Step>
+    ### 2. 验证升级后的 Operator
+
     确认 operator 部署正在运行且状态正常：
 
     ```bash
@@ -64,8 +68,10 @@ description: "将 ClickHouse Private 组件——operator 和 ClickHouse 集群�
     ```
   </Step>
 
-  <Step title="3. 升级 onprem-clickhouse-cluster Helm 图表" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
-    为每个集群升级 `onprem-clickhouse-cluster` helm 图表。保持现有的所有 helm 配置值不变，只将 ClickHouse 服务器和 Keeper 镜像版本更新为新的目标版本。
+  <Step>
+    ### 3. 升级 onprem-clickhouse-cluster Helm 图表
+
+    为每个集群升级 `onprem-clickhouse-cluster` helm 图表。保持现有的所有 helm 配置值不变，只将 ClickHouse 服务器 和 Keeper image 的版本更新为新的目标版本。
 
     ```bash
     helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
@@ -76,10 +82,12 @@ description: "将 ClickHouse Private 组件——operator 和 ClickHouse 集群�
       --set keeper.version=<new-keeper-version>
     ```
 
-    这会触发 **Keeper 和服务器 Pod (容器组) 的滚动重启** (每次重启一个 Pod (容器组) ) 。对每个集群重复此操作。
+    这会触发 **Keeper 和 服务器 pod (容器组) 的滚动重启** (每次重启一个 pod (容器组) ) 。对每个集群重复此操作。
   </Step>
 
-  <Step title="4. 验证升级后的集群" id="4-validate-the-upgraded-cluster">
+  <Step>
+    ### 4. 验证升级后的集群
+
     滚动重启完成后，确认集群状态正常：
 
     ```bash
@@ -87,7 +95,7 @@ description: "将 ClickHouse Private 组件——operator 和 ClickHouse 集群�
     kubectl get pods -n <namespace>
     ```
 
-    所有 Pod (容器组) 都应处于 `Running` 状态，且 `ClickhouseCluster` CR 不应显示任何错误。若要进一步验证连通性，可对 ClickHouse 服务执行端口转发 (参见相关[教程](/zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)中的端口转发部分) ，并运行测试查询。
+    所有 Pod (容器组) 都应处于 `Running` 状态，且 `ClickhouseCluster` CR 不应显示任何错误。若要进一步验证连通性，可对 ClickHouse 服务执行端口转发 (参见相关[教程](/zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)中的 端口转发 部分) ，并运行测试查询。
   </Step>
 </Steps>
 

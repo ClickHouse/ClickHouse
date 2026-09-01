@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include "config.h"
 
 #include <Client/ClientBase.h>
@@ -23,7 +22,6 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
@@ -278,16 +276,6 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress)
     in >> token;
     progress = toProgressOption(token);
     return in;
-}
-
-/// Validate the `print-memory-to-stderr` mode. The same values are accepted for the `--memory-usage`
-/// CLI option and for the `<print-memory-to-stderr>` client config key, so both paths validate here
-/// (an empty value means the feature is off). Without this a typo in the config file would silently
-/// disable memory reporting instead of throwing, unlike `--memory-usage=unknown`.
-static void assertMemoryUsageMode(const std::string & mode)
-{
-    if (!mode.empty() && mode != "none" && mode != "default" && mode != "readable")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown memory-usage mode: {}", mode);
 }
 
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
@@ -1122,7 +1110,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     if (!need_render_progress && !need_render_progress_table)
         return;
 
-    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
+    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle");
     progress_table_toggle_on = !progress_table_toggle_enabled;
 
     /// If need_render_progress and need_render_progress_table are enabled,
@@ -1821,14 +1809,8 @@ void ClientBase::onProfileEvents(Block & block)
             progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled, false);
         }
 
-        /// Read at the use site: the client config file is loaded after the command line
-        /// options are processed, so an early read would miss the value from the file.
-        /// `print-profile-events` is an enable-only flag (no CLI form to disable it), so the
-        /// CLI-derived `profile_events.print` and the config value combine with OR; the config
-        /// layer already carries the CLI flag (see `addOptionsToTheClientConfiguration`).
-        if (profile_events.print || getClientConfiguration().getBool("print-profile-events", false))
+        if (profile_events.print)
         {
-            profile_events.delay_ms = getClientConfiguration().getUInt64("profile-events-delay-ms", 0);
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {
                 /// We need to restart the watch each time we flushed these events
@@ -2714,9 +2696,6 @@ void ClientBase::processParsedSingleQuery(
             error_stream << progress_indication.elapsedSeconds() << "\n";
 
         const auto & print_memory_mode = config.getString("print-memory-to-stderr", "");
-        /// The value may come from the client config file (e.g. `<print-memory-to-stderr>`), which is
-        /// not routed through the `--memory-usage` option parser, so validate it here as well.
-        assertMemoryUsageMode(print_memory_mode);
         auto peak_memory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
         if (print_memory_mode == "default")
             error_stream << peak_memory_usage << "\n";
@@ -2739,9 +2718,7 @@ void ClientBase::processParsedSingleQuery(
     /// redirected to a file or a pipe (for example when running under
     /// `clickhouse-test` or any other automation), there is no terminal to chime
     /// at, and emitting `BEL` would just contaminate the captured stderr stream.
-    /// The default lives here (not in the CLI option) so that a value from the
-    /// client config file is not clobbered when the flag is omitted.
-    UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 5);
+    UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 0);
     if (chime_threshold_seconds > 0
         && stderr_is_a_tty
         && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
@@ -2894,14 +2871,12 @@ void ClientBase::setupEchoAndHighlightSettings(bool verbose_implies_echo)
 
     /// By default, echoing and formatting are enabled in interactive mode and disabled in batch mode.
     /// In `clickhouse-local`, `--verbose` enables echoing as well (historical behavior, opt-in here).
-    /// ConfigHelper::getBool treats the self-closing (empty) tag form (e.g. <echo/>)
-    /// as `true`, which raw Poco boolean parsing would reject.
     const bool echo_default = is_interactive || (verbose_implies_echo && config.getBool("verbose", false));
-    echo_queries = ConfigHelper::getBool(config, "echo", echo_default);
-    echo_query_formatted = ConfigHelper::getBool(config, "echo-formatted", is_interactive);
-    echo_query_id = ConfigHelper::getBool(config, "echo-query-id", is_interactive);
+    echo_queries = config.getBool("echo", echo_default);
+    echo_query_formatted = config.getBool("echo-formatted", is_interactive);
+    echo_query_id = config.getBool("echo-query-id", is_interactive);
     echo_query_separator = config.getString("echo-query-separator", "");
-    highlight_queries = ConfigHelper::getBool(config, "highlight", true);
+    highlight_queries = config.getBool("highlight", true);
 }
 
 
@@ -3976,10 +3951,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("time"))
         getClientConfiguration().setBool("print-time-to-stderr", true);
 
-    if (options.contains("memory-usage") && !options["memory-usage"].defaulted())
+    if (options.contains("memory-usage"))
     {
         const auto & memory_usage_mode = options["memory-usage"].as<std::string>();
-        assertMemoryUsageMode(memory_usage_mode);
+        if (memory_usage_mode != "none" && memory_usage_mode != "default" && memory_usage_mode != "readable")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown memory-usage mode: {}", memory_usage_mode);
         getClientConfiguration().setString("print-memory-to-stderr", memory_usage_mode);
     }
 
@@ -4011,14 +3987,14 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("stacktrace", true);
     if (options.contains("print-profile-events"))
         getClientConfiguration().setBool("print-profile-events", true);
-    if (options.contains("profile-events-delay-ms") && !options["profile-events-delay-ms"].defaulted())
+    if (options.contains("profile-events-delay-ms"))
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
-    if (options.contains("chime") && !options["chime"].defaulted())
+    if (options.contains("chime"))
         getClientConfiguration().setUInt64("chime-threshold-seconds", options["chime"].as<UInt64>());
     /// Whether to print the number of processed rows at
     if (options.contains("processed-rows"))
         getClientConfiguration().setBool("print-num-processed-rows", true);
-    if (options.contains("progress") && !options["progress"].defaulted())
+    if (options.contains("progress"))
     {
         switch (options["progress"].as<ProgressOption>())
         {
@@ -4036,7 +4012,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
                 break;
         }
     }
-    if (options.contains("progress-table") && !options["progress-table"].defaulted())
+    if (options.contains("progress-table"))
     {
         switch (options["progress-table"].as<ProgressOption>())
         {
@@ -4054,7 +4030,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
                 break;
         }
     }
-    if (options.contains("enable-progress-table-toggle") && !options["enable-progress-table-toggle"].defaulted())
+    if (options.contains("enable-progress-table-toggle"))
         getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
     if (options.contains("echo"))
         getClientConfiguration().setBool("echo", options["echo"].as<bool>());
@@ -4068,11 +4044,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("disable_suggestion", true);
     if (options.contains("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
-    if (options.contains("suggestion_limit") && !options["suggestion_limit"].defaulted())
+    if (options.contains("suggestion_limit"))
         getClientConfiguration().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
-    if (options.contains("highlight") && !options["highlight"].defaulted())
+    if (options.contains("highlight"))
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
-    if (options.contains("hints") && !options["hints"].defaulted())
+    if (options.contains("hints"))
         getClientConfiguration().setBool("hints", options["hints"].as<bool>());
     if (options.contains("history_file"))
     {
@@ -4080,7 +4056,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom history file is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
     }
-    if (options.contains("history_max_entries") && !options["history_max_entries"].defaulted())
+    if (options.contains("history_max_entries"))
         getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
     if (options.contains("interactive"))
         getClientConfiguration().setBool("interactive", true);
@@ -4144,92 +4120,6 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
 }
 
-void ClientBase::remapClientConfigurationAliases()
-{
-    auto & config = getClientConfiguration();
-
-    /// XML configuration idiomatically uses underscores while the CLI options (and thus the
-    /// configuration keys the read sites use) are dashed. Accept the underscore spellings in
-    /// the config file, unless the corresponding dashed key is already set (e.g. by a CLI flag).
-    /// ConfigHelper::getBool treats the self-closing (empty) tag form (e.g. <echo_query_id/>)
-    /// as `true`, which raw Poco boolean parsing would reject.
-    static constexpr std::pair<const char *, const char *> boolean_aliases[] =
-    {
-        {"echo_formatted", "echo-formatted"},
-        {"echo_query_id", "echo-query-id"},
-        {"enable_progress_table_toggle", "enable-progress-table-toggle"},
-    };
-
-    for (const auto & [underscore_key, dashed_key] : boolean_aliases)
-    {
-        if (!config.has(dashed_key) && config.has(underscore_key))
-            config.setBool(dashed_key, ConfigHelper::getBool(config, underscore_key));
-    }
-}
-
-void ClientBase::validateClientConfiguration()
-{
-    auto & config = getClientConfiguration();
-
-    /// The same modes are accepted for the `--memory-usage` CLI option; a typo in the config
-    /// file must be rejected before any query is sent, not silently ignored.
-    assertMemoryUsageMode(config.getString("print-memory-to-stderr", ""));
-
-    /// `print-profile-events` is also read lazily (`onProfileEvents`), so a malformed value
-    /// would otherwise throw only after the query has started. The empty form
-    /// (`<print-profile-events/>`) idiomatically means "enabled", but `Poco` cannot parse an
-    /// empty string as a boolean, so normalize it here.
-    if (config.has("print-profile-events"))
-    {
-        if (config.getString("print-profile-events").empty())
-        {
-            config.setBool("print-profile-events", true);
-        }
-        else
-        {
-            try
-            {
-                config.getBool("print-profile-events");
-            }
-            catch (const Poco::Exception &)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid value '{}' for the 'print-profile-events' configuration key: expected a boolean",
-                    config.getString("print-profile-events"));
-            }
-        }
-    }
-
-    /// Numeric keys whose values are read lazily at their use sites (the reads there keep
-    /// their fallbacks; this check only guarantees they cannot throw mid-query). Each key must be
-    /// validated with the same parser (and thus the same range) as its eventual read site,
-    /// otherwise a value that is only out of range for the narrower consumer would pass here
-    /// and still throw later.
-    auto validate_numeric_key = [&](const char * key, auto && parse)
-    {
-        if (!config.has(key))
-            return;
-        try
-        {
-            parse(key);
-        }
-        catch (const Poco::Exception &)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Invalid value '{}' for the '{}' configuration key: expected a number",
-                config.getString(key), key);
-        }
-    };
-
-    /// Read via getUInt64 in ClientBase::onProfileEvents and ClientBase::processParsedSingleQuery.
-    validate_numeric_key("chime-threshold-seconds", [&](const char * key) { config.getUInt64(key); });
-    validate_numeric_key("profile-events-delay-ms", [&](const char * key) { config.getUInt64(key); });
-    /// Read via getUInt in ClientBase::runInteractive.
-    validate_numeric_key("history_max_entries", [&](const char * key) { config.getUInt(key); });
-    /// Read via getInt in Client::connect and ClientBase::runInteractive.
-    validate_numeric_key("suggestion_limit", [&](const char * key) { config.getInt(key); });
-}
-
 void ClientBase::runInteractive()
 {
     if (getClientConfiguration().has("query_id"))
@@ -4254,9 +4144,9 @@ void ClientBase::runInteractive()
     {
         /// Load suggestion data from the server.
         if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
-            suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
+            suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
         else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::SERVER)
-            suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
+            suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
     if (home_path.empty())
@@ -4278,7 +4168,7 @@ void ClientBase::runInteractive()
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
 
-    if (ConfigHelper::getBool(getClientConfiguration(), "highlight", true))
+    if (getClientConfiguration().getBool("highlight", true))
     {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
@@ -4335,8 +4225,8 @@ void ClientBase::runInteractive()
         /// Hints need color, so they are enabled only together with highlighting.
         /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
         /// turns off autocompletion entirely, including the hints.
-        .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
-            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
+        .enable_hints = getClientConfiguration().getBool("hints", true)
+            && getClientConfiguration().getBool("highlight", true)
             && !getClientConfiguration().getBool("disable_suggestion", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
@@ -4447,7 +4337,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo());
         }
 
         try

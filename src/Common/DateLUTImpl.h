@@ -2005,10 +2005,7 @@ public:
 
     NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int64 delta) const
     {
-        /// Compute delta * 7 in the UInt64 domain so it wraps by construction. FillingRow::doLongJump
-        /// (WITH FILL) passes deltas from the whole Int64 range and relies on the wraparound; a signed
-        /// multiply is UB on overflow even under NO_SANITIZE_UNDEFINED. Bit-identical two's complement.
-        return addDays(t, static_cast<Int64>(static_cast<UInt64>(delta) * 7ULL));
+        return addDays(t, delta * 7);
     }
 
     UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -2026,12 +2023,7 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        /// Clamp delta to a window wide enough to reach any representable calendar month but narrow enough
-        /// that values.month + delta cannot overflow Int64. WITH FILL passes deltas from the whole Int64
-        /// range and a plain values.month + delta would be UB on overflow; the calendar saturates far
-        /// inside this window anyway, so clamping does not change any representable result.
-        static constexpr Int64 max_month_delta = 12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1);
-        Int64 month = values.month + std::clamp<Int64>(delta, -max_month_delta, max_month_delta);
+        Int64 month = values.month + delta;
 
         if (month > 0)
         {
@@ -2117,8 +2109,7 @@ public:
     template <typename DateOrTime>
     auto NO_SANITIZE_UNDEFINED addQuarters(DateOrTime d, Int64 delta) const
     {
-        /// UInt64 domain for defined wraparound (see addWeeks); addMonths itself has no further multiply.
-        return addMonths(d, static_cast<Int64>(static_cast<UInt64>(delta) * 3ULL));
+        return addMonths(d, delta * 3);
     }
 
     template <typename DateOrTime>
@@ -2126,14 +2117,7 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        /// Clamp delta to a window wide enough to reach any representable year but narrow enough that
-        /// values.year + delta stays within Int16 (makeLUTIndex saturates out-of-range years). WITH FILL
-        /// passes deltas from the whole Int64 range and the UInt32 (DateTime) / DayNum (Date) carriers
-        /// reach here without a window check; the previous static_cast<Int16>(delta) narrowed e.g. 32768
-        /// to -32768 and ran the calendar backward. The calendar saturates far inside this window anyway,
-        /// so clamping does not change any representable result.
-        static constexpr Int64 max_year_delta = DATE_LUT_MAX_REPRESENTABLE_YEAR + 1;
-        Int64 year = values.year + std::clamp<Int64>(delta, -max_year_delta, max_year_delta);
+        auto year = values.year + static_cast<Int16>(delta);
         auto month = values.month;
         auto day_of_month = values.day_of_month;
 

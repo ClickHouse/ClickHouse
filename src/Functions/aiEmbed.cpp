@@ -45,10 +45,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
@@ -99,7 +95,6 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
-            /// `model` must be a plain (non-nullable) `String`; constness is enforced by the column validator.
             {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -110,9 +105,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    /// Parameters accepted in the optional trailing `Map(String, String)` argument. `aiEmbed` does not
-    /// inherit `FunctionBaseAI`, so it declares its own spec (no `max_tokens`, which embeddings do not
-    /// use; no `model`, which is a required positional argument for `aiEmbed`).
+    /// Parameters accepted in the optional trailing `Map(String, String)` argument.
     static AIParamSpecs embeddingParams()
     {
         return {
@@ -145,11 +138,8 @@ public:
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
 
-        AIQuotaTracker quota(
-            settings[Setting::ai_function_max_input_tokens_per_query].value,
-            settings[Setting::ai_function_max_output_tokens_per_query].value,
-            settings[Setting::ai_function_max_api_calls_per_query].value,
-            settings[Setting::ai_function_throw_on_quota_exceeded].value);
+        /// Shared across every AI function call in the query
+        auto quota_tracker = getContext()->getAIQuotaTracker();
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -200,7 +190,7 @@ public:
 
         for (size_t batch_start = 0; batch_start < live_rows.size(); batch_start += max_batch_size)
         {
-            if (quota.checkQuotas())
+            if (quota_tracker->checkQuotas())
             {
                 rows_skipped += live_rows.size() - batch_start;
                 break;
@@ -211,6 +201,7 @@ public:
             AIEmbeddingRequest ai_embedding_request;
             ai_embedding_request.model = model;
             ai_embedding_request.dimensions = dimensions;
+            ai_embedding_request.function_name = getName();
             ai_embedding_request.inputs.reserve(batch_end - batch_start);
 
             for (size_t k = batch_start; k < batch_end; ++k)
@@ -220,19 +211,17 @@ public:
             bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
-                /// Check quotas before every request.
-                /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-                if (quota.checkQuotas())
+                /// Reserve an API-call slot before each request; this also performs a quota check.
+                /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
+                if (!quota_tracker->recordApiCall())
                     break;
 
                 try
                 {
-                    /// update api_calls/quotas before call so failed calls are still added to total
                     ++total_api_calls;
-                    quota.recordAttempt();
                     ai_embedding_response = provider->embed(ai_embedding_request, timeouts);
                     total_input_tokens += ai_embedding_response.input_tokens;
-                    quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                    quota_tracker->recordTokens(ai_embedding_response.input_tokens, 0);
                     batch_ok = true;
                     break;
                 }
@@ -317,7 +306,7 @@ from a chat one.
 
 The `model` is a required positional argument (a constant `String`). Unlike the text functions,
 `aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
-that defines `model` is rejected rather than silently ignored.
+that defines `model` is rejected.
 
 The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.

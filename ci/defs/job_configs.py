@@ -190,7 +190,6 @@ class JobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
-        enable_gh_auth=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
@@ -443,12 +442,18 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DARWIN,
-            provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_AMD_DARWIN_BIN,
+                ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
-            provides=[ArtifactNames.CH_ARM_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_ARM_DARWIN_BIN,
+                ArtifactNames.CH_ARM_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -681,16 +686,16 @@ class JobConfigs:
     functional_tests_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel",
-            # `--distributed-plan` fans each query across local parallel replicas,
-            # multiplying the server-side memory of every in-flight query, so the
-            # aggregate RSS of the parallel suite's co-scheduled queries is heavier
-            # than a normal ASan run and overruns the sanitizer memory cap on the
-            # default 64 GiB runner. Use a LARGE runner (same 32 vCPU as MEDIUM_CPU,
-            # but 128 GiB instead of 64 GiB RAM) so the suite keeps full concurrency
-            # and the default timeout instead of cutting workers - which barely
-            # moved peak RSS and only made the job slower.
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            # This variant runs the parallel suite at reduced concurrency (see the
+            # distributed-plan branch in `functional_tests.py`) to keep the
+            # aggregate server RSS under the sanitizer memory cap, which lowers
+            # throughput. Allow more wall-clock than the common 2.5h budget so the
+            # reduced concurrency cannot turn into a job timeout: the job ran ~2h36m
+            # at 8 workers, and the further cut to 7 workers pushes it to ~2h57m, so
+            # 3.5h keeps a comfortable margin.
+            timeout=int(3600 * 3.5),
         ),
         *[
             Job.ParamSet(
@@ -1708,4 +1713,31 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+    )
+
+    sign_macos_binary_jobs = Job.Config(
+        name=JobNames.SIGN_MACOS,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/utils+--network=host+root",
+        timeout=3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=build_digest_config.include_paths
+            + [
+                "./ci/jobs/sign_macos_binary.py",
+                "./ci/jobs/scripts/sign_macos_binary",
+            ],
+            with_git_submodules=True,
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_DARWIN,
+            requires=[ArtifactNames.CH_AMD_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_AMD_DARWIN_SIGNED],
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_DARWIN,
+            requires=[ArtifactNames.CH_ARM_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_ARM_DARWIN_SIGNED],
+        ),
     )

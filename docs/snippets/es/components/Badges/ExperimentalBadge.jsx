@@ -11,11 +11,8 @@ const Icon = () => {
 }
 export const ExperimentalBadge = () => {
     return (
-        <a
-            href="/docs/beta-and-experimental-features#experimental-features"
-            className="experimentalBadge"
-        >
-            <Icon />Funcionalidad experimental
-        </a>
+        <div className="experimentalBadge">
+            <Icon />Funcionalidad experimental.&nbsp;<u><a href='/docs/beta-and-experimental-features#experimental-features'>Más información.</a></u>
+        </div>
     )
 }

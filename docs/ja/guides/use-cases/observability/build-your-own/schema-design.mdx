@@ -443,7 +443,7 @@ RequestPage:    /filter/27|13 ,27|  5 ,p53
 SeverityText:   INFO
 SeverityNumber:  9
 
-1 row in set. Elapsed: 0.010 sec.
+1 行 in set. Elapsed: 0.010 sec.
 ```
 
 JSON 関数を使用して `Body` カラムから各カラムを抽出する、これと同等の materialized view を以下に示します。
@@ -1555,7 +1555,7 @@ WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
 │           0 │     1   │                    │
 └─────────────┴─────────┴────────────────────┘
 
-1 row in set. Elapsed: 0.008 sec.
+1 行 in set. Elapsed: 0.008 sec.
 ```
 
 上記のクエリを再度実行すると、追加のストレージを消費する代わりに、パフォーマンスが大幅に向上していることがわかります (測定方法については[&quot;テーブルサイズと圧縮の測定&quot;](#measuring-table-size--compression)を参照してください) 。
@@ -1992,8 +1992,8 @@ Map型は、OTelのスキーマで広く使われています。この型では�
   ## テーブルサイズと圧縮の測定
 </div>
 
-ClickHouse がオブザーバビリティで利用される主な理由の 1 つは、圧縮です。
+ClickHouse がオブザーバビリティ用途で使われる主な理由の 1 つは、高い圧縮率にあります。
 
-圧縮はストレージコストを大幅に削減するだけでなく、ディスク上のデータ量が減ることで I/O も少なくなり、クエリや insert が高速になります。I/O 削減の効果は、CPU に対する圧縮アルゴリズムのオーバーヘッドを上回ります。そのため、ClickHouse のクエリを高速化したい場合は、まずデータの圧縮率向上に注力すべきです。
+圧縮によってストレージコストを大幅に削減できるだけでなく、ディスク上のデータ量が減ることで I/O も少なくなり、クエリや insert も高速になります。I/O 削減による効果は、CPU に対する圧縮アルゴリズムのオーバーヘッドを上回ります。したがって、ClickHouse のクエリを高速化する際は、まずデータの圧縮率向上に注力すべきです。
 
 圧縮の測定方法の詳細は、[こちら](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)を参照してください。

@@ -116,7 +116,11 @@ public:
     }
 
     void addConditions(ActionsDAG actions_dag);
-    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const SharedHeader & stream_header);
+
+    /// Extract the part of the JOIN ON expression that can be evaluated on `side` alone, to be applied
+    /// as a filter on that input.
+    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(
+        JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header);
 
     struct ActionsDAGWithKeys
     {
@@ -137,8 +141,6 @@ public:
     bool isOptimized() const { return optimized; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
-    std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
-
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
         std::optional<UInt64> left_rows_ = {},

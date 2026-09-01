@@ -2977,7 +2977,7 @@ DataTypePtr QueryFuzzer::getRandomType()
 
     /// Geo types are custom-named Array aliases with no TypeIndex of their own,
     /// so they are appended after the TypeIndex vector in a unified selection.
-    static constexpr const char * geo_type_names[] = {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+    static constexpr const char * geo_type_names[] = {"Point", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     static constexpr size_t n_geo = std::size(geo_type_names);
     const size_t pick = fuzz_rand() % (random_types.size() + n_geo);
     if (pick >= random_types.size())
@@ -3484,11 +3484,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
         /// arbitrary expressions — doing so breaks the order_by_all formatting invariant
         /// (ASTSelectQuery::formatImpl assumes children[0] is ASTOrderByElement when
         /// order_by_all == true) and causes a null-pointer crash in format().
-        /// `WINDOW` lists likewise contain `ASTWindowListElement` nodes: the analyzer and query
-        /// tree builder cast every `window()` child to `ASTWindowListElement`, so replacing one
-        /// with a plain expression breaks that node-type invariant. We still recurse into the
-        /// element below (via `fuzz(child)`) so the window definition is fuzzed in place.
-        if (!typeid_cast<ASTOrderByElement *>(child.get()) && !typeid_cast<ASTWindowListElement *>(child.get()))
+        if (!typeid_cast<ASTOrderByElement *>(child.get()))
         {
             if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
             {

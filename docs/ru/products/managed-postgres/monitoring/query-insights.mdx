@@ -7,7 +7,7 @@ keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'медленны
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
@@ -197,10 +197,10 @@ CPU time.
 [ClickHouse Cloud OpenAPI](/ru/products/managed-postgres/openapi#query-insights).
 Таблица [медленные шаблоны](#slow-patterns) сопоставлена с
 конечной точкой
-[получения списка шаблонов медленных запросов](/ru/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
+[получения списка шаблонов медленных запросов](/ru/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList),
 а [выдвижная панель сведений](#detail) — с
 конечной точкой
-[получения шаблона медленного запроса](/ru/products/cloud/api-reference/postgres/slow-query-pattern-get),
+[получения шаблона медленного запроса](/ru/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet),
 которая возвращает агрегированные метрики одного шаблона вместе с его
 последними выполнениями.
 

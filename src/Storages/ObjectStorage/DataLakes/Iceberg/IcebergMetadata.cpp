@@ -814,6 +814,7 @@ void IcebergMetadata::createInitial(
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
             = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
+
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
@@ -825,6 +826,15 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+
+    if (catalog)
+    {
+        /// Register the namespace before any files are written (but after all local
+        /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
+        /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
+        /// a namespace over the plain directory those files would leave behind.
+        catalog->createNamespaceIfNotExists(DataLake::parseTableName(table_id_.getTableName()).first, location_path);
+    }
 
     try
     {
@@ -919,7 +929,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
 
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
-    auto snapshot_logs = metadata_object->get(f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
+    /// snapshot-log is optional; treat an absent log as empty rather than throwing.
+    Poco::JSON::Array::Ptr snapshot_logs
+        = metadata_object->has(f_snapshot_log) ? metadata_object->getArray(f_snapshot_log) : Poco::JSON::Array::Ptr(new Poco::JSON::Array);
 
     std::vector<Int64> ancestors;
     std::map<Int64, Int64> parents_list;
@@ -946,6 +958,16 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             current_snapshot_id = parents_list[current_snapshot_id];
         }
     }
+
+    /// Parse an Iceberg `timestamp-ms` field (unix milliseconds) into DateTime64.
+    auto parse_timestamp_ms = [](const Poco::JSON::Object::Ptr & object) -> DateTime64
+    {
+        auto value = object->getValue<std::string>(f_timestamp_ms);
+        ReadBufferFromString in(value);
+        DateTime64 time = 0;
+        readDateTime64Text(time, 6, in);
+        return time;
+    };
 
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
@@ -974,20 +996,25 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         else
             history_record.parent_id = 0;
 
+        bool found_in_snapshot_log = false;
+        /// A snapshot-id can occur in snapshot-log more than once (a rollback makes an older
+        /// snapshot current again); made_current_at is the LAST such time, so do not stop early.
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
             if (snapshot_log->getValue<Int64>(f_metadata_snapshot_id) == history_record.snapshot_id)
             {
-                auto value = snapshot_log->getValue<std::string>(f_timestamp_ms);
-                ReadBufferFromString in(value);
-                DateTime64 time = 0;
-                readDateTime64Text(time, 6, in);
-
-                history_record.made_current_at = time;
-                break;
+                history_record.made_current_at = parse_timestamp_ms(snapshot_log);
+                found_in_snapshot_log = true;
             }
         }
+
+        /// A retained snapshot can be missing from a trimmed snapshot-log; its log time is then
+        /// unrecoverable, so fall back to the snapshot's own commit time instead of the epoch.
+        /// `timestamp-ms` is required on a snapshot, so a missing one is corrupt metadata: let the
+        /// parse throw rather than reporting the epoch as if it were a real time.
+        if (!found_in_snapshot_log)
+            history_record.made_current_at = parse_timestamp_ms(snapshot);
 
         if (std::find(ancestors.begin(), ancestors.end(), history_record.snapshot_id) != ancestors.end())
             history_record.is_current_ancestor = true;

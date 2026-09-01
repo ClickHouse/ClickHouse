@@ -6,6 +6,9 @@ tags: ['Performance and Optimizations']
 keywords: ['Available Threads']
 ---
 
+{frontMatter.description}
+{/* truncate */}
+
 ## Increasing the Number of Threads in ClickHouse {#increasing-the-number-of-threads-in-clickhouse}
 ClickHouse uses threads from the **Global Thread pool** to process queries and also perform background operations like merges and mutations. If there is no idle thread to process a query, then a new thread is created in the pool.
 

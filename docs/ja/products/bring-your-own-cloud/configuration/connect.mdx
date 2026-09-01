@@ -11,24 +11,6 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 このページでは、BYOC で ClickHouse サービスに接続するさまざまな方法について説明します。セキュリティ要件やネットワーク要件に応じて、パブリックロードバランサー、プライベートロードバランサー、または PrivateLink/Private Service Connect エンドポイントを選択できます。
 
-<div id="connection-via">
-  ## コンソールで接続パスを選択する
-</div>
-
-すべての BYOC サービスの接続情報は ClickHouse Cloudコンソールで確認できます。サービスを開き、**Connect** をクリックします。
-
-BYOC サービスでは、**Connect** ダイアログに **Connection via** ドロップダウンがあります。これを使って、サービスへの接続方法を選択します。
-
-* **パブリックロードバランサー** — インターネット向けのエンドポイント。
-* **プライベートロードバランサー** — VPC ピアリング または接続済みネットワーク経由で到達する内部エンドポイント。ご利用のインフラストラクチャで [private load balancer](#private-load-balancer) が有効な場合にのみ表示されます。
-* **PrivateLink** (AWS) / **Private Service Connect** (GCP) — クラウドプロバイダーのプライベートエンドポイントのホスト名。[PrivateLink or Private Service Connect](#privatelink-or-private-service-connect) が有効な場合にのみ表示されます。
-
-パスを選択すると、ダイアログ内のすべての接続例でホスト名が更新されます。対象は HTTPS (`curl`) コマンド、ネイティブクライアント、JDBC、MySQL、および各言語の client スニペット (Python、Node.js、Java、Go、C#) です。これにより、ホスト名を手動で編集しなくても、必要なパスに対応したそのまま使えるコマンドをコピーできます。
-
-ドロップダウンには、ご利用のインフラストラクチャで有効なパスのみが表示され、リストはダイアログを開くたびに更新されます。新たに有効化した private load balancer や PrivateLink endpoint は、次回 **Connect** を開いたときに表示され、反映待ちはありません。利用可能なパスが 1 つだけの場合、ドロップダウンは無効状態で表示され、そのエンドポイントが選択された状態になります。
-
-<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Connection via ドロップダウンが展開され、public load balancer、private load balancer、PrivateLink の各パスが表示されている Connect ダイアログ" background="black" />
-
 <div id="public-load-balancer">
   ## パブリックロードバランサー
 </div>
@@ -44,7 +26,7 @@ BYOC サービスでは、**Connect** ダイアログに **Connection via** ド�
 * **Security**: TLS による暗号化と IP フィルタリングで保護 (推奨)
 
 <div id="connecting-via-public-load-balancer">
-  ### パブリックロードバランサー 経由で接続する
+  ### Public Load Balancer 経由で接続する
 </div>
 
 パブリックエンドポイントを使用して ClickHouse サービスに接続するには、次の手順に従います。
@@ -93,11 +75,8 @@ IP フィルタリングの詳細については、[IP Access List ドキュメ�
    * その他のプライベート ネットワークの場合: BYOC VPC に到達できるようにルーティングが構成されていることを確認します
 3. **プライベート エンドポイントを確認する**:
    プライベート エンドポイントは、サービスの「Connect」セクションにある ClickHouse Cloud コンソール で確認できます。プライベート エンドポイントはパブリック エンドポイントと同じフォーマットですが、サービス ID の部分に `-private` という接尾辞が追加されます。例:
-
    * **パブリック エンドポイント**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
    * **プライベート エンドポイント**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
-
-   `-private` の hostname を手作業で組み立てる代わりに、**Connect** ダイアログの **Connection via** dropdown で **Private load balancer** を選択すると、エンドポイントとそのまま使える接続コマンドを直接コピーできます。
 
 <div id="private-ip-filtering">
   ### IPフィルタリング
@@ -141,8 +120,6 @@ PrivateLink エンドポイントの形式はパブリックエンドポイン�
 
 * **パブリックエンドポイント**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 * **PrivateLink エンドポイント**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
-
-エンドポイントの設定が完了し、許可リスト への追加も済んだら、**Connect** ダイアログの **Connection via** ドロップダウンから **PrivateLink** (GCP では **Private Service Connect**) を選択すると、プライベートエンドポイントの接続情報を直接コピーできます。
 
 <div id="endpoint-id-allowlist">
   ### Endpoint ID 許可リスト

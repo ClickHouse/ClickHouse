@@ -253,9 +253,10 @@ private:
         bool allow_lambda_expression,
         bool allow_table_expression,
         bool ignore_alias = false,
-        bool allow_niladic_functions = true);
+        bool allow_niladic_functions = true,
+        bool is_top_level_projection = false);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -339,16 +340,6 @@ private:
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
-
-    /// True while arguments of a table function are resolved. Table functions are resolved
-    /// into storages even in only-analyze mode (the storage is required to infer the query
-    /// header), so scalar subqueries in their arguments must be executed for real instead of
-    /// being replaced with type-only placeholders. See evaluateScalarSubqueryIfNeeded.
-    bool table_function_arguments_in_resolve_process = false;
-
-    /// True while a parameterized view argument value is resolved: a scalar subquery there must
-    /// fold to a literal, not a `__getScalar` reference. See `evaluateScalarSubqueryIfNeeded`.
-    bool parameterized_view_arguments_in_resolve_process = false;
 };
 
 }

@@ -24,11 +24,11 @@ import SupersetDocker from '/snippets/ja/_add_superset_detail.mdx';
 
 * OpenCelliD のデータを ClickHouse に読み込む
 * Apache Superset を ClickHouse に接続する
-* データセットで利用可能なデータに基づいてダッシュボードを作成する
+* データセット内のデータを基にダッシュボードを作成する
 
 以下は、このガイドで作成するダッシュボードのプレビューです。
 
-<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="mcc 204 における無線方式別の基地局ダッシュボード" />
+<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="mcc 204 における無線タイプ別の基地局ダッシュボード" />
 
 <div id="get-the-dataset">
   ## データセットを取得する
@@ -52,7 +52,7 @@ OpenCelliD Project は Creative Commons Attribution-ShareAlike 4.0 International
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="基地局データセットを読み込む" />
 
-    ### cell&#95;towers テーブルのスキーマを確認する
+    ### cell_towers テーブルのスキーマを確認する
 
     ```sql
     DESCRIBE TABLE cell_towers
@@ -82,7 +82,7 @@ OpenCelliD Project は Creative Commons Attribution-ShareAlike 4.0 International
     ```
   </Tab>
 
-  <Tab title="Self-managed">
+  <Tab title="セルフマネージド">
     1. テーブルを作成します。
 
     ```sql
@@ -332,7 +332,7 @@ Superset では、データベースの種類を選択し、接続情報を入�
   ### テーブル **cell_towers** を Superset の **データセット** として追加する
 </div>
 
-Superset では、**データセット** はデータベース内のテーブルに対応します。Add dataset をクリックし、ClickHouse サービス、テーブルを含むデータベース (`default`)、そして `cell_towers` テーブルを選択します。
+Superset では、**データセット** はデータベース内のテーブルに対応します。Add dataset をクリックし、ClickHouse サービス、テーブルを含むデータベース (`default`) 、そして `cell_towers` テーブルを選択します。
 
 <Image img="/images/getting-started/example-datasets/superset-add-dataset.webp" size="md" alt="cell_towers テーブルをデータセットとして追加" />
 
@@ -340,7 +340,7 @@ Superset では、**データセット** はデータベース内のテーブル
   ### いくつかの**チャート**を作成する
 </div>
 
-Superset でチャートを追加する際は、データセット (`cell_towers`) とチャートの種類を指定する必要があります。OpenCelliD データセットには基地局の経度・緯度の座標が含まれているため、ここでは **Map** チャートを作成します。**deck.gL Scatterplot** タイプは、地図上の高密度なデータポイントの表示に適しているため、このデータセットに向いています。
+Superset でチャートを追加する際は、データセット (`cell_towers`) とチャートの種類を指定する必要があります。OpenCelliD データセットには基地局の経度・緯度の座標が含まれているため、ここでは **Map** チャートを作成します。**deck.gL Scatterplot** タイプは、地図上の密集したデータポイントを適切に表示できるため、このデータセットに適しています。
 
 <Image img="/images/getting-started/example-datasets/superset-create-map.webp" size="md" alt="Superset で地図を作成する" />
 

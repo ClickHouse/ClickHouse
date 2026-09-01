@@ -35,7 +35,9 @@ ClickHouse Private のコンポーネント (operator と ClickHouse クラス�
 </div>
 
 <Steps>
-  <Step title="1. Operator の Helm チャートをアップグレードする" id="1-upgrade-the-operator-helm-chart">
+  <Step>
+    ### 1. Operator の Helm チャートをアップグレードする
+
     既存の helm の values はすべてそのままにし、operator のバージョンのみを新しい対象バージョンに更新します。
 
     ```bash
@@ -48,7 +50,9 @@ ClickHouse Private のコンポーネント (operator と ClickHouse クラス�
     > **注:** operator をアップグレードすると、管理しているすべての ClickHouse クラスターでローリング再起動が発生する可能性があります。複数のクラスターがあり、operator が他のクラスターをリコンサイルする前に 1 つのクラスターでアップグレードを検証したい場合は、以下の [アップグレード中にクラスターを保護する](#protecting-clusters-during-upgrade) を参照してください。
   </Step>
 
-  <Step title="2. アップグレード後の Operator を検証する" id="2-validate-the-upgraded-operator">
+  <Step>
+    ### 2. アップグレード後の Operator を検証する
+
     operator のデプロイメントが正常に稼働していることを確認します。
 
     ```bash
@@ -64,7 +68,9 @@ ClickHouse Private のコンポーネント (operator と ClickHouse クラス�
     ```
   </Step>
 
-  <Step title="3. onprem-clickhouse-cluster Helm チャートをアップグレードする" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
+  <Step>
+    ### 3. onprem-clickhouse-cluster Helm チャートをアップグレードする
+
     各クラスターについて `onprem-clickhouse-cluster` Helm チャートをアップグレードします。既存の helm の values はすべてそのままにし、ClickHouse server と Keeper のイメージバージョンのみを新しい対象バージョンに更新します。
 
     ```bash
@@ -79,7 +85,9 @@ ClickHouse Private のコンポーネント (operator と ClickHouse クラス�
     これにより、**Keeper と server のポッドのローリング再起動** (一度に 1 つのポッド) が発生します。各クラスターに対してこれを繰り返してください。
   </Step>
 
-  <Step title="4. アップグレード後のクラスターを検証する" id="4-validate-the-upgraded-cluster">
+  <Step>
+    ### 4. アップグレード後のクラスターを検証する
+
     ローリング再起動の完了後、クラスターが正常であることを確認します。
 
     ```bash

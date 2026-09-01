@@ -677,7 +677,6 @@
     M(1007, ILLEGAL_STREAM) \
     M(1008, TEMPORARY_DATA_NOT_IN_CACHE) \
     M(1009, S3_OBJECT_CHANGED_DURING_READ) \
-    M(1010, UNIQUE_KEY_DENSE_INDEX_UNREADABLE) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -694,7 +693,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1010;
+    constexpr ErrorCode END = 1009;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames

@@ -160,6 +160,10 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_skip_indexes_for_top_k;
+    extern const SettingsBool use_top_k_dynamic_filtering;
 }
 
 namespace ErrorCodes
@@ -420,6 +424,12 @@ bool applyTrivialCountIfPossible(
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
+        return false;
+
+    /// `arrayJoin` in the argument multiplies rows above the source read, so the aggregate does not
+    /// observe `totalRows()` rows. Must precede `optimize_trivial_count`: storages that count in
+    /// read() act on that flag even when this function later declines.
+    if (hasFunctionNode(aggregates.front(), "arrayJoin"))
         return false;
 
     /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
@@ -926,6 +936,26 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         return limit_length + limit_offset;
     return 0;
+}
+
+/// Does the query condition cache have to be kept out of the pre-plan parallel-replicas estimate?
+/// The estimate analyzes the read before `tryOptimizeTopK` has had a chance to stamp it, so for a query
+/// which may still become a TopK read it cannot know whether the `use_query_condition_cache_for_top_k`
+/// gate applies. With the gate off such a read must neither consult nor populate the cache, so analyze
+/// without it. This is a deliberate over-approximation of `tryOptimizeTopK`'s plan pattern (which needs
+/// the sorting and limit steps that do not exist yet): a query which turns out not to be a TopK read
+/// only loses the cache for this throwaway estimate, never for the read that executes.
+bool mustSkipQueryConditionCacheInParallelReplicasEstimate(const SelectQueryInfo & select_query_info, const Settings & settings)
+{
+    if (!settings[Setting::use_query_condition_cache] || settings[Setting::use_query_condition_cache_for_top_k])
+        return false;
+
+    /// `tryOptimizeTopK` stamps the read only if at least one of the two TopK mechanisms is enabled.
+    if (!settings[Setting::use_skip_indexes_for_top_k] && !settings[Setting::use_top_k_dynamic_filtering])
+        return false;
+
+    const auto * main_query_node = select_query_info.query_tree->as<QueryNode>();
+    return main_query_node && main_query_node->hasOrderBy() && main_query_node->hasLimit();
 }
 
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
@@ -1850,7 +1880,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallelReplicasEnabledForStorage(storage, query_context, settings))
                 {
-                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
+                    /// The custom-key read below replaces the plan with a remote read at the fixed stage
+                    /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested
+                    /// stage is not below that: a plan built up to a partial stage - e.g. a `Merge` table plans
+                    /// its children up to `WithMergeableState` when one of the underlying tables is read through
+                    /// an interpreter - must not receive finalized (post-aggregation, post-LIMIT) data instead
+                    /// of the partial aggregation states its consumer expects.
+                    const bool to_stage_supports_custom_key = select_query_options.to_stage == QueryProcessingStage::Complete
+                        || select_query_options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+                    if (query_context->canUseParallelReplicasCustomKey() && to_stage_supports_custom_key
+                        && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
@@ -1896,7 +1936,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
-                            auto result_ptr = reading_step->selectRangesToRead();
+                            auto result_ptr
+                                = mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings)
+                                ? reading_step->estimateRangesToReadWithoutQueryConditionCache()
+                                : reading_step->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)

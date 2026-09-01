@@ -92,6 +92,7 @@ struct ZooKeeperRequest : virtual Request
 
     virtual ZooKeeperResponsePtr makeResponse() const = 0;
     virtual bool isReadRequest() const = 0;
+    virtual std::shared_ptr<ZooKeeperRequest> cloneForMulti(const ACLs & default_acls) const;
 
     virtual void createLogElements(LogElements & elems) const;
 };
@@ -265,6 +266,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs & default_acls) const override;
 
     size_t bytesSize() const override { return CreateRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 
@@ -334,6 +336,10 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperRemoveRequest>(*this);
+    }
 
     size_t bytesSize() const override { return RemoveRequest::bytesSize() + sizeof(xid); }
 
@@ -369,6 +375,10 @@ struct ZooKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, ZooKeeper
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperRemoveRecursiveRequest>(*this);
+    }
 
     size_t bytesSize() const override { return RemoveRecursiveRequest::bytesSize() + sizeof(xid); }
 };
@@ -396,6 +406,10 @@ struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperExistsRequest>(*this);
+    }
 
     size_t bytesSize() const override { return ExistsRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -425,6 +439,10 @@ struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperGetRequest>(*this);
+    }
 
     size_t bytesSize() const override { return GetRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -453,6 +471,10 @@ struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
     std::string toStringImpl(bool short_format) const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperSetRequest>(*this);
+    }
 
     size_t bytesSize() const override { return SetRequest::bytesSize() + sizeof(xid); }
 
@@ -483,6 +505,10 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     std::string toStringImpl(bool short_format) const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperListRequest>(*this);
+    }
 
     size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -492,6 +518,10 @@ struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
 {
     OpNum getOpNum() const override { return OpNum::SimpleList; }
     ZooKeeperResponsePtr makeResponse() const override;
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperSimpleListRequest>(*this);
+    }
 };
 
 struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
@@ -537,6 +567,10 @@ struct ZooKeeperCheckRequest : CheckRequest, ZooKeeperRequest
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperCheckRequest>(*this);
+    }
 
     size_t bytesSize() const override { return CheckRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 
@@ -769,6 +803,7 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
 
     std::optional<OperationType> operation_type;
 private:
+    static std::optional<OperationType> getOperationType(OpNum op_num);
     void checkOperationType(OperationType type);
 };
 
@@ -860,6 +895,10 @@ struct ZooKeeperListRecursiveRequest final : ListRecursiveRequest, ZooKeeperRequ
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperListRecursiveRequest>(*this);
+    }
 
     size_t bytesSize() const override { return ListRecursiveRequest::bytesSize() + sizeof(xid); }
 };

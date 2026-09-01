@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/SettingSource.h>
 #include <Common/quoteString.h>
 
 #include <DataTypes/FieldToDataType.h>
@@ -304,9 +305,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             set_query.changes.removeSetting("offset");
         }
 
+        /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
+        /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
+        /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
+        /// Clamp it instead of throwing, as done for other settings crossing execution contexts
+        /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
+        /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
+        /// reader's constraints keeps working. A top-level clause still throws
+        /// (`applySettingsFromQuery`). Clamp a copy: the `QueryNode` keeps the clause as written, so
+        /// the tree's AST and hash are unchanged, and every node executing the subquery clamps it
+        /// against its own constraints. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
         if (!set_query.changes.empty())
         {
-            updated_context->applySettingsChanges(set_query.changes);
+            auto checked_changes = set_query.changes;
+            updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
+            updated_context->applySettingsChanges(checked_changes);
             settings_changes = set_query.changes;
         }
     }
@@ -1009,7 +1022,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 auto & subquery_expression = table_expression.subquery->as<ASTSubquery &>();
                 const auto & select_with_union_query = subquery_expression.children[0];
 
-                auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, select_query.aliases(), context);
+                /// Views store CTE references in FROM as subqueries with cte_name set (ApplyWithSubqueryVisitor).
+                /// Propagate it so qualified identifiers like `cte_name.column` still bind, as they do when
+                /// a CTE reference is resolved from the WITH section directly.
+                auto node = buildSelectWithUnionExpression(
+                    select_with_union_query,
+                    true /*is_subquery*/,
+                    CommonTableExpressionData{.cte_name = subquery_expression.cte_name},
+                    select_query.aliases(),
+                    context);
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
 

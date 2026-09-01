@@ -12,8 +12,8 @@ integration:
 keywords: ['mysql', 'データベースインテグレーション', '外部テーブル', 'データソース', 'SQLデータベース']
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 このページでは、MySQL テーブルからデータを読み取るための `MySQL` テーブルエンジンの使用方法について説明します。
 
@@ -25,145 +25,149 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
   ## MySQL テーブルエンジン を使用して ClickHouse を MySQL に接続する
 </div>
 
-`MySQL` テーブルエンジンを使用すると、ClickHouse を MySQL に接続できます。**SELECT** ステートメントと **INSERT** ステートメントは、ClickHouse と MySQL テーブルのどちらに対しても実行できます。この記事では、`MySQL` テーブルエンジンの基本的な使い方を説明します。
+`MySQL` テーブルエンジン を使用すると、ClickHouse を MySQL に接続できます。**SELECT** 文と **INSERT** 文は、ClickHouse 側でも MySQL テーブル側でも実行できます。この記事では、`MySQL` テーブルエンジン の基本的な使い方を説明します。
 
-<Steps>
-  <Step title="MySQL を設定する" id="1-configure-mysql">
-    1. MySQL でデータベースを作成します:
+<div id="1-configure-mysql">
+  ### 1. MySQL を設定する
+</div>
 
-    ```sql
-    CREATE DATABASE db1;
-    ```
+1. MySQL にデータベースを作成します:
 
-    2. テーブルを作成します:
+```sql
+  CREATE DATABASE db1;
+```
 
-    ```sql
-    CREATE TABLE db1.table1 (
-      id INT,
-      column1 VARCHAR(255)
-    );
-    ```
+2. テーブルを作成します:
 
-    3. サンプルの行を挿入します:
+```sql
+  CREATE TABLE db1.table1 (
+    id INT,
+    column1 VARCHAR(255)
+  );
+```
 
-    ```sql
-    INSERT INTO db1.table1
-      (id, column1)
-    VALUES
-      (1, 'abc'),
-      (2, 'def'),
-      (3, 'ghi');
-    ```
+3. サンプル行を挿入します:
 
-    4. ClickHouse から接続するためのユーザーを作成します:
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (1, 'abc'),
+    (2, 'def'),
+    (3, 'ghi');
+```
 
-    ```sql
-    CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
-    ```
+4. ClickHouse から接続するためのユーザーを作成します:
 
-    5. 必要に応じて権限を付与します。 (デモ用として、`mysql_clickhouse` ユーザーには管理者権限を付与しています。)
+```sql
+  CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
+```
 
-    ```sql
-    GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
-    ```
+5. 必要に応じて権限を付与します。 (説明のため、`mysql_clickhouse` ユーザーには管理者権限を付与します。)
 
-    <Note>
-      この機能を ClickHouse Cloud で使用する場合は、ClickHouse Cloud の IP アドレスから MySQL インスタンスにアクセスできるよう許可する必要がある場合があります。
-      エグレストラフィックの詳細については、ClickHouse の [Cloud Endpoints API](/ja/products/cloud/guides/sql-console/query-endpoints) を確認してください。
-    </Note>
-  </Step>
+```sql
+  GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
+```
 
-  <Step title="ClickHouse にテーブルを定義する" id="2-define-a-table-in-clickhouse">
-    1. それでは、`MySQL` テーブルエンジンを使用する ClickHouse テーブルを作成しましょう:
+<Note>
+  この機能を ClickHouse Cloud で使用する場合、ClickHouse Cloud の IP アドレスから MySQL インスタンスにアクセスできるよう許可が必要になることがあります。
+  送信トラフィックの詳細については、ClickHouse の [Cloud Endpoints API](/ja/products/cloud/guides/sql-console/query-endpoints) を確認してください。
+</Note>
 
-    ```sql
-    CREATE TABLE mysql_table1 (
-      id UInt64,
-      column1 String
-    )
-    ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
-    ```
+<div id="2-define-a-table-in-clickhouse">
+  ### 2. ClickHouseでテーブルを定義する
+</div>
 
-    最小限必要なパラメータは次のとおりです:
+1. それでは、`MySQL` テーブルエンジンを使用する ClickHouse テーブルを作成しましょう。
 
-    | parameter | Description      | example               |
-    | --------- | ---------------- | --------------------- |
-    | host      | ホスト名または IP       | mysql-host.domain.com |
-    | database  | MySQL データベース名    | db1                   |
-    | table     | MySQL テーブル名      | table1                |
-    | user      | MySQL に接続するユーザー名 | mysql&#95;clickhouse  |
-    | password  | MySQL に接続するパスワード | Password123!          |
+```sql
+  CREATE TABLE mysql_table1 (
+    id UInt64,
+    column1 String
+  )
+  ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
+```
 
-    <Note>
-      完全なパラメータ一覧については、[MySQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/mysql) のドキュメントページを参照してください。
-    </Note>
-  </Step>
+最低限必要なパラメータは次のとおりです。
 
-  <Step title="インテグレーションをテストする" id="3-test-the-integration">
-    1. MySQL でサンプルの行を挿入します:
+| parameter | Description      | example               |
+| --------- | ---------------- | --------------------- |
+| host      | ホスト名または IP       | mysql-host.domain.com |
+| database  | MySQL データベース名    | db1                   |
+| table     | MySQL テーブル名      | table1                |
+| user      | MySQL に接続するユーザー名 | mysql&#95;clickhouse  |
+| password  | MySQL に接続するパスワード | Password123!          |
 
-    ```sql
-    INSERT INTO db1.table1
-      (id, column1)
-    VALUES
-      (4, 'jkl');
-    ```
+<Note>
+  パラメータの完全な一覧については、[MySQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/mysql) のドキュメントページを参照してください。
+</Note>
 
-    2. MySQLテーブルの既存の行に、先ほど追加した新しい行も含めて、ClickHouseテーブルに入っていることを確認します。
+<div id="3-test-the-integration">
+  ### 3. インテグレーションをテストする
+</div>
 
-    ```sql
-    SELECT
-        id,
-        column1
-    FROM mysql_table1
-    ```
+1. MySQL でサンプルの行を挿入します:
 
-    4 行表示されるはずです。
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (4, 'jkl');
+```
 
-    ```response
-    Query id: 6d590083-841e-4e95-8715-ef37d3e95197
+2. MySQLテーブルの既存の行に、先ほど追加した新しい行も含めて、ClickHouseテーブルに入っていることを確認します。
 
-    ┌─id─┬─column1─┐
-    │  1 │ abc     │
-    │  2 │ def     │
-    │  3 │ ghi     │
-    │  4 │ jkl     │
-    └────┴─────────┘
+```sql
+  SELECT
+      id,
+      column1
+  FROM mysql_table1
+```
 
-    4 rows in set. Elapsed: 0.044 sec.
-    ```
+4 行表示されるはずです。
 
-    3. ClickHouseのテーブルに行を追加しましょう:
+```response
+  Query id: 6d590083-841e-4e95-8715-ef37d3e95197
 
-    ```sql
-    INSERT INTO mysql_table1
-      (id, column1)
-    VALUES
-      (5,'mno')
-    ```
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  │  3 │ ghi     │
+  │  4 │ jkl     │
+  └────┴─────────┘
 
-    4. MySQL に新しい行が表示されていることを確認します:
+  4 rows in set. Elapsed: 0.044 sec.
+```
 
-    ```bash
-    mysql> select id,column1 from db1.table1;
-    ```
+3. ClickHouseのテーブルに行を追加しましょう:
 
-    新しい行が表示されます：
+```sql
+  INSERT INTO mysql_table1
+    (id, column1)
+  VALUES
+    (5,'mno')
+```
 
-    ```response
-    +------+---------+
-    | id   | column1 |
-    +------+---------+
-    |    1 | abc     |
-    |    2 | def     |
-    |    3 | ghi     |
-    |    4 | jkl     |
-    |    5 | mno     |
-    +------+---------+
-    5 rows in set (0.01 sec)
-    ```
-  </Step>
-</Steps>
+4. MySQL に新しい行が表示されていることを確認します:
+
+```bash
+  mysql> select id,column1 from db1.table1;
+```
+
+新しい行が表示されます：
+
+```response
+  +------+---------+
+  | id   | column1 |
+  +------+---------+
+  |    1 | abc     |
+  |    2 | def     |
+  |    3 | ghi     |
+  |    4 | jkl     |
+  |    5 | mno     |
+  +------+---------+
+  5 rows in set (0.01 sec)
+```
 
 <div id="summary">
   ### 概要

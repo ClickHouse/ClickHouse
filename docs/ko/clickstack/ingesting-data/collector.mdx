@@ -629,6 +629,6 @@ OTel collector의 리소스 요구 사항은 이벤트 처리량, 메시지 크�
   ## 스키마 선택: Map vs JSON
 </div>
 
-ClickStack collector는 기본적으로 속성을 `Map(LowCardinality(String), String)` 컬럼으로 저장하는 테이블을 생성합니다. 이는 관측성 워크로드에 권장되는 스키마입니다. `JSON` 타입 스키마는 속성 키 집합이 작고 안정적인 워크로드에서 평가할 수 있도록 베타로 제공됩니다.
+ClickStack collector는 기본적으로 속성을 `Map(LowCardinality(String), String)` 컬럼에 저장하는 테이블을 생성합니다. 이는 관측성 워크로드에 권장되는 스키마입니다. `JSON` 타입 스키마는 속성 키 집합이 작고 안정적인 워크로드에서 평가할 수 있도록 베타로 제공됩니다.
 
-전체 비교, 각각이 적합한 경우, JSON 타입 스키마를 활성화하는 데 필요한 환경 변수, 그리고 migration 안내는 [Map vs JSON 타입](/ko/clickstack/ingesting-data/schema/map-vs-json)를 참조하십시오.
+전체 비교, 각각이 적합한 경우, JSON 타입 스키마를 활성화하는 데 필요한 환경 변수, 그리고 마이그레이션 절차는 [Map vs JSON 타입](/ko/clickstack/ingesting-data/schema/map-vs-json)을 참조하십시오.

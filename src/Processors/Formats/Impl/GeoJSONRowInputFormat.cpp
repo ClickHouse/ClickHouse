@@ -351,8 +351,8 @@ bool isOneOf(std::string_view name, std::span<const std::string_view> names)
 
 /// The GeoJSON geometry types that ClickHouse's `Geometry` type can represent. `Ring` is part of the
 /// `Geometry` Variant but is not a valid GeoJSON geometry type, so it is intentionally absent.
-constexpr std::array<std::string_view, 6> supported_geojson_geometry_types
-    = {"Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+constexpr std::array<std::string_view, 5> supported_geojson_geometry_types
+    = {"Point", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
 
 /// Read the `type`, `coordinates`, and `geometries` members of a geometry object into strings (the
 /// opening `{` must already be consumed). `coordinates` and `geometries` are buffered verbatim so
@@ -423,7 +423,8 @@ size_t readGeoJSONNestedArray(ReadBuffer & buf, ColumnArray * array_col, Element
 /// Parse the `coordinates` of a GeoJSON geometry, enforce the GeoJSON shape invariants, and append
 /// each position directly into `sub_col` — the matching sub-column of the `Geometry` variant. When
 /// `sub_col` is null the coordinates are only read and validated. `Ring` is a synonym for `LineString`
-/// because it is part of the `Geometry` type.
+/// because it is part of the `Geometry` type, and `MultiPoint` is read in validation-only mode because
+/// it can be stored as NULL.
 void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, IColumn * sub_col, bool validate, bool precise_float_parsing)
 {
     if (geo_type == "Point")
@@ -545,7 +546,9 @@ void validateGeoJSONGeometryMembers(
         return;
     }
 
-    if (!isOneOf(geo_type, supported_geojson_geometry_types))
+    /// `MultiPoint` also carries a `coordinates` member (validated like a linear ring, without the
+    /// closed/length invariants); every other type with coordinates is a supported geometry.
+    if (!isOneOf(geo_type, supported_geojson_geometry_types) && geo_type != "MultiPoint")
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or invalid geometry type '{}'", geo_type);
 
     /// A 'geometries' member belongs only to a GeometryCollection; reject it on any other type.
@@ -594,7 +597,7 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
         {
             geometry_col_idx = i;
             static constexpr std::array geo_type_names
-                = {"Point", "MultiPoint", "LineString", "Polygon", "MultiPolygon", "Ring", "MultiLineString"};
+                = {"Point", "LineString", "Polygon", "MultiPolygon", "Ring", "MultiLineString"};
 
             const auto * variant_type = typeid_cast<const DataTypeVariant *>(col.type.get());
             if (variant_type)
@@ -851,8 +854,8 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
     String raw_geometries;
     readGeometryMembers(buf, format_settings.json, geo_type, raw_coordinates, raw_geometries);
 
-    /// Valid GeoJSON geometry types that cannot be represented in ClickHouse's `Geometry` type.
-    static constexpr std::array<std::string_view, 1> unrepresentable_geojson_types = {"GeometryCollection"};
+    /// Valid GeoJSON geometry types that cannot be represented in ClickHouse's Geometry type.
+    static constexpr std::array<std::string_view, 2> unrepresentable_geojson_types = {"GeometryCollection", "MultiPoint"};
 
     if (!isOneOf(geo_type, supported_geojson_geometry_types))
     {
@@ -966,7 +969,7 @@ Reading a `FeatureCollection` produces one row per feature with the following fi
 | `geometry`   | `Geometry`        | The feature's geometry, stored as a `Geometry` variant type.                                |
 | `properties` | `Nullable(JSON)`  | The feature's `properties` object, stored as a semi-structured `JSON` column. An explicit `"properties": null` is preserved as `NULL`. |
 
-Each geometry is stored in ClickHouse's `Geometry` type (a `Variant`). The supported GeoJSON geometry types are `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, and `MultiPolygon`. The remaining GeoJSON geometry type, `GeometryCollection`, cannot be represented by the `Geometry` type; reading one into the `geometry` column raises an exception by default, which can be changed to insert `NULL` instead — see [Handling unsupported geometry types](#unsupported-geometry) below. By default, the `geometry` column is `NULL` only when a feature's geometry is an explicit JSON `null`; under `input_format_geojson_unsupported_geometry_handling = 'null'` it is also `NULL` for an unsupported geometry type.
+Each geometry is stored in ClickHouse's `Geometry` type (a `Variant`). The supported GeoJSON geometry types are `Point`, `LineString`, `MultiLineString`, `Polygon`, and `MultiPolygon`. The two other GeoJSON geometry types, `GeometryCollection` and `MultiPoint`, cannot be represented by the `Geometry` type; reading one into the `geometry` column raises an exception by default, which can be changed to insert `NULL` instead — see [Handling unsupported geometry types](#unsupported-geometry) below. By default, the `geometry` column is `NULL` only when a feature's geometry is an explicit JSON `null`; under `input_format_geojson_unsupported_geometry_handling = 'null'` it is also `NULL` for an unsupported geometry type.
 
 The document's structure is validated: the top-level `type` must be `FeatureCollection` and every element of `features` must have `type` `Feature`. By default, coordinates must satisfy the GeoJSON shape invariants — a `LineString` (and each line of a `MultiLineString`) must have at least two points, and a `Polygon` ring (and each ring of a `MultiPolygon`) must be closed and have at least four points (see [Geometry validation](#geometry-validation)). Malformed documents are rejected rather than silently loaded.
 
@@ -1143,7 +1146,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 
 ### Handling unsupported geometry types {#unsupported-geometry}
 
-Some valid GeoJSON geometry types &mdash; such as `GeometryCollection` &mdash; can't be represented by ClickHouse's `Geometry` type. You can control what happens when such a geometry must be stored in the `geometry` column using the `input_format_geojson_unsupported_geometry_handling` setting. Possible values are:
+Some valid GeoJSON geometry types &mdash; such as `GeometryCollection` and `MultiPoint` &mdash; can't be represented by ClickHouse's `Geometry` type. You can control what happens when such a geometry must be stored in the `geometry` column using the `input_format_geojson_unsupported_geometry_handling` setting. Possible values are:
 
 * `'throw'` — throw an exception (default)
 * `'null'` — insert a `NULL` value for the `geometry` column and continue parsing
@@ -1158,7 +1161,7 @@ Reading reflects only what fits the fixed schema, so some GeoJSON information is
 - A position's third (elevation) coordinate, and any beyond it, are dropped — positions become `[longitude, latitude]`.
 - `bbox` and foreign members (such as a top-level `name` or `crs`, or extra members inside a `Feature`) are ignored.
 - A numeric `id` is stored as text, so the string-vs-number distinction is lost; an absent or `null` `id` becomes `NULL`.
-- `GeometryCollection` cannot be represented — see [Handling unsupported geometry types](#unsupported-geometry).
+- `GeometryCollection` and `MultiPoint` cannot be represented — see [Handling unsupported geometry types](#unsupported-geometry).
 
 ## Writing data {#writing-data}
 

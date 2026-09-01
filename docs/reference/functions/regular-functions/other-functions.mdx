@@ -6,9 +6,9 @@ title: 'Other functions'
 doc_type: 'reference'
 ---
 
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import DeprecatedBadge from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
 <Note>
 The function documentation below is generated from the `system.functions` system table.
@@ -1368,8 +1368,6 @@ Counting starts from 1 with the following logic:
 An optional argument `length` uses the following logic:
 - If `length` is positive, it means number of digits to take from offset
 - If `length` is negative, it means number of digits from the right of the number to exclude
-
-See also the [`substring`](/reference/functions/regular-functions/string-functions#substring) function, which performs the analogous operation on strings.
     
 
 **Syntax**
@@ -1845,9 +1843,9 @@ Introduced in: v25.11.0
 
 Flips the x and y coordinates of geometric objects. This operation swaps latitude and longitude, which is useful for converting between different coordinate systems or correcting coordinate order.
 
-For a Point, it swaps the x and y coordinates. For complex geometries (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
+For a Point, it swaps the x and y coordinates. For complex geometries (LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
 
-The function supports both individual geometry types (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
+The function supports both individual geometry types (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
 
 **Syntax**
 
@@ -1857,11 +1855,11 @@ flipCoordinates(geometry)
 
 **Arguments**
 
-- `geometry` — The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types). 
+- `geometry` — The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types). 
 
 **Returned value**
 
-The geometry with flipped coordinates. The return type matches the input type. [`Point`](/reference/data-types/geo#point) or [`MultiPoint`](/reference/data-types/geo#multipoint) or [`Ring`](/reference/data-types/geo#ring) or [`Polygon`](/reference/data-types/geo#polygon) or [`MultiPolygon`](/reference/data-types/geo#multipolygon) or [`LineString`](/reference/data-types/geo#linestring) or [`MultiLineString`](/reference/data-types/geo#multilinestring) or [`Geometry`](/reference/data-types/geo)
+The geometry with flipped coordinates. The return type matches the input type. [`Point`](/reference/data-types/geo#point) or [`Ring`](/reference/data-types/geo#ring) or [`Polygon`](/reference/data-types/geo#polygon) or [`MultiPolygon`](/reference/data-types/geo#multipolygon) or [`LineString`](/reference/data-types/geo#linestring) or [`MultiLineString`](/reference/data-types/geo#multilinestring) or [`Geometry`](/reference/data-types/geo)
 
 **Examples**
 

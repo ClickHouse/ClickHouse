@@ -646,8 +646,10 @@ static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_s
 
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
+
+            default:
+                UNREACHABLE();
         }
-        UNREACHABLE();
     };
 
     /// CHJ supports only one join clause for now

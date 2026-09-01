@@ -285,8 +285,8 @@ instance 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개�
 자가 관리형 Grafana 사용자는 Alloy 에이전트 설치 지침을 [여기](https://grafana.com/docs/alloy/latest/get-started/install/)에서 확인할 수 있습니다. Alloy가 Prometheus 메트릭을 원하는 대상으로 전송하도록 이미 구성되어 있다고 가정합니다. 아래의 `prometheus.scrape` 컴포넌트는 Alloy가 ClickHouse Cloud 엔드포인트를 스크레이프하게 합니다. `prometheus.remote_write`가 스크레이프된 메트릭을 수신한다고 가정합니다. 이 구성이 없다면 `forward_to key`를 대상에 맞게 조정하십시오.
 
 ```yaml
-// prometheus.scrape component causes Alloy to scrape the ClickHouse Cloud Prometheus endpoint.
-  // Adjust the forward_to key to match your remote_write receiver if it differs.
+// prometheus.scrape 컴포넌트는 Alloy가 ClickHouse Cloud Prometheus 엔드포인트를 스크레이프하도록 합니다.
+  // forward_to 키가 다른 경우 remote_write 수신기에 맞게 조정하십시오.
   prometheus.scrape "clickhouse_cloud" {
   targets = [{
   __address__ = "api.clickhouse.cloud",
@@ -344,8 +344,8 @@ instances:
   ## 관련 페이지
 </div>
 
-* [모니터링 개요](/ko/products/cloud/features/monitoring/overview) — ClickHouse Cloud의 모든 모니터링 방법을 비교합니다
+* [모니터링 개요](/ko/products/cloud/features/monitoring/overview) — ClickHouse Cloud의 모든 모니터링 방식을 비교
 * [Cloud Console 모니터링](/ko/products/cloud/features/monitoring/cloud-console) — 외부 도구 없이 사용할 수 있는 기본 제공 대시보드
 * [커뮤니티 및 파트너 통합](/ko/products/cloud/features/monitoring/integrations) — Datadog agent 통합 및 커뮤니티 솔루션
-* [시스템 테이블 쿼리](/ko/products/cloud/features/monitoring/system-tables) — 시스템 메트릭에 SQL로 직접 액세스
-* [Managed Postgres Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) — Managed Postgres 서비스의 메트릭을 스크레이프합니다
+* [시스템 테이블 쿼리](/ko/products/cloud/features/monitoring/system-tables) — SQL로 시스템 메트릭에 직접 액세스
+* [Managed Postgres Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) — Managed Postgres 서비스에서 메트릭 스크레이프

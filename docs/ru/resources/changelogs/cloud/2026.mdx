@@ -1,7 +1,7 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Журнал изменений Cloud — 2026'
+title: 'Журнал изменений ClickHouse Cloud — 2026'
 description: 'Журнал изменений ClickHouse Cloud с описанием нововведений в каждом релизе ClickHouse Cloud'
 doc_type: 'changelog'
 keywords: ['журнал изменений', 'примечания к релизу', 'обновления', 'новые возможности', 'изменения в Cloud']
@@ -9,55 +9,7 @@ keywords: ['журнал изменений', 'примечания к рели�
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-В дополнение к этому журналу изменений ClickHouse Cloud см. также страницу [Cloud Compatibility](/ru/products/cloud/guides/cloud-compatibility).
-
-<Update label="13 июля 2026">
-  В обновления этой недели входят sticky-маршрутизация реплик через обычный HTTPS, пользовательские даты начала расчетного периода биллинга и новые элементы управления первоначальной загрузкой для ClickPipes для объектного хранилища.
-
-  ### Sticky-маршрутизация реплик через HTTPS (закрытая предварительная версия)
-
-  Теперь вы можете закреплять запросы за конкретной репликой через стандартный HTTPS, добавив параметр `?session_id=` к обычному URL вашего сервиса, без специальных имен хостов или изменений DNS. Это сохраняет доступность объектов с областью видимости сеанса, таких как временные таблицы, между запросами, а также помогает повторным запросам попадать в прогретые локальные кэши реплики. Возможность постепенно становится доступной в рамках закрытой предварительной версии всем клиентам Enterprise, а для клиентов Scale — по запросу. Существующая маршрутизация на основе поддоменов продолжает работать, но со временем будет переведена на этот подход. См. документацию по [маршрутизации с учетом реплик](/ru/manage/replica-aware-routing).
-
-  ### Пользовательские даты начала расчетного периода биллинга
-
-  Теперь вы можете запросить изменение даты биллинга вашей организации — дня месяца, в который начинается каждый расчетный период биллинга, — например, чтобы синхронизировать счета с календарным месяцем. Откройте тикет в поддержку и укажите желаемую дату. Даты биллинга применяются в UTC, и каждый счет охватывает использование с даты биллинга до той же даты следующего месяца (не включая ее).
-
-  ### Пропуск первоначальной загрузки для ClickPipes для объектного хранилища
-
-  [ClickPipes](/ru/integrations/clickpipes) для объектного хранилища (S3, GCS и Azure Blob Storage) теперь предлагают два способа управления первоначальной загрузкой при создании пайпа: **Start after**, который пропускает файлы вплоть до указанного ключа объекта включительно, и **Skip initial load**, который полностью пропускает уже существующие файлы и обрабатывает только уведомления о новых объектах. Ранее новый пайп всегда выполнял дозагрузку всех файлов по указанному пути. Эти два варианта взаимоисключающие и являются постоянными для конкретного пайпа: пропущенную дозагрузку нельзя запустить позже. Доступно в интерфейсе, Cloud API и Terraform v3.18.0 и более поздних версиях.
-</Update>
-
-<Update label="30 июня 2026">
-  В обновления этой недели входят новые возможности обсервабилити для Postgres и внутренних компонентов ClickHouse, расширенные возможности управления ClickPipes, включая доставку Kafka exactly-once, а также несколько дополнений платформы: Azure Marketplace BYOC, официальный провайдер Airflow и обновления ClickHouse Agents.
-
-  ### Доставка Kafka exactly-once в ClickPipes
-
-  Теперь вы можете включить доставку exactly-once для импорта из Kafka прямо в потоке импорта [ClickPipes](/ru/integrations/clickpipes/kafka/index); та же возможность доступна и через публичный API для программной настройки.
-
-  ### Унифицированные элементы управления TLS для источников CDC
-
-  Активация TLS и уровни проверки теперь унифицированы для всех источников CDC. Конечные точки OpenAPI для создания и обновления передают поля `postgres_skip_cert_verification`, `postgres_disable_tls` и `mongo_skip_cert_verification`, чтобы вы могли управлять обработкой сертификатов через API.
-
-  ### Базы данных Replicated возвращаются в селектор ClickPipes
-
-  Базы данных Replicated снова можно выбирать в селекторе пункта назначения ClickPipes.
-
-  ### Обновления ClickHouse Agents (публичная бета-версия)
-
-  [ClickHouse Agents](/ru/products/cloud/features/ai-ml/agents/index) теперь поддерживает Chat Projects для организации диалогов, индикатор использования контекста с отображением расхода токенов и окна контекста, Skills, созданные агентом, а также встроенные Skills с лучшими практиками ClickHouse. Этот релиз также включает улучшения настроек, навигации, горячих клавиш и закрепления.
-
-  ### ClickHouse BYOC в Azure Marketplace
-
-  ClickHouse [Собственное облако](/ru/products/cloud/guides/infrastructure/deployment-options/byoc/overview) теперь представлен в Azure Marketplace, что позволяет клиентам приобретать его через private offer и развертывать BYOC с оплатой через их аккаунт Azure. На стороне платформы добавлена поддержка биллинга для листингов Azure BYOC в маркетплейсе и идентификаторов продуктов.
-
-  ### Официальный провайдер ClickHouse для Airflow
-
-  Официальный провайдер Apache Airflow для ClickHouse теперь доступен на PyPI и указан в реестре Airflow, заменяя устаревший плагин сообщества для передачи данных в ClickHouse и из него.
-
-  ### Улучшения видимости биллинга и маркетплейса
-
-  Биллинг теперь включает таблицу истории кредитов в режиме самообслуживания, сводку по предоплате с отображением использованных и истекших сумм, а также поддержку электронной почты GCP MPPO.
-</Update>
+Помимо этого журнала изменений ClickHouse Cloud, см. также страницу [Совместимость с Cloud](/ru/products/cloud/guides/cloud-compatibility).
 
 <Update label="3 июня 2026 года">
   Неделя Open House 2026 ознаменовалась волной анонсов, направленных на запуск ClickHouse там, где хранятся ваши данные, и на интеграцию агентных рабочих процессов с поддержкой ИИ в платформу.
@@ -207,7 +159,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
   ### Terraform и OpenAPI для ClickPipes (общая доступность)
 
-  Ресурсы ClickPipes в ClickHouse [Terraform-провайдере](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) теперь общедоступны в составе стабильных релизов, а [конечные точки OpenAPI](/ru/products/cloud/api-reference/organization/get-list-of-available-organizations) больше не помечаются как бета-версия. Это включает полное покрытие для CDC-коннекторов (Postgres, MySQL, MongoDB). Подробнее см. [документацию Terraform](/ru/integrations/clickpipes/programmatic-access/terraform), [документацию OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [запись блога](https://clickhouse.com/blog/terraform-ga).
+  Ресурсы ClickPipes в ClickHouse [Terraform-провайдере](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) теперь общедоступны в составе стабильных релизов, а [конечные точки OpenAPI](/ru/api-reference/organization/get-list-of-available-organizations) больше не помечаются как бета-версия. Это включает полное покрытие для CDC-коннекторов (Postgres, MySQL, MongoDB). Подробнее см. [документацию Terraform](/ru/integrations/clickpipes/programmatic-access/terraform), [документацию OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [запись блога](https://clickhouse.com/blog/terraform-ga).
 </Update>
 
 <Update label="17 апреля 2026">

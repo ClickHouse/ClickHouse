@@ -3,17 +3,19 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
+#include <Common/FieldVisitorToString.h>
+#include <Parsers/ASTHelpers.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/ISerialization.h>
-#include <Formats/FormatSettings.h>
-#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 class FunctionParameterValuesVisitor
 {
@@ -27,14 +29,7 @@ public:
     void visit(const ASTPtr & ast)
     {
         if (const auto * function = ast->as<ASTFunction>())
-        {
-            /// A recognized `parameter = value` assignment consumes the whole subtree: the value
-            /// expression must not be descended into, otherwise an inner predicate that happens to
-            /// reference the same parameter name (e.g. a subquery `... WHERE p = 1`) would overwrite
-            /// the collected value.
-            if (visitFunction(*function))
-                return;
-        }
+            visitFunction(*function);
         for (const auto & child : ast->children)
             visit(child);
     }
@@ -43,39 +38,41 @@ private:
     NameToNameMap & parameter_values;
     ContextPtr context;
 
-    /// Returns true if this function is a `parameter = value` assignment that was collected.
-    bool visitFunction(const ASTFunction & parameter_function)
+    void visitFunction(const ASTFunction & parameter_function)
     {
         if (parameter_function.name != "equals" && parameter_function.children.size() != 1)
-            return false;
+            return;
 
         const auto * expression_list = parameter_function.children[0]->as<ASTExpressionList>();
 
-        if (!expression_list || expression_list->children.size() != 2)
-            return false;
+        if (expression_list && expression_list->children.size() != 2)
+            return;
 
-        const auto * identifier = expression_list->children[0]->as<ASTIdentifier>();
-        if (!identifier)
-            return false;
-
-        const ASTPtr & value = expression_list->children[1];
-
-        /// Evaluate the value to a constant and serialize it with its own data type so the result
-        /// is text-escaped the way `ReplaceQueryParameterVisitor` expects (it reads the value back
-        /// with `deserializeTextEscaped`). This mirrors the analyzer counterpart in `QueryAnalyzer`,
-        /// which likewise has no separate literal path.
-        if (value->as<ASTLiteral>() || value->as<ASTFunction>() || value->as<ASTSubquery>())
+        if (const auto * identifier = expression_list->children[0]->as<ASTIdentifier>())
         {
-            auto [field, type] = evaluateConstantExpression(value, context);
-            auto column = type->createColumn();
-            column->insert(field);
-            WriteBufferFromOwnString buffer;
-            type->getDefaultSerialization()->serializeTextEscaped(*column, 0, buffer, {});
-            parameter_values[identifier->name()] = buffer.str();
-            return true;
+            if (const auto * literal = expression_list->children[1]->as<ASTLiteral>())
+            {
+                parameter_values[identifier->name()] = convertFieldToString(literal->value);
+            }
+            else if (const auto * function = expression_list->children[1]->as<ASTFunction>())
+            {
+                if (isFunctionCast(function))
+                {
+                    const auto * cast_expression = assert_cast<ASTExpressionList*>(function->arguments.get());
+                    if (cast_expression->children.size() != 2)
+                        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function CAST must have exactly two arguments");
+                    if (const auto * cast_literal = cast_expression->children[0]->as<ASTLiteral>())
+                    {
+                        parameter_values[identifier->name()] = convertFieldToString(cast_literal->value);
+                    }
+                }
+                else
+                {
+                    ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(expression_list->children[1], context);
+                    parameter_values[identifier->name()] = convertFieldToString(res->as<ASTLiteral>()->value);
+                }
+            }
         }
-
-        return false;
     }
 };
 

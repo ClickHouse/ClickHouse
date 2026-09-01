@@ -927,8 +927,18 @@ static bool writeConsolidatedManifestFile(
     return true;
 }
 
-namespace
+bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update)
 {
+    /// Every declared added file and row must be accounted for as a position delete: the
+    /// breakdown counters are optional and read as 0 when absent, so their absence is not
+    /// evidence. One delete file with deleted rows but no file count is a position delete file.
+    return update.added_files == 0 && update.added_records == 0 && update.added_delete_files != 0
+        && (update.added_position_delete_files == update.added_delete_files
+            || (update.added_position_delete_files == 0 && update.added_position_deletes != 0
+                && update.added_delete_files == 1))
+        && update.added_equality_delete_files == 0 && update.added_equality_deletes == 0
+        && update.deleted_data_files == 0 && update.removed_records == 0 && update.removed_files_size == 0;
+}
 
 [[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const Iceberg::IcebergHistoryRecord & history_record)
 {
@@ -943,9 +953,7 @@ namespace
         case SnapshotSummaryOperation::DELETE:
             return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
-            const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
-            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
-            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+            if (overwriteIsPositionDeleteOnly(summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>()))
                 return std::nullopt;
             [[fallthrough]];
         }
@@ -954,6 +962,8 @@ namespace
     }
 };
 
+namespace
+{
 
 /// Current experimental compact implementation expects snapshots to be either appends or overwrites which has only position deletes
 /// Lets force this invariant

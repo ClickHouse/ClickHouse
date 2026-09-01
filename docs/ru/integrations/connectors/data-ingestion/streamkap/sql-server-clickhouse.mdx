@@ -37,15 +37,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 * Работающий экземпляр SQL Server
 
-* Для этого руководства мы используем AWS RDS for SQL Server, но подойдет любой современный экземпляр SQL Server.[Настройка AWS SQL Server с нуля.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap#setting-up-a-new-rds-sql-server-from-scratch)
+* Для этого руководства мы используем AWS RDS for SQL Server, но подойдет любой современный экземпляр SQL Server.[Настройка AWS SQL Server с нуля.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23setting-up-a-new-rds-sql-server-from-scratch)
 
 * Экземпляр ClickHouse
 
-* Самоуправляемый или облачный.[Настройка ClickHouse с нуля.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap#creating-a-new-clickhouse-account)
+* Самоуправляемый или облачный.[Настройка ClickHouse с нуля.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23creating-a-new-clickhouse-account)
 
 * Streamkap
 
-* Этот инструмент станет основой вашего конвейера потоковой передачи данных.
+* Этот инструмент станет основой вашего конвейера стриминга данных.
 
 <div id="connection-info">
   ### Параметры подключения
@@ -57,129 +57,155 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * адрес сервера ClickHouse, порт, имя пользователя и пароль. IP Access List в ClickHouse определяет, какие сервисы могут подключаться к вашей базе данных ClickHouse.[Следуйте инструкциям здесь.](https://www.google.com/url?q=https://docs.streamkap.com/docs/clickhouse\&sa=D\&source=editors\&ust=1760992472359060\&usg=AOvVaw3H1XqqwvqAso_TQPNBKEhD)
 * таблицы, которые вы хотите передавать в поток — пока начните с одной
 
-<Steps>
-  <Step title="Создание источника SQL Server в Streamkap" id="step-1-creating-a-sql-server-source-in-streamkap">
-    <a id="setting-up-sql-server-as-a-source" />
+<div id="setting-up-sql-server-as-a-source">
+  ## Настройка SQL Server в качестве источника
+</div>
 
-    Давайте начнём!
+Приступим!
 
-    Сначала настроим подключение к источнику. Так Streamkap понимает, откуда получать изменения.
+<div id="step-1-creating-a-sql-server-source-in-streamkap">
+  ### Шаг 1: Создание источника SQL Server в Streamkap
+</div>
 
-    Вот как это сделать:
+Начнём с настройки подключения к источнику. Так Streamkap понимает, откуда забирать изменения.
 
-    1. Откройте Streamkap и перейдите в раздел источников.
-    2. Создайте новый источник.
+Вот как это сделать:
 
-    * Укажите понятное имя (например, sqlserver-demo-source).
+1. Откройте Streamkap и перейдите в раздел источников.
+2. Создайте новый источник.
 
-    3. Заполните сведения о подключении к SQL Server:
+* Задайте ему понятное имя (например, sqlserver-demo-source).
 
-    * Хост (например, your-db-instance.rds.amazonaws.com)
-    * Порт (по умолчанию для SQL Server используется 3306)
-    * Имя пользователя и пароль
-    * Имя базы данных
+3. Укажите сведения о подключении к SQL Server:
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+* Хост (например, your-db-instance.rds.amazonaws.com)
+* Порт (по умолчанию для SQL Server — 3306)
+* Имя пользователя и пароль
+* Имя базы данных
 
-    #### Что происходит в фоновом режиме
+<Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+<div id="whats-happening-behind-the-scenes">
+  #### Что происходит под капотом
+</div>
 
-    После настройки Streamkap подключится к вашему SQL Server и обнаружит таблицы. Для этой демонстрации мы выберем таблицу, в которую уже поступают данные, например events или transactions.
-  </Step>
+<Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
 
-  <Step title="Добавьте ClickHouse как пункт назначения в Streamkap" id="step-2-add-a-clickhouse-destination-in-streamkap">
-    <a id="creating-a-clickhouse-destination" />
+После настройки Streamkap подключится к вашему SQL Server и определит таблицы. Для этого примера мы выберем таблицу, в которую уже поступают данные, например события или транзакции.
 
-    Теперь настроим пункт назначения, куда будут отправляться все эти данные.
+<div id="creating-a-clickhouse-destination">
+  ## Создание пункта назначения ClickHouse
+</div>
 
-    Как и в случае с источником, мы создадим пункт назначения, используя сведения о подключении ClickHouse.
+Теперь настроим пункт назначения, в которое мы будем отправлять все эти данные.
 
-    #### Шаги:
+<div id="step-2-add-a-clickhouse-destination-in-streamkap">
+  ### Шаг 2: Добавьте пункт назначения ClickHouse в Streamkap
+</div>
 
-    1. Перейдите в раздел пунктов назначения в Streamkap.
-    2. Добавьте новый пункт назначения — выберите ClickHouse в качестве типа пункта назначения.
-    3. Введите данные для ClickHouse:
+Как и для источника, мы создадим пункт назначения, используя сведения о подключении к ClickHouse.
 
-    * Хост
-    * Порт (по умолчанию — 9000)
-    * Имя пользователя и пароль
-    * Имя базы данных
+<div id="steps">
+  #### Шаги:
+</div>
 
-    Пример снимка экрана: добавление нового пункта назначения ClickHouse в панели мониторинга Streamkap.
+1. Перейдите в раздел пунктов назначения в Streamkap.
+2. Добавьте новый пункт назначения — выберите ClickHouse в качестве типа назначения.
+3. Укажите данные ClickHouse:
 
-    ### Режим upsert: что это?
+* Хост
+* Порт (по умолчанию — 9000)
+* Имя пользователя и пароль
+* Имя базы данных
 
-    Это важный шаг: нам нужно использовать режим ClickHouse «upsert», который «под капотом» использует движок ReplacingMergeTree в ClickHouse. Это позволяет эффективно объединять входящие записи и обрабатывать обновления после приёма, используя то, что ClickHouse называет «слиянием частей».
+Пример скриншота: добавление нового пункта назначения ClickHouse в панели мониторинга Streamkap.
 
-    * Это гарантирует, что ваша целевая таблица не будет заполняться дубликатами при изменениях на стороне SQL Server.
+<div id="upsert-mode-what-is-that">
+  ### Режим upsert: что это такое?
+</div>
 
-    ### Обработка изменения схемы
+Это важный шаг: мы хотим использовать в ClickHouse режим «upsert», который под капотом использует движок ReplacingMergeTree. Это позволяет эффективно объединять входящие записи и обрабатывать обновления после приёма с помощью того, что в ClickHouse называется «слиянием частей».
 
-    В ClickHouse и SQL Server набор столбцов иногда различается — особенно когда приложение уже работает, а разработчики продолжают добавлять новые столбцы на лету.
+* Это гарантирует, что ваша целевая таблица не будет заполняться дубликатами при изменениях на стороне SQL Server.
 
-    * Хорошая новость: Streamkap поддерживает базовое изменение схемы. Это значит, что если вы добавите новый столбец в SQL Server, он появится и в ClickHouse.
+<div id="handling-schema-evolution">
+  ### Обработка изменений схемы
+</div>
 
-    Просто выберите «schema evolution» в настройках пункта назначения. При необходимости это всегда можно изменить позже.
-  </Step>
+У ClickHouse и SQL Server не всегда одинаковые столбцы — особенно когда приложение уже работает в продакшене, а разработчики продолжают на лету добавлять новые.
 
-  <Step title="Настройте конвейер в Streamkap" id="step-3-set-up-the-pipeline-in-streamkap">
-    <a id="building-the-streaming-pipeline" />
+* Хорошая новость: Streamkap поддерживает базовые изменения схемы. Это значит, что если вы добавите новый столбец в SQL Server, он появится и в ClickHouse.
 
-    Когда источник и пункт назначения заданы, пора перейти к самой интересной части — стримингу данных!
+Просто выберите “schema evolution” в настройках пункта назначения. При необходимости это всегда можно изменить позже.
 
-    #### Настройка конвейера
+<div id="building-the-streaming-pipeline">
+  ## Создание стриминг-конвейера
+</div>
 
-    1. Перейдите на вкладку Pipelines в Streamkap.
+Когда источник и пункт назначения настроены, пора перейти к самому интересному — к стримингу данных!
 
-    2. Создайте новый конвейер.
+<div id="step-3-set-up-the-pipeline-in-streamkap">
+  ### Шаг 3: Настройте конвейер в Streamkap
+</div>
 
-    3. Выберите источник SQL Server (`sqlserver-demo-source`).
+<div id="pipeline-setup">
+  #### Настройка конвейера
+</div>
 
-    4. Выберите пункт назначения ClickHouse (`clickhouse-tutorial-destination`).
+1. Перейдите на вкладку Pipelines в Streamkap.
 
-    5. Выберите таблицу, которую хотите передавать в стриминге, — допустим, это `events`.
+2. Создайте новый конвейер.
 
-    6. Настройте CDC (фиксация изменений данных).
+3. Выберите источник SQL Server (sqlserver-demo-source).
 
-    * В этом примере мы будем передавать в стриминге новые данные (на первом этапе дозагрузку можно пропустить и сосредоточиться на событиях CDC).
+4. Выберите пункт назначения ClickHouse (clickhouse-tutorial-destination).
 
-    Снимок экрана с настройками конвейера: выбор источника, пункта назначения и таблицы.
+5. Выберите таблицу, данные из которой хотите передавать — допустим, это events.
 
-    #### Нужна ли вам дозагрузка?
+6. Настройте CDC (фиксацию изменений данных).
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+* В этом примере мы будем передавать только новые данные (на первом этапе дозагрузку можно пропустить и сосредоточиться на событиях CDC).
 
-    У вас может возникнуть вопрос: нужно ли дозагружать старые данные?
+Снимок экрана с настройками конвейера: выбор источника, пункта назначения и таблицы.
 
-    Во многих аналитических сценариях достаточно просто начать со стриминга изменений с текущего момента, а при необходимости позже можно дозагрузить и более старые данные.
+<div id="should-you-backfill">
+  #### Нужна ли дозагрузка?
+</div>
 
-    Пока просто выберите “don’t backfill”, если только у вас нет конкретной необходимости.
-  </Step>
+<Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
 
-  <Step title="Просмотр потока данных" id="step-4-watch-the-data-stream">
-    <a id="streaming-in-action-what-to-expect" />
+У вас может возникнуть вопрос: нужно ли дозагружать старые данные?
 
-    Теперь ваш конвейер настроен и работает!
+Во многих аналитических сценариях достаточно просто начать со стриминга изменений с текущего момента, а при необходимости вы всегда сможете вернуться и загрузить более старые данные.
 
-    Вот что происходит:
+Пока просто выберите “не выполнять дозагрузку”, если у вас нет в этом конкретной необходимости.
 
-    * Когда в исходную таблицу SQL Server поступают новые данные, конвейер Streamkap фиксирует изменения и отправляет их в ClickHouse.
-    * ClickHouse (благодаря ReplacingMergeTree и слиянию частей) принимает эти строки и объединяет обновления.
-    * Схема успевает за изменениями — добавьте столбцы в SQL Server, и они появятся и в ClickHouse.
+<div id="streaming-in-action-what-to-expect">
+  ## Стриминг в действии: чего ожидать
+</div>
 
-    На панели мониторинга в реальном времени или в журналах видно, как растёт количество строк в ClickHouse и SQL Server.
+Теперь ваш конвейер настроен и работает!
 
-    Можно буквально наблюдать, как число строк в ClickHouse растёт по мере поступления данных в SQL Server.
+<div id="step-4-watch-the-data-stream">
+  ### Шаг 4: Следите за потоком данных
+</div>
 
-    ```sql
-    -- Example: Checking rows in ClickHouse 
-    SELECT COUNT(*) FROM analytics.events; |
-    ```
+Вот что происходит:
 
-    При высокой нагрузке возможна некоторая задержка, но в большинстве случаев данные поступают почти в реальном времени.
-  </Step>
-</Steps>
+* Когда новые данные попадают в исходную таблицу в SQL Server, конвейер Streamkap отслеживает изменения и отправляет их в ClickHouse.
+* ClickHouse (благодаря ReplacingMergeTree и слиянию частей) принимает эти строки и объединяет обновления.
+* Схема успевает за изменениями — добавьте столбцы в SQL Server, и они появятся и в ClickHouse.
+
+Панель мониторинга или журналы в реальном времени, показывающие, как растёт число строк в ClickHouse и SQL Server.
+
+Можно буквально увидеть, как число строк в ClickHouse растёт по мере поступления данных в SQL Server.
+
+```sql
+-- Пример: подсчёт строк в ClickHouse 
+SELECT COUNT(*) FROM analytics.events; |
+```
+
+При высокой нагрузке возможна некоторая задержка, но в большинстве случаев стриминг идет почти в реальном времени.
 
 <div id="under-the-hood-whats-streamkap-actually-doing">
   ## Что происходит «под капотом»: что на самом деле делает Streamkap?

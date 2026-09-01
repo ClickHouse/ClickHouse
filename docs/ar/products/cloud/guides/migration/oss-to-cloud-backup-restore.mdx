@@ -272,21 +272,29 @@ FROM s3(
 اتبع الخطوات أدناه لإنشاء خدمة Cloud جديدة.
 
 <Steps>
-  <Step title="افتح Cloud Console" id="open-cloud-console">
+  <Step>
+    #### افتح Cloud Console
+
     انتقل إلى [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
   </Step>
 
-  <Step title="أنشئ خدمة جديدة" id="create-new-service">
+  <Step>
+    #### أنشئ خدمة جديدة
+
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="أنشئ خدمة جديدة" />
   </Step>
 
-  <Step title="اضبط الإعدادات وأنشئ خدمة" id="configure-and-create">
+  <Step>
+    #### اضبط الإعدادات وأنشئ خدمة
+
     اختر المنطقة والتكوين المطلوبين، ثم انقر على `Create service`
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="إعداد تفضيلات الخدمة" />
   </Step>
 
-  <Step title="أنشئ دور وصول" id="create-an-access-role">
+  <Step>
+    #### أنشئ دور وصول
+
     افتح SQL Console
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="إعداد تفضيلات الخدمة" />
@@ -327,7 +335,7 @@ FROM s3(
 
     تتضمن السياسة كِلا ARNين:
 
-    * **مستخدم IAM** (`docs-s3-user`): يتيح لعنقود ClickHouse ذاتي الإدارة لديك أخذ نسخة احتياطية إلى S3
+    * **IAM user** (`docs-s3-user`): يتيح لعنقود ClickHouse ذاتي الإدارة لديك أخذ نسخة احتياطية إلى S3
     * **ClickHouse Cloud role** (`ClickHouseAccess-001`): يتيح لخدمة Cloud لديك الاستعادة من S3
   </Step>
 </Steps>

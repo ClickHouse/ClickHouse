@@ -1048,22 +1048,9 @@ static void convertNotEqualsChainToNotIn(
             continue;
         }
 
-        /// `notIn` rejects arguments with a dynamic structure outright, and resolving the function is
-        /// what would throw, so this must be checked before building it.
-        if (expression.node->getResultType()->hasDynamicStructure())
-        {
-            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
-            continue;
-        }
-
-        const auto expr_type = removeLowCardinality(expression.node->getResultType());
-
         size_t min_index = not_equals_entries.front().first;
         Tuple args;
         args.reserve(not_equals_entries.size());
-        DataTypes tuple_element_types;
-        tuple_element_types.reserve(not_equals_entries.size());
-        bool all_constants_convert_losslessly = true;
         for (auto & [idx, not_equals] : not_equals_entries)
         {
             min_index = std::min(min_index, idx);
@@ -1071,32 +1058,17 @@ static void convertNotEqualsChainToNotIn(
             chassert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
 
             const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
-            const auto * literal = not_equals_arguments[1]->as<ConstantNode>();
-            if (!literal)
+            if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
+                args.push_back(rhs_literal->getValue());
+            else
             {
-                literal = not_equals_arguments[0]->as<ConstantNode>();
-                chassert(literal);
+                const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
+                chassert(lhs_literal);
+                args.push_back(lhs_literal->getValue());
             }
-
-            args.push_back(literal->getValue());
-            tuple_element_types.push_back(literal->getResultType());
-
-            /// The set converts each element to the expression's type, while the comparison it
-            /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
-            if (!tryConvertToColumnType(literal, expr_type))
-                all_constants_convert_losslessly = false;
         }
 
-        if (!all_constants_convert_losslessly)
-        {
-            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
-            continue;
-        }
-
-        /// Carry the resolved constant types over: deriving them from the `Field` values instead
-        /// would collapse `DateTime` to `UInt32`, an Enum to its underlying integer and so on, and
-        /// the resulting `notIn` would compare different values than the notEquals it replaces.
-        auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+        auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
 
         auto not_in_function = std::make_shared<FunctionNode>("notIn");
         not_in_function->markAsOperator();
@@ -1108,15 +1080,6 @@ static void convertNotEqualsChainToNotIn(
 
         not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
         not_in_function->resolveAsFunction(not_in_function_resolver);
-
-        /// `notIn` may be nullable where the notEquals it replaces was not (a Variant expression
-        /// resolves through the variant adaptor to Nullable(UInt8)). Ancestors already captured the
-        /// old type, so keep the original notEquals chain instead of changing it.
-        if (removeLowCardinality(not_in_function->getResultType())->isNullable())
-        {
-            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
-            continue;
-        }
 
         output.emplace_back(min_index, std::move(not_in_function));
     }
@@ -2458,18 +2421,7 @@ private:
                 continue;
             }
 
-            /// `in` rejects Dynamic-structure arguments outright, so building it would turn a working
-            /// OR chain into an error. Keep the original comparisons.
-            if (expression.node->getResultType()->hasDynamicStructure())
-            {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
-                continue;
-            }
-
-            const auto expr_type = removeLowCardinality(expression.node->getResultType());
-
             bool is_any_nullable = false;
-            bool all_constants_convert_losslessly = true;
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -2482,27 +2434,18 @@ private:
                 chassert(equals_function && equals_function->getFunctionName() == "equals");
 
                 const auto & equals_arguments = equals_function->getArguments().getNodes();
-                const auto * literal = equals_arguments[1]->as<ConstantNode>();
-                if (!literal)
+                if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
                 {
-                    literal = equals_arguments[0]->as<ConstantNode>();
-                    chassert(literal);
+                    args.push_back(rhs_literal->getValue());
+                    tuple_element_types.push_back(rhs_literal->getResultType());
                 }
-
-                args.push_back(literal->getValue());
-                tuple_element_types.push_back(literal->getResultType());
-
-                /// The set converts each element to the expression's type, while the comparison it
-                /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
-                /// A NULL constant is excluded above, so it never reaches this check.
-                if (!tryConvertToColumnType(literal, expr_type))
-                    all_constants_convert_losslessly = false;
-            }
-
-            if (!all_constants_convert_losslessly)
-            {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
-                continue;
+                else
+                {
+                    const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
+                    chassert(lhs_literal);
+                    args.push_back(lhs_literal->getValue());
+                    tuple_element_types.push_back(lhs_literal->getResultType());
+                }
             }
 
             auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
@@ -2522,15 +2465,6 @@ private:
             const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
             if (type_low_cardinality)
                 result_type = type_low_cardinality->getDictionaryType();
-            /// The replacement must not be more nullable than the equals it replaces: for a Variant
-            /// expression `in` resolves through the variant adaptor to Nullable(UInt8) while the
-            /// original equals resolved to UInt8. Ancestors already captured the OR's result type, so
-            /// keep the original chain rather than change it.
-            if (result_type->isNullable() && !is_any_nullable)
-            {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
-                continue;
-            }
             /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
               * is replaced with `k IN (1, NULL)` with result type UInt8.
               * Convert it back to Nullable(UInt8).
