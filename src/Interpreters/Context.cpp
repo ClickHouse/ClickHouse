@@ -81,6 +81,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
+#include <Access/resolveSetting.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
@@ -3207,8 +3208,14 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     std::lock_guard lock(mutex);
-    for (const String & name: names)
+    for (const String & name : names)
+    {
         settings->setDefaultValue(name);
+        /// `Settings` stores a `merge_tree_`-prefixed name as a custom setting, under the exact name that
+        /// wrote it. Resetting one name of a setting therefore has to clear what its other names wrote.
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+            settings->setDefaultValue(equivalent_name);
+    }
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const

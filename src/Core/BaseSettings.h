@@ -7,6 +7,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 
@@ -136,6 +137,15 @@ private:
   *
   * MY_SETTINGS_SUPPORTED_TYPES(MySettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
   */
+/// The name a custom setting is stored under. Identity, unless a settings class shares its namespace
+/// with another one: `Settings` addresses a `MergeTreeSettings` setting through a `merge_tree_`-prefixed
+/// custom setting, and such a setting can have two names, which have to reach the same value.
+template <class TTraits>
+std::string_view resolveCustomSettingName(std::string_view name)
+{
+    return name;
+}
+
 template <class TTraits>
 class BaseSettings : public TTraits::Data
 {
@@ -201,6 +211,9 @@ public:
 
     /// Get the tier (PRODUCTION/BETA/EXPERIMENTAL) of a setting
     SettingsTierType getTier(std::string_view name) const;
+
+    /// Tier of a built-in setting. Unlike `getTier`, ignores custom settings and returns nullopt instead of throwing when no setting exists.
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
 
     // ========================================================================
     // VALIDATION & CONVERSION (static utilities)
@@ -429,7 +442,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     }
 
     if constexpr (Traits::allow_custom_settings)
-        custom_settings_map.erase(String{name});
+        custom_settings_map.erase(String{resolveCustomSettingName<TTraits>(name)});
 }
 
 template <typename TTraits>
@@ -481,6 +494,16 @@ SettingsTierType BaseSettings<TTraits>::getTier(std::string_view name) const
     if (tryGetCustomSetting(name))
         return SettingsTierType::PRODUCTION;
     BaseSettingsHelpers::throwSettingNotFound(name);
+}
+
+template <typename TTraits>
+std::optional<SettingsTierType> BaseSettings<TTraits>::tryGetTierOfBuiltin(std::string_view name)
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        return accessor.getTier(index);
+    return std::nullopt;
 }
 
 template <typename TTraits>
@@ -703,9 +726,9 @@ SettingFieldCustom & BaseSettings<TTraits>::getCustomSetting(std::string_view na
 {
     if constexpr (Traits::allow_custom_settings)
     {
-        auto it = custom_settings_map.find(name);
+        auto it = custom_settings_map.find(resolveCustomSettingName<TTraits>(name));
         if (it == custom_settings_map.end())
-            it = custom_settings_map.emplace(String{name}, SettingFieldCustom{}).first;
+            it = custom_settings_map.emplace(String{resolveCustomSettingName<TTraits>(name)}, SettingFieldCustom{}).first;
         return it->second;
     }
     BaseSettingsHelpers::throwSettingNotFound(name);
@@ -716,7 +739,7 @@ const SettingFieldCustom & BaseSettings<TTraits>::getCustomSetting(std::string_v
 {
     if constexpr (Traits::allow_custom_settings)
     {
-        auto it = custom_settings_map.find(name);
+        auto it = custom_settings_map.find(resolveCustomSettingName<TTraits>(name));
         if (it != custom_settings_map.end())
             return it->second;
     }
@@ -728,7 +751,7 @@ const SettingFieldCustom * BaseSettings<TTraits>::tryGetCustomSetting(std::strin
 {
     if constexpr (Traits::allow_custom_settings)
     {
-        auto it = custom_settings_map.find(name);
+        auto it = custom_settings_map.find(resolveCustomSettingName<TTraits>(name));
         if (it != custom_settings_map.end())
             return &it->second;
     }
