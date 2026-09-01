@@ -2639,3 +2639,44 @@ TEST(SchedulerSpaceShared, ForcedSpillWaitsForAllRegisteredProcessorStats)
     EXPECT_NE(scheduler.getForcedSpillResult(request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 }
+
+
+/// A processor which leaves the pipeline cannot keep an exhaustive query-level spill pass open.
+TEST(SchedulerSpaceShared, ForcedSpillRemovalCompletesEpoch)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor completed(0, /*spill_succeeds_=*/ false);
+    ManualSpillProcessor removed(4096, /*spill_succeeds_=*/ true);
+    scheduler.registerProcessor(&completed);
+    scheduler.registerProcessor(&removed);
+
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.checkAndSpill(&completed);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+
+    scheduler.remove(&removed);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
+}
+
+
+/// A spillable processor registered while an epoch is active belongs to that same query-level pass.
+TEST(SchedulerSpaceShared, ForcedSpillIncludesProcessorRegisteredDuringEpoch)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor first(0, /*spill_succeeds_=*/ false);
+    ManualSpillProcessor late(4096, /*spill_succeeds_=*/ true);
+    scheduler.registerProcessor(&first);
+
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.registerProcessor(&late);
+    scheduler.checkAndSpill(&first);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+
+    scheduler.checkAndSpill(&late);
+    EXPECT_EQ(late.spillCallCount(), 1u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+}

@@ -187,18 +187,22 @@ bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest 
     // Update current increase request
     // To avoid thrashing we first server running allocation increase requests, then pending ones
     IncreaseRequest * old_increase = increase;
+    ISpaceSharedNode * suction_child = nullptr;
+    if (new_increase && new_increase->allocation.isSuctioned())
+        suction_child = &from_child;
+    else if (increase_child
+        && !(increase_child == &from_child && (!new_increase || detach_child))
+        && increase_child->increase
+        && increase_child->increase->allocation.isSuctioned())
+        suction_child = increase_child;
     auto eligible = [](const ISpaceSharedNode & child)
     {
         return child.increase && !child.increase->allocation.isIncreaseSuspended();
     };
-    auto suction = std::find_if(increasing_children.begin(), increasing_children.end(), [](const ISpaceSharedNode & child)
-    {
-        return child.increase && child.increase->allocation.isSuctioned();
-    });
     auto increasing = std::find_if(increasing_children.begin(), increasing_children.end(), eligible);
     auto pending = std::find_if(pending_children.begin(), pending_children.end(), eligible);
-    if (suction != increasing_children.end())
-        increase_child = &*suction;
+    if (suction_child)
+        increase_child = suction_child;
     else if (increasing != increasing_children.end())
         increase_child = &*increasing;
     else

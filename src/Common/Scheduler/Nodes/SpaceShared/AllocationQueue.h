@@ -53,7 +53,7 @@ public:
     UInt64 getPending() const;
 
 private:
-    bool setIncrease();
+    bool setIncrease(IncreaseRequest * preferred_suction = nullptr);
     bool setDecrease();
     void ensureUsable() const;
     void clearMemoryGrowthSuspension();

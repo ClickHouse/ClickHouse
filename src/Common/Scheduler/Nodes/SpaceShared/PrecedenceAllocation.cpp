@@ -213,16 +213,20 @@ bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRe
 
     // Update current increase request
     IncreaseRequest * old_increase = increase;
-    auto suction = std::find_if(increasing_children.begin(), increasing_children.end(), [](const ISpaceSharedNode & child)
-    {
-        return child.increase && child.increase->allocation.isSuctioned();
-    });
+    ISpaceSharedNode * suction_child = nullptr;
+    if (new_increase && new_increase->allocation.isSuctioned())
+        suction_child = &from_child;
+    else if (increase_child
+        && !(increase_child == &from_child && (!new_increase || detach_child))
+        && increase_child->increase
+        && increase_child->increase->allocation.isSuctioned())
+        suction_child = increase_child;
     auto eligible = std::find_if(increasing_children.begin(), increasing_children.end(), [](const ISpaceSharedNode & child)
     {
         return child.increase && !child.increase->allocation.isIncreaseSuspended();
     });
-    increase_child = suction != increasing_children.end()
-        ? &*suction
+    increase_child = suction_child
+        ? suction_child
         : (eligible == increasing_children.end() ? nullptr : &*eligible);
 
     /// Suspension is an internal reclaim state, not permission to cross a workload-policy boundary.

@@ -68,12 +68,14 @@ private:
     std::atomic<ForcedSpillOutcome> forced_spill_outcome = ForcedSpillOutcome::Pending;
     std::atomic<Int64> forced_spill_reclaimed_bytes = 0;
     bool forced_spill_active = false;
+    size_t forced_spill_remaining = 0; /// Protected by `mutex`.
 
     // When there is no need to spill, return nullptr. otherwise return top_processor;
     IProcessor * selectSpilledProcessor(
         IProcessor * current_processor, const ProcessorMemoryStats & mem_stats, bool force_spill);
 
     void updateTopProcessor();
+    void completeForcedSpillProcessor(UInt64 epoch, ProcessorState & state);
 
     Int64 getHardLimit();
 };
