@@ -170,7 +170,7 @@ ManifestFileCacheKeys getManifestList(
 
         insertRowToLogTable(
             local_context,
-            manifest_list_deserializer.getMetadataContent(),
+            [&] { return manifest_list_deserializer.getMetadataContent(); },
             DB::IcebergMetadataLogLevel::ManifestListMetadata,
             persistent_table_components.path_resolver.getTableRoot(),
             filename,
@@ -235,7 +235,7 @@ ManifestFileCacheKeys getManifestList(
 
             insertRowToLogTable(
                 local_context,
-                manifest_list_deserializer.getContent(i),
+                [&] { return manifest_list_deserializer.getContent(i); },
                 DB::IcebergMetadataLogLevel::ManifestListEntry,
                 persistent_table_components.path_resolver.getTableRoot(),
                 filename,
