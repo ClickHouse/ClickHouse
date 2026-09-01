@@ -35,6 +35,11 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (dag.hasNonDeterministic())
         return 0;
 
+    /// `split` hands the before/after halves off by column name, so a computed node reusing an input name
+    /// (`CAST(x, ...) AS x`) could swap the two carriers across the step. Leave such DAGs alone.
+    if (dag.hasInputNameShadowedByComputedNode())
+        return 0;
+
     auto extracted = dag.extractFirstArrayJoin();
     if (!extracted)
         return 0;

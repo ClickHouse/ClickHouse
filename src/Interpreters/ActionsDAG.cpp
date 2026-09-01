@@ -2205,6 +2205,19 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
+bool ActionsDAG::hasInputNameShadowedByComputedNode() const
+{
+    std::unordered_set<std::string_view> input_names;
+    for (const auto * input : inputs)
+        input_names.insert(input->result_name);
+
+    for (const auto & node : nodes)
+        if (node.type != ActionType::INPUT && input_names.contains(node.result_name))
+            return true;
+
+    return false;
+}
+
 void ActionsDAG::decorrelate()
 {
     for (auto & node : nodes)
