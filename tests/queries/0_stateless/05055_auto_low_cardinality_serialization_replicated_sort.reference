@@ -13,4 +13,4 @@
 2	['2']	[]
 2	['2']	[]
 ---
-Array(LowCardinality(String))	Array(LowCardinality(String)), Array(size = 6, UInt64(size = 6), LowCardinality(size = 6, UInt8(size = 6), Unique(size = 4, String(size = 4))))
+Array(LowCardinality(String))	Array(LowCardinality(String)), Array(size = N, UInt64(size = N), LowCardinality(size = N, UInt8(size = N), Unique(size = N, String(size = N))))

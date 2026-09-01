@@ -20,7 +20,9 @@ ORDER BY 1, 2, 3;
 
 SELECT '---';
 
-SELECT toTypeName(l.value), dumpColumnStructure(l.value)
+-- The exact block sizes depend on randomized settings (block size, join order), so only the nesting
+-- of the column structure is asserted here - that is what the materialization bug used to break.
+SELECT toTypeName(l.value), replaceRegexpAll(dumpColumnStructure(l.value), 'size = \\d+', 'size = N')
 FROM
 (
     SELECT toString(number % 3) :: LowCardinality(String) AS key, [toString(number % 3)] :: Array(LowCardinality(String)) AS value
