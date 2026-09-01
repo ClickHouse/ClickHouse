@@ -149,6 +149,41 @@ TEST(RequestQueue, FairWeightLoweringByAge)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{101, 201, 202, 102}));
 }
 
+/// fair, weight lowering by attained IO bytes: once a query has attained enough IO its weight is
+/// lowered, deprioritising its later requests versus a fresh query. Attained-service thresholds
+/// (unlike age) only take effect after the query has been served, so the queue is driven
+/// pop-then-push here.
+TEST(RequestQueue, FairWeightLoweringByIoBytes)
+{
+    Fixture f(SchedulerAlgorithm::Fair); // IOByte
+    auto * heavy = f.makeQuery(/*weight*/ 1.0, /*factor*/ 0.5, /*age_s*/ 0, /*cpu_s*/ 0, /*io_b*/ 1);
+    auto * fresh = f.makeQuery(/*weight*/ 1.0, /*factor*/ 1.0, 0, 0, 0);
+    // Serve one 1-byte request from `heavy` so its attained IO (1) reaches the threshold; from here
+    // its effective weight is halved (0.5), so its virtual runtime advances twice as fast.
+    f.enqueue(0, heavy, 1);
+    ASSERT_EQ(f.dequeueIds(), (std::vector<int>{0}));
+    f.enqueue(1, heavy, 1); // H1
+    f.enqueue(2, heavy, 1); // H2
+    f.enqueue(3, fresh, 1); // F1
+    f.enqueue(4, fresh, 1); // F2
+    f.enqueue(5, fresh, 1); // F3
+    // The halved weight pushes heavy's second post-threshold request (id 2) to the back; without
+    // the lowering it would land ahead of F3 (id 5).
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{3, 1, 4, 5, 2}));
+}
+
+/// fair, three equal-weight queries are interleaved round-robin.
+TEST(RequestQueue, FairEqualWeightThreeQueries)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    auto * c = f.makeQuery(1.0);
+    f.enqueue(11, a); f.enqueue(21, b); f.enqueue(31, c);
+    f.enqueue(12, a); f.enqueue(22, b); f.enqueue(32, c);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 31, 12, 22, 32}));
+}
+
 /// las: the query that has attained the least service is served first.
 TEST(RequestQueue, LasFavoursLeastAttained)
 {

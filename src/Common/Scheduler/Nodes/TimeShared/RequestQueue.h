@@ -208,6 +208,13 @@ private:
     /// Effective weight = base weight, lowered once by `weight_lowering_factor` as soon as the
     /// query crosses ANY configured threshold (age, attained CPU-seconds, or attained IO-bytes).
     /// Thresholds do not combine: the first to trip applies the full lowering.
+    ///
+    /// NOTE: this is sampled at `push()` time (when a request is keyed), so lowering applies from the
+    /// threshold-crossing forward: requests a query already had queued when it crosses the threshold
+    /// keep their full-weight `vstart` and are not re-ordered — only its subsequent requests advance
+    /// virtual runtime at the lowered weight. The lag is bounded by the query's in-flight request
+    /// count at the crossing, and lowering is a single-step heuristic bias, so this is acceptable
+    /// (unlike `las`, where staleness is corrected on `pop()`).
     double effectiveWeight(const ResourceSchedulingContext & ctx, const ResourceSchedulingContext::ResourceState & state) const
     {
         bool lowered = false;
