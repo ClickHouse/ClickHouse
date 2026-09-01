@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-detach, no-replicated-database
+# Tags: long, no-flaky-check, no-random-detach, no-replicated-database
 # no-random-detach: test uses DETACH/ATTACH itself
 # long: comprehensive regression suite (RBAC users, BACKUP/RESTORE, many DETACH/ATTACH cycles) whose
 #       cumulative time across flaky-check reruns exceeds the flaky-check budget, though each run is quick
+# no-flaky-check: the flaky check reruns a test 50 times; a single run of this suite already takes tens of
+#       seconds on a sanitizer build, so the reruns hit the per-test timeout. The suite is deterministic
+#       (it drives every `DETACH`/`ATTACH` itself and is `no-random-detach`), so there is nothing for the
+#       flaky check to shake out here.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
