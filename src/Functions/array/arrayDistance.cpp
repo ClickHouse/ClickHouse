@@ -807,6 +807,26 @@ public:
 
 
 private:
+    /// Mirror of the getLeastSupertype-based mapping in getReturnTypeImpl: the result is Float32
+    /// iff both operand types are representable in Float32 (small ints, BFloat16, Float32) and at
+    /// least one of them is a small float (otherwise the supertype is an integer type, which maps
+    /// to Float64). For every (left, right) pair exactly one ResultType is reachable, so guarding
+    /// the kernel instantiations with this predicate halves the number of instantiations.
+    template <typename T>
+    static constexpr bool is_small_float = std::is_same_v<T, BFloat16> || std::is_same_v<T, Float32>;
+
+    template <typename T>
+    static constexpr bool fits_float32 = is_small_float<T>
+        || std::is_same_v<T, UInt8> || std::is_same_v<T, UInt16> || std::is_same_v<T, Int8> || std::is_same_v<T, Int16>;
+
+    template <typename ResultType, typename FirstArgType, typename SecondArgType>
+    static constexpr bool isReachableResultType()
+    {
+        constexpr bool is_float32_result = fits_float32<FirstArgType> && fits_float32<SecondArgType>
+            && (is_small_float<FirstArgType> || is_small_float<SecondArgType>);
+        return std::is_same_v<ResultType, Float32> == is_float32_result;
+    }
+
     template <typename ResultType>
     ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
@@ -841,7 +861,13 @@ private:
         {
         #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, type>(arguments[0].column, arguments[1].column, input_rows_count, arguments); \
+                if constexpr (isReachableResultType<ResultType, LeftType, type>()) \
+                    return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, type>(arguments[0].column, arguments[1].column, input_rows_count, arguments); \
+                else \
+                    throw Exception( \
+                        ErrorCodes::LOGICAL_ERROR, \
+                        "Result type {} of function {} is impossible for operand types {} and {}", \
+                        TypeName<ResultType>, getName(), TypeName<LeftType>, TypeName<type>); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
