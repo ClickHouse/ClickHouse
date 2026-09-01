@@ -106,6 +106,12 @@ if (ARCH_AMD64)
             LIBC_TARGET_CPU_HAS_NEAREST_INT=1
             LIBC_TARGET_CPU_HAS_AVX=1
             LIBC_TARGET_CPU_HAS_AVX2=1
+            # Copies >= 16 KiB via rep movsb: on ERMS cores (all of x86-64-v3) it
+            # beats the SIMD loop for large copies (measured +10..25% for
+            # 16 KiB..1 MiB on Zen 5) while leaving smaller sizes on the SIMD
+            # tiers, where rep startup latency would hurt. Not set for the v2
+            # compat build, whose baseline predates ERMS.
+            LIBC_COPT_MEMCPY_X86_USE_REPMOVSB_FROM_SIZE=16384
         )
     else()
         # v4: AVX-512 (F/BW/DQ/CD/VL). -mprefer-vector-width=512 forces clang to
@@ -126,6 +132,8 @@ if (ARCH_AMD64)
             LIBC_TARGET_CPU_HAS_AVX2=1
             LIBC_TARGET_CPU_HAS_AVX512_F=1
             LIBC_TARGET_CPU_HAS_AVX512_BW=1
+            # See the v3 comment; every AVX-512 core also has ERMS.
+            LIBC_COPT_MEMCPY_X86_USE_REPMOVSB_FROM_SIZE=16384
         )
         target_compile_options(libllvmlibc PRIVATE -mprefer-vector-width=512)
     endif()
