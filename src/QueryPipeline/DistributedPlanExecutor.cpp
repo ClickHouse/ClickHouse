@@ -1981,18 +1981,20 @@ void DistributedQueryPlanExecutor::start()
 
 bool DistributedQueryPlanExecutor::execute(UInt64 poll_timeout_ms)
 {
-    if (running_stages.empty())
-        return true;
-
-    auto & stage_name = running_stages.front();
-    bool stage_finished = waitForStage(stage_name, poll_timeout_ms);
-    if (stage_finished)
+    /// Multiple stages could have finished already: drain them until the first unfinished one.
+    /// Only the first wait may block; the rest are non-blocking checks.
+    while (!running_stages.empty())
     {
+        auto & stage_name = running_stages.front();
+        if (!waitForStage(stage_name, poll_timeout_ms))
+            return false;
+
         LOG_DEBUG(logger, "Stage '{}' finished", stage_name);
         running_stages.pop_front();
+        poll_timeout_ms = 0;
     }
 
-    return false;
+    return true;
 }
 
 std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(

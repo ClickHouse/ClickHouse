@@ -71,6 +71,29 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_9>
+            <my_rule_13>
+                <url>/api/v1/metadata</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_13>
+            <!-- A table which never gets any metrics metadata: /api/v1/metadata must return an empty result for it. -->
+            <my_rule_14>
+                <url>/empty/api/v1/metadata</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_empty</table>
+                </handler>
+            </my_rule_14>
+            <!-- A table with a metric family having multiple metadata entries: for testing limit_per_metric. -->
+            <my_rule_15>
+                <url>/multi/api/v1/metadata</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_multi</table>
+                </handler>
+            </my_rule_15>
 
             <my_rule_10>
                 <!-- This handler sets no database and no table, so both database and table names

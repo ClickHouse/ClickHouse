@@ -19,40 +19,36 @@ Você pode usar o [AWS PrivateLink](https://aws.amazon.com/privatelink/) para es
 
 Para restringir o acesso aos seus serviços do ClickHouse Cloud exclusivamente por meio de endereços do AWS PrivateLink, siga as instruções fornecidas pelo ClickHouse Cloud em [IP Access Lists](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters).
 
-<Note>
-  O ClickHouse Cloud oferece suporte a [PrivateLink entre regiões](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/) nas seguintes regiões:
+O ClickHouse Cloud oferece suporte a [PrivateLink entre regiões](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region) para serviços hospedados nas seguintes regiões da AWS:
 
-  * sa-east-1
-  * il-central-1
-  * me-south-1
-  * mx-central-1
-  * eu-central-2
-  * eu-north-1
-  * eu-south-2
-  * eu-west-3
-  * eu-south-1
-  * eu-west-2
-  * eu-west-1
-  * eu-central-1
-  * ca-west-1
-  * ca-central-1
-  * ap-northeast-1
-  * ap-southeast-2
-  * ap-southeast-1
-  * ap-northeast-2
-  * ap-northeast-3
-  * ap-south-1
-  * ap-southeast-5
-  * ap-southeast-4
-  * ap-southeast-3
-  * ap-south-2
-  * ap-east-1
-  * af-south-1
-  * us-west-2
-  * us-west-1
-  * us-east-2
-  * us-east-1
-</Note>
+A tabela abrange apenas regiões de hospedagem de serviços. As regiões de endpoint de VPC de interface do consumidor usam uma lista de permissões separada; por exemplo, `mx-central-1` é uma região de consumidor permitida, embora os serviços hospedados nela não possam habilitar o acesso entre regiões.
+
+| Código da região | Nome da região              |
+| ---------------- | --------------------------- |
+| `af-south-1`     | África (Cidade do Cabo)     |
+| `ap-east-1`      | Ásia-Pacífico (Hong Kong)   |
+| `ap-northeast-1` | Ásia-Pacífico (Tóquio)      |
+| `ap-northeast-2` | Ásia-Pacífico (Seul)        |
+| `ap-south-1`     | Ásia-Pacífico (Mumbai)      |
+| `ap-southeast-1` | Ásia-Pacífico (Singapura)   |
+| `ap-southeast-2` | Ásia-Pacífico (Sydney)      |
+| `ap-southeast-3` | Ásia-Pacífico (Jacarta)     |
+| `ap-southeast-5` | Ásia-Pacífico (Malásia)     |
+| `ca-central-1`   | Canadá (Central)            |
+| `eu-central-1`   | Europa (Frankfurt)          |
+| `eu-north-1`     | Europa (Estocolmo)          |
+| `eu-west-1`      | Europa (Irlanda)            |
+| `eu-west-2`      | Europa (Londres)            |
+| `il-central-1`   | Israel (Tel Aviv)           |
+| `me-central-1`   | Oriente Médio (EAU)         |
+| `sa-east-1`      | América do Sul (São Paulo)  |
+| `us-east-1`      | Leste dos EUA (N. Virginia) |
+| `us-east-2`      | Leste dos EUA (Ohio)        |
+| `us-west-2`      | Oeste dos EUA (Oregon)      |
+
+<Warning>
+  O PrivateLink entre regiões não é compatível com serviços do ClickHouse Cloud hospedados em `ap-east-2` ou `mx-central-1`. Para se conectar a um serviço em qualquer uma dessas regiões usando o PrivateLink, crie o endpoint da VPC de interface na mesma região da AWS do serviço.
+</Warning>
 
 <Note>
   A AWS cobra pela transferência de dados entre regiões. Consulte os [preços do AWS PrivateLink](https://aws.amazon.com/privatelink/pricing/) para obter detalhes.
@@ -376,61 +372,51 @@ Neste exemplo, a conexão usando o valor do nome de host `privateDnsHostname` se
   ## Solução de problemas
 </div>
 
-<div id="multiple-privatelinks-in-one-region">
-  ### Vários PrivateLinks em uma região
-</div>
+<AccordionGroup>
+  <Accordion title="Vários PrivateLinks em uma região" id="multiple-privatelinks-in-one-region">
+    Na maioria dos casos, você só precisa criar um único serviço de endpoint para cada VPC. Esse endpoint pode rotear solicitações da VPC para vários serviços do ClickHouse Cloud.
+    Consulte [aqui](#considerations)
+  </Accordion>
 
-Na maioria dos casos, você só precisa criar um único serviço de endpoint para cada VPC. Esse endpoint pode encaminhar solicitações da VPC para vários serviços do ClickHouse Cloud.
-Consulte [aqui](#considerations)
+  <Accordion title="Tempo limite esgotado na conexão com o endpoint privado" id="connection-to-private-endpoint-timed-out">
+    * Anexe o grupo de segurança ao endpoint da VPC.
+    * Verifique as regras de `inbound` no grupo de segurança anexado ao endpoint e permita as portas do ClickHouse.
+    * Verifique as regras de `outbound` no grupo de segurança anexado à VM usada para o teste de conectividade e permita conexões com as portas do ClickHouse.
+  </Accordion>
 
-<div id="connection-to-private-endpoint-timed-out">
-  ### A conexão com o endpoint privado expirou
-</div>
+  <Accordion title="Hostname privado: endereço do host não encontrado" id="private-hostname-not-found-address-of-host">
+    * Verifique sua configuração de DNS
+  </Accordion>
 
-* Anexe o Security Group ao endpoint da VPC.
-* Verifique as regras de `inbound` no Security Group anexado ao Endpoint e libere as portas do ClickHouse.
-* Verifique as regras de `outbound` no Security Group anexado à VM usada para o teste de conectividade e permita conexões às portas do ClickHouse.
+  <Accordion title="Conexão redefinida pelo par" id="connection-reset-by-peer">
+    * Muito provavelmente, o ID do endpoint não foi adicionado à lista de permissões do serviço. Consulte a [etapa](#add-endpoint-id-to-services-allow-list)
+  </Accordion>
 
-<div id="private-hostname-not-found-address-of-host">
-  ### Hostname privado: endereço do host não encontrado
-</div>
+  <Accordion title="Verificando filtros de endpoint" id="checking-endpoint-filters">
+    Defina as seguintes variáveis de ambiente antes de executar qualquer comando:
 
-* Verifique sua configuração de DNS
+    ```bash
+    KEY_ID=<Key ID>
+    KEY_SECRET=<Key secret>
+    ORG_ID=<please set ClickHouse organization ID>
+    INSTANCE_ID=<Instance ID>
+    ```
 
-<div id="connection-reset-by-peer">
-  ### Conexão redefinida pelo host remoto
-</div>
+    Você pode obter `INSTANCE_ID` na [etapa](#option-2-api).
 
-* Muito provavelmente, o Endpoint ID não foi adicionado à lista de permissões do serviço; consulte o [passo](#add-endpoint-id-to-services-allow-list)
+    ```shell
+    curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+    -X GET -H "Content-Type: application/json" \
+    "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
+    jq .result.privateEndpointIds
+    ```
+  </Accordion>
 
-<div id="checking-endpoint-filters">
-  ### Verificando os filtros de endpoint
-</div>
+  <Accordion title="Conectando-se a um banco de dados remoto" id="connecting-to-a-remote-database">
+    De acordo com a [documentação do AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
 
-Defina as seguintes variáveis de ambiente antes de executar qualquer comando:
+    > Use o AWS PrivateLink quando houver uma configuração cliente/servidor em que você queira permitir que uma ou mais VPCs consumidoras tenham acesso unidirecional a um serviço específico ou a um conjunto de instâncias na VPC do provedor de serviço. Somente os clientes na VPC consumidora podem iniciar uma conexão com o serviço na VPC do provedor de serviço.
 
-```bash
-KEY_ID=<Key ID>
-KEY_SECRET=<Key secret>
-ORG_ID=<please set ClickHouse organization ID>
-INSTANCE_ID=<Instance ID>
-```
-
-Você pode obter `INSTANCE_ID` na [etapa](#option-2-api).
-
-```shell
-curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
--X GET -H "Content-Type: application/json" \
-"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
-jq .result.privateEndpointIds
-```
-
-<div id="connecting-to-a-remote-database">
-  ### Conectando-se a um banco de dados remoto
-</div>
-
-De acordo com a [documentação do AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
-
-> Use o AWS PrivateLink quando houver uma configuração cliente/servidor em que você queira permitir que uma ou mais VPCs consumidoras tenham acesso unidirecional a um serviço específico ou a um conjunto de instâncias na VPC do provedor de serviço. Somente os clientes na VPC consumidora podem iniciar uma conexão com o serviço na VPC do provedor de serviço.
-
-Para conectar as funções de tabela [MySQL](/pt-BR/reference/functions/table-functions/mysql) ou [PostgreSQL](/pt-BR/reference/functions/table-functions/postgresql) no ClickHouse Cloud a um banco de dados hospedado na sua VPC da AWS, configure seus grupos de segurança da AWS para permitir conexões do ClickHouse Cloud. Consulte os [endereços IP de egress padrão das regiões do ClickHouse Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api), juntamente com os [endereços IP estáticos disponíveis](https://api.clickhouse.cloud/static-ips.json).
+    Para conectar as funções de tabela [MySQL](/pt-BR/reference/functions/table-functions/mysql) ou [PostgreSQL](/pt-BR/reference/functions/table-functions/postgresql) no ClickHouse Cloud a um banco de dados hospedado na sua VPC da AWS, configure seus grupos de segurança da AWS para permitir conexões do ClickHouse Cloud. Consulte os [endereços IP de egress padrão das regiões do ClickHouse Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api), juntamente com os [endereços IP estáticos disponíveis](https://api.clickhouse.cloud/static-ips.json).
+  </Accordion>
+</AccordionGroup>
