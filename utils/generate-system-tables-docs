@@ -184,43 +184,55 @@ def run_query(binary, config, query, use_client=False, extra_args=None):
     stderr = ""
     returncode = 0
     timed_out = False
+
+    def _as_text(value):
+        if value is None:
+            return ""
+        return value if isinstance(value, str) else value.decode("utf-8", errors="replace")
+
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         stdout = result.stdout
         stderr = result.stderr
         returncode = result.returncode
     except subprocess.TimeoutExpired as e:
-        def _as_text(x):
-            if x is None:
-                return ""
-            return x if isinstance(x, str) else x.decode("utf-8", errors="replace")
         stdout = _as_text(e.stdout)
         stderr = _as_text(e.stderr)
         returncode = -1
         timed_out = True
         print(f"Error: query timed out after 300 seconds: {query}", file=sys.stderr)
-    reader = csv.reader(io.StringIO(stdout), delimiter="\t")
-    rows = list(reader)
+    rows = list(csv.reader(io.StringIO(stdout), delimiter="\t"))
     # `clickhouse-local` can exit with a non-zero status because of races
     # between system log teardown and `Poco::Application` destruction, even
     # after the query has produced complete output to stdout. Tolerate that
-    # specific case only: the process must have exited cleanly (no timeout)
-    # and stdout must parse as TSVWithNamesAndTypes (header + types row).
-    # Timeouts always propagate, since partial output may be silently accepted
-    # otherwise.
-    if returncode != 0:
-        if not timed_out and len(rows) >= 2:
-            print(
-                f"Warning: query exited with code {returncode} but"
-                f" produced {len(rows)} rows of output, treating as success.",
-                file=sys.stderr,
-            )
-            if stderr:
-                print(f"stderr: {stderr}", file=sys.stderr)
-        else:
-            print(f"Error running query: {query}", file=sys.stderr)
+    # specific case only: when stdout parses as TSVWithNamesAndTypes (header +
+    # types row), retry once and accept only a clean second result. This avoids
+    # mistaking output truncated by a real exception for a complete result.
+    # Timeouts always propagate.
+    if returncode != 0 and not timed_out and len(rows) >= 2:
+        print(
+            f"Warning: query exited with code {returncode} after producing"
+            " parseable output; retrying once.",
+            file=sys.stderr,
+        )
+        if stderr:
             print(f"stderr: {stderr}", file=sys.stderr)
-            sys.exit(1)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            stdout = result.stdout
+            stderr = result.stderr
+            returncode = result.returncode
+            rows = list(csv.reader(io.StringIO(stdout), delimiter="\t"))
+        except subprocess.TimeoutExpired as e:
+            stderr = _as_text(e.stderr)
+            returncode = -1
+            timed_out = True
+            print(f"Error: query retry timed out after 300 seconds: {query}", file=sys.stderr)
+
+    if returncode != 0:
+        print(f"Error running query: {query}", file=sys.stderr)
+        print(f"stderr: {stderr}", file=sys.stderr)
+        sys.exit(1)
     if len(rows) < 2:
         return []
     headers = rows[0]

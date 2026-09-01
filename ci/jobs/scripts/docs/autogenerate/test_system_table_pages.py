@@ -2,10 +2,13 @@
 """Self-contained tests for structured system-table documentation generation."""
 
 import importlib.util
+import io
 import re
 import tempfile
+from contextlib import redirect_stderr
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from unittest.mock import patch
 
 
 HERE = Path(__file__).resolve().parent
@@ -52,6 +55,43 @@ def load_generator():
 def main():
     generator = load_generator()
     async_metrics_generator = generator.load_async_metrics_generator()
+
+    partial_result = generator.subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="name\tdescription\nString\tString\npartial\tIncomplete page\n",
+        stderr="Code: 999. Partial result",
+    )
+    complete_result = generator.subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout="name\tdescription\nString\tString\ncomplete\tComplete page\n",
+        stderr="",
+    )
+    with patch.object(
+        generator.subprocess,
+        "run",
+        side_effect=[partial_result, complete_result],
+    ) as run:
+        with redirect_stderr(io.StringIO()):
+            assert generator.run_query("clickhouse", None, "SELECT 1") == [
+                {"name": "complete", "description": "Complete page"}
+            ]
+        assert run.call_count == 2
+
+    with patch.object(
+        generator.subprocess,
+        "run",
+        side_effect=[partial_result, partial_result],
+    ) as run:
+        with redirect_stderr(io.StringIO()):
+            try:
+                generator.run_query("clickhouse", None, "SELECT 1")
+            except SystemExit as error:
+                assert error.code == 1
+            else:
+                raise AssertionError("Repeated partial output must fail")
+        assert run.call_count == 2
 
     attach_source = ATTACH_SOURCE.read_text(encoding="utf-8")
     attach_documents = dict(
