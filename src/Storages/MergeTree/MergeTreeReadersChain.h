@@ -32,11 +32,7 @@ using ColumnsForPatches = std::vector<ColumnsForPatch>;
 
 /// Cached for the same reason as `getMergeTreeRangeReaderLogger`: a readers chain is built for every
 /// read task, and `getLogger` would take a process-global mutex each time.
-inline LoggerPtr getMergeTreeReadersChainLogger()
-{
-    static LoggerPtr log = getLogger("MergeTreeReadersChain");
-    return log;
-}
+LoggerPtr getMergeTreeReadersChainLogger();
 
 class MergeTreeReadersChain
 {

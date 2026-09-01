@@ -32,11 +32,7 @@ using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
 
 /// Cached: `getLogger` takes a process-global mutex, and a read pipeline is built per read buffer.
-inline LoggerPtr getReadPipelineLogger()
-{
-    static LoggerPtr log = getLogger("ReadPipeline");
-    return log;
-}
+LoggerPtr getReadPipelineLogger();
 
 /// ReadPipeline: a declarative specification for creating a read buffer chain.
 ///

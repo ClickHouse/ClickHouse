@@ -165,12 +165,9 @@ public:
 };
 
 /// `getLogger` locks a process-global mutex and looks the logger up by name, while range readers are
-/// constructed once per read step for every read task, so the lookup is cached here.
-inline LoggerPtr getMergeTreeRangeReaderLogger()
-{
-    static LoggerPtr log = getLogger("MergeTreeRangeReader");
-    return log;
-}
+/// constructed once per read step for every read task, so the lookup is cached in a function-local
+/// static (defined in the .cpp, so that the cache is not duplicated per shared object).
+LoggerPtr getMergeTreeRangeReaderLogger();
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
