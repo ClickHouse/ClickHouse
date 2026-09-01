@@ -39,16 +39,6 @@ namespace LIBC_NAMESPACE_DECL {
 CH_AVX512_CLONE static void *
 memcpy_ge64_avx512(Ptr __restrict dst, CPtr __restrict src, size_t count) {
   void *const ret = dst;
-  // Large copies via rep movsb on ERMS cores; see
-  // LIBC_COPT_MEMCPY_X86_USE_REPMOVSB_FROM_SIZE in the CMakeLists. This
-  // dispatch bypasses upstream's inline_memcpy_x86_maybe_interpose_repmovsb,
-  // so the threshold has to be honored here.
-  if constexpr (x86::K_REP_MOVSB_THRESHOLD != SIZE_MAX) {
-    if (LIBC_UNLIKELY(count >= x86::K_REP_MOVSB_THRESHOLD)) {
-      x86::Memcpy::repmovsb(dst, src, count);
-      return ret;
-    }
-  }
   if (count <= 128) {
     builtin::Memcpy<64>::head_tail(dst, src, count);
     return ret;
@@ -71,13 +61,6 @@ memcpy_ge64_avx512(Ptr __restrict dst, CPtr __restrict src, size_t count) {
 CH_NO_SSP static void *
 memcpy_ge64_baseline(Ptr __restrict dst, CPtr __restrict src, size_t count) {
   void *const ret = dst;
-  // Same rep movsb threshold as in memcpy_ge64_avx512 above.
-  if constexpr (x86::K_REP_MOVSB_THRESHOLD != SIZE_MAX) {
-    if (LIBC_UNLIKELY(count >= x86::K_REP_MOVSB_THRESHOLD)) {
-      x86::Memcpy::repmovsb(dst, src, count);
-      return ret;
-    }
-  }
   if constexpr (x86::K_AVX)
     inline_memcpy_x86_avx_ge64(dst, src, count);
   else
