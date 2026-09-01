@@ -220,15 +220,21 @@ public:
 
         /// Runtime arbitration between the kept-keys cutoff and external aggregation, shared by
         /// every stream (and every `Aggregator`) of one aggregation step. Spilled buckets would
-        /// bypass the restriction to the kept keys, and a table emptied by a spill under
-        /// `no_more_keys` would drop the remaining rows of the kept keys, so the two are mutually
-        /// exclusive, decided by whichever fires first:
+        /// bypass the restriction to the kept keys, so before the kept keys are frozen the two
+        /// exclude each other, decided by whichever fires first:
         /// - a stream that needs to spill before any freeze permanently abandons the cutoff
         ///   (`checkLimits` stops capping the tables, no rows have been dropped anywhere, and the
         ///   aggregation completes exactly, spilling as it would without the optimization);
-        /// - once the kept keys are frozen (or this stream has already stopped admitting keys),
-        ///   spilling is skipped: every table is bounded by the `max_rows_to_group_by` kept keys,
-        ///   which is the memory bound the cutoff provides.
+        /// - a freeze locks the cutoff in, and from then on only a table already rebuilt to the
+        ///   kept keys may spill.
+        /// After a freeze, capping the number of keys is not by itself a memory bound: the kept
+        /// keys are bounded, but their aggregate states are not (`uniqExact`, `groupArray`,
+        /// `topK`, the exact quantiles), so external aggregation has to stay available. A table
+        /// rebuilt to the kept keys holds nothing but kept keys, so flushing it to disk cannot
+        /// leak a dropped key into the result; the flush empties the table, which under
+        /// `no_more_keys` would drop the remaining rows of the kept keys, so the `Aggregator`
+        /// re-seeds it from `keptKeysSeed` right after the flush and keeps aggregating exactly.
+        /// A table that has not been rebuilt yet may not spill — it still holds arbitrary keys.
         /// Created by `AggregatingStep` when the cutoff is armed; null otherwise.
         struct SharedKeptKeysControl
         {
@@ -261,6 +267,27 @@ public:
             {
                 return state.load() == State::Abandoned;
             }
+
+            /// The frozen kept keys with empty aggregate states, in the mergeable block layout
+            /// (`ManyAggregatedData::SharedKeptKeys::seed`). Published by the freezing stream
+            /// before it sets `frozen`, so every stream that has applied the cutoff sees it.
+            /// Used to re-seed a table emptied by an external-aggregation spill.
+            void publishKeptKeysSeed(std::shared_ptr<const Block> seed)
+            {
+                std::lock_guard lock(seed_mutex);
+                if (!kept_keys_seed)
+                    kept_keys_seed = std::move(seed);
+            }
+
+            std::shared_ptr<const Block> keptKeysSeed() const
+            {
+                std::lock_guard lock(seed_mutex);
+                return kept_keys_seed;
+            }
+
+        private:
+            mutable std::mutex seed_mutex;
+            std::shared_ptr<const Block> kept_keys_seed;
         };
 
         std::shared_ptr<SharedKeptKeysControl> shared_kept_keys_control;
@@ -1236,7 +1263,12 @@ private:
     /// Arbitration between an external-aggregation spill and the kept-keys cutoff
     /// (see `Params::SharedKeptKeysControl`). Always true when the cutoff is not armed.
     /// May permanently abandon the cutoff, so call it only when the spill would proceed.
-    bool spillAllowedUnderKeptKeysCutoff(bool no_more_keys) const;
+    bool spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const;
+
+    /// Re-inserts the frozen kept keys, with empty states, into a table just emptied by a spill,
+    /// so the remaining rows of those keys keep being aggregated (see
+    /// `Params::SharedKeptKeysControl`). No-op unless the table is restricted to the kept keys.
+    void reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const;
 
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 

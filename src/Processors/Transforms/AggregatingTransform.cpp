@@ -1131,6 +1131,10 @@ void rebuildVariantsToKeptKeys(
             agg_chunk.chunk.detachColumns(), num_rows, /*is_overflows=*/false, variants, rebuild_no_more_keys, is_cancelled);
     }
 
+    /// From here on the table admits no key outside the kept set, which is what makes it safe to
+    /// flush it to a temporary file under the cutoff (see `Aggregator::Params::SharedKeptKeysControl`).
+    variants.restricted_to_kept_keys = true;
+
     ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysRebuilds);
 }
 
@@ -1393,6 +1397,10 @@ void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
         {
             shared.seed = buildKeptKeysSeedBlock(
                 own_chunks, params->getCustomHeader(/*final_=*/false), aggregator.getParams().keys_size, aggregator.getParams().max_rows_to_group_by);
+            /// The `Aggregator` re-seeds a table emptied by an external-aggregation spill from
+            /// here (see `Aggregator::Params::SharedKeptKeysControl`).
+            if (const auto & control = aggregator.getParams().shared_kept_keys_control)
+                control->publishKeptKeysSeed(std::make_shared<const Block>(shared.seed));
             shared.frozen.store(true, std::memory_order_release);
             LOG_TRACE(log, "Froze a shared set of {} kept keys for the GROUP BY LIMIT cutoff", shared.seed.rows());
         }
@@ -1427,6 +1435,14 @@ void AggregatingTransform::initGenerate()
         src_rows, rows, ReadableSize(src_bytes),
         elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
         ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
+
+    /// Only a table restricted to the kept keys may be flushed to a temporary file while the
+    /// cutoff holds, so apply it before the flush below (see ManyAggregatedData::SharedKeptKeys).
+    /// A spill under the cutoff can only happen after the freeze, so whenever there is temporary
+    /// data to join, the freeze is already visible here.
+    if (const auto & shared = many_data->shared_kept_keys;
+        shared && !no_more_keys && !variants.empty() && shared->frozen.load(std::memory_order_acquire))
+        applySharedKeptKeysCutoff(/*may_freeze=*/false);
 
     if (params->aggregator.hasTemporaryData())
     {

@@ -453,6 +453,13 @@ struct AggregatedDataVariants : private boost::noncopyable
     };
     Type type = Type::EMPTY;
     bool top_k_heap_ever_rejected = false;
+
+    /// The table was rebuilt to the frozen set of kept keys of the trivial `GROUP BY ... LIMIT`
+    /// cutoff (see `ManyAggregatedData::SharedKeptKeys`), so it admits no other key. Only such a
+    /// table may be flushed to a temporary file while the cutoff holds: everything it contains is
+    /// a kept key, and `Aggregator` re-seeds it with the kept keys after the flush so the
+    /// remaining rows of those keys keep being aggregated.
+    bool restricted_to_kept_keys = false;
     AggregatedDataVariants();
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }
