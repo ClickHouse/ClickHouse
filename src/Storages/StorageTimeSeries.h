@@ -74,6 +74,10 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// With `FINAL` the read deduplicates unmerged rows of the inner "tags" table, so a series is returned
+    /// exactly once (see `makeASTSelectFromTimeSeries`).
+    bool supportsFinal() const override { return true; }
+
     static VirtualColumnsDescription createVirtuals();
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
