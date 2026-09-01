@@ -9387,6 +9387,65 @@ void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util:
     }
 }
 
+static void maskURLCredentials(String & text)
+{
+    maskURIPassword(&text);
+    /// A presigned parameter with nothing after it runs to the end of the text, so only a whole URL is sound to scan.
+    if (isOneWholeURL(text))
+        maskPresignedURLParameters(text);
+}
+
+/// A serialized composite is not a URL and its punctuation closes the value, so its leaves are masked instead.
+static void maskURLCredentialsInLeaves(Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::String:
+            maskURLCredentials(field.safeGet<String>());
+            return;
+        case Field::Types::Array:
+            for (Field & element : field.safeGet<Array>())
+                maskURLCredentialsInLeaves(element);
+            return;
+        case Field::Types::Tuple:
+            for (Field & element : field.safeGet<Tuple>())
+                maskURLCredentialsInLeaves(element);
+            return;
+        case Field::Types::Map:
+            for (Field & element : field.safeGet<Map>())
+                maskURLCredentialsInLeaves(element);
+            return;
+        case Field::Types::Object:
+            for (auto & element : field.safeGet<Object>())
+                maskURLCredentialsInLeaves(element.second);
+            return;
+        case Field::Types::AggregateFunctionState:
+        {
+            AggregateFunctionStateData & state = field.safeGet<AggregateFunctionStateData>();
+            maskURLCredentials(state.name);
+            maskURLCredentials(state.data);
+            return;
+        }
+        default:
+            return;
+    }
+}
+
+static String maskedSettingValue(const SettingsTraits::Accessor & accessor, const SettingsImpl & settings, size_t index)
+{
+    if (accessor.getTypeName(index) == "Map")
+    {
+        Field field = accessor.getValue(settings, index);
+        maskURLCredentialsInLeaves(field);
+        /// Re-serialized through the setting's own type, so an unmasked value stays byte-identical.
+        return accessor.valueToStringUtil(index, field);
+    }
+
+    String value = accessor.getValueString(settings, index);
+    maskURLCredentials(value);
+    return value;
+}
+
 /// Both settings maps below are display-only, so a secret is hidden in them as ASTSetQuery hides it in the query text.
 static String maskedCustomSettingValue(const SettingFieldCustom & field)
 {
@@ -9394,9 +9453,9 @@ static String maskedCustomSettingValue(const SettingFieldCustom & field)
     if (field.value.tryGet<CustomType>(custom) && custom.isSecret())
         return custom.toString(/* show_secrets */ false);
 
-    String value = field.toString();
-    maskURIPassword(&value);
-    return value;
+    Field masked = field.value;
+    maskURLCredentialsInLeaves(masked);
+    return masked.dump();
 }
 
 void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
@@ -9421,8 +9480,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
             continue;
 
         const auto & name = accessor.getName(i);
-        auto value = accessor.getValueString(*this, i);
-        maskURIPassword(&value);
+        auto value = maskedSettingValue(accessor, *this, i);
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
         ++size;
@@ -9455,8 +9513,7 @@ std::map<String, String> SettingsImpl::changedToMap() const
         if (!accessor.isValueChanged(*this, i))
             continue;
 
-        String value = accessor.getValueString(*this, i);
-        maskURIPassword(&value);
+        String value = maskedSettingValue(accessor, *this, i);
         result.emplace(accessor.getName(i), std::move(value));
     }
 

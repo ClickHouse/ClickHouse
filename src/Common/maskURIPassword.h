@@ -116,6 +116,28 @@ inline bool maskURIUserinfo(std::string & url)
     return true;
 }
 
+/// Whether the text is one whole URL: it opens with a scheme and holds no whitespace, which a URL cannot contain.
+inline bool isOneWholeURL(std::string_view text)
+{
+    static constexpr std::string_view SEPARATOR = "://";
+
+    auto is_letter = [](char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); };
+    auto is_letter_or_digit = [&](char c) { return is_letter(c) || ('0' <= c && c <= '9'); };
+
+    if (text.empty() || !is_letter(text[0]))
+        return false;
+
+    size_t scheme_end = 1;
+    while (scheme_end < text.length()
+           && (is_letter_or_digit(text[scheme_end]) || text[scheme_end] == '+' || text[scheme_end] == '.' || text[scheme_end] == '-'))
+        ++scheme_end;
+
+    if (text.compare(scheme_end, SEPARATOR.length(), SEPARATOR) != 0)
+        return false;
+
+    return text.find_first_of(" \t\n\v\f\r") == std::string_view::npos;
+}
+
 /** Mask the values of the query parameters that carry credentials in a presigned URL, so that
   * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
   * is masked. Returns whether anything was masked.

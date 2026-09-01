@@ -9,6 +9,14 @@ PLAIN_URL="http://registry.invalid:8080/subjects"
 SECRET_DISK="disk(type = 's3', endpoint = 'http://localhost:9000/x', access_key_id = 'AK_LEAK_CANARY', secret_access_key = 'SK_LEAK_CANARY')"
 SECRET_BASE="http://baseuser:URL_BASE_LEAK_CANARY_4c1e7d@base.invalid/dir/"
 SECRET_CUSTOM="http://customuser:CUSTOM_URI_LEAK_CANARY_7b2e91@custom.invalid/p"
+PRESIGNED="https://bucket.s3.amazonaws.com/k?X-Amz-Credential=PRESIGN_ID_CANARY_1a2b&X-Amz-Signature=PRESIGN_SIG_CANARY_9d4e&list-type=2"
+PLAIN_QUERY="https://bucket.s3.amazonaws.com/k?list-type=2&prefix=a/b"
+TEXT_AFTER_URL="https://b/k?X-Amz-Signature=FREE_TAIL_CANARY_6a4c and then some trailing words"
+TEXT_BEFORE_URL="note=https://b/k?X-Amz-Signature=FREE_HEAD_CANARY_7d5b"
+CREDENTIAL_THEN_COMMA="https://b/k?X-Amz-Signature=COMMA_TAIL_CANARY_3c8f,request=42"
+PRESIGNED_LAST="https://bucket.s3.amazonaws.com/k?list-type=2&X-Amz-Signature=PRESIGN_TAIL_CANARY_3f81"
+PRESIGNED_NESTED="https://bucket.s3.amazonaws.com/n?list-type=2&X-Amz-Signature=PRESIGN_NEST_CANARY_2b7a"
+PRESIGNED_MAP="https://bucket/k?X-Amz-Signature=PRESIGN_MAP_CANARY_5c7d"
 
 # A query_log entry is written after the response is sent, so wait for it to appear.
 # An empty result after the last attempt is printed as is and fails the test.
@@ -74,3 +82,55 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}" --data-binary "
 
 echo 'query_log, custom setting with a URI password'
 read_query_log "Settings['SQL_05054_uri']" settings_map_mask_custom_uri
+
+# A presigned URL carries its credential in query parameters instead of the userinfo.
+echo 'query_log, presigned URL parameters'
+$CLICKHOUSE_CLIENT -q "SELECT 1 FORMAT Null SETTINGS log_comment = 'settings_map_mask_presigned', s3_base = '$PRESIGNED'"
+read_query_log "Settings['s3_base']" settings_map_mask_presigned
+
+echo 'processes, presigned URL parameters'
+$CLICKHOUSE_CLIENT -q "
+    SELECT Settings['s3_base'] FROM system.processes
+    WHERE query_id = queryID() SETTINGS s3_base = '$PRESIGNED'"
+
+# A presigned parameter value runs to the end of the text, so free text is left alone. One arm per
+# half of that precondition, so removing either half reddens exactly one of them.
+echo 'processes, free text after the URL'
+$CLICKHOUSE_CLIENT -q "
+    SELECT Settings['log_comment'] FROM system.processes
+    WHERE query_id = queryID() SETTINGS log_comment = '$TEXT_AFTER_URL'"
+
+echo 'processes, free text before the URL'
+$CLICKHOUSE_CLIENT -q "
+    SELECT Settings['log_comment'] FROM system.processes
+    WHERE query_id = queryID() SETTINGS log_comment = '$TEXT_BEFORE_URL'"
+
+# A custom setting is shown as a Field dump, so the quotes and brackets around a masked leaf have to survive.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}" --data-binary \
+    "SET SQL_05054_tail = '$PRESIGNED_LAST', SQL_05054_nested = {'endpoint':'$PRESIGNED_NESTED','region':'eu-west-1'}"
+
+echo 'processes, custom setting ending in a credential'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}" --data-binary "
+    SELECT Settings['SQL_05054_tail'] FROM system.processes WHERE query_id = queryID()"
+
+echo 'processes, custom setting with a nested credential'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}" --data-binary "
+    SELECT Settings['SQL_05054_nested'] FROM system.processes WHERE query_id = queryID()"
+
+# A Map setting serializes to more than one value, so the entry after the credential has to survive.
+echo 'processes, Map setting with presigned URL parameters'
+$CLICKHOUSE_CLIENT -q "
+    SELECT Settings['http_response_headers'] FROM system.processes WHERE query_id = queryID()
+    SETTINGS http_response_headers = {'Location':'$PRESIGNED_MAP','X-Kept':'yes'}"
+
+# Query parameters that name no credential are passed through unchanged.
+echo 'processes, query parameters that are not credentials'
+$CLICKHOUSE_CLIENT -q "
+    SELECT Settings['s3_base'] FROM system.processes
+    WHERE query_id = queryID() SETTINGS s3_base = '$PLAIN_QUERY'"
+
+# A parameter value ends at the next '&' or '#', so a comma belongs to the credential it follows.
+echo 'processes, a credential followed by a comma'
+$CLICKHOUSE_CLIENT -q "
+    SELECT Settings['log_comment'] FROM system.processes
+    WHERE query_id = queryID() SETTINGS log_comment = '$CREDENTIAL_THEN_COMMA'"
