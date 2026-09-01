@@ -619,6 +619,11 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     const bool full_pushdown = other_key_set.empty() && !condition_extends_keys
         && isFullPushdownAllowed(join_operator.kind, join_operator.strictness, side);
 
+    /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split that
+    /// variant A is; variant B keeps a single final aggregation and stays legal under it.
+    if (!full_pushdown && memo.getContext().distributed_plan_force_shuffle_aggregation)
+        return nullptr;
+
     /// The rebuilt pushed-side header (keys + aggregate state columns) must have unique names
     /// disjoint from the other side's - `JoinExpressionActions` requires it.
     NameSet new_pushed_names = pushed_key_set;

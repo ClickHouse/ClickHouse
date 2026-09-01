@@ -207,6 +207,22 @@ SELECT countIf(explain LIKE '%Exchange%') >= 1, countIf(trimLeft(explain) LIKE '
 SELECT '-- 27. nested aggregation over a variant-B pushdown: outer aggregation reuses the pushed join as-is (no further cascade, see comment above)';
 EXPLAIN SELECT k, max(c) AS total FROM (SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 LEFT ANY JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key) GROUP BY k;
 
+-- `distributed_plan_force_shuffle_aggregation` forbids only the partial + merge split (variant A);
+-- variant B keeps a single final aggregation and must stay available under it. The expensive
+-- build side is what makes the pushed plan win here: the aggregation shuffles the facts either
+-- way under the setting, but probing the 50M-row hash table with ~100 aggregated rows beats
+-- probing it with 100M raw ones. The pinned shape (the single `Aggregating` BELOW the join) is
+-- itself the proof that the rule fired.
+SELECT '-- 28. force-shuffle: variant B still fires under distributed_plan_force_shuffle_aggregation';
+SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 50000000, "avg_row_bytes": 20, "distinct_keys": {"key": 50000000}}}';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT SEMI JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key
+SETTINGS distributed_plan_force_shuffle_aggregation = 1;
+SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
+
+SELECT '-- 29. force-shuffle: an A-shaped query (case 1''s) is not pushed, classic shuffle shape';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key
+SETTINGS distributed_plan_force_shuffle_aggregation = 1;
+
 DROP TABLE t_push_facts;
 DROP TABLE t_push_dims;
 DROP TABLE t_push_dims_multi;

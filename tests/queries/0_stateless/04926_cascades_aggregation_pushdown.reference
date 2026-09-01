@@ -393,3 +393,26 @@ Expression ((Project names + Projection))
             Aggregating
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 28. force-shuffle: variant B still fires under distributed_plan_force_shuffle_aggregation
+GatherExchange
+  Expression ((Project names + Projection))
+    JoinLogical (Shuffle HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table2.key)
+        Expression (Change column names to column identifiers)
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_push_dims)
+      Aggregating
+        Filter
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 29. force-shuffle: an A-shaped query (case 1\'s) is not pushed, classic shuffle shape
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        ShuffleExchange
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)

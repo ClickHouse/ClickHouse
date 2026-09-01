@@ -123,12 +123,9 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     addRule(createTwoStageAggregationTransformation());
     /// Registered conditionally: the rule can never apply when the setting is off,
     /// and the optimizer is built per query, so the gate belongs here.
-    /// `distributed_plan_force_shuffle_aggregation` fully disables it too: a pushed partial +
-    /// merge is exactly the split that setting forbids, and keyless aggregations (which the
-    /// shuffle strategy cannot apply to) are already excluded by the rule's own
-    /// `params.keys.empty()` bail-out.
-    if (memo.getContext().cascades_aggregation_pushdown
-        && !memo.getContext().distributed_plan_force_shuffle_aggregation)
+    /// `distributed_plan_force_shuffle_aggregation` does not disable the whole rule: it forbids
+    /// only the partial + merge split (variant A), which the rule skips itself.
+    if (memo.getContext().cascades_aggregation_pushdown)
         addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
     addRule(createLocalReadImplementation());
