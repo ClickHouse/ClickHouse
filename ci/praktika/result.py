@@ -937,9 +937,10 @@ class Result(MetaClasses.Serializable):
         :param command_kwargs: Keyword arguments for the callable command.
         :param retries: The number of times to retry the command if it fails.
         :param retry_errors: The errors to retry on. Support for shell command(s) only.
-        :param retry_deadline: Seconds the retry ladder may span, measured from the first
-            retryable failure. Bounds a class whose per-attempt cost varies, which an
-            attempt count cannot. Shell command(s) only. None keeps the count as the
+        :param retry_deadline: Seconds after the first retryable failure past which no further
+            attempt is started. An attempt already running is not interrupted, so the ladder can
+            outlast this by one attempt's own bound. Bounds a class whose per-attempt cost varies,
+            which an attempt count cannot. Shell command(s) only. `None` keeps the count as the
             only bound.
         :param env: Optional environment dict for shell commands (e.g. the job
             python env so PYTHONPATH carries the checkout root for `ci.*` imports).

@@ -398,8 +398,9 @@ BUILDX_TIMEOUT_FLOOR = 60
 # Only attempts that run to their bound price the job envelope; a registry error fails in
 # about a second. So this, not BUILDX_RETRIES, is what buildx_timeout divides by.
 BUILDX_EXPENSIVE_ATTEMPTS = 2
-# Wall clock the ladder may span, from the first retryable failure. Expiries stay bounded
-# by BUILDX_EXPENSIVE_ATTEMPTS while this is <= BUILDX_TIMEOUT_FLOOR + 6.
+# Seconds after the first retryable failure past which no further attempt is started; an
+# attempt already running still gets its whole bound. Expiries stay bounded by
+# `BUILDX_EXPENSIVE_ATTEMPTS` while this is <= `BUILDX_TIMEOUT_FLOOR` + 6.
 BUILDX_RETRY_DEADLINE = 30
 
 
