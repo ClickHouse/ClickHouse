@@ -578,3 +578,41 @@ OPTIMIZE TABLE t_nested_filtered_default_2d FINAL;
 SELECT id, `n.a`, `n.b` FROM t_nested_filtered_default_2d ORDER BY id;
 
 DROP TABLE t_nested_filtered_default_2d;
+
+-- The same alias dependency on a part layout that merges horizontally. A packed part makes
+-- `chooseMergeAlgorithm` pick `Horizontal`, and only that branch hands the expired columns to the
+-- TTL step, which fills them with the value of their `DEFAULT`. That value is exactly the one that
+-- disagrees with the shared `Nested` offsets, and an `ALIAS` dependency is not even resolvable
+-- there (an alias column is never part of the block), so a column expired because its `DEFAULT`
+-- cannot be materialized must be kept out of that step and recomputed on read instead.
+DROP TABLE IF EXISTS t_nested_alias_packed;
+
+CREATE TABLE t_nested_alias_packed (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    min_bytes_for_full_part_storage = 1000000000;
+
+SYSTEM STOP MERGES t_nested_alias_packed;
+
+INSERT INTO t_nested_alias_packed VALUES (1, [10,20]);
+INSERT INTO t_nested_alias_packed VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_alias_packed ADD COLUMN s Array(String);
+ALTER TABLE t_nested_alias_packed ADD COLUMN s_alias Array(String) ALIAS s;
+ALTER TABLE t_nested_alias_packed ADD COLUMN `n.b` Array(String) DEFAULT s_alias;
+
+SYSTEM START MERGES t_nested_alias_packed;
+OPTIMIZE TABLE t_nested_alias_packed FINAL;
+
+SELECT count(), countDistinct(_part) FROM t_nested_alias_packed;
+SELECT id, `n.a` FROM t_nested_alias_packed ORDER BY id;
+
+-- `n.b` stays unmaterialized in the merged part and is recomputed on read.
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_nested_alias_packed' AND active
+    AND column = 'n.b';
+
+DROP TABLE t_nested_alias_packed;
