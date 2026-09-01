@@ -141,6 +141,40 @@ void LimitStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
     extras.addBool(IS_SHARD_LIMIT_TAG, is_shard_limit);
 }
 
+namespace
+{
+/// Logical digest tags for `LimitStep`. Own enum, unique within this writer; never reused.
+enum LimitStepLogicalDigestTag : UInt64
+{
+    LOGICAL_LIMIT_TAG = 1,
+    LOGICAL_OFFSET_TAG = 2,
+    LOGICAL_WITH_TIES_TAG = 3,
+    LOGICAL_TIES_DESCRIPTION_TAG = 4,
+    LOGICAL_ALWAYS_READ_TILL_END_TAG = 5,
+    LOGICAL_IS_SHARD_LIMIT_TAG = 6,
+};
+}
+
+void LimitStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The window of rows that survives.
+    writer.addVarUInt(LOGICAL_LIMIT_TAG, limit);
+    writer.addVarUInt(LOGICAL_OFFSET_TAG, offset);
+
+    /// `with_ties` extends the window past `limit` by the rows equal to the last one under
+    /// `description`, so both are relation-defining.
+    writer.addBool(LOGICAL_WITH_TIES_TAG, with_ties);
+    writer.addSortDescription(LOGICAL_TIES_DESCRIPTION_TAG, description);
+
+    /// Both change user-visible output beyond this step's own rows, so both are in: with
+    /// `always_read_till_end` the input keeps running after the limit is reached, which is what
+    /// makes `totals` see every row, and `QueryPipeline::initRowsBeforeLimit` special-cases a shard
+    /// limit so its discarded rows still count into the parent limit's `rows_before_limit_at_least`.
+    /// `is_shard_limit` is also the stage marker of a split limit (plan section 4.2).
+    writer.addBool(LOGICAL_ALWAYS_READ_TILL_END_TAG, always_read_till_end);
+    writer.addBool(LOGICAL_IS_SHARD_LIMIT_TAG, is_shard_limit);
+}
+
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags = 0;

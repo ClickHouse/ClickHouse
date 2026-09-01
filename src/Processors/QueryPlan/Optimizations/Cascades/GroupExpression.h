@@ -48,6 +48,7 @@ public:
         , inputs(other_.inputs)
         , enforced_property(other_.enforced_property)
         , cached_step_fingerprint(other_.cached_step_fingerprint)
+        , cached_step_logical_fingerprint(other_.cached_step_logical_fingerprint)
     {}
 
     String getName() const;
@@ -76,6 +77,23 @@ public:
     /// the expression means is compared, including `enforced_property` and `description_suffix`.
     size_t fullFingerprint() const;
     bool fullyEqualTo(const GroupExpression & other) const;
+
+    /// Content-based fingerprint of the step's logical digest, or nullptr when the step instance has
+    /// no logical digest. Cached and invalidated exactly like `cachedStepFingerprint`.
+    const StepFingerprint * cachedStepLogicalFingerprint() const;
+
+    /// Group identity: do the two expressions compute the same relation? The frame is own
+    /// `properties` plus the ordered inputs (group id and per-input required properties); the step
+    /// is compared by its logical digest, so two expressions differing only in a physical knob are
+    /// logically equal and belong in one group as costed alternatives. `strategy`,
+    /// `enforced_property` and `description_suffix` are deliberately absent from the frame: these
+    /// methods are defined only for pure logical expressions (an enforcer computes its input's
+    /// relation, so it would fold into its own child group), and `description_suffix` is
+    /// optimizer-side display state. Fails closed - false, and no merge, whenever either step
+    /// instance has no logical digest.
+    /// `fullyEqualTo` implies `logicallyEqualTo` for steps that have a logical digest.
+    size_t logicalFingerprint() const;
+    bool logicallyEqualTo(const GroupExpression & other) const;
 
     GroupId group_id = INVALID_GROUP_ID;
     std::shared_ptr<const IQueryPlanStep> plan_step;
@@ -110,6 +128,9 @@ private:
     /// matches. Mutated from a `const` getter with no synchronization - safe only because the
     /// Cascades optimizer runs single-threaded.
     mutable std::shared_ptr<const StepFingerprint> cached_step_fingerprint;
+
+    /// The same cache over the logical digest; the two are independent because the digests are.
+    mutable std::shared_ptr<const StepFingerprint> cached_step_logical_fingerprint;
 };
 
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;

@@ -2292,6 +2292,70 @@ void JoinStepLogical::appendCascadesIdentityExtras(StepDigestWriter & extras) co
     extras.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sorting_settings.read_in_order_use_virtual_row_per_block);
 }
 
+namespace
+{
+/// Logical digest tags for `JoinStepLogical`. Own enum, unique within this writer; never reused.
+enum JoinStepLogicalDigestTag : UInt64
+{
+    LOGICAL_EXPRESSION_ACTIONS_TAG = 1,
+    LOGICAL_JOIN_OPERATOR_TAG = 2,
+    LOGICAL_ACTIONS_AFTER_JOIN_TAG = 3,
+    LOGICAL_SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG = 4,
+    LOGICAL_MAX_ROWS_IN_JOIN_TAG = 5,
+    LOGICAL_MAX_BYTES_IN_JOIN_TAG = 6,
+    LOGICAL_DEFAULT_MAX_BYTES_IN_JOIN_TAG = 7,
+    LOGICAL_JOIN_OVERFLOW_MODE_TAG = 8,
+    LOGICAL_JOIN_ANY_TAKE_LAST_ROW_TAG = 9,
+    LOGICAL_ALLOW_DYNAMIC_TYPE_IN_JOIN_KEYS_TAG = 10,
+};
+}
+
+void JoinStepLogical::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    const auto actions_dag = expression_actions.getActionsDAG();
+
+    /// The relation: the pre-join expressions, the join operator itself (kind, strictness, locality,
+    /// the ON expression and the residual filter, all as node references into the DAG above), and the
+    /// nodes that split what is computed after the join from what is computed before it.
+    writer.addDAG(LOGICAL_EXPRESSION_ACTIONS_TAG, actions_dag.get());
+
+    WriteBufferFromOwnString join_operator_payload;
+    join_operator.serialize(join_operator_payload, actions_dag.get());
+    writer.addString(LOGICAL_JOIN_OPERATOR_TAG, join_operator_payload.str());
+
+    WriteBufferFromOwnString actions_after_join_payload;
+    serializeNodeList(actions_after_join_payload, actions_dag->getNodeToIdMap(), actions_after_join);
+    writer.addString(LOGICAL_ACTIONS_AFTER_JOIN_TAG, actions_after_join_payload.str());
+
+    /// `HashJoin` publishes these as shared runtime filters that prune rows on the other side. The
+    /// pruning is meant to be exact, but the descriptors are what makes it happen at all, so they are
+    /// kept in - the fail-closed direction, matching the read side of plan section 8.
+    writer.addString(
+        LOGICAL_SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG, encodeRuntimeFilterDescriptors(join_operator.shared_runtime_filter_descriptors));
+
+    /// The result-affecting slice of `join_settings`: the size limits truncate (`break`) or fail
+    /// (`throw`) the join, `join_any_take_last_row` picks the other row for an `ANY` join, and the
+    /// dynamic-key permission decides between a result and an exception.
+    writer.addVarUInt(LOGICAL_MAX_ROWS_IN_JOIN_TAG, join_settings.max_rows_in_join);
+    writer.addVarUInt(LOGICAL_MAX_BYTES_IN_JOIN_TAG, join_settings.max_bytes_in_join);
+    writer.addVarUInt(LOGICAL_DEFAULT_MAX_BYTES_IN_JOIN_TAG, join_settings.default_max_bytes_in_join);
+    writer.addVarUInt(LOGICAL_JOIN_OVERFLOW_MODE_TAG, static_cast<UInt64>(join_settings.join_overflow_mode));
+    writer.addBool(LOGICAL_JOIN_ANY_TAKE_LAST_ROW_TAG, join_settings.join_any_take_last_row);
+    writer.addBool(LOGICAL_ALLOW_DYNAMIC_TYPE_IN_JOIN_KEYS_TAG, join_settings.allow_dynamic_type_in_join_keys);
+
+    /// Out, planner bookkeeping - it informs later passes and does not change this join's rows:
+    /// `optimized`, `disjunctions_optimization_applied`, `result_rows_estimation`,
+    /// `imprecise_estimate`, `result_column_stats`, `left_relation` / `right_relation`,
+    /// `table_stats_hint`, `right_hash_table_cache_key`, `join_analyze_mode`. Excluding them lets two
+    /// joins that differ only in how far the reordering pass got share one group; it does not make a
+    /// rule-rebuilt join match an ingested one, whose input group list differs by construction.
+    /// Out, algorithm and execution: `join_algorithms` and every threshold that steers it, the block
+    /// sizes, the partial-merge and grace-hash bucketing, the spill thresholds, the temporary-file
+    /// codec and buffer size, `max_rows_in_set_to_optimize_join` (an exact pre-filter),
+    /// `use_join_disjunctions_push_down`, the lazy-column, prefetch and fixed-hash-table switches,
+    /// and the whole `sorting_settings` struct - the physical join re-derives its sorts from it.
+}
+
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
 {
     size_t num_nodes = 0;

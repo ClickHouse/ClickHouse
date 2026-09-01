@@ -1328,6 +1328,107 @@ void AggregatingStep::appendCascadesIdentityExtras(StepDigestWriter & extras) co
         extras.addAbsent(PARAMS_TOP_K_TAG);
 }
 
+String encodeAggregateDescriptionsForDigest(const AggregateDescriptions & aggregates)
+{
+    WriteBufferFromOwnString payload;
+    serializeAggregateDescriptions(aggregates, payload);
+    return payload.str();
+}
+
+String encodeGroupingSetsForDigest(const GroupingSetsParamsList & grouping_sets_params)
+{
+    WriteBufferFromOwnString payload;
+    writeVarUInt(grouping_sets_params.size(), payload);
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        writeVarUInt(grouping_set.used_keys.size(), payload);
+        for (const auto & used_key : grouping_set.used_keys)
+            writeStringBinary(used_key, payload);
+    }
+    return payload.str();
+}
+
+namespace
+{
+/// Logical digest tags for `AggregatingStep`. Own enum, unique within this writer; never reused.
+enum AggregatingStepLogicalDigestTag : UInt64
+{
+    LOGICAL_KEYS_TAG = 1,
+    LOGICAL_AGGREGATES_TAG = 2,
+    LOGICAL_GROUPING_SETS_TAG = 3,
+    LOGICAL_FINAL_TAG = 4,
+    LOGICAL_ONLY_MERGE_TAG = 5,
+    LOGICAL_GROUP_BY_USE_NULLS_TAG = 6,
+    LOGICAL_OVERFLOW_ROW_TAG = 7,
+    LOGICAL_MAX_ROWS_TO_GROUP_BY_TAG = 8,
+    LOGICAL_GROUP_BY_OVERFLOW_MODE_TAG = 9,
+    LOGICAL_EMPTY_RESULT_FOR_EMPTY_SET_TAG = 10,
+    LOGICAL_LIMIT_HINT_TAG = 11,
+    LOGICAL_BUCKET_TOP_K_TAG = 12,
+    LOGICAL_BUCKET_TOP_K_ASCENDING_TAG = 13,
+    LOGICAL_BUCKET_TOP_K_COUNT_INDEX_TAG = 14,
+    LOGICAL_TOP_K_TAG = 15,
+    LOGICAL_GROUP_BY_SORT_DESCRIPTION_TAG = 16,
+    LOGICAL_RESULTS_IN_BUCKET_ORDER_TAG = 17,
+    LOGICAL_MEMORY_BOUND_MERGING_TAG = 18,
+};
+}
+
+void AggregatingStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The relation itself: what is grouped, what is computed over each group, and which grouping
+    /// sets are unioned into the output.
+    writer.addStrings(LOGICAL_KEYS_TAG, params.keys);
+    writer.addString(LOGICAL_AGGREGATES_TAG, encodeAggregateDescriptionsForDigest(params.aggregates));
+    writer.addString(LOGICAL_GROUPING_SETS_TAG, encodeGroupingSetsForDigest(grouping_sets_params));
+
+    /// Stage marker: a partial aggregation emits states, up to one row per key per node; a final one
+    /// emits finalized values, one row per key (plan section 3). `only_merge` selects the
+    /// projection path, which changes the header and the `Aggregator` branch that runs.
+    writer.addBool(LOGICAL_FINAL_TAG, final);
+    writer.addBool(LOGICAL_ONLY_MERGE_TAG, params.only_merge);
+
+    /// `group_by_use_nulls` changes the key column types; `overflow_row` adds a row.
+    writer.addBool(LOGICAL_GROUP_BY_USE_NULLS_TAG, group_by_use_nulls);
+    writer.addBool(LOGICAL_OVERFLOW_ROW_TAG, params.overflow_row);
+
+    /// Result-affecting limits `serializeSettings` carries on the wire, which the logical digest
+    /// does not call: `Aggregator::checkLimits` throws, drops rows or routes them to the overflow
+    /// row, and the empty-set flag decides between zero and one row for a keyless aggregation.
+    writer.addVarUInt(LOGICAL_MAX_ROWS_TO_GROUP_BY_TAG, params.max_rows_to_group_by);
+    writer.addVarUInt(LOGICAL_GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
+    writer.addBool(LOGICAL_EMPTY_RESULT_FOR_EMPTY_SET_TAG, params.empty_result_for_aggregation_by_empty_set);
+
+    /// Truncations: all three keep only some of the groups.
+    writer.addVarUInt(LOGICAL_LIMIT_HINT_TAG, limit_hint);
+    writer.addVarUInt(LOGICAL_BUCKET_TOP_K_TAG, params.bucket_top_k);
+    writer.addBool(LOGICAL_BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    writer.addVarUInt(LOGICAL_BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+    if (params.top_k)
+        writer.addString(LOGICAL_TOP_K_TAG, encodeTopKParams(*params.top_k));
+    else
+        writer.addAbsent(LOGICAL_TOP_K_TAG);
+
+    /// Order claim, not a knob: these three decide `getSortDescription()`, i.e. the order this step
+    /// promises its consumers. `ExpressionProperties` models the delivered order of a `SortingStep`
+    /// only, so nothing else in the logical frame would carry it.
+    writer.addSortDescription(LOGICAL_GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
+    writer.addBool(LOGICAL_RESULTS_IN_BUCKET_ORDER_TAG, should_produce_results_in_order_of_bucket_number);
+    writer.addBool(LOGICAL_MEMORY_BOUND_MERGING_TAG, memory_bound_merging_of_aggregation_results_enabled);
+
+    /// Out, parallelism and chunking: `merge_threads`, `temporary_data_merge_threads`,
+    /// `params.max_threads`, `max_block_size`, `params.max_block_size`,
+    /// `aggregation_in_order_max_block_bytes`, `storage_has_evenly_distributed_read` (suppresses a
+    /// resize), `enable_sharding_aggregator` (picks the shard-by-hash pipeline).
+    /// Out, memory and spill: the two-level thresholds, `max_bytes_before_external_group_by`,
+    /// `min_free_disk_space`, the hash-table stats collection, `enable_prefetch`, the adaptive
+    /// aggregator, the packed-string-key and zero-byte string layouts, the consecutive-keys
+    /// optimization, `optimize_group_by_constant_keys` - all exact, all execution-only.
+    /// Out by predicate: `sort_description_for_merging` and
+    /// `explicit_sorting_required_for_aggregation_in_order` (in-order aggregation), excluded with
+    /// the whole instance by `isSerializable()`; `skip_merging`, see `hasLogicalDigest`.
+}
+
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)

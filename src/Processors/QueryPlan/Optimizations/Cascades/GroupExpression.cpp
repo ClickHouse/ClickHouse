@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <IO/Operators.h>
+#include <base/defines.h>
 #include <boost/functional/hash.hpp>
 
 namespace DB
@@ -193,6 +194,86 @@ bool GroupExpression::fullyEqualTo(const GroupExpression & other) const
 
     /// The fingerprint only narrows the candidates; the bytes decide.
     return stepFullDigestsEqual(*plan_step, *other.plan_step);
+}
+
+const StepFingerprint * GroupExpression::cachedStepLogicalFingerprint() const
+{
+    if (!plan_step || !plan_step->hasLogicalDigest())
+    {
+        /// Drop an inherited entry so it stops pinning the step it was computed from.
+        cached_step_logical_fingerprint.reset();
+        return nullptr;
+    }
+
+    /// A rule may legally replace `plan_step` on a shallow copy before insertion, so a cached
+    /// fingerprint that was computed for a different step must not be trusted.
+    if (!cached_step_logical_fingerprint || cached_step_logical_fingerprint->source_step != plan_step)
+        cached_step_logical_fingerprint
+            = std::make_shared<const StepFingerprint>(StepFingerprint{computeStepLogicalFingerprint(*plan_step), plan_step});
+
+    return cached_step_logical_fingerprint.get();
+}
+
+/// `logicallyEqualTo` and `logicalFingerprint` must cover the same components in the same order:
+/// properties, inputs (group and required properties), then the step's logical digest.
+size_t GroupExpression::logicalFingerprint() const
+{
+    chassert(strategy == nullptr && enforced_property == EnforcedProperty::None);
+
+    size_t hash_value = ExpressionPropertiesHash()(properties);
+    for (const auto & input : inputs)
+    {
+        boost::hash_combine(hash_value, input.group_id);
+        boost::hash_combine(hash_value, ExpressionPropertiesHash()(input.required_properties));
+    }
+
+    if (const auto * fingerprint = cachedStepLogicalFingerprint())
+    {
+        boost::hash_combine(hash_value, fingerprint->value.items[0]);
+        boost::hash_combine(hash_value, fingerprint->value.items[1]);
+    }
+    else
+    {
+        /// No logical digest means the expression never merges, so hash the pointer to keep it in a
+        /// bucket of its own.
+        boost::hash_combine(hash_value, reinterpret_cast<uintptr_t>(plan_step.get()));
+    }
+
+    return hash_value;
+}
+
+bool GroupExpression::logicallyEqualTo(const GroupExpression & other) const
+{
+    chassert(strategy == nullptr && enforced_property == EnforcedProperty::None);
+    chassert(other.strategy == nullptr && other.enforced_property == EnforcedProperty::None);
+
+    if (!(properties == other.properties))
+        return false;
+
+    if (inputs.size() != other.inputs.size())
+        return false;
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        if (inputs[i].group_id != other.inputs[i].group_id)
+            return false;
+        if (!(inputs[i].required_properties == other.inputs[i].required_properties))
+            return false;
+    }
+
+    const auto * fingerprint = cachedStepLogicalFingerprint();
+    const auto * other_fingerprint = other.cachedStepLogicalFingerprint();
+    /// Fail closed: an unaudited step instance never merges, not even with itself.
+    if (!fingerprint || !other_fingerprint)
+        return false;
+
+    if (plan_step == other.plan_step)
+        return true;
+
+    if (fingerprint->value != other_fingerprint->value)
+        return false;
+
+    /// The fingerprint only narrows the candidates; the bytes decide.
+    return stepLogicalDigestsEqual(*plan_step, *other.plan_step);
 }
 
 }

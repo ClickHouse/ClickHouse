@@ -26,6 +26,11 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
 /// the key's name, the sort would order by something the heap never ranked and pruning could drop real winners.
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
 
+/// Payloads shared by the logical digests of `AggregatingStep` and `MergingAggregatedStep`. Only the
+/// used keys of a grouping set are encoded; the missing ones are derived from the full key list.
+String encodeAggregateDescriptionsForDigest(const AggregateDescriptions & aggregates);
+String encodeGroupingSetsForDigest(const GroupingSetsParamsList & grouping_sets_params);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.
@@ -129,6 +134,12 @@ public:
 
     bool supportsCascadesIdentity() const override { return isSerializable(); }
     void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
+
+    /// `skip_merging` finalizes each stream on its own, which is correct only when the input streams
+    /// carry disjoint key sets - a property of the input layout that the memo does not model yet, so
+    /// such an instance stays out of group deduplication (plan section 4.2; Stage C removes this).
+    bool hasLogicalDigest() const override { return isSerializable() && !skip_merging; }
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

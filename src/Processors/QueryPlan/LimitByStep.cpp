@@ -202,6 +202,32 @@ void LimitByStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
     extras.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
 }
 
+namespace
+{
+/// Logical digest tags for `LimitByStep`. Own enum, unique within this writer; never reused.
+enum LimitByStepLogicalDigestTag : UInt64
+{
+    LOGICAL_GROUP_LENGTH_TAG = 1,
+    LOGICAL_GROUP_OFFSET_TAG = 2,
+    LOGICAL_COLUMNS_TAG = 3,
+    LOGICAL_SORTED_COLUMNS_DESCR_TAG = 4,
+};
+}
+
+void LimitByStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// Which rows of each group survive, and what a group is.
+    writer.addVarUInt(LOGICAL_GROUP_LENGTH_TAG, group_length);
+    writer.addVarUInt(LOGICAL_GROUP_OFFSET_TAG, group_offset);
+    writer.addStrings(LOGICAL_COLUMNS_TAG, columns);
+
+    /// An input assumption, not a knob: it selects `LimitBySortedStreamTransform`, which is correct
+    /// only when the input really arrives grouped in this order.
+    writer.addSortDescription(LOGICAL_SORTED_COLUMNS_DESCR_TAG, sorted_columns_descr);
+
+    /// Out by predicate: `skip_stream_merging`, see `hasLogicalDigest`.
+}
+
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 {
     UInt64 group_length = 0;

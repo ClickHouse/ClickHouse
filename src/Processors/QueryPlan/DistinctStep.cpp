@@ -180,6 +180,42 @@ void DistinctStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
     extras.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
 }
 
+namespace
+{
+/// Logical digest tags for `DistinctStep`. Own enum, unique within this writer; never reused.
+/// `pre_distinct` needs no tag: it selects `getSerializationName()`, which the digest writes first.
+enum DistinctStepLogicalDigestTag : UInt64
+{
+    LOGICAL_COLUMNS_TAG = 1,
+    LOGICAL_LIMIT_HINT_TAG = 2,
+    LOGICAL_SORT_DESCRIPTION_TAG = 3,
+    LOGICAL_MAX_ROWS_TAG = 4,
+    LOGICAL_MAX_BYTES_TAG = 5,
+    LOGICAL_OVERFLOW_MODE_TAG = 6,
+};
+}
+
+void DistinctStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The columns duplicates are collapsed on.
+    writer.addStrings(LOGICAL_COLUMNS_TAG, columns);
+
+    /// Both DISTINCT transforms stop once `limit_hint` distinct rows were produced.
+    writer.addVarUInt(LOGICAL_LIMIT_HINT_TAG, limit_hint);
+
+    /// Order claim and input assumption in one: it is what `getSortDescription` reports, and it
+    /// selects `DistinctSortedStreamTransform`, which is correct only for an input sorted this way.
+    writer.addSortDescription(LOGICAL_SORT_DESCRIPTION_TAG, distinct_sort_desc);
+
+    /// Result-affecting limits that `serializeSettings` carries on the wire, which the logical digest
+    /// does not call: `break` truncates the result, `throw` fails the query.
+    writer.addVarUInt(LOGICAL_MAX_ROWS_TAG, set_size_limits.max_rows);
+    writer.addVarUInt(LOGICAL_MAX_BYTES_TAG, set_size_limits.max_bytes);
+    writer.addVarUInt(LOGICAL_OVERFLOW_MODE_TAG, static_cast<UInt64>(set_size_limits.overflow_mode));
+
+    /// Out by predicate: `skip_stream_merging`, see `hasLogicalDigest`.
+}
+
 QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
 {
     if (ctx.input_headers.size() != 1)

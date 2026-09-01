@@ -505,20 +505,92 @@ a zero-width row (a bare `count()`) making exchanges look free.
 inside one group, where only logically equivalent expressions live, but not across groups:
 two `FilterStep`s with different predicates, or two scans of the same table with different
 pruning, look identical that way. This directory's `StepIdentity.h` adds a *content* identity on
-top of the canonical full digest written by `writeStepFullDigest`
+top of the canonical digests written by `writeStepFullDigest` and `writeStepLogicalDigest`
 (`Processors/QueryPlan/StepIdentity.h`). That header is the contract for the framing, for what
 is stable across calls and for the rule that digest bytes must never be cached and compared
 later; it is not restated here.
 
-One writer, two consumers: the SipHash-128 fingerprint and the byte-exact confirmation both run
-over that same digest, so a fingerprint collision never decides equality on its own.
+One writer per digest, two consumers each: the SipHash-128 fingerprint and the byte-exact
+confirmation both run over the same bytes, so a fingerprint collision never decides equality on
+its own.
 
-Identity is **opt-in per audited step type**. `IQueryPlanStep::supportsCascadesIdentity`
-defaults to `false`, and a step that has not opted in compares equal only to itself. That
-default is the fail-closed mechanism of the whole feature: a missed deduplication costs
-nothing, while a wrong one on a read returns wrong rows.
+**Two identity levels, two jobs.** They answer different questions and must not be swapped.
 
-**Opting a step in, or classifying a new field.**
+| | full digest | logical digest |
+|---|---|---|
+| Question | are the two step objects interchangeable? | do they compute the same relation? |
+| Content | wire `serialize` + `serializeSettings` bytes plus the audited non-wire extras | the relation-defining fields only, all authored by the step |
+| Frame (`GroupExpression`) | properties, inputs, `strategy`, `enforced_property`, `description_suffix`, step | properties, inputs, step |
+| Job | duplicate filter *inside* one group | key of group membership |
+| Step hooks | `supportsCascadesIdentity` / `appendCascadesIdentityExtras` | `hasLogicalDigest` / `writeLogicalDigest` |
+
+Physical knobs (thread counts, block sizes, buffering, spill settings) are deliberately out of
+the logical digest: two subtrees that differ only in `max_threads` then land in one group and
+become costed alternatives, instead of one of them silently winning by entering the memo first.
+Dropping one of two expressions that differ only in a knob has to stay a decision of the cost
+model, which is why the full digest - and only it - may be used to drop an alternative.
+`fullyEqualTo` implies `logicallyEqualTo` for steps that have a logical digest.
+
+The wire bytes cannot be filtered down to the logical ones: they interleave relation-defining
+and physical fields with no markers, and each step's payload is a black box. So the two writers
+are separate methods over shared helpers, and neither is derived from the other.
+
+**What a group means.** All expressions in a group are mutually substitutable for every consumer
+of the group. For ordinary groups that means they compute the same relation. For a **stage-marked**
+group - the partial stage a two-stage rule splits off - it means the acceptable-set semantics: a
+partial aggregation or a partial top-N is not even a function of the input relation (its output
+depends on how rows are spread over nodes and streams), so the group denotes the set of relations
+that merge to the correct result, and the only consumers are the merge expressions built together
+with it. `GroupExpression::physical_output_rows` already reflects this (a partial top-N emits up
+to L rows per node while the group statistics are trimmed to L).
+
+Stage markers are therefore relation-defining and stay in the logical digest:
+`SortingStep::is_partial_top_n`, `AggregatingStep::final`, `LimitStep::is_shard_limit`, and the
+`AggregatingStep` / `MergingAggregatedStep` split. This is also what keeps deduplication from
+folding a partial stage back into its source group and forming a self-cycle.
+
+**Nondeterministic operators.** Merging two identical nondeterministic subplans (a LIMIT without a
+full order, `any` aggregates) forces them to produce the same rows where separate execution could
+diverge. That is accepted: any merged outcome is a valid outcome of each subplan on its own, which
+is standard common-subexpression-elimination semantics.
+
+Identity is **opt-in per audited step type**, at both levels. `IQueryPlanStep::supportsCascadesIdentity`
+and `IQueryPlanStep::hasLogicalDigest` default to `false`, and a step that has not opted in
+compares equal only to itself - for the logical digest, not even to itself, since a fresh group is
+the only sound outcome there. That default is the fail-closed mechanism of the whole feature: a
+missed deduplication costs nothing, while a wrong one on a read returns wrong rows.
+
+**Classifying a field as relation-defining (the logical digest).** Given fixed input relations
+(and, for a stage-marked step, a fixed acceptable set), does changing this field change the output
+rows or the output header?
+
+- Yes: in. Row-affecting limits and truncations count, even when they are provably exact
+  (`limit_hint`, the `bucket_top_k` family, `params.top_k`, `max_rows_to_group_by` with
+  `group_by_overflow_mode`, the DISTINCT and sort size limits): a truncated result is a different
+  result. So do the join operator, the DAGs, the keys, and the stage markers above.
+- Only cost, parallelism, memory, chunking or spilling: out.
+- Only informs another optimizer pass, without changing this step's relation: out of the logical
+  digest, kept in the full one, so both variants coexist in one group and the passes that read the
+  flag keep working on their own expression. Examples: `prevent_input_removal`,
+  `SortingStep::is_sorting_for_merge_join`, `JoinStepLogical::optimized`,
+  `disjunctions_optimization_applied`, the join estimates and `table_stats_hint`, the
+  query-condition-cache key.
+- A sort description is in whenever it is an *order claim* (what `getSortDescription` reports) or
+  an *input-order assumption* (it selects a transform that is only correct for that order):
+  `ExpressionProperties` models the delivered order of a `SortingStep` only, so nothing else in the
+  logical frame would carry it.
+- **Layout-dependent flags** (`AggregatingStep::skip_merging`, `DistinctStep::skip_stream_merging`,
+  `LimitByStep::skip_stream_merging`) mean "my input streams are disjoint on my keys". The memo does
+  not model that yet, so an instance with such a flag set returns `false` from `hasLogicalDigest`.
+  Once the `stream_layout` property normalization lands, the flag is stripped at ingestion into a
+  `Disjoint(keys)` requirement on the input link and this opt-out goes away.
+- When in doubt: the instance predicate goes false. Fail closed.
+
+The per-field rationale lives next to each writer and its tag enum in the step `.cpp`. The two
+writers of a step have **separate tag enums**; tags are unique within one writer and appear in the
+same order on every call, with explicit absent slots.
+
+**Opting a step in, or classifying a new field (the full digest).**
 
 - Classify every member of the step and of its base classes as one of: *on the wire* (written by
   `serialize` / `serializeSettings`, hence already in the digest), *execution-constraining
@@ -550,6 +622,10 @@ nothing, while a wrong one on a read returns wrong rows.
   tracked in an upstream issue; closing them is a precondition for enabling memo-wide
   deduplication.
 - When in doubt, the predicate goes false and the field goes into the extras.
+- `hasLogicalDigest` inherits only the guards that still apply. The logical digest calls neither
+  `serialize` nor `serializeSettings`, so the whole `NonZeroUInt64` class disappears from it - a
+  `SortingStep` built by `optimizeGroupByTopK` has a logical digest and no full one. The
+  correlated-`PLACEHOLDER` guard stays wherever the logical writer serializes a DAG.
 
 **Provenance witnesses.** State with no serialization at all (`KeyCondition`, `PartitionPruner`,
 part and settings snapshots, the query tree) is encoded as the address of an object the step owns
@@ -572,8 +648,13 @@ analyzed yet and that share the part, mutation and metadata snapshots can merge.
   current fingerprint — lazily populated analysis state changes the fingerprint over a step's
   lifetime.
 
+The logical digest has one more precondition of its own: `ReadFromMergeTree` keeps
+`hasLogicalDigest() == false` until its content snapshot identity lands, so reads never merge and
+no parent of a read merges either.
+
 **Key files**: `StepIdentity.h/cpp`, `Processors/QueryPlan/StepIdentity.h/cpp`, and the
-`supportsCascadesIdentity` / `appendCascadesIdentityExtras` pair of each opted-in step
+`supportsCascadesIdentity` / `appendCascadesIdentityExtras` and `hasLogicalDigest` /
+`writeLogicalDigest` pairs of each opted-in step
 
 ---
 

@@ -91,14 +91,14 @@ SharedHeader makeAggregatedHeader()
 
 /// Merge-only `Aggregator::Params` constructor - the same one `MergingAggregatedStep::deserialize`
 /// uses, so `only_merge` is always true.
-Aggregator::Params makeMergingAggregatedParams(size_t max_threads)
+Aggregator::Params makeMergingAggregatedParams(size_t max_threads, size_t params_max_block_size = 65536)
 {
     return Aggregator::Params(
         Names{"k"},
         AggregateDescriptions{},
         /*overflow_row=*/false,
         max_threads,
-        /*max_block_size=*/65536,
+        params_max_block_size,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
         /*enable_packed_string_keys=*/true);
@@ -129,11 +129,12 @@ std::unique_ptr<MergingAggregatedStep> makeMergingAggregatedStep(
 /// Merge-only `Aggregator::Params` again - `AggregatingStep` only stores them, and with no aggregate
 /// functions the output header is the key list for both `final` values, so a test that flips `final`
 /// really does compare two steps that differ in nothing else.
-std::unique_ptr<AggregatingStep> makeAggregatingStep(bool final, size_t merge_threads = 4, UInt64 limit_hint = 0)
+std::unique_ptr<AggregatingStep> makeAggregatingStep(
+    bool final, size_t merge_threads = 4, UInt64 limit_hint = 0, size_t params_max_block_size = 65536)
 {
     auto step = std::make_unique<AggregatingStep>(
         makeAggregatedHeader(),
-        makeMergingAggregatedParams(/*max_threads=*/4),
+        makeMergingAggregatedParams(/*max_threads=*/4, params_max_block_size),
         GroupingSetsParamsList{},
         final,
         /*max_block_size=*/65536,
@@ -1209,4 +1210,557 @@ TEST(CascadesStepIdentity, ReadFromMergeTreeStreamReadDoesNotSupportIdentity)
 
     EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
     EXPECT_FALSE(a->fullyEqualTo(*b));
+}
+
+/// Logical digest
+///
+/// The logical digest answers "do these two steps compute the same relation?", so it must be blind
+/// to physical knobs and sensitive to everything that changes rows or the header. Every test below
+/// pins one direction of that; the physical-knob direction (logically equal while fully unequal) is
+/// the one the full digest could never express.
+///
+/// Not covered here: the purity `chassert` in `logicallyEqualTo` / `logicalFingerprint`. It fires
+/// only in debug builds and aborts the process, which gtest cannot observe; `Memo::internExpression`
+/// is the caller that has to respect it.
+
+namespace
+{
+
+/// Two expressions over independently built steps, ready for a logical comparison. Both are pure
+/// logical expressions (no strategy, no enforced property), which the logical methods require.
+std::pair<GroupExpressionPtr, GroupExpressionPtr> logicalPair(QueryPlanStepPtr lhs, QueryPlanStepPtr rhs)
+{
+    return {std::make_shared<GroupExpression>(std::move(lhs)), std::make_shared<GroupExpression>(std::move(rhs))};
+}
+
+/// The relation-defining direction: the flip must be visible to both the fingerprint and the bytes.
+void expectLogicallyUnequal(const GroupExpression & a, const GroupExpression & b)
+{
+    EXPECT_NE(a.logicalFingerprint(), b.logicalFingerprint());
+    EXPECT_FALSE(a.logicallyEqualTo(b));
+    EXPECT_FALSE(b.logicallyEqualTo(a));
+}
+
+/// The knob direction: one group, two costed alternatives.
+void expectLogicallyEqualButNotFully(const GroupExpression & a, const GroupExpression & b)
+{
+    EXPECT_EQ(a.logicalFingerprint(), b.logicalFingerprint());
+    EXPECT_TRUE(a.logicallyEqualTo(b));
+    EXPECT_TRUE(b.logicallyEqualTo(a));
+    EXPECT_FALSE(a.fullyEqualTo(b));
+}
+
+}
+
+TEST(CascadesStepIdentity, LogicalDigestOfClonesIsEqual)
+{
+    auto header = makeHeader();
+    ExpressionStep step(header, makeDag(1));
+
+    auto [a, b] = logicalPair(step.clone(), step.clone());
+
+    EXPECT_NE(a->plan_step, b->plan_step);
+    EXPECT_EQ(a->logicalFingerprint(), b->logicalFingerprint());
+    EXPECT_TRUE(a->logicallyEqualTo(*b));
+}
+
+TEST(CascadesStepIdentity, LogicalDigestExpressionDagIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(
+        std::make_unique<ExpressionStep>(header, makeDag(1)), std::make_unique<ExpressionStep>(header, makeDag(2)));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// `prevent_input_removal` only forbids a later pass from pruning this step's inputs, so it stays in
+/// the full digest and out of the logical one.
+TEST(CascadesStepIdentity, LogicalDigestExcludesPreventInputRemoval)
+{
+    auto header = makeHeader();
+    auto b_step = std::make_unique<ExpressionStep>(header, makeDag(1));
+    b_step->setPreventInputRemoval();
+
+    auto [a, b] = logicalPair(std::make_unique<ExpressionStep>(header, makeDag(1)), std::move(b_step));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// The `PLACEHOLDER` guard survives into the logical digest: it too serializes the DAG.
+TEST(CascadesStepIdentity, LogicalDigestRejectsCorrelatedExpressions)
+{
+    auto header = makeHeader();
+    auto type = std::make_shared<DataTypeUInt64>();
+    ActionsDAG dag(NamesAndTypesList{{"x", type}});
+    dag.addPlaceholder("correlated", type);
+
+    ExpressionStep step(header, std::move(dag));
+    ASSERT_TRUE(step.hasCorrelatedExpressions());
+    EXPECT_FALSE(step.hasLogicalDigest());
+
+    auto [a, b] = logicalPair(step.clone(), step.clone());
+
+    EXPECT_EQ(a->cachedStepLogicalFingerprint(), nullptr);
+    EXPECT_FALSE(a->logicallyEqualTo(*b));
+}
+
+/// A step type with no logical digest never merges - not even with itself, so that a fresh group is
+/// the only possible outcome.
+TEST(CascadesStepIdentity, LogicalDigestWithoutOptInNeverMerges)
+{
+    auto header = makeHeader();
+    auto a = std::make_shared<GroupExpression>(std::make_unique<OffsetStep>(header, 10));
+
+    EXPECT_EQ(a->cachedStepLogicalFingerprint(), nullptr);
+
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization) - the shallow copy is the test subject
+    GroupExpression shared_step_copy(*a);
+    ASSERT_EQ(shared_step_copy.plan_step, a->plan_step);
+    EXPECT_FALSE(a->logicallyEqualTo(shared_step_copy));
+}
+
+/// Stage D (`ReadFromMergeTree` content identity) has not landed, so reads stay fail-closed.
+TEST(CascadesStepIdentity, LogicalDigestExcludesReadFromMergeTree)
+{
+    MergeTreeReadFixture fixture("logical_read");
+    auto query_info = MergeTreeReadFixture::makeQueryInfo();
+
+    auto a_step = fixture.makeRead(query_info);
+    ASSERT_TRUE(a_step->supportsCascadesIdentity());
+    EXPECT_FALSE(a_step->hasLogicalDigest());
+
+    auto [a, b] = logicalPair(std::move(a_step), fixture.makeRead(query_info));
+
+    EXPECT_EQ(a->cachedStepLogicalFingerprint(), nullptr);
+    EXPECT_FALSE(a->logicallyEqualTo(*b));
+}
+
+/// The expression-level frame: own properties and the ordered inputs, each with its group id and its
+/// required properties.
+TEST(CascadesStepIdentity, LogicalDigestFrameCoversInputsAndProperties)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(
+        std::make_unique<ExpressionStep>(header, makeDag(1)), std::make_unique<ExpressionStep>(header, makeDag(1)));
+
+    a->inputs.push_back({1, {}});
+    b->inputs.push_back({1, {}});
+    ASSERT_TRUE(a->logicallyEqualTo(*b));
+
+    b->inputs[0].group_id = 2;
+    expectLogicallyUnequal(*a, *b);
+
+    b->inputs[0].group_id = 1;
+    b->inputs[0].required_properties.sorting = makeSortDescription();
+    expectLogicallyUnequal(*a, *b);
+
+    b->inputs[0].required_properties = {};
+    ASSERT_TRUE(a->logicallyEqualTo(*b));
+
+    b->properties.sorting = makeSortDescription();
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// `description_suffix` is optimizer-side display state and deliberately not in the logical frame,
+/// unlike in the full one.
+TEST(CascadesStepIdentity, LogicalDigestFrameExcludesDescriptionSuffix)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(
+        std::make_unique<ExpressionStep>(header, makeDag(1)), std::make_unique<ExpressionStep>(header, makeDag(1)));
+    b->description_suffix = "(by k)";
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// FilterStep
+
+TEST(CascadesStepIdentity, LogicalDigestFilterDagIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(
+        std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false),
+        std::make_unique<FilterStep>(header, makeFilterDag(2), "f", /*remove_filter_column_=*/false));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// The query-condition-cache key records granules that provably match nothing, so it changes how
+/// fast a later read runs and never which rows this filter emits.
+TEST(CascadesStepIdentity, LogicalDigestExcludesQueryConditionCacheKey)
+{
+    auto header = makeHeader();
+    auto b_step = std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false);
+    b_step->setConditionForQueryConditionCache(42, "x > 0");
+
+    auto [a, b] = logicalPair(
+        std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false), std::move(b_step));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// LimitStep
+
+TEST(CascadesStepIdentity, LogicalDigestLimitIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(std::make_unique<LimitStep>(header, 10, 0), std::make_unique<LimitStep>(header, 20, 0));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// `is_shard_limit` is the stage marker of a split limit and changes the user-visible
+/// `rows_before_limit_at_least`, so it is relation-defining (plan section 4.2).
+TEST(CascadesStepIdentity, LogicalDigestShardLimitMarkerIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto b_step = std::make_unique<LimitStep>(header, 10, 0);
+    b_step->markAsShardLimit();
+
+    auto [a, b] = logicalPair(std::make_unique<LimitStep>(header, 10, 0), std::move(b_step));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// MergingAggregatedStep
+
+TEST(CascadesStepIdentity, LogicalDigestExcludesMergingAggregatedThreadCounts)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [a, b] = logicalPair(
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4),
+        makeMergingAggregatedStep(/*max_threads=*/8, /*memory_efficient_merge_threads=*/16));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// Partial versus final merge: different rows, different header (plan section 3).
+TEST(CascadesStepIdentity, LogicalDigestMergingAggregatedFinalIsRelationDefining)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [a, b] = logicalPair(
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/true),
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/false));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestMergingAggregatedBucketTopKIsRelationDefining)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [a, b] = logicalPair(
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/true, /*bucket_top_k=*/0),
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/true, /*bucket_top_k=*/100));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// AggregatingStep
+
+TEST(CascadesStepIdentity, LogicalDigestExcludesAggregatingMergeThreads)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [a, b] = logicalPair(
+        makeAggregatingStep(/*final=*/true, /*merge_threads=*/4), makeAggregatingStep(/*final=*/true, /*merge_threads=*/8));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// `params.max_block_size` only splits the aggregation result into chunks.
+TEST(CascadesStepIdentity, LogicalDigestExcludesAggregatingParamsMaxBlockSize)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [a, b] = logicalPair(
+        makeAggregatingStep(/*final=*/true, /*merge_threads=*/4, /*limit_hint=*/0, /*params_max_block_size=*/65536),
+        makeAggregatingStep(/*final=*/true, /*merge_threads=*/4, /*limit_hint=*/0, /*params_max_block_size=*/1024));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// The partial/final stage marker of an aggregation.
+TEST(CascadesStepIdentity, LogicalDigestAggregatingFinalIsRelationDefining)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto a_step = makeAggregatingStep(/*final=*/true);
+    auto b_step = makeAggregatingStep(/*final=*/false);
+    /// With no aggregate functions the two headers agree, so only the marker can tell them apart.
+    ASSERT_EQ(
+        a_step->getOutputHeader()->getNamesAndTypesList().toString(),
+        b_step->getOutputHeader()->getNamesAndTypesList().toString());
+
+    auto [a, b] = logicalPair(std::move(a_step), std::move(b_step));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestAggregatingLimitHintIsRelationDefining)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [a, b] = logicalPair(
+        makeAggregatingStep(/*final=*/true, /*merge_threads=*/4, /*limit_hint=*/0),
+        makeAggregatingStep(/*final=*/true, /*merge_threads=*/4, /*limit_hint=*/10));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// A layout-dependent flag opts the instance out until the `stream_layout` normalization lands
+/// (plan section 4.2).
+TEST(CascadesStepIdentity, LogicalDigestAggregatingSkipMergingOptsOut)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto a_step = makeAggregatingStep(/*final=*/true);
+    ASSERT_TRUE(a_step->hasLogicalDigest());
+    a_step->skipMerging();
+    EXPECT_FALSE(a_step->hasLogicalDigest());
+
+    auto b_step = makeAggregatingStep(/*final=*/true);
+    b_step->skipMerging();
+
+    auto [a, b] = logicalPair(std::move(a_step), std::move(b_step));
+
+    EXPECT_EQ(a->cachedStepLogicalFingerprint(), nullptr);
+    EXPECT_FALSE(a->logicallyEqualTo(*b));
+}
+
+/// SortingStep
+
+/// The stage marker of a two-stage top-N: the partial stage emits up to `limit` rows per node, the
+/// merged one `limit` rows in total (plan section 3).
+TEST(CascadesStepIdentity, LogicalDigestPartialTopNMarkerIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto b_step = makeSortingStep(header);
+    b_step->setPartialTopN();
+
+    auto [a, b] = logicalPair(makeSortingStep(header), std::move(b_step));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// `is_sorting_for_merge_join` only tells later passes what the sort is for; the executed sort and
+/// its rows are the same either way.
+TEST(CascadesStepIdentity, LogicalDigestExcludesIsSortingForMergeJoin)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(
+        makeSortingStep(header),
+        std::make_unique<SortingStep>(
+            header, makeSortDescription(), /*limit_=*/10, makeSortSettings(), /*is_sorting_for_merge_join_=*/true));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// A read-in-order buffering knob: it only decides how much the final merge buffers ahead.
+TEST(CascadesStepIdentity, LogicalDigestExcludesSortBufferingKnob)
+{
+    auto header = makeHeader();
+    auto buffering_settings = makeSortSettings();
+    buffering_settings.read_in_order_use_buffering = !buffering_settings.read_in_order_use_buffering;
+
+    auto [a, b] = logicalPair(
+        makeSortingStep(header),
+        std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, buffering_settings));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// The logical digest calls neither `serialize` nor `serializeSettings`, so the whole
+/// `NonZeroUInt64` guard class disappears with it: a sort built from `Settings(size_t)` - as
+/// `optimizeGroupByTopK` builds one - has no full digest but does have a logical one.
+TEST(CascadesStepIdentity, LogicalDigestSurvivesZeroTemporaryFilesBuffer)
+{
+    auto header = makeHeader();
+    auto a_step = std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65536));
+    auto b_step = std::make_unique<SortingStep>(header, makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65536));
+
+    ASSERT_FALSE(a_step->supportsCascadesIdentity());
+    EXPECT_TRUE(a_step->hasLogicalDigest());
+
+    auto [a, b] = logicalPair(std::move(a_step), std::move(b_step));
+
+    EXPECT_NE(a->cachedStepLogicalFingerprint(), nullptr);
+    EXPECT_EQ(a->cachedStepFingerprint(), nullptr);
+    EXPECT_TRUE(a->logicallyEqualTo(*b));
+    EXPECT_FALSE(a->fullyEqualTo(*b));
+}
+
+TEST(CascadesStepIdentity, LogicalDigestSortLimitIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto b_step = makeSortingStep(header);
+    b_step->updateLimit(5);
+
+    auto [a, b] = logicalPair(makeSortingStep(header), std::move(b_step));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// DistinctStep
+
+TEST(CascadesStepIdentity, LogicalDigestDistinctLimitHintIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(
+        std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false),
+        std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/10, Names{"x"}, /*pre_distinct_=*/false));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+/// `serializeSettings` is what carries the DISTINCT size limits on the wire, and the logical digest
+/// does not call it - so the logical writer has to write them itself: `break` truncates the result.
+TEST(CascadesStepIdentity, LogicalDigestDistinctSizeLimitsAreRelationDefining)
+{
+    auto header = makeHeader();
+    SizeLimits truncating(/*max_rows=*/100, /*max_bytes=*/0, OverflowMode::BREAK);
+
+    auto [a, b] = logicalPair(
+        std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false),
+        std::make_unique<DistinctStep>(header, truncating, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestDistinctSkipStreamMergingOptsOut)
+{
+    auto header = makeHeader();
+    auto a_step = std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false);
+    ASSERT_TRUE(a_step->hasLogicalDigest());
+    a_step->skipStreamMerging();
+    EXPECT_FALSE(a_step->hasLogicalDigest());
+
+    auto b_step = std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false);
+    b_step->skipStreamMerging();
+
+    auto [a, b] = logicalPair(std::move(a_step), std::move(b_step));
+
+    EXPECT_EQ(a->cachedStepLogicalFingerprint(), nullptr);
+    EXPECT_FALSE(a->logicallyEqualTo(*b));
+}
+
+/// LimitByStep
+
+TEST(CascadesStepIdentity, LogicalDigestLimitByGroupLengthIsRelationDefining)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(
+        std::make_unique<LimitByStep>(header, /*group_length_=*/1, /*group_offset_=*/0, Names{"x"}),
+        std::make_unique<LimitByStep>(header, /*group_length_=*/2, /*group_offset_=*/0, Names{"x"}));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestLimitBySkipStreamMergingOptsOut)
+{
+    auto header = makeHeader();
+    auto a_step = std::make_unique<LimitByStep>(header, /*group_length_=*/1, /*group_offset_=*/0, Names{"x"});
+    ASSERT_TRUE(a_step->hasLogicalDigest());
+    a_step->skipStreamMerging();
+    EXPECT_FALSE(a_step->hasLogicalDigest());
+
+    auto b_step = std::make_unique<LimitByStep>(header, /*group_length_=*/1, /*group_offset_=*/0, Names{"x"});
+    b_step->skipStreamMerging();
+
+    auto [a, b] = logicalPair(std::move(a_step), std::move(b_step));
+
+    EXPECT_EQ(a->cachedStepLogicalFingerprint(), nullptr);
+    EXPECT_FALSE(a->logicallyEqualTo(*b));
+}
+
+/// JoinStepLogical
+
+TEST(CascadesStepIdentity, LogicalDigestJoinIndependentlyBuiltStepsAreEqual)
+{
+    auto [a, b] = logicalPair(makeJoinStepLogical(), makeJoinStepLogical());
+
+    EXPECT_NE(a->plan_step, b->plan_step);
+    EXPECT_EQ(a->logicalFingerprint(), b->logicalFingerprint());
+    EXPECT_TRUE(a->logicallyEqualTo(*b));
+}
+
+/// Join planner bookkeeping informs later passes and does not change the join's rows, so both
+/// variants belong in one group.
+TEST(CascadesStepIdentity, LogicalDigestExcludesJoinPlannerBookkeeping)
+{
+    auto b_step = makeJoinStepLogical();
+    b_step->setOptimized(/*estimated_rows_=*/1000);
+    b_step->setDisjunctionsOptimizationApplied(true);
+    b_step->setRightHashTableCacheKey(42);
+    b_step->setTableStatsHint("t1:1000");
+
+    auto [a, b] = logicalPair(makeJoinStepLogical(), std::move(b_step));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// The join's own three plan settings never reach the wire (the sorting settings overwrite them),
+/// and they only matter when an algorithm spills.
+TEST(CascadesStepIdentity, LogicalDigestExcludesJoinBlockSize)
+{
+    auto b_step = makeJoinStepLogical();
+    b_step->getJoinSettings().max_block_size += 1;
+
+    auto [a, b] = logicalPair(makeJoinStepLogical(), std::move(b_step));
+
+    expectLogicallyEqualButNotFully(*a, *b);
+}
+
+/// `join_any_take_last_row` picks the other row for an `ANY` join.
+TEST(CascadesStepIdentity, LogicalDigestJoinAnyTakeLastRowIsRelationDefining)
+{
+    auto b_step = makeJoinStepLogical();
+    b_step->getJoinSettings().join_any_take_last_row = !b_step->getJoinSettings().join_any_take_last_row;
+
+    auto [a, b] = logicalPair(makeJoinStepLogical(), std::move(b_step));
+
+    expectLogicallyUnequal(*a, *b);
+}
+
+TEST(CascadesStepIdentity, LogicalDigestJoinRejectsCorrelatedExpressions)
+{
+    auto a_step = makeJoinStepLogical(/*with_correlated_column=*/true);
+    ASSERT_TRUE(a_step->hasCorrelatedExpressions());
+    EXPECT_FALSE(a_step->hasLogicalDigest());
+
+    auto [a, b] = logicalPair(std::move(a_step), makeJoinStepLogical(/*with_correlated_column=*/true));
+
+    EXPECT_EQ(a->cachedStepLogicalFingerprint(), nullptr);
+    EXPECT_FALSE(a->logicallyEqualTo(*b));
+}
+
+/// The logical passes are counted like the full ones - they cost the optimizer the same way.
+TEST(CascadesStepIdentity, LogicalDigestCountersCountDigestPasses)
+{
+    auto header = makeHeader();
+    auto [a, b] = logicalPair(
+        std::make_unique<ExpressionStep>(header, makeDag(1)), std::make_unique<ExpressionStep>(header, makeDag(1)));
+
+    StepDigestCounters counters;
+    CurrentStepDigestCounters counters_scope(counters);
+
+    a->logicalFingerprint();
+    EXPECT_EQ(counters.digests_written, 1u);
+    EXPECT_GT(counters.digest_bytes_written, 0u);
+    EXPECT_EQ(counters.digest_confirmations, 0u);
+
+    EXPECT_TRUE(a->logicallyEqualTo(*b));
+    /// One pass fingerprints `b`, then both steps are re-digested to be compared byte for byte.
+    EXPECT_EQ(counters.digest_confirmations, 2u);
+    EXPECT_EQ(counters.digests_written, 4u);
 }

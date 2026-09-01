@@ -847,6 +847,72 @@ void SortingStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
     extras.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sort_settings.read_in_order_use_virtual_row_per_block);
 }
 
+namespace
+{
+/// Logical digest tags for `SortingStep`. Own enum, unique within this writer; never reused.
+enum SortingStepLogicalDigestTag : UInt64
+{
+    LOGICAL_TYPE_TAG = 1,
+    LOGICAL_RESULT_DESCRIPTION_TAG = 2,
+    LOGICAL_PREFIX_DESCRIPTION_TAG = 3,
+    LOGICAL_PARTITION_BY_DESCRIPTION_TAG = 4,
+    LOGICAL_SKIP_SCATTER_BY_PARTITION_TAG = 5,
+    LOGICAL_LIMIT_TAG = 6,
+    LOGICAL_IS_PARTIAL_TOP_N_TAG = 7,
+    LOGICAL_LIMIT_BY_COLUMNS_TAG = 8,
+    LOGICAL_LIMIT_BY_GROUP_LENGTH_TAG = 9,
+    LOGICAL_ALWAYS_READ_TILL_END_TAG = 10,
+    LOGICAL_APPLY_VIRTUAL_ROW_CONVERSIONS_TAG = 11,
+    LOGICAL_MAX_ROWS_TO_SORT_TAG = 12,
+    LOGICAL_MAX_BYTES_TO_SORT_TAG = 13,
+    LOGICAL_SORT_OVERFLOW_MODE_TAG = 14,
+};
+}
+
+void SortingStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The order the step delivers, plus the input order it assumes (`prefix_description` is read
+    /// only for `FinishSorting`, but it is written unconditionally so the tag set never varies).
+    writer.addVarUInt(LOGICAL_TYPE_TAG, static_cast<UInt64>(type));
+    writer.addSortDescription(LOGICAL_RESULT_DESCRIPTION_TAG, result_description);
+    writer.addSortDescription(LOGICAL_PREFIX_DESCRIPTION_TAG, prefix_description);
+
+    /// A partitioned sort sorts each partition on its own, and `skip_scatter_by_partition` asserts
+    /// the input is already split that way; under a limit both decide which rows survive.
+    writer.addSortDescription(LOGICAL_PARTITION_BY_DESCRIPTION_TAG, partition_by_description);
+    writer.addBool(LOGICAL_SKIP_SCATTER_BY_PARTITION_TAG, skip_scatter_by_partition);
+
+    /// The top-N bound and its stage marker: a partial top-N emits up to `limit` rows per node while
+    /// the merged one emits `limit` rows in total, so it denotes a different relation (plan section
+    /// 3) - and `TwoStageTopN` builds the partial stage by cloning the sort and flipping only this
+    /// flag, so a blind digest would fold the partial stage back into its source group.
+    writer.addVarUInt(LOGICAL_LIMIT_TAG, limit);
+    writer.addBool(LOGICAL_IS_PARTIAL_TOP_N_TAG, is_partial_top_n);
+
+    /// `addPerStreamLimitByIfNeeded` installs a row-dropping per-stream transform from these.
+    writer.addStrings(LOGICAL_LIMIT_BY_COLUMNS_TAG, limit_by_columns);
+    writer.addVarUInt(LOGICAL_LIMIT_BY_GROUP_LENGTH_TAG, limit_by_group_length);
+
+    /// `always_read_till_end` drains exhausted-but-unneeded inputs, which is what makes `totals` see
+    /// every row; `apply_virtual_row_conversions` adds a `RemoveVirtualRowTransform`, i.e. it decides
+    /// whether the marker rows of read-in-order leave this step.
+    writer.addBool(LOGICAL_ALWAYS_READ_TILL_END_TAG, always_read_till_end);
+    writer.addBool(LOGICAL_APPLY_VIRTUAL_ROW_CONVERSIONS_TAG, apply_virtual_row_conversions);
+
+    /// Result-affecting limits: `break` truncates the sorted input, `throw` fails the query.
+    writer.addVarUInt(LOGICAL_MAX_ROWS_TO_SORT_TAG, sort_settings.size_limits.max_rows);
+    writer.addVarUInt(LOGICAL_MAX_BYTES_TO_SORT_TAG, sort_settings.size_limits.max_bytes);
+    writer.addVarUInt(LOGICAL_SORT_OVERFLOW_MODE_TAG, static_cast<UInt64>(sort_settings.size_limits.overflow_mode));
+
+    /// Out, an optimizer hint only: `is_sorting_for_merge_join` tells later passes what the sort is
+    /// for; the executed sort and its rows are the same either way.
+    /// Out, buffering and spill: `use_buffering`, `sort_settings.read_in_order_use_buffering`,
+    /// `read_in_order_use_virtual_row_per_block`, `max_block_size`, `max_block_bytes`, the remerge
+    /// thresholds, the external-sort thresholds, `min_free_disk_space`, the temporary-file codec and
+    /// buffer size. Out, derived: `threshold_tracker` (a starved tracker only prunes less).
+    /// Out by predicate: `scatter_partitions`, excluded with the whole instance by `isSerializable()`.
+}
+
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)

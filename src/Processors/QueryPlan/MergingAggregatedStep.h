@@ -49,6 +49,10 @@ public:
     bool supportsCascadesIdentity() const override { return isSerializable(); }
     void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
 
+    /// No DAG and no wire guard to fail on, so every instance participates.
+    bool hasLogicalDigest() const override { return true; }
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;

@@ -53,10 +53,20 @@ private:
 /// Canonical full digest: serialization name, output header, changed serialization settings,
 /// wire `serialize` bytes, then the framed extras. The step description is deliberately excluded:
 /// it is display-only. Caller guarantees `step.supportsCascadesIdentity()`.
-/// This is the only digest writer - both the fingerprint and the byte-exact comparison in
+/// Both the full fingerprint and the byte-exact full comparison in
 /// Optimizations/Cascades/StepIdentity.h go through it so they cannot diverge.
 /// How to opt a step in, or classify a new field: Optimizations/Cascades/ARCHITECTURE.md,
 /// "Step digests and cross-group identity".
 void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out);
+
+/// Canonical logical digest: the same preamble (serialization name, output header), then the
+/// relation-defining content the step writes through `writeLogicalDigest`. It embeds no wire
+/// `serialize` bytes and no `serializeSettings`: those interleave relation-defining and physical
+/// fields with no markers and cannot be filtered without parsing, so the step authors its whole
+/// logical content through the framing writer instead. Caller guarantees `step.hasLogicalDigest()`.
+/// Everything `StepDigestWriter` says about framing and about digest lifetime applies here too.
+/// How a field is classified as relation-defining: Optimizations/Cascades/ARCHITECTURE.md,
+/// "Step digests and cross-group identity".
+void writeStepLogicalDigest(const IQueryPlanStep & step, WriteBuffer & out);
 
 }

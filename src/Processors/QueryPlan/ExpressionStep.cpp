@@ -139,6 +139,24 @@ void ExpressionStep::appendCascadesIdentityExtras(StepDigestWriter & extras) con
     extras.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
 }
 
+namespace
+{
+/// Logical digest tags for `ExpressionStep`. Own enum, unique within this writer; never reused.
+enum ExpressionStepLogicalDigestTag : UInt64
+{
+    LOGICAL_ACTIONS_DAG_TAG = 1,
+};
+}
+
+void ExpressionStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The whole relation: the DAG maps input rows to output rows and names the output columns.
+    writer.addDAG(LOGICAL_ACTIONS_DAG_TAG, &actions_dag);
+
+    /// Out: `prevent_input_removal` - it only forbids a later pass from pruning this step's inputs
+    /// and cannot change the rows this step produces from the inputs it has.
+}
+
 QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
 {
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);

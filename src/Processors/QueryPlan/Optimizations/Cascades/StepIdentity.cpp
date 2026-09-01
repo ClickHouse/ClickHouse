@@ -45,12 +45,14 @@ private:
     char buffer[4096];
 };
 
-}
+using StepDigestWriteFunction = void (*)(const IQueryPlanStep &, WriteBuffer &);
 
-UInt128 computeStepFullFingerprint(const IQueryPlanStep & step)
+/// The full and the logical pass differ only in which writer they run; the counters and the
+/// ProfileEvents deliberately aggregate both, since both cost the optimizer the same way.
+UInt128 computeFingerprint(const IQueryPlanStep & step, StepDigestWriteFunction write_digest)
 {
     SipHashWriteBuffer buffer;
-    writeStepFullDigest(step, buffer);
+    write_digest(step, buffer);
     auto hash = buffer.getHash();
 
     if (auto * counters = CurrentStepDigestCounters::get())
@@ -63,13 +65,13 @@ UInt128 computeStepFullFingerprint(const IQueryPlanStep & step)
     return hash;
 }
 
-bool stepFullDigestsEqual(const IQueryPlanStep & lhs, const IQueryPlanStep & rhs)
+bool digestsEqual(const IQueryPlanStep & lhs, const IQueryPlanStep & rhs, StepDigestWriteFunction write_digest)
 {
     WriteBufferFromOwnString lhs_out;
-    writeStepFullDigest(lhs, lhs_out);
+    write_digest(lhs, lhs_out);
 
     WriteBufferFromOwnString rhs_out;
-    writeStepFullDigest(rhs, rhs_out);
+    write_digest(rhs, rhs_out);
 
     const auto lhs_bytes = std::string_view(lhs_out.str());
     const auto rhs_bytes = std::string_view(rhs_out.str());
@@ -85,6 +87,28 @@ bool stepFullDigestsEqual(const IQueryPlanStep & lhs, const IQueryPlanStep & rhs
     ProfileEvents::increment(ProfileEvents::CascadesStepDigestConfirmations, 2);
 
     return lhs_bytes == rhs_bytes;
+}
+
+}
+
+UInt128 computeStepFullFingerprint(const IQueryPlanStep & step)
+{
+    return computeFingerprint(step, writeStepFullDigest);
+}
+
+bool stepFullDigestsEqual(const IQueryPlanStep & lhs, const IQueryPlanStep & rhs)
+{
+    return digestsEqual(lhs, rhs, writeStepFullDigest);
+}
+
+UInt128 computeStepLogicalFingerprint(const IQueryPlanStep & step)
+{
+    return computeFingerprint(step, writeStepLogicalDigest);
+}
+
+bool stepLogicalDigestsEqual(const IQueryPlanStep & lhs, const IQueryPlanStep & rhs)
+{
+    return digestsEqual(lhs, rhs, writeStepLogicalDigest);
 }
 
 }

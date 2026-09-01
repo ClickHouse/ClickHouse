@@ -81,7 +81,8 @@ void StepDigestWriter::addDAG(UInt64 tag, const ActionsDAG * dag)
     addPayload(tag, payload.str());
 }
 
-void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out)
+/// Shared by both digests: the step class and the schema half of the relation it produces.
+static void writeStepDigestPreamble(const IQueryPlanStep & step, WriteBuffer & out)
 {
     writeStringBinary(step.getSerializationName(), out);
 
@@ -89,6 +90,11 @@ void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out)
         serializeQueryPlanStepHeader(*step.getOutputHeader(), out);
     else
         serializeQueryPlanStepHeader({}, out);
+}
+
+void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out)
+{
+    writeStepDigestPreamble(step, out);
 
     QueryPlanSerializationSettings settings;
     step.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
@@ -103,6 +109,18 @@ void writeStepFullDigest(const IQueryPlanStep & step, WriteBuffer & out)
 
     StepDigestWriter extras(out, registry);
     step.appendCascadesIdentityExtras(extras);
+}
+
+void writeStepLogicalDigest(const IQueryPlanStep & step, WriteBuffer & out)
+{
+    writeStepDigestPreamble(step, out);
+
+    /// A fresh registry per digest, as in the full digest: set ids are assigned in encounter order,
+    /// so two independently built steps holding equal sets encode equally. `for_cache_key` stays
+    /// false here too, so a runtime-filter id inside a DAG is part of the digest - fail-closed.
+    SerializedSetsRegistry registry;
+    StepDigestWriter writer(out, registry);
+    step.writeLogicalDigest(writer);
 }
 
 }

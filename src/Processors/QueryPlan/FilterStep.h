@@ -62,6 +62,10 @@ public:
     bool supportsCascadesIdentity() const override { return isSerializable() && !hasCorrelatedExpressions(); }
     void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
 
+    /// The logical digest writes the DAG, so the correlated-`PLACEHOLDER` guard stays.
+    bool hasLogicalDigest() const override { return !hasCorrelatedExpressions(); }
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;

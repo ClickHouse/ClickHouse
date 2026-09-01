@@ -171,6 +171,13 @@ public:
     bool supportsCascadesIdentity() const override;
     void appendCascadesIdentityExtras(StepDigestWriter & extras) const override;
 
+    /// The `NonZeroUInt64` guard of `supportsCascadesIdentity` does not apply here: the logical
+    /// digest calls neither `serialize` nor `serializeSettings`. `isSerializable()` stays, so that
+    /// the two shapes it excludes (`MergingSorted` / `PartitionedFinishSorting`, and the
+    /// fixed-shard-count scatter) keep out of group deduplication until they are audited.
+    bool hasLogicalDigest() const override { return isSerializable(); }
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;

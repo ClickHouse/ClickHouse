@@ -450,6 +450,30 @@ void FilterStep::appendCascadesIdentityExtras(StepDigestWriter & extras) const
     }
 }
 
+namespace
+{
+/// Logical digest tags for `FilterStep`. Own enum, unique within this writer; never reused.
+enum FilterStepLogicalDigestTag : UInt64
+{
+    LOGICAL_ACTIONS_DAG_TAG = 1,
+    LOGICAL_FILTER_COLUMN_NAME_TAG = 2,
+    LOGICAL_REMOVE_FILTER_COLUMN_TAG = 3,
+};
+}
+
+void FilterStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The predicate and the column it is read from decide which rows survive; dropping the filter
+    /// column changes the output header.
+    writer.addDAG(LOGICAL_ACTIONS_DAG_TAG, &actions_dag);
+    writer.addString(LOGICAL_FILTER_COLUMN_NAME_TAG, filter_column_name);
+    writer.addBool(LOGICAL_REMOVE_FILTER_COLUMN_TAG, remove_filter_column);
+
+    /// Out: `prevent_input_removal`, as in `ExpressionStep`. Out: `condition` - it only keys the
+    /// query condition cache, whose entries record granules that provably match nothing, so it
+    /// changes how fast a later read runs and never which rows this filter emits.
+}
+
 QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)

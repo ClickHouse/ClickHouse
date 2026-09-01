@@ -94,6 +94,15 @@ public:
     /// `supportsCascadesIdentity()`; must append the same tags in the same order every time.
     virtual void appendCascadesIdentityExtras(StepDigestWriter & /*extras*/) const {}
 
+    /// Logical digest: the relation-defining fields only (same rows, same header, given the same
+    /// inputs). Keys future memo-wide group deduplication, so it is opt-in per audited step type
+    /// and fail-closed per instance. Physical knobs (threads, block sizes, buffering, spill) are
+    /// excluded by design - variants coexist in one group as costed alternatives.
+    virtual bool hasLogicalDigest() const { return false; }
+    /// Writes the whole logical content - the logical digest embeds no wire bytes. Called only when
+    /// `hasLogicalDigest()`; must write the same tags in the same order every time.
+    virtual void writeLogicalDigest(StepDigestWriter & /*writer*/) const {}
+
     virtual QueryPlanStepPtr clone() const;
 
     virtual const SortDescription & getSortDescription() const;
