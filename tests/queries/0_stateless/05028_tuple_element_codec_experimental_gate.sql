@@ -36,7 +36,8 @@ DETACH TABLE tuple_element_codec_gate;
 ATTACH TABLE tuple_element_codec_gate;
 SELECT value.number FROM tuple_element_codec_gate FORMAT Null;
 
--- Restating an existing declaration is not an introduction and remains allowed.
+-- Restating Delta, which is stored as Delta(8) for UInt64, is semantically unchanged
+-- and remains allowed without either admission gate.
 ALTER TABLE tuple_element_codec_gate
     MODIFY COLUMN value Tuple(number UInt64 CODEC(Delta), retained UInt64 CODEC(Delta), text String);
 

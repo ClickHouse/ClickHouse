@@ -857,15 +857,23 @@ static void applyTupleCodecPatch(
 
 static ColumnCodecDescription getChangedTupleCodecDeclarations(
     const ColumnCodecDescription & current_policy,
-    const ColumnCodecDescription & declarations)
+    const ColumnCodecDescription & declarations,
+    const ColumnCodecDescription & normalized_resulting_policy)
 {
     ColumnCodecDescription changed;
-    for (const auto & [path, codec] : declarations.getSubcolumns())
+    for (const auto & [path, _] : declarations.getSubcolumns())
     {
+        const auto normalized = normalized_resulting_policy.getSubcolumns().find(path);
+        if (normalized == normalized_resulting_policy.getSubcolumns().end())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Normalized codec policy has no explicitly declared tuple element path {}",
+                formatTupleCodecPath(path));
+
         auto current = current_policy.getSubcolumns().find(path);
         if (current == current_policy.getSubcolumns().end()
-            || current->second->formatWithSecretsOneLine() != codec->formatWithSecretsOneLine())
-            changed.set(path, codec);
+            || current->second->formatWithSecretsOneLine() != normalized->second->formatWithSecretsOneLine())
+            changed.set(path, normalized->second);
     }
     return changed;
 }
@@ -2331,11 +2339,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             const auto & current_owner = all_columns.get(column_name);
             const DataTypePtr resulting_type = command.data_type ? command.data_type : current_owner.type;
-            const auto changed_tuple_codecs = getChangedTupleCodecDeclarations(current_owner.codec, command.declared_codec);
-            if (!changed_tuple_codecs.empty() && !context->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Tuple-element CODEC declarations are experimental. Set allow_experimental_tuple_element_codecs = 1 to enable them");
             auto resulting_codec = current_owner.codec.clone();
             applyTupleCodecPatch(
                 resulting_codec,
@@ -2352,12 +2355,25 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (!resulting_codec.empty())
             {
+                /// Normalize the complete candidate as trusted metadata before deciding whether an
+                /// explicitly written declaration changed. Stored declarations are already normalized,
+                /// so comparing them with raw syntax would misclassify equivalent forms such as
+                /// `Delta` and `Delta(8)` as a new codec.
+                resulting_codec = validateColumnCodecDescription(
+                    resulting_codec, resulting_type, CodecValidationSettings::trusted());
+                const auto changed_tuple_codecs = getChangedTupleCodecDeclarations(
+                    current_owner.codec, command.declared_codec, resulting_codec);
+                if (!changed_tuple_codecs.empty()
+                    && !context->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Tuple-element CODEC declarations are experimental. Set allow_experimental_tuple_element_codecs = 1 to enable them");
+
                 auto declarations_to_admit = changed_tuple_codecs;
                 if (command.codec)
                     declarations_to_admit.setRoot(command.codec);
-                resulting_codec = declarations_to_admit.empty()
-                    ? validateColumnCodecDescription(resulting_codec, resulting_type, CodecValidationSettings::trusted())
-                    : validateColumnCodecDescriptionForAlter(
+                if (!declarations_to_admit.empty())
+                    resulting_codec = validateColumnCodecDescriptionForAlter(
                         resulting_codec, resulting_type, declarations_to_admit, codec_validation_settings);
             }
 
