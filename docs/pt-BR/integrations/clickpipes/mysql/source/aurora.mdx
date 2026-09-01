@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/pt-BR/clickpipes/_iam_authentication.mdx";
 
 Este guia passo a passo mostra como configurar o Amazon Aurora MySQL para replicar dados para o ClickHouse Cloud usando o [ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index). Para perguntas frequentes sobre CDC do MySQL, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).
 
@@ -136,13 +137,7 @@ Conecte-se à sua instância do Aurora MySQL como usuário administrador e execu
   ### Usando autenticação IAM (opcional)
 </div>
 
-Em vez de uma senha, você pode autenticar o usuário do ClickPipes por meio do acesso baseado em função do AWS IAM. Crie o usuário da seguinte forma e, em seguida, conceda a ele os mesmos privilégios de schema e replicação mostrados acima:
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-Consulte [AWS IAM DB authentication (RDS/Aurora)](/pt-BR/integrations/clickpipes/postgres/auth) para ver o passo a passo completo de configuração da IAM role e da política necessárias para que o ClickPipes se autentique dessa forma.
+<IAMAuthentication engine="mysql" service="aurora" />
 
 <div id="configure-network-access">
   ## Configurar o acesso à rede
@@ -152,7 +147,7 @@ Consulte [AWS IAM DB authentication (RDS/Aurora)](/pt-BR/integrations/clickpipes
   ### Controle de acesso baseado em IP
 </div>
 
-Para restringir o tráfego para sua instância do Aurora MySQL, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/home#list-of-static-ips) às **regras de entrada** do Security Group do Aurora.
+Para restringir o tráfego para sua instância do Aurora MySQL, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às **regras de entrada** do Security Group do Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Onde encontrar o Security Group no Aurora MySQL?" size="lg" border />
 

@@ -80,3 +80,23 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
     err = (stderr or b"").decode()
     assert code == 0, "harness failed:\n{}\n{}".format(out, err)
     assert "All scenarios passed" in out
+    # The `run=1`-marker scenarios are the regression tests for scoping the URL
+    # marker to the tab that produced it, and the `dirty-startup-*` ones cover an
+    # edit that lands while the saved workspace is still loading; pin them by name
+    # so a harness edit that silently drops a scenario cannot pass as "all
+    # scenarios passed".
+    for scenario in (
+        "run-marker-per-tab",
+        "legacy-popstate-clears-policy",
+        "run-marker-kept-for-own-run",
+        "run-marker-plain-load",
+        "dirty-startup-run-leak",
+        "dirty-startup-adopt-restamp",
+        "dirty-startup-allblank-edit-survives",
+        "dirty-startup-allblank-entry-reowned",
+        "dirty-startup-merge-entry-reowned",
+        "shape-not-stamped-before-run",
+    ):
+        assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
+            scenario, out
+        )

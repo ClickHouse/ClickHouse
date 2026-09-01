@@ -19,7 +19,7 @@ namespace DB::PrometheusQueryToSQL
 /// For comparison operators with the `bool` modifier, `allow_grouping_modifier_copy_metric_name` should be
 /// false, because `bool` always drops `__name__` unconditionally.
 SQLQueryPiece applySimpleBinaryOperator(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
     SQLQueryPiece && right_argument,
     ConverterContext & context,

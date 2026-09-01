@@ -1,0 +1,16 @@
+-- the user cannot describe the target directly
+1
+-- 1. omitted columns, no rights on the target: rejected
+1
+-- 1. nothing was created, so nothing was disclosed
+0
+-- 2. omitted columns, with SHOW COLUMNS on the target: allowed and inferred
+x	UInt64
+secret_column	String
+-- 3. explicit columns, no rights on the target: still allowed
+1
+-- 4. temporary table, omitted columns, no rights on the target: rejected
+1
+-- 5. a detached table with an inferred structure re-attaches without the grant
+x	UInt64
+secret_column	String

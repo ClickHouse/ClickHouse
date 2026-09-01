@@ -48,7 +48,7 @@ It is normally unnecessary to override a write format, but the methods in `click
 | Float64               | float                   |                   |                                                                                                             |
 | Decimal               | decimal.Decimal         |                   |                                                                                                             |
 | String                | str or bytes            |                   | A column must consistently contain text or bytes.                                                           |
-| FixedString           | bytes                   | string            | If inserted as a string, additional bytes will be set to zeros                                              |
+| FixedString           | bytes                   | string            | String values are padded with zero bytes. Empty bytes are written as all zero bytes.                        |
 | Enum[8,16]            | str or int              |                   | Insert labels as strings or their underlying integer values.                                                |
 | Date                  | datetime.date           | int               | Integer values are interpreted as days since 1970-01-01.                                                    |
 | Date32                | datetime.date           | int               | Integer values are interpreted as signed day offsets.                                                       |
@@ -195,11 +195,31 @@ ClickHouse Connect uses the standard library `zoneinfo` module. The driver no lo
 
 #### Timezone-naive datetime objects {#timezone-naive-datetime-objects}
 
-Python interprets a naive `datetime` in the system's local timezone when `.timestamp()` is called. That makes inserts dependent on the environment. Prefer one of these approaches:
+The global `naive_datetime_insert` setting controls native Python object inserts of naive `datetime` values. It also applies to naive ISO strings accepted by `DateTime64` columns.
 
-1. Use timezone-aware datetime objects.
-2. Ensure the process timezone is UTC.
-3. Attach the intended timezone or convert to an epoch integer explicitly.
+- `"local"` is the default in 1.x. Python interprets the value in the process timezone when `.timestamp()` is called. This preserves the existing behavior.
+- `"server"` interprets the value as wall time in the timezone declared by the `DateTime` or `DateTime64` column. If the column has no timezone, it uses the server timezone reported when the client connected.
+
+Set the option before an insert. It is read when each native insert column containing Python `datetime` objects or `DateTime64` ISO strings is serialized, so the change applies to existing clients and reusable insert contexts.
+
+```python
+from datetime import datetime
+
+from clickhouse_connect import common
+
+common.set_setting("naive_datetime_insert", "server")
+
+naive_time = datetime(2023, 6, 15, 10, 30)
+client.insert("events", [[naive_time]], column_names=["event_time"])
+```
+
+With `"server"`, ClickHouse Connect attaches the target `tzinfo` before converting the value to an epoch. For IANA time zones, it follows the standard library rules for daylight saving transitions. A fall overlap uses the datetime's `fold` value. The default `fold=0` selects the offset before the transition, while `fold=1` selects the offset after it. A spring gap uses the same offset selection and is not rejected or normalized.
+
+Nonexistent spring gap wall times may not round trip through a wall-mode query parameter because ClickHouse text parsing can select a different offset. Use an aware `datetime` or a valid wall time when the instant matters.
+
+The option only applies to native Python object inserts of `datetime` values and naive ISO strings accepted by `DateTime64`. Naive `datetime64`-dtype NumPy and Pandas columns keep their existing UTC wall time conversion.
+
+To represent a specific instant independent of either mode, attach the intended timezone or provide an epoch integer explicitly.
 
 ```python
 from datetime import datetime, timezone
@@ -212,11 +232,13 @@ epoch_timestamp = int(naive_time.replace(tzinfo=timezone.utc).timestamp())
 client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 ```
 
+Naive `datetime` query parameters use the separate `naive_datetime_binding` setting. Its default `"wall"` mode sends the wall fields without host-local conversion. See the [Parameters argument](/integrations/language-clients/python/driver-api#parameters-argument) section.
+
 #### DateTime columns with timezone metadata {#datetime-columns-with-timezone-metadata}
 
 ClickHouse columns can declare timezone metadata, for example `DateTime('America/Denver')` or `DateTime64(3, 'Asia/Tokyo')`. The metadata controls how values are presented when queried.
 
-When inserting into such a column, ClickHouse Connect converts the Python value according to its own `tzinfo`. When queried, the result uses the column timezone unless a per-column override is supplied with the `column_tzs` argument. The `query_tz` argument doesn't override a column's declared timezone.
+When inserting a timezone-aware value, ClickHouse Connect preserves the represented instant. For a naive value, the `naive_datetime_insert` setting controls whether the process timezone or column timezone is used. When queried, the result uses the column timezone unless a per-column override is supplied with the `column_tzs` argument. The `query_tz` argument doesn't override a column's declared timezone.
 
 ```python
 from datetime import datetime

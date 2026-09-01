@@ -83,6 +83,14 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// The name of the named collection the table function arguments were resolved from, or an empty
+    /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
+    /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
+    /// blocked while the table exists, matching the behavior of table engines that resolve named
+    /// collections (see `tryGetNamedCollectionWithOverrides`). Transient uses of the table function in a
+    /// query do not register anything.
+    virtual String getUsedNamedCollectionName() const { return {}; }
+
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
     virtual void setPartitionBy(const ASTPtr &) {}

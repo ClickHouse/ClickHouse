@@ -13,8 +13,8 @@ namespace DB
 class WriteBuffer;
 class ReadBuffer;
 
-/// The outline: the front part of a serialized query plan, carrying the data every step has in
-/// common - tree shape, step names and payload format versions, descriptions, output headers,
+/// The outline: the front part of a serialized query plan, carrying the plan-level limits and the
+/// data every step has in common - tree shape, step names and payload format versions, descriptions, output headers,
 /// changed settings, payload sizes. The step payloads follow it, one sized byte range each.
 ///
 /// Keeping all of that in front lets a reader:
@@ -31,6 +31,11 @@ struct PlanOutline
 {
     /// name + flags (bit 0: ignorable) + length-prefixed setting-field value bytes.
     using SettingEntry = QueryPlanSerializationSettings::SerializedEntry;
+
+    /// Limits that belong to the plan as a whole, not to a step. Without them a plan fragment would
+    /// run with default limits after it is read back.
+    UInt64 max_threads = 0;
+    bool concurrency_control = false;
 
     struct Node
     {

@@ -295,7 +295,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-يُستخدم الإعداد [`mutations_sync`](/ar/reference/settings/session-settings#mutations_sync)
+يُستخدم الإعداد [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync)
 لفرض التنفيذ بشكل متزامن.
 
 ننشئ ونملأ الإسقاط `prj_gby_county` — وهو جدول إضافي (مخفي)
@@ -468,7 +468,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-تُظهر الاستعلامات التالية الفرق في الأداء مع الإسقاطات وبدونها. ولتعطيل استخدام الإسقاطات، نستخدم الإعداد [`optimize_use_projections`](/ar/reference/settings/session-settings#optimize_use_projections)، وهو مُمكَّن افتراضيًا.
+تُظهر الاستعلامات التالية الفرق في الأداء مع الإسقاطات وبدونها. ولتعطيل استخدام الإسقاطات، نستخدم الإعداد [`optimize_use_projections`](/ar/reference/settings/session-settings/optimize-use#optimize_use_projections)، وهو مُمكَّن افتراضيًا.
 
 <div id="average-price-projections">
   #### الاستعلام 1. متوسط السعر لكل سنة

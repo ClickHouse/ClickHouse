@@ -13,12 +13,16 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Field.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsBasic.h>
@@ -76,11 +80,38 @@ TEST(Statistics, TDigestLessThan)
     test_less_than(data, {-1, 1e9, 50000.0, 3000.0, 30.0}, {0, 100000, 50000, 3000, 30}, {0, 0, 0.001, 0.001, 0.001});
 }
 
+TEST(Statistics, TryConvertToFloat64)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+
+    auto converted_int = StatisticsUtils::tryConvertToFloat64(Field(Int64(-42)), data_type);
+    ASSERT_TRUE(converted_int.has_value());
+    EXPECT_DOUBLE_EQ(*converted_int, -42.0);
+
+    auto converted_string = StatisticsUtils::tryConvertToFloat64(Field(String("1.25")), data_type);
+    ASSERT_TRUE(converted_string.has_value());
+    EXPECT_DOUBLE_EQ(*converted_string, 1.25);
+
+    const auto decimal_type = std::make_shared<DataTypeDecimal64>(18, 2);
+    auto converted_decimal = StatisticsUtils::tryConvertToFloat64(
+        Field(DecimalField<Decimal64>(Decimal64(12345), 2)), decimal_type);
+    ASSERT_TRUE(converted_decimal.has_value());
+    EXPECT_DOUBLE_EQ(*converted_decimal, 123.45);
+
+    const auto ipv4_type = std::make_shared<DataTypeIPv4>();
+    auto converted_ipv4 = StatisticsUtils::tryConvertToFloat64(Field(IPv4(0x7f000001)), ipv4_type);
+    ASSERT_TRUE(converted_ipv4.has_value());
+    EXPECT_DOUBLE_EQ(*converted_ipv4, 2130706433.0);
+
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(String("1.25 trailing")), data_type).has_value());
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(Array{}), data_type).has_value());
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(Float64(1.0)), std::make_shared<DataTypeArray>(data_type)).has_value());
+}
+
 TEST(Statistics, Estimator)
 {
-    /// `StatisticsTDigest::estimateLess` converts field values via `toFloat64` from
-    /// `FunctionFactory`. Register scalar functions so this test is self-contained and
-    /// does not rely on earlier tests in the binary having registered them.
+    /// Register scalar functions used while interpreting estimator expressions so this
+    /// test does not depend on earlier tests in the binary having registered them.
     tryRegisterFunctions();
 
     DataTypePtr data_type = std::make_shared<DataTypeInt32>();
@@ -149,6 +180,7 @@ TEST(Statistics, Estimator)
     ///
     test_f("a in (1,2,3,4,5)", 5);
     test_f("a not in (1,2,3,4,5)", 10000-5);
+    test_f("a < '3'", 2); /// Quoted numeric literal reaches statistics as a String Field.
     test_f("b in (2, 500, 500)", 5000);
     test_f("a < 3 and b = 500", 1);
     test_f("a < 3 and b = 500 and a < b", 1); /// unknown condition 'a < b' assumes 100% selectivity
@@ -751,3 +783,67 @@ TEST(Statistics, BasicDefaultCountArray)
     EXPECT_DOUBLE_EQ(*eq_empty, 2.0);
 }
 
+
+/// Statistics files with version `V3` were produced by builds of `master` between PR #102356 (which
+/// added a `NullCount` statistic) and its revert. They must stay readable: a part written by such a
+/// build is otherwise unqueryable, and on a readonly disk it cannot be rewritten by
+/// `ALTER TABLE ... MATERIALIZE STATISTICS`. The layout is `V4` without `stored_type_name`, and bit 4
+/// of the type mask -- the reverted `NullCount` -- must be skipped rather than parsed as `Basic`.
+TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+
+    auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)
+    {
+        writeIntBinary(static_cast<UInt64>(stat_payload.size()), out);
+        out.write(stat_payload.data(), stat_payload.size());
+    };
+
+    String minmax_payload;
+    {
+        WriteBufferFromString buf(minmax_payload);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// row_count
+        writeStringBinary(data_type->getName(), buf);
+        writeFieldBinary(Field(Int64(-5)), buf);
+        writeFieldBinary(Field(Int64(42)), buf);
+        buf.finalize();
+    }
+
+    /// `StatisticsNullCount::serialize` wrote a single `UInt64`.
+    String null_count_payload;
+    {
+        WriteBufferFromString buf(null_count_payload);
+        writeIntBinary(static_cast<UInt64>(7), buf);
+        buf.finalize();
+    }
+
+    String file;
+    {
+        WriteBufferFromString buf(file);
+        writeIntBinary(static_cast<UInt16>(3), buf); /// StatisticsFileVersion::V3
+        /// bit 3 = `MinMax`, bit 4 = the reverted `NullCount`, which is today's `Basic` slot
+        writeIntBinary(static_cast<UInt64>((1ULL << 3) | (1ULL << 4)), buf);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// rows
+        lengthPrefixed(buf, minmax_payload);
+        lengthPrefixed(buf, null_count_payload);
+        buf.finalize();
+    }
+
+    ReadBufferFromString rb(file);
+    auto restored = ColumnStatistics::deserialize(rb, data_type);
+
+    ASSERT_TRUE(restored != nullptr);
+    EXPECT_EQ(restored->getNumRows(), 100u);
+
+    /// `MinMax` was read...
+    ASSERT_TRUE(restored->hasMinMax());
+    auto estimate = restored->getEstimate();
+    ASSERT_TRUE(estimate.estimated_min.has_value());
+    ASSERT_TRUE(estimate.estimated_max.has_value());
+    EXPECT_EQ(*estimate.estimated_min, Field(Int64(-5)));
+    EXPECT_EQ(*estimate.estimated_max, Field(Int64(42)));
+
+    /// ...and the reverted `NullCount` payload was skipped, not misread as a `Basic` payload.
+    EXPECT_FALSE(restored->getStats().contains(StatisticsType::Basic));
+    EXPECT_FALSE(restored->hasNullCount());
+}

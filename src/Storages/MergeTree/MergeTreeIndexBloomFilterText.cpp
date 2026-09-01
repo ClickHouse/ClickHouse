@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -85,7 +86,8 @@ MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText
     : index_columns(index_columns_)
     , index_name (index_name_)
     , params(params_)
-    , tokenizer(tokenizer_)
+    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? tokenizer_->clone() : nullptr)
+    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , granule(
         std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
             index_name, index_columns.size(), params))
@@ -157,7 +159,8 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     : index_columns(index_sample_block.getNames())
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
-    , tokenizer(token_extactor_)
+    , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
+    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
 {
     if (!predicate)
     {
@@ -435,6 +438,19 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
+namespace
+{
+
+bool isLikePatternFunction(const String & function_name)
+{
+    return function_name == "like"
+        || function_name == "notLike"
+        || function_name == "mapContainsKeyLike"
+        || function_name == "mapContainsValueLike";
+}
+
+}
+
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -466,6 +482,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         return false;
 
     Field const_value = value_field;
+
+    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
+    /// granule holding matching rows.
+    if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String
+        && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
+        return false;
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);

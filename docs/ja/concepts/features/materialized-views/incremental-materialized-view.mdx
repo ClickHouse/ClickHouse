@@ -1051,7 +1051,7 @@ GROUP BY UserId
   ## 並列処理と順次処理
 </div>
 
-前の例で示したように、1 つのテーブルを複数の Materialized View のソースとして使用できます。これらの実行順序は、設定 [`parallel_view_processing`](/ja/reference/settings/session-settings#parallel_view_processing) によって決まります。
+前の例で示したように、1 つのテーブルを複数の Materialized View のソースとして使用できます。これらの実行順序は、設定 [`parallel_view_processing`](/ja/reference/settings/session-settings/parallel#parallel_view_processing) によって決まります。
 
 デフォルトでは、この設定は `0` (`false`) であり、Materialized View は `uuid` の順に順次実行されます。
 

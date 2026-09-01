@@ -50,6 +50,21 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
+### Per-query read formats {#sqlalchemy-per-query-read-formats}
+
+Set ClickHouse read formats on an engine, connection, or statement through SQLAlchemy execution options with `query_formats`, with statement formats applied first so they override matching connection or engine keys and wildcards.
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
 ### Server-side parameters {#sqlalchemy-server-side-parameters}
 
 SQLAlchemy normally renders client-side parameters. Opt in to ClickHouse server-side parameters when creating the engine:
@@ -63,9 +78,13 @@ engine = create_engine(
 
 In this mode every bound value must have a ClickHouse-compatible SQLAlchemy type. Supported `IN` lists become typed ClickHouse `Array` parameters. The compiler raises `CompileError` when it cannot derive a compatible type or safely process a bind.
 
+Bind names must be ClickHouse ASCII BareWord names. Names that start and end with `$` are rejected because the core driver reserves them for raw binary query parameters.
+
 ## Core queries {#sqlalchemy-core-queries}
 
-The dialect supports SQLAlchemy Core `SELECT` queries with joins, filters, ordering, limits and offsets, and `DISTINCT`.
+The dialect supports SQLAlchemy Core `SELECT` queries with joins, filters, ordering, limits and offsets, `DISTINCT`, and compound selects.
+
+SQLAlchemy `union()`, `intersect()`, and `except_()` compile to ClickHouse `UNION DISTINCT`, `INTERSECT DISTINCT`, and `EXCEPT DISTINCT`. Their `union_all()`, `intersect_all()`, and `except_all()` counterparts compile to the corresponding `ALL` operators. This explicit mapping preserves SQLAlchemy's duplicate semantics regardless of ClickHouse set-operation defaults.
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -96,6 +115,56 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
+### Literal rendering {#sqlalchemy-literal-rendering}
+
+When SQLAlchemy inlines a bound value through `literal_binds` or `literal_execute`, the dialect uses ClickHouse quoting for generic string types and ClickHouse types. This also applies through `TypeDecorator` wrappers and `with_variant()` selections. String values retain percent signs and backslashes even when other bound parameters remain.
+
+### JSON subcolumns {#sqlalchemy-json-subcolumns}
+
+For a column declared or reflected as ClickHouse `JSON`, use square brackets to select one segment of a storage-backed subcolumn path at a time:
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+`payload["severity"]` compiles to ClickHouse dotted identifier syntax. Each part is quoted separately, for example `` `events`.`payload`.`severity` ``. It reads ClickHouse's stored JSON subcolumn and does not call `getSubcolumn`. Chain `[]` or `.subcolumn()` once for each path segment. Each segment must be a non-empty string.
+
+Passing `type_` to `.subcolumn()` wraps the dotted path in a SQL `CAST` and assigns that type to the SQLAlchemy expression. Without `type_`, `.subcolumn("segment")` behaves like `["segment"]`.
+
+An untyped path has ClickHouse's `Dynamic` type. ClickHouse does not allow `Dynamic` values directly in `ORDER BY` or `GROUP BY`. Pass `type_` when a subcolumn is used there.
+
+For statically typed code, import `json_subcolumn` from `clickhouse_connect.cc_sqlalchemy`. The helper also takes one segment at a time and preserves the Python result type from `type_`:
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+In this example, type checkers see `request_id` as `ColumnElement[int]`.
+
+Each segment is quoted independently, including names with spaces or backticks. Backticks do not make a dot literal to ClickHouse JSON path handling. When `json_type_escape_dots_in_keys` is enabled, use ClickHouse's `%2E` encoding for literal dots in keys. Access a key named `a.b` as `payload["a%2Eb"]`, not `payload["a.b"]`.
+
 ### ClickHouse query extensions {#sqlalchemy-query-extensions}
 
 Import `select` from `clickhouse_connect.cc_sqlalchemy` to expose typed ClickHouse methods to static type checkers. The standard `sqlalchemy.select` also has these methods at runtime.
@@ -123,6 +192,21 @@ The ClickHouse `Select` methods are:
 | `.array_join(...)` | `ARRAY JOIN` |
 | `.left_array_join(...)` | `LEFT ARRAY JOIN` |
 | `.ch_join(...)` | ClickHouse joins with `strictness`, `distribution`, `using`, and `cross` options |
+| `.cte(name, materialized=True)` | `WITH name AS MATERIALIZED (...)` |
+
+SQLAlchemy's `Select.with_hint()` is a table hint API. The ClickHouse dialect does not render table hints. An applicable wildcard or `clickhousedb` hint emits an `SAWarning` and leaves the generated SQL unchanged. Use `final()`, `sample()`, `prewhere()`, or `limit_by()` for those ClickHouse clauses.
+
+`Select.with_statement_hint()` is a raw tail directive API. It appends the supplied text to the end of the `SELECT` without ClickHouse-specific validation. This remains available for trusted static SQL such as `SETTINGS max_threads=1`:
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+For ClickHouse settings, prefer execution options so the driver handles the settings separately from the SQL text:
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
 
 For example, a ClickHouse `GLOBAL ANY LEFT JOIN` can be chained without nesting a custom `FromClause`:
 
@@ -155,7 +239,49 @@ stmt = select(
 )
 ```
 
-The standard SQLAlchemy `values()` construct compiles to ClickHouse's `VALUES` table-function syntax, including when used in a common table expression (the CTE form requires SQLAlchemy 2.x, where `Values.cte()` was added).
+The standard SQLAlchemy `values()` construct compiles to ClickHouse's `VALUES` table-function syntax, including when used in a common table expression. The CTE form requires SQLAlchemy 2.0.42 or later, where `Values.cte()` was added.
+
+### Materialized CTEs {#sqlalchemy-materialized-ctes}
+
+By default ClickHouse inlines a common table expression, so a CTE referenced more than once has its body executed once per reference. Pass `materialized=True` to `.cte()` to emit `WITH <name> AS MATERIALIZED (...)`, which computes the body once:
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+The server materializes the CTE only when the keyword is present, `enable_materialized_cte=1`, and the analyzer is enabled. Set `enable_materialized_cte` on the statement, connection, or engine as shown in [Per-query settings](#sqlalchemy-per-query-settings). The analyzer is enabled by default on every server that supports this feature, so setting `enable_analyzer=1` explicitly is defensive. `enable_materialized_cte` is an experimental ClickHouse setting. With `enable_materialized_cte=0` or `enable_analyzer=0`, the query succeeds and returns the same rows. ClickHouse silently ignores `MATERIALIZED` and inlines the CTE again, so a forgotten setting costs performance without raising anything. Materialized CTEs require ClickHouse 26.3 or later. Older servers reject the keyword as a syntax error.
+
+For a statement built with the standard `sqlalchemy.select`, use the module-level `cte()` instead. It takes the statement as its first argument and otherwise mirrors `Select.cte()`:
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+The keyword renders only on the ClickHouse dialect, so a statement shared with another backend compiles unchanged there.
+
+ClickHouse does not support recursive materialized CTEs. The SQLAlchemy helpers raise `ValueError` when `recursive=True` and `materialized=True` are both set.
 
 ## DDL and reflection {#sqlalchemy-ddl-reflection}
 
@@ -188,6 +314,8 @@ with engine.connect() as conn:
 ```
 
 Reflected columns carry `server_default` for `DEFAULT` expressions and dialect-specific attributes such as `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized`, and `clickhouse_alias` when present.
+
+String values in `DEFAULT`, `MATERIALIZED`, `ALIAS`, and `TTL` clauses use ClickHouse string escaping. The same escaping applies to table, dictionary, and column comments, including comments emitted by Alembic.
 
 MergeTree key arguments such as `order_by`, `partition_by`, `primary_key`, `sample_by`, and `ttl` accept SQLAlchemy column and SQL expressions as well as plain strings.
 

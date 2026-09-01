@@ -2,13 +2,12 @@
 
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
 
 bool tryEstimateWithStatistics(
-    WhatIfIndexEstimator::IndexResult & result,
+    WhatIfCandidateResult & result,
     const MergeTreeIndexPtr & index_helper,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
@@ -42,20 +41,13 @@ bool tryEstimateWithStatistics(
 
     for (const auto & part : parts)
     {
-        try
+        auto stats = part.data_part->loadStatistics();
+        if (!stats.empty())
         {
-            auto stats = part.data_part->loadStatistics();
-            if (!stats.empty())
-            {
-                builder.markDataPart(part.data_part);
-                for (const auto & [column_name, stat] : stats)
-                    builder.addStatistics(column_name, stat);
-                has_any_stats = true;
-            }
-        }
-        catch (const Exception &) /// Ok — statistical estimation is best-effort
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            builder.markDataPart(part.data_part);
+            for (const auto & [column_name, stat] : stats)
+                builder.addStatistics(column_name, stat);
+            has_any_stats = true;
         }
     }
 
@@ -75,7 +67,7 @@ bool tryEstimateWithStatistics(
     double selectivity = std::min(1.0, static_cast<double>(profile.rows) / static_cast<double>(unfiltered.rows));
     result.skip_ratio = 1.0 - selectivity;
     result.estimated_marks = std::max<UInt64>(1, static_cast<UInt64>(static_cast<double>(analysis.selected_marks) * selectivity));
-    result.estimate_source = "statistical";
+    result.estimate_source = WhatIfCandidateResult::Statistical;
     return true;
 }
 

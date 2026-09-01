@@ -64,7 +64,7 @@ DirectoryWatcherBase::DirectoryWatcherBase(
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
 #endif
 
-    watch_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "directory_watch", [this] { watchFunc(); });
+    watch_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "directory_watch", [this] { watchFunc(); });
     start();
 }
 

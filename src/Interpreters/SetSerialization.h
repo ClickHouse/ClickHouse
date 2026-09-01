@@ -24,6 +24,12 @@ struct SerializedSetsRegistry
 
     std::unordered_map<FutureSet::Hash, FutureSetPtr, Hashing> sets;
 
+    /// Set when this serialization is used to compute a plan-step cache key (not for transmission).
+    /// MUST be kept in sync with `for_cache_key` on `IQueryPlanStep::Serialization`: this one drives
+    /// `ActionsDAG::serialize` (skips the runtime-filter id value), that one drives the step's own
+    /// `serialize`. Set both or neither.
+    bool for_cache_key = false;
+
     /// Entries sorted by hash. The map's iteration order is not stable across builds, and plan
     /// bytes are hashed for identity (e.g. `sipHash64` of a task's serialized plan), so anything
     /// written to the wire must use this fixed order.

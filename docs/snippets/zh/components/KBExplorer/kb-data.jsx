@@ -93,14 +93,6 @@ export const kbIndex = {
       tags: ["Data Modelling"]
     },
     {
-      id: "tables-schema/schema-migration-tools",
-      title: "Automatic schema migration tools for ClickHouse",
-      description: "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time.",
-      href: "/zh/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
-      category: "Tables & schema",
-      tags: ["Tools and Utilities"]
-    },
-    {
       id: "cloud-services/aws-privatelink-setup-for-msk-clickpipes",
       title: "AWS PrivateLink setup to expose MSK for ClickPipes",
       description: "Setup steps to expose a private MSK via MSK multi-VPC connectivity to ClickPipes.",
@@ -176,7 +168,7 @@ export const kbIndex = {
     {
       id: "configuration-settings/change-the-prompt-in-clickhouse-client",
       title: "Change the prompt in clickhouse-client",
-      description: "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      description: "本文介绍如何将 ClickHouse 客户端和 clickhouse-local 终端窗口中的提示符从 :) 更改为“前缀 + :)”的形式",
       href: "/zh/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       category: "Configuration & settings",
       tags: ["Settings", "Native Clients and Interfaces"]
@@ -196,14 +188,6 @@ export const kbIndex = {
       href: "/zh/resources/support-center/knowledge-base/queries-sql/comparing-metrics-between-queries",
       category: "Queries & SQL",
       tags: ["Performance and Optimizations"]
-    },
-    {
-      id: "configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      title: "在 Docker 中配置 CAP_IPC_LOCK 和 CAP_SYS_NICE 能力",
-      description: "了解如何在容器中运行 ClickHouse 时解决 `CAP_IPC_LOCK` 和 `CAP_SYS_NICE` 的 Docker 能力警告。",
-      href: "/zh/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      category: "Configuration & settings",
-      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -739,7 +723,7 @@ export const kbIndex = {
     },
     {
       id: "performance-optimization/finding-expensive-queries-by-memory-usage",
-      title: "Identifying Expensive Queries by Memory Usage in ClickHouse",
+      title: "根据内存使用情况识别 ClickHouse 中的高开销查询",
       description: "Learn how to use the `system.query_log` table to find the most memory-intensive queries in ClickHouse, with examples for clustered and standalone setups.",
       href: "/zh/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
       category: "Performance & optimization",
@@ -874,20 +858,20 @@ export const kbIndex = {
       tags: ["Errors and Exceptions", "Data Formats"]
     },
     {
-      id: "troubleshooting/exception-too-many-parts",
-      title: 'Resolving "Too Many Parts" error in ClickHouse',
-      description: 'Learn how to address the "Too many parts" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.',
-      href: "/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
-      category: "Troubleshooting & errors",
-      tags: ["Errors and Exceptions"]
-    },
-    {
       id: "troubleshooting/certificate-verify-failed-error",
-      title: "Resolving SSL Certificate Verify Error in ClickHouse",
+      title: "解决 ClickHouse 中的 SSL 证书验证失败错误",
       description: "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
       href: "/zh/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
       category: "Troubleshooting & errors",
       tags: ["Security and Authentication", "Errors and Exceptions"]
+    },
+    {
+      id: "troubleshooting/exception-too-many-parts",
+      title: '解决 ClickHouse 中的“parts 过多”异常',
+      description: '了解如何通过批量插入、使用异步插入以及选择合适的分区键，来诊断并解决“parts 过多”异常。',
+      href: "/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+      category: "Troubleshooting & errors",
+      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/connection-timeout-remote-remoteSecure",
@@ -906,12 +890,28 @@ export const kbIndex = {
       tags: ["Runbooks", "Data Modelling"]
     },
     {
+      id: "tables-schema/schema-migration-tools",
+      title: "ClickHouse 的 schema 迁移工具",
+      description: "了解 ClickHouse 的 schema 迁移工具，以及如何管理不断变化的数据库 schema。",
+      href: "/zh/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+      category: "Tables & schema",
+      tags: ["Tools and Utilities"]
+    },
+    {
       id: "tables-schema/search-across-node-for-tables-with-a-wildcard",
       title: "Searching across nodes for tables with a wildcard",
       description: "Learn how to search across nodes for tables with a wildcard.",
       href: "/zh/resources/support-center/knowledge-base/tables-schema/search-across-node-for-tables-with-a-wildcard",
       category: "Tables & schema",
       tags: ["Deployments and Scaling"]
+    },
+    {
+      id: "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      title: "设置 ClickHouse 文档 MCP 服务器",
+      description: "通过 Model Context Protocol 将 AI 工具连接到 ClickHouse 文档。",
+      href: "/zh/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      category: "Setup & installation",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "performance-optimization/query-max-execution-time",
@@ -1074,6 +1074,14 @@ export const kbIndex = {
       href: "/zh/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
       category: "General & FAQs",
       tags: []
+    },
+    {
+      id: "security/set-role-not-persisting-in-sql-console",
+      title: "为什么 `SET ROLE` 在 ClickHouse Cloud SQL 控制台中不会持久保留",
+      description: "了解为什么 `SET ROLE` 不会在 ClickHouse Cloud SQL 控制台中持久保留，以及如何为各个用户分配永久权限。",
+      href: "/zh/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
+      category: "Security & access control",
+      tags: ["Security and Authentication", "Managing Cloud", "Troubleshooting"]
     },
     {
       id: "data-management/dictionaries-consistent-state",

@@ -34,7 +34,7 @@ You can use the [log_queries_probability](/reference/settings/session-settings/l
 - `event_time` ([DateTime](/reference/data-types/datetime)) — The date and time when the view finished execution.
 - `event_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — The date and time when the view finished execution with microseconds precision.
 - `view_duration_ms` ([UInt64](/reference/data-types/int-uint)) — Duration of view execution (sum of its stages) in milliseconds.
-- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query (for distributed query execution).
+- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query in the same query chain.
 - `view_name` ([String](/reference/data-types/string)) — Name of the view.
 - `view_uuid` ([UUID](/reference/data-types/uuid)) — UUID of the view.
 - `view_type` ([Enum8('Default' = 1, 'Materialized' = 2, 'Live' = 3, 'Window' = 4)](/reference/data-types/enum)) — Type of the view. Values: 'Default' = 1 — Default views. Should not appear in this log, 'Materialized' = 2 — Materialized views, 'Live' = 3 — Live views.

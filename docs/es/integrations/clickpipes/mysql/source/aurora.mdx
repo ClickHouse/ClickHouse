@@ -11,8 +11,9 @@ integration:
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/es/clickpipes/_iam_authentication.mdx";
 
-Esta guía paso a paso le muestra cómo configurar Amazon Aurora MySQL para replicar datos en ClickHouse Cloud mediante [ClickPipe de MySQL](/es/integrations/clickpipes/mysql/index). Para ver las preguntas frecuentes sobre el CDC de MySQL, consulte la [página de preguntas frecuentes de MySQL](/es/integrations/clickpipes/mysql/faq).
+Esta guía paso a paso le muestra cómo configurar Amazon Aurora MySQL para replicar datos en ClickHouse Cloud mediante [ClickPipe para MySQL](/es/integrations/clickpipes/mysql/index). Para ver las preguntas frecuentes sobre el CDC de MySQL, consulte la [página de preguntas frecuentes de MySQL](/es/integrations/clickpipes/mysql/faq).
 
 <div id="enable-binlog-retention-aurora">
   ## Habilitar la retención del binlog
@@ -136,13 +137,7 @@ Conéctese a su instancia de Aurora MySQL como usuario administrador y ejecute l
   ### Uso de la autenticación de AWS IAM (opcional)
 </div>
 
-En lugar de una contraseña, puede autenticar al usuario de ClickPipes mediante control de acceso basado en roles de AWS IAM. Cree el usuario como se indica a continuación y luego concédale los mismos privilegios de esquema y replicación que se muestran arriba:
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-Consulta [autenticación de base de datos con IAM (RDS/Aurora)](/es/integrations/clickpipes/postgres/auth) para conocer todos los pasos necesarios para configurar el rol de IAM y la política que ClickPipes necesita para autenticarse de este modo.
+<IAMAuthentication engine="mysql" service="aurora" />
 
 <div id="configure-network-access">
   ## Configurar el acceso de red
@@ -152,7 +147,7 @@ Consulta [autenticación de base de datos con IAM (RDS/Aurora)](/es/integrations
   ### Control de acceso basado en IP
 </div>
 
-Para restringir el tráfico a su instancia de Aurora MySQL, agregue las [IP NAT estáticas documentadas](/es/integrations/clickpipes/home#list-of-static-ips) a las **reglas de entrada** de su grupo de seguridad de Aurora.
+Para restringir el tráfico a su instancia de Aurora MySQL, agregue las [IP NAT estáticas documentadas](/es/integrations/clickpipes/networking/static-ips) a las **reglas de entrada** de su grupo de seguridad de Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="¿Dónde encontrar el grupo de seguridad en Aurora MySQL?" size="lg" border />
 

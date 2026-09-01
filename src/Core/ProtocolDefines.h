@@ -19,7 +19,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_LOGS = 54406;
 /// Compare by protocol revision rather than major/minor version: the aggregation method can change
 /// within a single release (same major.minor) and only the revision distinguishes a pre-change
 /// server from a post-change one.
-static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54488;
+/// 54489: the method for a single `String` key follows `enable_packed_string_keys_in_aggregation`.
+/// A peer below this revision always uses the packed method and does not know the setting, so it
+/// cannot follow a query that disables it.
+static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54489;
 static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA = 54410;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE = 54405;
@@ -45,7 +48,9 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_FILE
 /// between the open-source and the private repositories and a given number never has two meanings.
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_COMPACTION = 7;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX = 8;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS = 9;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING = 10;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -70,27 +75,51 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 4 adds `WindowStep` to the set of serializable steps. An older worker does not register a
 /// "Window" step at all (`QueryPlanStepRegistry::createStep` would throw `UNKNOWN_IDENTIFIER` on it), so
 /// the serializer fails closed instead when talking to a peer below version 4.
-/// Version 5 is the outline-first framed envelope. The head is
-/// `[version][format_kind][body_size][min_reader_version]` and is frozen: every future body layout
-/// keeps those four, so a reader that does not know the kind still finds the end of the body,
-/// skips it and rejects the plan without losing the connection.
-/// The outline carries per-node names, step format versions, headers, framed settings and payload
-/// sizes, so a reader can validate the whole plan or render its shape without touching a payload,
-/// and steps may append ignorable payload fields without a version bump. `min_reader_version` is
-/// the oldest version able to read this particular plan, computed by the writer from the content;
-/// a reader accepts any stream whose `min_reader_version` it meets, even from a newer writer.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 5;
-/// The version writers emit unless a query asks for another one. It lags
+/// Version 5 registers the `enable_packed_string_keys_in_aggregation` plan setting. A peer at this version
+/// receives it on every aggregation step whenever the legacy method is requested. An older peer rejects the
+/// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
+/// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
+/// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
+/// Version 6 lets a `PARTITION BY` window's feeding sort be shipped under `make_distributed_plan`:
+/// `SortingStep` now serializes a non-empty `partition_by_description` plus a trailing flags byte that
+/// carries a `FinishSorting` conversion, and `GatherSendStep` now serializes `maintain_sort_description`
+/// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
+/// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
+/// reject an unknown step name as with version 4.
+/// Version 7 registers the `enable_adaptive_aggregator`, `adaptive_aggregator_freeze_threshold` and
+/// `adaptive_aggregator_freeze_threshold_bytes` plan settings. As with version 5, an older peer rejects the
+/// unknown names, so they are written only towards a peer at this version or above; a peer below it has no
+/// adaptive aggregation to drive anyway.
+/// Version 8 adds the distributed-plan payloads: the bounded-sort limit on `SortingStep`, the
+/// narrowing flag on `UnionStep`, the bucketed-read task parameter name on `ReadFromMergeTree`,
+/// and the in-order aggregation payload on `AggregatingStep`. Only the sort limit has a
+/// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
+/// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
+/// or `WITH CUBE` can be shipped under `make_distributed_plan`.
+/// Version 10 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
+/// properties of individual steps, so a remote plan fragment would otherwise execute with its default
+/// execution limits after deserialization.
+/// Version 11 is the framed format. The head is `[version][format_kind][body_size][min_reader_version]`
+/// and does not change again: every later body layout keeps those four fields, so a reader that does not
+/// know the layout still finds the end of the body, skips it, and rejects the plan without losing the
+/// connection. The body starts with an outline: the plan-level fields, then for each step its name,
+/// payload format version, header, changed settings and payload size. A reader can check the whole plan
+/// or print its shape from the outline alone, and a step can add fields to its payload without a version
+/// bump because older readers skip what they do not know. `min_reader_version` is the oldest version
+/// that can read this plan, computed by the writer from what the plan carries; a reader accepts any
+/// stream whose `min_reader_version` it meets, also from a newer writer.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 11;
+/// The version writers use unless a query asks for another one. It can stay below
 /// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` for a release after a new version lands: the fleet then
 /// reads the new version everywhere before anyone writes it, and users can try it per query with
 /// `query_plan_serialization_version`. Move it up once the new version has proven itself.
-static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 5;
-/// Body layout of a v5+ stream, named in the head so a reader decides what it is looking at instead
+static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 11;
+/// Body layout of a framed stream, named in the head so a reader knows what it is looking at instead
 /// of inferring it from the version. 0 is never written. Every new layout takes the next value and
 /// names the plan version that introduced it.
 static constexpr auto DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE = 1;
-/// First version with the outline-first framed envelope.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 5;
+/// First version with the framed format.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 11;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
 /// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
 /// Not tied to `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`: the plan is cached and written per peer
@@ -100,6 +129,16 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_RE
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
+/// First query-plan serialization version that knows the `enable_packed_string_keys_in_aggregation`
+/// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
+/// `MergingAggregatedStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
+/// First query-plan serialization version that knows the `enable_adaptive_aggregator` and
+/// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
+/// `AggregatingStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
+/// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 10;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
@@ -204,6 +243,15 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 
 /// Push the initiator's current roles to other nodes for consistent role-scoped access.
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES = 54488;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO = 54490;
+
+/// Serialize the skip degree of a `quantileDeterministic` state, so that merging states thinned out
+/// to different degrees does not depend on how the rows were distributed between them.
+static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE = 54491;
+
+/// Send String columns in the native protocol with a separate stream of cumulative byte offsets.
+static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION = 54492;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -212,5 +260,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES =
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54488;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54492;
 }

@@ -202,7 +202,7 @@ QueryPlan deserializePlan(const std::string & bytes)
 
 /// For the legacy v3 stream and the current stream: serialize -> deserialize -> serialize must reproduce identical
 /// bytes, and the reconstructed plans must explain identically across versions. This pins both
-/// the legacy and the v5 outline formats and per-step determinism.
+/// the older and the framed formats and per-step determinism.
 void checkRoundTrip(QueryPlan plan)
 {
     registerStepsOnce();
@@ -1023,11 +1023,11 @@ TEST(QueryPlanOutline, ReservedFlagBitsAreRejected)
     {
         auto bytes = writeOutlineToString(makeTestOutline());
 
-        /// Everything before the first node's flag byte is a one-byte varint except the step name:
-        /// frame size, node count, child count, name length, name, format version, prefix base and
-        /// reader version.
+        /// Everything before the first node's flag byte is one byte except the step name: frame
+        /// size, the two plan-level limits, node count, child count, name length, name, format
+        /// version, prefix base and reader version.
         const std::string first_step_name = "TestSource";
-        const size_t flags_at = 6 + first_step_name.size() + 1;
+        const size_t flags_at = 8 + first_step_name.size() + 1;
         ASSERT_EQ(bytes[flags_at], char(1)) << "the node flag byte is not where this test expects it";
         bytes[flags_at] = char(1 | 2);
 

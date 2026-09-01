@@ -9,68 +9,70 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="aws-regions">
-  ## AWS リージョン
+<div id="supported-regions">
+  ## サポート対象リージョン
 </div>
 
-* ap-northeast-1 (東京)
-* ap-northeast-2 (韓国・ソウル)
-* ap-south-1 (ムンバイ)
-* ap-southeast-1 (シンガポール)
-* ap-southeast-2 (シドニー)
-* eu-central-1 (フランクフルト)
-* eu-west-1 (アイルランド)
-* eu-west-2 (ロンドン)
-* us-east-1 (北バージニア)
-* us-east-2 (オハイオ)
-* us-west-2 (オレゴン)
-* il-central-1 (イスラエル・テルアビブ)
-* ca-central-1 (カナダ)
+以下の表は、クラウドプロバイダー別のサポート対象リージョンを示しています。バッジは利用可能なオプションを示します。一般提供リージョンには `Public`、`Private`、`HIPAA`、または `PCI` を提供するリージョンには該当するバッジが表示されます。
 
-**プライベートリージョン:**
+<Tabs>
+  <Tab title="AWS" id="aws-regions" icon="aws">
+    | リージョン            | 可用性                                                                                                     |
+    | ---------------- | ------------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | <Badge color="purple">プライベート</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">プライベート</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">プライベート</Badge>                                                                    |
+    | `ap-northeast-1` | <Badge color="yellow">パブリック</Badge>                                                                     |
+    | `ap-northeast-2` | <Badge color="yellow">パブリック</Badge>                                                                     |
+    | `ap-south-1`     | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `ap-southeast-1` | <Badge color="yellow">パブリック</Badge>                                                                     |
+    | `ap-southeast-2` | <Badge color="yellow">パブリック</Badge>                                                                     |
+    | `ap-southeast-3` | <Badge color="purple">プライベート</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">プライベート</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-central-1`   | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-north-1`     | <Badge color="purple">プライベート</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-west-2`      | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `il-central-1`   | <Badge color="yellow">パブリック</Badge>                                                                     |
+    | `me-central-1`   | <Badge color="yellow">パブリック</Badge>                                                                     |
+    | `mx-central-1`   | <Badge color="purple">プライベート</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `sa-east-1`      | <Badge color="purple">プライベート</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `us-east-2`      | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `us-west-2`      | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+  </Tab>
 
-* af-south-1 (南アフリカ)
-* eu-north-1 (ストックホルム)
-* sa-east-1 (南アメリカ)
-* ap-southeast-3 (ジャカルタ)
-* ap-east-1 (香港)
-* mx-central-1 (メキシコ)
+  <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
+    | リージョン                     | 可用性                                                                                                    |
+    | ------------------------- | ------------------------------------------------------------------------------------------------------ |
+    | `asia-northeast1`         | <Badge color="yellow">パブリック</Badge>                                                                    |
+    | `asia-southeast1`         | <Badge color="yellow">パブリック</Badge>                                                                    |
+    | `australia-southeast1`    | <Badge color="purple">プライベート</Badge>                                                                   |
+    | `europe-west2`            | <Badge color="yellow">パブリック</Badge>                                                                    |
+    | `europe-west3`            | <Badge color="purple">プライベート</Badge>                                                                   |
+    | `europe-west4`            | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">プライベート</Badge>                                                                   |
+    | `northamerica-northeast1` | <Badge color="purple">プライベート</Badge>                                                                   |
+    | `us-central1`             | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">プライベート</Badge>                                                                   |
+  </Tab>
 
-<div id="google-cloud-regions">
-  ## Google Cloud のリージョン
-</div>
-
-* asia-southeast1 (シンガポール)
-* asia-northeast1 (東京)
-* europe-west2 (ロンドン)
-* europe-west4 (オランダ)
-* us-central1 (アイオワ)
-* us-east1 (サウスカロライナ)
-
-**プライベートリージョン:**
-
-* australia-southeast1(シドニー)
-* europe-west3 (フランクフルト)
-* europe-west6 (チューリッヒ)
-* northamerica-northeast1 (モントリオール)
-* us-west1 (オレゴン)
-
-<div id="azure-regions">
-  ## Azure リージョン
-</div>
-
-* West US 3 (アリゾナ)
-* East US 2 (バージニア)
-* Germany West Central (フランクフルト)
-
-**プライベートリージョン:**
-
-* Japan East (東京、埼玉)
-* UAE North (ドバイ)
-* Australia East (ニューサウスウェールズ)
+  <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
+    | リージョン                  | 可用性                                   |
+    | ---------------------- | ------------------------------------- |
+    | `Australia East`       | <Badge color="purple">Private</Badge> |
+    | `East US 2`            | <Badge color="yellow">Public</Badge>  |
+    | `Germany West Central` | <Badge color="yellow">Public</Badge>  |
+    | `Japan East`           | <Badge color="purple">Private</Badge> |
+    | `UAE North`            | <Badge color="purple">Private</Badge> |
+    | `West US 3`            | <Badge color="yellow">Public</Badge>  |
+  </Tab>
+</Tabs>
 
 <Note>
-  現在掲載されていないリージョンへのデプロイが必要な場合は、[リクエストを送信](https://clickhouse.com/pricing?modal=open)してください。
+  一覧にないリージョンへのデプロイが必要な場合は、[リクエストを送信](https://clickhouse.com/pricing?modal=open)してください。
 </Note>
 
 <div id="private-regions">
@@ -85,9 +87,8 @@ Enterprise tier のサービスでは、プライベートリージョンを提�
 
 * サービスは自動スケーリングされませんが、手動での垂直スケーリングおよび水平スケーリングには対応しています。
 * サービスをアイドル状態にすることはできません。
-* プライベートリージョンではステータスページを利用できません。
 
-HIPAA コンプライアンスには、追加要件が適用される場合があります (BAA の締結を含む) 。なお、HIPAA は現在 Enterprise tier のサービスでのみ利用可能です
+BAA (Business Associate Agreement) の締結を含め、HIPAA 準拠には追加要件が適用される場合があります。HIPAA は現在 Enterprise tier のサービスでのみ利用可能です。
 
 <div id="hipaa-compliant-regions">
   ## HIPAA 準拠リージョン
@@ -95,21 +96,7 @@ HIPAA コンプライアンスには、追加要件が適用される場合が�
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
-HIPAA 準拠リージョンでサービスをセットアップするには、Business Associate Agreement (BAA) に署名し、営業またはサポートを通じてオンボーディングを依頼する必要があります。HIPAA 準拠に対応しているリージョンは次のとおりです。
-
-* AWS af-south-1 (南アフリカ)  **プライベートリージョン**
-* AWS ca-central-1 (カナダ)
-* AWS eu-central-1 (フランクフルト)
-* AWS eu-north-1 (ストックホルム)  **プライベートリージョン**
-* AWS eu-west-1 (アイルランド)
-* AWS eu-west-2 (ロンドン)
-* AWS sa-east-1 (南アメリカ)  **プライベートリージョン**
-* AWS us-east-1 (北バージニア)
-* AWS us-east-2 (オハイオ)
-* AWS us-west-2 (オレゴン)
-* GCP europe-west4 (オランダ)
-* GCP us-central1 (アイオワ)
-* GCP us-east1 (サウスカロライナ)
+表で HIPAA 準拠と示されているリージョンでサービスをセットアップするには、BAA に署名し、営業またはサポートを通じてオンボーディングを依頼する必要があります。
 
 <div id="pci-compliant-regions">
   ## PCI 準拠リージョン
@@ -117,19 +104,4 @@ HIPAA 準拠リージョンでサービスをセットアップするには、Bu
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 
-PCI 準拠リージョンでサービスをセットアップするには、Sales または Support を通じてオンボーディングを依頼する必要があります。以下のリージョンが PCI コンプライアンスに対応しています。
-
-* AWS af-south-1 (南アフリカ) **プライベートリージョン**
-* AWS ca-central-1 (カナダ)
-* AWS eu-central-1 (フランクフルト)
-* AWS eu-north-1 (ストックホルム) **プライベートリージョン**
-* AWS eu-west-1 (アイルランド)
-* AWS eu-west-2 (ロンドン)
-* AWS mx-central-1 (メキシコ) **プライベートリージョン**
-* AWS sa-east-1 (南アメリカ) **プライベートリージョン**
-* AWS us-east-1 (北バージニア)
-* AWS us-east-2 (オハイオ)
-* AWS us-west-2 (オレゴン)
-* GCP europe-west4 (オランダ)
-* GCP us-central1 (アイオワ)
-* GCP us-east1 (サウスカロライナ)
+表で PCI 準拠と表示されているリージョンでサービスをセットアップするには、Sales または サポート を通じてオンボーディングを依頼する必要があります。

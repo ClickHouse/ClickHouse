@@ -17,6 +17,7 @@
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
 #include <Core/ServerSettings.h>
+#include <Interpreters/Set.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
@@ -34,6 +35,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_QUERY_PLAN;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ServerSetting
@@ -102,6 +105,68 @@ std::vector<std::pair<FutureSet::Hash, FutureSet *>> SerializedSetsRegistry::ent
     return ordered;
 }
 
+/// The values of a subquery set, ready to ship to a distributed-plan worker task. A task binds a
+/// ready set before its own planning; shipping the subquery plan instead would make every task run
+/// the subquery again. Throws when the set is not complete or is over the transfer limits: a
+/// truncated set would change `IN` results on the workers, so `transfer_overflow_mode = 'break'`
+/// does not apply here.
+static Columns readySubquerySetValues(const FutureSetFromSubquery & from_subquery, const SizeLimits & transfer_limits, DataTypes & types)
+{
+    auto built_set = from_subquery.get();
+    if (!built_set || !built_set->hasExplicitSetElements() || built_set->isTruncated())
+    {
+        String reason = !built_set ? "the set is not built"
+            : built_set->isTruncated() ? "the set was truncated by `set_overflow_mode = 'break'`"
+                                       : "the set was built without its values";
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot ship an IN-subquery set to distributed-plan worker tasks ({}): {}",
+            reason,
+            from_subquery.getSourceAST() ? from_subquery.getSourceAST()->formatForErrorMessage() : "");
+    }
+
+    auto columns = built_set->getSetElements();
+    UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
+    size_t num_bytes = 0;
+    for (const auto & column : columns)
+        num_bytes += column->byteSize();
+    if (!transfer_limits.check(
+            num_rows, num_bytes, "IN-subquery set shipped to distributed-plan tasks", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+        throw Exception(ErrorCodes::SET_SIZE_LIMIT_EXCEEDED,
+            "Cannot ship an IN-subquery set of {} rows ({} bytes) to distributed-plan worker tasks: "
+            "it exceeds the transfer limits", num_rows, num_bytes);
+
+    types = built_set->getElementsTypes();
+    return columns;
+}
+
+/// The payload of a `TupleValues` record: column count, row count, then per column the encoded
+/// type and the native-encoded data.
+static void writeSetValues(const DataTypes & types, const Columns & columns, WriteBuffer & out)
+{
+    if (columns.size() != types.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid number of columns for Set. Expected {} got {}",
+            columns.size(), types.size());
+
+    UInt64 num_columns = columns.size();
+    UInt64 num_rows = num_columns > 0 ? columns.front()->size() : 0;
+
+    writeVarUInt(num_columns, out);
+    writeVarUInt(num_rows, out);
+
+    for (size_t col = 0; col < num_columns; ++col)
+    {
+        if (columns[col]->size() != num_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid number of rows in column of Set. Expected {} got {}",
+                num_rows, columns[col]->size());
+
+        encodeDataType(types[col], out);
+        auto serialization = types[col]->getDefaultSerialization();
+        NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
+    }
+}
+
 void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const SerializationFlags & flags)
 {
     /// Write sets sorted by hash, not in the unordered map iteration order,
@@ -126,41 +191,26 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
         else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::TupleValues, out);
-
-            auto types = from_tuple->getTypes();
-            auto columns = from_tuple->getKeyColumns();
-
-            if (columns.size() != types.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Invalid number of columns for Set. Expected {} got {}",
-                    columns.size(), types.size());
-
-            UInt64 num_columns = columns.size();
-            UInt64 num_rows = num_columns > 0 ? columns.front()->size() : 0;
-
-            writeVarUInt(num_columns, out);
-            writeVarUInt(num_rows, out);
-
-            for (size_t col = 0; col < num_columns; ++col)
-            {
-                if (columns[col]->size() != num_rows)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Invalid number of rows in column of Set. Expected {} got {}",
-                        num_rows, columns[col]->size());
-
-                encodeDataType(types[col], out);
-                auto serialization = types[col]->getDefaultSerialization();
-                NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
-            }
+            writeSetValues(from_tuple->getTypes(), from_tuple->getKeyColumns(), out);
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
         {
-            writeIntBinary(SetSerializationKind::SubqueryPlan, out);
-            const auto * plan = from_subquery->getQueryPlan();
-            if (!plan)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
+            if (flags.sets_must_be_ready)
+            {
+                DataTypes types;
+                auto columns = readySubquerySetValues(*from_subquery, flags.sets_transfer_limits, types);
+                writeIntBinary(SetSerializationKind::TupleValues, out);
+                writeSetValues(types, columns, out);
+            }
+            else
+            {
+                writeIntBinary(SetSerializationKind::SubqueryPlan, out);
+                const auto * plan = from_subquery->getQueryPlan();
+                if (!plan)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
 
-            plan->serialize(out, flags);
+                plan->serialize(out, flags);
+            }
         }
         else
         {
@@ -232,46 +282,35 @@ void serializeEnvelopeSets(
         else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set_ptr))
         {
             entry.kind = UInt8(SetSerializationKind::TupleValues);
-
             auto types = from_tuple->getTypes();
-            auto columns = from_tuple->getKeyColumns();
-
-            if (columns.size() != types.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Invalid number of columns for Set. Expected {} got {}",
-                    columns.size(), types.size());
-
-            UInt64 num_columns = columns.size();
-            UInt64 num_rows = num_columns > 0 ? columns.front()->size() : 0;
-
-            writeVarUInt(num_columns, body);
-            writeVarUInt(num_rows, body);
-
-            for (size_t col = 0; col < num_columns; ++col)
-            {
-                if (columns[col]->size() != num_rows)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Invalid number of rows in column of Set. Expected {} got {}",
-                        num_rows, columns[col]->size());
-
-                min_reader_plan_version = std::max(min_reader_plan_version, minReaderVersionForType(*types[col]));
-                encodeDataType(types[col], body);
-                auto serialization = types[col]->getDefaultSerialization();
-                NativeWriter::writeData(*serialization, columns[col], body, {}, 0, 0, 0);
-            }
+            for (const auto & type : types)
+                min_reader_plan_version = std::max(min_reader_plan_version, minReaderVersionForType(*type));
+            writeSetValues(types, from_tuple->getKeyColumns(), body);
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
         {
-            entry.kind = UInt8(SetSerializationKind::SubqueryPlan);
-            const auto * plan = from_subquery->getQueryPlan();
-            if (!plan)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
+            if (flags.sets_must_be_ready)
+            {
+                entry.kind = UInt8(SetSerializationKind::TupleValues);
+                DataTypes types;
+                auto columns = readySubquerySetValues(*from_subquery, flags.sets_transfer_limits, types);
+                for (const auto & type : types)
+                    min_reader_plan_version = std::max(min_reader_plan_version, minReaderVersionForType(*type));
+                writeSetValues(types, columns, body);
+            }
+            else
+            {
+                entry.kind = UInt8(SetSerializationKind::SubqueryPlan);
+                const auto * plan = from_subquery->getQueryPlan();
+                if (!plan)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
 
-            /// A whole plan with its own leading version, so it says how long it is and what it is,
-            /// which the older stream did not: there the nested plan just ran on inline. It is
-            /// written at the version the outer plan settled on rather than choosing again, because
-            /// a query that asks for a version has to get it for the nested plans too.
-            plan->serialize(body, flags.version, flags.version);
+                /// A whole plan with its own leading version, so it says how long it is and what it
+                /// is, which the older stream did not: there the nested plan just ran on inline. It
+                /// is written at the version the outer plan settled on rather than choosing again,
+                /// because a query that asks for a version has to get it for the nested plans too.
+                plan->serialize(body, flags.version, flags.version);
+            }
         }
         else
         {
@@ -360,8 +399,8 @@ QueryPlanAndSets deserializeEnvelopeSets(
             {
                 auto type = decodeDataType(body, max_type_complexity);
                 auto serialization = type->getDefaultSerialization();
-                ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, body, &format_settings, num_rows, nullptr, nullptr);
+                auto column = type->createColumn();
+                NativeReader::readData(*serialization, *column, body, &format_settings, num_rows, nullptr, nullptr);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -452,8 +491,8 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             {
                 auto type = decodeDataType(in, max_type_complexity);
                 auto serialization = type->getDefaultSerialization();
-                ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, in, &format_settings, num_rows, nullptr, nullptr);
+                auto column = type->createColumn();
+                NativeReader::readData(*serialization, *column, in, &format_settings, num_rows, nullptr, nullptr);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }

@@ -47,21 +47,25 @@ bech32Decode(address[, 'raw'])
 **Декодирование адреса**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)
 ```
 
 ```response title=Response
-bc   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 **Адрес тестнета**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)
 ```
 
 ```response title=Response
-tb   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 <div id="bech32Encode">
@@ -105,7 +109,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
+bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru
 ```
 
 **Алгоритм Bech32**
@@ -116,7 +120,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
+bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
 ```
 
 **Пользовательский HRP**
@@ -128,7 +132,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 ```
 
 ```response title=Response
-abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
+abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px
 ```
 
 **Адрес Cosmos SDK (BIP173, без witness version)**
@@ -140,7 +144,7 @@ SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'b
 ```
 
 ```response title=Response
-inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs
+inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq
 ```
 
 <div id="bin">
@@ -270,9 +274,9 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions
 ```
 
 ```response title=Response
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
 ```
 
 <div id="bitmaskToArray">
@@ -307,9 +311,9 @@ SELECT bitmaskToArray(50) AS powers_of_two
 ```
 
 ```response title=Response
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
 ```
 
 **Одна степень двойки**
@@ -355,9 +359,9 @@ SELECT bitmaskToList(50) AS powers_list
 ```
 
 ```response title=Response
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
 ```
 
 <div id="char">
@@ -550,35 +554,35 @@ SELECT hilbertDecode(2, 31)
 ```
 
 ```response title=Response
-["3", "4"]
+(3,4)
 ```
 
 **Один аргумент**
 
 ```sql title=Query
--- Код Гильберта для одного аргумента всегда равен самому аргументу (в виде кортежа).
+-- Hilbert code for one argument is always the argument itself (as a tuple).
 SELECT hilbertDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **Расширенный режим**
 
 ```sql title=Query
--- Одиночный аргумент с кортежем, задающим битовые сдвиги, будет сдвинут вправо соответствующим образом.
+-- A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
 SELECT hilbertDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(8192)
 ```
 
-**Работа со столбцами**
+**Использование столбцов**
 
 ```sql title=Query
--- Сначала создайте таблицу и вставьте данные
+-- First create the table and insert some data
 CREATE TABLE hilbert_numbers(
     n1 UInt32,
     n2 UInt32
@@ -587,12 +591,12 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 
--- Используйте имена столбцов вместо констант в качестве аргументов функции
+-- Use column names instead of constants as function arguments
 SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
 ```
 
 ```response title=Response
-1    2
+1	2
 ```
 
 <div id="hilbertEncode">
@@ -739,17 +743,17 @@ SELECT hilbertEncode(n1, n2) FROM hilbert_numbers;
 * До 8-кратного сужения.
 
 Расширение диапазонов может быть полезно, если нужно получить схожее распределение для
-аргументов с сильно различающимися диапазонами (или мощностью). Например: &#39;IP Address&#39; `(0...FFFFFFFF)`
-и &#39;Country code&#39; `(0...FF)`. Как и в случае с функцией кодирования, число таких значений ограничено
+аргументов с сильно различающимися диапазонами (или мощностью). Например: &#39;IP-адрес&#39; `(0...FFFFFFFF)`
+и &#39;код страны&#39; `(0...FF)`. Как и в случае с функцией кодирования, число таких значений ограничено
 максимум 8.
 
 **Синтаксис**
 
 ```sql
--- Простой режим
+-- Simple mode
 mortonDecode(tuple_size, code)
 
--- Расширенный режим
+-- Expanded mode
 mortonDecode(range_mask, code)
 ```
 
@@ -772,7 +776,7 @@ SELECT mortonDecode(3, 53)
 ```
 
 ```response title=Response
-["1", "2", "3"]
+(1,2,3)
 ```
 
 **Один аргумент**
@@ -782,7 +786,7 @@ SELECT mortonDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **Расширенный режим, с сужением одного аргумента**
@@ -792,13 +796,13 @@ SELECT mortonDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(128)
 ```
 
 **Использование столбцов**
 
 ```sql title=Query
--- Сначала создаём таблицу и вставляем данные
+-- First create the table and insert some data
 CREATE TABLE morton_numbers(
     n1 UInt32,
     n2 UInt32,
@@ -813,12 +817,12 @@ ENGINE=MergeTree()
 ORDER BY n1;
 INSERT INTO morton_numbers (*) values(1, 2, 3, 4, 5, 6, 7, 8);
 
--- Используем имена столбцов вместо констант в качестве аргументов функции
+-- Use column names instead of constants as function arguments
 SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FROM morton_numbers;
 ```
 
 ```response title=Response
-1 2 3 4 5 6 7 8
+1	2	3	4	5	6	7	8
 ```
 
 <div id="mortonEncode">
@@ -974,9 +978,9 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ```
 
 ```response title=Response
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```
 
 <div id="sqidEncode">
@@ -1057,7 +1061,7 @@ SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000
 ```
 
 ```response title=Response
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
+┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
@@ -1119,7 +1123,7 @@ SELECT unhex('303132'), UNHEX('4D7953514C')
 ```
 
 ```response title=Response
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
 ```

@@ -38,6 +38,9 @@ constexpr UInt64 MAX_OUTLINE_SETTINGS_PER_NODE = 64 * 1024;
 
 void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
 {
+    writeVarUInt(outline.max_threads, out);
+    writeBinary(outline.concurrency_control, out);
+
     writeVarUInt(outline.nodes.size(), out);
     for (const auto & node : outline.nodes)
     {
@@ -101,6 +104,9 @@ String readCappedSizedBytes(ReadBuffer & in, UInt64 cap, const char * what)
 PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 max_frame_bytes)
 {
     PlanOutline outline;
+
+    readVarUInt(outline.max_threads, in);
+    readBinary(outline.concurrency_control, in);
 
     /// Counts come from the peer: the vectors grow as elements are read, so a frame that ends
     /// early only pays for what it delivered.

@@ -313,19 +313,44 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
     return available_space;
 }
 
+namespace
+{
+
+/// A path built from an unhashed skip-index file name (see replace_long_file_name_to_hash) can
+/// exceed the filesystem's NAME_MAX when probed directly for existence -- e.g. checking for a
+/// legacy extension on a part that only has the packed/hashed form. That's a normal "not found
+/// under this name" outcome for an existence probe, so treat it as "doesn't exist" rather than
+/// letting it escape as an exception. Any other stat() failure (EACCES, EIO, ESTALE, ...) is a
+/// genuine problem and must keep throwing -- callers rely on that to distinguish "missing" from
+/// "broken" (e.g. MergeTreeData::loadFormatVersion, IMergeTreeDataPart::loadColumns).
+template <typename Func>
+bool existsOrFileNameTooLong(Func && func)
+try
+{
+    return func();
+}
+catch (const fs::filesystem_error & e)
+{
+    if (e.code() == std::errc::filename_too_long)
+        return false;
+    throw;
+}
+
+}
+
 bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
-    return fs::exists(fs::path(disk_path) / path);
+    return existsOrFileNameTooLong([&] { return fs::exists(fs::path(disk_path) / path); });
 }
 
 bool DiskLocal::existsFile(const String & path) const
 {
-    return fs::is_regular_file(fs::path(disk_path) / path);
+    return existsOrFileNameTooLong([&] { return fs::is_regular_file(fs::path(disk_path) / path); });
 }
 
 bool DiskLocal::existsDirectory(const String & path) const
 {
-    return fs::is_directory(fs::path(disk_path) / path);
+    return existsOrFileNameTooLong([&] { return fs::is_directory(fs::path(disk_path) / path); });
 }
 
 size_t DiskLocal::getFileSize(const String & path) const

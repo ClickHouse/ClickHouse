@@ -30,27 +30,31 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 * `user` — PostgreSQL ユーザー。
 * `password` — ユーザーのパスワード。
 * `schema` — PostgreSQL スキーマ。
-* `use_table_cache` — データベーステーブルの構造をキャッシュするかどうかを指定します。省略可。デフォルト値: `0`。
+* `use_table_cache` — データベーステーブルのテーブル構造をキャッシュするかどうかを指定します。省略可。デフォルト値: `0`。
 
-<div id="data_types-support">
+TLS/SSL パラメータは `libpq` に渡され、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を通じて、または末尾のキー・バリュー引数として指定できます。`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、または `verify-full`) と、証明書および秘密鍵は、2 つの形式のいずれかで指定できます。`sslrootcert` (CA 証明書) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルのファイルへのパスであり、サーバー設定ファイルで定義された名前付きコレクションからのみ受け付けられます。代わりに `sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` では対応するファイルの内容を直接指定でき、SQL からも指定できます (例: `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`) 。これらの値は、パスワードと同様にログおよび `SHOW` クエリでマスクされます。未設定の場合は、`libpq` のデフォルトが適用されます (`sslmode=prefer`) 。
+
+<a id="data_types-support" />
+
+<div id="data-types-support">
   ## データ型の対応
 </div>
 
-| PostgreSQL       | ClickHouse                                          |
-| ---------------- | --------------------------------------------------- |
-| DATE             | [Date](/ja/reference/data-types/date)                  |
-| TIMESTAMP        | [DateTime](/ja/reference/data-types/datetime)          |
-| REAL             | [Float32](/ja/reference/data-types/float)              |
-| DOUBLE           | [Float64](/ja/reference/data-types/float)              |
-| DECIMAL, NUMERIC | [Decimal](/ja/reference/data-types/decimal) (以下の注を参照)  |
-| SMALLINT         | [Int16](/ja/reference/data-types/int-uint)             |
-| INTEGER          | [Int32](/ja/reference/data-types/int-uint)             |
-| BIGINT           | [Int64](/ja/reference/data-types/int-uint)             |
-| SERIAL           | [UInt32](/ja/reference/data-types/int-uint)            |
-| BIGSERIAL        | [UInt64](/ja/reference/data-types/int-uint)            |
-| TEXT, CHAR       | [String](/ja/reference/data-types/string)              |
-| INTEGER          | Nullable([Int32](/ja/reference/data-types/int-uint))   |
-| ARRAY            | [Array](/ja/reference/data-types/array)                |
+| PostgreSQL       | ClickHouse                                         |
+| ---------------- | -------------------------------------------------- |
+| DATE             | [Date](/ja/reference/data-types/date)                 |
+| TIMESTAMP        | [DateTime](/ja/reference/data-types/datetime)         |
+| REAL             | [Float32](/ja/reference/data-types/float)             |
+| DOUBLE           | [Float64](/ja/reference/data-types/float)             |
+| DECIMAL, NUMERIC | [Decimal](/ja/reference/data-types/decimal) (以下の注を参照) |
+| SMALLINT         | [Int16](/ja/reference/data-types/int-uint)            |
+| INTEGER          | [Int32](/ja/reference/data-types/int-uint)            |
+| BIGINT           | [Int64](/ja/reference/data-types/int-uint)            |
+| SERIAL           | [UInt32](/ja/reference/data-types/int-uint)           |
+| BIGSERIAL        | [UInt64](/ja/reference/data-types/int-uint)           |
+| TEXT, CHAR       | [String](/ja/reference/data-types/string)             |
+| INTEGER          | Nullable([Int32](/ja/reference/data-types/int-uint))  |
+| ARRAY            | [Array](/ja/reference/data-types/array)               |
 
 <Note>
   精度 `p` が 76 (`Decimal256` でサポートされる最大値) を超える PostgreSQL の `numeric(p, 0)` — たとえば、256 ビット整数の保存によく使われる `numeric(78, 0)` — は、`Decimal` ではなく [`Int256`](/ja/reference/data-types/int-uint) にマッピングされます。`Int256` の範囲に収まらない値はエラーとして拒否されます。

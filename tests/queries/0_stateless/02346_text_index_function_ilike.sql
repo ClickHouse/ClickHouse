@@ -411,6 +411,44 @@ SELECT groupArray(id) FROM tab WHERE message NOT ILIKE '%foo%';
 
 DROP TABLE tab;
 
+SELECT 'Text index analysis for ILIKE with an ALIAS index column and lower preprocessor';
+-- lower on an ALIAS index column is still pure case folding, so ILIKE keeps using the dictionary scan.
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    provider Nullable(String),
+    message String ALIAS ifNull(provider, 'default'),
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(message)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab(id, provider) SELECT number, 'Hello ClickHouse' FROM numbers(1024);
+INSERT INTO tab(id, provider) SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1024);
+INSERT INTO tab(id, provider) SELECT number, 'Hallo xClickHouse' FROM numbers(1024);
+INSERT INTO tab(id, provider) SELECT number, 'ClickHousez rocks' FROM numbers(1024);
+
+-- Show the text index selection; without case-folding recognition ILIKE would not prune here.
+SELECT '-- ILIKE %world% prunes to 1024/4096 granules via the text index';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE message ILIKE '%world%'
+) WHERE explain LIKE '%Description: text%' OR (explain LIKE '%Granules: %/4096' AND explain NOT LIKE '%4096/4096')
+ORDER BY explain;
+
+SELECT '-- ILIKE %HELLO% (case-insensitive) prunes to 2048/4096 granules via the text index';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE message ILIKE '%HELLO%'
+) WHERE explain LIKE '%Description: text%' OR (explain LIKE '%Granules: %/4096' AND explain NOT LIKE '%4096/4096')
+ORDER BY explain;
+
+DROP TABLE tab;
+
 SELECT 'Test ILIKE optimization is applied for lcase/ucase preprocessor aliases';
 
 -- lcase and ucase are aliases of lower and upper, so they are also pure case folding and must

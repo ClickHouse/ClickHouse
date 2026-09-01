@@ -60,7 +60,10 @@ public:
         UNKNOWN = 0,
         GET     = 1,
         POST    = 2,
-        OPTIONS = 3
+        OPTIONS = 3,
+        PUT     = 4,
+        DELETE  = 5,
+        HEAD    = 6
     };
 
     enum class QueryKind : uint8_t
@@ -98,11 +101,12 @@ public:
 
     Interface interface = Interface::TCP;
     bool is_secure = false;
+    /// The connection was accepted on the introspection port.
+    bool is_from_introspection_port = false;
     String certificate;
 
     /// For tcp
     String os_user;
-    String client_hostname;
     String client_name;
     /// Canonical id of the AI coding agent that invoked the client (e.g. `claude-code`, `cursor`),
     /// detected from environment variables. Empty when no agent is detected.
@@ -136,6 +140,12 @@ public:
     String http_user_agent;
     String http_referer;
     std::map<String, String, HTTPFieldLess> http_headers;
+    /// Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query (empty otherwise). Kept in
+    /// ClientInfo so that `currentHandler()` and the query_log report it on remote shards of a distributed query.
+    String http_handler_name;
+    /// The HTTP request URL (path and query string) that invoked the query (empty for non-HTTP). Kept in
+    /// ClientInfo so that `currentRequestURL()` and the query_log report it on remote shards.
+    String http_request_url;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
@@ -176,8 +186,9 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    /// `with_trailing_fields` controls whether the `client_agent`, `is_internal` and `current_roles` fields are
-    /// (de)serialized as trailing members of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the
+    /// `with_trailing_fields` controls whether the fields added after the async `Distributed` insert header layout
+    /// was frozen — `client_agent`, `is_internal`, `current_roles`, `http_handler_name` and `http_request_url` —
+    /// are (de)serialized as part of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the
     /// persisted async `Distributed` insert header, where these are stored as trailing header fields instead, so
     /// that older binaries draining newer queue files can read the header without misinterpreting it.
     void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
@@ -186,12 +197,23 @@ public:
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
 
+    /// An older peer can forward a server-initiated query whose context was never filled with a
+    /// version, so `client_version_*` arrives as 0.0.0 over the wire. Take the immediate peer's
+    /// version from the connection hello instead (a real server always reports it there), so that
+    /// version-gated compatibility decisions and the zero-version check in `RemoteQueryExecutor`
+    /// on the next hop do not misfire during a rolling upgrade. No-op when the client version is
+    /// already known or the connection version is not.
+    void setClientVersionFromConnectionIfUnknown();
+
     /// Initialize parameters related to HTTP request.
     void setFromHTTPRequest(const Poco::Net::HTTPRequest & request);
 
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 
     String getVersionStr() const;
+
+    /// Hostname of the machine this `ClientInfo` describes.
+    const String & getClientHostName() const;
 
 private:
     struct ForwardedForCache;
@@ -201,6 +223,9 @@ private:
     mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
 
     void fillOSUserHostNameAndVersionInfo();
+
+    String client_hostname;
+    bool resolve_client_hostname_on_demand = false;
 };
 
 String toString(ClientInfo::Interface interface);

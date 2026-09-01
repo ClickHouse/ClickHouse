@@ -156,6 +156,7 @@
             "resources/support-center/knowledge-base/security/common-rbac-queries",
             "resources/support-center/knowledge-base/security/remove-default-user",
             "resources/support-center/knowledge-base/security/row-column-policy",
+            "resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
             "resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
           ]
         },
@@ -179,7 +180,8 @@
             "resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "resources/support-center/knowledge-base/setup-installation/production"
+            "resources/support-center/knowledge-base/setup-installation/production",
+            "resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
           ]
         },
         {

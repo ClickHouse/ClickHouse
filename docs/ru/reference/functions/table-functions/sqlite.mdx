@@ -25,11 +25,11 @@ sqlite('db_path', 'table_name')
 * `db_path` — Путь к файлу базы данных SQLite. [String](/ru/reference/data-types/string).
 * `table_name` — Имя таблицы в базе данных SQLite или запрос, передаваемый в SQLite как есть (см. [Передача запроса вместо имени таблицы](#passing-a-query)). [String](/ru/reference/data-types/string).
 
-<div id="returned_value">
+<div id="returned-value">
   ## Возвращаемое значение
 </div>
 
-* Объект table с теми же столбцами, что и в исходной таблице `SQLite`.
+* Объект таблица с теми же столбцами, что и в исходной таблице `SQLite`.
 
 <div id="passing-a-query">
   ## Передача запроса вместо имени таблицы
@@ -47,7 +47,7 @@ SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col
 <Note>
   Форма подзапроса `(SELECT ...)` разбирается ClickHouse и повторно сериализуется перед отправкой в SQLite. Поэтому она должна быть корректным ClickHouse SQL. Чтобы передать синтаксис, специфичный для SQLite, который ClickHouse не разбирает, используйте форму `query('...')`, текст которой отправляется в SQLite дословно.
 
-  Любые внешние `WHERE`, `LIMIT`, агрегация и т. п. из окружающего запроса к ClickHouse **не** переносятся в переданный запрос — они применяются в ClickHouse после получения полного результата запроса. Чтобы ограничить данные, считываемые из SQLite, поместите фильтр внутрь переданного запроса. При [`external_table_strict_query = 1`](/ru/reference/settings/session-settings#external_table_strict_query) внешний фильтр, который нельзя перенести, вызывает исключение вместо локального применения.
+  Любые внешние `WHERE`, `LIMIT`, агрегация и т. п. из окружающего запроса к ClickHouse **не** переносятся в переданный запрос — они применяются в ClickHouse после получения полного результата запроса. Чтобы ограничить данные, считываемые из SQLite, поместите фильтр внутрь переданного запроса. При [`external_table_strict_query = 1`](/ru/reference/settings/session-settings/external-table#external_table_strict_query) внешний фильтр, который нельзя перенести, вызывает исключение вместо локального применения.
 </Note>
 
 <div id="example">

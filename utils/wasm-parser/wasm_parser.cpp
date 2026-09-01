@@ -18,18 +18,11 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
-#include <csetjmp>
+#include <wasm_sjlj.h>
+
 #include <cstdint>
 #include <string>
 #include <new>
-
-extern "C"
-{
-    /// The error boundary; defined in `wasm_runtime.cpp`.
-    jmp_buf * chParserRecoveryPoint();
-    void chParserArmRecovery(bool armed);
-    const char * chParserRecoveryMessage();
-}
 
 namespace
 {
@@ -47,7 +40,7 @@ constexpr size_t MAX_PARSER_BACKTRACKS = 1000000;
 /// `tryParseQuery` reports a syntax error by returning null and filling in the message, and
 /// nothing in `src/Parsers` catches. A few checks in the parser still report an invalid query by
 /// throwing, and this build has no unwinding, so `wasm_runtime.cpp` turns such a throw into a jump
-/// back to the `setjmp` boundary the caller armed - see the comment on `__cxa_throw` there.
+/// back to the boundary in `wasm_sjlj.c` - see the comment on `__cxa_throw` there.
 DB::ASTPtr parse(const char * query, uint32_t size, std::string & error)
 {
     const char * end = query + size;
@@ -57,13 +50,74 @@ DB::ASTPtr parse(const char * query, uint32_t size, std::string & error)
         MAX_QUERY_SIZE, MAX_PARSER_DEPTH, MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/true);
 }
 
+/// What a `chParserProtectedCall` body is handed. `one_line` is only read by `formatBody`.
+struct Request
+{
+    const char * query;
+    uint32_t size;
+    int one_line;
+};
+
+/// The bodies run below the boundary, so they answer exactly what `ch_check` and `ch_format`
+/// answer - 1 for a query that parses, 0 for one that does not - and leave the throwing case,
+/// which does not return here at all, to their callers.
+extern "C" int checkBody(void * argument)
+{
+    const auto & request = *static_cast<const Request *>(argument);
+
+    std::string error;
+    if (!parse(request.query, request.size, error))
+    {
+        result() = std::move(error);
+        return 0;
+    }
+
+    result().clear();
+    return 1;
+}
+
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+extern "C" int formatBody(void * argument)
+{
+    const auto & request = *static_cast<const Request *>(argument);
+
+    std::string error;
+    DB::ASTPtr ast = parse(request.query, request.size, error);
+
+    if (!ast)
+    {
+        result() = std::move(error);
+        return 0;
+    }
+
+    /// Formatting throws for an AST the parser accepted but cannot print, so it stays inside the
+    /// boundary too.
+    result() = request.one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
+    return 1;
+}
+#endif
+
+/// Turns the boundary's `CH_PARSER_THREW` into the same answer a syntax error gets, with the
+/// message of the exception that ended the call.
+int finish(int protected_call_result)
+{
+    if (protected_call_result == CH_PARSER_THREW)
+    {
+        result() = chParserRecoveryMessage();
+        return 0;
+    }
+
+    return protected_call_result;
+}
+
 }
 
 extern "C"
 {
 
-/** What the module was built with. The build leaves out whole classes of work - see `build.sh` -
-  * and a caller that has to cope with more than one build should ask rather than guess.
+/** What the module was built with. The build leaves out whole classes of work - see
+  * `CMakeLists.txt` - and a caller that has to cope with more than one build should ask rather
+  * than guess.
   */
 enum : uint32_t
 {
@@ -95,51 +149,15 @@ void ch_free(uint8_t * ptr)
 
 int ch_check(const char * query, uint32_t size)
 {
-    if (setjmp(*chParserRecoveryPoint()) != 0)
-    {
-        result() = chParserRecoveryMessage();
-        return 0;
-    }
-    chParserArmRecovery(true);
-
-    std::string error;
-    if (!parse(query, size, error))
-    {
-        chParserArmRecovery(false);
-        result() = std::move(error);
-        return 0;
-    }
-
-    chParserArmRecovery(false);
-    result().clear();
-    return 1;
+    Request request{query, size, /*one_line=*/0};
+    return finish(chParserProtectedCall(checkBody, &request));
 }
 
 #if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
 int ch_format(const char * query, uint32_t size, int one_line)
 {
-    if (setjmp(*chParserRecoveryPoint()) != 0)
-    {
-        result() = chParserRecoveryMessage();
-        return 0;
-    }
-    chParserArmRecovery(true);
-
-    std::string error;
-    DB::ASTPtr ast = parse(query, size, error);
-
-    if (!ast)
-    {
-        chParserArmRecovery(false);
-        result() = std::move(error);
-        return 0;
-    }
-
-    /// Formatting throws for an AST the parser accepted but cannot print, so it stays inside the
-    /// boundary too.
-    result() = one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
-    chParserArmRecovery(false);
-    return 1;
+    Request request{query, size, one_line};
+    return finish(chParserProtectedCall(formatBody, &request));
 }
 #endif
 

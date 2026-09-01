@@ -194,6 +194,19 @@ void ParquetV3BlockInputFormat::onCancel() noexcept
         reader->cancel();
 }
 
+void ParquetV3BlockInputFormat::resetReadBuffer()
+{
+    {
+        /// Background tasks read through a non-owning pointer to the buffers the base class is
+        /// about to release, so they have to be stopped first. `reader` stays alive:
+        /// getMatchedBuckets() reads row group metadata after the source is exhausted.
+        std::lock_guard lock(reader_mutex);
+        if (reader)
+            reader->shutdownTasks();
+    }
+    IInputFormat::resetReadBuffer();
+}
+
 void ParquetV3BlockInputFormat::resetParser()
 {
     {
@@ -461,6 +474,23 @@ When writing Parquet file, data types that don't have a matching Parquet type ar
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
+### Wide integers {#wide-integers}
+
+By default, ClickHouse writes `Int128`, `UInt128`, `Int256`, and `UInt256` as unannotated `FIXED_LEN_BYTE_ARRAY(16/32)` values in little-endian order. This legacy representation remains the default so files can be read by older ClickHouse versions.
+
+Set `output_format_parquet_wide_integer_as_decimal = 1` to use the standard Parquet `DECIMAL` representation instead:
+
+| ClickHouse type | Parquet logical type | Physical type | Value encoding |
+|-----------------|----------------------|---------------|----------------|
+| `UInt128` | `DECIMAL(39, 0)` | `FIXED_LEN_BYTE_ARRAY(17)` | A zero sign byte followed by the 16-byte unsigned value in big-endian order |
+| `UInt256` | `DECIMAL(78, 0)` | `FIXED_LEN_BYTE_ARRAY(33)` | A zero sign byte followed by the 32-byte unsigned value in big-endian order |
+| `Int128` | `DECIMAL(39, 0)` | `FIXED_LEN_BYTE_ARRAY(17)` | The 16-byte two's-complement value in big-endian order, sign-extended to 17 bytes |
+| `Int256` | `DECIMAL(77, 0)` | `FIXED_LEN_BYTE_ARRAY(33)` | The 32-byte two's-complement value in big-endian order, sign-extended to 33 bytes |
+
+The decimal representation provides numeric ordering for standard Parquet column-chunk statistics and page indexes, which lets ClickHouse use row-group and page min/max pruning. ClickHouse reads both encodings. For decimal precision 39, schema inference returns `Decimal(39, 0)`, backed by `Decimal256`; specify an explicit `Int128` or `UInt128` structure to recover a wide-integer type. Decimal precision 77 or 78 exceeds the range of ClickHouse `Decimal256`, so reading those files requires an explicit compatible `Int256` or `UInt256` structure. With an explicit wide-integer structure, ClickHouse accepts standard decimal values stored as either `BYTE_ARRAY` or `FIXED_LEN_BYTE_ARRAY` of any valid width, and range-checks every value after removing sign extension.
+
+Some Parquet clients support decimal precision only up to 38, while Arrow's high-level decimal types support precision only up to 76. Such clients can reject the precision-77/78 representation even though its schema and 33-byte physical width conform to Parquet. Keep the setting disabled when files must be read by older ClickHouse versions or clients with smaller decimal limits.
+
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to that data type which is set for the ClickHouse table column. E.g. a `UINT_32` Parquet column can be read into an [IPv4](/reference/data-types/ipv4) ClickHouse column.
 
 For some Parquet types there's no closely matching ClickHouse type. We read them as follows:
@@ -557,6 +587,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_row_group_size_bytes`                                   | Target row group size in bytes, before compression.                                                                                                                                                                                  | `536870912` |
 | `output_format_parquet_string_as_string`                                       | Use Parquet String type instead of Binary for String columns.                                                                                                                                                                      | `1`         |
 | `output_format_parquet_fixed_string_as_fixed_byte_array`                       | Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.                                                                                                                                                  | `1`         |
+| `output_format_parquet_wide_integer_as_decimal`                                | Write `Int128`, `UInt128`, `Int256`, and `UInt256` as standard big-endian Parquet `DECIMAL` values instead of legacy little-endian fixed byte arrays.                                                                            | `0`         |
 | `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)                                                                                                              | `zstd`      |
 | `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads.                                                                                                                                          | `1`         |
 | `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |
@@ -587,9 +618,16 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                "schema_inference_make_columns_nullable={};schema_inference_make_json_columns_nullable={};"
+                "enable_json_parsing={};max_parser_depth={};"
+                "local_time_as_utc={};allow_geoparquet_parser={};skip_columns_with_unsupported_types={}",
                 settings.schema_inference_make_columns_nullable,
-                settings.parquet.enable_json_parsing);
+                settings.schema_inference_make_json_columns_nullable,
+                settings.parquet.enable_json_parsing,
+                settings.max_parser_depth,
+                settings.parquet.local_time_as_utc,
+                settings.parquet.allow_geoparquet_parser,
+                settings.parquet.skip_columns_with_unsupported_types_in_schema_inference);
         });
 }
 

@@ -21,7 +21,7 @@ Estas configurações estão disponíveis em [system.merge&#95;tree&#95;settings
 Limita a velocidade máxima da transferência de dados pela rede, em bytes por
 segundo, para fetches [replicados](/pt-BR/reference/engines/table-engines/mergetree-family/replication).
 Essa configuração é aplicada a uma tabela específica, ao contrário da
-configuração [`max_replicated_fetches_network_bandwidth_for_server`](/pt-BR/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth),
+configuração [`max_replicated_fetches_network_bandwidth_for_server`](/pt-BR/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server),
 que é aplicada ao servidor.
 
 Você pode limitar tanto a largura de banda de rede do servidor quanto a de uma
@@ -92,7 +92,7 @@ fila do ReplicatedMergeTree.
 Limita a velocidade máxima de transferência de dados pela rede, em bytes por
 segundo, para envios [replicados](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree).
 Essa configuração é aplicada a uma tabela específica, diferentemente da
-configuração [`max_replicated_sends_network_bandwidth_for_server`](/pt-BR/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth),
+configuração [`max_replicated_sends_network_bandwidth_for_server`](/pt-BR/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server),
 que é aplicada ao servidor.
 
 Você pode limitar tanto a rede do servidor quanto a rede de uma tabela

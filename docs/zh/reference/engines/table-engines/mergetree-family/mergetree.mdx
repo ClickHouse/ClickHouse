@@ -69,7 +69,9 @@ ORDER BY expr
 
 `ENGINE` — 引擎名称及其参数。`ENGINE = MergeTree()`。`MergeTree` 引擎没有参数。
 
-<div id="order_by">
+<a id="order_by" />
+
+<div id="order-by">
   #### ORDER BY
 </div>
 
@@ -219,7 +221,7 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 ClickHouse 不要求主键是唯一的。你可以插入多行具有相同主键的数据。
 
-你可以在 `PRIMARY KEY` 和 `ORDER BY` 子句中使用 `Nullable` 类型的表达式，但强烈不建议这样做。要启用此功能，请打开 [allow&#95;nullable&#95;key](/zh/reference/settings/merge-tree-settings#allow_nullable_key) 设置。对于 `ORDER BY` 子句中的 `NULL` 值，适用 [NULLS&#95;LAST](/zh/reference/statements/select/order-by#sorting-of-special-values) 原则。
+你可以在 `PRIMARY KEY` 和 `ORDER BY` 子句中使用 `Nullable` 类型的表达式，但强烈不建议这样做。要启用此功能，请打开 [allow&#95;nullable&#95;key](/zh/reference/settings/merge-tree-settings/allow#allow_nullable_key) 设置。对于 `ORDER BY` 子句中的 `NULL` 值，适用 [NULLS&#95;LAST](/zh/reference/statements/select/order-by#sorting-of-special-values) 原则。
 
 <div id="selecting-a-primary-key">
   ### 选择主键
@@ -244,9 +246,9 @@ ClickHouse 不要求主键是唯一的。你可以插入多行具有相同主键
 
 较长的主键会对插入性能和内存消耗产生负面影响，但主键中的额外列不会影响 ClickHouse 在 `SELECT` 查询期间的性能。
 
-你可以使用 `ORDER BY tuple()` 语法创建不带主键的表。在这种情况下，ClickHouse 会按插入顺序存储数据。如果你希望在通过 `INSERT ... SELECT` 查询插入数据时保留数据顺序，请设置 [max&#95;insert&#95;threads = 1](/zh/reference/settings/session-settings#max_insert_threads)。
+你可以使用 `ORDER BY tuple()` 语法创建不带主键的表。在这种情况下，ClickHouse 会按插入顺序存储数据。如果你希望在通过 `INSERT ... SELECT` 查询插入数据时保留数据顺序，请设置 [max&#95;insert&#95;threads = 1](/zh/reference/settings/session-settings/max-insert#max_insert_threads)。
 
-如果要按初始顺序读取数据，请使用[单线程](/zh/reference/settings/session-settings#max_threads) `SELECT` 查询。
+如果要按初始顺序读取数据，请使用[单线程](/zh/reference/settings/session-settings/max-threads#max_threads) `SELECT` 查询。
 
 <div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
   ### 选择与排序键不同的主键
@@ -259,7 +261,7 @@ ClickHouse 不要求主键是唯一的。你可以插入多行具有相同主键
 
 在这种情况下，更合理的做法是仅在主键中保留少量能够提供高效范围扫描的列，并将其余维度列加入排序键 Tuple。
 
-对排序键执行 [ALTER](/zh/reference/statements/alter/index) 是一种轻量级操作，因为当新列同时添加到表和排序键中时，现有的数据 parts 不需要修改。由于旧排序键是新排序键的前缀，并且新添加的列中还没有数据，因此在修改表的那一刻，数据同时满足按旧排序键和新排序键排序。
+对排序键执行 [ALTER](/zh/reference/statements/alter/skipping-index) 是一种轻量级操作，因为当新列同时添加到表和排序键中时，现有的数据 parts 不需要修改。由于旧排序键是新排序键的前缀，并且新添加的列中还没有数据，因此在修改表的那一刻，数据同时满足按旧排序键和新排序键排序。
 
 <div id="use-of-indexes-and-partitions-in-queries">
   ### 在查询中使用索引和分区
@@ -306,7 +308,7 @@ ClickHouse 将使用主键索引裁剪不符合条件的数据，并使用按月
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-要检查 ClickHouse 在执行查询时是否能够使用索引，请使用设置 [force&#95;index&#95;by&#95;date](/zh/reference/settings/session-settings#force_index_by_date) 和 [force&#95;primary&#95;key](/zh/reference/settings/session-settings#force_primary_key)。
+要检查 ClickHouse 在执行查询时是否能够使用索引，请使用设置 [force&#95;index&#95;by&#95;date](/zh/reference/settings/session-settings/force#force_index_by_date) 和 [force&#95;primary&#95;key](/zh/reference/settings/session-settings/force#force_primary_key)。
 
 按月分区的键可以只读取包含相应日期范围的数据块。在这种情况下，一个数据块可能包含多个日期的数据 (最多可覆盖整整一个月) 。在一个块内，数据按主键排序，而主键的第一列不一定是日期。因此，如果查询仅包含日期条件，且未指定主键前缀，那么读取的数据会比只查询单个日期时更多。
 
@@ -692,7 +694,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 投影类似于 [materialized views](/zh/reference/statements/create/view)，但定义在分片级别。它们既提供一致性保证，也会在查询中自动使用。
 
 <Note>
-  在实现投影时，还应考虑 [force&#95;optimize&#95;projection](/zh/reference/settings/session-settings#force_optimize_projection) 设置。
+  在实现投影时，还应考虑 [force&#95;optimize&#95;projection](/zh/reference/settings/session-settings/force-optimize#force_optimize_projection) 设置。
 </Note>
 
 带有 [FINAL](/zh/reference/statements/select/from#final-modifier) 修饰符的 `SELECT` 语句不支持投影。
@@ -966,7 +968,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
   ### 删除过期数据
 </div>
 
-带有已过期 `TTL` 的数据会在 ClickHouse 合并数据 parts 时被删除。
+带有已过期 `TTL` (生存时间 (TTL)) 的数据会在 ClickHouse 合并数据 parts 时被删除。
 
 当 ClickHouse 检测到数据已过期时，会执行一次计划外合并。要控制此类合并的频率，可以设置 `merge_with_ttl_timeout`。如果该值过低，系统会执行大量计划外合并，可能消耗大量资源。
 
@@ -974,7 +976,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 **另请参见**
 
-* [ttl&#95;only&#95;drop&#95;parts](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts) 设置
+* [ttl&#95;only&#95;drop&#95;parts](/zh/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) 设置
 
 <div id="disk-types">
   ## 磁盘类型
@@ -1010,7 +1012,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 </div>
 
 * 磁盘 — 挂载到文件系统上的块设备。
-* 默认磁盘 — 用于存储 [path](/zh/reference/settings/server-settings/settings#path) 服务器设置中指定路径的磁盘。
+* 默认磁盘 — 用于存储 [path](/zh/reference/settings/server-settings/settings/other#path) 服务器设置中指定路径的磁盘。
 * 卷 — 由相同类型磁盘组成的有序集合 (类似于 [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)) 。
 * 存储策略 — 由一组卷及其之间的数据移动规则构成。
 
@@ -1175,7 +1177,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 `default` 存储策略表示只使用一个卷，而该卷仅包含 `<path>` 中指定的一个磁盘。
 你可以在创建表后使用 [ALTER TABLE ... MODIFY SETTING] 查询更改存储策略；新策略应包含所有旧磁盘和卷，且名称必须保持不变。
 
-执行数据分区片段后台移动的线程数可以通过 [background&#95;move&#95;pool&#95;size](/zh/reference/settings/server-settings/settings#background_move_pool_size) 设置进行调整。
+执行数据 parts 后台移动的线程数可以通过 [background&#95;move&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_move_pool_size) 设置进行调整。
 
 <div id="details">
   ### 详细说明
@@ -1205,7 +1207,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 后台合并和变更完成后，旧 parts 只有在经过一定时间 (`old_parts_lifetime`) 之后才会被删除。
 在此期间，它们不会被移动到其他卷或磁盘。因此，在这些 parts 最终被删除之前，它们仍会被计入已占用磁盘空间的评估中。
 
-用户可以使用 [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/zh/reference/settings/merge-tree-settings#min_bytes_to_rebalance_partition_over_jbod) setting，将新的大 parts 以均衡方式分配到某个 [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) 卷的不同磁盘上。
+用户可以使用 [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod) setting，将新的大 parts 以均衡方式分配到某个 [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) 卷的不同磁盘上。
 
 <div id="table_engine-mergetree-s3">
   ## 使用外部存储来存储数据
@@ -1428,16 +1430,16 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
   从列中提取的一组紧凑的单值摘要。根据列类型，会填充以下内容：
 
+  * 对于任何列：等于该类型默认值的行数 (整数和浮点数为 `0`，`String` 为 `''`，`Array` 为 `[]`，`Nullable` 为 `NULL` 等) ，这使优化器能够估算 `col = <default>` 谓词和 `IS NULL` 过滤器；
   * 对于任何以数字表示值的列 (整数、浮点数、`Decimal*`、`Date*`、`DateTime*`、`Enum*`、`IPv4`，……) ：最小值和最大值，可用于估算范围过滤器的选择性并启用分片裁剪；
-  * 对于 `String` 和 `FixedString` 列：非 `NULL` 值的总字节长度 (可由此推导出平均字符串长度) ；
-  * 对于 `Nullable` 和 `LowCardinality(Nullable)` 列：`NULL` 值的数量，优化器会用它在选择性估算中扣除 `NULL` 行。
+  * 对于 `String` 和 `FixedString` 列：非 `NULL` 值的总字节长度 (可由此推导出平均字符串长度) 。
 
-    单个 `basic` 统计信息可以同时填充其中多项——例如在 `Nullable(UInt32)` 列上，它会同时跟踪数值最小/最大值和 `NULL` 计数。与 `minmax` 相比，`basic` 还可用于 `String` / `FixedString` 列，并且也可以仅为了跟踪 `NULL` 计数而声明在 `UUID` 或 `IPv6` 等类型的 `Nullable` 包装类型上。
+    单个 `basic` 统计信息可以同时填充其中多项——例如在 `Nullable(UInt32)` 列上，它会同时跟踪数值最小/最大值和 `NULL` 计数。由于每种列类型都定义了默认值计数，`basic` 可以声明在任何列上，包括 `Array`、`Tuple` 和 `Map` 等复合类型。
 
 * `minmax` (已弃用)
 
 <Note>
-  `minmax` 统计信息已弃用，且无法再创建 (`CREATE TABLE ... STATISTICS(minmax)` 和 `ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` 会返回错误) 。带有 `minmax` 统计信息的现有表和 parts 仍可继续工作。请改用 `basic` 统计信息。
+  `minmax` 统计信息已弃用。请改用 `basic` 统计信息，后者是 `minmax` 的超集。
 </Note>
 
 * `tdigest`
@@ -1468,16 +1470,16 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
   ### 支持的数据类型
 </div>
 
-|             | (U)Int*, Float*, Decimal(*), Date*, 布尔值, Enum* | IPv4 | String 或 FixedString |
-| ----------- | ---------------------------------------------- | ---- | -------------------- |
-| basic       | ✔                                              | ✔    | ✔                    |
-| countmin    | ✔                                              | ✔    | ✔                    |
-| minmax      | ✔                                              | ✔    | ✗                    |
-| tdigest     | ✔                                              | ✗    | ✗                    |
-| uniq        | ✔                                              | ✔    | ✔                    |
-| uniq&#95;v2 | ✔                                              | ✔    | ✔                    |
+|             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String 或 FixedString | 其他任意类型        |
+| ----------- | -------------------------------------------------- | ---- | -------------------- | ------------- |
+| basic       | ✔                                                  | ✔    | ✔                    | ✔ (仅默认值计数)  |
+| countmin    | ✔                                                  | ✔    | ✔                    | ✗             |
+| minmax      | ✔                                                  | ✔    | ✗                    | ✗             |
+| tdigest     | ✔                                                  | ✗    | ✗                    | ✗             |
+| uniq        | ✔                                                  | ✔    | ✔                    | ✗             |
+| uniq&#95;v2 | ✔                                                  | ✔    | ✔                    | ✗             |
 
-上述各项也都支持所列类型的 `Nullable` 和 `LowCardinality(Nullable)` 包装类型。`Basic` 还可以额外声明在诸如 `UUID` 或 `IPv6` 等类型的 `Nullable` 包装器上，仅用于统计空值数量。
+上述所有类型还支持所列类型的 `Nullable` 和 `LowCardinality(Nullable)` 包装器。`basic` 还可用于任何其他类型 (包括 `Array`、`Tuple` 和 `Map` 等复合类型) ；对于这些类型，它仅统计默认值计数。
 
 <div id="supported-operations">
   ### 支持的操作
@@ -1485,16 +1487,22 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 |             | 等值过滤器 (==) | 范围过滤器 (`>, >=, <, <=`) |
 | ----------- | ---------- | ---------------------- |
-| basic       | ✗          | ✔ (仅限数值列)              |
+| basic       | ✔ (仅默认值)   | ✔ (仅数值列)               |
 | countmin    | ✔          | ✗                      |
-| minmax      | ✗          | ✔ (仅限数值列)              |
-| tdigest     | ✗          | ✔ (仅限数值列)              |
+| minmax      | ✗          | ✔ (仅数值列)               |
+| tdigest     | ✗          | ✔ (仅数值列)               |
 | uniq        | ✔          | ✗                      |
 | uniq&#95;v2 | ✔          | ✗                      |
 
-对于 `String` / `FixedString` 列上的 `basic`，该统计信息仅记录非 `NULL` 值的总字节长度
-(用于估算平均字符串长度) 以及 `NULL` 计数；
-它不用于范围过滤器或分片裁剪。
+仅当比较值与列内部存储的默认值匹配时，`basic` 才能精确处理等值过滤器
+(数值类型为原始整数 `0`、`String` /
+`FixedString` 为 `''` / N 个零字节、`Nullable` 列为 `NULL` 等) 。对于 `Enum` 类型，快速路径
+仅当枚举字面量映射为原始整数 `0` 时才会触发；如果没有任何枚举值的原始值为 `0`，
+该统计信息不会参与等值估算。对于其他值，优化器会回退
+到其他统计信息。
+对于 `String` / `FixedString` 列的 `basic`，该统计信息会记录非 NULL 字节总长度
+(用于估算平均字符串长度) 以及默认值/`NULL` 的数量；它不用于范围过滤器或
+分片裁剪。
 
 <div id="column-level-settings">
   ## 列级设置

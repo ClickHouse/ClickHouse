@@ -362,7 +362,7 @@ Parsing allows an additional field `tskv` to be added without the equal sign or 
 During import, columns with unknown names will be skipped, 
 if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 
-[NULL](/sql-reference/syntax.md) is formatted as `\N`.
+[NULL](/reference/syntax) is formatted as `\N`.
 
 ## Example usage {#example-usage}
 

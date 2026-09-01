@@ -1,0 +1,10 @@
+<clickhouse>
+    <!--
+        Minimal placeholder config for the `user_directories_include_from` cluster. The test injects the
+        `<user_directories>` entry, the extra users config file it points at, and that users config's
+        `<include_from>` substitution source via `config.d/` at runtime and reloads, to assert the
+        top-level tags the source contributes are accepted: the source lives under `config.d/`, so it is
+        merged into the server config, and the validator must learn about it by scanning the users
+        configs listed in `<user_directories>` - not only the top-level `<users_config>`.
+    -->
+</clickhouse>

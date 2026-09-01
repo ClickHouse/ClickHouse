@@ -191,7 +191,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ويُزاد توازي تنفيذ الاستعلام أيضًا عبر:
 
 1. **المعالجة المتجهية SIMD**: تستخدم العمليات على البيانات العمودية [تعليمات CPU SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (مثل [AVX512](https://en.wikipedia.org/wiki/AVX-512))، مما يتيح معالجة القيم على شكل دفعات.
-2. **التوازي على مستوى المجموعة**: في البيئات الموزعة، تنفّذ كل عقدة query processing محليًا. وتُبث [حالات التجميع الجزئية](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) إلى العقدة المُبادِرة ثم تُدمَج. وإذا كانت مفاتيح `GROUP BY` في الاستعلام متوافقة مع مفاتيح sharding، فيمكن [تقليل الدمج أو تجنبه تمامًا](/ar/reference/settings/session-settings#distributed_group_by_no_merge).
+2. **التوازي على مستوى المجموعة**: في البيئات الموزعة، تنفّذ كل عقدة query processing محليًا. وتُبث [حالات التجميع الجزئية](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) إلى العقدة المُبادِرة ثم تُدمَج. وإذا كانت مفاتيح `GROUP BY` في الاستعلام متوافقة مع مفاتيح sharding، فيمكن [تقليل الدمج أو تجنبه تمامًا](/ar/reference/settings/session-settings/distributed#distributed_group_by_no_merge).
 
 <br />
 

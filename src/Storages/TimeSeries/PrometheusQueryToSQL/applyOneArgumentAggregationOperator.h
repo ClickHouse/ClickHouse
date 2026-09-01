@@ -14,6 +14,6 @@ bool isOneArgumentAggregationOperator(std::string_view operator_name);
 
 /// Applies a one-argument aggregation operator.
 SQLQueryPiece applyOneArgumentAggregationOperator(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

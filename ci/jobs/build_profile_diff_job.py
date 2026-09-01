@@ -45,6 +45,12 @@ Notes on data coverage:
     linked (clickhouse-keeper has none when built as a symlink to clickhouse).
   * `binary_sizes` is complete on both sides; `binary_symbols` is complete on
     the PR side and on master builds since this check was introduced.
+  * The warmup build builds every object-file target ninja knows about while a
+    PR build builds only `clickhouse-bundle`, so the object-size comparison
+    covers the object files the PR build produced (see `compare_objects`).
+  * Names coming out of a ThinLTO link carry an unstable `.llvm.<hash>` clone
+    suffix, so symbols and per-function times are keyed by the name with that
+    suffix removed (see `strip_clone_suffix`).
 
 Local run (no AWS SSM secrets and no PR comment; `gh` is still required, to
 enumerate master history from the provided baseline):
@@ -97,20 +103,68 @@ FINAL_BINARIES = [
 PR_DAYS = 7
 BASE_DAYS = 7
 TU_BASE_DAYS = 14
+# How long after a master commit its profile can still arrive: the master-side
+# windows end that far past their anchor. Over 673 master `Build (arm_release)`
+# commits the upload lagged the commit by 4 hours at p99 and 85 hours at most.
+UPLOAD_DELAY_DAYS = 4
 
 # Significance thresholds. Object files are compared against the flag-identical
 # warmup build, so their thresholds are tight. The stripped binary is compared
-# against the official master build, which differs in build flags beyond debug
-# info (official-build flag, PGO/BOLT availability): a no-op PR measured a
-# -0.44% residual, so its threshold must absorb about that much. Times run on
-# different machines under different load and need generous margins.
+# against the official master build, which is compiled with debug info while a
+# pull request build is not, and that leaks into the code itself (see
+# XRAY_DEBUG_OFFSET_RATIO): a no-op pull request measured a -0.43% residual, so
+# its threshold must absorb about that much. Times run on different machines
+# under different load and need generous margins.
 BINARY_SIG_BYTES = 8 << 20  # stripped binary: 8 MiB and
 BINARY_SIG_RATIO = 0.01  # 1%
+# The size by which the official master binary exceeds a pull request one for
+# reasons no pull request can influence. A delta that lands on this offset is
+# not shown at all, see compare_binaries.
+#
+# Pull request builds pass -DDISABLE_ALL_DEBUG_SYMBOLS=1 and the official master
+# build does not (build_clickhouse.py), and `strip --strip-debug` does not undo
+# the difference. XRay decides whether to instrument a loop-free function by
+# counting MachineInstrs with debug pseudo-instructions included
+# (`MICount += MBB.size()` in llvm/lib/CodeGen/XRayInstrumentation.cpp), so with
+# debug info thousands of functions just under the 200-instruction threshold get
+# entry/exit sleds that the pull request build never emits. Measured on master
+# 9d8eed34c114 against pull request 116614: 11028 extra instrumented functions,
+# 3.06 MiB of a 712 MiB stripped binary (0.43%), all of it in `xray_instr_map`,
+# `xray_fn_idx`, the sled NOPs in `.text` and the `.Lxray_*` / `$d` symbols they
+# add. The offset is always in the same direction, because the official build is
+# the one carrying the extra sleds.
+#
+# The compiler side is fixed in llvm/llvm-project#219100; once that reaches the
+# toolchain this offset can go away, and the headline row becomes exact again.
+XRAY_DEBUG_OFFSET_RATIO = 0.0043
+# How far a delta may sit from that offset and still be read as the offset. This
+# is deliberately a window *around* the measurement rather than everything up to
+# it: a pull request that grows the binary by less than the offset still compares
+# smaller than master, and hiding the whole `[-offset, 0]` range would turn such
+# a regression into a silent omission. At half the offset the window is
+# +-1.53 MiB around -3.06 MiB, so any real change past that shows up, in either
+# direction, and its upper edge stays below BINARY_SIG_RATIO.
+XRAY_DEBUG_OFFSET_TOLERANCE = 0.5
+# Shown whenever the headline size section says anything at all, so that a
+# rendered negative delta is read with the offset in mind rather than as a size
+# win of that size.
+XRAY_DEBUG_OFFSET_NOTE = (
+    "The official master build is compiled with `-g` and a pull request build is "
+    "not, and XRay counts debug instructions towards its instrumentation "
+    "threshold, so master instruments thousands of functions more and its binary "
+    "is ~0.4% larger no matter what the pull request does."
+)
 OBJECT_REPORT_BYTES = 16 << 10  # .o file: report at 16 KiB,
 OBJECT_SIG_BYTES = 256 << 10  # significant at 256 KiB
-OPTFN_REPORT_SECONDS = 2  # per-function LTO time: report at |delta| >= 2s
-OPTFN_REPORT_RATIO = 1.5  # and 1.5x, significant at 15s
-OPTFN_SIG_SECONDS = 15
+# Per-function ThinLTO time is the noisiest signal of the check: the two links
+# run on different machines, with different flags, and the backend's per-function
+# time depends on the import decisions of the whole module. Measured on pull
+# requests that cannot possibly have changed the functions in question, single
+# functions of a few seconds drifted by up to a factor of two - which the old
+# 2 s / 1.5x reporting bar turned into a dozen-row table on every pull request.
+OPTFN_REPORT_SECONDS = 5  # per-function LTO time: report at |delta| >= 5s
+OPTFN_REPORT_RATIO = 2.0  # and 2x, significant at 20s
+OPTFN_SIG_SECONDS = 20
 TU_REPORT_SECONDS = 5  # per-TU compile time: report at |delta| >= 5s
 TU_REPORT_RATIO = 1.3  # and 1.3x, significant at 20s and 1.5x
 TU_SIG_SECONDS = 20
@@ -125,8 +179,16 @@ TU_SIG_RATIO = 1.5
 # baselines use the PR's flags, but not the PR's runner.
 TU_SKEW_SIG_RATIO = 1.2
 TU_SKEW_SIG_SECONDS = 300
-SYMBOL_REPORT_BYTES = 16 << 10  # per-symbol size: report at 16 KiB,
-SYMBOL_SIG_BYTES = 256 << 10  # significant at 256 KiB
+# Per-symbol sizes are baselined on the official master build, not on the
+# flag-identical warmup one: that build is compiled with debug info, and every
+# function it instruments but a pull request build does not carries the sled NOPs
+# in its own size (see XRAY_DEBUG_OFFSET_RATIO), so individual functions really
+# do differ in size between two builds of the same source. That is worth ~3 MiB
+# over the whole stripped binary, so the margins here are much wider than the
+# object-file ones (those are baselined on a build compiled with the PR's exact
+# flags).
+SYMBOL_REPORT_BYTES = 64 << 10  # per-symbol size: report at 64 KiB,
+SYMBOL_SIG_BYTES = 512 << 10  # significant at 512 KiB
 MAX_TABLE_ROWS = 20
 MAX_NAME_LEN = 100
 
@@ -178,6 +240,60 @@ def in_list(values) -> str:
     return ", ".join(quote(v) for v in values)
 
 
+def recent_days(days: int) -> str:
+    """A `date` condition covering the last `days` days up to today."""
+    return f"date >= today() - {days}"
+
+
+def anchored_window(anchor_date: datetime.date, days: int, today: datetime.date) -> str:
+    """A `date` condition covering `days` before `anchor_date` up to its uploads.
+
+    Closed on both ends: `date` leads the primary key of every profile table, so
+    a bounded range prunes on it while an open `date >= start` scans every newer
+    day of the whole fleet's telemetry. The upper end allows for profiles that
+    arrive after their commit (UPLOAD_DELAY_DAYS) and never moves into the
+    future, so an anchor at today reproduces `recent_days` exactly.
+    """
+    start = anchor_date - datetime.timedelta(days=days)
+    end = min(anchor_date + datetime.timedelta(days=UPLOAD_DELAY_DAYS), today)
+    return f"date BETWEEN '{start.isoformat()}' AND '{end.isoformat()}'"
+
+
+def master_windows(event_time: str, days_by_name: Dict[str, int]) -> Dict[str, str]:
+    """The master-side `date` conditions, anchored on the run's own event.
+
+    The baseline candidates are the frozen first-parent chain of the head's
+    master parent, so a window measured from the wall clock excludes them all
+    once the run is replayed later than the event it was triggered by (a rerun
+    keeps the event payload, and with it `event_time`). Anchoring both on the
+    event makes the candidate set and the row filter commensurable.
+
+    An absent `event_time` (only `LocalInfo`, where `--base-sha` is mandatory
+    and short-circuits the baseline lookup) keeps the wall-clock windows.
+    """
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    if not event_time:
+        return {name: recent_days(days) for name, days in days_by_name.items()}
+    anchor = min(datetime.date.fromisoformat(event_time[:10]), today)
+    return {name: anchored_window(anchor, days, today) for name, days in days_by_name.items()}
+
+
+def walk_cutoff(event_time: str, days: int) -> str:
+    """The ISO 8601 UTC timestamp the first-parent walk stops at.
+
+    Reaches past the lower bound of the anchored window: that bound is a whole
+    calendar upload day, and an upload lags its commit, so a commit older than
+    the bound can still own a row inside the window.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    anchor = now
+    if event_time:
+        parsed = datetime.datetime.fromisoformat(event_time.replace("Z", "+00:00"))
+        anchor = min(parsed, now)
+    start = anchor.date() - datetime.timedelta(days=days + UPLOAD_DELAY_DAYS)
+    return f"{start.isoformat()}T00:00:00Z"
+
+
 @dataclasses.dataclass
 class Side:
     """One comparison side, pinned to a single concrete build run.
@@ -192,7 +308,7 @@ class Side:
     silently falls back to an older one.
     """
 
-    days: int
+    date_condition: str
     pr_number: int
     sha: str
     check_start_time: str
@@ -202,7 +318,7 @@ class Side:
 
 def resolve_run(
     db: "Db",
-    days: int,
+    date_condition: str,
     pr_number: int,
     sha: str,
     table: str = "binary_sizes",
@@ -217,7 +333,7 @@ def resolve_run(
     rows = db.query(
         f"""SELECT check_start_time, instance_id
         FROM {table}
-        WHERE date >= today() - {days}
+        WHERE {date_condition}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(sha)}
             AND check_name = {quote(check_name)}
@@ -226,13 +342,13 @@ def resolve_run(
     )
     if not rows:
         return None
-    return Side(days, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"], check_name)
+    return Side(date_condition, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"], check_name)
 
 
 def side_conditions(side: Side, extra_where: str = "") -> str:
     """The WHERE conditions selecting one side's rows, pinned to its build run."""
     where = f"\n            AND {extra_where}" if extra_where else ""
-    return f"""date >= today() - {side.days}
+    return f"""{side.date_condition}
             AND pull_request_number = {side.pr_number}
             AND commit_sha = {quote(side.sha)}
             AND check_name = {quote(side.check_name)}
@@ -297,6 +413,33 @@ def strip_build_dir(path: str) -> str:
     return path.removeprefix(f"{BUILD_DIR}/")
 
 
+# ThinLTO's clone suffix, in the demangled form (` [clone .llvm.123]`) and in the
+# mangled one (`.llvm.123`) - `binary_symbols` holds demangled names, the time
+# trace holds mangled ones.
+CLONE_SUFFIX_RE = r"' ?\\[clone \\.llvm\\.[0-9]+\\]'"
+LLVM_SUFFIX_RE = r"'\\.llvm\\.[0-9]+'"
+
+
+def strip_clone_suffix(column: str) -> str:
+    """SQL dropping ThinLTO's `.llvm.<hash>` suffix from a symbol name.
+
+    When ThinLTO imports a function it promotes the module-local symbols it
+    needs and renames them with a `.llvm.<hash>` suffix (`nm --demangle` renders
+    it as ` [clone .llvm.<hash>]`). The hash is derived from the defining
+    module's identity, so it is not stable across builds: two builds of the very
+    same source name the same clone differently.
+
+    Both sides are therefore normalized by dropping the suffix, which also folds
+    the several clones of one function into a single row. Without it an entirely
+    unchanged function appears twice - once as removed, once as new, at exactly
+    the same size - and those phantom pairs were the largest rows of the symbol
+    and ThinLTO tables on every pull request, and enough to declare both
+    sections significant.
+    """
+    without_clone = f"replaceRegexpAll({column}, {CLONE_SUFFIX_RE}, '')"
+    return f"replaceRegexpAll({without_clone}, {LLVM_SUFFIX_RE}, '')"
+
+
 _DEMANGLER = None
 
 
@@ -328,6 +471,7 @@ class LocalInfo:
     repo_name = "ClickHouse/ClickHouse"
     pr_number = 0
     sha = ""
+    event_time = ""
 
     def get_kv_data(self, key):
         return None
@@ -371,7 +515,8 @@ def get_master_shas(info) -> List[str]:
 # `repos/.../commits` interleaves merged PRs' own commits with the master
 # merge commits, so one 100-commit page typically advances the first-parent
 # chain by only ~25-50 commits. ClickHouse master merges up to ~100 commits a
-# day, so 60 fetches cover the TU_BASE_DAYS window with margin.
+# day, so 60 fetches cover the walk's TU_BASE_DAYS + UPLOAD_DELAY_DAYS horizon
+# with margin (measured: 21 fetches for 19 days over 1247 first-parent commits).
 EXTEND_MAX_PAGES = 60
 
 
@@ -440,7 +585,7 @@ def _walk_first_parent(anchor_sha: str, cutoff: str, max_pages: int, list_page, 
             raise RuntimeError(f"the commit listing anchored at {wanted} does not contain it")
 
 
-def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_page=_list_commits_page) -> List[str]:
+def extend_master_shas(master_shas: List[str], cutoff: str, list_page=_list_commits_page) -> List[str]:
     """Extend the anchored chain far enough back to cover the per-TU window.
 
     `master_track_commits_sha` holds only ~100 first-parent commits - a day or
@@ -451,6 +596,10 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     master commit and an ancestor of the PR's merge base (a baseline must
     never contain changes the PR does not have).
 
+    `cutoff` comes from the same anchor as the per-TU SQL window and reaches
+    further back than it, so the returned chain is a superset of the commits
+    that window can return a row for.
+
     Fail-close: a GitHub API failure propagates and fails the job (which is
     `allow_failure`) instead of degrading to the un-extended ~100-sha chain.
     The shallow chain would silently hide valid 8-14 day warmup baselines,
@@ -459,7 +608,6 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     """
     if not master_shas:
         return master_shas
-    cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     chain, complete = _walk_first_parent(master_shas[-1], cutoff, EXTEND_MAX_PAGES, list_page)
     seen = set(master_shas)
     shas = list(master_shas)
@@ -470,7 +618,7 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     if not complete:
         # Hitting the fetch cap is a bounded, loud partial (well past the
         # window under normal merge rates), unlike the unbounded API failure.
-        print(f"WARNING: the master chain still does not span {days} days after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
+        print(f"WARNING: the master chain still does not reach {cutoff} after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
     return shas
 
 
@@ -491,7 +639,7 @@ def seed_master_shas(anchor_sha: str, list_page=_list_commits_page) -> List[str]
     return chain
 
 
-def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
+def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str) -> Optional[str]:
     """The most recent master commit with uploaded arm_release profile data.
 
     The PR-side commit is excluded so that a re-run on an already-merged
@@ -510,7 +658,7 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
     rows = db.query(
         f"""SELECT DISTINCT commit_sha
         FROM binary_sizes
-        WHERE date >= today() - {BASE_DAYS}
+        WHERE {date_condition}
             AND pull_request_number = 0
             AND check_name = {quote(CHECK_NAME)}
             AND file = {quote(MAIN_BINARY)}
@@ -523,7 +671,7 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
     return None
 
 
-def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
+def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str) -> Optional[str]:
     """The most recent master commit with uploaded warmup-build profile data.
 
     The warmup build compiles with the PR flags but does not link, so its
@@ -540,7 +688,7 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optiona
     rows = db.query(
         f"""SELECT DISTINCT commit_sha
         FROM binary_sizes
-        WHERE date >= today() - {BASE_DAYS}
+        WHERE {date_condition}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
             AND commit_sha IN ({in_list(candidates)})"""
@@ -556,7 +704,7 @@ def has_pr_data(db: Db, pr_number: int, pr_sha: str) -> bool:
     rows = db.query(
         f"""SELECT count() AS c
         FROM binary_sizes
-        WHERE date >= today() - {PR_DAYS}
+        WHERE {recent_days(PR_DAYS)}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(pr_sha)}
             AND check_name = {quote(CHECK_NAME)}
@@ -570,9 +718,25 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
 
     Only the stripped binary is comparable: master keeps debug symbols while
     PR ThinLTO builds strip them (build_clickhouse.py), so the unstripped and
-    self-extracting binaries differ by gigabytes on any PR. Even stripped, the
-    two sides differ in the official-build flag and PGO/BOLT availability -
-    the significance threshold absorbs that residual.
+    self-extracting binaries differ by gigabytes on any PR.
+
+    Even the stripped binary carries a fixed offset in master's favour, because
+    debug info leaks into codegen through XRay's instruction threshold (see
+    XRAY_DEBUG_OFFSET_RATIO): the official build instruments ~11k functions the
+    pull request build leaves alone, worth ~0.43% of the binary. That is not
+    something a pull request can influence, and reporting it as a -3 MiB change
+    on every pull request only invites a hunt for a size win that does not
+    exist - so a delta that lands on the offset is not shown at all, just named.
+    The window is centred on the measured offset rather than reaching up to it
+    (XRAY_DEBUG_OFFSET_TOLERANCE), so a pull request that grows the binary while
+    still comparing smaller than master is reported rather than swallowed, and a
+    delta large enough to be significant is always shown.
+
+    This does hide a genuine change of exactly the offset's size, and there is no
+    way around that while the baseline is the official build: a 3 MiB saving and
+    the offset are indistinguishable here. Recovering it needs a baseline
+    compiled with the pull request's flags - the warmup build, once it links a
+    binary of its own - or the offset gone from the compiler.
 
     This is the check's headline size signal, so it must never disappear
     silently: a headline binary whose size row the PR build did not upload
@@ -612,15 +776,26 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         "| Binary | Master | PR | Δ |",
         "|---|---:|---:|---:|",
     ]
+    within_offset = []
     for file in HEADLINE_BINARIES:
         pr_size, base_size = sizes.get(file, (0, 0))
         if not pr_size or not base_size:
             continue
         delta = pr_size - base_size
+        offset = base_size * XRAY_DEBUG_OFFSET_RATIO
         name = strip_build_dir(file)
         if abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
             section.significant = True
             summaries.append(f"{name}: {format_bytes_delta(delta, base_size)}")
+        elif (
+            -offset * (1 + XRAY_DEBUG_OFFSET_TOLERANCE)
+            <= delta
+            <= -offset * (1 - XRAY_DEBUG_OFFSET_TOLERANCE)
+        ):
+            # The known debug-info/XRay offset, not the pull request. Checked
+            # after significance, so a flagged delta is never hidden by it.
+            within_offset.append(name)
+            continue
         table.append(f"| {md_code(name)} | {format_bytes(base_size)} | {format_bytes(pr_size)} | {format_bytes_delta(delta, base_size)} |")
     if len(table) > 2:
         table.append("")
@@ -630,6 +805,18 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
             "by construction."
         )
         lines += table
+    if within_offset:
+        if lines:
+            lines.append("")
+        names = ", ".join(md_code(name) for name in within_offset)
+        lines.append(
+            f"{names}: smaller than the master baseline by the known offset "
+            "between the two builds, so the difference is not shown. A delta "
+            f"that differs from the offset by more than {XRAY_DEBUG_OFFSET_TOLERANCE:.0%} "
+            "of it is shown, in either direction."
+        )
+    if len(table) > 2 or within_offset:
+        lines += ["", XRAY_DEBUG_OFFSET_NOTE]
     section.body = "\n".join(lines).rstrip()
     section.summary = "; ".join(summaries)
     return section
@@ -655,6 +842,19 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
     The warmup build is the only master build compiled with the PR's exact
     flags: the official master build keeps debug symbols inside every .o file
     while PR builds strip them, which would dwarf any real change.
+
+    Only the object files the PR build produced are compared. The two builds do
+    not have the same target set: the warmup build compiles every object-file
+    target ninja knows about (see PR_CACHE_WARMUP_BUILD_TYPES in
+    build_clickhouse.py), while a PR build only builds `clickhouse-bundle`, so
+    hundreds of object files - `grpc_unsecure`, protobuf-lite, the gRPC half of
+    google-cloud-cpp, the unit tests, the utils - exist on the warmup side alone.
+    Reading them as removals produced a "685 removed, -40 MiB" finding on every
+    pull request. A PR-only object file, on the other hand, is a real addition:
+    the warmup side builds a superset of the target set, so it is a source file
+    the PR added. The reverse signal - a source file the PR deletes - is left to
+    the binary and symbol sections; there is no way to tell it apart from the
+    target-set difference here.
     """
     section = Section(title="Object file sizes")
     if base_side is None:
@@ -667,16 +867,16 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
             toInt64(pr_size) - toInt64(base_size) AS delta
         FROM {both_sides("binary_sizes", "file, size", pr_side, base_side, OBJECT_FILTER)}
         GROUP BY file
-        HAVING abs(delta) >= {OBJECT_REPORT_BYTES}
+        HAVING pr_size > 0 AND abs(delta) >= {OBJECT_REPORT_BYTES}
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
     )
     totals = db.query(
         f"""SELECT
             countIf(pr_size > 0 AND base_size > 0 AND pr_size != base_size) AS changed,
-            countIf(base_size = 0) AS added,
-            countIf(pr_size = 0) AS removed,
-            sum(toInt64(pr_size) - toInt64(base_size)) AS total_delta
+            countIf(pr_size > 0 AND base_size = 0) AS added,
+            countIf(pr_size = 0) AS base_only,
+            sumIf(toInt64(pr_size) - toInt64(base_size), pr_size > 0) AS total_delta
         FROM (
             SELECT file,
                 maxIf(size, side = 'pr') AS pr_size,
@@ -685,16 +885,21 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
             GROUP BY file
         )"""
     )[0]
-    changed, added, removed = (
+    changed, added, base_only = (
         int(totals["changed"]),
         int(totals["added"]),
-        int(totals["removed"]),
+        int(totals["base_only"]),
     )
-    if not rows and not added and not removed:
+    # The baseline-only files are the target-set difference, not a finding, so
+    # they never bring the section to life on their own. Say how many were left
+    # out in the job log even when the section stays silent.
+    if base_only:
+        print(f"{base_only} object files exist only in the warmup baseline (target-set difference) and are not compared")
+    if not rows and not added:
         return section
 
     lines = [
-        f"{changed} object files changed ({format_bytes_delta(int(totals['total_delta']), 0)} total), {added} added, {removed} removed.",
+        f"{changed} object files changed ({format_bytes_delta(int(totals['total_delta']), 0)} total), {added} added.",
         "",
         "| Object file | Master | PR | Δ |",
         "|---|---:|---:|---:|",
@@ -704,17 +909,23 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
         delta = int(row["delta"])
         # OBJECT_FILTER keeps only real compile-stage .o files (link-stage
         # artifacts do not end in .o, and scratch/incremental dirs are
-        # excluded), and both sides compile the full set of objects with the
-        # same flags - so a one-sided row is a genuinely added or removed
+        # excluded), and the warmup build compiles a superset of the PR's
+        # targets with the same flags - so a PR-only row is a genuinely added
         # object file. Its whole size is the delta, and it drives the verdict
         # exactly like a size change of a file present on both sides.
         if abs(delta) >= OBJECT_SIG_BYTES:
             section.significant = True
         base_text = format_bytes(base_size) if base_size else "new"
-        pr_text = format_bytes(pr_size) if pr_size else "removed"
-        lines.append(f"| {md_code(strip_build_dir(row['file']))} | {base_text} | {pr_text} | {format_bytes_delta(delta, base_size)} |")
+        lines.append(f"| {md_code(strip_build_dir(row['file']))} | {base_text} | {format_bytes(pr_size)} | {format_bytes_delta(delta, base_size)} |")
+    if base_only:
+        lines += [
+            "",
+            f"{base_only} more object {'file is' if base_only == 1 else 'files are'} built by the "
+            "master warmup baseline only (it builds every object-file target, a "
+            "pull request build only `clickhouse-bundle`) and not compared.",
+        ]
     section.body = "\n".join(lines)
-    section.summary = f"{changed} object files changed, {added} added, {removed} removed"
+    section.summary = f"{changed} object files changed, {added} added"
     return section
 
 
@@ -741,6 +952,22 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     uniform ratio. The median ratio over matched functions estimates the skew
     and per-function deltas are taken relative to it, the same way the per-TU
     compile-time section normalizes its machine-speed skew.
+
+    The skew is estimated per binary. Each binary is a separate ThinLTO link, so
+    the two links of a build do not even run at the same time, let alone the
+    links of the two sides: their ratios to the baseline routinely differ by more
+    than a factor of two. One median over both binaries splits the difference and
+    charges the whole gap to the functions of both - it reported the unchanged
+    functions of `clickhouse` as several seconds faster and those of
+    `clickhouse-keeper` as twice as slow, in the same table, on a pull request
+    that touched neither.
+
+    A shift that moves every function of a binary by the same factor is the skew
+    itself, so - unlike the per-TU compile-time section, which judges its skew on
+    the section level - it produces no finding here. Absolute link times are not
+    comparable between the two sides at all (the master build's debug info alone
+    changes them by tens of percent), so there is nothing to judge such a shift
+    against.
     """
     section = Section(title="Slowest function optimization changes (ThinLTO)")
     trace_where = "name = 'OptFunction' AND dur >= 50000"
@@ -781,25 +1008,37 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
         section.body = "\n".join(lines).rstrip()
         return section
     where = f"file IN ({in_list(comparable)}) AND {trace_where}"
+    # ThinLTO renames the clones it creates with an unstable hash, so both sides
+    # are keyed by the normalized function name (see strip_clone_suffix).
+    both = both_sides(
+        "build_time_trace",
+        f"file, {strip_clone_suffix('detail')} AS detail, dur",
+        pr_side,
+        base_side,
+        where,
+    )
     # The systematic skew between the sides, as the median PR/master time
-    # ratio over functions matched on both sides with a non-trivial baseline.
+    # ratio over functions matched on both sides with a non-trivial baseline,
+    # per binary (each is its own link, see above).
     # Interpolated: `medianExact` returns the upper middle element on an even
     # count, which overestimates the shift when a part of the functions
     # regressed and would normalize that regression away.
     skew_rows = db.query(
-        f"""SELECT quantileExactWeightedInterpolated(0.5)(pr_dur / base_dur, 1) AS skew, count() AS matched
+        f"""SELECT file, quantileExactWeightedInterpolated(0.5)(pr_dur / base_dur, 1) AS skew, count() AS matched
         FROM (
             SELECT file, detail,
                 sumIf(dur, side = 'pr') AS pr_dur,
                 sumIf(dur, side = 'base') AS base_dur
-            FROM {both_sides("build_time_trace", "file, detail, dur", pr_side, base_side, where)}
+            FROM {both}
             GROUP BY file, detail
             HAVING pr_dur >= 500000 AND base_dur >= 500000
-        )"""
+        )
+        GROUP BY file"""
     )
-    skew = 1.0
-    if skew_rows and int(skew_rows[0]["matched"]) >= 10:
-        skew = float(skew_rows[0]["skew"])
+    skews = {row["file"]: float(row["skew"]) for row in skew_rows if int(row["matched"]) >= 10}
+    skew_expr = "1.0"
+    if skews:
+        skew_expr = f"transform(file, [{in_list(skews)}], [{', '.join(f'{v}' for v in skews.values())}], 1.0)"
     report_us = int(OPTFN_REPORT_SECONDS * 1e6)
     # dur >= 50ms cuts the aggregation from ~1M rows per side to tens of
     # thousands; a function can only reach the report threshold if one side
@@ -808,22 +1047,26 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
         f"""SELECT file, detail,
             sumIf(dur, side = 'pr') AS pr_dur,
             sumIf(dur, side = 'base') AS base_dur,
-            toInt64(pr_dur) - toInt64(base_dur * {skew}) AS delta
-        FROM {both_sides("build_time_trace", "file, detail, dur", pr_side, base_side, where)}
+            base_dur * ({skew_expr}) AS adjusted_base_dur,
+            toInt64(pr_dur) - toInt64(adjusted_base_dur) AS delta
+        FROM {both}
         GROUP BY file, detail
         HAVING abs(delta) >= {report_us}
             AND (pr_dur = 0 OR base_dur = 0
-                 OR greatest(toFloat64(pr_dur), base_dur * {skew}) >= least(toFloat64(pr_dur), base_dur * {skew}) * {OPTFN_REPORT_RATIO})
+                 OR greatest(toFloat64(pr_dur), adjusted_base_dur) >= least(toFloat64(pr_dur), adjusted_base_dur) * {OPTFN_REPORT_RATIO})
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
     )
     if not rows:
         section.body = "\n".join(lines).rstrip()
         return section
-    if abs(skew - 1.0) >= 0.05:
+    skewed = sorted((f, s) for f, s in skews.items() if abs(s - 1.0) >= 0.05)
+    if skewed:
+        ratios = ", ".join(f"{md_code(strip_build_dir(f))} ×{s:.2f}" for f, s in skewed)
         lines += [
-            f"Median per-function time ratio to the master baseline is ×{skew:.2f} "
-            "(different machine and build flags); deltas below are relative to that ratio.",
+            f"Median per-function time ratio to the master baseline: {ratios} "
+            "(each binary is linked separately, on a different machine and with "
+            "different build flags); deltas below are relative to it.",
             "",
         ]
     lines += [
@@ -832,7 +1075,7 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     ]
     for row in rows:
         pr_s, base_s = int(row["pr_dur"]) / 1e6, int(row["base_dur"]) / 1e6
-        adjusted_base_s = base_s * skew
+        adjusted_base_s = base_s * skews.get(row["file"], 1.0)
         delta = pr_s - adjusted_base_s
         if abs(delta) >= OPTFN_SIG_SECONDS:
             section.significant = True
@@ -843,7 +1086,7 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     return section
 
 
-def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
+def compare_compile_times(db: Db, pr_side, master_shas, date_condition: str) -> Section:
     """Per-TU compile time of TUs this PR recompiled.
 
     sccache makes the recompiled set exactly the TUs affected by the PR. Each
@@ -898,7 +1141,7 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
             argMax(check_start_time, time) AS check_start_time,
             argMax(instance_id, time) AS instance_id
         FROM build_time_trace
-        WHERE date >= today() - {TU_BASE_DAYS}
+        WHERE {date_condition}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
             AND name = 'ExecuteCompiler'
@@ -934,7 +1177,7 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
         any_warmup = db.query(
             f"""SELECT count() AS c
             FROM build_time_trace
-            WHERE date >= today() - {TU_BASE_DAYS}
+            WHERE {date_condition}
                 AND pull_request_number = 0
                 AND check_name = {quote(WARMUP_CHECK_NAME)}
                 AND name = 'ExecuteCompiler'
@@ -968,7 +1211,7 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
         if tu not in base_durs:
             continue
         base_dur, base_tu_sha, base_cst, base_iid = base_durs[tu]
-        base_tu_side = Side(TU_BASE_DAYS, 0, base_tu_sha, base_cst, base_iid, WARMUP_CHECK_NAME)
+        base_tu_side = Side(date_condition, 0, base_tu_sha, base_cst, base_iid, WARMUP_CHECK_NAME)
         adjusted_base = base_dur * skew
         delta_s = (pr_dur - adjusted_base) / 1e6
         ratio = max(pr_dur, adjusted_base) / max(min(pr_dur, adjusted_base), 1)
@@ -1066,7 +1309,7 @@ def drill_down_tu(db: Db, pr_side, base_side, file, library, skew=1.0) -> List[s
         FROM {
             both_sides(
                 "build_time_trace",
-                "name, detail, dur",
+                f"name, {strip_clone_suffix('detail')} AS detail, dur",
                 pr_side,
                 base_side,
                 f"file = {quote(file)} AND library = {quote(library)} AND detail != '' AND name IN ('InstantiateFunction', 'InstantiateClass', 'ParseClass', 'Source', 'OptFunction', 'CodeGen Function')",
@@ -1100,6 +1343,11 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
     sides have its symbol data; a binary whose symbols the master baseline has
     but the PR build did not upload means the profile producer lost rows, and
     is flagged as an incomplete comparison instead of an all-green omission.
+
+    Symbols are keyed by the name with ThinLTO's clone suffix removed (see
+    `strip_clone_suffix`): the suffix is not stable across builds, so without
+    that the largest rows of the table are the same unchanged function listed
+    twice, once removed and once new.
     """
     section = Section(title="Symbol sizes")
     sides = db.query(
@@ -1137,7 +1385,15 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
             sumIf(size, side = 'pr') AS pr_size,
             sumIf(size, side = 'base') AS base_size,
             toInt64(pr_size) - toInt64(base_size) AS delta
-        FROM {both_sides("binary_symbols", "file, symbol, size", pr_side, base_side, f"file IN ({in_list(comparable)}) AND size >= 1024")}
+        FROM {
+            both_sides(
+                "binary_symbols",
+                f"file, {strip_clone_suffix('symbol')} AS symbol, size",
+                pr_side,
+                base_side,
+                f"file IN ({in_list(comparable)}) AND size >= 1024",
+            )
+        }
         GROUP BY file, symbol
         HAVING abs(delta) >= {SYMBOL_REPORT_BYTES}
         ORDER BY abs(delta) DESC
@@ -1239,34 +1495,38 @@ def run_comparison(db, info, args, pr_number: int, pr_sha: str):
         if not args.base_sha:
             raise RuntimeError("A local run has no CI master-chain metadata - pass --base-sha to anchor the baseline")
         master_shas = seed_master_shas(args.base_sha)
-    base_sha = args.base_sha or find_baseline(db, master_shas, pr_sha)
+    # The baseline chain is frozen at the head's master parent, so the windows
+    # that look for its profile rows are measured from the same event rather
+    # than from the wall clock (see master_windows).
+    windows = master_windows(info.event_time, {"base": BASE_DAYS, "tu": TU_BASE_DAYS})
+    base_sha = args.base_sha or find_baseline(db, master_shas, pr_sha, windows["base"])
     if not base_sha:
         # Fail-close: no baseline means no comparison, not a comparison against
         # an arbitrary commit.
         raise RuntimeError("No master baseline with build profile data found - cannot compare")
-    warmup_sha = find_warmup_baseline(db, master_shas, pr_sha)
+    warmup_sha = find_warmup_baseline(db, master_shas, pr_sha, windows["base"])
     print(f"Comparing PR {pr_number} sha {pr_sha} against master {base_sha} (warmup baseline: {warmup_sha})")
 
     # Pin each side to one concrete build run once, and reuse it for every
     # table (see Side / resolve_run): the whole comparison then reflects a
     # single build instead of a per-table mix of reruns.
-    pr_side = resolve_run(db, PR_DAYS, pr_number, pr_sha)
-    base_side = resolve_run(db, BASE_DAYS, 0, base_sha)
+    pr_side = resolve_run(db, recent_days(PR_DAYS), pr_number, pr_sha)
+    base_side = resolve_run(db, windows["base"], 0, base_sha)
     if pr_side is None or base_side is None:
         raise RuntimeError("Could not resolve a concrete build run for one of the sides")
     # The warmup baseline may lag while master catches up with profiling the
     # warmup build; the sections that depend on it degrade to a catch-up note.
-    warmup_side = resolve_run(db, BASE_DAYS, 0, warmup_sha, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
+    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
     # The per-TU compile baseline looks back TU_BASE_DAYS - far past the ~100
     # commits of the anchored chain - so its candidate set is extended with
     # older ancestors (see extend_master_shas).
-    tu_master_shas = extend_master_shas(master_shas)
+    tu_master_shas = extend_master_shas(master_shas, walk_cutoff(info.event_time, TU_BASE_DAYS))
 
     sections = [
         compare_binaries(db, pr_side, base_side),
         compare_objects(db, pr_side, warmup_side),
         compare_opt_functions(db, pr_side, base_side),
-        compare_compile_times(db, pr_side, tu_master_shas),
+        compare_compile_times(db, pr_side, tu_master_shas, windows["tu"]),
         compare_symbols(db, pr_side, base_side),
     ]
 

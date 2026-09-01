@@ -51,7 +51,7 @@ void ChildrenSet2::insertCombine(std::string_view name, NodeAction action, DB::A
 
 void MemtableChildrenSet::insertCombine(std::string_view name, NodeAction action, DB::Arena & arena, bool strict)
 {
-    switch (getMode())
+    switch (mode)
     {
         case Mode::Empty:
         {
@@ -95,7 +95,7 @@ void MemtableChildrenSet::insertCombine(std::string_view name, NodeAction action
 
 MemtableChildrenSet::ConstIterator MemtableChildrenSet::iterate() const
 {
-    switch (getMode())
+    switch (mode)
     {
         case Mode::Empty:
             return {.mode = Mode::Empty, .entry = {}};
@@ -142,6 +142,7 @@ NodeRef Memtable::appendNode(FullNode & node, bool strict)
         total_bytes += new_block->capacity;
         blocks.push_back(std::move(new_block));
     }
+    num_entries += 1;
     node_count_delta += nodeCountDelta(node.action);
 
     return ref;
@@ -163,6 +164,7 @@ MemtablePtr Memtable::takeSnapshot() const
     MemtablePtr res = std::make_shared<Memtable>();
     res->file_seqno = file_seqno;
     res->total_bytes = total_bytes;
+    res->num_entries = num_entries;
     res->node_count_delta = node_count_delta;
     res->blocks = blocks;
 

@@ -29,6 +29,7 @@ public:
 
     std::string getName() const override { return "ConstantJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     bool isCloneSupported() const override
     {
@@ -52,6 +53,8 @@ public:
 
     size_t getTotalRowCount() const override { return in_memory_rows; }
     size_t getTotalByteCount() const override;
+
+    StepAnalysisReport getAnalysisReport() const override;
 
     bool alwaysReturnsEmptySet() const override;
 
@@ -112,6 +115,9 @@ private:
 
     static OutputPlan makeOutputPlan(JoinKind kind, JoinStrictness strictness, bool constant_predicate_value, bool any_take_last_row);
 
+    /// Method is used to snapshot data for EXPLAIN ANALYZE
+    void updatePeakAllocatedSizeIfNeeded();
+
     std::shared_ptr<TableJoin> table_join;
 
     /// Header of the right columns appended to every output row and the sample that stored right blocks normalize to.
@@ -130,6 +136,7 @@ private:
     size_t in_memory_rows = 0;
     /// Incrementally maintained sum of `StoredBlock::allocatedBytes` over `right_blocks`.
     size_t allocated_size = 0;
+    size_t peak_allocated_size = 0;
     /// At least one stored block is compressed; readers then decompress every stored block.
     bool have_compressed = false;
     /// The single right row joined by `RightRowsToJoin::SelectedRowOnly`; kept separately from the stored
@@ -142,6 +149,7 @@ private:
     const OutputPlan plan;
     /// Whether any probe rows have matched; gates the unmatched right rows and the first-left-row cut in `joinBlock`.
     std::atomic_bool has_seen_matching_rows = false;
+    std::atomic<UInt64> total_rows_left = 0;
     /// The `join_any_take_last_row` setting; folded into `plan`, kept only for `clone`.
     const bool any_take_last_row;
 

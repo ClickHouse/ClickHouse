@@ -49,7 +49,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
-        data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
+        data_part->name, data_part->storage.getLogName(), data_part->getSerializations().toSerializationByName(),
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         columns_list_,

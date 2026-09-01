@@ -32,18 +32,18 @@ clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
   ### 创建 Postgres 服务
 </div>
 
-创建该服务并保存返回结果；密码仅显示一次：
+创建该服务并保存响应；密码仅显示一次：
 
 ```bash
 clickhousectl cloud postgres create \
   --name quickstart-pg \
   --region us-east-1 \
-  --size c6gd.large \
+  --size m6gd.large \
   --pg-version 18 \
   --json > pg.json
 ```
 
-返回结果中包含服务 ID、主机名以及可直接使用的连接字符串：
+响应中包含服务 ID、主机名以及可直接使用的连接字符串：
 
 ```json
 {
@@ -52,7 +52,7 @@ clickhousectl cloud postgres create \
   "provider": "aws",
   "region": "us-east-1",
   "postgresVersion": "18",
-  "size": "c6gd.large",
+  "size": "m6gd.large",
   "storageSize": 118,
   "haType": "none",
   "state": "creating",
@@ -175,7 +175,7 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-得益于 NVMe 存储，在 `c6gd.large` (最小规格) 上插入 100 万行数据大约只需 7 秒。可通过查询验证；由于数据是用 `random()` 生成的，每次运行得到的行数可能会有所不同：
+得益于 NVMe 存储，在 `m6gd.large` (最小规格) 上插入 100 万行数据大约只需 7 秒。可通过查询验证；由于数据是用 `random()` 生成的，每次运行得到的行数可能会有所不同：
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
@@ -215,7 +215,7 @@ done
   ### 将表复制到 ClickHouse
 </div>
 
-在 ClickHouse 服务上创建一个 Postgres CDC ClickPipe，并将其指向 Managed Postgres 的主机名。该管道会先复制现有行，然后持续将后续变更同步到 ClickHouse：
+在 ClickHouse 服务上创建一个 Postgres CDC ClickPipe，并将其指向 ClickHouse Managed Postgres 的主机名。该管道会先复制现有行，然后持续将后续变更同步到 ClickHouse：
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -307,7 +307,7 @@ SQL
 
 这里特意不给 heredoc 加引号，这样 shell 就会在 SQL 到达 Postgres 之前先替换 `$CH_HOST` 和 `$CH_PASSWORD`。现在，这些复制表会在 `organization` schema 中显示为 foreign tables；对它们发起的查询实际上会在 ClickHouse 中执行。
 
-在使用该数据集的 `c6gd.large` 上测得，通过 foreign tables 运行分析查询的速度可提升 6-9 倍 (例如，一个包含 5 个聚合的 GROUP BY：通过 ClickHouse 为 176 ms，本地执行为 1,133 ms；一个带聚合的 JOIN：298 ms，而本地为 2,764 ms) 。
+在使用该数据集的 `m6gd.large` 上测得，通过 foreign tables 运行分析查询的速度可提升 6-9 倍 (例如，一个包含 5 个聚合的 GROUP BY：通过 ClickHouse 为 176 ms，本地执行为 1,133 ms；一个带聚合的 JOIN：298 ms，而本地为 2,764 ms) 。
 
 <div id="cleanup-resources">
   ## 清理

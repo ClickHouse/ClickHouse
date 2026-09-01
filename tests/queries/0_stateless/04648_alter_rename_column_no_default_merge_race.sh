@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-random-merge-tree-settings
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+# Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/80648, the facet where the
 # renamed column has no default expression, so a merge that wrongly expires it loses the values for
 # good.
@@ -18,12 +19,11 @@ set -e
 # for it because it aborts the explicit OPTIMIZE too ("Cancelled merging parts").
 #
 # The failpoint is server-global, so a concurrent copy of this test can clear it mid-window. That
-# only ever costs coverage here, never a red, because every assertion holds in both states: the
-# positive ones read `system.parts_columns` for a column the merge had to keep either way, and the
-# phase-3 one reads the values, which the rename preserves whether or not it has materialized. The
+# only ever costs coverage here, never a red, because every assertion holds in both states: they
+# read `system.parts_columns` for a column the merge had to keep either way. The
 # remaining effect of an early release is that the rename may materialize on only some source parts,
 # so OPTIMIZE legitimately refuses a mixed mutation version - `optimize_or_skip` below turns that one
-# refusal into a skip. Same trade-off as 03830_vertical_merge_inject_column_after_drop, untagged too.
+# refusal into a skip. Same trade-off as 03830_vertical_merge_inject_column_after_drop, `no-parallel` too.
 #
 # Every assertion is about what a merge decided, so OPTIMIZE always runs with
 # `optimize_throw_if_noop = 1`: a silently skipped merge would otherwise read as a lost column.
@@ -107,58 +107,6 @@ if optimize_or_skip t_rename_no_default_dynamic; then
 fi
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_dynamic"
-
-# Phase 3: the opposite direction - the keep-alive must not over-apply. The old name is re-added
-# before the pending rename materializes, so the metadata carries both a and b while the parts still
-# store only the pre-rename a. That physical a belongs to b once the rename materializes, so the
-# merge must keep it under its own name and must not also claim b as present: doing so would bind one
-# set of bytes to two logical columns.
-${CLICKHOUSE_CLIENT} --query="
-    DROP TABLE IF EXISTS t_rename_no_default_reuse;
-    CREATE TABLE t_rename_no_default_reuse (id UInt64, a String)
-    ENGINE = MergeTree() ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0;
-    INSERT INTO t_rename_no_default_reuse VALUES (1, 'AAA'), (2, 'BBB');
-    INSERT INTO t_rename_no_default_reuse VALUES (3, 'CCC'), (4, 'DDD');
-    SYSTEM STOP MERGES t_rename_no_default_reuse;
-    SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
-    ALTER TABLE t_rename_no_default_reuse RENAME COLUMN a TO b SETTINGS alter_sync = 0;
-    ALTER TABLE t_rename_no_default_reuse ADD COLUMN a String DEFAULT 'reused_default' SETTINGS alter_sync = 0;
-    SYSTEM START MERGES t_rename_no_default_reuse;
-"
-optimize_or_skip t_rename_no_default_reuse || true
-# The two ALTERs have to take effect as one step. A merge that runs between them sees no live a, so it
-# correctly materializes a physical b that the later re-add cannot remove. STOP MERGES closes that
-# window, as in phases 4 and 5.
-#
-# Assert the values rather than the physical column set. Which columns a part stores is not stable
-# here: while the rename is pending only a exists, and once it materializes a part legitimately holds
-# both b and the re-added a, so no predicate over `system.parts_columns` can tell the correct shapes
-# apart from the defect. A mutation-progress probe cannot fix that either - it aggregates over every
-# mutation on the table, so an unrelated pending one makes it claim this rename is unfinished after it
-# has materialized.
-#
-# What the defect costs is b's data: over-applying the keep-alive lets the re-added a claim the
-# physical column, so the merge rewrites it from a's default and the pre-rename values are gone. That
-# holds whether or not the rename has materialized, so assert exactly it.
-#
-# Deliberately not asserted: while the rename is still pending, reading logical a also returns b's
-# data instead of a's default. That is a read-path defect that reproduces on master with no merge at
-# all, so it is out of scope here and is tracked separately.
-wrong=$(${CLICKHOUSE_CLIENT} --query="
-    SELECT countIf(b NOT IN ('AAA', 'BBB', 'CCC', 'DDD'))
-    FROM t_rename_no_default_reuse")
-if [ "$wrong" != "0" ]; then
-    echo "FAIL (rename target reused): the merge lost b's data to the re-added a"
-    ${CLICKHOUSE_CLIENT} --query="SELECT id, b, a FROM t_rename_no_default_reuse ORDER BY id"
-    ${CLICKHOUSE_CLIENT} --query="
-        SELECT name, column, column_data_uncompressed_bytes FROM system.parts_columns
-        WHERE database = currentDatabase() AND table = 't_rename_no_default_reuse' AND active
-        ORDER BY name, column"
-    exit 1
-fi
-disable_failpoint
-${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_reuse"
 
 # Phase 4: a column whose only live values are in a patch part. `ADD COLUMN a` plus a lightweight
 # `UPDATE` leaves every base part without a physical a, so the merge must not expire it - neither

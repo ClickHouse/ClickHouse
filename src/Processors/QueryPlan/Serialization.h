@@ -16,12 +16,14 @@ struct IQueryPlanStep::Serialization
     WriteBuffer & out;
     SerializedSetsRegistry & registry;
 
-    // A durty hack used by the automatic parallel replicas implementation:
-    // the `final` value differs for `AggregatingStep` in single-node and distributed query plans.
-    // This breaks matching by hash.
-    bool skip_final_flag = false;
-    // The same situation as above.
-    bool skip_cache_key = false;
+    // Set when a step is serialized to compute its Auto-PR plan cache-key hash (not for transmission).
+    // In that mode the serialization omits fields that would otherwise break hash matching between the
+    // single-node and distributed (parallel-replicas) plan builds: `AggregatingStep`'s `final` flag
+    // (which differs between those builds) and its stats-collecting cache key, and the runtime-filter
+    // id value in `ActionsDAG::serialize`.
+    // MUST be kept in sync with `for_cache_key` on `SerializedSetsRegistry` (the registry one drives
+    // `ActionsDAG::serialize`, this one drives the step's own `serialize`): set both or neither.
+    bool for_cache_key = false;
 
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
@@ -74,7 +76,7 @@ struct IQueryPlanStep::Deserialization
     UInt64 step_format_version = 1;
 };
 
-/// How a header goes on the wire, the same in the plan stream and in the outline: column names and
+/// How a header goes on the wire, the same in the older stream and in the outline: column names and
 /// encoded types only. Steps refill the constants.
 void serializeQueryPlanHeader(const Block & header, WriteBuffer & out);
 Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity);

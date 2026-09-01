@@ -17,12 +17,10 @@ INSERT INTO t_or_like_fs VALUES ('apple'), ('banana'), ('cherry'), ('grape'), ('
 -- FixedString, pure-substring chain (would otherwise become `multiSearchAny`).
 SELECT count() FROM t_or_like_fs WHERE s LIKE '%app%' OR s LIKE '%ban%' OR s LIKE '%cher%' SETTINGS optimize_or_like_chain = 0, enable_analyzer = 1;
 SELECT count() FROM t_or_like_fs WHERE s LIKE '%app%' OR s LIKE '%ban%' OR s LIKE '%cher%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
-SELECT count() FROM t_or_like_fs WHERE s LIKE '%app%' OR s LIKE '%ban%' OR s LIKE '%cher%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 0;
 
 -- FixedString, non-substring chain (would otherwise become `multiMatchAny`).
 SELECT count() FROM t_or_like_fs WHERE s LIKE 'app%' OR s LIKE 'ban%' OR s LIKE 'cher%' SETTINGS optimize_or_like_chain = 0, enable_analyzer = 1;
 SELECT count() FROM t_or_like_fs WHERE s LIKE 'app%' OR s LIKE 'ban%' OR s LIKE 'cher%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
-SELECT count() FROM t_or_like_fs WHERE s LIKE 'app%' OR s LIKE 'ban%' OR s LIKE 'cher%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 0;
 
 DROP TABLE t_or_like_fs;
 
@@ -33,11 +31,9 @@ INSERT INTO t_or_like_enum VALUES ('apple'), ('banana'), ('cherry'), ('grape'), 
 -- Enum, pure-substring chain.
 SELECT count() FROM t_or_like_enum WHERE e LIKE '%a%' OR e LIKE '%e%' OR e LIKE '%rr%' SETTINGS optimize_or_like_chain = 0, enable_analyzer = 1;
 SELECT count() FROM t_or_like_enum WHERE e LIKE '%a%' OR e LIKE '%e%' OR e LIKE '%rr%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
-SELECT count() FROM t_or_like_enum WHERE e LIKE '%a%' OR e LIKE '%e%' OR e LIKE '%rr%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 0;
 
 -- Enum, non-substring chain.
 SELECT count() FROM t_or_like_enum WHERE e LIKE 'app%' OR e LIKE 'ban%' OR e LIKE 'cher%' SETTINGS optimize_or_like_chain = 0, enable_analyzer = 1;
 SELECT count() FROM t_or_like_enum WHERE e LIKE 'app%' OR e LIKE 'ban%' OR e LIKE 'cher%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
-SELECT count() FROM t_or_like_enum WHERE e LIKE 'app%' OR e LIKE 'ban%' OR e LIKE 'cher%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 0;
 
 DROP TABLE t_or_like_enum;

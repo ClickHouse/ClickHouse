@@ -6,11 +6,13 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -30,6 +32,7 @@
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <Formats/FormatFactory.h>
+#include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
@@ -334,6 +337,115 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type, false);
             break;
         case avro::AVRO_INT:
+            if (target.isDate32())
+            {
+                /// Avro `date` is a day count since the epoch, and it is inferred as `Date32`.
+                /// Validate it against the range of `Date32` instead of storing an impossible date,
+                /// the same invariant that the Arrow, Arrow IPC, Parquet and ORC readers enforce.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the range of type Date32, which is [{}, {}]",
+                                days_num,
+                                DATE_LUT_MIN_EXTEND_DAY_NUM,
+                                DATE_LUT_MAX_EXTEND_DAY_NUM);
+                    }
+                    insertNumber(column, target, days_num);
+                    return true;
+                };
+            }
+            if (target.isDate())
+            {
+                /// An Avro `date` day count can exceed the range of `Date`, so validate it
+                /// instead of silently wrapping in the `UInt16` representation,
+                /// the same way the ORC reader validates a `Date` type hint.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < 0) ? 0 : DATE_LUT_MAX_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the range of type Date, which is [0, {}]",
+                                days_num,
+                                DATE_LUT_MAX_DAY_NUM);
+                    }
+                    insertNumber(column, target, days_num);
+                    return true;
+                };
+            }
+            if (target.isDateTime() && root_node->logicalType().type() == avro::LogicalType::DATE)
+            {
+                /// An Avro `date` is a day count since the epoch, while the generic numeric branch
+                /// below would insert it as raw unix seconds. Convert the day count to midnight of
+                /// that day in the column's time zone, validating the same [0, MAX_DATETIME_DAY_NUM]
+                /// window that `ToDateTimeImpl` uses, the same way the other format readers do.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target_type, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > MAX_DATETIME_DAY_NUM || days_num < 0)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < 0) ? 0 : MAX_DATETIME_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the day range of type DateTime, which is [0, {}]",
+                                days_num,
+                                MAX_DATETIME_DAY_NUM);
+                    }
+                    const auto & time_zone = assert_cast<const DataTypeDateTime &>(*target_type).getTimeZone();
+                    assert_cast<ColumnVector<UInt32> &>(column).insertValue(
+                        static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(days_num))));
+                    return true;
+                };
+            }
+            if (target.isDateTime64() && root_node->logicalType().type() == avro::LogicalType::DATE)
+            {
+                /// Same for DateTime64: convert the day count to midnight of that day instead of
+                /// inserting it as raw ticks. The day count is validated against the window that the
+                /// target scale can actually represent, which is narrower than the `Date32` range at
+                /// high precision - a scale-9 `DateTime64` stops at `2262-04-11`.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*target_type);
+                const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+                const auto [min_day, max_day] = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
+                return [target_type, date_time_overflow_behavior, scale_multiplier, min_day, max_day](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > max_day || days_num < min_day)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < min_day) ? min_day : max_day;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the day range representable by type {}, which is [{}, {}]",
+                                days_num,
+                                target_type->getName(),
+                                min_day,
+                                max_day);
+                    }
+                    const auto & dt64 = assert_cast<const DataTypeDateTime64 &>(*target_type);
+                    const Int64 seconds = dt64.getTimeZone().fromDayNum(ExtendedDayNum(days_num));
+                    assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(
+                        DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(seconds, 0, scale_multiplier));
+                    return true;
+                };
+            }
             if (target_type->isValueRepresentedByNumber())
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
@@ -1595,9 +1707,9 @@ Each message uses the Confluent wire format: a magic byte (`0x00`) followed by a
 | `input_format_avro_allow_missing_fields`             | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`                  | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
 | `format_avro_schema_registry_url`                    | The Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
-| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0 and less than 600 (10 minutes). | `1`     |
-| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
-| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
+| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
+| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
 | `output_format_avro_confluent_subject`               | For output: the subject name under which the schema is registered in the Schema Registry. Required when writing. |         |
 | `output_format_avro_string_column_pattern`           | For output: regexp of String columns to serialize as Avro `string` (default is `bytes`). |         |
 

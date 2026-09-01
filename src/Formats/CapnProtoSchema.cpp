@@ -9,10 +9,18 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
+#include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
+#include <Core/Defines.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <boost/algorithm/string/join.hpp>
 #include <capnp/schema.h>
 #include <capnp/schema-parser.h>
 #include <fcntl.h>
+
+#include <filesystem>
+#include <unordered_set>
 
 namespace DB
 {
@@ -27,8 +35,130 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+/// The Cap'n Proto schema parser is a recursive-descent parser without a depth limit of its own,
+/// so a schema with deeply nested type expressions, such as `List(List(List(...)))`, exhausts the
+/// thread stack while it is being lexed - before ClickHouse gets a chance to look at the result.
+/// Bound the nesting of the schema text before handing it over to the parser.
+///
+/// A schema may `import` other schema files, and the parser reads them with the same recursive
+/// parser, so the whole import graph has to be checked, not just the entry file. Imports with an
+/// absolute path are resolved against the schema directory (the only import root we pass to the
+/// parser), and relative ones against the directory of the importing file, exactly as Cap'n Proto
+/// does it.
+void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const String & schema_path)
+{
+    const std::filesystem::path root = schema_directory;
+
+    std::vector<std::filesystem::path> to_visit;
+    to_visit.push_back(root / schema_path);
+
+    std::unordered_set<String> visited;
+
+    while (!to_visit.empty())
+    {
+        const std::filesystem::path path = to_visit.back();
+        to_visit.pop_back();
+
+        std::error_code error;
+        const std::filesystem::path canonical_path = std::filesystem::weakly_canonical(path, error);
+        if (error)
+            continue; /// A malformed path is reported with a proper message by the parser below.
+
+        if (!visited.emplace(canonical_path.string()).second)
+            continue;
+
+        if (!std::filesystem::is_regular_file(canonical_path, error))
+            continue; /// A missing file is reported with a proper message by the parser below.
+
+        ReadBufferFromFile in(canonical_path);
+        String content;
+        readStringUntilEOF(content, in);
+
+        size_t depth = 0;
+        /// The last identifier seen before the current position, to recognize `import "..."`.
+        String last_word;
+        /// Whether `last_word` has already been terminated by whitespace.
+        bool last_word_finished = false;
+
+        for (size_t i = 0; i < content.size(); ++i)
+        {
+            const char c = content[i];
+
+            /// Cap'n Proto has line comments and text literals; brackets inside them are not nesting.
+            if (c == '#')
+            {
+                last_word.clear();
+                last_word_finished = false;
+                i = content.find('\n', i);
+                if (i == String::npos)
+                    break;
+            }
+            else if (c == '"')
+            {
+                String literal;
+                for (++i; i < content.size() && content[i] != '"'; ++i)
+                {
+                    if (content[i] == '\\' && i + 1 < content.size())
+                        ++i;
+                    literal += content[i];
+                }
+
+                if (last_word == "import" && !literal.empty())
+                {
+                    if (literal[0] == '/')
+                        to_visit.push_back(root / literal.substr(1));
+                    else
+                        to_visit.push_back(canonical_path.parent_path() / literal);
+                }
+
+                last_word.clear();
+                last_word_finished = false;
+            }
+            else if (isWordCharASCII(c))
+            {
+                if (last_word_finished)
+                {
+                    last_word.clear();
+                    last_word_finished = false;
+                }
+                last_word += c;
+            }
+            else if (isWhitespaceASCII(c))
+            {
+                /// Whitespace separates `import` from the path, so it must not forget the keyword.
+                last_word_finished = !last_word.empty();
+            }
+            else
+            {
+                last_word.clear();
+                last_word_finished = false;
+
+                if (c == '(' || c == '[' || c == '{')
+                {
+                    ++depth;
+                    if (depth > DBMS_DEFAULT_MAX_PARSER_DEPTH)
+                        throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA,
+                            "The CapnProto schema is nested too deeply: the limit is {}", DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                }
+                else if (c == ')' || c == ']' || c == '}')
+                {
+                    if (depth > 0)
+                        --depth;
+                }
+            }
+        }
+    }
+}
+
+}
+
 capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaInfo & schema_info)
 {
+    checkCapnProtoSchemaNestingDepth(schema_info.schemaDirectory(), schema_info.schemaPath());
+
     capnp::ParsedSchema schema;
     try
     {
@@ -74,6 +204,8 @@ bool checkIfStructIsNamedUnion(const capnp::StructSchema & struct_schema)
 /// Get full name of type for better exception messages.
 String getCapnProtoFullTypeName(const capnp::Type & type)
 {
+    checkStackSize();
+
     static const std::map<capnp::schema::Type::Which, String> capnp_simple_type_names =
     {
         {capnp::schema::Type::Which::BOOL, "Bool"},
@@ -171,6 +303,8 @@ namespace
 
     DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type, bool skip_unsupported_fields)
     {
+        checkStackSize();
+
         switch (capnp_type.which())
         {
             case capnp::schema::Type::INT8:

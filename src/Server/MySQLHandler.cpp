@@ -10,6 +10,7 @@
 #include <Core/MySQL/PacketsPreparedStatements.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
@@ -39,6 +40,8 @@
 #include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
@@ -62,6 +65,11 @@ namespace Setting
     extern const SettingsSeconds send_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
+
 using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
@@ -75,6 +83,7 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
@@ -496,6 +505,7 @@ MySQLHandler::MySQLHandler(
     const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, bool secure_required_,
      uint32_t connection_id_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -504,6 +514,7 @@ MySQLHandler::MySQLHandler(
     , log(getLogger("MySQLHandler"))
     , secure_required(secure_required_)
     , connection_id(connection_id_)
+    , default_session_user(std::move(default_session_user_))
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)
     , write_event(write_event_)
@@ -571,6 +582,23 @@ void MySQLHandler::run()
         if (secure_required && !(client_capabilities & CLIENT_SSL))
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
 
+        /// An empty user name means the default session user: the `default_session_user`
+        /// server setting, possibly overridden for this listener in the `protocols` section.
+        /// If the resolved name is empty too (explicitly configured to prohibit connections
+        /// without a user name), authentication fails on the empty user name below.
+        if (handshake_response.username.empty())
+            handshake_response.username = default_session_user
+                ? *default_session_user
+                : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
+
+        if (handshake_response.username.empty())
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from MySQL handshake");
+            session->onAuthenticationFailure(handshake_response.username, socket().peerAddress(), exception);
+            packet_endpoint->sendPacket(ERRPacket(exception.code(), mysql_error_code, exception.message()));
+            return;
+        }
+
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
         try
@@ -578,7 +606,15 @@ void MySQLHandler::run()
             session->makeSessionContext();
             session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
+            {
+                /// `database` is a real setting, so enforce its constraints on the handshake database
+                /// too, consistently with `USE`, `SET database = ...` and the HTTP `?database=...`
+                /// parameter.
+                SettingsChanges database_change;
+                database_change.setSetting("database", handshake_response.database);
+                session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
                 session->sessionContext()->setCurrentDatabase(handshake_response.database);
+            }
         }
         catch (const Exception & exc)
         {
@@ -740,6 +776,10 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     LOG_DEBUG(log, "Setting current database to {}", database);
     /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
     session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+    /// ... and its settings-constraint check on the `database` setting.
+    SettingsChanges database_change;
+    database_change.setSetting("database", database);
+    session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
     session->sessionContext()->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
@@ -782,7 +822,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
     String query = String(payload.position(), payload.buffer().end());
 
     // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
-    // As Clickhouse doesn't support these statements, we just send OK packet in response.
+    // As ClickHouse doesn't support these statements, we just send OK packet in response.
     if (isFederatedServerSetupSetCommand(query))
     {
         packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, 0, 0, 0));
@@ -982,10 +1022,11 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool ssl_enabled,
     bool secure_required_,
     uint32_t connection_id_,
+    std::optional<String> default_session_user_,
     KeyPair & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, read_event_, write_event_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, std::move(default_session_user_), read_event_, write_event_)
     , private_key(private_key_)
 {}
 

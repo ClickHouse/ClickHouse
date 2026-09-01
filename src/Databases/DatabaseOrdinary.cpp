@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
+#include <Storages/TableZnodeInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
@@ -141,6 +142,22 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
         );
 }
 
+void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
+{
+    /// A conversion mints a path the table never had, so the substituted name is validated as strictly
+    /// as a CREATE validates it -- but one level below CREATE, because the requirement that a path start
+    /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
+    const auto & server_settings = local_context->getServerSettings();
+    TableZnodeInfo::resolve(
+        server_settings[ServerSetting::default_replica_path],
+        server_settings[ServerSetting::default_replica_name],
+        StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
+        create_query,
+        LoadingStrictnessLevel::SECONDARY_CREATE,
+        local_context,
+        /*validate_substitutions=*/true);
+}
+
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
 {
     auto * storage = create_query.storage;
@@ -232,6 +249,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
+    checkReplicaPathIsSafe(create_query, getContext());
     checkReplicaPathExists(create_query, getContext());
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
@@ -426,7 +444,7 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
         return false;
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
-        || query.isParameterizedView() || query.is_window_view)
+        || query.isParameterizedView())
         return false;
 
     /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
@@ -703,6 +721,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
 
 VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
+    ensurePopulated();
     std::set<String> unique_names;
     {
         std::lock_guard lock(mutex);
