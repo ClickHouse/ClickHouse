@@ -1,4 +1,5 @@
 import http.server
+import json
 import random
 import socket
 import socketserver
@@ -102,6 +103,13 @@ class MockControl:
             url += f"&count={count}"
 
         self._apply(url)
+
+    def get_request_counts(self):
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            ["curl", "-s", f"http://localhost:{self._port}/mock_settings/request_counts"],
+        )
+        return json.loads(response)
 
     def setup_slow_get_answers(self, timeout=None, count=None):
         url = f"http://localhost:{self._port}/mock_settings/slow_get?nothing=1"
@@ -224,6 +232,18 @@ class _ServerRuntime:
                 "<Error>"
                 "<Code>ExpectedError</Code>"
                 "<Message>mock s3 injected unretryable error</Message>"
+                "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
+                "</Error>"
+            )
+            request_handler.write_error(500, data)
+
+    class InternalErrorAction:
+        def inject_error(self, request_handler):
+            data = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Error>"
+                "<Code>InternalError</Code>"
+                "<Message>mock s3 injected retryable error</Message>"
                 "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
                 "</Error>"
             )
@@ -380,6 +400,8 @@ class _ServerRuntime:
                 self.error_handler = _ServerRuntime.BrokenPipeAction()
             elif self.action == "redirect_to":
                 self.error_handler = _ServerRuntime.RedirectAction(*self.action_args)
+            elif self.action == "internal_error":
+                self.error_handler = _ServerRuntime.InternalErrorAction()
             elif self.action == "slow_down":
                 self.error_handler = _ServerRuntime.SlowDownAction(*self.action_args)
             elif self.action == "qps_limit_exceeded":
@@ -428,6 +450,7 @@ class _ServerRuntime:
         self.lock = threading.Lock()
         self.at_part_upload = None
         self.at_object_upload = None
+        self.request_counts = {"part_upload": 0, "abort_multipart_upload": 0}
         self.fake_put_when_length_bigger = None
         self.fake_uploads = dict()
         self.slow_put = None
@@ -449,6 +472,7 @@ class _ServerRuntime:
         with self.lock:
             self.at_part_upload = None
             self.at_object_upload = None
+            self.request_counts = {"part_upload": 0, "abort_multipart_upload": 0}
             self.fake_put_when_length_bigger = None
             self.fake_uploads = dict()
             self.slow_put = None
@@ -581,6 +605,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if len(path) < 2:
             return self.write_error(400, "_mock_settings: wrong command")
 
+        if path[1] == "request_counts":
+            with _runtime.lock:
+                data = json.dumps(_runtime.request_counts)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(bytes(data, "UTF-8"))
+            return
+
         if path[1] == "at_part_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_part_upload = _ServerRuntime.CountAfter.from_cgi_params(
@@ -696,6 +730,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         upload_id = params.get("uploadId", [None])[0]
 
         if upload_id is not None:
+            with _runtime.lock:
+                _runtime.request_counts["part_upload"] += 1
+
             if _runtime.at_part_upload is not None:
                 self.log_message(
                     "put at_part_upload %s, %s, %s",
@@ -763,6 +800,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.redirect()
 
     def do_DELETE(self):
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        if params.get("uploadId", [None])[0] is not None:
+            with _runtime.lock:
+                _runtime.request_counts["abort_multipart_upload"] += 1
         self.redirect()
 
 
