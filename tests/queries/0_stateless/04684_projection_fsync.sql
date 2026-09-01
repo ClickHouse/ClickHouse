@@ -264,10 +264,15 @@ ALTER TABLE t_mat_plain UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2;
 SYSTEM FLUSH LOGS part_log;
 
 -- The projection rebuild the mutation performs must fsync the projection on top of everything the
--- identical projection-less mutation already syncs. The delta is one per rebuilt projection and
--- does not track how many files the projection holds (measured: unchanged when the projection grows
--- from 14 files to 24). Asserting the exact value means a missing sync and a stray extra one both
--- redden.
+-- identical projection-less mutation already syncs.
+--
+-- The delta is one, and stays one however many columns the projection has, because of what this
+-- counter can see and not because of how much is synced: `part_log` takes its `ProfileEvents` from a
+-- scope that counts the mutation thread's own events only, and `parallelSyncFiles` hands every batch
+-- of two or more files to the shared IO pool. The projection's columns and its metadata files are
+-- synced in such batches and are invisible here, while its primary index is synced on its own,
+-- inline, and is the one fsync that reaches this counter. Asserting the exact value means a missing
+-- sync and a stray extra one both redden.
 SELECT 'mutation syncs projection files',
     (SELECT argMax(ProfileEvents['FileSync'], event_time_microseconds) FROM system.part_log
      WHERE database = currentDatabase() AND table = 't_mat' AND event_type = 'MutatePart')

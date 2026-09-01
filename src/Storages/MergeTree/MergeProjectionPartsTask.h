@@ -26,8 +26,8 @@ public:
         time_t time_of_merge_,
         MergeTreeData::MutableDataPartPtr new_data_part_,
         ReservationSharedPtr space_reservation_,
-        MergeListElement * parent_merge_list_element_ = nullptr,
-        bool need_sync_ = false)
+        MergeListElement * parent_merge_list_element_,
+        bool need_sync_)
         : name(std::move(name_))
         , projection(projection_)
         , block_num(block_num_)

@@ -108,7 +108,7 @@ public:
         MergeTreeDataMergerMutator * mutator_,
         PartitionActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_,
-        bool force_sync_ = false)
+        bool force_sync_)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
 
