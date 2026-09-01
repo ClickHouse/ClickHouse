@@ -1063,6 +1063,33 @@ fi
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_other"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${MUT_DB}"
 
+# `InterpreterAlterQuery::executeToTable` resolves an unqualified `ALTER` target with the default
+# `ResolveAll`, so a session temporary table shadows the persistent one, while `InterpreterUpdateQuery`
+# and `InterpreterDeleteQuery` resolve theirs with an explicit `ResolveOrdinary` and are never shadowed.
+# The mutation preflight has to probe the table the statement will really hit: probing the persistent
+# `MergeTree` for a shadowed `ALTER` would let the hook detach the sources of a statement that fails on
+# its temporary target before reading any of them.
+function check_source_not_detached_for_shadowed_alter()
+{
+    query="$1"
+    check_if_detached_impl "CREATE TEMPORARY TABLE t_reattach_mut_mt (a UInt64) ENGINE = Memory; $query" "t_reattach_mut_src"
+    if [ "$REATTACH_STATUS" -eq 0 ]; then
+        echo "FAIL (query unexpectedly succeeded)"
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "NOT_IMPLEMENTED"; then
+        echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mut_src"; then
+        echo "FAIL (source detached for an ALTER failing on its shadowing temporary target)"
+    else
+        echo "OK"
+    fi
+}
+
+check_source_not_detached_for_shadowed_alter "ALTER TABLE t_reattach_mut_mt DELETE WHERE a IN (SELECT a FROM t_reattach_mut_src)"
+check_source_not_detached_for_shadowed_alter "ALTER TABLE t_reattach_mut_mt UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)"
+
+# The same shapes without the shadowing temporary table do reach and randomize the source.
+check_if_detached "ALTER TABLE t_reattach_mut_mt UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS mutations_sync = 1" "t_reattach_mut_src"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_mt"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_src"

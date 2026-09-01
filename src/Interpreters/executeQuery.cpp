@@ -58,7 +58,6 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
-#include <Parsers/ASTWatchQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -1406,8 +1405,6 @@ AccessFlags requiredAccessForTableQuery(const IAST & ast)
         return AccessFlags::allFlagsGrantableOnTableLevel();
     if (ast.as<ASTDeleteQuery>())
         return AccessType::ALTER_DELETE;
-    if (ast.as<ASTWatchQuery>())
-        return AccessType::SELECT;
     return AccessFlags::allFlagsGrantableOnTableLevel();
 }
 
@@ -1845,17 +1842,23 @@ bool udfSubstitutionFails(const IAST & ast, const ContextPtr & context)
     return false;
 }
 
-/// Resolves the target of a mutation-carrying statement in the ordinary namespace, returning nullptr
-/// whenever the statement is going to stop on it or the probe would not be side-effect free (a database
-/// that does not support detaching tables performs remote work even in `isTableExist`/`tryGetTable`).
-StoragePtr tryResolveMutationTarget(const String & database_name, const String & table_name, const ContextPtr & context)
+/// Resolves the target of a mutation-carrying statement, returning nullptr whenever the statement is
+/// going to stop on it or the probe would not be side-effect free (a database that does not support
+/// detaching tables performs remote work even in `isTableExist`/`tryGetTable`). The namespace must be the
+/// one the statement's own interpreter resolves in: `InterpreterAlterQuery::executeToTable` resolves an
+/// unqualified `ALTER` target with the default `ResolveAll`, so a session temporary table shadows the
+/// persistent one there, while `InterpreterUpdateQuery` and `InterpreterDeleteQuery` resolve their target
+/// with an explicit `ResolveOrdinary`. Probing the wrong table would predict the fate of a statement that
+/// is not the one being executed.
+StoragePtr tryResolveMutationTarget(
+    const String & database_name, const String & table_name, Context::StorageNamespace resolve_namespace, const ContextPtr & context)
 {
     if (table_name.empty())
         return nullptr;
 
     auto resolved = context->tryResolveStorageID(
         database_name.empty() ? StorageID("", table_name) : StorageID(database_name, table_name),
-        Context::ResolveOrdinary);
+        resolve_namespace);
     if (!resolved)
         return nullptr;
 
@@ -1908,7 +1911,7 @@ bool deleteQueryStopsBeforeSources(const ASTDeleteQuery & delete_query, const Co
     if (udfSubstitutionFails(delete_query, context))
         return true;
 
-    const auto table = tryResolveMutationTarget(delete_query.getDatabase(), delete_query.getTable(), context);
+    const auto table = tryResolveMutationTarget(delete_query.getDatabase(), delete_query.getTable(), Context::ResolveOrdinary, context);
     if (!table)
         return true;
 
@@ -2009,7 +2012,7 @@ bool updateQueryStopsBeforeSources(const ASTUpdateQuery & update_query, const Co
     if (udfSubstitutionFails(update_query, context))
         return true;
 
-    const auto table = tryResolveMutationTarget(update_query.getDatabase(), update_query.getTable(), context);
+    const auto table = tryResolveMutationTarget(update_query.getDatabase(), update_query.getTable(), Context::ResolveOrdinary, context);
     if (!table)
         return true;
 
@@ -2115,7 +2118,7 @@ bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr 
             return true;
     }
 
-    const auto table = tryResolveMutationTarget(alter.getDatabase(), alter.getTable(), context);
+    const auto table = tryResolveMutationTarget(alter.getDatabase(), alter.getTable(), Context::ResolveAll, context);
     if (!table)
         return true;
 
@@ -2191,6 +2194,8 @@ String mutationExpressionsDatabase(const IAST & ast, const ContextPtr & context)
 {
     String database;
     String table;
+    /// The same namespace the carrier's own interpreter resolves its target in, see `tryResolveMutationTarget`.
+    Context::StorageNamespace resolve_namespace = Context::ResolveOrdinary;
 
     if (const auto * update_query = ast.as<ASTUpdateQuery>())
     {
@@ -2203,10 +2208,11 @@ String mutationExpressionsDatabase(const IAST & ast, const ContextPtr & context)
             return {};
         database = alter_query->getDatabase();
         table = alter_query->getTable();
+        resolve_namespace = Context::ResolveAll;
     }
     else if (const auto * delete_query = ast.as<ASTDeleteQuery>())
     {
-        const auto target = tryResolveMutationTarget(delete_query->getDatabase(), delete_query->getTable(), context);
+        const auto target = tryResolveMutationTarget(delete_query->getDatabase(), delete_query->getTable(), Context::ResolveOrdinary, context);
         if (!target || target->supportsDelete())
             return {};
         return target->getStorageID().getDatabaseName();
@@ -2220,7 +2226,7 @@ String mutationExpressionsDatabase(const IAST & ast, const ContextPtr & context)
         return {};
 
     const auto resolved = context->tryResolveStorageID(
-        database.empty() ? StorageID("", table) : StorageID(database, table), Context::ResolveOrdinary);
+        database.empty() ? StorageID("", table) : StorageID(database, table), resolve_namespace);
     return resolved ? resolved.getDatabaseName() : String{};
 }
 
@@ -2271,7 +2277,7 @@ ExpectedObjectKind mainTableExpectedObjectKind(const IAST & ast)
 /// `EXISTS TABLE`/`EXISTS VIEW`/`EXISTS DICTIONARY` (`InterpreterExistsQuery`), `SHOW CREATE VIEW`/
 /// `SHOW CREATE DICTIONARY` (`InterpreterShowCreateQuery`), `CREATE`/`ATTACH` targets
 /// (`InterpreterCreateQuery`), `UNDROP` (`InterpreterUndropQuery`), `UPDATE` (`InterpreterUpdateQuery`),
-/// `DELETE` (`InterpreterDeleteQuery`), and `WATCH` (`InterpreterWatchQuery`).
+/// and `DELETE` (`InterpreterDeleteQuery`).
 ///
 /// `ResolveAll` carriers (a session temporary table legitimately shadows the persistent one):
 /// `SHOW CREATE TABLE` (`InterpreterShowCreateQuery`), `ALTER` (`InterpreterAlterQuery`), `OPTIMIZE`
@@ -2282,7 +2288,7 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
     if (ast.as<ASTExistsTableQuery>() || ast.as<ASTExistsViewQuery>() || ast.as<ASTExistsDictionaryQuery>()
         || ast.as<ASTShowCreateViewQuery>() || ast.as<ASTShowCreateDictionaryQuery>()
         || ast.as<ASTCreateQuery>() || ast.as<ASTUndropQuery>()
-        || ast.as<ASTUpdateQuery>() || ast.as<ASTDeleteQuery>() || ast.as<ASTWatchQuery>())
+        || ast.as<ASTUpdateQuery>() || ast.as<ASTDeleteQuery>())
         return Context::ResolveOrdinary;
     return Context::ResolveAll;
 }
