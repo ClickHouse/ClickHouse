@@ -131,6 +131,26 @@ SELECT avgOrNullSparkbar(3, 0, 2)(intDiv(number, 2), if(intDiv(number, 2) = 1, N
 SELECT 'countSparkbar with an all-NULL forwarded argument:';
 SELECT toTypeName(countSparkbar(3, 0, 2)(number, CAST(NULL, 'Nullable(UInt8)'))) FROM numbers(3);
 
+-- A `Nullable` *input argument* must not make the result `Nullable(String)`. Without an own null
+-- adapter the generic `Null` combinator would reuse the nested function's
+-- `returns_default_when_only_null` property (`avg`'s is false) and wrap the whole sparkbar into
+-- `Nullable(String)`, so an all-`NULL` input would return `NULL` instead of the empty sparkbar.
+SELECT 'avgSparkbar with a Nullable x-axis argument (String, NULLs skipped):';
+SELECT toTypeName(avgSparkbar(3, 0, 2)(CAST(number AS Nullable(UInt8)), number)) FROM numbers(3);
+SELECT avgSparkbar(3, 0, 2)(if(number = 1, NULL, toUInt8(number)), toInt64(number) * 10) FROM numbers(3);
+
+SELECT 'avgSparkbar with an all-NULL Nullable x-axis (empty sparkbar, not NULL):';
+SELECT toTypeName(avgSparkbar(3, 0, 2)(CAST(NULL, 'Nullable(UInt8)'), number)) FROM numbers(3);
+SELECT '[' || avgSparkbar(3, 0, 2)(CAST(NULL, 'Nullable(UInt8)'), number) || ']' FROM numbers(3);
+
+SELECT 'sumSparkbar with a Nullable forwarded argument (String, NULLs skipped):';
+SELECT toTypeName(sumSparkbar(3, 0, 2)(number, CAST(number AS Nullable(UInt8)))) FROM numbers(3);
+SELECT sumSparkbar(3, 0, 2)(number, if(number = 1, NULL, toUInt8(number) * 10)) FROM numbers(3);
+
+SELECT 'countSparkbar with a Nullable x-axis only (unary null adapter):';
+SELECT toTypeName(countSparkbar(3, 0, 2)(CAST(number AS Nullable(UInt8)))) FROM numbers(3);
+SELECT countSparkbar(3, 0, 2)(if(number = 1, NULL, toUInt8(number))) FROM numbers(3);
+
 -- Error: too few parameters
 SELECT countSparkbar(5, 0)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 

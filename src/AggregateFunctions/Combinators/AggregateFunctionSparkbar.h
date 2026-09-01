@@ -3,6 +3,7 @@
 #include <array>
 #include <string_view>
 
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
@@ -386,6 +387,24 @@ public:
             result.insert(argument + 1);
 
         return result;
+    }
+
+    /// The combinator always renders a `String`, whatever the nested function's null semantics
+    /// are. Without an own adapter the generic `Null` combinator would consult the *nested*
+    /// function's `returns_default_when_only_null` property (`avg`'s, for example, is false) and
+    /// wrap the whole sparkbar into `Nullable(String)`, returning `NULL` for an all-`NULL` input
+    /// instead of the empty sparkbar. Force the non-nullable adapter so the advertised result
+    /// type does not depend on the nested function. `serialize_flag` stays `true`, so the state
+    /// layout is the one the generic adapter would have produced.
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function_,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const override
+    {
+        if (arguments.size() == 1)
+            return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function_, arguments, params);
+        return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function_, arguments, params);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
