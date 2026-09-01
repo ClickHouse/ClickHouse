@@ -522,7 +522,11 @@ class Shell:
                         print(f"ERROR: exception {e}")
                     else:
                         print(f"Retry {retry+1}/{retries}: exception {e}")
-                        if terminal:
+                        if terminal and retry < retries - 1:
+                            print(
+                                f"Retry deadline of {retry_deadline}s reached, stopping retries"
+                            )
+                        elif terminal:
                             print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
