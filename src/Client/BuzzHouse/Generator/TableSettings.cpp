@@ -57,8 +57,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_coalescing_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_commit_order_projection", trueOrFalseSetting},
     {"allow_dimensions_outside_sorting_key", trueOrFalseSetting},
-    /// Picks a codec per block on merge, so the data read back must stay the same
-    {"allow_experimental_adaptive_codec_selection", trueOrFalseSetting},
     {"allow_experimental_replacing_merge_with_cleanup", trueOrFalseSetting},
     {"allow_experimental_text_index_phrase_search", trueOrFalseSetting},
     {"allow_floating_point_partition_key", trueOrFalseSetting},
@@ -152,6 +150,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'v1'", "'v2'", "'v3'"},
          false)},
+    /// Picks a codec per block on merge, so the data read back must stay the same
+    {"enable_adaptive_codec_selection", trueOrFalseSetting},
     {"enable_block_number_column", trueOrFalseSetting},
     {"enable_block_offset_column", trueOrFalseSetting},
     {"enable_index_granularity_compression", trueOrFalseSetting},
@@ -295,7 +295,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {"0", "1", "5", "25"},
          false)},
     {"max_replicated_fetches_network_bandwidth", bytesRangeSetting},
-    {"max_replicated_logs_to_keep", highRangeSetting},
+    {"max_replicated_logs_to_keep", highRangeNonZeroSetting},
     {"max_replicated_merges_in_queue",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },

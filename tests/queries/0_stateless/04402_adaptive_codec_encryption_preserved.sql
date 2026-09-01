@@ -15,7 +15,7 @@ CREATE TABLE t_enc
     y UInt64
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1, default_compression_codec = 'LZ4, AES_128_GCM_SIV';
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, default_compression_codec = 'LZ4, AES_128_GCM_SIV';
 
 INSERT INTO t_enc SELECT cityHash64(number), number FROM numbers(1000000);
 INSERT INTO t_enc SELECT cityHash64(number), number FROM numbers(1000000, 1000000);
@@ -39,7 +39,7 @@ CREATE TABLE t_plain
     y UInt64
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1, default_compression_codec = 'LZ4';
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, default_compression_codec = 'LZ4';
 
 INSERT INTO t_plain SELECT cityHash64(number), number FROM numbers(1000000);
 INSERT INTO t_plain SELECT cityHash64(number), number FROM numbers(1000000, 1000000);

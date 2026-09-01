@@ -117,9 +117,9 @@ addDate(datetime, interval)
 SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
         )",
         R"(
-┌─addDate(toDa⋯valYear(3))─┐
-│               2021-01-01 │
-└──────────────────────────┘
+┌─addDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2021-01-01 │
+└──────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_addDate = {23, 9};
