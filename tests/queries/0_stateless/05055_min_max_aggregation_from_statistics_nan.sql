@@ -71,3 +71,29 @@ SELECT 'the same values without the optimization';
 SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats SETTINGS use_statistics_for_min_max_aggregation = 0;
 
 DROP TABLE t_nan_stats;
+
+-- The per-part statistics are not built at once: `MergeTask` and `MutateTask` feed the collectors
+-- one output chunk at a time. Check a single part whose first chunks are all `NaN` and whose later
+-- chunks are finite, so that the accumulator is not stuck at `NaN` in the materialized statistics.
+DROP TABLE IF EXISTS t_nan_stats_merged;
+
+CREATE TABLE t_nan_stats_merged (key UInt64, f32 Float32, f64 Float64)
+ENGINE = MergeTree ORDER BY key
+SETTINGS auto_statistics_types = 'basic, uniq_v2', materialize_statistics_on_merge = 1;
+
+-- More rows than `merge_max_block_size`, so that the merged part really starts with all-`NaN` chunks.
+INSERT INTO t_nan_stats_merged SELECT number, nan, nan FROM numbers(100000);
+INSERT INTO t_nan_stats_merged SELECT 100000 + number, toFloat32(number) + 1, toFloat64(number) + 1 FROM numbers(100000);
+
+OPTIMIZE TABLE t_nan_stats_merged FINAL;
+
+SELECT 'the merged part is a single part covered by statistics';
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_nan_stats_merged' AND active;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats_merged) WHERE explain LIKE '%_statistics_min_max_projection%';
+
+SELECT 'one part merged from an all-NaN prefix and a finite suffix';
+SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats_merged;
+SELECT 'the same values without the optimization';
+SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats_merged SETTINGS use_statistics_for_min_max_aggregation = 0;
+
+DROP TABLE t_nan_stats_merged;

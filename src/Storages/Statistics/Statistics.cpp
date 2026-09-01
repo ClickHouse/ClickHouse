@@ -1,6 +1,7 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
@@ -52,6 +53,28 @@ bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunct
         if (!a_types[i]->equals(*b_types[i]))
             return false;
     return true;
+}
+
+void StatisticsUtils::updateMin(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && value < accumulator)
+        accumulator = value;
+}
+
+void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && accumulator < value)
+        accumulator = value;
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
