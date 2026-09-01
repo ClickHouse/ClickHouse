@@ -2106,7 +2106,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 
 /// `Field::isNaN` recognizes a scalar `Float64` only, so a NaN nested in a container is invisible to it.
 /// Iterative because Fields nest inside Fields and a recursive walk overflows the native stack.
-static bool fieldContainsNaN(const Field & field)
+static bool fieldContainsNaNAnywhere(const Field & field)
 {
     absl::InlinedVector<const Field *, 16> pending{&field};
 
@@ -2170,8 +2170,8 @@ static bool fieldContainsNaN(const Field & field)
 ///   input:  `['123']`  type `String`
 ///   output: `[123]`  type `UInt8`
 ///
-/// `out_transform_input_has_nan`, when given, reports whether the value handed to the DAG held a NaN. The
-/// direct-CAST fast path leaves it untouched: it never adapts the input to `dag.input_type`, so it makes none.
+/// `out_transform_input_has_nan`, when given, is always written and reports whether the value handed to
+/// the transform DAG held a NaN. The direct-CAST fast path runs no DAG, so it reports false.
 static bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
@@ -2181,6 +2181,9 @@ static bool applyDeterministicDagToColumn(
     DataTypePtr & out_type,
     bool * out_transform_input_has_nan = nullptr)
 {
+    if (out_transform_input_has_nan)
+        *out_transform_input_has_nan = false;
+
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
 
@@ -2317,9 +2320,8 @@ static bool applyDeterministicDagToColumn(
 
     if (out_transform_input_has_nan)
     {
-        *out_transform_input_has_nan = false;
         for (size_t i = 0, size = input_column->size(); i < size && !*out_transform_input_has_nan; ++i)
-            *out_transform_input_has_nan = fieldContainsNaN((*input_column)[i]);
+            *out_transform_input_has_nan = fieldContainsNaNAnywhere((*input_column)[i]);
     }
 
     Block block;
