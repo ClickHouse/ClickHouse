@@ -206,6 +206,22 @@ TEST(RequestQueue, PriorityStrictOrder)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{10, 20, 21, 0}));
 }
 
+/// priority ordering is exact across the full UInt64 range: two priorities that differ only above
+/// 2^53 (where a double key would collapse them to one value) still order correctly.
+TEST(RequestQueue, PriorityFullRangeUInt64)
+{
+    Fixture f(SchedulerAlgorithm::Priority);
+    const UInt64 p_lo = (1ULL << 53);      // 9007199254740992
+    const UInt64 p_hi = (1ULL << 53) + 1;  // 9007199254740993 — equal to p_lo once cast to double
+    auto * higher_prec = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ p_lo); // lower value = higher precedence
+    auto * lower_prec = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ p_hi);
+    f.enqueue(2, lower_prec); // enqueue the lower-precedence (larger value) request first
+    f.enqueue(1, higher_prec);
+    // p_lo < p_hi, so id 1 is served first despite arriving second. A double key would tie the two
+    // and fall back to FIFO ({2, 1}).
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2}));
+}
+
 /// The swap hook migrates all pending requests to the new algorithm; none are lost, and the
 /// node identity is unchanged.
 TEST(RequestQueue, SwapSchedulerKeepsRequests)
@@ -281,10 +297,12 @@ TEST(RequestQueue, ResetClearsSchedulingState)
     TestRequest r(1, 5);
     r.scheduling_context = ctx.get();
     r.scheduling_key = {42.0, 7};
+    r.scheduling_priority = 123;
     r.reset(9);
     EXPECT_EQ(r.scheduling_context, nullptr);
     EXPECT_EQ(r.scheduling_key.first, 0.0);
     EXPECT_EQ(r.scheduling_key.second, 0u);
+    EXPECT_EQ(r.scheduling_priority, 0u);
     EXPECT_EQ(r.cost, 9);
 }
 

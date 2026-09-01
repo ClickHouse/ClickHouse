@@ -85,8 +85,16 @@ public:
     /// Ordering key for the query-aware schedulers (`fair`, `las`) in `RequestQueue`. Computed at
     /// enqueue and constant while the request is in the queue (required by the intrusive ordered
     /// set). `.first` is the virtual runtime (`fair`) or MLFQ level (`las`); `.second` a monotonic
-    /// sequence number for a stable FIFO tie-break. Unused by the `fifo` scheduler.
+    /// sequence number for a stable FIFO tie-break (also used by the `priority` scheduler). Unused
+    /// by the `fifo` scheduler.
     std::pair<double, UInt64> scheduling_key{0.0, 0};
+
+    /// Primary ordering key for the `priority` scheduler in `RequestQueue` (lower value first,
+    /// then `scheduling_key.second` for FIFO). The `priority` query setting is a full-range
+    /// `UInt64`, so it is kept here as an integer rather than routed through the `double` half of
+    /// `scheduling_key`, which would lose ordering above 2^53. Holds the mapped key (priority `0`
+    /// = "no priority" is mapped to the max value so it sorts last). Unused by other schedulers.
+    UInt64 scheduling_priority = 0;
 
     /// Scheduler nodes to be notified on consumption finish
     /// Auto-filled during request dequeue
@@ -112,6 +120,7 @@ public:
         // thread-local `ResourceGuard::Request`) never carries stale state from a previous query.
         scheduling_context = nullptr;
         scheduling_key = {0.0, 0};
+        scheduling_priority = 0;
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 

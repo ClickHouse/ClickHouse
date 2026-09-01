@@ -397,8 +397,10 @@ public:
         UInt64 priority = request->scheduling_context ? request->scheduling_context->priority : 0;
         // `priority == 0` = no priority → lowest precedence: map to the max key so explicit
         // priorities (1 = highest) sort ahead of it; FIFO within equal priority via the sequence.
-        double key = priority == 0 ? static_cast<double>(std::numeric_limits<UInt64>::max()) : static_cast<double>(priority);
-        request->scheduling_key = {key, next_seq++};
+        // The key is a full-width integer (not the `double` half of `scheduling_key`) so ordering
+        // stays exact across the whole UInt64 setting range (a double loses it above 2^53).
+        request->scheduling_priority = priority == 0 ? std::numeric_limits<UInt64>::max() : priority;
+        request->scheduling_key = {0.0, next_seq++};
         requests.insert(*request);
     }
 
@@ -447,7 +449,10 @@ private:
     {
         bool operator()(const ResourceRequest & lhs, const ResourceRequest & rhs) const noexcept
         {
-            return lhs.scheduling_key < rhs.scheduling_key;
+            // Integer priority first (exact across the full UInt64 range), then the sequence for FIFO.
+            if (lhs.scheduling_priority != rhs.scheduling_priority)
+                return lhs.scheduling_priority < rhs.scheduling_priority;
+            return lhs.scheduling_key.second < rhs.scheduling_key.second;
         }
     };
     using Set = boost::intrusive::set<ResourceRequest, ResourceRequest::SchedulingHook, boost::intrusive::compare<ByKey>>;
