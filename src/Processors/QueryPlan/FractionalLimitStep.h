@@ -36,11 +36,8 @@ public:
 
     bool hasCorrelatedExpressions() const override { return false; }
 
-    /// A fractional limit is resolved against the whole query result (the transform must see every row
-    /// to know what the fraction is), so `apply_prelimit` never pushes it to the shard and it is
-    /// evaluated on the initiator. Reporting support keeps `considerEnablingParallelReplicas` from
-    /// rejecting the whole plan; `transformPipeline` still attaches a collector so that a boundary here
-    /// would be measured rather than cached as `output_bytes = 0`.
+    /// The fraction is resolved against the whole result, so `apply_prelimit` never pushes this to a
+    /// shard and it runs on the initiator.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:

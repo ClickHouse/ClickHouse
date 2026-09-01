@@ -33,16 +33,9 @@ public:
 
     bool hasCorrelatedExpressions() const override { return false; }
 
-    /// Unlike the other variants this one can be pushed to the shard: `addPreliminaryLimitStep` calls
-    /// `markAsShardLimit` on it, and `apply_prelimit` does not exclude a negative limit. So it may end
-    /// up at the replica-output boundary, which is precisely why `transformPipeline` attaches a
-    /// collector - reporting support without one would cache `output_bytes = 0` and price the transfer
-    /// to the initiator at zero.
-    ///
-    /// `LIMIT -n` returns the *last* `n` rows, so a shard `NegativeLimit` is a bounded top-N taken from
-    /// the tail: every replica keeps its own last `n` rows and ships all of them, and the initiator
-    /// takes the last `n` of the merged result. Its output is therefore replicated rather than
-    /// partitioned, and `considerEnablingParallelReplicas` prices it like `LimitStep`.
+    /// `LIMIT -n` returns the *last* `n` rows, and `addPreliminaryLimitStep` can push it to the shard, so
+    /// this step can be the replica-output boundary. It is a top-N taken from the tail, so like
+    /// `LimitStep` its output is replicated: every replica ships its own last `n` rows.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:

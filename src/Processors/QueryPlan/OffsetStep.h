@@ -25,21 +25,9 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    /// `considerEnablingParallelReplicas` uses this predicate as a whole-plan gate: a single
-    /// unsupported step rejects the plan outright and no statistics are collected at all. Reporting
-    /// support here is what lets a plan carrying an `OffsetStep` be considered for automatic parallel
-    /// replicas at all - `SELECT ... ORDER BY k OFFSET n`, or the shard-side `OFFSET` that
-    /// `addPreliminaryLimitStep` emits underneath a negative limit.
-    ///
-    /// `OFFSET` skips rows of the entire query result rather than of each shard, and there is no way to
-    /// evaluate it per replica (splitting the offset between them would skip a different set of rows),
-    /// so a bare one is applied on the initiator. Where the planner does place an `OffsetStep` on the
-    /// shard it sits under a `NegativeLimitStep`, never as the topmost replica step, so this step is
-    /// not expected to be the replica-output boundary itself.
-    ///
-    /// `transformPipeline` still attaches a `RuntimeDataflowStatisticsCollector` when instrumented,
-    /// because an uninstrumented boundary fails open: it would cache `output_bytes = 0`, i.e. price the
-    /// network transfer to the initiator at zero. Measuring the post-offset output instead fails close.
+    /// `OFFSET` skips a prefix of the whole result and cannot be evaluated per replica, so it runs on
+    /// the initiator; where the planner does put one on a shard (under a negative limit) it is never the
+    /// topmost replica step.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:

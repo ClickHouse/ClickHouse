@@ -404,19 +404,11 @@ void considerEnablingParallelReplicas(
                 ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
                 : SIZE_MAX;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
-            /// `output_bytes` is what the boundary step produced on a single node, and the network term
-            /// below is what one replica ships to the initiator. Dividing by `num_replicas` assumes the
-            /// replicas partition that output between them, which holds for a boundary whose output is a
-            /// share of the rows: `Aggregating` (each replica aggregates its own share) or a plain
-            /// `Sorting`.
-            ///
-            /// It does not hold for a boundary that keeps a bounded top-N *per replica*, because there
-            /// every replica emits up to `n` rows and ships all of them, so each one sends the whole
-            /// `output_bytes` the single-node plan produced. That covers a shard `LIMIT n`, a shard
-            /// `LIMIT -n` (which returns the *last* `n` rows, i.e. a top-N taken from the tail), and
-            /// equally a top-N `Sorting` (a sort carrying a limit keeps the local top `limit` rows on
-            /// each node - see `SortingStep::is_partial_top_n`), so all of them must skip the division.
-            /// Dividing anyway underestimates the parallel-replicas plan by a factor of `num_replicas`.
+            /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
+            /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a
+            /// bounded top-N per replica instead makes every replica ship the whole `output_bytes`:
+            /// `LIMIT n`, `LIMIT -n` (the last `n` rows) and a `Sorting` carrying a limit. Dividing
+            /// those underestimates the parallel-replicas plan by a factor of `num_replicas`.
             const auto * boundary_step = corresponding_node_in_single_replica_plan->step.get();
             const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
             const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)

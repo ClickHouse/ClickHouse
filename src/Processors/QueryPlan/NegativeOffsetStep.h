@@ -23,11 +23,7 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    /// A negative `OFFSET` skips rows of the entire query result, not of each shard, so like
-    /// `OffsetStep` this step is evaluated on the initiator and a plan carrying one is otherwise as
-    /// simple as any other. Reporting support keeps `considerEnablingParallelReplicas` from rejecting
-    /// the whole plan (its check is a whole-plan gate). `transformPipeline` still attaches a collector,
-    /// so that a boundary here would be measured rather than cached as `output_bytes = 0`.
+    /// Like `OffsetStep`: a negative `OFFSET` applies to the whole result, so it runs on the initiator.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
