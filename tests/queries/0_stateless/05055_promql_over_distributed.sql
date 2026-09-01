@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS ts_one_shard;
 DROP TABLE IF EXISTS ts_remote;
 DROP TABLE IF EXISTS ts_remote_tf;
 DROP TABLE IF EXISTS ts_nested;
+DROP TABLE IF EXISTS ts_coarse;
 DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;
 
@@ -80,6 +81,16 @@ CREATE TABLE ts_remote_tf (number UInt64) ENGINE = Remote('127.0.0.1', numbers(1
 SELECT * FROM prometheusQuery(ts_remote_tf, 'm', 140); -- { serverError UNEXPECTED_TABLE_ENGINE }
 CREATE TABLE ts_nested AS ts_all ENGINE = Distributed(test_shard_localhost, currentDatabase(), ts_dist);
 SELECT * FROM prometheusQuery(ts_nested, 'm', 140); -- { serverError UNEXPECTED_TABLE_ENGINE }
+
+SELECT '--- rejected: the shard-local tables must declare the same time_series type ---';
+-- Legal for Distributed, which never validates the shard-side structure, but PromQL would parse
+-- the times with the wrapper's scale and read with the shards'.
+CREATE TABLE ts_coarse (metric_name String, tags Map(String, String), time_series Array(Tuple(DateTime64(0), Float64)))
+    ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local);
+SELECT * FROM prometheusQuery(ts_coarse, 'm', 140); -- { serverError TYPE_MISMATCH }
+-- A selector-free query reads no shard, so nothing is probed either.
+SELECT count() FROM prometheusQuery(ts_coarse, '1 + 2', 140);
+DROP TABLE ts_coarse;
 
 SELECT '--- declared Distributed settings the generated read has to carry ---';
 -- Declaring the default explicitly changes nothing about the read: must pass.

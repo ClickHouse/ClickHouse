@@ -25,13 +25,13 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
 /// True when the parsed PromQL contains a selector, i.e. would actually read the table.
 bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 
-/// The wrapper's SELECT grant, the one table-scoped decoration the rewrite must redo by hand:
-/// table functions are exempt from the planner's check. Revisit if PlannerJoinTree gains another.
+/// The wrapper's SELECT grant, the one table-scoped decoration the rewrite must redo by hand
+/// (table functions are exempt from the planner's check), then the shard-local targets below.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
-/// Refuses shard-local tables that are not TimeSeries, which an INSERT would otherwise accept.
-/// Cached per cluster and table, keyed on the fleet so a reload re-probes. Call after the grant.
-void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
+/// Refuses shard-local tables that are not TimeSeries or declare another `time_series` type, which
+/// the sink and the rewrite would silently accept. Verdicts are cached for a minute. Call after the grant.
+void checkPrometheusQueryDistributedTargets(const IStorage & storage, const ContextPtr & context);
 
 /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
 /// generated cluster() call's own declaration so ClusterProxy applies its usual precedence.

@@ -16,6 +16,13 @@
                     <table>default.prom_dist_bad</table>
                 </handler>
             </bad_write>
+            <coarse_write>
+                <url>/coarse/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_dist_coarse</table>
+                </handler>
+            </coarse_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>

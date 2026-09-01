@@ -73,6 +73,11 @@ def start_cluster():
             "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
         )
         node.query("CREATE TABLE ts_all ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE ts_coarse (metric_name String, tags Map(String, String), "
+            "time_series Array(Tuple(DateTime64(0), Float64))) "
+            "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
+        )
         node.query(INSERT_TEST_DATA, settings={"distributed_foreground_insert": 1})
         node.query(
             "INSERT INTO ts_all (metric_name, tags, time_series) "
@@ -181,3 +186,16 @@ def test_the_query_endpoints_still_answer_over_a_distributed_target():
         )
     )
     assert len(ranged["result"]) == 4, ranged
+
+
+def test_the_query_endpoints_refuse_a_wrapper_of_another_time_series_type():
+    # Legal for Distributed, which never validates the shard-side structure, but PromQL would parse
+    # the times with the wrapper's scale and read with the shards': refused, and both types named.
+    response = requests.get(
+        f"http://{node.ip_address}:9093/coarse/api/v1/query?query=m&time={EVALUATION_TIME}"
+    )
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["status"] == "error", body
+    assert "Array(Tuple(DateTime64(0), Float64))" in body["error"], body["error"]
+    assert "Array(Tuple(DateTime64(3), Float64))" in body["error"], body["error"]
