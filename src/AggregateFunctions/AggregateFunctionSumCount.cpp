@@ -149,7 +149,7 @@ SELECT sumCount(x) FROM s_table;
         )",
         R"(
 ┌─sumCount(x)─┐
-│ (190,21)    │
+│ (190,20)    │
 └─────────────┘
         )"
     }

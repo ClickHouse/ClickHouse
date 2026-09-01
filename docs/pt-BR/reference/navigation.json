@@ -185,7 +185,8 @@
             "pt-BR/reference/statements/truncate",
             "pt-BR/reference/statements/undrop",
             "pt-BR/reference/statements/update",
-            "pt-BR/reference/statements/use"
+            "pt-BR/reference/statements/use",
+            "pt-BR/reference/statements/watch"
           ]
         },
         {
