@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
+
 
 namespace DB
 {
@@ -64,19 +65,9 @@ public:
     {
     }
 
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
+    WeakHash32 getWeakHash32() const override
     {
-        /// A dummy column has a single fixed per-row hash (`WEAK_HASH32_INITIAL_VALUE`). The
-        /// non-initial path still combines that finalized value (like an empty ColumnTuple) so a
-        /// materialized dummy and a ColumnConst wrapper of it compose identically.
-        /// See IColumn::computeHashInto.
-        const size_t n = row_end - row_begin;
-        if (initial)
-            for (size_t i = 0; i < n; ++i)
-                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
-        else
-            for (size_t i = 0; i < n; ++i)
-                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
+        return WeakHash32(s);
     }
 
     void updateHashFast(SipHash & /*hash*/) const override
@@ -121,7 +112,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
     double getRatioOfDefaultRows(double) const override;
     UInt64 getNumberOfDefaultRows() const override;

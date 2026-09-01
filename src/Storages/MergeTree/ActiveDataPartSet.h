@@ -74,10 +74,11 @@ public:
     bool removePartAndCoveredParts(const MergeTreePartInfo & part_info)
     {
         Strings parts_covered_by = getPartsCoveredBy(part_info);
+        bool result = remove(part_info);
         for (const auto & part : parts_covered_by)
-            remove(part);
+            result &= remove(part);
 
-        return !parts_covered_by.empty();
+        return result;
     }
 
     /// Remove only covered parts from active set

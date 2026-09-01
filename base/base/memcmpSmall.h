@@ -100,9 +100,9 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
     /// The strings are equal up to min_size.
     /// If the rest of the larger string is zero bytes then the strings are considered equal.
 
-    size_t max_size = 0;
-    const Char * longest = nullptr;
-    int cmp = 0;
+    size_t max_size;
+    const Char * longest;
+    int cmp;
 
     if (a_size == b_size)
     {
@@ -348,9 +348,9 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
     /// The strings are equal up to min_size.
     /// If the rest of the larger string is zero bytes then the strings are considered equal.
 
-    size_t max_size = 0;
-    const Char * longest = nullptr;
-    int cmp = 0;
+    size_t max_size;
+    const Char * longest;
+    int cmp;
 
     if (a_size == b_size)
     {
@@ -587,9 +587,9 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
     /// If the rest of the larger string is zero bytes then the strings are
     /// considered equal.
 
-    size_t max_size = 0;
-    const Char * longest = nullptr;
-    int cmp = 0;
+    size_t max_size;
+    const Char * longest;
+    int cmp;
 
     if (a_size == b_size)
     {
@@ -751,10 +751,10 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 template <typename Char>
 inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
-    size_t min_size = 0;
-    size_t max_size = 0;
-    const Char * longest = nullptr;
-    int size_cmp = 0;
+    size_t min_size;
+    size_t max_size;
+    const Char * longest;
+    int size_cmp;
 
     if (a_size == b_size)
     {
@@ -839,12 +839,4 @@ template <typename Char>
 inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
     return 0 == memcmpSmallLikeZeroPaddedAllowOverflow15(a, a_size, b, b_size);
-}
-
-inline int memcmpSmallCharsAllowOverflow15(const UInt8 * a, size_t a_size, const UInt8 * b, size_t b_size)
-{
-    /// Normalize to -1/0/1 because the JIT caller truncates i32 to i8,
-    /// and the generic (memcmp-based) fallback may return arbitrary magnitude.
-    const int res = memcmpSmallAllowOverflow15(a, a_size, b, b_size);
-    return (res > 0) - (res < 0);
 }

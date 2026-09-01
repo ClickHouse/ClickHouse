@@ -106,11 +106,6 @@ struct RuokCommand : public IFourLetterCommand
  * zk_approximate_data_size    27
  * zk_open_file_descriptor_count 23    - only available on Unix platforms
  * zk_max_file_descriptor_count 1024   - only available on Unix platforms
- * zk_leader_uptime 1234               - only exposed by the Leader
- * zk_sum_leader_unavailable_time 1234 - only exposed by the Leader
- * zk_cnt_leader_unavailable_time 1    - only exposed by the Leader
- * zk_sum_election_time 1234           - only exposed by the Leader
- * zk_cnt_election_time 1              - only exposed by the Leader
  * zk_learners 2                       - only exposed by the Leader
  * zk_followers 1                      - only exposed by the Leader
  * zk_synced_followers  1              - only exposed by the Leader

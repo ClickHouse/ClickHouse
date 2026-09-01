@@ -92,7 +92,7 @@ ExternalModelInfos CatBoostLibraryBridgeHelper::listModels()
 
     ExternalModelInfos result;
 
-    UInt64 num_rows = 0;
+    UInt64 num_rows;
     readIntBinary(num_rows, *buf);
 
     for (UInt64 i = 0; i < num_rows; ++i)
@@ -102,7 +102,7 @@ ExternalModelInfos CatBoostLibraryBridgeHelper::listModels()
         readStringBinary(info.model_path, *buf);
         readStringBinary(info.model_type, *buf);
 
-        UInt64 t = 0;
+        UInt64 t;
         readIntBinary(t, *buf);
         info.loading_start_time = std::chrono::system_clock::from_time_t(t);
 
@@ -119,7 +119,7 @@ void CatBoostLibraryBridgeHelper::removeModel()
 {
     startBridgeSync();
 
-    chassert(model_path);
+    assert(model_path);
 
     auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_REMOVEMODEL_METHOD))
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -134,7 +134,7 @@ void CatBoostLibraryBridgeHelper::removeModel()
 
     String result;
     readStringBinary(result, *buf);
-    chassert(result == "1");
+    assert(result == "1");
 }
 
 void CatBoostLibraryBridgeHelper::removeAllModels()
@@ -149,14 +149,14 @@ void CatBoostLibraryBridgeHelper::removeAllModels()
 
     String result;
     readStringBinary(result, *buf);
-    chassert(result == "1");
+    assert(result == "1");
 }
 
 size_t CatBoostLibraryBridgeHelper::getTreeCount()
 {
     startBridgeSync();
 
-    chassert(model_path && library_path);
+    assert(model_path && library_path);
 
     auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_GETTREECOUNT_METHOD))
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -170,7 +170,7 @@ size_t CatBoostLibraryBridgeHelper::getTreeCount()
                         })
                    .create(credentials);
 
-    size_t result = 0;
+    size_t result;
     readIntBinary(result, *buf);
     return result;
 }
@@ -184,7 +184,7 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
     NativeWriter serializer(string_write_buf, /*client_revision*/ 0, block);
     serializer.write(*block);
 
-    chassert(model_path);
+    assert(model_path);
 
     auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_LIB_EVALUATE_METHOD))
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)

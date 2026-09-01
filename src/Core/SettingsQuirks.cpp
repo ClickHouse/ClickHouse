@@ -1,16 +1,11 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
-#include <IO/preadNoWait.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
-
-#include <mutex>
-
-#include <fmt/ranges.h>
 
 
 namespace
@@ -41,6 +36,13 @@ bool nestedEpollWorks(LoggerPtr log)
     return true;
 }
 
+/// See also QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS in Core/Defines.h
+#if !defined(SANITIZER)
+bool queryProfilerWorks() { return true; }
+#else
+bool queryProfilerWorks() { return false; }
+#endif
+
 }
 
 namespace DB
@@ -50,27 +52,16 @@ namespace Setting
 {
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
-    extern const SettingsBool make_distributed_plan;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
-    extern const SettingsBool use_skip_indexes_on_data_read;
-    extern const SettingsBool compile_expressions;
-    extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
-    extern const SettingsString local_filesystem_read_method;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsNonZeroUInt64 max_read_buffer_size;
-    extern const SettingsUInt64 max_read_buffer_size_local_fs;
-    extern const SettingsUInt64 max_read_buffer_size_remote_fs;
-    extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 max_joined_block_size_rows;
-    extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
+    extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool use_hedged_requests;
 }
 
@@ -99,95 +90,21 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
         }
     }
 
-    /// The 'pread_threadpool' read method hands a read off to a thread pool, unless the data is
-    /// already in the page cache, which it checks with the `preadv2` system call and the `RWF_NOWAIT`
-    /// flag. Without that check the hand-off is paid for every read, including the reads that only
-    /// have to copy the data from the page cache, and reading in the calling thread is cheaper.
-    /// The support is probed with a raw system call, so it is only probed when this read method
-    /// is actually requested.
-    if (!settings[Setting::local_filesystem_read_method].changed
-        && settings[Setting::local_filesystem_read_method].value == "pread_threadpool"
-        && !preadNoWaitUnavailableReason().empty())
+    if (!queryProfilerWorks())
     {
-        settings[Setting::local_filesystem_read_method] = "pread";
-
-        /// This is a property of this host, not of the query. A setting marked as changed goes into
-        /// `Settings::changes()`, and `Connection::sendQuery` forwards those to the remote shards -
-        /// which would downgrade the read method on hosts where the system call works. Leave it
-        /// unchanged instead, so it is only the effective default here.
-        settings[Setting::local_filesystem_read_method].setChanged(false);
-
-        /// `applySettingsQuirks` is called for every settings change as well, in every program:
-        /// `clickhouse-client` writes its log to stderr, and an unconditional warning here fails
-        /// every test that checks the client's stderr on a host without the system call. Report
-        /// the reason like the other quirks do - only to the caller that passes a logger, which
-        /// is `Context::setDefaultProfiles` at server startup - and once per process, because
-        /// that call runs again for every copy of the server context.
-        if (log)
+        if (settings[Setting::query_profiler_real_time_period_ns])
         {
-            static std::once_flag reported;
-            std::call_once(
-                reported,
-                [&]
-                {
-                    LOG_WARNING(
-                        log,
-                        "The default value of local_filesystem_read_method has been switched from 'pread_threadpool' "
-                        "to 'pread' (you can explicitly set it back still), because {}. That system call is what "
-                        "'pread_threadpool' needs to read the data that is already in the page cache "
-                        "without handing the read off to a thread pool",
-                        preadNoWaitUnavailableReason());
-                });
+            settings[Setting::query_profiler_real_time_period_ns] = 0;
+            if (log)
+                LOG_WARNING(log, "query_profiler_real_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
+        }
+        if (settings[Setting::query_profiler_cpu_time_period_ns])
+        {
+            settings[Setting::query_profiler_cpu_time_period_ns] = 0;
+            if (log)
+                LOG_WARNING(log, "query_profiler_cpu_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
         }
     }
-}
-
-/// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
-/// distributed plans support the corresponding feature - e.g. for the text index direct read,
-/// let the worker re-run the rewrite over its pinned part list instead of disabling it.
-void adjustSettingsForMakeDistributedPlan(Settings & settings)
-{
-    if (!settings[Setting::make_distributed_plan])
-        return;
-
-    Strings adjusted;
-
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
-    {
-        settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
-        adjusted.emplace_back("enable_parallel_replicas = 0");
-    }
-    if (settings[Setting::automatic_parallel_replicas_mode] != 0)
-    {
-        settings[Setting::automatic_parallel_replicas_mode] = 0;
-        adjusted.emplace_back("automatic_parallel_replicas_mode = 0");
-    }
-    if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
-    {
-        settings[Setting::correlated_subqueries_use_in_memory_buffer] = false;
-        adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
-    }
-    if (settings[Setting::use_skip_indexes_on_data_read])
-    {
-        settings[Setting::use_skip_indexes_on_data_read] = false;
-        adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
-    }
-    if (settings[Setting::compile_expressions])
-    {
-        settings[Setting::compile_expressions] = false;
-        adjusted.emplace_back("compile_expressions = 0");
-    }
-    if (settings[Setting::query_plan_direct_read_from_text_index])
-    {
-        settings[Setting::query_plan_direct_read_from_text_index] = false;
-        adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
-    }
-
-    if (!adjusted.empty())
-        LOG_DEBUG(
-            getLogger("adjustSettingsForMakeDistributedPlan"),
-            "Adjusted settings not supported by distributed query plans (make_distributed_plan is enabled): {}",
-            fmt::join(adjusted, ", "));
 }
 
 void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
@@ -199,21 +116,6 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         if (log)
             LOG_WARNING(log, "Sanity check: Too many threads requested ({}). Reduced to {}", max_threads, max_threads_max_value);
         current_settings[Setting::max_threads] = max_threads_max_value;
-    }
-
-    /// Same ceiling as max_threads: an unbounded value drives pipes.reserve()/resize() in
-    /// ReadFromMergeTree, where reserve() throws std::length_error when the requested size exceeds
-    /// the vector max_size.
-    if (UInt64 max_streams_for_merge_tree_reading = current_settings[Setting::max_streams_for_merge_tree_reading];
-        max_streams_for_merge_tree_reading > max_threads_max_value)
-    {
-        if (log)
-            LOG_WARNING(
-                log,
-                "Sanity check: 'max_streams_for_merge_tree_reading' value is too high ({}). Reduced to {}",
-                max_streams_for_merge_tree_reading,
-                max_threads_max_value);
-        current_settings[Setting::max_streams_for_merge_tree_reading] = max_threads_max_value;
     }
 
     static constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
@@ -237,22 +139,6 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     CHECK_MAX_VALUE(input_format_parquet_max_block_size)
 
 #undef CHECK_MAX_VALUE
-
-#define CHECK_READ_BUFFER_SIZE(SETTING_VALUE) \
-    if (UInt64 buffer_size = current_settings[Setting::SETTING_VALUE]; buffer_size > MAX_SANE_READ_BUFFER_SIZE) \
-    { \
-        if (log) \
-            LOG_WARNING( \
-                log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, buffer_size, MAX_SANE_READ_BUFFER_SIZE); \
-        current_settings[Setting::SETTING_VALUE] = MAX_SANE_READ_BUFFER_SIZE; \
-    }
-
-    CHECK_READ_BUFFER_SIZE(max_read_buffer_size)
-    CHECK_READ_BUFFER_SIZE(max_read_buffer_size_local_fs)
-    CHECK_READ_BUFFER_SIZE(max_read_buffer_size_remote_fs)
-    CHECK_READ_BUFFER_SIZE(prefetch_buffer_size)
-
-#undef CHECK_READ_BUFFER_SIZE
 
 
     if (auto max_block_size = current_settings[Setting::max_block_size]; max_block_size == 0)

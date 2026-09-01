@@ -1,6 +1,5 @@
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
-#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -11,7 +10,6 @@ namespace DB
 SerializationInfoSettings::SerializationInfoSettings(
     double ratio_of_defaults_for_sparse_,
     bool choose_kind_,
-    bool compute_exact_num_defaults_,
     MergeTreeSerializationInfoVersion version_,
     MergeTreeStringSerializationVersion string_serialization_version_,
     MergeTreeNullableSerializationVersion nullable_serialization_version_,
@@ -19,7 +17,6 @@ SerializationInfoSettings::SerializationInfoSettings(
     bool propagate_types_serialization_versions_to_nested_types_)
     : ratio_of_defaults_for_sparse(ratio_of_defaults_for_sparse_)
     , choose_kind(choose_kind_)
-    , compute_exact_num_defaults(compute_exact_num_defaults_)
     , version(version_)
     , string_serialization_version(string_serialization_version_)
     , nullable_serialization_version(nullable_serialization_version_)
@@ -28,13 +25,11 @@ SerializationInfoSettings::SerializationInfoSettings(
 {
     /// New type specialized serialization version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
     /// For older versions, it is automatically defaulted to preserve compatibility.
-    /// This includes `propagate_types_serialization_versions_to_nested_types`, which older versions cannot persist.
     if (version < MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
         nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
         map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
-        propagate_types_serialization_versions_to_nested_types = false;
     }
 }
 
@@ -68,28 +63,11 @@ bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type
     return type.supportsSparseSerialization();
 }
 
-void SerializationInfoSettings::updateHash(SipHash & hash) const
-{
-    hash.update(ratio_of_defaults_for_sparse);
-    hash.update(choose_kind);
-    hash.update(compute_exact_num_defaults);
-    hash.update(static_cast<int>(version));
-    hash.update(static_cast<int>(string_serialization_version));
-    hash.update(static_cast<int>(nullable_serialization_version));
-    hash.update(static_cast<int>(map_serialization_version));
-    hash.update(propagate_types_serialization_versions_to_nested_types);
-}
-
-SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations(bool with_string_size_stream)
+SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations()
 {
     SerializationInfoSettings settings;
     settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
     settings.nullable_serialization_version = MergeTreeNullableSerializationVersion::ALLOW_SPARSE;
-    if (with_string_size_stream)
-    {
-        settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
-        settings.propagate_types_serialization_versions_to_nested_types = true;
-    }
     return settings;
 }
 

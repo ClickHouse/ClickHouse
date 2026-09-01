@@ -31,7 +31,7 @@ bool typeIsSigned(const IDataType & type)
 {
     WhichDataType data_type(type);
     return data_type.isInt() || data_type.isFloat() || data_type.isEnum() || data_type.isDate32() || data_type.isDecimal()
-        || data_type.isDateTime64() || data_type.isTimeOrTime64();
+        || data_type.isDateTime64();
 }
 
 llvm::Type * toNullableType(llvm::IRBuilderBase & builder, llvm::Type * type)
@@ -391,7 +391,7 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
 
         if constexpr (std::is_floating_point_v<T>)
         {
-            return llvm::ConstantFP::get(type, static_cast<double>(element));
+            return llvm::ConstantFP::get(type, element);
         }
         else if constexpr (is_integer<T>)
         {
