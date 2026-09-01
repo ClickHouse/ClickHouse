@@ -709,7 +709,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
         TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
         subnode.requested = node.requested;
         processSubtree(subnode);
-        child_output_idx[i] = subnode.output_idx;
+        i = subnode.output_idx;
     }
 
     if (!node.requested)
